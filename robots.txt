@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://vishartattoo.com/sitemap.xml
