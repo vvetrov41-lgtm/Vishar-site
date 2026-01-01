@@ -119,6 +119,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+    <link rel="preload" as="image" href="assets/hero/hero.jpg" fetchpriority="high">
     
     <!-- Tailwind SDK -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -183,7 +184,7 @@
                 <a href="#contact" class="hover:text-white transition-colors">Contact</a>
             </div>
 
-            <button class="md:hidden text-white" onclick="toggleMenu()">
+            <button class="md:hidden text-white" onclick="toggleMenu()" aria-label="Toggle menu" aria-controls="mobile-overlay" aria-expanded="false" id="mobile-menu-toggle">
                 <svg id="menu-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16m-16 6h16" />
                 </svg>
@@ -191,7 +192,7 @@
         </div>
         
         <!-- Mobile Menu Overlay -->
-        <div id="mobile-overlay" class="hidden fixed inset-0 top-14 bg-black z-[90] flex flex-col p-8 space-y-6 text-2xl font-semibold">
+        <div id="mobile-overlay" class="hidden fixed inset-0 top-14 bg-black z-[90] flex flex-col p-8 space-y-6 text-2xl font-semibold" aria-hidden="true">
             <a href="#about" onclick="toggleMenu()">About</a>
             <a href="#portfolio" onclick="toggleMenu()">Portfolio</a>
             <a href="#gallery" onclick="toggleMenu()">Gallery</a>
@@ -201,10 +202,11 @@
         </div>
     </nav>
 
+    <main>
     <!-- Hero Section -->
     <header class="relative h-[95vh] flex items-center justify-center text-center px-6 overflow-hidden">
         <div class="absolute inset-0 z-0">
-            <img src="assets/hero/hero.jpg" alt="Hero Background" class="w-full h-full object-cover scale-105 opacity-60">
+            <img src="assets/hero/hero.jpg" alt="Hero Background" loading="eager" fetchpriority="high" class="w-full h-full object-cover scale-105 opacity-60">
             <div class="absolute inset-0 bg-gradient-to-b from-black/20 via-black/40 to-black"></div>
         </div>
         
@@ -212,7 +214,7 @@
             <h1 class="hero-title text-5xl md:text-8xl font-semibold mb-6 tracking-tight">Realism.</h1>
             <p class="text-xl md:text-2xl text-white/60 mb-10 font-light">Colour & Black-Grey Realism in Manchester</p>
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <a href="https://bit.ly/43RhJPA" target="_blank" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all scale-100 active:scale-95">
+                <a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all scale-100 active:scale-95">
                     Book Your Session
                 </a>
                 <a href="#portfolio" class="px-8 py-3 text-white font-medium hover:underline flex items-center gap-2">
@@ -241,29 +243,7 @@
             <h2 class="text-4xl font-semibold tracking-tight">Portfolio</h2>
             <p class="text-white/40 mt-2">Latest Realistic Works</p>
         </div>
-        <div class="max-w-[1400px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-2">
-            <!-- 20 items generated with high-quality placeholders -->
-            <script>
-  const portfolioImages = [
-    '01.jpg','02.jpg','03.jpg','04.jpg',
-    '05.jpg','06.jpg','07.jpg','08.jpg',
-    '09.jpg','10.jpg','11.jpg','12.jpg',
-    '13.jpg','14.jpg','15.jpg','16.jpg',
-    '17.jpg','18.jpg','19.jpg','20.jpg'
-  ];
-
-  portfolioImages.forEach((file, index) => {
-    document.write(`
-      <div class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative" onclick="openLightbox(this)">
-        <img src="assets/portfolio/${file}" alt="Realism tattoo by Vladimir Vishar - Manchester - portfolio ${index+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">
-        <div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span class="text-xs uppercase tracking-widest font-semibold">View</span>
-        </div>
-      </div>
-    `);
-  });
-            </script>
-        </div>
+        <div id="portfolio-grid" class="max-w-[1400px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-2"></div>
     </section>
 
     <!-- Gallery (6 Photos) -->
@@ -275,19 +255,7 @@
                     <p class="text-white/40">Environment & Creative Process</p>
                 </div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
-                <script>
-  const galleryFiles = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg'];
-
-  galleryFiles.forEach(file => {
-    document.write(`
-      <div class="aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group">
-        <img src="assets/gallery/${file}" alt="Tattoo studio Manchester - photo ${file}" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500">
-      </div>
-    `);
-  });
-</script>
-            </div>
+            <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 gap-6"></div>
         </div>
     </section>
 
@@ -323,14 +291,14 @@
     </section>
 
     <!-- Aftercare Section -->
-    <section id="aftercare" class="py-32 px-6 text-center">
-        <div class="max-w-[600px] mx-auto">
-            <h2 class="text-3xl font-semibold mb-6">Heal it properly.</h2>
-            <p class="text-white/50 mb-10 text-lg font-light">The first 14 days define the life of your tattoo. Download my official guide for the best results.</p>
-            <a href="Tattoo_Aftercare_EN_mobile.pdf" target="_blank" class="inline-flex items-center gap-3 bg-white/5 border border-white/10 px-8 py-4 rounded-full hover:bg-white hover:text-black transition-all font-medium">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                Download Guide (PDF)
-            </a>
+    <section id="aftercare" class="py-24 px-6">
+        <div class="max-w-[900px] mx-auto">
+            <div id="aftercare-root"></div>
+            <noscript>
+                <div class="text-center text-white/60">
+                    Please enable JavaScript to view the aftercare guide.
+                </div>
+            </noscript>
         </div>
     </section>
 
@@ -388,7 +356,7 @@
                     <div class="space-y-8">
                         <div>
                             <p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Location</p>
-                            <a href="https://maps.app.goo.gl/mCQcaojR2MR6upBYA?g_st=ic" target="_blank" class="text-2xl font-light hover:text-white transition-colors underline decoration-white/20 underline-offset-8">Manchester / Salford</a>
+                            <a href="https://maps.app.goo.gl/mCQcaojR2MR6upBYA?g_st=ic" target="_blank" rel="noopener noreferrer" class="text-2xl font-light hover:text-white transition-colors underline decoration-white/20 underline-offset-8">Manchester / Salford</a>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Inquiries</p>
@@ -396,18 +364,19 @@
                         </div>
                         <div>
                             <p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Social</p>
-                            <a href="https://www.instagram.com/vladimir_vishar" target="_blank" class="text-2xl font-light hover:text-white transition-colors">Instagram</a>
+                            <a href="https://www.instagram.com/vladimir_vishar" target="_blank" rel="noopener noreferrer" class="text-2xl font-light hover:text-white transition-colors">Instagram</a>
                         </div>
                     </div>
                 </div>
                 <div class="flex items-center justify-center md:justify-end">
-                    <a href="https://bit.ly/43RhJPA" target="_blank" class="w-64 h-64 rounded-full border border-white/10 flex items-center justify-center text-center p-8 group hover:bg-white hover:text-black transition-all duration-500 scale-100 hover:scale-110">
+                    <a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="w-64 h-64 rounded-full border border-white/10 flex items-center justify-center text-center p-8 group hover:bg-white hover:text-black transition-all duration-500 scale-100 hover:scale-110">
                         <span class="text-xl font-medium tracking-tight">Book Now <br> <span class="text-sm font-light opacity-60">Starts at £130</span></span>
                     </a>
                 </div>
             </div>
         </div>
     </section>
+    </main>
 
     <!-- Footer -->
     <footer class="py-24 border-t border-white/5 px-6 text-center">
@@ -425,9 +394,14 @@
     </footer>
 
     <!-- Lightbox -->
-    <div id="lightbox" class="fixed inset-0 z-[1000] bg-black/98 hidden flex items-center justify-center p-4 backdrop-blur-xl cursor-zoom-out" onclick="closeLightbox()">
+    <div id="lightbox" class="fixed inset-0 z-[1000] bg-black/98 hidden flex items-center justify-center p-4 backdrop-blur-xl cursor-zoom-out" onclick="closeLightbox()" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Image preview">
         <img id="lightbox-img" src="" class="max-w-full max-h-[90vh] object-contain shadow-2xl transition-transform duration-500" alt="Fullscreen view">
     </div>
+
+    <!-- React (Aftercare Guide) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <!-- AI Core Engine (Gemini API) -->
     <script>
@@ -488,22 +462,72 @@
     btn.innerText = "Ask Assistant";
   }
 
+        const portfolioImages = [
+          '01.jpg','02.jpg','03.jpg','04.jpg',
+          '05.jpg','06.jpg','07.jpg','08.jpg',
+          '09.jpg','10.jpg','11.jpg','12.jpg',
+          '13.jpg','14.jpg','15.jpg','16.jpg',
+          '17.jpg','18.jpg','19.jpg','20.jpg'
+        ];
+
+        const galleryFiles = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg'];
+
+        function buildImageGrid() {
+          const portfolioGrid = document.getElementById('portfolio-grid');
+          const galleryGrid = document.getElementById('gallery-grid');
+
+          if (portfolioGrid) {
+            portfolioImages.forEach((file, index) => {
+              const wrapper = document.createElement('div');
+              wrapper.className = 'aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';
+              wrapper.addEventListener('click', () => openLightbox(wrapper));
+              wrapper.innerHTML = `
+                <img src="assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar - Manchester - portfolio ${index + 1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">
+                <div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <span class="text-xs uppercase tracking-widest font-semibold">View</span>
+                </div>
+              `;
+              portfolioGrid.appendChild(wrapper);
+            });
+          }
+
+          if (galleryGrid) {
+            galleryFiles.forEach((file) => {
+              const wrapper = document.createElement('div');
+              wrapper.className = 'aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group';
+              wrapper.innerHTML = `
+                <img src="assets/gallery/${file}" loading="lazy" decoding="async" width="900" height="900" alt="Tattoo studio Manchester - photo ${file}" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500">
+              `;
+              galleryGrid.appendChild(wrapper);
+            });
+          }
+        }
+
+        document.addEventListener('DOMContentLoaded', buildImageGrid);
+
         // UI Helpers
         function toggleMenu() {
             const overlay = document.getElementById('mobile-overlay');
+            const toggle = document.getElementById('mobile-menu-toggle');
             overlay.classList.toggle('hidden');
+            const isOpen = !overlay.classList.contains('hidden');
+            overlay.setAttribute('aria-hidden', String(!isOpen));
+            toggle.setAttribute('aria-expanded', String(isOpen));
             document.body.classList.toggle('lightbox-active');
         }
 
         function openLightbox(el) {
             const img = el.querySelector('img');
             document.getElementById('lightbox-img').src = img.src;
+            document.getElementById('lightbox-img').alt = img.alt || 'Fullscreen view';
         document.getElementById('lightbox').classList.remove('hidden');
+            document.getElementById('lightbox').setAttribute('aria-hidden', 'false');
             document.body.classList.add('lightbox-active');
         }
 
         function closeLightbox() {
             document.getElementById('lightbox').classList.add('hidden');
+            document.getElementById('lightbox').setAttribute('aria-hidden', 'true');
             document.body.classList.remove('lightbox-active');
         }
 
@@ -513,6 +537,241 @@
             document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('active'));
             if (!active) item.classList.add('active');
         }
+
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            const overlay = document.getElementById('mobile-overlay');
+            const toggle = document.getElementById('mobile-menu-toggle');
+            if (!document.getElementById('lightbox').classList.contains('hidden')) {
+              closeLightbox();
+              return;
+            }
+            if (overlay && !overlay.classList.contains('hidden')) {
+              overlay.classList.add('hidden');
+              overlay.setAttribute('aria-hidden', 'true');
+              toggle.setAttribute('aria-expanded', 'false');
+              document.body.classList.remove('lightbox-active');
+            }
+          }
+        });
+    </script>
+
+    <script type="text/babel">
+      const { useState } = React;
+
+      const Section = ({ title, icon, children, variant = "default" }) => (
+        <section className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xl">{icon}</span>
+            <h2 className="text-2xl font-semibold text-white">{title}</h2>
+          </div>
+          <div
+            className={`rounded-3xl p-6 ${
+              variant === "warning"
+                ? "bg-red-500/10 border border-red-500/20"
+                : "bg-white/5 border border-white/10"
+            }`}
+          >
+            {children}
+          </div>
+        </section>
+      );
+
+      const ListItem = ({ children, icon = "✓" }) => (
+        <div className="flex gap-3 mb-4 last:mb-0">
+          <span className="text-blue-300 mt-0.5">{icon}</span>
+          <span className="text-white/70 leading-relaxed">{children}</span>
+        </div>
+      );
+
+      const AftercareApp = () => {
+        const [activeOption, setActiveOption] = useState(1);
+
+        return (
+          <div className="rounded-[32px] border border-white/10 bg-black/80 p-8 md:p-10 shadow-2xl">
+            <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 mb-10">
+              <div>
+                <p className="text-sm uppercase tracking-[0.3em] text-white/30 mb-2">Aftercare</p>
+                <h2 className="text-4xl md:text-5xl font-semibold text-white">Heal it properly.</h2>
+                <p className="text-white/50 mt-3 text-lg">
+                  The first 14 days define the life of your tattoo.
+                </p>
+              </div>
+              <a
+                href="Tattoo_Aftercare_EN_mobile.pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-3 bg-white/10 border border-white/15 px-6 py-3 rounded-full hover:bg-white hover:text-black transition-all font-medium"
+              >
+                Download Guide (PDF)
+              </a>
+            </header>
+
+            <Section title="Essentials" icon="🧼">
+              <ListItem icon="🖐️">Always wash your hands before touching the tattoo.</ListItem>
+              <ListItem icon="🛏️">Fresh bed sheets for the first night.</ListItem>
+              <ListItem icon="👕">Wear loose clothing that won't rub.</ListItem>
+            </Section>
+
+            <div className="flex flex-col sm:flex-row bg-white/5 p-1 rounded-2xl mb-8 border border-white/10">
+              <button
+                onClick={() => setActiveOption(1)}
+                className={`flex-1 py-3 text-sm font-medium rounded-xl transition-all ${
+                  activeOption === 1 ? "bg-white text-black" : "text-white/60 hover:text-white"
+                }`}
+              >
+                Option 1: No Film
+              </button>
+              <button
+                onClick={() => setActiveOption(2)}
+                className={`flex-1 py-3 text-sm font-medium rounded-xl transition-all ${
+                  activeOption === 2 ? "bg-white text-black" : "text-white/60 hover:text-white"
+                }`}
+              >
+                Option 2: Healing Film
+              </button>
+            </div>
+
+            {activeOption === 1 && (
+              <div className="space-y-6">
+                <Section title="Initial Care" icon="⏱️">
+                  <div className="mb-6">
+                    <h3 className="font-semibold text-white mb-2">Day 0 (Evening)</h3>
+                    <p className="text-white/60">
+                      If your session ended in the evening, keep the initial dressing on until morning.
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white mb-2">Day 1</h3>
+                    <ListItem>Wash hands and remove the dressing.</ListItem>
+                    <ListItem>Quick lukewarm shower with mild fragrance-free soap.</ListItem>
+                    <ListItem>Pat dry with a clean paper towel.</ListItem>
+                    <ListItem>Apply a very thin layer of moisturiser.</ListItem>
+                  </div>
+                </Section>
+
+                <Section title="Routine (Days 1-3)" icon="🔁">
+                  <p className="text-sm text-white/40 mb-4 font-medium uppercase tracking-wider">
+                    Repeat 3-5 times per day
+                  </p>
+                  <div className="grid grid-cols-1 gap-4">
+                    {["Gentle but thorough wash", "Pat dry", "Thin layer of cream + clean dressing"].map(
+                      (step, index) => (
+                        <div
+                          key={step}
+                          className="p-4 bg-white/5 rounded-2xl flex items-center gap-4 border border-white/10"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center font-bold">
+                            {index + 1}
+                          </div>
+                          <span className="text-white/70">{step}</span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                  <div className="mt-6 p-4 border border-blue-500/20 bg-blue-500/10 rounded-2xl">
+                    <p className="text-sm text-blue-200 font-medium mb-1">
+                      Disposable absorbent pad (puppy pad):
+                    </p>
+                    <p className="text-sm text-blue-100/80">
+                      It's breathable; use for sleep, travel, or under clothing. Change when damp.
+                    </p>
+                  </div>
+                </Section>
+
+                <Section title="Late Stage (Day 4+)" icon="🌙">
+                  <ListItem>Once weeping stops and peeling starts, stop using dressings.</ListItem>
+                  <ListItem>Light moisturising as needed.</ListItem>
+                  <ListItem icon="✕">Don't pick at the peeling skin.</ListItem>
+                </Section>
+              </div>
+            )}
+
+            {activeOption === 2 && (
+              <div className="space-y-6">
+                <Section title="Application" icon="🩹">
+                  <ListItem>Wear for 3-5 days (up to 7 if comfortable and edges aren't lifting).</ListItem>
+                  <ListItem>Showers are fine; avoid long hot steam.</ListItem>
+                  <div className="mt-4 p-4 bg-red-500/10 rounded-2xl border border-red-500/20">
+                    <p className="text-sm text-red-200 font-medium mb-1">
+                      When to remove early:
+                    </p>
+                    <p className="text-sm text-red-100/80">
+                      If fluid builds up, it burns/leaks, or edges lift — switch to regular care routine.
+                    </p>
+                  </div>
+                </Section>
+
+                <Section title="Removal Process" icon="🧻">
+                  <ListItem>Removal: only when dry.</ListItem>
+                  <ListItem>Lift an edge and stretch it parallel to the skin, slowly.</ListItem>
+                  <div className="mt-4 p-4 bg-white/5 rounded-2xl border border-white/10">
+                    <p className="text-sm text-white font-medium mb-2">After removal:</p>
+                    <div className="flex justify-between items-center px-4 text-xs font-bold text-white/40">
+                      <span>WASH</span>
+                      <span>→</span>
+                      <span>PAT DRY</span>
+                      <span>→</span>
+                      <span>CREAM</span>
+                    </div>
+                  </div>
+                </Section>
+              </div>
+            )}
+
+            <Section title="Moisturiser" icon="💧">
+              <div className="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
+                <div>
+                  <p className="font-semibold text-white">Bepanthen Tattoo</p>
+                  <p className="text-sm text-white/50 mb-4">
+                    Intense Care Ointment with Provitamin B5.
+                  </p>
+                  <div className="p-3 bg-white/10 text-white/80 text-xs rounded-xl inline-flex items-center gap-2">
+                    Contains lanolin; use alternative if sensitive.
+                  </div>
+                </div>
+                <a
+                  href="https://amazon.com"
+                  className="px-4 py-2 bg-white text-black rounded-full text-sm font-medium flex items-center gap-2 hover:opacity-80 transition-opacity"
+                >
+                  Shop ↗
+                </a>
+              </div>
+            </Section>
+
+            <Section title="Avoid" icon="🚫">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                <ListItem icon="💧">Baths, pools, saunas</ListItem>
+                <ListItem icon="☀️">Sun/Sunbeds (3-4 weeks)</ListItem>
+                <ListItem icon="✕">Friction & tight synthetics</ListItem>
+                <ListItem icon="🐾">Animal fur & dirty surfaces</ListItem>
+                <ListItem icon="✕">Shaving & self-tan</ListItem>
+                <ListItem icon="🍷">Alcohol (first 48h)</ListItem>
+                <ListItem icon="🏋️">Intense workouts (3-7 days)</ListItem>
+              </div>
+              <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-2 text-sm text-white/40">
+                ☀️ After healing, always use SPF 50 on the tattoo.
+              </div>
+            </Section>
+
+            <Section title="Normal Symptoms" icon="✅">
+              <p className="text-white/70">
+                Mild redness, swelling, itch and peeling for 2-7 days.
+              </p>
+            </Section>
+
+            <Section title="Contact me / See a doctor if" icon="⚠️" variant="warning">
+              <div className="space-y-4 text-sm">
+                <p className="text-red-100">Pain or redness worsens after 48 hours.</p>
+                <p className="text-red-100">Pus, bad odour, fever, or red streaks appear.</p>
+                <p className="text-red-100">Severe rash or blisters (possible allergy).</p>
+              </div>
+            </Section>
+          </div>
+        );
+      };
+
+      ReactDOM.createRoot(document.getElementById("aftercare-root")).render(<AftercareApp />);
     </script>
 </body>
 </html>
