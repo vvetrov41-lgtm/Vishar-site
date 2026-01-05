@@ -35,7 +35,7 @@ export async function onRequestPost({ request, env }) {
         JSON.stringify({
           reply: `Gemini API error (${r.status}): ${data?.error?.message || "Unknown error"}`,
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
+        { status: r.status, headers: { "Content-Type": "application/json" } }
       );
     }
 
