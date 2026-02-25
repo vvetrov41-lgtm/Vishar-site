@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="index, follow">
+
+    <title>Vladimir Vishar - Manchester Tattoo Artist | Colour & Black-Grey Realism</title>
+    <meta name="description" content="Official portfolio of Vladimir Vishar. High-end Colour and Black-Grey Realism in Manchester & Salford. Custom designs, professional finish. Hourly rate is £140">
+    <link rel="canonical" href="https://vishartattoo.com/">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Vladimir Vishar - High-End Realism Tattooing">
+    <meta property="og:description" content="Bespoke realism tattoos in Manchester. Minimum charge £140. Book your session today.">
+    <meta property="og:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
+    <meta property="og:url" content="https://vishartattoo.com/">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,600;0,700;1,600;1,700&display=swap" rel="stylesheet">
+    <link rel="preload" as="image" href="assets/hero/hero.jpg" fetchpriority="high">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              serif: ['Playfair Display', 'serif'],
+            },
+            colors: {
+              brand: {
+                accent: '#d4af37', // Elegant muted gold
+                dark: '#09090b', // Zinc 950
+              }
+            },
+            animation: {
+              'slow-zoom': 'slowZoom 20s ease-out infinite alternate',
+            },
+            keyframes: {
+              slowZoom: {
+                '0%': { transform: 'scale(1)' },
+                '100%': { transform: 'scale(1.15)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body { background-color: #09090b; color: #fafafa; }
+      .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+      .glass-card { background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%); border: 1px solid rgba(255,255,255,0.1); }
+      .fade-in { opacity: 0; animation: fadeInUp 1s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+      .delay-200 { animation-delay: 0.2s; }
+      .delay-400 { animation-delay: 0.4s; }
+      @keyframes fadeInUp {
+        0% { opacity: 0; transform: translateY(30px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+      /* Custom scrollbar */
+      ::-webkit-scrollbar { width: 8px; }
+      ::-webkit-scrollbar-track { background: #09090b; }
+      ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #555; }
+    </style>
+</head>
+<body class="antialiased selection:bg-white/20">
+
+    <nav class="fixed top-6 left-1/2 -translate-x-1/2 z-[100] glass border border-white/10 rounded-full px-6 md:px-8 h-14 flex justify-between items-center w-[calc(100%-2rem)] max-w-5xl shadow-2xl transition-all duration-300">
+        <a href="#" class="font-serif italic text-xl font-bold tracking-tight hover:opacity-70 transition-opacity">Vishar.</a>
+
+        <div class="hidden md:flex space-x-8 text-xs uppercase tracking-widest font-medium text-white/70">
+            <a href="#about" class="hover:text-white transition-colors">About</a>
+            <a href="#portfolio" class="hover:text-white transition-colors">Portfolio</a>
+            <a href="#aftercare" class="hover:text-white transition-colors">Aftercare</a>
+            <a href="#reviews" class="hover:text-white transition-colors">Reviews</a>
+            <a href="#faq" class="hover:text-white transition-colors">FAQ</a>
+            <a href="#contact" class="hover:text-white transition-colors">Contact</a>
+        </div>
+
+        <button class="md:hidden text-white" onclick="toggleMenu()" aria-label="Toggle menu" id="mobile-menu-toggle">
+            <svg id="menu-icon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16m-16 6h16" />
+            </svg>
+        </button>
+    </nav>
+
+    <div id="mobile-overlay" class="fixed inset-0 bg-black/95 backdrop-blur-md z-[90] flex-col p-10 pt-32 space-y-8 text-3xl font-serif italic text-center" style="display:none;">
+        <a href="#about" onclick="toggleMenu()" class="text-white/80 hover:text-white transition-colors">About</a>
+        <a href="#portfolio" onclick="toggleMenu()" class="text-white/80 hover:text-white transition-colors">Portfolio</a>
+        <a href="#gallery" onclick="toggleMenu()" class="text-white/80 hover:text-white transition-colors">Gallery</a>
+        <a href="#aftercare" onclick="toggleMenu()" class="text-white/80 hover:text-white transition-colors">Aftercare</a>
+        <a href="#reviews" onclick="toggleMenu()" class="text-white/80 hover:text-white transition-colors">Reviews</a>
+        <a href="#faq" onclick="toggleMenu()" class="text-white/80 hover:text-white transition-colors">FAQ</a>
+        <a href="#contact" onclick="toggleMenu()" class="text-white/80 hover:text-white transition-colors">Contact</a>
+    </div>
+
+    <main>
+    <header class="relative h-screen flex items-center justify-center text-center px-6 overflow-hidden">
+        <div class="absolute inset-0 z-0">
+            <img src="assets/hero/hero.jpg" alt="Realism tattoo artwork" class="w-full h-full object-cover animate-slow-zoom opacity-50">
+            <div class="absolute inset-0 bg-gradient-to-b from-brand-dark/40 via-brand-dark/60 to-brand-dark"></div>
+        </div>
+
+        <div class="relative z-10 max-w-4xl fade-in mt-16">
+            <h1 class="font-serif italic text-6xl md:text-9xl mb-4 tracking-tighter">Realism.</h1>
+            <p class="text-lg md:text-2xl text-white/60 mb-12 font-light tracking-wide uppercase">Colour & Black-Grey Tattooing</p>
+            
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-6">
+                <a href="https://shorturl.at/orgVK" target="_blank" class="px-8 py-4 bg-white text-black rounded-full text-sm font-semibold tracking-wide uppercase hover:bg-gray-200 transition-all scale-100 active:scale-95 shadow-[0_0_40px_rgba(255,255,255,0.2)]">
+                    Get a Free Quote
+                </a>
+                <a href="#portfolio" class="px-8 py-4 text-white text-sm font-medium tracking-wide uppercase hover:text-white/70 transition-colors flex items-center gap-2">
+                    View Work <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" transform="rotate(90 12 12)"/></svg>
+                </a>
+            </div>
+
+            <div class="mt-16 pt-8 border-t border-white/10 flex flex-col items-center gap-4 fade-in delay-400">
+                <div class="text-brand-accent flex gap-1 text-lg">★★★★★</div>
+                <div class="text-white/50 text-xs tracking-widest uppercase">Currently booking June – July 2026</div>
+                <div class="flex flex-wrap justify-center gap-x-8 gap-y-2 text-white/40 text-sm mt-4">
+                    <span>✦ Medical-grade finish</span>
+                    <span>✦ Manchester & Salford</span>
+                    <span>✦ Hourly rate £140</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <section id="about" class="py-32 px-6 max-w-[900px] mx-auto">
+        <div class="text-center fade-in">
+            <h2 class="font-serif text-4xl md:text-6xl mb-10 tracking-tight italic">Precision in Every Needle.</h2>
+            <div class="space-y-8 text-lg md:text-xl text-white/60 leading-relaxed font-light">
+                <p>I am <span class="text-white font-medium">Vladimir Vishar</span>, a Manchester-based specialist in realistic tattooing. My practice focuses on two primary disciplines: vivid <span class="text-white">Colour Realism</span> and evocative <span class="text-white">Black & Grey</span> works.</p>
+                <p>Operating out of Salford, I believe in a custom approach where every design is a unique collaboration between artist and client, executed with a high-end medical-grade finish.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="portfolio" class="py-24 px-4">
+        <div class="max-w-[1200px] mx-auto text-center mb-16">
+            <h2 class="font-serif text-4xl md:text-5xl tracking-tight italic">Selected Works</h2>
+            <p class="text-white/40 mt-4 text-sm tracking-widest uppercase">Latest Realism Portfolio</p>
+        </div>
+        <div id="portfolio-grid" class="max-w-[1400px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+    </section>
+
+    <section id="gallery" class="py-24 px-6 bg-white/[0.02] border-y border-white/5">
+        <div class="max-w-[1200px] mx-auto">
+            <div class="text-center mb-16">
+                <h2 class="font-serif text-4xl md:text-5xl tracking-tight italic">The Studio</h2>
+                <p class="text-white/40 mt-4 text-sm tracking-widest uppercase">Environment & Process</p>
+            </div>
+            <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+        </div>
+    </section>
+
+    <section id="aftercare" class="py-32 px-6">
+        <div class="max-w-[900px] mx-auto">
+            <div class="glass-card rounded-[40px] p-8 md:p-12 shadow-2xl relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mr-20 -mt-20"></div>
+                
+                <button type="button" onclick="toggleAftercare()" class="w-full text-left flex flex-col md:flex-row md:items-end md:justify-between gap-6 relative z-10" id="aftercare-toggle">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.3em] text-brand-accent mb-4 font-semibold">Care Guide</p>
+                        <h2 class="font-serif text-4xl md:text-6xl text-white italic">Heal it properly.</h2>
+                        <p class="text-white/50 mt-4 text-lg font-light">The first 14 days define the life of your tattoo.</p>
+                    </div>
+                    <div class="shrink-0 pb-2">
+                        <span class="inline-flex items-center justify-center w-12 h-12 rounded-full border border-white/20 bg-white/5 text-white transition-transform duration-300" id="aftercare-toggle-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 9l-7 7-7-7" /></svg>
+                        </span>
+                    </div>
+                </button>
+
+                <div id="aftercare-content" class="mt-12 hidden relative z-10 border-t border-white/10 pt-10">
+                    <section class="mb-10">
+                        <h3 class="text-xl font-medium text-white mb-6 flex items-center gap-3"><span class="w-2 h-2 rounded-full bg-brand-accent"></span> Essentials</h3>
+                        <div class="grid md:grid-cols-3 gap-4">
+                            <div class="p-6 rounded-2xl bg-white/5 border border-white/5">
+                                <span class="text-2xl mb-3 block">🖐️</span>
+                                <p class="text-white/70 text-sm">Always wash your hands before touching the tattoo.</p>
+                            </div>
+                            <div class="p-6 rounded-2xl bg-white/5 border border-white/5">
+                                <span class="text-2xl mb-3 block">🛏️</span>
+                                <p class="text-white/70 text-sm">Fresh bed sheets for the first night.</p>
+                            </div>
+                            <div class="p-6 rounded-2xl bg-white/5 border border-white/5">
+                                <span class="text-2xl mb-3 block">👕</span>
+                                <p class="text-white/70 text-sm">Wear loose clothing that won't rub.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="flex p-1 bg-white/5 rounded-2xl mb-10 border border-white/10 w-full max-w-md mx-auto">
+                        <button id="aftercare-option-1" onclick="setAftercareOption(1)" class="flex-1 py-3 text-sm font-medium rounded-xl transition-all bg-white text-black shadow-sm">No Film</button>
+                        <button id="aftercare-option-2" onclick="setAftercareOption(2)" class="flex-1 py-3 text-sm font-medium rounded-xl transition-all text-white/50 hover:text-white">Healing Film</button>
+                    </div>
+
+                    <div id="aftercare-option-1-content" class="space-y-8">
+                        <div class="p-8 rounded-3xl bg-white/5 border border-white/5">
+                            <h4 class="text-lg font-medium text-white mb-4">Initial Care (Days 1-3)</h4>
+                            <ul class="space-y-4 text-white/70 font-light">
+                                <li class="flex gap-3"><span class="text-brand-accent">✓</span> Wash hands and remove dressing.</li>
+                                <li class="flex gap-3"><span class="text-brand-accent">✓</span> Quick lukewarm shower with mild soap.</li>
+                                <li class="flex gap-3"><span class="text-brand-accent">✓</span> Pat dry with a clean paper towel.</li>
+                                <li class="flex gap-3"><span class="text-brand-accent">✓</span> Apply a very thin layer of moisturiser.</li>
+                            </ul>
+                            <div class="mt-6 p-4 rounded-xl bg-white/5 border border-white/10 text-sm text-white/60">
+                                <strong class="text-white block mb-1">Routine:</strong> Repeat wash, dry, and cream 3-5 times per day.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="aftercare-option-2-content" class="space-y-8 hidden">
+                        <div class="p-8 rounded-3xl bg-white/5 border border-white/5">
+                            <h4 class="text-lg font-medium text-white mb-4">Film Application</h4>
+                            <ul class="space-y-4 text-white/70 font-light">
+                                <li class="flex gap-3"><span class="text-brand-accent">✓</span> Wear for 3-5 days.</li>
+                                <li class="flex gap-3"><span class="text-brand-accent">✓</span> Showers are fine; avoid hot steam.</li>
+                                <li class="flex gap-3"><span class="text-brand-accent">✓</span> Remove only when dry. Lift edge and stretch slowly.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="mt-12 p-8 rounded-3xl bg-gradient-to-br from-white/10 to-transparent border border-white/10">
+                        <h3 class="font-serif italic text-2xl text-white mb-2">Aftercare AI</h3>
+                        <p class="text-sm text-white/50 mb-6 font-light">Instant healing support based on my guidelines.</p>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <input id="ai-care-input" type="text" placeholder="e.g., Can I go to the gym tomorrow?" class="flex-1 bg-black/50 border border-white/10 rounded-xl px-5 py-4 text-sm text-white focus:border-white/50 outline-none transition-all placeholder:text-white/30">
+                            <button onclick="aiCare()" id="ai-care-btn" class="px-8 py-4 bg-white text-black rounded-xl text-sm font-medium transition-all hover:bg-gray-200 active:scale-95 whitespace-nowrap">Ask</button>
+                        </div>
+                        <div id="ai-care-res" class="mt-4 text-sm leading-relaxed text-brand-accent hidden"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="faq" class="py-24 px-6 max-w-[800px] mx-auto">
+        <div class="text-center mb-16">
+            <h2 class="font-serif text-4xl md:text-5xl tracking-tight italic">FAQ</h2>
+            <p class="text-white/40 mt-4 text-sm tracking-widest uppercase">Common Questions</p>
+        </div>
+        <div class="space-y-2">
+            <div class="glass-card rounded-2xl overflow-hidden transition-all duration-300">
+                <button class="w-full p-6 flex justify-between items-center text-left" onclick="toggleFaq(this)">
+                    <span class="text-lg font-medium text-white/90">How long does it take?</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="faq-icon h-5 w-5 text-white/40 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                <div class="faq-content hidden px-6 pb-6 text-white/50 font-light leading-relaxed">
+                    A standard session is up to 7 hours. Approximate estimates: Full sleeve: 8-10 sessions. Shoulder: 2-3 sessions. Forearm: 1-2 sessions. Colour work usually takes longer than black & grey.
+                </div>
+            </div>
+            <div class="glass-card rounded-2xl overflow-hidden transition-all duration-300">
+                <button class="w-full p-6 flex justify-between items-center text-left" onclick="toggleFaq(this)">
+                    <span class="text-lg font-medium text-white/90">Pain relief / numbing</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="faq-icon h-5 w-5 text-white/40 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                <div class="faq-content hidden px-6 pb-6 text-white/50 font-light leading-relaxed">
+                    I don't recommend numbing creams by default: risk of allergy, skin reacts unpredictably, healing can be less stable. Cream is applied only to broken skin towards the end of long sessions if necessary.
+                </div>
+            </div>
+            <div class="glass-card rounded-2xl overflow-hidden transition-all duration-300">
+                <button class="w-full p-6 flex justify-between items-center text-left" onclick="toggleFaq(this)">
+                    <span class="text-lg font-medium text-white/90">How long does healing take?</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="faq-icon h-5 w-5 text-white/40 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                <div class="faq-content hidden px-6 pb-6 text-white/50 font-light leading-relaxed">
+                    Surface heals in 10-14 days. Full healing: 4-6 weeks. Avoid heavy sweating/gym for 7-10 days. No sauna, pool, sea, or tanning for at least 3-4 weeks.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="reviews" class="py-24 px-6 bg-white/[0.02] border-y border-white/5">
+        <div class="max-w-[1200px] mx-auto">
+            <div class="text-center mb-16">
+                <h2 class="font-serif text-4xl md:text-5xl tracking-tight italic">Client Experiences</h2>
+                <div class="flex items-center justify-center gap-2 mt-4 text-brand-accent">
+                    <span>★★★★★</span>
+                    <span class="text-white/40 text-sm tracking-widest uppercase ml-2">5.0 on Google</span>
+                </div>
+            </div>
+            <div id="reviews-grid" class="grid md:grid-cols-3 gap-6 mb-12"></div>
+            <div class="text-center">
+                <button onclick="toggleReviews()" id="reviews-toggle" class="px-8 py-3 rounded-full border border-white/20 text-white/70 hover:text-white hover:bg-white/5 transition-all text-sm font-medium inline-flex items-center gap-2">
+                    <span id="reviews-toggle-label">Read all reviews</span>
+                    <svg id="reviews-toggle-icon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section id="contact" class="py-32 px-6 border-b border-white/10">
+        <div class="max-w-[1000px] mx-auto text-center">
+            <h2 class="font-serif text-5xl md:text-7xl mb-8 tracking-tighter italic">Ready to begin?</h2>
+            <p class="text-xl text-white/50 mb-12 font-light">Discuss your idea, get a free quote and check availability.</p>
+            <a href="https://shorturl.at/orgVK" target="_blank" class="inline-block px-10 py-5 bg-white text-black rounded-full text-lg font-medium hover:scale-105 transition-transform shadow-[0_0_40px_rgba(255,255,255,0.1)]">
+                Start Consultation
+            </a>
+            
+            <div class="mt-20 flex flex-wrap justify-center gap-8 text-white/60 text-sm uppercase tracking-widest">
+                <a href="https://www.instagram.com/vladimir_vishar" target="_blank" class="hover:text-white transition-colors">Instagram</a>
+                <a href="https://www.tiktok.com/@vladimir.vishar" target="_blank" class="hover:text-white transition-colors">TikTok</a>
+                <a href="https://g.page/r/CRBB4T36uQ6wEBI" target="_blank" class="hover:text-white transition-colors">Google Maps</a>
+            </div>
+        </div>
+    </section>
+
+    <footer class="py-12 text-center text-white/30 text-xs tracking-widest uppercase">
+        <p>&copy; 2026 Vladimir Vishar. All rights reserved.</p>
+        <p class="mt-2 text-[10px]">Salford, Manchester</p>
+    </footer>
+    </main>
+
+    <div id="lightbox" class="fixed inset-0 z-[200] bg-black/95 hidden flex flex-col items-center justify-center opacity-0 transition-opacity duration-300" onclick="onLightboxClick(event)">
+        <button class="absolute top-6 right-6 text-white/50 hover:text-white p-2" onclick="closeLightbox()">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <img id="lightbox-img" src="" class="max-h-[85vh] max-w-[95vw] object-contain shadow-2xl transition-transform duration-500">
+        <div class="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/50 tracking-widest text-sm" id="lb-counter"></div>
+    </div>
+
+    <script>
+    /* ─── Lightbox logic ─── */
+    let lbIndex = 0;
+    const portfolioImages = Array.from({length: 20}, (_, i) => `${String(i+1).padStart(2, '0')}.jpg`);
+    const galleryFiles = Array.from({length: 6}, (_, i) => `${String(i+1).padStart(2, '0')}.jpg`);
+    
+    function buildImageGrid() {
+        const pGrid = document.getElementById('portfolio-grid');
+        const gGrid = document.getElementById('gallery-grid');
+        
+        if (pGrid) {
+            portfolioImages.forEach((src, i) => {
+                pGrid.innerHTML += `<div class="aspect-[4/5] overflow-hidden rounded-xl bg-white/5 cursor-pointer relative group" onclick="openLightbox(${i})">
+                    <img src="assets/portfolio/${src}" loading="lazy" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+                    <div class="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
+                </div>`;
+            });
+        }
+        if (gGrid) {
+            galleryFiles.forEach((src) => {
+                gGrid.innerHTML += `<div class="aspect-square overflow-hidden rounded-2xl bg-white/5 cursor-pointer group">
+                    <img src="assets/gallery/${src}" loading="lazy" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-70 group-hover:opacity-100">
+                </div>`;
+            });
+        }
+    }
+
+    function openLightbox(index) {
+        lbIndex = index;
+        const lb = document.getElementById('lightbox');
+        const img = document.getElementById('lightbox-img');
+        lb.classList.remove('hidden');
+        setTimeout(() => lb.classList.remove('opacity-0'), 10);
+        img.src = `assets/portfolio/${portfolioImages[lbIndex]}`;
+        document.getElementById('lb-counter').textContent = `${lbIndex + 1} / ${portfolioImages.length}`;
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeLightbox() {
+        const lb = document.getElementById('lightbox');
+        lb.classList.add('opacity-0');
+        setTimeout(() => {
+            lb.classList.add('hidden');
+            document.body.style.overflow = '';
+        }, 300);
+    }
+
+    function onLightboxClick(e) {
+        if (e.target.id === 'lightbox') closeLightbox();
+    }
+
+    /* ─── Mobile Menu ─── */
+    function toggleMenu() {
+        const overlay = document.getElementById('mobile-overlay');
+        const isHidden = overlay.style.display === 'none';
+        if (isHidden) {
+            overlay.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+        } else {
+            overlay.style.display = 'none';
+            document.body.style.overflow = '';
+        }
+    }
+
+    /* ─── Aftercare Logic ─── */
+    function toggleAftercare() {
+        const content = document.getElementById('aftercare-content');
+        const icon = document.getElementById('aftercare-toggle-icon');
+        const isHidden = content.classList.contains('hidden');
+        
+        if (isHidden) {
+            content.classList.remove('hidden');
+            content.classList.add('fade-in');
+            icon.style.transform = 'rotate(180deg)';
+        } else {
+            content.classList.add('hidden');
+            content.classList.remove('fade-in');
+            icon.style.transform = 'rotate(0deg)';
+        }
+    }
+
+    function setAftercareOption(opt) {
+        const btn1 = document.getElementById('aftercare-option-1');
+        const btn2 = document.getElementById('aftercare-option-2');
+        const content1 = document.getElementById('aftercare-option-1-content');
+        const content2 = document.getElementById('aftercare-option-2-content');
+
+        if (opt === 1) {
+            btn1.className = "flex-1 py-3 text-sm font-medium rounded-xl transition-all bg-white text-black shadow-sm";
+            btn2.className = "flex-1 py-3 text-sm font-medium rounded-xl transition-all text-white/50 hover:text-white";
+            content1.classList.remove('hidden');
+            content2.classList.add('hidden');
+        } else {
+            btn2.className = "flex-1 py-3 text-sm font-medium rounded-xl transition-all bg-white text-black shadow-sm";
+            btn1.className = "flex-1 py-3 text-sm font-medium rounded-xl transition-all text-white/50 hover:text-white";
+            content2.classList.remove('hidden');
+            content1.classList.add('hidden');
+        }
+    }
+
+    /* ─── FAQ Logic ─── */
+    function toggleFaq(button) {
+        const content = button.nextElementSibling;
+        const icon = button.querySelector('svg');
+        const isHidden = content.classList.contains('hidden');
+        
+        if(isHidden) {
+            content.classList.remove('hidden');
+            icon.style.transform = 'rotate(180deg)';
+        } else {
+            content.classList.add('hidden');
+            icon.style.transform = 'rotate(0deg)';
+        }
+    }
+
+    /* ─── Reviews Logic ─── */
+    let reviewsExpanded = false;
+    const reviewsData = [
+        { author:"Mark Bates", text:"Had a great full 7 hours season with Vladimir..." },
+        { author:"Dave Cooke", text:"Great experience, can’t fault it, from the second I walked in..." },
+        { author:"Aline Alves", text:"I was with Vladimir, I loved his work! It was amazing..." },
+        { author:"Soumyadeep Datta", text:"The biggest thank you to No Regrets Manchester. Vladimir did an absolutely beautiful piece..." },
+        { author:"Dionne", text:"I had my tattoo done by Vladimir. He done an amazing job..." }
+    ];
+
+    function renderReviews(limit) {
+        const grid = document.getElementById('reviews-grid');
+        grid.innerHTML = '';
+        const toShow = limit ? reviewsData.slice(0, 3) : reviewsData;
+        
+        toShow.forEach((r) => {
+            grid.innerHTML += `<div class="glass-card p-8 rounded-3xl">
+                <div class="flex items-center gap-2 text-brand-accent mb-4 text-sm">★★★★★</div>
+                <p class="text-white/70 text-sm leading-relaxed mb-6 font-light">"${r.text}"</p>
+                <div class="text-white font-medium text-sm tracking-wide">${r.author}</div>
+            </div>`;
+        });
+    }
+
+    function toggleReviews() {
+        reviewsExpanded = !reviewsExpanded;
+        renderReviews(reviewsExpanded ? undefined : 3);
+        const label = document.getElementById('reviews-toggle-label');
+        const icon = document.getElementById('reviews-toggle-icon');
+        label.textContent = reviewsExpanded ? 'Show less' : 'Read all reviews';
+        icon.style.transform = reviewsExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
+    }
+
+    /* ─── AI Stub ─── */
+    async function aiCare() {
+        const btn = document.getElementById('ai-care-btn');
+        const res = document.getElementById('ai-care-res');
+        const input = document.getElementById('ai-care-input').value;
+        if (!input) return;
+        
+        btn.innerText = "Thinking...";
+        setTimeout(() => {
+            res.classList.remove('hidden');
+            res.innerText = "Please refer to the standard guidelines above or consult your doctor for medical advice. (AI connection stub)";
+            btn.innerText = "Ask";
+        }, 1000);
+    }
+
+    /* ─── Init ─── */
+    document.addEventListener('DOMContentLoaded', () => {
+        buildImageGrid();
+        renderReviews(3);
+    });
+    </script>
+</body>
+</html>
