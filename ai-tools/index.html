@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="index, follow">
+    <title>AI Tattoo Consultant & Aftercare Assistant | Vladimir Vishar</title>
+    <meta name="description" content="AI-powered tattoo tools by Vladimir Vishar. Get instant concept analysis for your tattoo idea and aftercare guidance for healing. Free to use.">
+    <link rel="canonical" href="https://vishartattoo.com/ai-tools/">
+
+```
+<script type="application/ld+json">
+```
+
+{
+“@context”: “https://schema.org”,
+“@graph”: [
+{
+“@type”: “BreadcrumbList”,
+“itemListElement”: [
+{ “@type”: “ListItem”, “position”: 1, “name”: “Home”, “item”: “https://vishartattoo.com/” },
+{ “@type”: “ListItem”, “position”: 2, “name”: “AI Tools”, “item”: “https://vishartattoo.com/ai-tools/” }
+]
+},
+{
+“@type”: “WebPage”,
+“@id”: “https://vishartattoo.com/ai-tools/#webpage”,
+“url”: “https://vishartattoo.com/ai-tools/”,
+“name”: “AI Tattoo Consultant & Aftercare Assistant | Vladimir Vishar”,
+“isPartOf”: { “@id”: “https://vishartattoo.com/#website” }
+}
+]
+}
+</script>
+
+```
+<meta property="og:type" content="website">
+<meta property="og:title" content="AI Tattoo Consultant & Aftercare Assistant | Vladimir Vishar">
+<meta property="og:description" content="AI-powered tattoo tools. Instant concept analysis and aftercare guidance. Free to use.">
+<meta property="og:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
+<meta property="og:url" content="https://vishartattoo.com/ai-tools/">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<script>window.PAGE_ID = 'ai-tools';</script>
+```
+
+</head>
+<body class="antialiased">
+    <div id="site-nav"></div>
+    <main>
+
+```
+<div class="pt-20 px-6 max-w-[1200px] mx-auto">
+    <nav aria-label="Breadcrumb" class="text-xs text-white/30"><a href="/" class="hover:text-white/60 transition-colors">Home</a><span class="mx-2">/</span><span class="text-white/60">AI Tools</span></nav>
+</div>
+
+<header class="py-24 md:py-32 px-6">
+    <div class="max-w-[900px] mx-auto text-center fade-in">
+        <span class="text-apple-blue font-semibold tracking-wide text-sm">Studio Tool</span>
+        <h1 class="text-4xl md:text-7xl font-semibold mt-2 mb-6 tracking-tight hero-title">AI Concierge.</h1>
+        <p class="text-xl text-white/50 font-light max-w-2xl mx-auto">Instant guidance for your next tattoo project or healing stage. Powered by AI, informed by professional tattoo practice.</p>
+    </div>
+</header>
+
+<section class="py-16 px-6 reveal">
+    <div class="max-w-[1000px] mx-auto">
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- Concept Consultant -->
+            <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift reveal">
+                <h2 class="text-2xl font-semibold mb-2">Concept Consultant</h2>
+                <p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Refine your idea</p>
+                <p class="text-sm text-white/50 mb-6 leading-relaxed">Describe your tattoo idea and get AI-powered suggestions on composition, lighting, placement, and how to make it work best in a realistic style.</p>
+                <textarea id="ai-idea-input" placeholder="Describe your tattoo idea (e.g., A lion's portrait with a crown on my shoulder)..." class="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all resize-none mb-6"></textarea>
+                <button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyze Concept</button>
+                <div id="ai-idea-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic"></div>
+            </div>
+
+            <!-- Aftercare AI -->
+            <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift reveal">
+                <h2 class="text-2xl font-semibold mb-2">Aftercare AI</h2>
+                <p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Instant healing support</p>
+                <p class="text-sm text-white/50 mb-6 leading-relaxed">Ask any question about tattoo healing, aftercare products, activities, or symptoms. For a complete guide, visit the <a href="/aftercare/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">aftercare page</a>.</p>
+                <input id="ai-care-input" type="text" placeholder="Ask anything (e.g., Can I go to the gym tomorrow?)" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all mb-6">
+                <button onclick="aiCare()" id="ai-care-btn" class="w-full py-4 bg-white/10 text-white rounded-full font-semibold transition-all hover:bg-white/20 active:scale-95 border border-white/10">Ask Assistant</button>
+                <div id="ai-care-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic"></div>
+            </div>
+        </div>
+
+        <div class="mt-12 text-center">
+            <p class="text-xs text-white/30">AI responses are general guidance only. For specific medical concerns, always consult a healthcare professional. For questions about your tattoo project, <a href="mailto:info@vishartattoo.com" class="underline hover:text-white/50 transition-colors">contact me directly</a>.</p>
+        </div>
+    </div>
+</section>
+
+<section class="py-24 px-6 bg-apple-darkGray/10">
+    <div class="max-w-[900px] mx-auto text-center">
+        <h2 class="text-3xl font-semibold mb-4 tracking-tight">Ready to book?</h2>
+        <p class="text-white/50 mb-8">Send me your idea and I'll give you a personal assessment.</p>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Get a Free Quote</a>
+            <a href="/faq/" class="px-8 py-3 text-white font-medium hover:underline">Read FAQ →</a>
+        </div>
+    </div>
+</section>
+</main>
+
+<div id="site-footer"></div>
+<script src="/components.js" defer></script>
+
+<!-- AI Engine (same Gemini API as index.html) -->
+<script>
+async function callGemini(prompt, system) {
+    try {
+        const response = await fetch("/api/gemini", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt, system })
+        });
+        const data = await response.json();
+        return data.reply || "Assistant unavailable. Please try again.";
+    } catch (e) {
+        return "Network error. Please check your connection.";
+    }
+}
+
+async function aiIdea() {
+    const input = document.getElementById("ai-idea-input").value;
+    const btn = document.getElementById("ai-idea-btn");
+    const res = document.getElementById("ai-idea-res");
+    if (!input.trim()) return;
+    btn.disabled = true; btn.innerText = "Analyzing..."; res.classList.add("hidden");
+    const system = "You are a professional tattoo consultant. Analyze the user's idea and suggest how to elevate it for a realistic style (lighting, composition, placement). Be concise and practical. Do not use names. Answer in plain text only, no markdown.";
+    const result = await callGemini(input, system);
+    res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyze Concept";
+}
+
+async function aiCare() {
+    const input = document.getElementById("ai-care-input").value;
+    const btn = document.getElementById("ai-care-btn");
+    const res = document.getElementById("ai-care-res");
+    if (!input.trim()) return;
+    btn.disabled = true; btn.innerText = "Consulting..."; res.classList.add("hidden");
+    const system = "You are an expert in tattoo aftercare. Give safe, practical advice: hygiene, gentle washing, thin aftercare cream, avoid sun/pools/sauna, and avoid gym for a few days. Warn to see a doctor if there are signs of infection. Do not use names. Answer in plain text only, no markdown.";
+    const result = await callGemini(input, system);
+    res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Ask Assistant";
+}
+</script>
+```
+
+</body>
+</html>
