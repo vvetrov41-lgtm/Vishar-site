@@ -1,11 +1,11 @@
 {
-“name”: “vishartattoo”,
-“private”: true,
-“scripts”: {
-“build”: “npx tailwindcss -i src/input.css -o style.css –minify”,
-“watch”: “npx tailwindcss -i src/input.css -o style.css –watch”
-},
-“devDependencies”: {
-“tailwindcss”: “^3.4.0”
-}
+  "name": "vishartattoo",
+  "private": true,
+  "scripts": {
+    "build": "npx tailwindcss -i src/input.css -o style.css --minify",
+    "watch": "npx tailwindcss -i src/input.css -o style.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
 }
