@@ -204,6 +204,244 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
     </div>
 </header>
 
+<!-- ═══ 3D INDUCTION TATTOO MACHINE — Scroll Assembly ═══ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+<section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:300vh;background:#000;overflow:hidden">
+  <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center">
+    <div id="machine-progress" style="position:absolute;left:24px;top:50%;transform:translateY(-50%);width:2px;height:120px;background:rgba(255,255,255,0.06);border-radius:1px;z-index:10">
+      <div id="machine-progress-fill" style="width:100%;height:0%;background:rgba(255,255,255,0.3);border-radius:1px;transition:height 0.1s linear"></div>
+    </div>
+    <div id="machine-label-top" style="position:absolute;z-index:10;pointer-events:none;text-align:center;top:max(80px,10vh);left:50%;transform:translateX(-50%);transition:opacity 0.6s ease">
+      <h3 style="font-family:'Playfair Display',serif;font-size:clamp(1.2rem,3vw,2rem);font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:-0.02em;margin:0">The Instrument.</h3>
+      <p style="font-size:clamp(0.65rem,1.2vw,0.8rem);color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.25em;margin:6px 0 0">Scroll to assemble</p>
+    </div>
+    <div style="position:absolute;z-index:10;pointer-events:none;text-align:center;bottom:max(40px,6vh);left:50%;transform:translateX(-50%)">
+      <p id="machine-part-label" style="font-size:clamp(0.65rem,1.2vw,0.8rem);color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.25em;margin:0">&nbsp;</p>
+    </div>
+  </div>
+</section>
+
+<script>
+(function(){
+  'use strict';
+  function hasWebGL(){try{var c=document.createElement('canvas');return!!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')))}catch(e){return false}}
+  var prefersRM=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  if(!hasWebGL()){var w=document.getElementById('machine-canvas-wrap');if(w){w.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:60vh;text-align:center;padding:2rem"><p style="color:rgba(255,255,255,0.3);font-size:0.9rem">3D preview requires WebGL.</p></div>';document.getElementById('machine-section').style.height='auto'}return}
+  if(prefersRM){document.getElementById('machine-section').style.height='auto';var mcw=document.getElementById('machine-canvas-wrap');if(mcw)mcw.style.position='relative';if(mcw)mcw.style.height='60vh'}
+
+  var container=document.getElementById('machine-canvas-wrap');
+  var scene=new THREE.Scene();
+  scene.fog=new THREE.FogExp2(0x000000,0.08);
+  var camera=new THREE.PerspectiveCamera(40,container.clientWidth/container.clientHeight,0.1,100);
+  camera.position.set(4,2.5,6);camera.lookAt(0,0.5,0);
+  var renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
+  renderer.setSize(container.clientWidth,container.clientHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.1;
+  renderer.outputEncoding=THREE.sRGBEncoding;
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.setClearColor(0x000000,1);
+  container.appendChild(renderer.domElement);
+
+  /* Lighting */
+  var kl=new THREE.DirectionalLight(0xffeedd,1.4);kl.position.set(5,8,4);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-0.001;scene.add(kl);
+  var fl=new THREE.DirectionalLight(0x8899bb,0.4);fl.position.set(-4,3,-2);scene.add(fl);
+  var rl=new THREE.DirectionalLight(0xffffff,0.8);rl.position.set(-2,5,-5);scene.add(rl);
+  scene.add(new THREE.AmbientLight(0x111122,0.3));
+  var gl=new THREE.PointLight(0x334466,0.3,10);gl.position.set(0,-2,0);scene.add(gl);
+
+  var gp=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.ShadowMaterial({opacity:0.3}));
+  gp.rotation.x=-Math.PI/2;gp.position.y=-1.8;gp.receiveShadow=true;scene.add(gp);
+
+  /* Materials */
+  var blackSteel=new THREE.MeshStandardMaterial({color:0x1a1a1e,metalness:0.85,roughness:0.35});
+  var darkSteel=new THREE.MeshStandardMaterial({color:0x2a2a2e,metalness:0.9,roughness:0.3});
+  var brass=new THREE.MeshStandardMaterial({color:0x8b7533,metalness:0.95,roughness:0.25});
+  var copper=new THREE.MeshStandardMaterial({color:0x7f4422,metalness:0.9,roughness:0.3});
+  var chrome=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.98,roughness:0.1});
+  var darkCopper=new THREE.MeshStandardMaterial({color:0x5a3018,metalness:0.85,roughness:0.4});
+  var rubber=new THREE.MeshStandardMaterial({color:0x111111,metalness:0.0,roughness:0.9});
+
+  function mk(geo,mat){var m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;return m}
+
+  var parts={};
+  var mg=new THREE.Group();scene.add(mg);
+
+  /* 1. FRAME */
+  (function(){var g=new THREE.Group();
+  g.add(mk(new THREE.BoxGeometry(0.18,2.6,0.22),blackSteel));
+  var tb=mk(new THREE.BoxGeometry(1.4,0.16,0.2),blackSteel);tb.position.set(0.6,1.2,0);g.add(tb);
+  var fp=mk(new THREE.BoxGeometry(0.16,1.3,0.2),blackSteel);fp.position.set(1.2,0.15,0);fp.rotation.z=0.12;g.add(fp);
+  var yk=mk(new THREE.BoxGeometry(1.0,0.16,0.22),blackSteel);yk.position.set(0.4,-1.15,0);g.add(yk);
+  var br=mk(new THREE.BoxGeometry(0.1,1.1,0.12),darkSteel);br.position.set(0.7,0.05,0);br.rotation.z=-0.5;g.add(br);
+  var cn=mk(new THREE.CylinderGeometry(0.1,0.1,0.22,12),blackSteel);cn.rotation.x=Math.PI/2;cn.position.set(1.3,1.2,0);g.add(cn);
+  parts.frame=g;mg.add(g)})();
+
+  /* 2. COILS */
+  function buildCoil(px){var g=new THREE.Group();
+  g.add(mk(new THREE.CylinderGeometry(0.12,0.12,0.7,16),darkSteel));
+  for(var i=0;i<8;i++){var w=mk(new THREE.TorusGeometry(0.26,0.04,6,24),copper);w.position.y=-0.28+i*0.08;g.add(w)}
+  var c1=mk(new THREE.CylinderGeometry(0.28,0.28,0.06,16),darkSteel);c1.position.y=0.38;g.add(c1);
+  var c2=mk(new THREE.CylinderGeometry(0.28,0.28,0.06,16),darkSteel);c2.position.y=-0.38;g.add(c2);
+  g.position.set(px,-0.35,0);return g}
+  parts.coilFront=buildCoil(0.65);mg.add(parts.coilFront);
+  parts.coilRear=buildCoil(0.2);mg.add(parts.coilRear);
+
+  /* 3. ARMATURE */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(1.1,0.06,0.16),darkSteel));
+  var t=mk(new THREE.CylinderGeometry(0.04,0.04,0.2,8),chrome);t.rotation.z=Math.PI/2;t.position.set(0.55,0,0);g.add(t);
+  g.position.set(0.4,0.35,0);parts.armature=g;mg.add(g)})();
+
+  /* 4. FRONT SPRING */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.8,0.015,0.08),chrome));
+  var t=mk(new THREE.BoxGeometry(0.25,0.012,0.06),chrome);t.position.set(0.5,0.02,0);t.rotation.z=-0.08;g.add(t);
+  g.position.set(0.5,1.38,0);parts.frontSpring=g;mg.add(g)})();
+
+  /* 5. BACK SPRING */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.6,0.02,0.1),chrome));
+  g.position.set(0.4,1.32,0);parts.backSpring=g;mg.add(g)})();
+
+  /* 6. CONTACT SCREW */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.03,0.03,0.5,8),brass));
+  var k=mk(new THREE.CylinderGeometry(0.08,0.08,0.12,12),brass);k.position.y=0.3;g.add(k);
+  var kn=mk(new THREE.CylinderGeometry(0.09,0.09,0.06,6),brass);kn.position.y=0.25;g.add(kn);
+  g.position.set(1.0,1.55,0);parts.contactScrew=g;mg.add(g)})();
+
+  /* 7. CAPACITOR */
+  (function(){var g=new THREE.Group();var b=mk(new THREE.CylinderGeometry(0.12,0.12,0.45,16),darkCopper);b.rotation.z=Math.PI/2;g.add(b);
+  var w1=mk(new THREE.CylinderGeometry(0.015,0.015,0.2,6),copper);w1.position.set(0.3,0,0);w1.rotation.z=Math.PI/2;g.add(w1);
+  var w2=mk(new THREE.CylinderGeometry(0.015,0.015,0.2,6),copper);w2.position.set(-0.3,0,0);w2.rotation.z=Math.PI/2;g.add(w2);
+  g.position.set(0.4,-0.9,-0.2);parts.capacitor=g;mg.add(g)})();
+
+  /* 8. TUBE VISE */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.25,0.3,0.25),blackSteel));
+  var s=mk(new THREE.CylinderGeometry(0.04,0.04,0.3,8),brass);s.rotation.z=Math.PI/2;s.position.set(0.2,0,0);g.add(s);
+  var h=mk(new THREE.CylinderGeometry(0.07,0.07,0.06,6),brass);h.rotation.z=Math.PI/2;h.position.set(0.36,0,0);g.add(h);
+  g.position.set(0.7,-1.35,0);parts.tubeVise=g;mg.add(g)})();
+
+  /* 9. GRIP */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.1,0.1,1.8,20),darkSteel));
+  var gr=mk(new THREE.CylinderGeometry(0.12,0.12,1.0,20),rubber);gr.position.y=-0.1;g.add(gr);
+  for(var i=0;i<6;i++){var r=mk(new THREE.TorusGeometry(0.125,0.008,6,20),darkSteel);r.position.y=-0.5+i*0.2;g.add(r)}
+  g.position.set(0.7,-2.5,0);parts.grip=g;mg.add(g)})();
+
+  /* 10. TIP */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.04,0.02,0.5,12),chrome));
+  var o=mk(new THREE.CylinderGeometry(0.025,0.015,0.15,8),darkSteel);o.position.y=-0.3;g.add(o);
+  g.position.set(0.7,-3.6,0);parts.tip=g;mg.add(g)})();
+
+  /* 11. NEEDLE BAR */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.015,0.015,3.8,8),chrome));
+  var nt=mk(new THREE.ConeGeometry(0.02,0.15,6),chrome);nt.position.y=-1.95;g.add(nt);
+  var lp=mk(new THREE.TorusGeometry(0.04,0.012,6,12),chrome);lp.position.y=1.9;lp.rotation.x=Math.PI/2;g.add(lp);
+  g.position.set(0.7,-1.5,0);parts.needleBar=g;mg.add(g)})();
+
+  /* 12. BINDING POSTS */
+  function buildBP(x,z){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.04,0.04,0.35,8),brass));
+  var n=mk(new THREE.CylinderGeometry(0.065,0.065,0.08,6),brass);n.position.y=0.2;g.add(n);
+  var ws=mk(new THREE.CylinderGeometry(0.07,0.07,0.02,12),darkSteel);ws.position.y=0.1;g.add(ws);
+  g.position.set(x,0.9,z);return g}
+  parts.bindingPostL=buildBP(-0.12,-0.18);mg.add(parts.bindingPostL);
+  parts.bindingPostR=buildBP(-0.12,0.18);mg.add(parts.bindingPostR);
+
+  /* 13. CLIP CORD */
+  (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.06,0.06,0.25,12),rubber));
+  var p=mk(new THREE.CylinderGeometry(0.025,0.025,0.12,8),chrome);p.position.y=-0.18;g.add(p);
+  var sr=mk(new THREE.CylinderGeometry(0.05,0.07,0.12,10),rubber);sr.position.y=0.18;g.add(sr);
+  g.position.set(-0.12,0.5,-0.25);parts.clipCord=g;mg.add(g)})();
+
+  mg.position.set(-0.4,1.2,0);mg.scale.setScalar(0.7);
+
+  /* Assembled/Exploded states */
+  var assembled={},exploded={};
+  var keys=Object.keys(parts);
+  keys.forEach(function(k){var p=parts[k];assembled[k]={x:p.position.x,y:p.position.y,z:p.position.z,rx:p.rotation.x,ry:p.rotation.y,rz:p.rotation.z}});
+
+  var offsets={
+    frame:{x:0,y:0,z:0,rx:0,ry:0,rz:0},
+    coilFront:{x:1.5,y:-1.2,z:1.0,rx:0,ry:0.3,rz:0},
+    coilRear:{x:-0.8,y:-1.0,z:1.2,rx:0,ry:-0.3,rz:0},
+    armature:{x:0.5,y:2.0,z:0.8,rx:0,ry:0,rz:0.2},
+    frontSpring:{x:1.2,y:2.5,z:0.5,rx:0,ry:0,rz:-0.15},
+    backSpring:{x:-0.5,y:2.2,z:0.6,rx:0,ry:0,rz:0.1},
+    contactScrew:{x:1.8,y:2.8,z:0.3,rx:0,ry:0,rz:0},
+    capacitor:{x:-1.5,y:-0.5,z:1.5,rx:0,ry:0.5,rz:0},
+    tubeVise:{x:1.0,y:-2.0,z:-0.8,rx:0,ry:-0.3,rz:0},
+    grip:{x:0.3,y:-3.5,z:-1.2,rx:0,ry:0,rz:0.1},
+    tip:{x:0.5,y:-5.0,z:-1.0,rx:0,ry:0,rz:0},
+    needleBar:{x:1.8,y:-2.0,z:-1.5,rx:0.1,ry:0,rz:0.15},
+    bindingPostL:{x:-1.8,y:1.5,z:-1.0,rx:0,ry:0,rz:0},
+    bindingPostR:{x:-1.5,y:1.8,z:1.2,rx:0,ry:0,rz:0},
+    clipCord:{x:-2.2,y:0.5,z:-1.8,rx:0.2,ry:0.4,rz:0}
+  };
+
+  keys.forEach(function(k){var a=assembled[k];var o=offsets[k]||{x:0,y:0,z:0,rx:0,ry:0,rz:0};
+  exploded[k]={x:a.x+o.x,y:a.y+o.y,z:a.z+o.z,rx:a.rx+o.rx,ry:a.ry+o.ry,rz:a.rz+o.rz}});
+
+  /* Start exploded */
+  if(!prefersRM){keys.forEach(function(k){var p=parts[k];var e=exploded[k];p.position.set(e.x,e.y,e.z);p.rotation.set(e.rx,e.ry,e.rz)})}
+
+  var partNames=['Frame','Rear Coil','Front Coil','Binding Posts','Clip Cord','Capacitor','Back Spring','Front Spring','Contact Screw','Armature Bar','Tube Vise','Grip','Needle Bar','Tip'];
+
+  /* GSAP ScrollTrigger */
+  gsap.registerPlugin(ScrollTrigger);
+
+  if(!prefersRM){
+    gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:1.5,onUpdate:function(self){updateAsm(self.progress)}}});
+  }
+
+  function updateAsm(t){
+    var n=keys.length;
+    keys.forEach(function(k,i){
+      var ss=i/n*0.5,se=ss+0.5;
+      var lt=Math.max(0,Math.min(1,(t-ss)/(se-ss)));
+      var e2=lt<0.5?4*lt*lt*lt:1-Math.pow(-2*lt+2,3)/2;
+      var p=parts[k],a=assembled[k],ex=exploded[k];
+      p.position.x=ex.x+(a.x-ex.x)*e2;
+      p.position.y=ex.y+(a.y-ex.y)*e2;
+      p.position.z=ex.z+(a.z-ex.z)*e2;
+      p.rotation.x=ex.rx+(a.rx-ex.rx)*e2;
+      p.rotation.y=ex.ry+(a.ry-ex.ry)*e2;
+      p.rotation.z=ex.rz+(a.rz-ex.rz)*e2;
+    });
+
+    var pf=document.getElementById('machine-progress-fill');
+    if(pf)pf.style.height=(t*100)+'%';
+    var li=Math.min(Math.floor(t*partNames.length),partNames.length-1);
+    var le=document.getElementById('machine-part-label');
+    if(le){le.textContent=t>0.02&&t<0.98?partNames[li]:(t<0.02?' ':'Assembled')}
+    var tl=document.getElementById('machine-label-top');
+    if(tl)tl.style.opacity=t<0.15?1:Math.max(0,1-(t-0.15)*5);
+
+    var ang=-0.3+t*0.6;
+    camera.position.x=4*Math.cos(ang)+2*Math.sin(ang);
+    camera.position.z=6*Math.cos(ang*0.5);
+    camera.position.y=2.5-t*0.8;
+    camera.lookAt(0,0.3,0);
+
+    if(t>0.95){var int=(t-0.95)*20;var now=performance.now()*0.001;
+    parts.armature.position.y=assembled.armature.y+Math.sin(now*60)*0.008*int;
+    parts.needleBar.position.y=assembled.needleBar.y+Math.sin(now*60)*0.006*int;
+    parts.frontSpring.position.y=assembled.frontSpring.y+Math.sin(now*60+0.5)*0.003*int}
+  }
+
+  /* Render loop */
+  var animId;
+  function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderer.render(scene,camera)}
+  animate();
+
+  window.addEventListener('resize',function(){camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight)});
+
+  /* Mobile: hide progress bar */
+  if(window.innerWidth<640){var pb=document.getElementById('machine-progress');if(pb)pb.style.display='none'}
+})();
+</script>
+
 <!-- About -->
 <section id="about" class="py-32 px-6 max-w-[900px] mx-auto">
     <div class="text-center">
