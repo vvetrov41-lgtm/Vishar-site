@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
@@ -9,160 +8,184 @@
     <meta name="description" content="AI-powered tattoo tools by Vladimir Vishar. Get instant concept analysis for your tattoo idea and aftercare guidance for healing. Free to use.">
     <link rel="canonical" href="https://vishartattoo.com/ai-tools/">
 
-```
-<script type="application/ld+json">
-```
-
+    <script type="application/ld+json">
 {
-“@context”: “https://schema.org”,
-“@graph”: [
-{
-“@type”: “BreadcrumbList”,
-“itemListElement”: [
-{ “@type”: “ListItem”, “position”: 1, “name”: “Home”, “item”: “https://vishartattoo.com/” },
-{ “@type”: “ListItem”, “position”: 2, “name”: “AI Tools”, “item”: “https://vishartattoo.com/ai-tools/” }
-]
-},
-{
-“@type”: “WebPage”,
-“@id”: “https://vishartattoo.com/ai-tools/#webpage”,
-“url”: “https://vishartattoo.com/ai-tools/”,
-“name”: “AI Tattoo Consultant & Aftercare Assistant | Vladimir Vishar”,
-“isPartOf”: { “@id”: “https://vishartattoo.com/#website” }
-}
-]
-}
-</script>
-
-```
-<meta property="og:type" content="website">
-<meta property="og:title" content="AI Tattoo Consultant & Aftercare Assistant | Vladimir Vishar">
-<meta property="og:description" content="AI-powered tattoo tools. Instant concept analysis and aftercare guidance. Free to use.">
-<meta property="og:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
-<meta property="og:url" content="https://vishartattoo.com/ai-tools/">
-<meta name="twitter:card" content="summary_large_image">
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
-<!-- Tailwind CDN + Custom CSS -->
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-tailwind.config = {
-  theme: {
-    extend: {
-      colors: { apple: { black:'#000000', darkGray:'#1d1d1f', lightGray:'#f5f5f7', blue:'#0071e3' } },
-      fontFamily: { sans:['Inter','-apple-system','BlinkMacSystemFont','sans-serif'], serif:['Playfair Display','serif'] }
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://vishartattoo.com/" },
+        { "@type": "ListItem", "position": 2, "name": "AI Tools", "item": "https://vishartattoo.com/ai-tools/" }
+      ]
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://vishartattoo.com/ai-tools/#webpage",
+      "url": "https://vishartattoo.com/ai-tools/",
+      "name": "AI Tattoo Consultant & Aftercare Assistant | Vladimir Vishar",
+      "isPartOf": { "@id": "https://vishartattoo.com/#website" }
     }
-  }
+  ]
 }
 </script>
-<link rel="stylesheet" href="/style.css">
-<script>window.PAGE_ID = 'ai-tools';</script>
-```
 
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="AI Tattoo Consultant & Aftercare Assistant | Vladimir Vishar">
+    <meta property="og:description" content="AI-powered tattoo tools. Instant concept analysis and aftercare guidance. Free to use.">
+    <meta property="og:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
+    <meta property="og:url" content="https://vishartattoo.com/ai-tools/">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+<!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { apple: { black:'#000000', darkGray:'#1d1d1f', lightGray:'#f5f5f7', blue:'#0071e3' } },
+          fontFamily: { sans:['Inter','-apple-system','BlinkMacSystemFont','sans-serif'], serif:['Playfair Display','serif'] }
+        }
+      }
+    }
+    </script>
+    <style>
+    body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
+    ::selection{background:rgba(0,113,227,.35);color:#fff}
+    :focus-visible{outline:2px solid rgba(0,113,227,.8);outline-offset:3px;border-radius:4px}
+    :focus:not(:focus-visible){outline:none}
+    ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:0 0}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:10px}
+    .glass{background:rgba(29,29,31,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
+    .hero-title{letter-spacing:-.025em}
+    .faq-content{max-height:0;overflow:hidden;transition:max-height .5s cubic-bezier(.4,0,.2,1)}
+    .faq-item.active .faq-content{max-height:1000px}
+    .faq-item.active .faq-icon{transform:rotate(180deg)}
+    .faq-item button{transition:color .2s ease}.faq-item button:hover{color:#fff}
+    .lightbox-active{overflow:hidden;touch-action:none}
+    #lightbox{display:none}#lightbox .lb-nav{display:none}#lightbox[data-open="true"]{display:flex}#lightbox[data-open="true"] .lb-nav{display:flex}
+    .lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,.08);color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:all .25s ease;z-index:10;backdrop-filter:blur(12px)}
+    .lb-nav:hover{background:rgba(255,255,255,.15);color:#fff;transform:translateY(-50%) scale(1.08)}
+    .lb-nav--prev{left:16px}.lb-nav--next{right:16px}
+    .lb-counter{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);font-size:.75rem;color:rgba(255,255,255,.4);font-variant-numeric:tabular-nums;letter-spacing:.1em}
+    @media(max-width:768px){.lb-nav{width:40px;height:40px}.lb-nav--prev{left:8px}.lb-nav--next{right:8px}}
+    .sticky-cta{position:fixed;bottom:0;left:0;right:0;z-index:90;padding:12px 16px;padding-bottom:max(12px,env(safe-area-inset-bottom));background:rgba(0,0,0,.85);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:1px solid rgba(255,255,255,.08);transform:translateY(0);transition:transform .35s cubic-bezier(.4,0,.2,1),opacity .35s ease;opacity:1}
+    .sticky-cta.hidden-cta{transform:translateY(100%);opacity:0;pointer-events:none}
+    .sticky-cta a{display:block;width:100%;text-align:center;padding:14px 24px;background:#fff;color:#000;border-radius:9999px;font-weight:600;font-size:.875rem;transition:background .2s,transform .15s}
+    .sticky-cta a:active{transform:scale(.97)}
+    @media(min-width:769px){.sticky-cta{display:none}}
+    .fade-in{animation:fadeIn 1s ease-out forwards}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    .reveal{opacity:0;transform:translateY(24px);transition:opacity .7s cubic-bezier(.4,0,.2,1),transform .7s cubic-bezier(.4,0,.2,1)}
+    .reveal.visible{opacity:1;transform:translateY(0)}
+    .card-lift{transition:transform .35s cubic-bezier(.4,0,.2,1),box-shadow .35s ease}
+    .card-lift:hover{transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.4)}
+    .glow-border{position:relative}.glow-border::before{content:'';position:absolute;inset:-1px;border-radius:inherit;background:linear-gradient(135deg,rgba(0,113,227,.3),rgba(255,255,255,.05),rgba(0,113,227,.15));z-index:-1;opacity:0;transition:opacity .4s ease}.glow-border:hover::before{opacity:1}
+    @media(prefers-reduced-motion:reduce){*,::before,::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.reveal{opacity:1;transform:none}}
+    @media print{body{background:#fff!important;color:#000!important}nav,.sticky-cta,#lightbox,.lb-nav,.lb-counter,footer,.glass{display:none!important}.faq-content{max-height:none!important;overflow:visible!important}}
+    </style>
+    <script>window.PAGE_ID = 'ai-tools';</script>
 </head>
 <body class="antialiased">
     <div id="site-nav"></div>
     <main>
 
-```
-<div class="pt-20 px-6 max-w-[1200px] mx-auto">
-    <nav aria-label="Breadcrumb" class="text-xs text-white/30"><a href="/" class="hover:text-white/60 transition-colors">Home</a><span class="mx-2">/</span><span class="text-white/60">AI Tools</span></nav>
-</div>
-
-<header class="py-24 md:py-32 px-6">
-    <div class="max-w-[900px] mx-auto text-center fade-in">
-        <span class="text-apple-blue font-semibold tracking-wide text-sm">Studio Tool</span>
-        <h1 class="text-4xl md:text-7xl font-semibold mt-2 mb-6 tracking-tight hero-title">AI Concierge.</h1>
-        <p class="text-xl text-white/50 font-light max-w-2xl mx-auto">Instant guidance for your next tattoo project or healing stage. Powered by AI, informed by professional tattoo practice.</p>
+    <div class="pt-20 px-6 max-w-[1200px] mx-auto">
+        <nav aria-label="Breadcrumb" class="text-xs text-white/30"><a href="/" class="hover:text-white/60 transition-colors">Home</a><span class="mx-2">/</span><span class="text-white/60">AI Tools</span></nav>
     </div>
-</header>
 
-<section class="py-16 px-6 reveal">
-    <div class="max-w-[1000px] mx-auto">
-        <div class="grid md:grid-cols-2 gap-8">
-            <!-- Concept Consultant -->
-            <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift reveal">
-                <h2 class="text-2xl font-semibold mb-2">Concept Consultant</h2>
-                <p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Refine your idea</p>
-                <p class="text-sm text-white/50 mb-6 leading-relaxed">Describe your tattoo idea and get AI-powered suggestions on composition, lighting, placement, and how to make it work best in a realistic style.</p>
-                <textarea id="ai-idea-input" placeholder="Describe your tattoo idea (e.g., A lion's portrait with a crown on my shoulder)..." class="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all resize-none mb-6"></textarea>
-                <button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyze Concept</button>
-                <div id="ai-idea-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic"></div>
+    <header class="py-24 md:py-32 px-6">
+        <div class="max-w-[900px] mx-auto text-center fade-in">
+            <span class="text-apple-blue font-semibold tracking-wide text-sm">Studio Tool</span>
+            <h1 class="text-4xl md:text-7xl font-semibold mt-2 mb-6 tracking-tight hero-title">AI Concierge.</h1>
+            <p class="text-xl text-white/50 font-light max-w-2xl mx-auto">Instant guidance for your next tattoo project or healing stage. Powered by AI, informed by professional tattoo practice.</p>
+        </div>
+    </header>
+
+    <section class="py-16 px-6">
+        <div class="max-w-[1000px] mx-auto">
+            <div class="grid md:grid-cols-2 gap-8">
+                <!-- Concept Consultant -->
+                <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift">
+                    <h2 class="text-2xl font-semibold mb-2">Concept Consultant</h2>
+                    <p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Refine your idea</p>
+                    <p class="text-sm text-white/50 mb-6 leading-relaxed">Describe your tattoo idea and get AI-powered suggestions on composition, lighting, placement, and how to make it work best in a realistic style.</p>
+                    <textarea id="ai-idea-input" placeholder="Describe your tattoo idea (e.g., A lion's portrait with a crown on my shoulder)..." class="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all resize-none mb-6"></textarea>
+                    <button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyze Concept</button>
+                    <div id="ai-idea-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic"></div>
+                </div>
+
+                <!-- Aftercare AI -->
+                <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift">
+                    <h2 class="text-2xl font-semibold mb-2">Aftercare AI</h2>
+                    <p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Instant healing support</p>
+                    <p class="text-sm text-white/50 mb-6 leading-relaxed">Ask any question about tattoo healing, aftercare products, activities, or symptoms. For a complete guide, visit the <a href="/aftercare/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">aftercare page</a>.</p>
+                    <input id="ai-care-input" type="text" placeholder="Ask anything (e.g., Can I go to the gym tomorrow?)" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all mb-6">
+                    <button onclick="aiCare()" id="ai-care-btn" class="w-full py-4 bg-white/10 text-white rounded-full font-semibold transition-all hover:bg-white/20 active:scale-95 border border-white/10">Ask Assistant</button>
+                    <div id="ai-care-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic"></div>
+                </div>
             </div>
 
-            <!-- Aftercare AI -->
-            <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift reveal">
-                <h2 class="text-2xl font-semibold mb-2">Aftercare AI</h2>
-                <p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Instant healing support</p>
-                <p class="text-sm text-white/50 mb-6 leading-relaxed">Ask any question about tattoo healing, aftercare products, activities, or symptoms. For a complete guide, visit the <a href="/aftercare/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">aftercare page</a>.</p>
-                <input id="ai-care-input" type="text" placeholder="Ask anything (e.g., Can I go to the gym tomorrow?)" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all mb-6">
-                <button onclick="aiCare()" id="ai-care-btn" class="w-full py-4 bg-white/10 text-white rounded-full font-semibold transition-all hover:bg-white/20 active:scale-95 border border-white/10">Ask Assistant</button>
-                <div id="ai-care-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic"></div>
+            <div class="mt-12 text-center">
+                <p class="text-xs text-white/30">AI responses are general guidance only. For specific medical concerns, always consult a healthcare professional. For questions about your tattoo project, <a href="mailto:info@vishartattoo.com" class="underline hover:text-white/50 transition-colors">contact me directly</a>.</p>
             </div>
         </div>
+    </section>
 
-        <div class="mt-12 text-center">
-            <p class="text-xs text-white/30">AI responses are general guidance only. For specific medical concerns, always consult a healthcare professional. For questions about your tattoo project, <a href="mailto:info@vishartattoo.com" class="underline hover:text-white/50 transition-colors">contact me directly</a>.</p>
+    <section class="py-24 px-6 bg-apple-darkGray/10">
+        <div class="max-w-[900px] mx-auto text-center">
+            <h2 class="text-3xl font-semibold mb-4 tracking-tight">Ready to book?</h2>
+            <p class="text-white/50 mb-8">Send me your idea and I'll give you a personal assessment.</p>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Get a Free Quote</a>
+                <a href="/faq/" class="px-8 py-3 text-white font-medium hover:underline">Read FAQ →</a>
+            </div>
         </div>
-    </div>
-</section>
+    </section>
+    </main>
 
-<section class="py-24 px-6 bg-apple-darkGray/10">
-    <div class="max-w-[900px] mx-auto text-center">
-        <h2 class="text-3xl font-semibold mb-4 tracking-tight">Ready to book?</h2>
-        <p class="text-white/50 mb-8">Send me your idea and I'll give you a personal assessment.</p>
-        <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Get a Free Quote</a>
-            <a href="/faq/" class="px-8 py-3 text-white font-medium hover:underline">Read FAQ →</a>
-        </div>
-    </div>
-</section>
-</main>
+    <div id="site-footer"></div>
+    <script src="/components.js" defer></script>
 
-<div id="site-footer"></div>
-<script src="/components.js" defer></script>
-
-<!-- AI Engine (same Gemini API as index.html) -->
-<script>
-async function callGemini(prompt, system) {
-    try {
-        const response = await fetch("/api/gemini", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt, system })
-        });
-        const data = await response.json();
-        return data.reply || "Assistant unavailable. Please try again.";
-    } catch (e) {
-        return "Network error. Please check your connection.";
+    <!-- AI Engine (same Gemini API as index.html) -->
+    <script>
+    async function callGemini(prompt, system) {
+        try {
+            const response = await fetch("/api/gemini", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt, system })
+            });
+            const data = await response.json();
+            return data.reply || "Assistant unavailable. Please try again.";
+        } catch (e) {
+            return "Network error. Please check your connection.";
+        }
     }
-}
 
-async function aiIdea() {
-    const input = document.getElementById("ai-idea-input").value;
-    const btn = document.getElementById("ai-idea-btn");
-    const res = document.getElementById("ai-idea-res");
-    if (!input.trim()) return;
-    btn.disabled = true; btn.innerText = "Analyzing..."; res.classList.add("hidden");
-    const system = "You are a professional tattoo consultant. Analyze the user's idea and suggest how to elevate it for a realistic style (lighting, composition, placement). Be concise and practical. Do not use names. Answer in plain text only, no markdown.";
-    const result = await callGemini(input, system);
-    res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyze Concept";
-}
+    async function aiIdea() {
+        const input = document.getElementById("ai-idea-input").value;
+        const btn = document.getElementById("ai-idea-btn");
+        const res = document.getElementById("ai-idea-res");
+        if (!input.trim()) return;
+        btn.disabled = true; btn.innerText = "Analyzing..."; res.classList.add("hidden");
+        const system = "You are a professional tattoo consultant. Analyze the user's idea and suggest how to elevate it for a realistic style (lighting, composition, placement). Be concise and practical. Do not use names. Answer in plain text only, no markdown.";
+        const result = await callGemini(input, system);
+        res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyze Concept";
+    }
 
-async function aiCare() {
-    const input = document.getElementById("ai-care-input").value;
-    const btn = document.getElementById("ai-care-btn");
-    const res = document.getElementById("ai-care-res");
-    if (!input.trim()) return;
-    btn.disabled = true; btn.innerText = "Consulting..."; res.classList.add("hidden");
-    const system = "You are an expert in tattoo aftercare. Give safe, practical advice: hygiene, gentle washing, thin aftercare cream, avoid sun/pools/sauna, and avoid gym for a few days. Warn to see a doctor if there are signs of infection. Do not use names. Answer in plain text only, no markdown.";
-    const result = await callGemini(input, system);
-    res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Ask Assistant";
-}
-</script>
-```
-
+    async function aiCare() {
+        const input = document.getElementById("ai-care-input").value;
+        const btn = document.getElementById("ai-care-btn");
+        const res = document.getElementById("ai-care-res");
+        if (!input.trim()) return;
+        btn.disabled = true; btn.innerText = "Consulting..."; res.classList.add("hidden");
+        const system = "You are an expert in tattoo aftercare. Give safe, practical advice: hygiene, gentle washing, thin aftercare cream, avoid sun/pools/sauna, and avoid gym for a few days. Warn to see a doctor if there are signs of infection. Do not use names. Answer in plain text only, no markdown.";
+        const result = await callGemini(input, system);
+        res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Ask Assistant";
+    }
+    </script>
 </body>
 </html>
