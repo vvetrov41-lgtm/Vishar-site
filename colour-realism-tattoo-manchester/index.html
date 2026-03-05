@@ -216,7 +216,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </header>
 
 <!-- What Is Colour Realism -->
-<section id="about-style" class="py-24 px-6">
+<section id="about-style" class="py-24 px-6 reveal">
     <div class="max-w-[900px] mx-auto">
         <div class="text-center mb-16">
             <h2 class="text-3xl md:text-5xl font-semibold mb-8 tracking-tight">What is Colour Realism?</h2>
@@ -226,17 +226,17 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
             </div>
         </div>
         <div class="grid md:grid-cols-3 gap-6 mt-12">
-            <div class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift">
+            <div class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift reveal">
                 <div class="text-3xl mb-4">🎨</div>
                 <h3 class="text-lg font-semibold mb-2">True-to-Life Colour</h3>
                 <p class="text-sm text-white/50 leading-relaxed">Multiple pigment layers blended to match real-world tones — from subtle skin hues to saturated reds, blues, and greens.</p>
             </div>
-            <div class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift">
+            <div class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift reveal">
                 <div class="text-3xl mb-4">💡</div>
                 <h3 class="text-lg font-semibold mb-2">Light &amp; Shadow</h3>
                 <p class="text-sm text-white/50 leading-relaxed">Realistic light sources, reflections, and contrast that create a sense of depth and dimension on the skin.</p>
             </div>
-            <div class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift">
+            <div class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift reveal">
                 <div class="text-3xl mb-4">✦</div>
                 <h3 class="text-lg font-semibold mb-2">Custom Composition</h3>
                 <p class="text-sm text-white/50 leading-relaxed">Every design is built from scratch around your body's shape, movement, and the placement area. No templates, no repeats.</p>
@@ -258,7 +258,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </section>
 
 <!-- Process -->
-<section id="process" class="py-24 px-6">
+<section id="process" class="py-24 px-6 reveal">
     <div class="max-w-[900px] mx-auto">
         <div class="text-center mb-16">
             <h2 class="text-3xl md:text-4xl font-semibold tracking-tight">How It Works</h2>
@@ -303,7 +303,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </section>
 
 <!-- FAQ -->
-<section id="faq" class="py-24 px-6 bg-apple-darkGray/10">
+<section id="faq" class="py-24 px-6 bg-apple-darkGray/10 reveal">
     <div class="max-w-[800px] mx-auto">
         <h2 class="text-3xl md:text-4xl font-semibold mb-12 text-center tracking-tight">Colour Realism FAQ</h2>
         <div class="space-y-2" role="list">
@@ -343,12 +343,12 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </section>
 
 <!-- CTA -->
-<section id="book" class="py-32 px-6">
+<section id="book" class="py-32 px-6 reveal">
     <div class="max-w-[1000px] mx-auto">
         <div class="grid md:grid-cols-2 gap-16">
             <div>
                 <h2 class="text-4xl md:text-5xl font-semibold mb-4 tracking-tighter leading-tight">Ready for colour?</h2>
-                <p class="text-white/40 text-sm mb-8">Currently booking July – August 2026</p>
+                <p class="text-white/40 text-sm mb-8">Currently booking June – July 2026</p>
                 <div class="space-y-6 text-white/50 leading-relaxed">
                     <p>Send me your idea — a photo, a description, a rough sketch — and I'll get back to you with an honest assessment, time estimate, and next steps.</p>
                     <p>No deposit required until we've agreed on the concept.</p>
@@ -360,7 +360,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                     </div>
                     <div>
                         <p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Inquiries</p>
-                        <a href="/cdn-cgi/l/email-protection#b3daddd5dcf3c5dac0dbd2c1c7d2c7c7dcdc9dd0dcde" class="text-xl font-light hover:text-white transition-colors"><span class="__cf_email__" data-cfemail="b0d9ded6dff0c6d9c3d8d1c2c4d1c4c4dfdf9ed3dfdd">[email&#160;protected]</span></a>
+                        <a href="mailto:info@vishartattoo.com" class="text-xl font-light hover:text-white transition-colors">info@vishartattoo.com</a>
                     </div>
                 </div>
             </div>
@@ -390,56 +390,39 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </div>
 
 <!-- Shared components -->
-<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="/components.js" defer></script>
+<script src="/components.js" defer></script>
 
 <!-- Page JS -->
 <script>
 /*
  * GALLERY IMAGES:
- * When ready, create assets/colour-realism/ with 01.jpg–12.jpg
- * and switch colourBasePath to '/assets/colour-realism/'
+ * Create assets/colour-realism/ with 01.jpg–12.jpg
+ * OR uncomment the alternative to reuse portfolio images
  */
-const colourBasePath='/assets/colour-realism/';
 const colourImages=['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg','07.jpg','08.jpg','09.jpg','10.jpg','11.jpg','12.jpg'];
-```
+const colourBasePath='/assets/colour-realism/';
+/* Alt: reuse portfolio
+const colourBasePath='/assets/portfolio/';
+const colourImages=['01.jpg','03.jpg','05.jpg','08.jpg','10.jpg','13.jpg','16.jpg','19.jpg'];
+*/
+const colourAlts=['Colour realism portrait tattoo – vivid skin tones by Vladimir Vishar, Manchester','Photorealistic colour wildlife tattoo – vibrant animal portrait','Colour realism floral tattoo – rich saturated tones','Vivid colour realism sleeve – Manchester tattoo studio','Colour portrait tattoo with dramatic lighting','Photorealistic colour tattoo – bold composition and depth','Colour realism leg piece – large scale vivid artwork','Detailed colour realism – realistic textures and reflections','Colour realism shoulder piece by Vladimir Vishar','Vivid colour tattoo – rich reds, blues, and greens','Colour realism back piece – cinematic composition','Finished colour realism tattoo – medical-grade quality'];
 
-const colourAlts=[
-‘Colour realism portrait – vivid skin tones, Manchester’,
-‘Photorealistic colour wildlife tattoo’,
-‘Colour realism floral – rich saturated tones’,
-‘Vivid colour realism sleeve – Manchester’,
-‘Colour portrait with dramatic lighting’,
-‘Photorealistic colour – bold composition’,
-‘Colour realism leg piece – large scale’,
-‘Detailed colour realism – textures and reflections’,
-‘Colour realism shoulder piece’,
-‘Vivid colour tattoo – rich colours’,
-‘Colour realism back piece – cinematic’,
-‘Finished colour realism – medical-grade quality’
-];
-
-```
 let lbIndex=0;
-```
+function buildGallery(){const g=document.getElementById('colour-gallery-grid');if(!g)return;colourImages.forEach((f,i)=>{const w=document.createElement('div');w.className='aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';w.addEventListener('click',()=>openLightbox(i));w.innerHTML=`<img src="${colourBasePath}${f}" loading="lazy" decoding="async" width="900" height="1200" alt="${colourAlts[i]||'Colour realism tattoo '+(i+1)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-apple-darkGray items-center justify-center text-white/20 text-xs gap-2 flex-col" style="display:none"><svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><span>Photo ${i+1}</span></div><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;g.appendChild(w);});}
 
-function buildGallery(){const g=document.getElementById(‘colour-gallery-grid’);
-if(!g)return;
-colourImages.forEach((f,i)=>{const w=document.createElement(‘div’);
-w.className=‘aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative’;
-w.addEventListener(‘click’,()=>openLightbox(i));
-w.innerHTML=`<img src="${colourBasePath}${f}" loading="lazy" decoding="async" width="900" height="1200" alt="${colourAlts[i]||'Colour realism tattoo '+(i+1)}" onerror="this.style.display='none';this.parentElement.querySelector('.ph').style.display='flex'" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="ph hidden absolute inset-0 bg-apple-darkGray flex-col items-center justify-center text-white/20 text-xs gap-2" style="display:none"><svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><span>Photo ${i+1}</span></div><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
-g.appendChild(w);
-});
-}
-
-```
-function openLightbox(i){lbIndex=i;updateLb();const lb=document.getElementById('lightbox');lb.classList.remove('hidden');lb.style.display='flex';lb.setAttribute('aria-hidden','false');document.body.classList.add('lightbox-active');}
-window.closeLightbox=function(){const lb=document.getElementById('lightbox');lb.style.display='';lb.classList.add('hidden');lb.setAttribute('aria-hidden','true');document.body.classList.remove('lightbox-active');};
+function openLightbox(i){lbIndex=i;updateLb();const lb=document.getElementById('lightbox');lb.classList.remove('hidden');lb.setAttribute('data-open','true');lb.setAttribute('aria-hidden','false');document.body.classList.add('lightbox-active');}
+window.closeLightbox=function(){const lb=document.getElementById('lightbox');lb.classList.add('hidden');lb.removeAttribute('data-open');lb.setAttribute('aria-hidden','true');document.body.classList.remove('lightbox-active');};
 function navigateLightbox(d){lbIndex=(lbIndex+d+colourImages.length)%colourImages.length;updateLb();}
 function updateLb(){const img=document.getElementById('lightbox-img');img.src=colourBasePath+colourImages[lbIndex];img.alt=colourAlts[lbIndex]||'Fullscreen view';document.getElementById('lb-counter').textContent=(lbIndex+1)+' / '+colourImages.length;}
 function onLightboxClick(e){if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lightbox-img'))closeLightbox();}
 (function(){let sx=0;const lb=document.getElementById('lightbox');lb.addEventListener('touchstart',e=>{sx=e.changedTouches[0].screenX},{passive:true});lb.addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-sx;if(Math.abs(d)>50)navigateLightbox(d>0?-1:1);},{passive:true});})();
 document.addEventListener('keydown',e=>{if(document.getElementById('lightbox').classList.contains('hidden'))return;if(e.key==='ArrowRight')navigateLightbox(1);if(e.key==='ArrowLeft')navigateLightbox(-1);});
 
-function toggleFaq(btn){const item=btn.parentElement;const was=item.classList.contains('active');document.querySelectorAll('.faq-item').forEach(i=>{i.classList.remove('active
+function toggleFaq(btn){const item=btn.parentElement;const was=item.classList.contains('active');document.querySelectorAll('.faq-item').forEach(i=>{i.classList.remove('active');i.querySelector('button').setAttribute('aria-expanded','false');});if(!was){item.classList.add('active');btn.setAttribute('aria-expanded','true');}}
+
+document.addEventListener('DOMContentLoaded',buildGallery);
+</script>
 ```
+
+</body>
+</html>
