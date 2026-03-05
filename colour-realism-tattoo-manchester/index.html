@@ -348,7 +348,7 @@
                         </div>
                         <div>
                             <p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Inquiries</p>
-                            <a href="mailto:info@vishartattoo.com" class="text-xl font-light hover:text-white transition-colors">info@vishartattoo.com</a>
+                            <a href="/cdn-cgi/l/email-protection#b3daddd5dcf3c5dac0dbd2c1c7d2c7c7dcdc9dd0dcde" class="text-xl font-light hover:text-white transition-colors"><span class="__cf_email__" data-cfemail="b0d9ded6dff0c6d9c3d8d1c2c4d1c4c4dfdf9ed3dfdd">[email&#160;protected]</span></a>
                         </div>
                     </div>
                 </div>
@@ -378,7 +378,7 @@
     </div>
 
     <!-- Shared components -->
-    <script src="/components.js" defer></script>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="/components.js" defer></script>
 
     <!-- Page JS -->
     <script>
@@ -393,10 +393,31 @@
     const colourBasePath='/assets/portfolio/';
     const colourImages=['01.jpg','03.jpg','05.jpg','08.jpg','10.jpg','13.jpg','16.jpg','19.jpg'];
     */
-    const colourAlts=['Colour realism portrait tattoo – vivid skin tones by Vladimir Vishar, Manchester','Photorealistic colour wildlife tattoo – vibrant animal portrait','Colour realism floral tattoo – rich saturated tones','Vivid colour realism sleeve – Manchester tattoo studio','Colour portrait tattoo with dramatic lighting','Photorealistic colour tattoo – bold composition and depth','Colour realism leg piece – large scale vivid artwork','Detailed colour realism – realistic textures and reflections','Colour realism shoulder piece by Vladimir Vishar','Vivid colour tattoo – rich reds, blues, and greens','Colour realism back piece – cinematic composition','Finished colour realism tattoo – medical-grade quality'];
+const colourAlts=[
+      'Colour realism portrait – vivid skin tones, Manchester',
+      'Photorealistic colour wildlife tattoo',
+      'Colour realism floral – rich saturated tones',
+      'Vivid colour realism sleeve – Manchester',
+      'Colour portrait with dramatic lighting',
+      'Photorealistic colour – bold composition',
+      'Colour realism leg piece – large scale',
+      'Detailed colour realism – textures and reflections',
+      'Colour realism shoulder piece',
+      'Vivid colour tattoo – rich colours',
+      'Colour realism back piece – cinematic',
+      'Finished colour realism – medical-grade quality'
+    ];
 
     let lbIndex=0;
-    function buildGallery(){const g=document.getElementById('colour-gallery-grid');if(!g)return;colourImages.forEach((f,i)=>{const w=document.createElement('div');w.className='aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';w.addEventListener('click',()=>openLightbox(i));w.innerHTML=`<img src="${colourBasePath}${f}" loading="lazy" decoding="async" width="900" height="1200" alt="${colourAlts[i]||'Colour realism tattoo '+(i+1)}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;g.appendChild(w);});}
+function buildGallery(){const g=document.getElementById('colour-gallery-grid');
+    if(!g)return;
+    colourImages.forEach((f,i)=>{const w=document.createElement('div');
+    w.className='aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';
+    w.addEventListener('click',()=>openLightbox(i));
+    w.innerHTML=`<img src="${colourBasePath}${f}" loading="lazy" decoding="async" width="900" height="1200" alt="${colourAlts[i]||'Colour realism tattoo '+(i+1)}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
+    g.appendChild(w);
+    });
+    }
 
     function openLightbox(i){lbIndex=i;updateLb();const lb=document.getElementById('lightbox');lb.classList.remove('hidden');lb.style.display='flex';lb.setAttribute('aria-hidden','false');document.body.classList.add('lightbox-active');}
     window.closeLightbox=function(){const lb=document.getElementById('lightbox');lb.style.display='';lb.classList.add('hidden');lb.setAttribute('aria-hidden','true');document.body.classList.remove('lightbox-active');};
@@ -406,9 +427,4 @@
     (function(){let sx=0;const lb=document.getElementById('lightbox');lb.addEventListener('touchstart',e=>{sx=e.changedTouches[0].screenX},{passive:true});lb.addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-sx;if(Math.abs(d)>50)navigateLightbox(d>0?-1:1);},{passive:true});})();
     document.addEventListener('keydown',e=>{if(document.getElementById('lightbox').classList.contains('hidden'))return;if(e.key==='ArrowRight')navigateLightbox(1);if(e.key==='ArrowLeft')navigateLightbox(-1);});
 
-    function toggleFaq(btn){const item=btn.parentElement;const was=item.classList.contains('active');document.querySelectorAll('.faq-item').forEach(i=>{i.classList.remove('active');i.querySelector('button').setAttribute('aria-expanded','false');});if(!was){item.classList.add('active');btn.setAttribute('aria-expanded','true');}}
-
-    document.addEventListener('DOMContentLoaded',buildGallery);
-    </script>
-</body>
-</html>
+    function toggleFaq(btn){const item=btn.parentElement;const was=item.classList.contains('active');document.querySelectorAll('.faq-item').forEach(i=>{i.classList.remove('active
