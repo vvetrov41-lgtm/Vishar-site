@@ -4,46 +4,45 @@ Single source of truth for nav, footer, mobile CTA
 ───────────────────────────────────────────────────────── */
 
 (function () {
-‘use strict’;
+'use strict';
 
 /* ── Config ── */
-const BOOKING_URL = ‘https://shorturl.at/orgVK’;
-const EMAIL = ‘info@vishartattoo.com’;
-const INSTAGRAM = ‘https://www.instagram.com/vladimir_vishar’;
+const BOOKING_URL = 'https://shorturl.at/orgVK';
+const EMAIL = 'info@vishartattoo.com';
+const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
 
 const NAV_LINKS = [
-{ id: ‘home’,           label: ‘Home’,           href: ‘/’ },
-{ id: ‘colour-realism’, label: ‘Colour Realism’, href: ‘/colour-realism-tattoo-manchester/’ },
-{ id: ‘black-grey’,     label: ‘Black & Grey’,   href: ‘/black-and-grey-realism-manchester/’ },
-{ id: ‘cover-up’,       label: ‘Cover-ups’,      href: ‘/cover-up-tattoo-manchester/’ },
-{ id: ‘about’,          label: ‘About’,           href: ‘/about/’ },
-{ id: ‘aftercare’,      label: ‘Aftercare’,       href: ‘/aftercare/’ },
-{ id: ‘faq’,            label: ‘FAQ’,              href: ‘/faq/’ },
-{ id: ‘ai-tools’,       label: ‘AI Tools’,        href: ‘/ai-tools/’ }
+{ id: 'home',           label: 'Home',           href: '/' },
+{ id: 'colour-realism', label: 'Colour Realism', href: '/colour-realism-tattoo-manchester/' },
+{ id: 'black-grey',     label: 'Black & Grey',   href: '/black-and-grey-realism-manchester/' },
+{ id: 'cover-up',       label: 'Cover-ups',      href: '/cover-up-tattoo-manchester/' },
+{ id: 'about',          label: 'About',           href: '/about/' },
+{ id: 'aftercare',      label: 'Aftercare',       href: '/aftercare/' },
+{ id: 'faq',            label: 'FAQ',              href: '/faq/' },
+{ id: 'ai-tools',       label: 'AI Tools',        href: '/ai-tools/' }
 ];
 
 const SOCIALS = [
-{ label: ‘Instagram’, href: INSTAGRAM },
-{ label: ‘YouTube’,   href: ‘https://youtube.com/@vladimir_vishar’ },
-{ label: ‘TikTok’,    href: ‘https://www.tiktok.com/@vladimir.vishar’ },
-{ label: ‘Facebook’,  href: ‘https://www.facebook.com/profile.php?id=100088974927193’ }
+{ label: 'Instagram', href: INSTAGRAM },
+{ label: 'YouTube',   href: 'https://youtube.com/@vladimir_vishar' },
+{ label: 'TikTok',    href: 'https://www.tiktok.com/@vladimir.vishar' },
+{ label: 'Facebook',  href: 'https://www.facebook.com/profile.php?id=100088974927193' }
 ];
 
-const pageId = window.PAGE_ID || ‘’;
+const pageId = window.PAGE_ID || '';
 
 /* ── Helpers ── */
 function esc(str) {
-const d = document.createElement(‘div’);
+const d = document.createElement('div');
 d.textContent = str;
 return d.innerHTML;
 }
 
 /* ── Navigation ── */
 function buildNav() {
-const el = document.getElementById(‘site-nav’);
+const el = document.getElementById('site-nav');
 if (!el) return;
 
-```
 const desktopLinks = NAV_LINKS.map(l => {
   const active = l.id === pageId;
   return `<a href="${l.href}" class="hover:text-white transition-colors ${active ? 'text-white' : ''}">${esc(l.label)}</a>`;
@@ -85,16 +84,14 @@ el.innerHTML = `
       </div>
     </div>
   </nav>`;
-```
 
 }
 
 /* ── Footer ── */
 function buildFooter() {
-const el = document.getElementById(‘site-footer’);
+const el = document.getElementById('site-footer');
 if (!el) return;
 
-```
 const pageLinks = NAV_LINKS.map(l =>
   `<a href="${l.href}" class="hover:text-white transition-colors">${esc(l.label)}</a>`
 ).join('\n');
@@ -136,16 +133,14 @@ el.innerHTML = `
       </div>
     </div>
   </footer>`;
-```
 
 }
 
 /* ── Sticky Mobile CTA ── */
 function buildStickyCta() {
-const el = document.getElementById(‘sticky-cta’);
+const el = document.getElementById('sticky-cta');
 if (!el) return;
 
-```
 const text = el.dataset.ctaText || 'Book Your Session — from £140/hr';
 el.className = 'sticky-cta hidden-cta';
 el.innerHTML = `<a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
@@ -166,19 +161,17 @@ window.addEventListener('scroll', function () {
     ticking = true;
   }
 }, { passive: true });
-```
 
 }
 
 /* ── Mobile Menu Toggle ── */
 window.toggleMenu = function () {
-const overlay = document.getElementById(‘mobile-overlay’);
-const toggle = document.getElementById(‘mobile-menu-toggle’);
-const iconOpen = document.getElementById(‘menu-icon-open’);
-const iconClose = document.getElementById(‘menu-icon-close’);
+const overlay = document.getElementById('mobile-overlay');
+const toggle = document.getElementById('mobile-menu-toggle');
+const iconOpen = document.getElementById('menu-icon-open');
+const iconClose = document.getElementById('menu-icon-close');
 if (!overlay) return;
 
-```
 const isHidden = overlay.classList.contains('hidden');
 
 overlay.classList.toggle('hidden');
@@ -194,15 +187,13 @@ if (iconOpen) iconOpen.classList.toggle('hidden', isOpen);
 if (iconClose) iconClose.classList.toggle('hidden', !isOpen);
 
 document.body.classList.toggle('lightbox-active', isOpen);
-```
 
 };
 
 /* ── Keyboard: Escape to close overlays ── */
-document.addEventListener(‘keydown’, function (e) {
-if (e.key !== ‘Escape’) return;
+document.addEventListener('keydown', function (e) {
+if (e.key !== 'Escape') return;
 
-```
 // Lightbox first
 const lb = document.getElementById('lightbox');
 if (lb && !lb.classList.contains('hidden')) {
@@ -215,16 +206,14 @@ const overlay = document.getElementById('mobile-overlay');
 if (overlay && !overlay.classList.contains('hidden')) {
   window.toggleMenu();
 }
-```
 
 });
 
 /* ── Scroll-reveal (IntersectionObserver) ── */
 function initReveal() {
-const els = document.querySelectorAll(’.reveal’);
+const els = document.querySelectorAll('.reveal');
 if (!els.length) return;
 
-```
 if (!('IntersectionObserver' in window)) {
   // Fallback: show everything
   els.forEach(function (el) { el.classList.add('visible'); });
@@ -241,12 +230,11 @@ const observer = new IntersectionObserver(function (entries) {
 }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 
 els.forEach(function (el) { observer.observe(el); });
-```
 
 }
 
 /* ── Init ── */
-document.addEventListener(‘DOMContentLoaded’, function () {
+document.addEventListener('DOMContentLoaded', function () {
 buildNav();
 buildFooter();
 buildStickyCta();

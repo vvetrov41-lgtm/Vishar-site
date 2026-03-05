@@ -19,6 +19,21 @@ const RATE_LIMIT_TTL = 60;   // window in seconds
 
 export async function onRequestPost({ request, env }) {
   try {
+    if (!env.GEMINI_API_KEY) {
+      return new Response(
+        JSON.stringify({ reply: "Service temporarily unavailable." }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const contentType = request.headers.get("Content-Type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      return new Response(
+        JSON.stringify({ reply: "Content-Type must be application/json." }),
+        { status: 415, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     /* ── Rate limiting (KV) ─────────────────────────────────── */
     const ip = request.headers.get("CF-Connecting-IP") || "unknown";
 
@@ -34,8 +49,7 @@ export async function onRequestPost({ request, env }) {
         );
       }
 
-      // Non-blocking write — fire-and-forget
-      env.RATE_LIMIT.put(key, String(count + 1), { expirationTtl: RATE_LIMIT_TTL });
+      await env.RATE_LIMIT.put(key, String(count + 1), { expirationTtl: RATE_LIMIT_TTL });
     }
 
     /* ── Input validation ───────────────────────────────────── */
@@ -84,8 +98,8 @@ export async function onRequestPost({ request, env }) {
     return new Response(JSON.stringify({ reply: text }), {
       headers: { "Content-Type": "application/json" },
     });
-  } catch (e) {
-    return new Response(JSON.stringify({ reply: String(e) }), {
+  } catch {
+    return new Response(JSON.stringify({ reply: "Internal server error." }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
