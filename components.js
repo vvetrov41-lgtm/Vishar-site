@@ -216,8 +216,9 @@ function injectMotionStyles() {
   const style = document.createElement('style');
   style.id = 'vishar-motion-styles';
   style.textContent = [
-    '.reveal{opacity:0;transform:translate3d(0,28px,0) scale(.985);filter:blur(6px) brightness(.72);transition:opacity .9s cubic-bezier(.22,1,.36,1),transform .9s cubic-bezier(.22,1,.36,1),filter .9s cubic-bezier(.22,1,.36,1)}',
-    '.reveal.visible{opacity:1;transform:translate3d(0,0,0) scale(1);filter:blur(0) brightness(1)}',
+    '.reveal{opacity:1;transform:none;filter:none;transition:opacity .9s cubic-bezier(.22,1,.36,1),transform .9s cubic-bezier(.22,1,.36,1),filter .9s cubic-bezier(.22,1,.36,1)}',
+    '.motion-ready .reveal{opacity:0;transform:translate3d(0,28px,0) scale(.985);filter:blur(6px) brightness(.72)}',
+    '.motion-ready .reveal.visible{opacity:1;transform:translate3d(0,0,0) scale(1);filter:blur(0) brightness(1)}',
     '.hero-parallax{will-change:transform,opacity;transform-origin:center top}'
   ].join('');
 
@@ -225,6 +226,7 @@ function injectMotionStyles() {
 }
 
 function applyRevealToSections() {
+  document.documentElement.classList.add('motion-ready');
   const blocks = document.querySelectorAll('main section, main article');
   if (!blocks.length) return;
 
@@ -282,6 +284,16 @@ const observer = new IntersectionObserver(function (entries) {
 }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 
 els.forEach(function (el) { observer.observe(el); });
+
+  // Failsafe for mobile/older browsers where observer callbacks can be delayed.
+  window.setTimeout(function () {
+    document.querySelectorAll('.reveal:not(.visible)').forEach(function (el) {
+      const rect = el.getBoundingClientRect();
+      if (rect.top < window.innerHeight * 1.2) {
+        el.classList.add('visible');
+      }
+    });
+  }, 1200);
 
 }
 
