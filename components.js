@@ -209,6 +209,58 @@ if (overlay && !overlay.classList.contains('hidden')) {
 
 });
 
+/* ── Global motion polish ── */
+function injectMotionStyles() {
+  if (document.getElementById('vishar-motion-styles')) return;
+
+  const style = document.createElement('style');
+  style.id = 'vishar-motion-styles';
+  style.textContent = [
+    '.reveal{opacity:0;transform:translate3d(0,28px,0) scale(.985);filter:blur(6px) brightness(.72);transition:opacity .9s cubic-bezier(.22,1,.36,1),transform .9s cubic-bezier(.22,1,.36,1),filter .9s cubic-bezier(.22,1,.36,1)}',
+    '.reveal.visible{opacity:1;transform:translate3d(0,0,0) scale(1);filter:blur(0) brightness(1)}',
+    '.hero-parallax{will-change:transform,opacity;transform-origin:center top}'
+  ].join('');
+
+  document.head.appendChild(style);
+}
+
+function applyRevealToSections() {
+  const blocks = document.querySelectorAll('main section, main article');
+  if (!blocks.length) return;
+
+  blocks.forEach(function (el, i) {
+    if (!el.classList.contains('reveal')) el.classList.add('reveal');
+    el.style.transitionDelay = Math.min(i * 40, 240) + 'ms';
+  });
+}
+
+function initHeroParallax() {
+  const hero = document.querySelector('main > header');
+  if (!hero) return;
+
+  hero.classList.add('hero-parallax');
+
+  let ticking = false;
+  function update() {
+    const y = Math.max(window.scrollY, 0);
+    const p = Math.min(y / 700, 1);
+    const translate = p * 24;
+    const scale = 1 + p * 0.03;
+    const opacity = 1 - p * 0.14;
+
+    hero.style.transform = 'translate3d(0,' + translate + 'px,0) scale(' + scale.toFixed(3) + ')';
+    hero.style.opacity = opacity.toFixed(3);
+    ticking = false;
+  }
+
+  window.addEventListener('scroll', function () {
+    if (!ticking) {
+      window.requestAnimationFrame(update);
+      ticking = true;
+    }
+  }, { passive: true });
+}
+
 /* ── Scroll-reveal (IntersectionObserver) ── */
 function initReveal() {
 const els = document.querySelectorAll('.reveal');
@@ -238,6 +290,9 @@ document.addEventListener('DOMContentLoaded', function () {
 buildNav();
 buildFooter();
 buildStickyCta();
+injectMotionStyles();
+applyRevealToSections();
+initHeroParallax();
 initReveal();
 });
 })();
