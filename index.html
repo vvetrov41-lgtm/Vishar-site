@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- SEO -->
+    
+    <meta name="robots" content="index, follow">
+<!-- SEO -->
     <title>Vladimir Vishar — Manchester Tattoo Artist | Colour & Black-Grey Realism</title>
     <meta name="description" content="Official portfolio of Vladimir Vishar. High-end Colour and Black-Grey Realism in Manchester & Salford. Custom designs, professional finish. Hourly rate £140.">
     <link rel="canonical" href="https://vishartattoo.com/">
@@ -119,7 +121,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
-    <link rel="preload" as="image" href="assets/hero/hero.jpg" fetchpriority="high">
+    <link rel="preload" as="image" href="/assets/hero/hero.jpg" fetchpriority="high">
 
     <!-- Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -182,7 +184,7 @@
     <main>
     <header class="relative h-[95vh] flex items-center justify-center text-center px-6 overflow-hidden">
         <div class="absolute inset-0 z-0">
-            <img src="assets/hero/hero.jpg" alt="Hero Background" loading="eager" fetchpriority="high" class="w-full h-full object-cover scale-105 opacity-60">
+            <img src="/assets/hero/hero.jpg" alt="Hero Background" loading="eager" fetchpriority="high" class="w-full h-full object-cover scale-105 opacity-60">
             <div class="absolute inset-0 bg-gradient-to-b from-black/20 via-black/40 to-black"></div>
         </div>
         <div class="relative z-10 max-w-4xl fade-in">
@@ -649,7 +651,7 @@
           const w = document.createElement('div');
           w.className = 'aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';
           w.addEventListener('click', () => openLb(i));
-          w.innerHTML = `<img src="assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar Manchester – portfolio ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
+          w.innerHTML = `<img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar Manchester – portfolio ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
           pg.appendChild(w);
         });
       }
@@ -658,7 +660,7 @@
         galleryFiles.forEach((file) => {
           const w = document.createElement('div');
           w.className = 'aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group';
-          w.innerHTML = `<img src="assets/gallery/${file}" loading="lazy" decoding="async" width="900" height="900" alt="Tattoo studio Manchester – ${file}" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500">`;
+          w.innerHTML = `<img src="/assets/gallery/${file}" loading="lazy" decoding="async" width="900" height="900" alt="Tattoo studio Manchester – ${file}" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500">`;
           gg.appendChild(w);
         });
       }
@@ -681,7 +683,7 @@
     function navLb(d) { lbIdx = (lbIdx + d + portfolioImages.length) % portfolioImages.length; upLb(); }
     function upLb() {
       const img = document.getElementById('lightbox-img');
-      img.src = 'assets/portfolio/' + portfolioImages[lbIdx];
+      img.src = '/assets/portfolio/' + portfolioImages[lbIdx];
       img.alt = 'Realism tattoo – fullscreen';
       document.getElementById('lb-counter').textContent = (lbIdx+1) + ' / ' + portfolioImages.length;
     }
