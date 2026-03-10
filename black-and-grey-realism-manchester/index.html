@@ -249,8 +249,8 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 <script>
 /*
  * B&G GALLERY IMAGES:
- * Auto-discovers numbered files from /assets/black-grey/.
- * Supported names per number: 01.jpg or 01.jpg.JPG
+ * Render 12 cards immediately (placeholders first), then replace with real photos
+ * from /assets/black-grey/ if found (supports 01.jpg and 01.jpg.JPG).
  */
 const bgBasePath='/assets/black-grey/';
 const bgCandidates=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')+'.jpg');
@@ -270,37 +270,43 @@ async function resolveImageVariant(basePath,fileName){
   return null;
 }
 
-function renderBgEmptyState(){
-  const g=document.getElementById('bg-gallery-grid');
-  if(!g) return;
-  g.innerHTML='<div class="col-span-2 md:col-span-3 lg:col-span-4 rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/40">No Black & Grey photos found yet. Upload files into /assets/black-grey/ as 01.jpg, 02.jpg, ... (or .jpg.JPG).</div>';
+function bgPlaceholderCard(i){
+  return `<div class="absolute inset-0 bg-apple-darkGray flex flex-col items-center justify-center text-white/20 text-xs gap-2"><svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><span>Photo ${i+1}</span></div>`;
 }
 
 let bgLbIndex=0;
-async function buildBgGallery(){
+function buildBgGallery(){
   const g=document.getElementById('bg-gallery-grid');
   if(!g) return;
 
   bgSlides.length=0;
-  const resolved = await Promise.all(bgCandidates.map(file => resolveImageVariant(bgBasePath,file)));
-  resolved.forEach(src => { if (src) bgSlides.push(src); });
+  g.innerHTML='';
 
-  if(!bgSlides.length){
-    renderBgEmptyState();
-    return;
-  }
-
-  bgSlides.forEach((src,i)=>{
+  bgCandidates.forEach((file,i)=>{
     const w=document.createElement('div');
     w.className='aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';
-    w.addEventListener('click',()=>openBgLightbox(i));
-    w.innerHTML=`<img src="${src}" loading="lazy" decoding="async" width="900" height="1200" alt="Black and grey realism tattoo by Vladimir Vishar Manchester – ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
+    w.dataset.file=file;
+    w.dataset.slot=String(i);
+    w.innerHTML=bgPlaceholderCard(i)+`<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
     g.appendChild(w);
+  });
+
+  bgCandidates.forEach(async (file,i)=>{
+    const src=await resolveImageVariant(bgBasePath,file);
+    if(!src) return;
+
+    bgSlides.push(src);
+    const card=g.querySelector(`[data-slot="${i}"]`);
+    if(!card) return;
+
+    card.dataset.real='1';
+    card.innerHTML=`<img src="${src}" loading="lazy" decoding="async" width="900" height="1200" alt="Black and grey realism tattoo by Vladimir Vishar Manchester – ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
+    card.addEventListener('click',()=>openBgLightbox(bgSlides.indexOf(src)));
   });
 }
 
 function openBgLightbox(i){
-  if(!bgSlides.length) return;
+  if(!bgSlides.length || i < 0) return;
   bgLbIndex=i;
   updateBgLightbox();
   const lb=document.getElementById('lightbox');
