@@ -254,7 +254,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
  */
 const bgBasePath='/assets/black-grey/';
 const bgCandidates=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')+'.jpg');
-const bgSlides=[];
+const bgSlidesBySlot=Array(bgCandidates.length).fill(null);
 
 async function resolveImageVariant(basePath,fileName){
   const variants=[basePath+fileName, basePath+fileName+'.JPG'];
@@ -275,11 +275,26 @@ function bgPlaceholderCard(i){
 }
 
 let bgLbIndex=0;
+let bgAvailableSlides=[];
+
+function syncBgAvailableSlides(){
+  bgAvailableSlides = bgSlidesBySlot.filter(Boolean);
+}
+
+function openBgLightboxBySlot(slot){
+  const src = bgSlidesBySlot[slot];
+  if(!src) return;
+  const idx = bgAvailableSlides.indexOf(src);
+  if(idx < 0) return;
+  openBgLightbox(idx);
+}
+
 function buildBgGallery(){
   const g=document.getElementById('bg-gallery-grid');
   if(!g) return;
 
-  bgSlides.length=0;
+  for(let i=0;i<bgSlidesBySlot.length;i++) bgSlidesBySlot[i]=null;
+  syncBgAvailableSlides();
   g.innerHTML='';
 
   bgCandidates.forEach((file,i)=>{
@@ -295,18 +310,19 @@ function buildBgGallery(){
     const src=await resolveImageVariant(bgBasePath,file);
     if(!src) return;
 
-    bgSlides.push(src);
+    bgSlidesBySlot[i]=src;
+    syncBgAvailableSlides();
     const card=g.querySelector(`[data-slot="${i}"]`);
     if(!card) return;
 
     card.dataset.real='1';
     card.innerHTML=`<img src="${src}" loading="lazy" decoding="async" width="900" height="1200" alt="Black and grey realism tattoo by Vladimir Vishar Manchester – ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
-    card.addEventListener('click',()=>openBgLightbox(bgSlides.indexOf(src)));
+    card.addEventListener('click',()=>openBgLightboxBySlot(i));
   });
 }
 
 function openBgLightbox(i){
-  if(!bgSlides.length || i < 0) return;
+  if(!bgAvailableSlides.length || i < 0) return;
   bgLbIndex=i;
   updateBgLightbox();
   const lb=document.getElementById('lightbox');
@@ -325,16 +341,16 @@ window.closeLightbox=function(){
 };
 
 function navLb(d){
-  if(!bgSlides.length) return;
-  bgLbIndex=(bgLbIndex+d+bgSlides.length)%bgSlides.length;
+  if(!bgAvailableSlides.length) return;
+  bgLbIndex=(bgLbIndex+d+bgAvailableSlides.length)%bgAvailableSlides.length;
   updateBgLightbox();
 }
 
 function updateBgLightbox(){
   const img=document.getElementById('lightbox-img');
-  img.src=bgSlides[bgLbIndex];
+  img.src=bgAvailableSlides[bgLbIndex];
   img.alt='Black and grey realism – fullscreen';
-  document.getElementById('lb-counter').textContent=(bgLbIndex+1)+' / '+bgSlides.length;
+  document.getElementById('lb-counter').textContent=(bgLbIndex+1)+' / '+bgAvailableSlides.length;
 }
 
 function onLbClick(e){
