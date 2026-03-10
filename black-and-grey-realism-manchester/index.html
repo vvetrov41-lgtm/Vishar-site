@@ -231,7 +231,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                 <div class="space-y-6 text-white/50 leading-relaxed"><p>Send me your idea and references. I'll reply with an honest assessment, time estimate, and clear next steps. No deposit until we've agreed on the concept.</p></div>
                 <div class="mt-8 space-y-4">
                     <div><p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Location</p><a href="https://maps.app.goo.gl/mCQcaojR2MR6upBYA?g_st=ic" target="_blank" rel="noopener noreferrer" class="text-xl font-light hover:text-white transition-colors underline decoration-white/20 underline-offset-8">No Regrets Studios, Manchester / Salford</a></div>
-                    <div><p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Inquiries</p><a href="/cdn-cgi/l/email-protection#660f08000926100f150e07141207121209094805090b" class="text-xl font-light hover:text-white transition-colors"><span class="__cf_email__" data-cfemail="87eee9e1e8c7f1eef4efe6f5f3e6f3f3e8e8a9e4e8ea">[email&#160;protected]</span></a></div>
+                    <div><p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Inquiries</p><a href="mailto:info@vishartattoo.com" class="text-xl font-light hover:text-white transition-colors">info@vishartattoo.com</a></div>
                 </div>
             </div>
             <div class="flex items-center justify-center md:justify-end"><a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="w-64 h-64 rounded-full border border-white/10 flex items-center justify-center text-center p-8 group hover:bg-white hover:text-black transition-all duration-500 scale-100 hover:scale-110 glow-border"><span class="text-xl font-medium tracking-tight">Get a Free Quote <br><span class="text-sm font-light opacity-60">From £140/hr</span></span></a></div>
@@ -244,6 +244,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 <div id="site-footer"></div>
 <div id="lightbox" class="fixed inset-0 z-[1000] bg-black/98 hidden items-center justify-center p-4 backdrop-blur-xl" onclick="onLbClick(event)" role="dialog" aria-modal="true" aria-hidden="true"><button class="lb-nav lb-nav--prev" onclick="navLb(-1)" aria-label="Previous"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button><img id="lightbox-img" src="" class="max-w-full max-h-[90vh] object-contain shadow-2xl cursor-zoom-out" alt=""><button class="lb-nav lb-nav--next" onclick="navLb(1)" aria-label="Next"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button><div class="lb-counter" id="lb-counter"></div></div>
 
+codex/review-website-for-improvements-fqpg3r
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
 <script src="/components.js" defer></script>
 <script>
@@ -376,3 +377,25 @@ else buildBgGallery();
 
 </body>
 </html>
+<script src="/components.js" defer></script>
+<script>
+/* Reuse portfolio images — or create /assets/black-grey/ with dedicated images */
+const imgs=['02.jpg','04.jpg','06.jpg','07.jpg','09.jpg','11.jpg','12.jpg','14.jpg','15.jpg','17.jpg','18.jpg','20.jpg'];
+const base='/assets/black-grey/';
+let li=0;
+function build(){const g=document.getElementById('bg-gallery-grid');if(!g)return;imgs.forEach((f,i)=>{const w=document.createElement('div');w.className='aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';w.addEventListener('click',()=>openLb(i));w.innerHTML=`<img src="${base}${f}" loading="lazy" decoding="async" width="900" height="1200" alt="Black and grey realism tattoo by Vladimir Vishar Manchester – ${i+1}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-apple-darkGray items-center justify-center text-white/20 text-xs gap-2 flex-col" style="display:none"><svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><span>Photo ${i+1}</span></div><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;g.appendChild(w);});}
+function openLb(i){li=i;upLb();const l=document.getElementById('lightbox');l.classList.remove('hidden');l.setAttribute('data-open','true');l.setAttribute('aria-hidden','false');document.body.classList.add('lightbox-active');}
+window.closeLightbox=function(){const l=document.getElementById('lightbox');l.classList.add('hidden');l.removeAttribute('data-open');l.setAttribute('aria-hidden','true');document.body.classList.remove('lightbox-active');};
+function navLb(d){li=(li+d+imgs.length)%imgs.length;upLb();}
+function upLb(){const img=document.getElementById('lightbox-img');img.src=base+imgs[li];img.alt='Black and grey realism – fullscreen';document.getElementById('lb-counter').textContent=(li+1)+' / '+imgs.length;}
+function onLbClick(e){if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lightbox-img'))closeLightbox();}
+(function(){let sx=0;const l=document.getElementById('lightbox');l.addEventListener('touchstart',e=>{sx=e.changedTouches[0].screenX},{passive:true});l.addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-sx;if(Math.abs(d)>50)navLb(d>0?-1:1);},{passive:true});})();
+document.addEventListener('keydown',e=>{if(document.getElementById('lightbox').classList.contains('hidden'))return;if(e.key==='ArrowRight')navLb(1);if(e.key==='ArrowLeft')navLb(-1);});
+function toggleFaq(btn){const item=btn.parentElement;const was=item.classList.contains('active');document.querySelectorAll('.faq-item').forEach(i=>{i.classList.remove('active');i.querySelector('button').setAttribute('aria-expanded','false');});if(!was){item.classList.add('active');btn.setAttribute('aria-expanded','true');}}
+document.addEventListener('DOMContentLoaded',build);
+</script>
+```
+
+</body>
+</html>
+main
