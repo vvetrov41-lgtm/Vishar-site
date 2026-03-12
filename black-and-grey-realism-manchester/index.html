@@ -278,7 +278,12 @@ let bgLbIndex=0;
 let bgAvailableSlides=[];
 
 function syncBgAvailableSlides(){
-  bgAvailableSlides = bgSlidesBySlot.filter(Boolean);
+  const seen = new Set();
+  bgAvailableSlides = bgSlidesBySlot.filter((src)=>{
+    if(!src || seen.has(src)) return false;
+    seen.add(src);
+    return true;
+  });
 }
 
 function openBgLightboxBySlot(slot){
