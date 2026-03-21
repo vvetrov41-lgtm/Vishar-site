@@ -23,6 +23,7 @@ function jsonResponse(body, status = 200, extraHeaders = {}) {
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex",
       ...extraHeaders,
     },
   });
