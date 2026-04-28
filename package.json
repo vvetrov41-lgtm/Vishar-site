@@ -1,0 +1,11 @@
+{
+  "name": "vishar-site",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "optimize:images": "node scripts/optimize-images.mjs"
+  },
+  "devDependencies": {
+    "sharp": "^0.33.5"
+  }
+}
