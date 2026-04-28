@@ -1,44 +1,45 @@
-# Image Optimization Report (Phase 1A)
+# Image Optimization Report
 
-## Scope
-Top 15 largest raster images under `assets/` were selected.
+- Generated at: 2026-04-28T23:37:10.718Z
+- Source directory: assets
+- Image limit: 15
+- FORCE mode: false
+- Resize threshold: 2400px
+- WebP quality: 85
+- AVIF quality: 50
 
-## Environment result
-This execution environment cannot fetch package/system dependencies required to generate WebP/AVIF derivatives:
-- `npm install sharp` failed with `403 Forbidden` (registry access blocked).
-- `apt-get` installation of image CLI tools failed with `403 Forbidden` via proxy.
+## Summary
 
-Because no local image conversion engine is available, no WebP/AVIF derivatives were generated in this pass.
+- Candidates scanned: 65
+- Optimized set: 15
+- Derivatives written: 30
+- Derivatives skipped (up-to-date): 0
+- Original total: 172.40 MB
+- WebP total: 4.58 MB
+- AVIF total: 1.11 MB
 
-## Before/After table (requested set)
+## Per-file results
 
-| Image | Original bytes | WebP bytes | AVIF bytes | Status |
-|---|---:|---:|---:|---|
-| assets/cover-ups/after-04.jpg | 17,804,413 | n/a | n/a | skipped (tooling unavailable) |
-| assets/cover-ups/after-02.jpg | 15,772,580 | n/a | n/a | skipped (tooling unavailable) |
-| assets/cover-ups/after-05.jpg | 14,366,223 | n/a | n/a | skipped (tooling unavailable) |
-| assets/black-grey/05.jpg | 14,245,933 | n/a | n/a | skipped (tooling unavailable) |
-| assets/cover-ups/before-03.jpg | 13,941,750 | n/a | n/a | skipped (tooling unavailable) |
-| assets/portfolio/08.jpg | 13,066,147 | n/a | n/a | skipped (tooling unavailable) |
-| assets/colour-realism/04.jpg | 13,066,147 | n/a | n/a | skipped (tooling unavailable) |
-| assets/black-grey/04.jpg | 10,951,052 | n/a | n/a | skipped (tooling unavailable) |
-| assets/cover-ups/before-01.jpg | 10,520,226 | n/a | n/a | skipped (tooling unavailable) |
-| assets/black-grey/03.jpeg | 10,002,875 | n/a | n/a | skipped (tooling unavailable) |
-| assets/black-grey/08.jpg | 9,897,583 | n/a | n/a | skipped (tooling unavailable) |
-| assets/portfolio/20.jpg | 9,724,153 | n/a | n/a | skipped (tooling unavailable) |
-| assets/colour-realism/01.jpg | 9,724,153 | n/a | n/a | skipped (tooling unavailable) |
-| assets/cover-ups/before-04.jpg | 8,990,559 | n/a | n/a | skipped (tooling unavailable) |
-| assets/cover-ups/after-01.jpg | 8,699,537 | n/a | n/a | skipped (tooling unavailable) |
+| File | Original | WebP | AVIF | Resize | Status |
+|---|---:|---:|---:|---:|---|
+| assets/cover-ups/after-04.jpg | 16.98 MB | 373.52 KB | 61.40 KB | 4672→2400 | generated/updated |
+| assets/cover-ups/after-02.jpg | 15.04 MB | 319.38 KB | 69.58 KB | 4672→2400 | generated/updated |
+| assets/cover-ups/after-05.jpg | 13.70 MB | 291.36 KB | 78.35 KB | 5343→2400 | generated/updated |
+| assets/black-grey/05.jpg | 13.59 MB | 179.57 KB | 55.13 KB | 6048→2400 | generated/updated |
+| assets/cover-ups/before-03.jpg | 13.30 MB | 275.08 KB | 80.77 KB | 6048→2400 | generated/updated |
+| assets/colour-realism/04.jpg | 12.46 MB | 254.06 KB | 81.98 KB | 6039→2400 | generated/updated |
+| assets/portfolio/08.jpg | 12.46 MB | 254.06 KB | 81.98 KB | 6039→2400 | generated/updated |
+| assets/black-grey/04.jpg | 10.44 MB | 167.96 KB | 51.83 KB | 6048→2400 | generated/updated |
+| assets/cover-ups/before-01.jpg | 10.03 MB | 542.57 KB | 150.11 KB | 3712→2400 | generated/updated |
+| assets/black-grey/03.jpeg | 9.54 MB | 331.05 KB | 61.20 KB | 4672→2400 | generated/updated |
+| assets/black-grey/08.jpg | 9.44 MB | 246.33 KB | 81.58 KB | 5040→2400 | generated/updated |
+| assets/colour-realism/01.jpg | 9.27 MB | 217.65 KB | 56.22 KB | 4277→2400 | generated/updated |
+| assets/portfolio/20.jpg | 9.27 MB | 217.65 KB | 56.22 KB | 4277→2400 | generated/updated |
+| assets/cover-ups/before-04.jpg | 8.57 MB | 291.41 KB | 88.23 KB | 6048→2400 | generated/updated |
+| assets/cover-ups/after-01.jpg | 8.30 MB | 732.34 KB | 79.34 KB | 3072→2400 | generated/updated |
 
-## Pages referencing selected images
-- `index.html` (portfolio array references `08.jpg` and `20.jpg`)
-- `cover-up-tattoo-manchester/index.html` (before/after pairs include selected cover-up files)
-- `black-and-grey-realism-manchester/index.html` (gallery script dynamically resolves `03.jpeg`, `04.jpg`, `05.jpg`, `08.jpg`)
-- `colour-realism-tattoo-manchester/index.html` (gallery script dynamically resolves `01.jpg`, `04.jpg`)
+## Notes
 
-## Next step to complete Phase 1A
-Run in a network-enabled dev environment with either:
-1. Node + `sharp`, or
-2. `cwebp` + `avifenc` / ImageMagick.
-
-Then regenerate this report with actual optimized sizes and update markup to `<picture>` + AVIF/WebP fallbacks for affected entries.
+- Original JPG/PNG files are preserved and never overwritten.
+- This workflow only creates sidecar `.webp` and `.avif` files.
+- HTML `<picture>` migration should happen in a separate implementation phase.
