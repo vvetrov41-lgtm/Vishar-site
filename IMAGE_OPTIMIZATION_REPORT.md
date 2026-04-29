@@ -47,6 +47,16 @@
 
 ## Phase 1A serving update (2026-04-29)
 
-- Markup/JS serving logic now prefers AVIF/WebP derivatives where present, with original JPEG/PNG as fallback.
-- Cover-up page gallery now uses `<picture>` for directly rendered image markup.
-- Black/grey and colour pages keep JS-driven progressive loading and now resolve optimized formats first.
+> Superseded by emergency rollback on 2026-04-29.
+
+
+
+## Emergency rollback: optimized serving disabled
+
+Optimized .webp/.avif derivatives remain in the repository, but gallery serving has been rolled back to direct JPG/JPEG paths because the AVIF/WebP serving implementation caused production image loading issues.
+
+Current production serving behavior:
+- direct JPG/JPEG/PNG paths only
+- no <picture>
+- no AVIF/WebP source selection
+- no async optimized resolver

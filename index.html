@@ -643,31 +643,8 @@
     const portfolioImages = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg','07.jpg','08.jpg','09.jpg','10.jpg','11.jpg','12.jpg','13.jpg','14.jpg','15.jpg','16.jpg','17.jpg','18.jpg','19.jpg','20.jpg'];
     const galleryFiles = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg'];
     let lbIdx = 0;
-    const portfolioVariantCache = new Map();
-
-    function buildPortfolioPicture(file, altText) {
-      const stem = file.replace(/\.[^.]+$/, '');
-      return `<picture><source type="image/avif" srcset="/assets/portfolio/${stem}.avif"><source type="image/webp" srcset="/assets/portfolio/${stem}.webp"><img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture>`;
-    }
-
-    function resolvePortfolioLightboxSrc(file) {
-      if (portfolioVariantCache.has(file)) return portfolioVariantCache.get(file);
-      const stem = file.replace(/\.[^.]+$/, '');
-      const variants = [`/assets/portfolio/${stem}.avif`, `/assets/portfolio/${stem}.webp`, `/assets/portfolio/${file}`];
-      const resolver = (async () => {
-        for (const src of variants) {
-          const ok = await new Promise(resolve => {
-            const test = new Image();
-            test.onload = () => resolve(true);
-            test.onerror = () => resolve(false);
-            test.src = src;
-          });
-          if (ok) return src;
-        }
-        return `/assets/portfolio/${file}`;
-      })();
-      portfolioVariantCache.set(file, resolver);
-      return resolver;
+    function buildPortfolioImage(file, altText) {
+      return `<img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">`;
     }
 
     function buildImageGrid() {
@@ -677,7 +654,7 @@
           const w = document.createElement('div');
           w.className = 'aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';
           w.addEventListener('click', () => openLb(i));
-          w.innerHTML = `${buildPortfolioPicture(file, `Realism tattoo by Vladimir Vishar Manchester – portfolio ${i+1}`)}<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
+          w.innerHTML = `${buildPortfolioImage(file, `Realism tattoo by Vladimir Vishar Manchester – portfolio ${i+1}`)}<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
           pg.appendChild(w);
         });
       }
@@ -707,10 +684,10 @@
       document.body.classList.remove('lightbox-active');
     };
     function navLb(d) { lbIdx = (lbIdx + d + portfolioImages.length) % portfolioImages.length; upLb(); }
-    async function upLb() {
+    function upLb() {
       const img = document.getElementById('lightbox-img');
       const file = portfolioImages[lbIdx];
-      img.src = await resolvePortfolioLightboxSrc(file);
+      img.src = `/assets/portfolio/${file}`;
       img.alt = 'Realism tattoo – fullscreen';
       document.getElementById('lb-counter').textContent = (lbIdx+1) + ' / ' + portfolioImages.length;
     }
