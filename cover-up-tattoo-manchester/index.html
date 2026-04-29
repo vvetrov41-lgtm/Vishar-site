@@ -205,6 +205,26 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
   ];
   var basePath = '/assets/cover-ups/';
 
+  function imageExists(src) {
+    return new Promise(function(resolve){
+      var img = new Image();
+      img.onload = function(){ resolve(true); };
+      img.onerror = function(){ resolve(false); };
+      img.src = src;
+    });
+  }
+
+  function resolveBest(basePath, file) {
+    var stem = file.replace(/\.[^.]+$/, '');
+    var candidates = [basePath + stem + '.avif', basePath + stem + '.webp', basePath + file];
+    return candidates.reduce(function(p, src){
+      return p.then(function(found){
+        if (found) return found;
+        return imageExists(src).then(function(ok){ return ok ? src : null; });
+      });
+    }, Promise.resolve(null)).then(function(found){ return found || (basePath + file); });
+  }
+
   function buildGallery() {
     var grid = document.getElementById('coverup-gallery');
     if (!grid) return;
@@ -214,11 +234,11 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
       card.innerHTML =
         '<div class="grid grid-cols-2 gap-px bg-white/10">' +
           '<div class="relative">' +
-            '<img src="' + basePath + pair.before + '" loading="lazy" decoding="async" width="600" height="800" alt="Cover-up before – ' + (i+1) + '" class="w-full aspect-[3/4] object-cover bg-apple-darkGray">' +
+            '<picture><source srcset="' + basePath + pair.before.replace(/\.[^.]+$/, '.avif') + '" type="image/avif"><source srcset="' + basePath + pair.before.replace(/\.[^.]+$/, '.webp') + '" type="image/webp"><img src="' + basePath + pair.before + '" loading="lazy" decoding="async" width="600" height="800" alt="Cover-up before – ' + (i+1) + '" class="w-full aspect-[3/4] object-cover bg-apple-darkGray"></picture>' +
             '<span class="absolute top-3 left-3 text-[10px] uppercase tracking-[0.2em] bg-black/70 text-white/60 px-3 py-1 rounded-full backdrop-blur-sm">Before</span>' +
           '</div>' +
           '<div class="relative">' +
-            '<img src="' + basePath + pair.after + '" loading="lazy" decoding="async" width="600" height="800" alt="Cover-up after – ' + (i+1) + '" class="w-full aspect-[3/4] object-cover bg-apple-darkGray">' +
+            '<picture><source srcset="' + basePath + pair.after.replace(/\.[^.]+$/, '.avif') + '" type="image/avif"><source srcset="' + basePath + pair.after.replace(/\.[^.]+$/, '.webp') + '" type="image/webp"><img src="' + basePath + pair.after + '" loading="lazy" decoding="async" width="600" height="800" alt="Cover-up after – ' + (i+1) + '" class="w-full aspect-[3/4] object-cover bg-apple-darkGray"></picture>' +
             '<span class="absolute top-3 left-3 text-[10px] uppercase tracking-[0.2em] bg-white/90 text-black px-3 py-1 rounded-full backdrop-blur-sm">After</span>' +
           '</div>' +
         '</div>' +

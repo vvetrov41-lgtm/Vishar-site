@@ -642,16 +642,41 @@
     /* ── Portfolio + Gallery grids ── */
     const portfolioImages = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg','07.jpg','08.jpg','09.jpg','10.jpg','11.jpg','12.jpg','13.jpg','14.jpg','15.jpg','16.jpg','17.jpg','18.jpg','19.jpg','20.jpg'];
     const galleryFiles = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg'];
+    const portfolioPreferred = new Array(portfolioImages.length).fill(null);
     let lbIdx = 0;
+
+    function imageExists(src) {
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = src;
+      });
+    }
+
+    async function resolveBestImage(basePath, file) {
+      const dot = file.lastIndexOf('.');
+      const stem = dot > -1 ? file.slice(0, dot) : file;
+      const ext = dot > -1 ? file.slice(dot) : '';
+      const candidates = [basePath + stem + '.avif', basePath + stem + '.webp', basePath + file, basePath + stem + ext.toLowerCase()];
+      const seen = new Set();
+      for (const src of candidates) {
+        if (seen.has(src)) continue;
+        seen.add(src);
+        if (await imageExists(src)) return src;
+      }
+      return basePath + file;
+    }
 
     function buildImageGrid() {
       const pg = document.getElementById('portfolio-grid');
       if (pg) {
-        portfolioImages.forEach((file, i) => {
+        portfolioImages.forEach(async (file, i) => {
           const w = document.createElement('div');
           w.className = 'aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';
           w.addEventListener('click', () => openLb(i));
-          w.innerHTML = `<img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar Manchester – portfolio ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
+          resolveBestImage('/assets/portfolio/', file).then(src => { portfolioPreferred[i] = src; });
+          w.innerHTML = `<picture><source srcset="/assets/portfolio/${file.replace(/\.[^.]+$/, '')}.avif" type="image/avif"><source srcset="/assets/portfolio/${file.replace(/\.[^.]+$/, '')}.webp" type="image/webp"><img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar Manchester – portfolio ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
           pg.appendChild(w);
         });
       }
@@ -683,7 +708,7 @@
     function navLb(d) { lbIdx = (lbIdx + d + portfolioImages.length) % portfolioImages.length; upLb(); }
     function upLb() {
       const img = document.getElementById('lightbox-img');
-      img.src = '/assets/portfolio/' + portfolioImages[lbIdx];
+      img.src = portfolioPreferred[lbIdx] || ('/assets/portfolio/' + portfolioImages[lbIdx]);
       img.alt = 'Realism tattoo – fullscreen';
       document.getElementById('lb-counter').textContent = (lbIdx+1) + ' / ' + portfolioImages.length;
     }
