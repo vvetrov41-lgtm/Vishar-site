@@ -259,6 +259,8 @@ const bgSlidesBySlot=Array(bgCandidates.length).fill(null);
 async function resolveImageVariant(basePath,fileName){
   const stem=fileName.replace(/\.[^.]+$/, '');
   const variants=[
+    `${basePath}${stem}.avif`,
+    `${basePath}${stem}.webp`,
     basePath+fileName,
     `${basePath}${stem}.jpg`,
     `${basePath}${stem}.JPG`,
