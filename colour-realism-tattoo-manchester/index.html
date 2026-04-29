@@ -396,31 +396,6 @@ const colourBasePath='/assets/colour-realism/';
 const colourCandidates=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')+'.jpg');
 const colourSlides=[];
 
-async function resolveColourVariant(basePath,fileName){
-  const stem=fileName.replace(/\.[^.]+$/, '');
-  const variants=[
-    `${basePath}${stem}.avif`,
-    `${basePath}${stem}.webp`,
-    basePath+fileName,
-    `${basePath}${stem}.jpg`,
-    `${basePath}${stem}.JPG`,
-    `${basePath}${stem}.jpeg`,
-    `${basePath}${stem}.JPEG`,
-    `${basePath}${stem}.png`,
-    `${basePath}${stem}.PNG`
-  ];
-  for(const src of variants){
-    const ok=await new Promise(resolve=>{
-      const img=new Image();
-      img.onload=()=>resolve(true);
-      img.onerror=()=>resolve(false);
-      img.src=src;
-    });
-    if(ok) return src;
-  }
-  return null;
-}
-
 function colourPlaceholderCard(i){
   return `<div class="absolute inset-0 bg-apple-darkGray flex flex-col items-center justify-center text-white/20 text-xs gap-2"><svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><span>Photo ${i+1}</span></div>`;
 }
@@ -442,9 +417,8 @@ function buildGallery(){
     g.appendChild(w);
   });
 
-  colourCandidates.forEach(async (file,i)=>{
-    const src=await resolveColourVariant(colourBasePath,file);
-    if(!src) return;
+  colourCandidates.forEach((file,i)=>{
+    const src=`${colourBasePath}${file}`;
 
     colourSlides.push(src);
     const card=g.querySelector(`[data-slot="${i}"]`);

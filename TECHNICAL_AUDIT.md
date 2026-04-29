@@ -232,3 +232,11 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 - Updated `index.html` homepage portfolio grid and lightbox image selection to prefer AVIF, then WebP, then JPG fallback for portfolio assets.
 - Hero/LCP behavior unchanged: no above-the-fold hero image was switched to lazy-loading in this phase.
 - No original JPG/JPEG/PNG files or generated `.webp`/`.avif` files were deleted or modified in this phase.
+
+
+## 13. Emergency rollback (2026-04-29)
+
+- Rolled back runtime optimized serving to stabilize production image loading.
+- Current runtime behavior uses direct JPG/JPEG/PNG paths only across audited gallery pages (`index.html`, `cover-up-tattoo-manchester/index.html`, `black-and-grey-realism-manchester/index.html`, `colour-realism-tattoo-manchester/index.html`).
+- No `<picture>` markup, AVIF/WebP `<source>` selection, or async variant probing remains in these gallery render paths.
+- Generated sidecar derivatives (`.webp`/`.avif`) remain present in `assets/` for future controlled re-introduction.
