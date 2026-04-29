@@ -397,7 +397,18 @@ const colourCandidates=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')
 const colourSlides=[];
 
 async function resolveColourVariant(basePath,fileName){
-  const variants=[basePath+fileName, basePath+fileName+'.JPG'];
+  const stem=fileName.replace(/\.[^.]+$/, '');
+  const variants=[
+    `${basePath}${stem}.avif`,
+    `${basePath}${stem}.webp`,
+    basePath+fileName,
+    `${basePath}${stem}.jpg`,
+    `${basePath}${stem}.JPG`,
+    `${basePath}${stem}.jpeg`,
+    `${basePath}${stem}.JPEG`,
+    `${basePath}${stem}.png`,
+    `${basePath}${stem}.PNG`
+  ];
   for(const src of variants){
     const ok=await new Promise(resolve=>{
       const img=new Image();

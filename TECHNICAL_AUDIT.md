@@ -220,3 +220,15 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 - Remaining risks: image payload remains a high-severity performance risk until actual AVIF/WebP derivatives are generated and markup switched to `<picture>` with fallbacks.
 
 - Phase 1A status update: optimization execution is blocked in the current Codex environment (dependency/network restrictions), but reproducible tooling has now been prepared (`package.json`, `scripts/optimize-images.mjs`, `.github/workflows/optimize-images.yml`, `IMAGE_OPTIMIZATION_GUIDE.md`) for use in a network-enabled environment.
+
+
+## 12. Phase 1A markup/JS serving update (2026-04-29)
+
+- Verified optimized sidecar images exist in `assets/` (`.webp`/`.avif` count: 30).
+- Updated gallery serving logic to prefer AVIF, then WebP, then original JPG/JPEG/PNG fallback in JS-driven galleries:
+  - `cover-up-tattoo-manchester/index.html` now renders gallery images inside `<picture>` with AVIF/WebP `<source>` elements and original fallback `<img>`.
+  - `black-and-grey-realism-manchester/index.html` variant resolver now checks `.avif` and `.webp` before legacy extensions.
+  - `colour-realism-tattoo-manchester/index.html` variant resolver now checks `.avif` and `.webp` before legacy extensions.
+- Updated `index.html` homepage portfolio grid and lightbox image selection to prefer AVIF, then WebP, then JPG fallback for portfolio assets.
+- Hero/LCP behavior unchanged: no above-the-fold hero image was switched to lazy-loading in this phase.
+- No original JPG/JPEG/PNG files or generated `.webp`/`.avif` files were deleted or modified in this phase.

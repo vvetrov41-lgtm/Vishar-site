@@ -43,3 +43,10 @@
 - Original JPG/PNG files are preserved and never overwritten.
 - This workflow only creates sidecar `.webp` and `.avif` files.
 - HTML `<picture>` migration should happen in a separate implementation phase.
+
+
+## Phase 1A serving update (2026-04-29)
+
+- Markup/JS serving logic now prefers AVIF/WebP derivatives where present, with original JPEG/PNG as fallback.
+- Cover-up page gallery now uses `<picture>` for directly rendered image markup.
+- Black/grey and colour pages keep JS-driven progressive loading and now resolve optimized formats first.
