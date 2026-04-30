@@ -2,6 +2,27 @@ name: Optimize Images
 
 on:
   workflow_dispatch:
+    inputs:
+      image_root:
+        description: Folder to scan for source images
+        required: true
+        default: assets
+      image_limit:
+        description: Number of largest images to optimize
+        required: true
+        default: '15'
+      generate_webp:
+        description: Generate WebP derivatives
+        required: true
+        default: 'true'
+      generate_avif:
+        description: Generate AVIF derivatives
+        required: true
+        default: 'true'
+      force:
+        description: Regenerate derivatives even if they are newer than originals
+        required: true
+        default: 'false'
 
 permissions:
   contents: write
@@ -25,6 +46,12 @@ jobs:
         run: npm install
 
       - name: Run optimization
+        env:
+          IMAGE_ROOT: ${{ github.event.inputs.image_root || 'assets' }}
+          IMAGE_LIMIT: ${{ github.event.inputs.image_limit || '15' }}
+          GENERATE_WEBP: ${{ github.event.inputs.generate_webp || 'true' }}
+          GENERATE_AVIF: ${{ github.event.inputs.generate_avif || 'true' }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
         run: npm run optimize:images
 
       - name: Upload reports

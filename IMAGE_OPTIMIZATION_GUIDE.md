@@ -50,3 +50,34 @@ FORCE=true npm run optimize:images
 - **Do not delete originals**.
 - **Do not update HTML markup in this phase**.
 - `<picture>` / `srcset` / `sizes` markup updates should be handled in a separate follow-up phase after optimized files are present.
+
+## Workflow inputs and targeted runs
+
+`optimize:images` supports these environment variables (all optional):
+
+- `IMAGE_ROOT` (default: `assets`) — folder root to scan.
+- `IMAGE_LIMIT` (default: `15`) — number of largest images to optimize.
+- `GENERATE_WEBP` (default: `true`) — set to `false` to skip WebP generation.
+- `GENERATE_AVIF` (default: `true`) — set to `false` to skip AVIF generation.
+- `FORCE` (default: `false`) — set to `true` to regenerate derivatives even when existing derivatives are newer than the source image.
+
+Example: optimize homepage portfolio thumbnails only
+
+- `IMAGE_ROOT=assets/portfolio`
+- `IMAGE_LIMIT=20`
+- `GENERATE_WEBP=true`
+- `GENERATE_AVIF=false`
+
+Local command example:
+
+```bash
+IMAGE_ROOT=assets/portfolio IMAGE_LIMIT=20 GENERATE_WEBP=true GENERATE_AVIF=false npm run optimize:images
+```
+
+## AVIF serving status
+
+AVIF generation remains available in tooling, but AVIF is currently **not served on the site** due to previous production serving issues. Keep AVIF serving disabled until a dedicated validation rollout is completed.
+
+## Markup allowlist note
+
+Expand any markup allowlist for optimized formats only after WebP files already exist for the targeted images and preview/testing confirms gallery behavior is stable.
