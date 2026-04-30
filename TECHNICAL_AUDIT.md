@@ -240,3 +240,5 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 - Current runtime behavior uses direct JPG/JPEG/PNG paths only across audited gallery pages (`index.html`, `cover-up-tattoo-manchester/index.html`, `black-and-grey-realism-manchester/index.html`, `colour-realism-tattoo-manchester/index.html`).
 - No `<picture>` markup, AVIF/WebP `<source>` selection, or async variant probing remains in these gallery render paths.
 - Generated sidecar derivatives (`.webp`/`.avif`) remain present in `assets/` for future controlled re-introduction.
+
+- Pilot WebP serving enabled only for homepage portfolio thumbnails 08 and 20. AVIF and lightbox optimization remain disabled pending manual visual testing.

@@ -60,3 +60,5 @@ Current production serving behavior:
 - no <picture>
 - no AVIF/WebP source selection
 - no async optimized resolver
+
+- Pilot WebP serving enabled only for homepage portfolio thumbnails 08 and 20. AVIF and lightbox optimization remain disabled pending manual visual testing.
