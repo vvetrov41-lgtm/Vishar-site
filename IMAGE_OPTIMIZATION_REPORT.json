@@ -1,12 +1,14 @@
 {
-  "generatedAt": "2026-04-28T23:37:10.718Z",
+  "generatedAt": "2026-04-30T06:22:28.397Z",
   "assetsDir": "assets",
   "force": false,
+  "generateWebp": true,
+  "generateAvif": true,
   "limit": 15,
   "scanned": 65,
   "optimizedCount": 15,
-  "derivativesWritten": 30,
-  "derivativesSkipped": 0,
+  "derivativesWritten": 15,
+  "derivativesSkipped": 15,
   "originalTotal": 180773331,
   "webpTotal": 4806662,
   "avifTotal": 1161120,
@@ -18,11 +20,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/cover-ups/after-04.webp",
         "bytes": 382484,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/cover-ups/after-04.avif",
         "bytes": 62872,
         "skipped": false
@@ -35,11 +39,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/cover-ups/after-02.webp",
         "bytes": 327040,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/cover-ups/after-02.avif",
         "bytes": 71246,
         "skipped": false
@@ -52,11 +58,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/cover-ups/after-05.webp",
         "bytes": 298356,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/cover-ups/after-05.avif",
         "bytes": 80231,
         "skipped": false
@@ -69,11 +77,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/black-grey/05.webp",
         "bytes": 183880,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/black-grey/05.avif",
         "bytes": 56453,
         "skipped": false
@@ -86,11 +96,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/cover-ups/before-03.webp",
         "bytes": 281680,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/cover-ups/before-03.avif",
         "bytes": 82708,
         "skipped": false
@@ -103,11 +115,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/colour-realism/04.webp",
         "bytes": 260162,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/colour-realism/04.avif",
         "bytes": 83943,
         "skipped": false
@@ -120,11 +134,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/portfolio/08.webp",
         "bytes": 260162,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/portfolio/08.avif",
         "bytes": 83943,
         "skipped": false
@@ -137,11 +153,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/black-grey/04.webp",
         "bytes": 171990,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/black-grey/04.avif",
         "bytes": 53071,
         "skipped": false
@@ -154,11 +172,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/cover-ups/before-01.webp",
         "bytes": 555590,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/cover-ups/before-01.avif",
         "bytes": 153710,
         "skipped": false
@@ -171,11 +191,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/black-grey/03.webp",
         "bytes": 338998,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/black-grey/03.avif",
         "bytes": 62672,
         "skipped": false
@@ -188,11 +210,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/black-grey/08.webp",
         "bytes": 252242,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/black-grey/08.avif",
         "bytes": 83533,
         "skipped": false
@@ -205,11 +229,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/colour-realism/01.webp",
         "bytes": 222878,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/colour-realism/01.avif",
         "bytes": 57569,
         "skipped": false
@@ -222,11 +248,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/portfolio/20.webp",
         "bytes": 222878,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/portfolio/20.avif",
         "bytes": 57569,
         "skipped": false
@@ -239,11 +267,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/cover-ups/before-04.webp",
         "bytes": 298402,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/cover-ups/before-04.avif",
         "bytes": 90352,
         "skipped": false
@@ -256,11 +286,13 @@
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
+        "enabled": true,
         "path": "assets/cover-ups/after-01.webp",
         "bytes": 749920,
-        "skipped": false
+        "skipped": true
       },
       "avif": {
+        "enabled": true,
         "path": "assets/cover-ups/after-01.avif",
         "bytes": 81248,
         "skipped": false
