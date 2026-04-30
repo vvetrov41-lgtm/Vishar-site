@@ -642,9 +642,14 @@
     /* ── Portfolio + Gallery grids ── */
     const portfolioImages = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg','07.jpg','08.jpg','09.jpg','10.jpg','11.jpg','12.jpg','13.jpg','14.jpg','15.jpg','16.jpg','17.jpg','18.jpg','19.jpg','20.jpg'];
     const galleryFiles = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg'];
+    const webpPortfolioPilot = new Set(['08.jpg', '20.jpg']);
     let lbIdx = 0;
     function buildPortfolioImage(file, altText) {
-      return `<img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">`;
+      if (!webpPortfolioPilot.has(file)) {
+        return `<img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">`;
+      }
+      const webpFile = file.replace(/\.jpg$/i, '.webp');
+      return `<picture><source srcset="/assets/portfolio/${webpFile}" type="image/webp"><img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture>`;
     }
 
     function buildImageGrid() {
