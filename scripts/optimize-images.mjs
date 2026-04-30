@@ -13,7 +13,9 @@ try {
 }
 
 const ROOT = process.cwd();
-const ASSETS_DIR = path.join(ROOT, 'assets');
+const DEFAULT_IMAGE_ROOT = 'assets';
+const IMAGE_ROOT = (process.env.IMAGE_ROOT || DEFAULT_IMAGE_ROOT).trim() || DEFAULT_IMAGE_ROOT;
+const ASSETS_DIR = path.resolve(ROOT, IMAGE_ROOT);
 const JSON_REPORT_PATH = path.join(ROOT, 'IMAGE_OPTIMIZATION_REPORT.json');
 const MD_REPORT_PATH = path.join(ROOT, 'IMAGE_OPTIMIZATION_REPORT.md');
 
@@ -23,6 +25,8 @@ const MAX_WIDTH = 2400;
 const WEBP_QUALITY = 85;
 const AVIF_QUALITY = 50;
 const FORCE = /^true$/i.test(process.env.FORCE || '');
+const GENERATE_WEBP = !/^false$/i.test(process.env.GENERATE_WEBP || 'true');
+const GENERATE_AVIF = !/^false$/i.test(process.env.GENERATE_AVIF || 'true');
 
 const envLimit = Number.parseInt(process.env.IMAGE_LIMIT || '', 10);
 const IMAGE_LIMIT = Number.isInteger(envLimit) && envLimit > 0 ? envLimit : DEFAULT_LIMIT;
@@ -99,30 +103,53 @@ async function optimizeOne(filePath) {
     originalWidth,
     resizedToWidth: needsResize ? MAX_WIDTH : originalWidth,
     skipped: false,
-    webp: { path: toPosix(path.relative(ROOT, webpPath)), bytes: null, skipped: false },
-    avif: { path: toPosix(path.relative(ROOT, avifPath)), bytes: null, skipped: false }
+    webp: {
+      enabled: GENERATE_WEBP,
+      path: toPosix(path.relative(ROOT, webpPath)),
+      bytes: null,
+      skipped: false
+    },
+    avif: {
+      enabled: GENERATE_AVIF,
+      path: toPosix(path.relative(ROOT, avifPath)),
+      bytes: null,
+      skipped: false
+    }
   };
 
-  const skipWebp = await shouldSkipDerivative(stat, webpPath);
-  if (skipWebp) {
-    result.webp.skipped = true;
-    result.webp.bytes = (await fs.stat(webpPath)).size;
-  } else {
-    await pipeline.clone().webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(webpPath);
-    result.webp.bytes = (await fs.stat(webpPath)).size;
+  if (GENERATE_WEBP) {
+    const skipWebp = await shouldSkipDerivative(stat, webpPath);
+    if (skipWebp) {
+      result.webp.skipped = true;
+      result.webp.bytes = (await fs.stat(webpPath)).size;
+    } else {
+      await pipeline.clone().webp({ quality: WEBP_QUALITY, effort: 5 }).toFile(webpPath);
+      result.webp.bytes = (await fs.stat(webpPath)).size;
+    }
   }
 
-  const skipAvif = await shouldSkipDerivative(stat, avifPath);
-  if (skipAvif) {
-    result.avif.skipped = true;
-    result.avif.bytes = (await fs.stat(avifPath)).size;
-  } else {
-    await pipeline.clone().avif({ quality: AVIF_QUALITY, effort: 6 }).toFile(avifPath);
-    result.avif.bytes = (await fs.stat(avifPath)).size;
+  if (GENERATE_AVIF) {
+    const skipAvif = await shouldSkipDerivative(stat, avifPath);
+    if (skipAvif) {
+      result.avif.skipped = true;
+      result.avif.bytes = (await fs.stat(avifPath)).size;
+    } else {
+      await pipeline.clone().avif({ quality: AVIF_QUALITY, effort: 6 }).toFile(avifPath);
+      result.avif.bytes = (await fs.stat(avifPath)).size;
+    }
   }
 
-  result.skipped = result.webp.skipped && result.avif.skipped;
+  const allEnabledSkipped = [result.webp, result.avif]
+    .filter(item => item.enabled)
+    .every(item => item.skipped);
+  result.skipped = allEnabledSkipped;
+
   return result;
+}
+
+function renderCell(variant) {
+  if (!variant.enabled) return 'disabled';
+  return `${fmtBytes(variant.bytes || 0)}${variant.skipped ? ' (skip)' : ''}`;
 }
 
 function renderMarkdown(report) {
@@ -133,6 +160,8 @@ function renderMarkdown(report) {
   lines.push(`- Source directory: ${report.assetsDir}`);
   lines.push(`- Image limit: ${report.limit}`);
   lines.push(`- FORCE mode: ${report.force}`);
+  lines.push(`- Generate WebP: ${report.generateWebp}`);
+  lines.push(`- Generate AVIF: ${report.generateAvif}`);
   lines.push(`- Resize threshold: ${MAX_WIDTH}px`);
   lines.push(`- WebP quality: ${WEBP_QUALITY}`);
   lines.push(`- AVIF quality: ${AVIF_QUALITY}`);
@@ -156,7 +185,7 @@ function renderMarkdown(report) {
     const status = item.skipped ? 'skipped (up-to-date)' : 'generated/updated';
     const resize = item.originalWidth && item.originalWidth > MAX_WIDTH ? `${item.originalWidth}→${MAX_WIDTH}` : (item.originalWidth || 'n/a');
     lines.push(
-      `| ${item.file} | ${fmtBytes(item.originalBytes)} | ${fmtBytes(item.webp.bytes)}${item.webp.skipped ? ' (skip)' : ''} | ${fmtBytes(item.avif.bytes)}${item.avif.skipped ? ' (skip)' : ''} | ${resize} | ${status} |`
+      `| ${item.file} | ${fmtBytes(item.originalBytes)} | ${renderCell(item.webp)} | ${renderCell(item.avif)} | ${resize} | ${status} |`
     );
   }
 
@@ -164,7 +193,8 @@ function renderMarkdown(report) {
   lines.push('## Notes');
   lines.push('');
   lines.push('- Original JPG/PNG files are preserved and never overwritten.');
-  lines.push('- This workflow only creates sidecar `.webp` and `.avif` files.');
+  lines.push('- This workflow only creates sidecar `.webp` and/or `.avif` files.');
+  lines.push('- Existing newer derivatives are skipped unless `FORCE=true`.');
   lines.push('- HTML `<picture>` migration should happen in a separate implementation phase.');
   return lines.join('\n');
 }
@@ -190,13 +220,15 @@ async function main() {
 
   const report = {
     generatedAt: new Date().toISOString(),
-    assetsDir: toPosix(path.relative(ROOT, ASSETS_DIR) || 'assets'),
+    assetsDir: toPosix(path.relative(ROOT, ASSETS_DIR) || DEFAULT_IMAGE_ROOT),
     force: FORCE,
+    generateWebp: GENERATE_WEBP,
+    generateAvif: GENERATE_AVIF,
     limit: IMAGE_LIMIT,
     scanned: all.length,
     optimizedCount: items.length,
-    derivativesWritten: items.reduce((acc, i) => acc + (i.webp.skipped ? 0 : 1) + (i.avif.skipped ? 0 : 1), 0),
-    derivativesSkipped: items.reduce((acc, i) => acc + (i.webp.skipped ? 1 : 0) + (i.avif.skipped ? 1 : 0), 0),
+    derivativesWritten: items.reduce((acc, i) => acc + (i.webp.enabled && !i.webp.skipped ? 1 : 0) + (i.avif.enabled && !i.avif.skipped ? 1 : 0), 0),
+    derivativesSkipped: items.reduce((acc, i) => acc + (i.webp.enabled && i.webp.skipped ? 1 : 0) + (i.avif.enabled && i.avif.skipped ? 1 : 0), 0),
     originalTotal: items.reduce((acc, i) => acc + i.originalBytes, 0),
     webpTotal: items.reduce((acc, i) => acc + (i.webp.bytes || 0), 0),
     avifTotal: items.reduce((acc, i) => acc + (i.avif.bytes || 0), 0),

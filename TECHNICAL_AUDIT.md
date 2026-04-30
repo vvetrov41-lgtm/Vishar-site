@@ -242,3 +242,11 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 - Generated sidecar derivatives (`.webp`/`.avif`) remain present in `assets/` for future controlled re-introduction.
 
 - Pilot WebP serving enabled only for homepage portfolio thumbnails 08 and 20. AVIF and lightbox optimization remain disabled pending manual visual testing.
+
+## 14. Tooling update: targeted image optimization inputs (2026-04-30)
+
+- Updated optimization tooling to support scoped runs and format toggles without changing default behavior.
+- New optional env controls: `IMAGE_ROOT`, `IMAGE_LIMIT`, `GENERATE_WEBP`, `GENERATE_AVIF`, `FORCE`.
+- CI workflow now exposes equivalent `workflow_dispatch` inputs to support repository-side targeted optimization (for example `assets/portfolio`).
+- No gallery HTML/JS serving logic changed in this update.
+

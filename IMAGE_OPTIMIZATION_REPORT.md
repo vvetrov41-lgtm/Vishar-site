@@ -62,3 +62,10 @@ Current production serving behavior:
 - no async optimized resolver
 
 - Pilot WebP serving enabled only for homepage portfolio thumbnails 08 and 20. AVIF and lightbox optimization remain disabled pending manual visual testing.
+
+## Workflow enhancement note (2026-04-30)
+
+- Optimization tooling now supports targeted scope and format toggles via environment variables: `IMAGE_ROOT`, `IMAGE_LIMIT`, `GENERATE_WEBP`, `GENERATE_AVIF`, and `FORCE`.
+- Default behavior is unchanged (`IMAGE_ROOT=assets`, `IMAGE_LIMIT=15`, `GENERATE_WEBP=true`, `GENERATE_AVIF=true`).
+- This update changes optimization tooling/workflow inputs only and does not change site rendering logic.
+
