@@ -250,3 +250,10 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 - CI workflow now exposes equivalent `workflow_dispatch` inputs to support repository-side targeted optimization (for example `assets/portfolio`).
 - No gallery HTML/JS serving logic changed in this update.
 
+
+
+## Update – 2026-04-30
+
+- Homepage WebP pilot was expanded to all 20 homepage portfolio card images (`assets/portfolio/01.jpg` through `20.jpg`) via the existing safe allowlist pattern in `index.html`.
+- Homepage lightbox behavior remains unchanged and JPG-only.
+- AVIF remains disabled/not used.

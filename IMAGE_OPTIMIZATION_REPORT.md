@@ -51,3 +51,10 @@
 - This workflow only creates sidecar `.webp` and/or `.avif` files.
 - Existing newer derivatives are skipped unless `FORCE=true`.
 - HTML `<picture>` migration should happen in a separate implementation phase.
+
+
+## Update – 2026-04-30
+
+- Homepage WebP pilot was expanded to all 20 homepage portfolio card images (`assets/portfolio/01.jpg` through `20.jpg`) via the existing safe allowlist pattern in `index.html`.
+- Homepage lightbox behavior remains unchanged and JPG-only.
+- AVIF remains disabled/not used.
