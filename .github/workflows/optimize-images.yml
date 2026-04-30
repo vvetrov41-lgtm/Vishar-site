@@ -73,4 +73,8 @@ jobs:
             exit 0
           fi
           git commit -m "chore: optimize top images and update reports"
-          git push
+          if ! git pull --rebase origin main; then
+            echo "Rebase failed while updating from origin/main before push. Resolve conflicts and re-run workflow."
+            exit 1
+          fi
+          git push origin HEAD:main
