@@ -1,394 +1,242 @@
 {
-  "generatedAt": "2026-04-30T07:13:39.305Z",
-  "assetsDir": "assets/portfolio",
-  "force": false,
+  "generatedAt": "2026-05-04T23:18:45.987Z",
+  "assetsDir": "assets/black-grey",
+  "force": true,
   "generateWebp": true,
   "generateAvif": false,
   "limit": 20,
-  "scanned": 20,
-  "optimizedCount": 20,
-  "derivativesWritten": 18,
-  "derivativesSkipped": 2,
-  "originalTotal": 64979214,
-  "webpTotal": 4995776,
+  "scanned": 12,
+  "optimizedCount": 12,
+  "derivativesWritten": 12,
+  "derivativesSkipped": 0,
+  "originalTotal": 76795304,
+  "webpTotal": 3214324,
   "avifTotal": 0,
   "items": [
     {
-      "file": "assets/portfolio/08.jpg",
-      "originalBytes": 13066147,
-      "originalWidth": 6039,
+      "file": "assets/black-grey/05.jpg",
+      "originalBytes": 14245933,
+      "originalWidth": 6048,
       "resizedToWidth": 2400,
-      "skipped": true,
+      "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/portfolio/08.webp",
-        "bytes": 260162,
-        "skipped": true
+        "path": "assets/black-grey/05.webp",
+        "bytes": 183880,
+        "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/portfolio/08.avif",
+        "path": "assets/black-grey/05.avif",
         "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/portfolio/20.jpg",
-      "originalBytes": 9724153,
-      "originalWidth": 4277,
+      "file": "assets/black-grey/04.jpg",
+      "originalBytes": 10951052,
+      "originalWidth": 6048,
       "resizedToWidth": 2400,
-      "skipped": true,
+      "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/portfolio/20.webp",
-        "bytes": 222878,
-        "skipped": true
+        "path": "assets/black-grey/04.webp",
+        "bytes": 171990,
+        "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/portfolio/20.avif",
+        "path": "assets/black-grey/04.avif",
         "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/portfolio/17.jpg",
+      "file": "assets/black-grey/03.jpeg",
+      "originalBytes": 10002875,
+      "originalWidth": 4672,
+      "resizedToWidth": 2400,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/black-grey/03.webp",
+        "bytes": 338998,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": false,
+        "path": "assets/black-grey/03.avif",
+        "bytes": null,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/black-grey/08.jpg",
+      "originalBytes": 9897583,
+      "originalWidth": 5040,
+      "resizedToWidth": 2400,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/black-grey/08.webp",
+        "bytes": 252242,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": false,
+        "path": "assets/black-grey/08.avif",
+        "bytes": null,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/black-grey/10.jpg",
       "originalBytes": 8258768,
       "originalWidth": 2539,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/portfolio/17.webp",
+        "path": "assets/black-grey/10.webp",
         "bytes": 274128,
         "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/portfolio/17.avif",
+        "path": "assets/black-grey/10.avif",
         "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/portfolio/18.jpg",
-      "originalBytes": 6191376,
-      "originalWidth": 2446,
+      "file": "assets/black-grey/02.jpg",
+      "originalBytes": 6222455,
+      "originalWidth": 3072,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/portfolio/18.webp",
-        "bytes": 224106,
+        "path": "assets/black-grey/02.webp",
+        "bytes": 305730,
         "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/portfolio/18.avif",
+        "path": "assets/black-grey/02.avif",
         "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/portfolio/10.jpg",
+      "file": "assets/black-grey/11.jpg",
+      "originalBytes": 5931021,
+      "originalWidth": 2817,
+      "resizedToWidth": 2400,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/black-grey/11.webp",
+        "bytes": 664594,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": false,
+        "path": "assets/black-grey/11.avif",
+        "bytes": null,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/black-grey/07.jpg",
       "originalBytes": 5132775,
       "originalWidth": 3024,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/portfolio/10.webp",
+        "path": "assets/black-grey/07.webp",
         "bytes": 232616,
         "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/portfolio/10.avif",
+        "path": "assets/black-grey/07.avif",
         "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/portfolio/05.jpg",
-      "originalBytes": 4125662,
-      "originalWidth": 3024,
+      "file": "assets/black-grey/06.jpg",
+      "originalBytes": 2534467,
+      "originalWidth": 2237,
+      "resizedToWidth": 2237,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/black-grey/06.webp",
+        "bytes": 231642,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": false,
+        "path": "assets/black-grey/06.avif",
+        "bytes": null,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/black-grey/01.jpg",
+      "originalBytes": 2398434,
+      "originalWidth": 3072,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/portfolio/05.webp",
-        "bytes": 180830,
+        "path": "assets/black-grey/01.webp",
+        "bytes": 243538,
         "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/portfolio/05.avif",
+        "path": "assets/black-grey/01.avif",
         "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/portfolio/15.jpg",
-      "originalBytes": 3161190,
-      "originalWidth": 4249,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/15.webp",
-        "bytes": 278434,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/15.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/12.jpg",
-      "originalBytes": 1847741,
-      "originalWidth": 4041,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/12.webp",
-        "bytes": 184874,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/12.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/13.jpg",
-      "originalBytes": 1812434,
-      "originalWidth": 4586,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/13.webp",
-        "bytes": 167156,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/13.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/02.jpg",
-      "originalBytes": 1771908,
-      "originalWidth": 1979,
-      "resizedToWidth": 1979,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/02.webp",
-        "bytes": 651390,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/02.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/06.jpg",
-      "originalBytes": 1752106,
-      "originalWidth": 2768,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/06.webp",
-        "bytes": 309552,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/06.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/19.jpg",
-      "originalBytes": 1608992,
-      "originalWidth": 2172,
-      "resizedToWidth": 2172,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/19.webp",
-        "bytes": 535838,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/19.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/16.jpg",
-      "originalBytes": 1142875,
-      "originalWidth": 2624,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/16.webp",
-        "bytes": 255456,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/16.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/14.jpg",
-      "originalBytes": 1079051,
-      "originalWidth": 2610,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/14.webp",
-        "bytes": 225760,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/14.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/07.jpg",
-      "originalBytes": 1075368,
-      "originalWidth": 2287,
-      "resizedToWidth": 2287,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/07.webp",
-        "bytes": 295384,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/07.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/03.jpg",
-      "originalBytes": 977279,
-      "originalWidth": 2247,
-      "resizedToWidth": 2247,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/03.webp",
-        "bytes": 182944,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/03.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/11.jpg",
+      "file": "assets/black-grey/12.jpg",
       "originalBytes": 899227,
       "originalWidth": 2373,
       "resizedToWidth": 2373,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/portfolio/11.webp",
+        "path": "assets/black-grey/12.webp",
         "bytes": 177554,
         "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/portfolio/11.avif",
+        "path": "assets/black-grey/12.avif",
         "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/portfolio/01.jpg",
-      "originalBytes": 720526,
-      "originalWidth": 1920,
-      "resizedToWidth": 1920,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/01.webp",
-        "bytes": 124714,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/01.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/09.jpg",
+      "file": "assets/black-grey/09.jpg",
       "originalBytes": 320714,
       "originalWidth": 1034,
       "resizedToWidth": 1034,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/portfolio/09.webp",
+        "path": "assets/black-grey/09.webp",
         "bytes": 137412,
         "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/portfolio/09.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/portfolio/04.jpg",
-      "originalBytes": 310922,
-      "originalWidth": 1417,
-      "resizedToWidth": 1417,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/portfolio/04.webp",
-        "bytes": 74588,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/portfolio/04.avif",
+        "path": "assets/black-grey/09.avif",
         "bytes": null,
         "skipped": false
       }
