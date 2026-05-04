@@ -257,3 +257,7 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 - Homepage WebP pilot was expanded to all 20 homepage portfolio card images (`assets/portfolio/01.jpg` through `20.jpg`) via the existing safe allowlist pattern in `index.html`.
 - Homepage lightbox behavior remains unchanged and JPG-only.
 - AVIF remains disabled/not used.
+
+## Update – 2026-05-04
+
+- Black-and-grey WebP thumbnail serving enabled only for files with confirmed .webp sidecars. AVIF and lightbox optimization remain disabled.
