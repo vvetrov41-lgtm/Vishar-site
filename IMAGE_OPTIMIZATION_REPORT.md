@@ -43,3 +43,7 @@
 - This workflow only creates sidecar `.webp` and/or `.avif` files.
 - Existing newer derivatives are skipped unless `FORCE=true`.
 - HTML `<picture>` migration should happen in a separate implementation phase.
+
+## Update – 2026-05-04
+
+- Black-and-grey WebP thumbnail serving enabled only for files with confirmed .webp sidecars. AVIF and lightbox optimization remain disabled.
