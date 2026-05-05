@@ -271,3 +271,110 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 ## 12. Cover-up WebP Serving Update (2026-05-05)
 
 - 2026-05-05: Cover-up WebP serving enabled only for before/after files with confirmed .webp sidecars. AVIF remains disabled. Original JPG/JPEG fallback and before/after behavior remain unchanged.
+
+## Phase 1B Tailwind CDN Replacement Plan
+
+### Current Tailwind usage (audited scope)
+
+Audited files:
+- `index.html`
+- `about/index.html`
+- `faq/index.html`
+- `aftercare/index.html`
+- `ai-tools/index.html`
+- `black-and-grey-realism-manchester/index.html`
+- `colour-realism-tattoo-manchester/index.html`
+- `cover-up-tattoo-manchester/index.html`
+- `components.js` (for dynamic class generation)
+
+Findings:
+1. **Tailwind CDN runtime is used in all 8 audited HTML pages** via `<script src="https://cdn.tailwindcss.com"></script>`.
+2. **Inline `tailwind.config` exists in all 8 audited HTML pages** directly after the CDN script.
+3. **Inline custom theme extension exists** in those config blocks, including:
+   - `colors.apple.black = #000000`
+   - `colors.apple.darkGray = #1d1d1f`
+   - `colors.apple.lightGray = #f5f5f7`
+   - `colors.apple.blue = #0071e3`
+   - `fontFamily.sans = Inter / system sans stack`
+   - `fontFamily.serif = Playfair Display / serif`
+4. **Arbitrary-value Tailwind utilities are actively used** (examples):
+   - `max-w-[1200px]`, `max-w-[900px]`, `max-w-[1000px]`, `max-w-[1400px]`, `max-h-[90vh]`, `z-[1000]`, `text-[10px]`, `tracking-[0.3em]`, `aspect-[3/4]`.
+5. **Dynamic class names exist in JS** and must be included in Tailwind content scanning/safelist strategy:
+   - `components.js`: template-literal classes for nav/footer/mobile menu (`${active ? 'text-white' : ''}`, `${active ? 'text-apple-blue' : 'hover:text-white/80'}`), plus static utility strings in generated markup.
+   - `index.html`: runtime class assignment patterns like `element.className = '... ' + (condition ? '...' : '...')` and `classList.toggle('rotate-180', ...)`.
+
+### Risks
+
+- **Primary risk: missing utilities after migration** (especially arbitrary values and JS-composed classes) causing spacing/typography/layout regressions.
+- **Secondary risk: custom brand tokens loss** if `apple` color/font extensions are not mirrored in `tailwind.config.js`.
+- **Purge/content risk:** if content globs omit JS/HTML paths, production CSS may drop classes used only in templates/scripts.
+- **Order/specificity risk:** new compiled stylesheet load order vs existing inline `<style>` blocks may cause subtle overrides.
+
+Risk level: **Medium** (safe to proceed if migration is staged and verified page-by-page).
+
+### Exact files that would need changes (implementation PR, not this audit PR)
+
+Minimum expected:
+- `index.html`
+- `about/index.html`
+- `faq/index.html`
+- `aftercare/index.html`
+- `ai-tools/index.html`
+- `black-and-grey-realism-manchester/index.html`
+- `colour-realism-tattoo-manchester/index.html`
+- `cover-up-tattoo-manchester/index.html`
+- `components.js` (only if additional class safelist markers/comments are needed)
+
+New build/config files likely required:
+- `package.json` (scripts/devDependencies)
+- `tailwind.config.js` (or `tailwind.config.cjs`)
+- `postcss.config.js` (if using PostCSS pipeline)
+- source stylesheet file (for `@tailwind` directives)
+- compiled output CSS file under a stable public asset path
+
+### Proposed build setup (plan only)
+
+Recommended safe approach:
+1. Add Tailwind CLI-based build with deterministic output (no runtime CDN).
+2. Centralize current inline `tailwind.config` theme extensions into repo config.
+3. Set `content` globs to include all audited HTML routes and `components.js`:
+   - `./index.html`
+   - `./about/index.html`
+   - `./faq/index.html`
+   - `./aftercare/index.html`
+   - `./ai-tools/index.html`
+   - `./black-and-grey-realism-manchester/index.html`
+   - `./colour-realism-tattoo-manchester/index.html`
+   - `./cover-up-tattoo-manchester/index.html`
+   - `./components.js`
+4. Add targeted safelist for any runtime-only class variants that static scanning cannot reliably infer.
+5. Build minified production CSS artifact and link it in each page.
+
+### Proposed CSS output path
+
+- Recommended output: **`/assets/css/tailwind.css`** (or hashed variant such as `/assets/css/tailwind.[hash].css` once cache-busting strategy is finalized).
+
+### Verification checklist (pre-merge for implementation PR)
+
+1. Build succeeds locally with zero Tailwind warnings about invalid utilities.
+2. `https://cdn.tailwindcss.com` removed from all 8 audited pages.
+3. Inline `tailwind.config` removed from all 8 audited pages.
+4. Visual parity check completed for each audited page at mobile/tablet/desktop breakpoints.
+5. Confirm no missing styles for arbitrary classes and dynamic JS-generated elements (nav, mobile overlay, sticky CTA, FAQ toggles, lightbox controls).
+6. Confirm no CSP/analytics/branding/text changes were introduced.
+7. Confirm no unexpected CLS/layout shifts on initial load compared with baseline.
+8. Run HTML reference check to ensure compiled CSS path resolves in all routes.
+
+### Rollback plan
+
+If visual/function regressions appear after merge:
+1. Revert implementation PR commit(s) in full (single revert preferred).
+2. Restore previous CDN script + inline config blocks from git history.
+3. Re-run smoke checks on all 8 routes.
+4. Re-open migration in a smaller staged PR (e.g., homepage + one inner route first) with screenshots and explicit class safelist diffs.
+
+### Recommendation
+
+- **Recommended implementation approach:** proceed with a dedicated follow-up PR that introduces Tailwind build tooling + compiled CSS, then removes CDN/runtime config only after parity verification.
+- **Risk level:** Medium.
+- **Safe to proceed in a separate PR:** **Yes**, provided the implementation PR follows the staged verification checklist above and includes a fast rollback path.
