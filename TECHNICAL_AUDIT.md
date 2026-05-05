@@ -576,3 +576,129 @@ Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.
 ### Rollback plan
 - If any regression appears, restore previous `Content-Security-Policy` `script-src` value by re-adding `https://cdn.tailwindcss.com` in `_headers` and redeploy.
 - Re-run route smoke checks and CSP console checks after rollback.
+
+## Phase 2A CI and Static Validation Plan
+
+### Scope and current repo baseline
+- **Task branch:** `phase-2a-ci-static-validation-plan` was created from the available local repository state. Attempting to fetch `origin/main` failed because this checkout has no configured `origin` remote; implementation should be rebased onto the real latest `main` before opening the implementation PR.
+- **Package scripts present today:** `optimize:images` runs `node scripts/optimize-images.mjs`; `build:tailwind` runs Tailwind CLI from `assets/css/input.css` to `assets/css/tailwind.css` with minification.
+- **Existing GitHub Actions:** `.github/workflows/build-tailwind.yml` is manual-only (`workflow_dispatch`), installs dependencies, builds Tailwind, verifies `assets/css/tailwind.css` is at least 5 KB, uploads the CSS artifact, then commits/pushes generated CSS to `main`. `.github/workflows/optimize-images.yml` is also manual-only and can generate WebP/AVIF derivatives plus optimization reports, then commit/push those generated files to `main`.
+- **Tailwind build inputs:** `tailwind.config.js` currently scans the 8 HTML route files plus `components.js`, and safelists classes used dynamically at runtime.
+- **HTML routes currently in scope:** `index.html`, `about/index.html`, `aftercare/index.html`, `ai-tools/index.html`, `black-and-grey-realism-manchester/index.html`, `colour-realism-tattoo-manchester/index.html`, `cover-up-tattoo-manchester/index.html`, and `faq/index.html`.
+- **Key deployment/SEO files:** `_headers`, `robots.txt`, and `sitemap.xml` are present. `_redirects` is not present in the current checkout, so Phase 2A should only require it if a redirect policy is intentionally introduced later.
+- **Current CSS artifact:** `assets/css/tailwind.css` exists and was measured at 20,615 bytes, while `assets/css/input.css` is only the 3 Tailwind directives.
+- **Current Tailwind CDN status:** no `cdn.tailwindcss.com` references were found in scoped HTML or `_headers`; matches in `TECHNICAL_AUDIT.md` are historical audit notes only.
+- **Current AVIF-in-HTML status:** no `.avif` references were found in HTML pages. AVIF files may exist as generated assets, but the site should not serve AVIF from HTML yet.
+- **Current local-link feasibility:** a static parser check over HTML `href`, `src`, and `srcset` values found 0 broken local page/asset references, ignoring external URLs, `mailto:`, `tel:`, fragments, and Cloudflare-managed `/cdn-cgi/` paths.
+- **Current image sidecar findings:** all JPG/JPEG/PNG files over 500 KB under `assets/` had WebP sidecars except `assets/gallery/03.jpg`, `assets/gallery/05.jpg`, and `assets/hero/hero.jpg`. Those misses should inform allowlists/budgets rather than surprise-fail CI until the implementation PR defines the intended policy.
+
+### Recommended workflow name
+- **Workflow file:** `.github/workflows/static-validation.yml`
+- **Workflow display name:** `Static Validation`
+- **Trigger:** `pull_request` targeting `main`, plus `workflow_dispatch` for manual reruns.
+- **Permissions:** `contents: read` only. This workflow must not commit generated files, push to `main`, optimize images, or alter runtime output.
+
+### Proposed checks
+1. **Tailwind CSS build check**
+   - Run `npm ci` and `npm run build:tailwind` in CI.
+   - After build, run `git diff --exit-code -- assets/css/tailwind.css` so CI fails when committed CSS is stale relative to source HTML, `components.js`, `assets/css/input.css`, `tailwind.config.js`, or dependency lockfile changes.
+   - Keep this separate from the existing manual build workflow, because PR validation should report stale artifacts instead of auto-committing them.
+
+2. **No Tailwind CDN references**
+   - Search scoped production files for `cdn.tailwindcss.com`.
+   - Suggested scope: `*.html`, nested `*.html`, `_headers`, `components.js`, `assets/css/input.css`, and `tailwind.config.js`.
+   - Exclude `TECHNICAL_AUDIT.md`, historical reports, and docs so old audit references do not fail runtime validation.
+
+3. **Generated Tailwind CSS artifact exists and is not tiny**
+   - Assert `assets/css/tailwind.css` exists.
+   - Assert byte size is above a conservative threshold, initially `>= 5000` bytes to match the manual Tailwind workflow.
+   - This should run after `npm run build:tailwind`, then again against the committed artifact before diff checking.
+
+4. **Image size budgets**
+   - Add a lightweight Node script that scans `assets/` for raster files.
+   - Proposed fail budget for new/changed source images: JPG/JPEG/PNG over **2 MB** must have a same-directory `.webp` sidecar unless path is explicitly allowlisted.
+   - Proposed warn budget for existing large files: report JPG/JPEG/PNG over **5 MB** and WebP over **1.5 MB** as optimization opportunities, but do not fail immediately because this repo already contains multiple large legacy source images.
+   - Keep source originals allowed for now because current HTML still uses JPG fallbacks in `<picture>` patterns.
+
+5. **Broken internal links, if feasible**
+   - Add a simple static HTML link checker script using Node built-ins or a small dependency only if necessary.
+   - Check local absolute paths like `/about/`, `/assets/css/tailwind.css`, root-relative image paths, and route links that should resolve to files or `index.html`.
+   - Ignore external `http(s)` URLs, protocol-relative URLs, `mailto:`, `tel:`, fragments, `javascript:`, generated `/cdn-cgi/` paths, and dynamic JavaScript-generated gallery strings that cannot be resolved safely without executing route scripts.
+
+6. **Key file existence**
+   - Fail if `_headers`, `robots.txt`, or `sitemap.xml` are missing.
+   - Warn, but do not fail, if `_redirects` is missing unless the project later documents required redirects.
+   - Optionally check `sitemap.xml` is well-formed XML and contains the known route URLs.
+
+7. **CSP regression guard for Tailwind CDN**
+   - Parse `_headers` and fail if `Content-Security-Policy` contains `cdn.tailwindcss.com`.
+   - This specifically protects the previous CSP hardening from accidental reintroduction.
+
+8. **No AVIF served in HTML for now**
+   - Fail if scoped HTML files contain `.avif` references in `src`, `srcset`, inline JS templates, or `<source>` tags.
+   - Rationale: AVIF derivatives exist from the optimization workflow, but AVIF serving has not been approved as a runtime behavior change yet.
+
+9. **WebP sidecars for allowlisted thumbnails**
+   - Create an explicit allowlist of thumbnail/source-image groups that are intentionally served through `<picture>` WebP sidecars today: `assets/portfolio/`, `assets/colour-realism/`, `assets/black-grey/`, and `assets/cover-ups/`.
+   - Fail if a JPG/JPEG/PNG in those allowlisted folders lacks the matching `.webp` sidecar.
+   - Treat `assets/gallery/` and `assets/hero/` separately until their sidecar/runtime policy is implemented; report missing sidecars as warnings first.
+
+10. **No huge new JPG images without WebP sidecars**
+    - On pull requests, compare changed files against the merge base and fail if a newly added JPG/JPEG/PNG under `assets/` is over **500 KB** without a same-directory `.webp` sidecar.
+    - For modified existing images, fail only when the file crosses the same threshold and lacks a sidecar; otherwise warn to avoid blocking cleanup PRs that did not introduce the debt.
+
+### Files/workflows to add in the implementation PR
+- `.github/workflows/static-validation.yml` — PR/static validation workflow, read-only, no commits.
+- `scripts/validate-static-site.mjs` — repository-local validation script for runtime string checks, required files, CSS artifact size, CSP guard, no-AVIF-in-HTML check, sidecar checks, and internal link checks.
+- Optional: `scripts/validate-images.mjs` only if image budgets become large enough to keep separate from general static validation.
+- `package.json` script additions only; do not change existing `build:tailwind` or `optimize:images` behavior.
+- `TECHNICAL_AUDIT.md` implementation notes after the PR is complete.
+
+### Recommended npm scripts
+- `"validate:static": "node scripts/validate-static-site.mjs"`
+- `"check:tailwind": "npm run build:tailwind && git diff --exit-code -- assets/css/tailwind.css"`
+- Optional split if desired for clearer CI logs:
+  - `"check:css-artifact": "node scripts/validate-static-site.mjs --css-only"`
+  - `"check:images": "node scripts/validate-static-site.mjs --images-only"`
+  - `"check:links": "node scripts/validate-static-site.mjs --links-only"`
+
+### What should fail CI
+- `npm ci` fails.
+- `npm run build:tailwind` fails.
+- `assets/css/tailwind.css` is missing after build.
+- `assets/css/tailwind.css` is below the chosen minimum byte threshold, initially 5 KB.
+- Tailwind build changes `assets/css/tailwind.css` and the generated artifact was not committed.
+- Runtime-scoped HTML, `_headers`, `components.js`, or Tailwind source/config files contain `cdn.tailwindcss.com`.
+- `_headers` CSP contains `cdn.tailwindcss.com`.
+- Scoped HTML contains `.avif` references.
+- Required files `_headers`, `robots.txt`, or `sitemap.xml` are missing.
+- A known local route/asset reference in HTML resolves to no file.
+- JPG/JPEG/PNG files in allowlisted WebP thumbnail folders lack `.webp` sidecars.
+- Newly added huge JPG/JPEG/PNG files under `assets/` lack `.webp` sidecars according to the PR diff policy.
+
+### What should only warn initially
+- `_redirects` is absent, because there is no current redirect file or documented redirect requirement.
+- Existing legacy JPG/JPEG/PNG files over the proposed size budget when they already predate Phase 2A.
+- Existing missing WebP sidecars outside the initial allowlisted folders, specifically `assets/gallery/03.jpg`, `assets/gallery/05.jpg`, and `assets/hero/hero.jpg` until their runtime policy is decided.
+- External link checks, because reliable validation requires network access and can be noisy; production crawl remains a separate check requiring production URL.
+- Lighthouse/Core Web Vitals checks, because this plan is static validation only and no browser performance run was performed.
+- Exact production header behavior, because verifying deployed `_headers` requires a production or preview URL.
+
+### Risks
+- **False positives from dynamic HTML strings:** gallery cards are generated by inline JavaScript templates, so link and image-reference parsing must avoid overinterpreting expressions as literal paths.
+- **Generated CSS churn:** running Tailwind in CI will rewrite `assets/css/tailwind.css`; the workflow must fail on diff without committing anything.
+- **Legacy image debt:** the repo contains many large existing source images, so CI should distinguish new PR debt from existing debt to avoid blocking unrelated changes.
+- **Docs/history noise:** `TECHNICAL_AUDIT.md` intentionally contains historical `cdn.tailwindcss.com` references; validation must scope checks to runtime files rather than all Markdown.
+- **Manual workflow overlap:** existing manual workflows commit generated CSS/images to `main`; the new PR workflow must be read-only to prevent competing writes.
+- **No production verification:** static validation cannot prove Cloudflare Pages serves `_headers`, redirects, or caching exactly as expected without a preview/production URL.
+
+### Rollback plan
+- Keep the implementation PR limited to `.github/workflows/static-validation.yml`, validation script(s), `package.json`, `package-lock.json` only if script/dependency changes require it, and `TECHNICAL_AUDIT.md` notes.
+- If CI blocks legitimate PRs, temporarily disable only the new `Static Validation` workflow or change the failing rule from fail to warn in `scripts/validate-static-site.mjs`.
+- If Tailwind artifact checks are noisy, keep `npm run build:tailwind` as a build smoke check and temporarily remove the `git diff --exit-code -- assets/css/tailwind.css` gate while investigating deterministic output.
+- If image checks are too strict, reduce enforcement to newly added files only and leave existing assets as warnings.
+- Revert the implementation PR to restore the prior repo behavior, because Phase 2A should not alter runtime website files or production behavior.
+
+### Estimated risk and implementation recommendation
+- **Estimated risk:** Low, provided the implementation PR is read-only, scoped to validation/CI files, and distinguishes legacy warnings from new failures.
+- **Safe to implement in a separate PR:** Yes. The plan is safe for a dedicated follow-up PR because it does not require runtime HTML/CSS/image behavior changes and can be rolled back by reverting the validation workflow/scripts.
