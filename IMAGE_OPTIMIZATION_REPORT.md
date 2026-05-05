@@ -43,3 +43,5 @@
 - This workflow only creates sidecar `.webp` and/or `.avif` files.
 - Existing newer derivatives are skipped unless `FORCE=true`.
 - HTML `<picture>` migration should happen in a separate implementation phase.
+
+- 2026-05-05: Cover-up WebP serving enabled only for before/after files with confirmed .webp sidecars. AVIF remains disabled. Original JPG/JPEG fallback and before/after behavior remain unchanged.
