@@ -1,243 +1,243 @@
 {
-  "generatedAt": "2026-05-04T23:18:45.987Z",
-  "assetsDir": "assets/black-grey",
+  "generatedAt": "2026-05-05T05:44:27.682Z",
+  "assetsDir": "assets/colour-realism",
   "force": true,
   "generateWebp": true,
-  "generateAvif": false,
+  "generateAvif": true,
   "limit": 20,
   "scanned": 12,
   "optimizedCount": 12,
-  "derivativesWritten": 12,
+  "derivativesWritten": 24,
   "derivativesSkipped": 0,
-  "originalTotal": 76795304,
-  "webpTotal": 3214324,
-  "avifTotal": 0,
+  "originalTotal": 37035302,
+  "webpTotal": 2884974,
+  "avifTotal": 700035,
   "items": [
     {
-      "file": "assets/black-grey/05.jpg",
-      "originalBytes": 14245933,
-      "originalWidth": 6048,
+      "file": "assets/colour-realism/04.jpg",
+      "originalBytes": 13066147,
+      "originalWidth": 6039,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/black-grey/05.webp",
-        "bytes": 183880,
+        "path": "assets/colour-realism/04.webp",
+        "bytes": 260162,
         "skipped": false
       },
       "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/05.avif",
-        "bytes": null,
+        "enabled": true,
+        "path": "assets/colour-realism/04.avif",
+        "bytes": 83943,
         "skipped": false
       }
     },
     {
-      "file": "assets/black-grey/04.jpg",
-      "originalBytes": 10951052,
-      "originalWidth": 6048,
+      "file": "assets/colour-realism/01.jpg",
+      "originalBytes": 9724153,
+      "originalWidth": 4277,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/black-grey/04.webp",
-        "bytes": 171990,
+        "path": "assets/colour-realism/01.webp",
+        "bytes": 222878,
         "skipped": false
       },
       "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/04.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/black-grey/03.jpeg",
-      "originalBytes": 10002875,
-      "originalWidth": 4672,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
         "enabled": true,
-        "path": "assets/black-grey/03.webp",
-        "bytes": 338998,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/03.avif",
-        "bytes": null,
+        "path": "assets/colour-realism/01.avif",
+        "bytes": 57569,
         "skipped": false
       }
     },
     {
-      "file": "assets/black-grey/08.jpg",
-      "originalBytes": 9897583,
-      "originalWidth": 5040,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/black-grey/08.webp",
-        "bytes": 252242,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/08.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/black-grey/10.jpg",
-      "originalBytes": 8258768,
-      "originalWidth": 2539,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/black-grey/10.webp",
-        "bytes": 274128,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/10.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/black-grey/02.jpg",
-      "originalBytes": 6222455,
-      "originalWidth": 3072,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/black-grey/02.webp",
-        "bytes": 305730,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/02.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/black-grey/11.jpg",
-      "originalBytes": 5931021,
-      "originalWidth": 2817,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/black-grey/11.webp",
-        "bytes": 664594,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/11.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/black-grey/07.jpg",
-      "originalBytes": 5132775,
+      "file": "assets/colour-realism/09.jpg",
+      "originalBytes": 4125662,
       "originalWidth": 3024,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/black-grey/07.webp",
-        "bytes": 232616,
+        "path": "assets/colour-realism/09.webp",
+        "bytes": 180830,
         "skipped": false
       },
       "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/07.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/black-grey/06.jpg",
-      "originalBytes": 2534467,
-      "originalWidth": 2237,
-      "resizedToWidth": 2237,
-      "skipped": false,
-      "webp": {
         "enabled": true,
-        "path": "assets/black-grey/06.webp",
-        "bytes": 231642,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/06.avif",
-        "bytes": null,
+        "path": "assets/colour-realism/09.avif",
+        "bytes": 42001,
         "skipped": false
       }
     },
     {
-      "file": "assets/black-grey/01.jpg",
-      "originalBytes": 2398434,
-      "originalWidth": 3072,
+      "file": "assets/colour-realism/12.jpg",
+      "originalBytes": 1847741,
+      "originalWidth": 4041,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/black-grey/01.webp",
-        "bytes": 243538,
+        "path": "assets/colour-realism/12.webp",
+        "bytes": 184874,
         "skipped": false
       },
       "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/01.avif",
-        "bytes": null,
+        "enabled": true,
+        "path": "assets/colour-realism/12.avif",
+        "bytes": 56436,
         "skipped": false
       }
     },
     {
-      "file": "assets/black-grey/12.jpg",
-      "originalBytes": 899227,
-      "originalWidth": 2373,
-      "resizedToWidth": 2373,
+      "file": "assets/colour-realism/06.jpg",
+      "originalBytes": 1771908,
+      "originalWidth": 1979,
+      "resizedToWidth": 1979,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/black-grey/12.webp",
-        "bytes": 177554,
+        "path": "assets/colour-realism/06.webp",
+        "bytes": 651390,
         "skipped": false
       },
       "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/12.avif",
-        "bytes": null,
+        "enabled": true,
+        "path": "assets/colour-realism/06.avif",
+        "bytes": 81427,
         "skipped": false
       }
     },
     {
-      "file": "assets/black-grey/09.jpg",
-      "originalBytes": 320714,
-      "originalWidth": 1034,
-      "resizedToWidth": 1034,
+      "file": "assets/colour-realism/10.jpg",
+      "originalBytes": 1752106,
+      "originalWidth": 2768,
+      "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/black-grey/09.webp",
-        "bytes": 137412,
+        "path": "assets/colour-realism/10.webp",
+        "bytes": 309552,
         "skipped": false
       },
       "avif": {
-        "enabled": false,
-        "path": "assets/black-grey/09.avif",
-        "bytes": null,
+        "enabled": true,
+        "path": "assets/colour-realism/10.avif",
+        "bytes": 80175,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/colour-realism/03.jpg.JPG",
+      "originalBytes": 1259903,
+      "originalWidth": 1365,
+      "resizedToWidth": 1365,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/colour-realism/03.jpg.webp",
+        "bytes": 107496,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": true,
+        "path": "assets/colour-realism/03.jpg.avif",
+        "bytes": 31430,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/colour-realism/08.jpg",
+      "originalBytes": 1079051,
+      "originalWidth": 2610,
+      "resizedToWidth": 2400,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/colour-realism/08.webp",
+        "bytes": 225760,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": true,
+        "path": "assets/colour-realism/08.avif",
+        "bytes": 67184,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/colour-realism/07.jpg",
+      "originalBytes": 1075368,
+      "originalWidth": 2287,
+      "resizedToWidth": 2287,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/colour-realism/07.webp",
+        "bytes": 295384,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": true,
+        "path": "assets/colour-realism/07.avif",
+        "bytes": 92713,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/colour-realism/05.jpg",
+      "originalBytes": 720526,
+      "originalWidth": 1920,
+      "resizedToWidth": 1920,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/colour-realism/05.webp",
+        "bytes": 124714,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": true,
+        "path": "assets/colour-realism/05.avif",
+        "bytes": 33336,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/colour-realism/11.jpg",
+      "originalBytes": 310922,
+      "originalWidth": 1417,
+      "resizedToWidth": 1417,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/colour-realism/11.webp",
+        "bytes": 74588,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": true,
+        "path": "assets/colour-realism/11.avif",
+        "bytes": 24489,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/colour-realism/02.jpg",
+      "originalBytes": 301815,
+      "originalWidth": 1706,
+      "resizedToWidth": 1706,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/colour-realism/02.webp",
+        "bytes": 247346,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": true,
+        "path": "assets/colour-realism/02.avif",
+        "bytes": 49332,
         "skipped": false
       }
     }
