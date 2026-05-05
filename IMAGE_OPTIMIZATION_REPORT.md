@@ -47,3 +47,5 @@
 ## Update – 2026-05-05
 
 - Colour-realism WebP thumbnail serving enabled only for files with confirmed .webp sidecars. AVIF and lightbox optimization remain disabled.
+
+- 2026-05-05 follow-up: explicit colour-realism candidate list now includes `03.jpg.JPG` with `03.jpg.webp` sidecar mapping for thumbnail WebP delivery.
