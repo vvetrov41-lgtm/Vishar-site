@@ -18,18 +18,23 @@ module.exports = {
           black: '#000000',
           darkGray: '#1d1d1f',
           lightGray: '#f5f5f7',
-          blue: '#0071e3'
+          blue: '#0071e3',
+          muted: '#8e8e93'
         }
       },
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-        serif: ['Playfair Display', 'serif']
+        serif: ['Playfair Display', 'serif'],
+        display: ['Playfair Display', 'serif']
       }
     }
   },
   safelist: [
     'text-white',
+    'bg-apple-black',
     'text-apple-blue',
+    'text-apple-muted',
+    'font-display',
     'hover:text-white/80',
     'hidden',
     'mobile-overlay-enter',
@@ -38,6 +43,8 @@ module.exports = {
     'reveal',
     'visible',
     'hero-parallax',
-    'motion-ready'
+    'motion-ready',
+    'translate-y-8',
+    'lg:grid-cols-3'
   ]
 };
