@@ -525,3 +525,54 @@ Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.
   1. `_headers`: remove unused `cdn.tailwindcss.com` allowlist if confirmed unused in templates.
   2. `_headers`: add CSP reporting endpoint (`report-uri`/`report-to`) and keep current runtime-compatible inline allowances.
   3. `TECHNICAL_AUDIT.md`: document rollout checklist and owners for the next refactor PR that externalizes inline handlers/scripts/styles.
+
+
+## 15. Phase 1C First Security Headers Hardening (2026-05-05)
+
+### Patch plan (pre-change)
+1. Review current `_headers` CSP directives and keep all existing non-CSP security headers intact.
+2. Verify scoped HTML pages no longer reference Tailwind CDN runtime (`https://cdn.tailwindcss.com`).
+3. Remove only the unused Tailwind CDN origin from `script-src`; keep `'unsafe-inline'` in `script-src` and `style-src` to avoid breaking current inline code paths.
+4. Evaluate CSP reporting feasibility; if no existing reporting endpoint exists, do not add `report-uri`/`report-to` and document required endpoint details.
+5. Confirm `_headers` syntax remains valid and ensure no unrelated files are modified.
+
+### Files changed
+- `_headers`
+- `TECHNICAL_AUDIT.md`
+
+### CSP changes made
+- Updated `Content-Security-Policy` `script-src` by removing `https://cdn.tailwindcss.com` because Tailwind CDN is no longer referenced in scoped HTML pages.
+- Kept `https://cdnjs.cloudflare.com` in `script-src` because it remains in active use.
+- Kept `'unsafe-inline'` in both `script-src` and `style-src` intentionally as a temporary compatibility measure for existing inline scripts/styles.
+- No new directive families were introduced in this step (no nonce/hash migration in this phase).
+
+### CSP reporting status
+- `report-uri` / `report-to` was **not** added in this pass because no existing CSP report collection endpoint is configured in-repo.
+- Required for next phase: a real report collector endpoint (for example, Cloudflare-managed endpoint or self-hosted ingestion route) plus retention/alerting decision before enabling reporting directives.
+
+### Security headers preserved
+- `X-Content-Type-Options: nosniff` remains present.
+- `Referrer-Policy: strict-origin-when-cross-origin` remains present.
+- `Permissions-Policy: geolocation=(), microphone=(), camera=()` remains present.
+- Framing protection remains present via both `X-Frame-Options: DENY` and `frame-ancestors 'none'`.
+
+### Intentionally not changed
+- Did not remove `'unsafe-inline'` from `script-src` or `style-src`.
+- Did not refactor inline `<script>` / `<style>` blocks.
+- Did not change layout, gallery behavior, images, analytics, Tailwind runtime migration strategy, or site copy/content.
+- Did not change any file outside `_headers` and `TECHNICAL_AUDIT.md`.
+
+### Verification performed
+- `_headers` syntax check: header block structure remains unchanged and valid line-based `_headers` format is preserved.
+- Tailwind CDN reference check: no `https://cdn.tailwindcss.com` references detected in scoped HTML pages.
+- Inline compatibility check: `'unsafe-inline'` remains in both `script-src` and `style-src`, so current inline code paths are still allowed.
+- Scope check: only `_headers` and `TECHNICAL_AUDIT.md` modified in this phase.
+
+### Verification still needed on Cloudflare preview
+- Confirm effective response headers on preview deployment include updated CSP and unchanged companion security headers.
+- Confirm no browser console CSP violations on key routes (`/`, gallery pages, `ai-tools`).
+- Confirm third-party scripts (Cloudflare CDN-hosted libraries) still execute under updated `script-src`.
+
+### Rollback plan
+- If any regression appears, restore previous `Content-Security-Policy` `script-src` value by re-adding `https://cdn.tailwindcss.com` in `_headers` and redeploy.
+- Re-run route smoke checks and CSP console checks after rollback.
