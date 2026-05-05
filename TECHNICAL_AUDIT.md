@@ -261,3 +261,9 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 ## Update – 2026-05-04
 
 - Black-and-grey WebP thumbnail serving enabled only for files with confirmed .webp sidecars. AVIF and lightbox optimization remain disabled.
+
+## Update – 2026-05-05
+
+- Colour-realism WebP thumbnail serving enabled only for files with confirmed .webp sidecars. AVIF and lightbox optimization remain disabled.
+
+- 2026-05-05 follow-up: colour-realism candidate list is now explicit and uses the real third filename `03.jpg.JPG`, keeping gallery/lightbox original-file paths valid.
