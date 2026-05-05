@@ -1,243 +1,243 @@
 {
-  "generatedAt": "2026-05-05T05:44:27.682Z",
-  "assetsDir": "assets/colour-realism",
+  "generatedAt": "2026-05-05T06:18:21.399Z",
+  "assetsDir": "assets/cover-ups",
   "force": true,
   "generateWebp": true,
-  "generateAvif": true,
+  "generateAvif": false,
   "limit": 20,
   "scanned": 12,
   "optimizedCount": 12,
-  "derivativesWritten": 24,
+  "derivativesWritten": 12,
   "derivativesSkipped": 0,
-  "originalTotal": 37035302,
-  "webpTotal": 2884974,
-  "avifTotal": 700035,
+  "originalTotal": 107726958,
+  "webpTotal": 4116022,
+  "avifTotal": 0,
   "items": [
     {
-      "file": "assets/colour-realism/04.jpg",
-      "originalBytes": 13066147,
-      "originalWidth": 6039,
+      "file": "assets/cover-ups/after-04.jpg",
+      "originalBytes": 17804413,
+      "originalWidth": 4672,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/04.webp",
-        "bytes": 260162,
+        "path": "assets/cover-ups/after-04.webp",
+        "bytes": 382484,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/04.avif",
-        "bytes": 83943,
+        "enabled": false,
+        "path": "assets/cover-ups/after-04.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/01.jpg",
-      "originalBytes": 9724153,
-      "originalWidth": 4277,
+      "file": "assets/cover-ups/after-02.jpg",
+      "originalBytes": 15772580,
+      "originalWidth": 4672,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/01.webp",
-        "bytes": 222878,
+        "path": "assets/cover-ups/after-02.webp",
+        "bytes": 327040,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/01.avif",
-        "bytes": 57569,
+        "enabled": false,
+        "path": "assets/cover-ups/after-02.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/09.jpg",
-      "originalBytes": 4125662,
-      "originalWidth": 3024,
+      "file": "assets/cover-ups/after-05.jpg",
+      "originalBytes": 14366223,
+      "originalWidth": 5343,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/09.webp",
-        "bytes": 180830,
+        "path": "assets/cover-ups/after-05.webp",
+        "bytes": 298356,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/09.avif",
-        "bytes": 42001,
+        "enabled": false,
+        "path": "assets/cover-ups/after-05.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/12.jpg",
-      "originalBytes": 1847741,
-      "originalWidth": 4041,
+      "file": "assets/cover-ups/before-03.jpg",
+      "originalBytes": 13941750,
+      "originalWidth": 6048,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/12.webp",
-        "bytes": 184874,
+        "path": "assets/cover-ups/before-03.webp",
+        "bytes": 281680,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/12.avif",
-        "bytes": 56436,
+        "enabled": false,
+        "path": "assets/cover-ups/before-03.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/06.jpg",
-      "originalBytes": 1771908,
-      "originalWidth": 1979,
-      "resizedToWidth": 1979,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/colour-realism/06.webp",
-        "bytes": 651390,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/06.avif",
-        "bytes": 81427,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/colour-realism/10.jpg",
-      "originalBytes": 1752106,
-      "originalWidth": 2768,
+      "file": "assets/cover-ups/before-01.jpg",
+      "originalBytes": 10520226,
+      "originalWidth": 3712,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/10.webp",
-        "bytes": 309552,
+        "path": "assets/cover-ups/before-01.webp",
+        "bytes": 555590,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/10.avif",
-        "bytes": 80175,
+        "enabled": false,
+        "path": "assets/cover-ups/before-01.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/03.jpg.JPG",
-      "originalBytes": 1259903,
-      "originalWidth": 1365,
-      "resizedToWidth": 1365,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/colour-realism/03.jpg.webp",
-        "bytes": 107496,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/03.jpg.avif",
-        "bytes": 31430,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/colour-realism/08.jpg",
-      "originalBytes": 1079051,
-      "originalWidth": 2610,
+      "file": "assets/cover-ups/before-04.jpg",
+      "originalBytes": 8990559,
+      "originalWidth": 6048,
       "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/08.webp",
-        "bytes": 225760,
+        "path": "assets/cover-ups/before-04.webp",
+        "bytes": 298402,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/08.avif",
-        "bytes": 67184,
+        "enabled": false,
+        "path": "assets/cover-ups/before-04.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/07.jpg",
-      "originalBytes": 1075368,
-      "originalWidth": 2287,
-      "resizedToWidth": 2287,
+      "file": "assets/cover-ups/after-01.jpg",
+      "originalBytes": 8699537,
+      "originalWidth": 3072,
+      "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/07.webp",
-        "bytes": 295384,
+        "path": "assets/cover-ups/after-01.webp",
+        "bytes": 749920,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/07.avif",
-        "bytes": 92713,
+        "enabled": false,
+        "path": "assets/cover-ups/after-01.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/05.jpg",
-      "originalBytes": 720526,
-      "originalWidth": 1920,
-      "resizedToWidth": 1920,
+      "file": "assets/cover-ups/before-02.jpg",
+      "originalBytes": 7351866,
+      "originalWidth": 4237,
+      "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/05.webp",
-        "bytes": 124714,
+        "path": "assets/cover-ups/before-02.webp",
+        "bytes": 335338,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/05.avif",
-        "bytes": 33336,
+        "enabled": false,
+        "path": "assets/cover-ups/before-02.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/11.jpg",
-      "originalBytes": 310922,
-      "originalWidth": 1417,
-      "resizedToWidth": 1417,
+      "file": "assets/cover-ups/before-05.jpg",
+      "originalBytes": 6413564,
+      "originalWidth": 5081,
+      "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/11.webp",
-        "bytes": 74588,
+        "path": "assets/cover-ups/before-05.webp",
+        "bytes": 365432,
         "skipped": false
       },
       "avif": {
-        "enabled": true,
-        "path": "assets/colour-realism/11.avif",
-        "bytes": 24489,
+        "enabled": false,
+        "path": "assets/cover-ups/before-05.avif",
+        "bytes": null,
         "skipped": false
       }
     },
     {
-      "file": "assets/colour-realism/02.jpg",
-      "originalBytes": 301815,
-      "originalWidth": 1706,
-      "resizedToWidth": 1706,
+      "file": "assets/cover-ups/after-03.jpg",
+      "originalBytes": 2622703,
+      "originalWidth": 3725,
+      "resizedToWidth": 2400,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/02.webp",
-        "bytes": 247346,
+        "path": "assets/cover-ups/after-03.webp",
+        "bytes": 222558,
         "skipped": false
       },
       "avif": {
+        "enabled": false,
+        "path": "assets/cover-ups/after-03.avif",
+        "bytes": null,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/cover-ups/before-06.jpg",
+      "originalBytes": 628874,
+      "originalWidth": 1271,
+      "resizedToWidth": 1271,
+      "skipped": false,
+      "webp": {
         "enabled": true,
-        "path": "assets/colour-realism/02.avif",
-        "bytes": 49332,
+        "path": "assets/cover-ups/before-06.webp",
+        "bytes": 167898,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": false,
+        "path": "assets/cover-ups/before-06.avif",
+        "bytes": null,
+        "skipped": false
+      }
+    },
+    {
+      "file": "assets/cover-ups/after-06.jpg",
+      "originalBytes": 614663,
+      "originalWidth": 1440,
+      "resizedToWidth": 1440,
+      "skipped": false,
+      "webp": {
+        "enabled": true,
+        "path": "assets/cover-ups/after-06.webp",
+        "bytes": 131324,
+        "skipped": false
+      },
+      "avif": {
+        "enabled": false,
+        "path": "assets/cover-ups/after-06.avif",
+        "bytes": null,
         "skipped": false
       }
     }
