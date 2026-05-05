@@ -702,3 +702,48 @@ Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.
 ### Estimated risk and implementation recommendation
 - **Estimated risk:** Low, provided the implementation PR is read-only, scoped to validation/CI files, and distinguishes legacy warnings from new failures.
 - **Safe to implement in a separate PR:** Yes. The plan is safe for a dedicated follow-up PR because it does not require runtime HTML/CSS/image behavior changes and can be rolled back by reverting the validation workflow/scripts.
+
+## Phase 2A Static Validation CI Implementation
+
+### Files changed
+- `package.json` adds the `validate:site` npm script that runs the repository-local validator with Node.
+- `scripts/validate-site.mjs` adds read-only static validation for compiled CSS, runtime HTML string regressions, required deployment/SEO files, local static references, WebP sidecar allowlists, and large legacy image warnings.
+- `.github/workflows/static-validation.yml` adds the read-only GitHub Actions workflow for pull requests to `main` and manual dispatch.
+- `TECHNICAL_AUDIT.md` documents this Phase 2A implementation, operational scope, fail conditions, warning-only checks, workflow trigger, and rollback plan.
+
+### Checks implemented
+- Confirms `assets/css/tailwind.css` exists and is larger than 10 KB.
+- Confirms scoped HTML files do not reference `cdn.tailwindcss.com`.
+- Confirms scoped HTML files do not contain `tailwind.config =`.
+- Confirms scoped HTML files do not reference `.avif`.
+- Confirms required key files exist: `robots.txt`, `sitemap.xml`, and `_headers`.
+- Confirms `_headers` `Content-Security-Policy` does not contain `cdn.tailwindcss.com`.
+- Parses literal local `href`, `src`, and `srcset` references from HTML and verifies they resolve to local files or local `index.html` pages.
+- Checks explicit WebP sidecar allowlists for homepage portfolio thumbnails, black-grey thumbnails, colour-realism thumbnails, and cover-up before/after images.
+- Scans JPG/JPEG/PNG files under `assets/` and warns when files larger than 2 MB do not have matching WebP sidecars.
+
+### Fail conditions
+- `assets/css/tailwind.css` is missing or is 10 KB or smaller.
+- Any scoped HTML file references `cdn.tailwindcss.com`.
+- Any scoped HTML file contains `tailwind.config =`.
+- Any scoped HTML file references `.avif`.
+- `robots.txt`, `sitemap.xml`, or `_headers` is missing.
+- `_headers` CSP contains `cdn.tailwindcss.com`.
+- A literal local HTML `href`, `src`, or `srcset` reference cannot be resolved to an existing local asset or page.
+- An explicitly allowlisted source image or its mapped `.webp` sidecar is missing.
+- The CI dependency install, Tailwind build, or validation command fails.
+
+### Warning-only checks
+- JPG/JPEG/PNG files larger than 2 MB without WebP sidecars are reported as warnings only for Phase 2A so existing image debt does not block unrelated pull requests.
+- The validator does not check external URLs, deployed Cloudflare header behavior, production analytics, Search Console, Lighthouse, or live Core Web Vitals; those remain separate checks requiring a production or preview URL where applicable.
+
+### Workflow trigger
+- `.github/workflows/static-validation.yml` runs on pull requests targeting `main` and on manual `workflow_dispatch`.
+- The workflow uses `permissions: contents: read`, checks out the repository, sets up Node 20, runs `npm install`, runs `npm run build:tailwind`, and then runs `npm run validate:site`.
+- The workflow is read-only and does not commit, push, upload generated runtime changes, or auto-modify repository files.
+
+### Rollback plan
+- Revert the Phase 2A implementation commit to remove the new npm script, validator, workflow, and documentation note.
+- If a valid pull request is blocked by a false positive, temporarily disable `.github/workflows/static-validation.yml` or change the specific rule in `scripts/validate-site.mjs` from failure to warning while investigating.
+- If Tailwind output proves non-deterministic in CI, keep the validator available locally and temporarily remove or isolate the workflow Tailwind build step until deterministic output is restored.
+- Because no runtime website files, HTML content, gallery logic, images, Tailwind runtime behavior, CSP behavior, or Cloudflare Functions are changed by this implementation, rollback is limited to CI/validation files and documentation.
