@@ -378,3 +378,24 @@ If visual/function regressions appear after merge:
 - **Recommended implementation approach:** proceed with a dedicated follow-up PR that introduces Tailwind build tooling + compiled CSS, then removes CDN/runtime config only after parity verification.
 - **Risk level:** Medium.
 - **Safe to proceed in a separate PR:** **Yes**, provided the implementation PR follows the staged verification checklist above and includes a fast rollback path.
+
+## Phase 1B Tailwind CDN Replacement Implementation
+
+- **Files changed:** `package.json`, `package-lock.json` (not updated in this environment), `tailwind.config.js`, `assets/css/input.css`, `assets/css/tailwind.css` (output target), `index.html`, `about/index.html`, `faq/index.html`, `aftercare/index.html`, `ai-tools/index.html`, `black-and-grey-realism-manchester/index.html`, `colour-realism-tattoo-manchester/index.html`, `cover-up-tattoo-manchester/index.html`.
+- **Build command:** `npm run build:tailwind` (script uses `tailwindcss -i ./assets/css/input.css -o ./assets/css/tailwind.css --minify`).
+- **CDN references removed:** replaced `<script src="https://cdn.tailwindcss.com"></script>` with `<link rel="stylesheet" href="/assets/css/tailwind.css">` on all scoped audited pages.
+- **CSS output path:** `/assets/css/tailwind.css`.
+- **Safelist strategy:** classes toggled or injected at runtime from `components.js` are safelisted in `tailwind.config.js` (`hidden`, `text-white`, `text-apple-blue`, `hover:text-white/80`, `mobile-overlay-enter`, `lightbox-active`, `hidden-cta`, `reveal`, `visible`, `hero-parallax`, `motion-ready`) to avoid purge removal.
+- **Visual verification required in preview:** required before merge to confirm no design drift after static CSS compilation (navigation/menu states, sticky CTA visibility, reveal/parallax states, lightbox/menu overlay states, responsive breakpoints).
+- **Rollback plan:** if regressions are detected, revert this phase commit and temporarily restore CDN script + inline `tailwind.config` blocks while refining safelist/content scan coverage, then rebuild and retest.
+
+## Phase 1B Runtime Migration Status Update (Tooling-Only Adjustment)
+
+- The previous Tailwind runtime migration is **blocked** in the Codex environment because a real compiled `assets/css/tailwind.css` could not be generated (npm registry access returned 403), and the committed file was only a placeholder.
+- To avoid production styling risk, HTML routes are restored to the current stable Tailwind CDN runtime + inline `tailwind.config` behavior.
+
+### Safer staged plan
+
+1. **Phase 1B-1 (this PR):** add/keep Tailwind build tooling only (no runtime switch in production HTML).
+2. **Phase 1B-2:** run a manual GitHub Actions workflow in a network-enabled environment to generate real `assets/css/tailwind.css` and commit generated artifacts (`assets/css/tailwind.css`, `package-lock.json` if produced).
+3. **Phase 1B-3:** open a separate PR that replaces CDN runtime includes with compiled CSS links only after visual parity verification.
