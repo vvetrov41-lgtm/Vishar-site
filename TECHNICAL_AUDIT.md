@@ -399,3 +399,7 @@ If visual/function regressions appear after merge:
 1. **Phase 1B-1 (this PR):** add/keep Tailwind build tooling only (no runtime switch in production HTML).
 2. **Phase 1B-2:** run a manual GitHub Actions workflow in a network-enabled environment to generate real `assets/css/tailwind.css` and commit generated artifacts (`assets/css/tailwind.css`, `package-lock.json` if produced).
 3. **Phase 1B-3:** open a separate PR that replaces CDN runtime includes with compiled CSS links only after visual parity verification.
+
+## 2026-05-05 Update
+
+Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.css on scoped pages. Requires Cloudflare preview visual parity check before merge.
