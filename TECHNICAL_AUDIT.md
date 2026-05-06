@@ -2,6 +2,129 @@
 
 Hero/LCP WebP patch implemented: hero.webp is preloaded and served via <picture>, with hero.jpg retained as fallback.
 
+## Post-Optimization Live Performance Audit Plan
+
+Report-only update created on 2026-05-06. No production-behavior files were changed. The current workspace is the local `work` branch at commit `34ca2f4`; `git fetch origin main` could not verify a newer `main` because this checkout has no configured `origin` remote.
+
+### What was optimized
+
+- **Homepage hero image delivery:** the homepage now preloads `/assets/hero/hero.webp` with `as="image"`, `type="image/webp"`, and `fetchpriority="high"`. The hero markup uses a `<picture>` with a WebP `<source>` and keeps `/assets/hero/hero.jpg` as fallback. The visible hero `<img>` is eager-loaded and has `fetchpriority="high"`, `width="1500"`, and `height="1024"`.
+- **Hero payload reduction for modern browsers:** local asset inspection shows `/assets/hero/hero.webp` is `87,976` bytes at `1500 × 1024`, while the fallback `/assets/hero/hero.jpg` is `2,310,570` bytes and is detected by Sharp as PNG-formatted bytes despite the `.jpg` extension. Modern browsers should select the much smaller WebP candidate, but Safari/older fallback behavior and response `Content-Type` still need live verification.
+- **Tailwind runtime removal:** production HTML now references `/assets/css/tailwind.css` instead of the Tailwind CDN runtime. Local validation confirms the compiled CSS artifact exists and is `20,615` bytes.
+- **CSP alignment after Tailwind CDN removal:** `_headers` no longer allows `cdn.tailwindcss.com` in the visible CSP line; it allows local styles plus Google Fonts styles and local scripts plus `cdnjs.cloudflare.com`.
+- **Static validation coverage:** `npm run validate:site` passed locally with `9 passed, 0 warnings, 0 failures`, including checks for the Tailwind artifact, required static files, removal of Tailwind CDN/config strings, local HTML references, known WebP sidecars, and warning-only large image scanning.
+
+### What needs live measurement
+
+These items require a real browser, PageSpeed Insights, Lighthouse, or CDN/header access; do not infer them from the repository alone.
+
+- **Actual LCP element and timing:** confirm whether the LCP element is the hero image, the `Realism.` heading, or another above-the-fold element on mobile and desktop.
+- **Hero request behavior:** confirm that WebP-capable browsers download only `/assets/hero/hero.webp` for the hero and do not also download `/assets/hero/hero.jpg` because of preload or fallback mismatch.
+- **Live content type and caching:** verify `Content-Type`, `Cache-Control`, `ETag`, CDN status, transfer size, and compression for `/assets/hero/hero.webp`, `/assets/hero/hero.jpg`, `/assets/css/tailwind.css`, `/components.js`, and the homepage HTML. Local `curl` cannot currently reach the production URL from this environment because the configured proxy returns `CONNECT tunnel failed, response 403`; retry from a normal browser/network or from PageSpeed Insights.
+- **Font impact:** Google Fonts are preconnected and use `display=swap`, but PageSpeed must confirm whether font CSS/font downloads still delay render or contribute to layout shift.
+- **Third-party and animation cost:** the homepage still uses JavaScript-driven UI/animation behavior; live Lighthouse/DevTools must confirm total blocking time, main-thread time, unused JS, and INP risks.
+- **Field data availability:** check PageSpeed Insights/CrUX for origin-level and URL-level Core Web Vitals. Do not report field data if PSI says there is insufficient real-user data.
+
+### PageSpeed URLs/pages to test
+
+Run both **Mobile** and **Desktop** for each URL:
+
+1. `https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fvishartattoo.com%2F`
+2. `https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fvishartattoo.com%2Fabout%2F`
+3. `https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fvishartattoo.com%2Fblack-and-grey-realism-manchester%2F`
+4. `https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fvishartattoo.com%2Fcolour-realism-tattoo-manchester%2F`
+5. `https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fvishartattoo.com%2Fcover-up-tattoo-manchester%2F`
+6. `https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fvishartattoo.com%2Ffaq%2F`
+7. `https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fvishartattoo.com%2Faftercare%2F`
+8. `https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fvishartattoo.com%2Fai-tools%2F`
+
+Priority order: homepage first, then the three high-image gallery/service pages, then lower-risk informational pages.
+
+### Target metrics
+
+Use these as decision thresholds for the post-optimization pass:
+
+| Metric | Mobile target | Desktop target | Action threshold |
+| --- | ---: | ---: | --- |
+| Performance score | ≥ 90 | ≥ 95 | Investigate if mobile remains < 85 after hero WebP deploy |
+| LCP | ≤ 2.5s | ≤ 1.8s | Treat > 2.5s mobile as a remaining high-priority performance issue |
+| CLS | ≤ 0.10 | ≤ 0.10 | Treat any page > 0.10 as a layout-stability bug |
+| INP / TBT proxy | INP ≤ 200ms if field data exists; TBT ≤ 200ms lab | INP ≤ 200ms; TBT ≤ 150ms lab | Investigate JS/animation if TBT is high |
+| FCP | ≤ 1.8s | ≤ 1.0s | Investigate render-blocking CSS/fonts if missed |
+| Speed Index | ≤ 3.4s | ≤ 2.0s | Review images, fonts, and render path if missed |
+| Total transfer on homepage | Prefer < 1.5 MB initial transfer on mobile lab | Prefer < 1.0 MB initial transfer | Check network waterfall if exceeded |
+
+### Likely remaining bottlenecks and LCP risks
+
+- **Fallback hero remains large and mislabeled:** `/assets/hero/hero.jpg` remains `2.31 MB` and Sharp identifies it as PNG data. If any browser, bot, CDN transform, or preload path uses the fallback, LCP can still regress.
+- **No responsive hero sizes yet:** the hero WebP is dramatically smaller, but it is still a single `1500 × 1024` candidate. Mobile may download more pixels than needed; PageSpeed may still recommend properly sized images depending viewport and DPR.
+- **Large below-the-fold originals remain in the repository:** multiple JPG originals in `assets/cover-ups`, `assets/black-grey`, `assets/portfolio`, and `assets/colour-realism` are 6–17 MB. The current HTML generally serves WebP sidecars for galleries, but live measurements must confirm no large originals are pulled during initial load or lightbox interactions.
+- **Inline critical/non-critical CSS split is not measured:** pages link compiled Tailwind but also contain page-level inline styles. This may be acceptable, but PageSpeed must confirm CSS is not blocking too much rendering work.
+- **Google Fonts still participate in render path:** preconnect and `display=swap` are present, but font CSS and font files still require third-party requests. If FCP/LCP is marginal, consider self-hosting or reducing font families/weights in a later patch plan.
+- **JavaScript animation/main-thread work:** homepage interactions and animations can affect TBT/INP even after image optimization. Lighthouse must identify whether JS execution, style recalculation, or animation work remains a bottleneck.
+- **CDN cache/header uncertainty:** repository headers indicate intended security policy, but actual Cloudflare Pages response headers, cache status, and asset max-age need live verification from a browser/network that can reach the production URL.
+
+### Current blockers to running Lighthouse/PageSpeed in this environment
+
+- `git fetch origin main` could not verify latest `main` because the repository has no configured `origin` remote in this checkout.
+- Direct `curl` requests to `https://vishartattoo.com` and key assets fail through the environment proxy with `curl: (56) CONNECT tunnel failed, response 403`; unsetting proxy variables produced `curl: (7) Failed to connect`. The `web.open` browser tool could render the homepage text, but it does not provide full DevTools waterfall, Lighthouse scores, response headers, or Core Web Vitals metrics.
+- Lighthouse is not installed locally (`require.resolve('lighthouse')` failed), and no Chrome/Chromium executable is available in `PATH`. Without a browser binary, local Lighthouse cannot be run reliably.
+- PageSpeed Insights manual UI results were not generated in this environment. Do not invent PSI scores; run the URLs above in a normal browser session.
+
+### What must be checked manually in PageSpeed Insights
+
+For each URL/device combination, record:
+
+- Performance score and timestamp.
+- Field data status: origin data, URL data, or insufficient data.
+- Core Web Vitals: LCP, CLS, INP if field data exists.
+- Lab metrics: FCP, LCP, TBT, CLS, Speed Index, TTI if shown.
+- The **Largest Contentful Paint element** screenshot/selector and whether it is the hero image.
+- **Network dependency tree / critical request chains**, especially fonts, CSS, hero image, and JS.
+- Opportunities and diagnostics for **properly size images**, **serve images in next-gen formats**, **preload LCP image**, **render-blocking resources**, **unused CSS/JS**, **font display**, **cache policy**, and **main-thread work**.
+- Whether `/assets/hero/hero.webp` is credited as the LCP resource and whether `/assets/hero/hero.jpg` appears in the initial waterfall on modern Chrome.
+- Whether image-heavy pages trigger warnings only after user interactions/lightbox or during initial page load.
+
+### Next actions based on results
+
+- **If homepage mobile LCP is ≤ 2.5s and no duplicate hero fallback is downloaded:** keep current hero WebP patch; move to responsive image `srcset` planning only if PageSpeed still flags image sizing.
+- **If homepage mobile LCP is > 2.5s and the hero is the LCP element:** inspect waterfall. If hero starts late, adjust preload/discovery; if transfer is high, add responsive hero sizes; if render delay is high, review CSS/fonts/main-thread work.
+- **If `/assets/hero/hero.jpg` downloads on modern Chrome during initial load:** fix preload/picture mismatch or browser selection issue before broader optimization work.
+- **If gallery/service pages still show high transfer sizes:** audit generated markup and CDN responses to ensure WebP sidecars are served, then plan responsive `srcset`/thumbnail variants for cards and defer full originals to lightbox-only interactions.
+- **If TBT/INP is poor:** profile homepage scripts/animations, reduce non-critical animation work, defer non-essential JS, and verify third-party scripts are not blocking startup.
+- **If CLS exceeds 0.10:** identify shifting elements in PageSpeed filmstrip/trace; prioritize missing dimensions, injected content, font swaps, sticky CTA behavior, and gallery card reservation.
+- **If cache policy warnings appear:** add a separate patch plan for Cloudflare Pages `_headers` cache-control rules for immutable static assets versus short-lived HTML.
+- **If PSI field data is unavailable:** rely on lab trends for regression checks, but do not claim production Core Web Vitals pass/fail until CrUX/Search Console data is available.
+
+### Commands run for this post-optimization plan
+
+- `pwd && rg --files -g 'AGENTS.md' -g 'TECHNICAL_AUDIT.md' -g 'package.json' -g 'vite.config.*' -g 'tailwind.config.*' -g 'src/**' -g 'public/**' -g 'index.html'`
+  - Result: confirmed repository root and key audit files.
+- `cat /workspace/Vishar-site/.agents/skills/website-technical-audit/SKILL.md && cat AGENTS.md && git status --short --branch`
+  - Result: confirmed audit-only instructions and noted untracked `node_modules/` pre-existed in the workspace.
+- `git remote -v && git branch --show-current && git branch -a --no-color && git fetch origin main && git status --short --branch`
+  - Result: local branch is `work`; fetch failed because `origin` is not configured.
+- `git show-ref --heads --dereference && git log --oneline --decorate --graph --all -n 20`
+  - Result: only local `work` branch is available; latest visible commit is `34ca2f4`.
+- `cat package.json; nl -ba tailwind.config.js; rg --files -g '!node_modules/**'`
+  - Result: reviewed scripts, Tailwind content config, and static file structure.
+- `nl -ba index.html | sed -n '120,190p'; nl -ba _headers; nl -ba scripts/validate-site.mjs`
+  - Result: reviewed hero preload/markup, compiled CSS link, security headers, and static validation logic.
+- `npm run validate:site`
+  - Result: passed; `9 passed, 0 warnings, 0 failures`.
+- `curl -sSIL --max-time 20 https://vishartattoo.com` and related direct production asset `curl` checks
+  - Result: failed due to environment networking/proxy (`CONNECT tunnel failed, response 403`); cannot use these results as production header/performance evidence.
+- `env | sort | rg -i 'proxy|https|http'; env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy curl -sSIL --max-time 20 https://vishartattoo.com`
+  - Result: confirmed proxy variables are configured; direct no-proxy retry could not connect.
+- `command -v lighthouse; command -v google-chrome; command -v chromium; command -v chromium-browser; node -e "try{require.resolve('lighthouse')}catch(e){...}"`
+  - Result: Lighthouse module is not installed and no Chrome/Chromium executable was found in `PATH`.
+- `node`/Sharp asset inspection for `assets/hero/hero.webp`, `assets/hero/hero.jpg`, and `assets/css/tailwind.css`
+  - Result: confirmed hero WebP size/dimensions, fallback size/format, and compiled CSS size.
+- `find assets -type f ... | sort -nr | head -20` and `find assets -type f -iname '*.webp' ... | sort -nr | head -20`
+  - Result: confirmed remaining large original assets and current WebP sidecar size range.
+- `web.open https://vishartattoo.com`
+  - Result: homepage rendered in the browser tool, but no Lighthouse, PSI, header, or network-waterfall data was available from that tool.
+
 # Technical Website Audit
 
 ## 1. Executive Summary
