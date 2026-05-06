@@ -196,10 +196,6 @@
     </header>
 
     <!-- ═══ 3D INDUCTION TATTOO MACHINE — Scroll Assembly ═══ -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-
     <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:150vh;background:#000;overflow:hidden">
       <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center">
         <div id="machine-progress" style="position:absolute;left:24px;top:50%;transform:translateY(-50%);width:2px;height:120px;background:rgba(255,255,255,0.06);border-radius:1px;z-index:10">
@@ -218,11 +214,67 @@
     <script>
     (function(){
       'use strict';
-      function hasWebGL(){try{var c=document.createElement('canvas');return!!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')))}catch(e){return false}}
-      var prefersRM=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
-      if(!hasWebGL()){var w=document.getElementById('machine-canvas-wrap');if(w){w.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:60vh;text-align:center;padding:2rem"><p style="color:rgba(255,255,255,0.3);font-size:0.9rem">3D preview requires WebGL.</p></div>';document.getElementById('machine-section').style.height='auto'}return}
-      if(prefersRM){document.getElementById('machine-section').style.height='auto';var mcw=document.getElementById('machine-canvas-wrap');if(mcw)mcw.style.position='relative';if(mcw)mcw.style.height='60vh'}
+      var section=document.getElementById('machine-section');
+      var wrap=document.getElementById('machine-canvas-wrap');
+      var librariesPromise=null;
+      var initStarted=false;
+      var prefersRM=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
 
+      function setMachineFallback(message){
+        if(!wrap)return;
+        wrap.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:60vh;text-align:center;padding:2rem"><p style="color:rgba(255,255,255,0.3);font-size:0.9rem">'+message+'</p></div>';
+        if(section)section.style.height='auto';
+        wrap.style.position='relative';
+        wrap.style.height='60vh';
+      }
+
+      function hasWebGL(){try{var c=document.createElement('canvas');return!!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')))}catch(e){return false}}
+
+      if(prefersRM){setMachineFallback('3D animation disabled because reduced motion is enabled.');return}
+      if(!hasWebGL()){setMachineFallback('3D preview requires WebGL.');return}
+
+      function loadScript(src){
+        return new Promise(function(resolve,reject){
+          var script=document.createElement('script');
+          script.src=src;
+          script.async=false;
+          script.onload=resolve;
+          script.onerror=function(){reject(new Error('Unable to load '+src))};
+          document.head.appendChild(script);
+        });
+      }
+
+      function loadMachineLibraries(){
+        if(librariesPromise)return librariesPromise;
+        librariesPromise=loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')
+          .then(function(){return loadScript('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js')})
+          .then(function(){return loadScript('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js')})
+          .catch(function(error){console.warn(error);setMachineFallback('3D preview could not be loaded.');throw error});
+        return librariesPromise;
+      }
+
+      function initMachineWhenReady(){
+        if(initStarted)return;
+        initStarted=true;
+        loadMachineLibraries().then(function(){
+          if(!window.THREE||!window.gsap||!window.ScrollTrigger){setMachineFallback('3D preview could not be loaded.');return}
+          initMachine3D();
+        }).catch(function(){});
+      }
+
+      if('IntersectionObserver'in window){
+        var loadObserver=new IntersectionObserver(function(entries){
+          entries.forEach(function(entry){if(entry.isIntersecting){loadObserver.disconnect();initMachineWhenReady()}});
+        },{rootMargin:'700px 0px',threshold:0});
+        loadObserver.observe(section);
+      }else{
+        window.addEventListener('load',function(){setTimeout(initMachineWhenReady,1)},{once:true});
+      }
+
+      var requestIdle=window.requestIdleCallback||function(cb){return setTimeout(cb,3500)};
+      requestIdle(function(){loadMachineLibraries().catch(function(){})},{timeout:6000});
+
+      function initMachine3D(){
       var container=document.getElementById('machine-canvas-wrap');
       var scene=new THREE.Scene();
       scene.fog=new THREE.FogExp2(0x000000,0.08);
@@ -396,7 +448,7 @@
       gsap.registerPlugin(ScrollTrigger);
 
       if(!prefersRM){
-        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress)}}});
+        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:startRendering,onEnterBack:startRendering,onLeave:stopRendering,onLeaveBack:stopRendering,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
       }
 
       function updateAsm(t){
@@ -434,15 +486,22 @@
         parts.frontSpring.position.y=assembled.frontSpring.y+Math.sin(now*60+0.5)*0.003*int}
       }
 
-      /* Render loop */
-      var animId;
-      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderer.render(scene,camera)}
-      animate();
+      /* Render loop: start only while the 3D section is visible. */
+      var animId=null;
+      function renderFrame(){renderer.render(scene,camera)}
+      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
+      function startRendering(){if(animId===null)animate()}
+      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
 
-      window.addEventListener('resize',function(){camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight)});
+      var renderObserver;if('IntersectionObserver'in window){renderObserver=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting){startRendering()}else{stopRendering()}})},{rootMargin:'0px',threshold:0.01});renderObserver.observe(document.getElementById('machine-section'))}else{startRendering()}
+      renderFrame();
+
+      window.addEventListener('resize',function(){camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);renderFrame()});
 
       /* Mobile: hide progress bar */
       if(window.innerWidth<640){var pb=document.getElementById('machine-progress');if(pb)pb.style.display='none'}
+
+      }
     })();
     </script>
 
