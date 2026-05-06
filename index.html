@@ -121,7 +121,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
-    <link rel="preload" as="image" href="/assets/hero/hero.jpg" fetchpriority="high">
+    <link rel="preload" as="image" href="/assets/hero/hero.webp" type="image/webp" fetchpriority="high">
 
     <!-- Tailwind CDN -->
     <link rel="stylesheet" href="/assets/css/tailwind.css">
@@ -174,7 +174,10 @@
     <main>
     <header class="relative h-[95vh] flex items-center justify-center text-center px-6 overflow-hidden">
         <div class="absolute inset-0 z-0">
-            <img src="/assets/hero/hero.jpg" alt="Hero Background" loading="eager" fetchpriority="high" class="w-full h-full object-cover scale-105 opacity-60">
+            <picture class="block w-full h-full">
+                <source srcset="/assets/hero/hero.webp" type="image/webp">
+                <img src="/assets/hero/hero.jpg" alt="Hero Background" loading="eager" fetchpriority="high" width="1500" height="1024" class="w-full h-full object-cover scale-105 opacity-60">
+            </picture>
             <div class="absolute inset-0 bg-gradient-to-b from-black/20 via-black/40 to-black"></div>
         </div>
         <div class="relative z-10 max-w-4xl fade-in">
