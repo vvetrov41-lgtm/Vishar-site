@@ -129,7 +129,7 @@ For each URL/device combination, record:
 
 ## 1. Executive Summary
 
-Overall state: the repository is a static multi-page site with shared JS components and a Cloudflare Pages Function endpoint (`/functions/api/gemini.js`). It has strong baseline SEO metadata, canonical tags, sitemap/robots, and a security header file. However, there are high technical risks around frontend performance payload (very large JPG assets + CDN Tailwind runtime), CSP looseness (`'unsafe-inline'`), and deploy reproducibility (no dependency manifest / no build pipeline in repo). 
+Overall state: the repository is a static multi-page site with shared JS components and an external Cloudflare Worker AI endpoint (`https://tattooai.vvetrov41.workers.dev/`). It has strong baseline SEO metadata, canonical tags, sitemap/robots, and a security header file. However, there are high technical risks around frontend performance payload (very large JPG assets + CDN Tailwind runtime), CSP looseness (`'unsafe-inline'`), and deploy reproducibility (no dependency manifest / no build pipeline in repo).
 
 Main risks:
 - Extremely heavy image payloads (many files in 8–17MB range) likely causing poor LCP/INP and mobile instability.
@@ -206,21 +206,21 @@ What to fix first:
 - Add explicit `width`/`height` on any remaining content images that might still miss intrinsic dimensions.
 - Add preconnect/preload audit for actually-used origins only; remove unused external dependencies.
 - Ensure all external links use consistent `rel="noopener noreferrer"` (spot-check shows this is mostly already present).
-- Document Cloudflare Pages env vars and bindings required for `/api/gemini` (especially `GEMINI_API_KEY`, optional `RATE_LIMIT`).
+- Document the external Cloudflare Worker contract, availability monitoring, and rate limits for `https://tattooai.vvetrov41.workers.dev/`.
 
 ## 6. Commands Run
 
 - `pwd; rg --files`
-  - Result: repository structure enumerated; static HTML site + assets + `functions/api/gemini.js` found.
+  - Result: repository structure enumerated; static HTML site + assets found.
 - `find . -maxdepth 3 -type f | sed 's#^./##' | head -n 200`
   - Result: confirmed top-level files/folders and absence of obvious build config files in first 200 entries.
-- `for f in index.html about/index.html faq/index.html aftercare/index.html ai-tools/index.html black-and-grey-realism-manchester/index.html colour-realism-tattoo-manchester/index.html cover-up-tattoo-manchester/index.html components.js robots.txt sitemap.xml _headers functions/api/gemini.js; do ...; done`
+- `for f in index.html about/index.html faq/index.html aftercare/index.html ai-tools/index.html black-and-grey-realism-manchester/index.html colour-realism-tattoo-manchester/index.html cover-up-tattoo-manchester/index.html components.js robots.txt sitemap.xml _headers; do ...; done`
   - Result: reviewed key HTML/JS/SEO/security/function files.
 - `test -f package.json && cat package.json || echo 'package.json not found'; test -d .github/workflows && find .github/workflows -maxdepth 2 -type f -print || echo '.github/workflows not found'; test -f wrangler.toml && cat wrangler.toml || echo 'wrangler.toml not found'`
   - Result: `package.json not found`; `.github/workflows not found`; `wrangler.toml not found`.
 - `find assets -type f \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.JPG' -o -name '*.png' -o -name '*.webp' -o -name '*.avif' \) -printf '%s %p\n' | sort -nr | head -n 15`
   - Result: many very large image files found (largest ~17.8MB).
-- `rg -n "gtag|ga4|googletagmanager|GTM-|fbq|fbevents|tiktok|ttq|plausible|analytics|dataLayer|utm_|consent|cookie|mixpanel|segment" *.html */index.html components.js functions/api/gemini.js`
+- `rg -n "gtag|ga4|googletagmanager|GTM-|fbq|fbevents|tiktok|ttq|plausible|analytics|dataLayer|utm_|consent|cookie|mixpanel|segment" *.html */index.html components.js`
   - Result: no GA4/Meta/TikTok pixel implementation detected in code; only content links to TikTok found.
 - `for f in index.html about/index.html aftercare/index.html faq/index.html ai-tools/index.html black-and-grey-realism-manchester/index.html colour-realism-tattoo-manchester/index.html cover-up-tattoo-manchester/index.html; do echo -n "$f: "; rg -o "<h1\b" "$f" | wc -l; done`
   - Result: one `<h1>` detected per audited page.
@@ -239,7 +239,7 @@ What to fix first:
 - `robots.txt`
 - `sitemap.xml`
 - `_headers`
-- `functions/api/gemini.js`
+- External Cloudflare Worker AI endpoint: `https://tattooai.vvetrov41.workers.dev/`
 - `assets/` (size/sample inspection)
 
 ## 8. Recommended Implementation Plan
@@ -303,7 +303,7 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 - **Direct response-header / redirect / 404 / robots / sitemap checks from shell:** not verifiable in this environment due network/proxy failure (`curl: (56) CONNECT tunnel failed, response 403`).
 - **Canonical / OG / Twitter / viewport metadata:** not newly parsed from live HTML in this pass due unavailable local HTTP fetch libraries and blocked `curl` path; baseline repository metadata remains previously documented.
 - **Image loading behavior, network payload, console errors, mobile viewport behavior, tracking network events, Cloudflare cache headers:** require real browser DevTools session (or successful HTTP capture) and could not be conclusively measured here.
-- **`/api/gemini` live endpoint behavior:** not safely testable from this environment because direct HTTP requests to production failed at network tunnel level.
+- **External AI Worker live endpoint behavior:** verify availability and response shape for `https://tattooai.vvetrov41.workers.dev/` during deployment checks.
 - **Lighthouse / PageSpeed:** not run in this pass (no working Lighthouse/PageSpeed execution path available in this environment).
 
 ### Issues confirmed
@@ -324,7 +324,7 @@ Live target: `https://vishartattoo.com` (checked on 2026-04-28 UTC).
 
 ### What still requires access to Cloudflare / GA4 / Search Console
 
-- **Cloudflare access required:** cache rules/effective edge cache status, WAF/rate-limiting logs for `/api/gemini`, redirect rules, header transforms, bot/security events, and zone-level SSL/TLS settings.
+- **Cloudflare access required:** cache rules/effective edge cache status, WAF/rate-limiting logs for the external AI Worker, redirect rules, header transforms, bot/security events, and zone-level SSL/TLS settings.
 - **GA4 access required:** real event ingestion (e.g., `book_click`, `form_submit`, outbound click events), attribution quality, conversion setup, and duplicate-tag validation.
 - **Search Console access required:** index coverage, canonical selection by Google, sitemap processing status, crawl anomalies, and live SEO performance queries.
 
@@ -534,14 +534,14 @@ Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.
 ## Phase 1C CSP and Security Headers Plan
 
 ### Current header state
-- Current security headers are set in `_headers` for all routes (`/*`) and include: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, `Origin-Agent-Cluster`, `X-Permitted-Cross-Domain-Policies`, and a CSP. 
+- Current security headers are set in `_headers` for all routes (`/*`) and include: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, `Origin-Agent-Cluster`, `X-Permitted-Cross-Domain-Policies`, and a CSP.
 - Current CSP:
   - `default-src 'self'`
   - `script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com`
   - `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`
   - `img-src 'self' data: https:`
   - `font-src 'self' https://fonts.gstatic.com`
-  - `connect-src 'self' https://generativelanguage.googleapis.com`
+  - `connect-src 'self' https://tattooai.vvetrov41.workers.dev`
   - `object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests`
 - Risk summary: CSP currently permits inline script and inline style globally via `'unsafe-inline'`, which materially lowers XSS resistance across all pages.
 
@@ -549,7 +549,7 @@ Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.
 - `https://fonts.googleapis.com` (Google Fonts stylesheet links in all audited pages).
 - `https://fonts.gstatic.com` (font file fetches via Google Fonts).
 - `https://cdnjs.cloudflare.com` (Three.js/GSAP/ScrollTrigger on homepage and black/grey page).
-- `https://generativelanguage.googleapis.com` (AI proxy destination in `functions/api/gemini.js`; also already in CSP `connect-src`).
+- `https://tattooai.vvetrov41.workers.dev` (external AI Worker; also allowed in CSP `connect-src`).
 - `https://cdn.tailwindcss.com` is currently allowlisted in CSP, but no longer required by audited HTML runtime includes in this pass.
 
 ### Inline script/style blockers for strict CSP
@@ -605,7 +605,7 @@ Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.
   - `style-src 'self' https://fonts.googleapis.com`
   - `font-src 'self' https://fonts.gstatic.com`
   - `img-src 'self' data: https:` (or narrowed list once all remote image usage is enumerated)
-  - `connect-src 'self' https://generativelanguage.googleapis.com`
+  - `connect-src 'self' https://tattooai.vvetrov41.workers.dev`
   - `object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests`
 - Optional stronger end-state:
   - replace external CDN libraries with self-hosted pinned assets and remove third-party `script-src` origins entirely;
@@ -616,7 +616,7 @@ Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.
 - **Mobile menu + sticky CTA**: `toggleMenu()` and templated nav handlers in `components.js` rely on inline event attributes.
 - **Homepage 3D machine section**: contains inline style attributes + inline script logic + external CDN dependencies.
 - **FAQ and reviews toggles**: many inline `onclick` entry points.
-- **AI tools / Gemini usage**: UI actions rely on inline handlers; `connect-src` must continue to allow Gemini API host for proxy/backend flow.
+- **AI tools / Worker usage**: UI actions rely on inline handlers; `connect-src` must continue to allow the external AI Worker host.
 - **Analytics/tracking**: no GA4/GTM scripts detected in current repository audit; if added later they will require explicit CSP allowances and should use nonce/hash approach.
 
 ### Verification checklist (for implementation phases)
@@ -1239,7 +1239,7 @@ Visible homepage scripts in `index.html`:
 5. GSAP ScrollTrigger from cdnjs: `https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js`.
 6. Inline 3D tattoo machine script immediately after the 3D section markup.
 7. Shared `/components.js` loaded with `defer`.
-8. Inline page script for Gemini helpers, portfolio/gallery DOM construction, lightbox, aftercare toggles, FAQ construction, and review rendering.
+8. Inline page script for AI Worker helpers, portfolio/gallery DOM construction, lightbox, aftercare toggles, FAQ construction, and review rendering.
 
 ### Render-blocking resources and main-thread-heavy resources
 
