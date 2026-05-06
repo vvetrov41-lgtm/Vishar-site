@@ -1518,3 +1518,52 @@ They are now injected dynamically in order by the homepage 3D bootstrap, preserv
 - Confirm the render loop stops when the machine section is not visible.
 - Confirm `prefers-reduced-motion: reduce` skips 3D dependency loading and WebGL initialization.
 - Run `npm run validate:site`.
+
+## Homepage 3D Strict Viewport Loading Follow-up
+
+### Files changed
+
+- `index.html` — removed the homepage 3D idle-time preload path so Three.js, GSAP, and ScrollTrigger are not warmed on initial browser idle. The 3D bootstrap now waits for viewport proximity before loading the ordered dependency stack and running the existing WebGL initializer.
+- `TECHNICAL_AUDIT.md` — documented this follow-up implementation, expected performance impact, rollback plan, and preview checklist.
+
+### Idle preload removed/disabled
+
+- The previous `requestIdleCallback` / post-load warmup path has been removed from the homepage 3D bootstrap.
+- There is no remaining `requestIdleCallback` call that can load Three.js, GSAP, or ScrollTrigger during the initial idle window.
+- The external 3D libraries remain dynamically injected only by the 3D loader and are still loaded in dependency order when the viewport trigger runs: Three.js, then GSAP, then ScrollTrigger.
+
+### Viewport trigger strategy
+
+- `IntersectionObserver` remains the primary trigger for `#machine-section`.
+- The observer now uses a strict visible-proximity trigger (`rootMargin: '0px 0px -50% 0px'`) instead of the previous generous `700px` margin. This avoids treating the first sliver of the 3D section immediately below the 95vh hero as an initial-load trigger on mobile.
+- Browsers without `IntersectionObserver` use scroll/resize/orientation listeners to check section proximity and only initialize after the section is within a small fallback margin or when directly linked with `#machine-section`.
+- No parser-discovered `<script src>` tags for Three.js, GSAP, or ScrollTrigger are restored.
+
+### Reduced-motion behavior
+
+- `prefers-reduced-motion: reduce` is checked before WebGL capability checks and before any 3D dependency loading.
+- Reduced-motion users receive the lightweight static fallback message and do not load or initialize Three.js, GSAP, ScrollTrigger, or the WebGL scene.
+
+### Expected PageSpeed impact
+
+- Expected primary impact is a further reduction in mobile Total Blocking Time because the browser should no longer download, parse, compile, or execute the 3D dependency stack during initial idle time in the PageSpeed measurement window.
+- FCP, LCP, Speed Index, and CLS are expected to remain stable because the hero image markup, page copy, layout, CTA, gallery, lightbox, CSS pipeline, CSP headers, and assets were not changed.
+- Actual PageSpeed results still require a production URL or deployed preview measurement; no new Lighthouse/PageSpeed score is claimed from this code-only follow-up.
+
+### Rollback plan
+
+1. Revert the follow-up commit to restore the previous lazy-load behavior.
+2. If deployed, purge cached `index.html` at the CDN/edge layer before retesting.
+3. Run `npm run validate:site` after rollback.
+4. Recheck homepage hero rendering, scroll-to-assemble behavior, reduced-motion fallback, gallery/lightbox behavior, sticky CTA, and mobile navigation before promoting the rollback.
+
+### Preview checklist
+
+- Confirm homepage initial load does not request Three.js, GSAP, or ScrollTrigger before scrolling toward `#machine-section`.
+- Confirm no parser-discovered Three.js/GSAP/ScrollTrigger script tags exist in the static homepage HTML.
+- Confirm no `requestIdleCallback` or post-load idle path loads the 3D dependency stack.
+- Confirm scrolling to the 3D section loads the three dependencies in order and initializes the tattoo machine scene.
+- Confirm the render loop starts only when the 3D section is visible and pauses/cancels when the section leaves view.
+- Confirm `prefers-reduced-motion: reduce` skips dependency loading and WebGL initialization.
+- Confirm hero, copy, layout, CTA, gallery, lightbox, mobile nav, and sticky CTA behavior are unchanged.
+- Run `npm run validate:site`.
