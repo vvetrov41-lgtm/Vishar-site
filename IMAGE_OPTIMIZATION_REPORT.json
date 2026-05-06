@@ -1,242 +1,33 @@
 {
-  "generatedAt": "2026-05-05T06:18:21.399Z",
-  "assetsDir": "assets/cover-ups",
+  "generatedAt": "2026-05-06T00:33:30.442Z",
+  "assetsDir": "assets/hero",
   "force": true,
   "generateWebp": true,
   "generateAvif": false,
-  "limit": 20,
-  "scanned": 12,
-  "optimizedCount": 12,
-  "derivativesWritten": 12,
+  "limit": 5,
+  "scanned": 1,
+  "optimizedCount": 1,
+  "derivativesWritten": 1,
   "derivativesSkipped": 0,
-  "originalTotal": 107726958,
-  "webpTotal": 4116022,
+  "originalTotal": 2310570,
+  "webpTotal": 87976,
   "avifTotal": 0,
   "items": [
     {
-      "file": "assets/cover-ups/after-04.jpg",
-      "originalBytes": 17804413,
-      "originalWidth": 4672,
-      "resizedToWidth": 2400,
+      "file": "assets/hero/hero.jpg",
+      "originalBytes": 2310570,
+      "originalWidth": 1500,
+      "resizedToWidth": 1500,
       "skipped": false,
       "webp": {
         "enabled": true,
-        "path": "assets/cover-ups/after-04.webp",
-        "bytes": 382484,
+        "path": "assets/hero/hero.webp",
+        "bytes": 87976,
         "skipped": false
       },
       "avif": {
         "enabled": false,
-        "path": "assets/cover-ups/after-04.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/after-02.jpg",
-      "originalBytes": 15772580,
-      "originalWidth": 4672,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/after-02.webp",
-        "bytes": 327040,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/after-02.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/after-05.jpg",
-      "originalBytes": 14366223,
-      "originalWidth": 5343,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/after-05.webp",
-        "bytes": 298356,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/after-05.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/before-03.jpg",
-      "originalBytes": 13941750,
-      "originalWidth": 6048,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/before-03.webp",
-        "bytes": 281680,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/before-03.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/before-01.jpg",
-      "originalBytes": 10520226,
-      "originalWidth": 3712,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/before-01.webp",
-        "bytes": 555590,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/before-01.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/before-04.jpg",
-      "originalBytes": 8990559,
-      "originalWidth": 6048,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/before-04.webp",
-        "bytes": 298402,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/before-04.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/after-01.jpg",
-      "originalBytes": 8699537,
-      "originalWidth": 3072,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/after-01.webp",
-        "bytes": 749920,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/after-01.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/before-02.jpg",
-      "originalBytes": 7351866,
-      "originalWidth": 4237,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/before-02.webp",
-        "bytes": 335338,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/before-02.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/before-05.jpg",
-      "originalBytes": 6413564,
-      "originalWidth": 5081,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/before-05.webp",
-        "bytes": 365432,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/before-05.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/after-03.jpg",
-      "originalBytes": 2622703,
-      "originalWidth": 3725,
-      "resizedToWidth": 2400,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/after-03.webp",
-        "bytes": 222558,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/after-03.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/before-06.jpg",
-      "originalBytes": 628874,
-      "originalWidth": 1271,
-      "resizedToWidth": 1271,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/before-06.webp",
-        "bytes": 167898,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/before-06.avif",
-        "bytes": null,
-        "skipped": false
-      }
-    },
-    {
-      "file": "assets/cover-ups/after-06.jpg",
-      "originalBytes": 614663,
-      "originalWidth": 1440,
-      "resizedToWidth": 1440,
-      "skipped": false,
-      "webp": {
-        "enabled": true,
-        "path": "assets/cover-ups/after-06.webp",
-        "bytes": 131324,
-        "skipped": false
-      },
-      "avif": {
-        "enabled": false,
-        "path": "assets/cover-ups/after-06.avif",
+        "path": "assets/hero/hero.avif",
         "bytes": null,
         "skipped": false
       }
