@@ -686,21 +686,50 @@
 
     <!-- Page scripts -->
     <script>
-    /* ── Gemini AI ── */
-    async function callGemini(prompt, system) {
-      try {
-        const r = await fetch("/api/gemini", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, system }) });
-        const d = await r.json();
-        return d.reply || "Assistant unavailable.";
-      } catch (e) { return "Network error."; }
+    /* ── AI Worker ── */
+    const AI_WORKER_ENDPOINT = "https://tattooai.vvetrov41.workers.dev/";
+    const AI_ERROR_MESSAGE = "Sorry, the AI assistant is temporarily unavailable. Please try again shortly.";
+
+    function extractAiResponse(data) {
+      if (typeof data === "string" && data.trim()) return data.trim();
+      if (!data || typeof data !== "object") return "Assistant unavailable. Please try again.";
+
+      const response = data.response || data.result || data.text || data.output;
+      if (typeof response === "string" && response.trim()) return response.trim();
+      if (response && typeof response === "object") return JSON.stringify(response);
+
+      const fallback = JSON.stringify(data);
+      return fallback && fallback !== "{}" ? fallback : "Assistant unavailable. Please try again.";
     }
+
+    async function callAiWorker(type, message) {
+      try {
+        const r = await fetch(AI_WORKER_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type, message })
+        });
+        const responseText = await r.text();
+        const data = responseText ? JSON.parse(responseText) : {};
+
+        if (!r.ok) {
+          throw new Error(`AI Worker returned ${r.status}: ${responseText}`);
+        }
+
+        return extractAiResponse(data);
+      } catch (error) {
+        console.error("AI Worker request failed", error);
+        return AI_ERROR_MESSAGE;
+      }
+    }
+
     async function aiIdea() {
       const input = document.getElementById("ai-idea-input").value;
       const btn = document.getElementById("ai-idea-btn");
       const res = document.getElementById("ai-idea-res");
       if (!input.trim()) return;
       btn.disabled = true; btn.innerText = "Analyzing..."; res.classList.add("hidden");
-      const result = await callGemini(input, "You are a professional tattoo consultant. Analyze the user's idea and suggest how to elevate it for a realistic style (lighting, composition, placement). Be concise and practical. Do not use names. Answer in plain text only, no markdown.");
+      const result = await callAiWorker("idea", input);
       res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyze Concept";
     }
     async function aiCare() {
@@ -709,7 +738,7 @@
       const res = document.getElementById("ai-care-res");
       if (!input.trim()) return;
       btn.disabled = true; btn.innerText = "Consulting..."; res.classList.add("hidden");
-      const result = await callGemini(input, "You are an expert in tattoo aftercare. Give safe, practical advice. Warn to see a doctor if signs of infection. Do not use names. Answer in plain text only, no markdown.");
+      const result = await callAiWorker("aftercare", input);
       res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Ask Assistant";
     }
 
