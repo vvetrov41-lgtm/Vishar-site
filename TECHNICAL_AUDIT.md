@@ -1567,3 +1567,74 @@ They are now injected dynamically in order by the homepage 3D bootstrap, preserv
 - Confirm `prefers-reduced-motion: reduce` skips dependency loading and WebGL initialization.
 - Confirm hero, copy, layout, CTA, gallery, lightbox, mobile nav, and sticky CTA behavior are unchanged.
 - Run `npm run validate:site`.
+
+## Final Homepage Performance Result
+
+Date recorded: 2026-05-06.
+
+Scope: report-only update for the homepage after the strict 3D viewport-loading change. No runtime website behavior files were changed in this task.
+
+### Latest PageSpeed mobile result for `https://vishartattoo.com/`
+
+These metrics were supplied by the user for the latest homepage mobile PageSpeed run. I did not run a new PageSpeed/Lighthouse measurement in this environment.
+
+| Metric | Latest mobile result |
+| --- | ---: |
+| Performance | **92** |
+| Accessibility | **94** |
+| Best Practices | **100** |
+| SEO | **100** |
+| First Contentful Paint (FCP) | **2.7s** |
+| Largest Contentful Paint (LCP) | **2.7s** |
+| Total Blocking Time (TBT) | **0ms** |
+| Cumulative Layout Shift (CLS) | **0** |
+| Speed Index | **2.7s** |
+
+### Comparison against previous homepage results
+
+| Measurement point | Performance | FCP | LCP | TBT | CLS | Speed Index |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Earlier baseline before homepage optimizations | **57** | Not recorded | **4.4s** | **30,660ms** | Not recorded | Not recorded |
+| Before strict 3D viewport loading | **62** | Not recorded | **2.7s** | **24,210ms** | **0** | Not recorded |
+| Final result after strict 3D viewport loading | **92** | **2.7s** | **2.7s** | **0ms** | **0** | **2.7s** |
+
+Observed improvement:
+
+- Performance score improved from **57 → 92** compared with the earlier baseline, a **+35 point** increase.
+- Performance score improved from **62 → 92** compared with the pre-strict-viewport-loading result, a **+30 point** increase.
+- TBT improved from **30,660ms → 0ms** compared with the earlier baseline.
+- TBT improved from **24,210ms → 0ms** compared with the result immediately before strict 3D viewport loading.
+- LCP improved from the earlier **4.4s** baseline to **2.7s** and stayed stable at **2.7s** after the strict 3D viewport-loading change.
+- CLS stayed stable at **0**, so the performance gain did not introduce visible layout instability in the supplied PageSpeed result.
+
+### Likely cause of the improvement
+
+The strongest source-level explanation is that the strict 3D viewport-loading change kept the homepage's heavy 3D stack out of the initial PageSpeed mobile measurement window:
+
+- The homepage 3D follow-up removed the previous idle-time preload/warmup path for Three.js, GSAP, and ScrollTrigger.
+- The 3D dependency stack now waits for strict viewport proximity before loading, instead of being discovered or warmed during the initial page-load/idle period.
+- The stricter `IntersectionObserver` margin avoids treating the 3D machine section immediately below the hero as an initial-load trigger on mobile.
+- Reduced-motion users continue to skip the 3D dependency stack and receive a lightweight fallback.
+
+Because the latest result shows **TBT = 0ms** while LCP remains **2.7s**, the main improvement appears to be main-thread relief rather than a new above-the-fold image or layout change. In practical terms, the browser is no longer spending the initial PageSpeed run parsing/executing the 3D libraries or initializing/running the WebGL scene before the user scrolls toward that section.
+
+### Current status
+
+- Homepage mobile performance is now in the green target range with **Performance 92**.
+- Accessibility, Best Practices, and SEO are also strong in the supplied PageSpeed result: **94 / 100 / 100**.
+- Core Web Vitals lab proxies in the supplied result are acceptable for the homepage: **LCP 2.7s**, **TBT 0ms**, and **CLS 0**.
+- The original urgent homepage issue was excessive JavaScript/main-thread blocking from the 3D section during initial load. The supplied final metric set indicates that urgent issue is resolved.
+
+### Remaining non-urgent opportunities
+
+These are optional follow-ups, not urgent blockers:
+
+1. **Fine-tune LCP from 2.7s toward ≤ 2.5s.** The homepage is now performant overall, but PageSpeed may still classify a 2.7s mobile LCP as slightly above the ideal Core Web Vitals threshold. Any further work should be small, measured, and focused on the confirmed LCP element from PageSpeed diagnostics.
+2. **Confirm field data when available.** Check PageSpeed/CrUX URL-level and origin-level field data later if enough real-user data exists. Do not infer field Core Web Vitals from lab data alone.
+3. **Monitor the 3D trigger after deployment.** Confirm in a normal browser network panel that Three.js, GSAP, and ScrollTrigger are still not requested before scrolling toward the 3D section.
+4. **Consider responsive image refinements only if PageSpeed still flags them.** Avoid another image or asset pass unless PageSpeed diagnostics identify a concrete remaining opportunity.
+5. **Keep regression checks around TBT.** Future homepage changes should avoid reintroducing parser-discovered heavy scripts, idle-time loading of the 3D stack, or always-on render loops during initial load.
+
+### Recommendation
+
+No further urgent homepage performance changes are needed right now. The recommended next step is to keep the current implementation, monitor production/PageSpeed over several runs, and only plan small non-urgent refinements if repeated PageSpeed diagnostics or field data show a persistent issue.
