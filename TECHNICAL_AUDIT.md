@@ -1076,3 +1076,261 @@ Safe rollback should be simple because the first patch should add derivatives wi
   - Result: file begins with PNG signature and IHDR bytes showing `1500 × 1024` dimensions.
 - `python3` PNG/JPEG dimension check attempt
   - Result: confirmed `assets/hero/hero.jpg` is not JPEG; Python Pillow is not installed, so dimensions were read from the PNG header bytes instead.
+
+## Homepage Mobile Performance Audit After PageSpeed
+
+Date: 2026-05-06.
+
+Scope: report-only audit of `index.html`, `components.js`, homepage CSS, deployment headers, and package scripts. No runtime files were changed in this task.
+
+### Current PageSpeed mobile metrics supplied for `https://vishartattoo.com`
+
+- Performance: **57**
+- First Contentful Paint (FCP): **2.7s**
+- Largest Contentful Paint (LCP): **4.4s**
+- Total Blocking Time (TBT): **30,660ms**
+- Cumulative Layout Shift (CLS): **0**
+- Speed Index: **3.1s**
+
+Notes:
+
+- These numbers were provided by the user. I did not run a new Lighthouse/PageSpeed test in this report-only pass.
+- The reported TBT is unusually severe compared with the visible source size of first-party JS. The most credible source-level explanation is immediate loading and execution of the Three.js/GSAP 3D machine section plus a continuous WebGL render loop during initial page load.
+- Confirming exact long tasks requires a Lighthouse trace, Chrome Performance trace, or PageSpeed diagnostics export from production.
+
+### Repository / branch baseline
+
+- Current local branch is `work`.
+- Attempted `git fetch origin main`, but this repository has no configured `origin` remote, so latest remote `main` could not be fetched from this environment.
+- The latest visible local commit before this report update is `34ca2f4` (`Merge pull request #30 from vvetrov41-lgtm/codex/implement-webp-patch-for-homepage-hero`).
+- `node_modules/` is present as an untracked directory and was not modified.
+
+### Scripts reviewed on the homepage
+
+Visible homepage scripts in `index.html`:
+
+1. Inline JSON-LD structured data in the head (`type="application/ld+json"`). This is not executable UI logic and is not the likely TBT cause.
+2. Inline `window.PAGE_ID = 'home';` in the head. Very small, but it is still inline JavaScript before the body.
+3. Three.js from cdnjs: `https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js`.
+4. GSAP from cdnjs: `https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js`.
+5. GSAP ScrollTrigger from cdnjs: `https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js`.
+6. Inline 3D tattoo machine script immediately after the 3D section markup.
+7. Shared `/components.js` loaded with `defer`.
+8. Inline page script for Gemini helpers, portfolio/gallery DOM construction, lightbox, aftercare toggles, FAQ construction, and review rendering.
+
+### Render-blocking resources and main-thread-heavy resources
+
+#### Definitely render-blocking from source
+
+- Google Fonts CSS is loaded as a normal stylesheet in the head. It is render-blocking CSS and also discovers additional font files from `fonts.gstatic.com`.
+- `/assets/css/tailwind.css` is loaded as a normal stylesheet in the head and is render-blocking. The local file is about `20,615` bytes, which is not huge, but it still blocks first render.
+- Inline critical CSS in the head does not add a network request, but it must still be parsed before rendering.
+
+#### Parser-blocking JavaScript from source
+
+- The three CDN scripts for Three.js, GSAP, and ScrollTrigger are classic scripts without `defer` or `async`. They are placed after the hero section, so they should not block initial parsing of the hero markup itself, but they do block continued parsing and can monopolize the main thread early in the load.
+- The inline 3D script that follows those libraries also runs immediately as the parser reaches it. It creates the WebGL scene, renderer, lights, materials, dozens of geometries/meshes/groups, shadow setup, a ScrollTrigger, and starts `requestAnimationFrame` immediately.
+- The bottom inline page script is also a classic script. Because it is near the end of the body, it is less likely to delay initial hero discovery, but it registers DOMContentLoaded work that builds portfolio, gallery, FAQ, and review DOM.
+
+#### Main-thread / GPU-heavy code visible from source
+
+- Three.js initializes immediately with `new THREE.Scene()`, `new THREE.PerspectiveCamera(...)`, and `new THREE.WebGLRenderer(...)`.
+- The renderer enables shadows and uses `renderer.setPixelRatio(Math.min(window.devicePixelRatio,2))`; on mobile DPR 2, this increases canvas work substantially.
+- The 3D setup creates many `THREE.MeshStandardMaterial`, `BoxGeometry`, `CylinderGeometry`, `TorusGeometry`, `ConeGeometry`, groups, shadows, and lights before the user has interacted with the machine section.
+- GSAP `ScrollTrigger` is registered immediately and tied to `#machine-section`.
+- A continuous render loop starts immediately through `requestAnimationFrame(animate)` and keeps rendering even before the user scrolls to or interacts with the machine section.
+- `components.js` adds scroll handlers and motion/reveal behavior, but this code is much smaller and is a secondary risk compared with WebGL initialization.
+
+### Three.js, GSAP, ScrollTrigger, and animation-on-initial-load assessment
+
+Yes, large animation libraries and animation code run during initial homepage load:
+
+- The homepage loads Three.js, GSAP, and ScrollTrigger directly in the body, without `defer`, lazy loading, or intersection gating.
+- The 3D machine script runs immediately after those libraries and before the rest of the homepage content is parsed.
+- The 3D machine is below the hero, but the initialization is not delayed until the machine section approaches the viewport.
+- The continuous WebGL render loop begins immediately. This is the strongest source-code explanation for the very high reported TBT and potentially poor responsiveness on mobile.
+- `components.js` also applies reveal classes and hero parallax after DOMContentLoaded. This is not likely to explain 30s+ TBT by itself, but it should be checked after the 3D work is delayed because it touches many sections and adds scroll-driven transforms.
+
+### Can homepage animation be delayed until after first paint?
+
+Yes. The safest performance opportunity is to delay non-critical animation work:
+
+1. Keep the hero image and critical text static and discoverable in initial HTML.
+2. Delay loading Three.js, GSAP, and ScrollTrigger until after first paint and preferably until `#machine-section` is near the viewport.
+3. Initialize the 3D machine only when needed, using an `IntersectionObserver` root margin or a post-load idle callback plus viewport proximity check.
+4. Do not start the WebGL `requestAnimationFrame` loop until the machine section is visible; pause it when it is far out of view.
+5. Respect `prefers-reduced-motion` before loading the animation libraries, not after the libraries and scene setup have already happened.
+6. Consider disabling the 3D machine on small/mobile viewports or replacing it with a static poster image for mobile if PageSpeed TBT remains high after lazy loading.
+
+### Can scripts use `defer` or be lazy-loaded?
+
+Likely yes, but with dependency order care:
+
+- `components.js` already uses `defer`; keep that behavior.
+- The inline page script is at the end of `body`, so `defer` does not apply directly unless it is moved to an external file. Moving it is optional and lower priority than the 3D script.
+- The Three.js, GSAP, and ScrollTrigger scripts should not simply be given independent `async` attributes because the inline 3D code depends on globals and library order.
+- Safer options:
+  - Add `defer` to the three CDN scripts and move/guard the 3D initialization so it runs after the deferred libraries are available.
+  - Better: remove those CDN tags from initial HTML and dynamically load them in sequence only when the machine section is near the viewport.
+  - Best first mobile-focused experiment: lazy-load the entire 3D library stack and initialize only on desktop/tablet or only after the machine section is close to view.
+
+### CSS and font render-blocking assessment
+
+- Google Fonts CSS is render-blocking as currently loaded. The URL includes `display=swap`, which is good for font-display behavior once the CSS is fetched, but the stylesheet request itself still blocks render.
+- Two font families are requested: Inter weights `300,400,500,600` and Playfair Display italic/non-italic `700`. This can create multiple font file requests.
+- `/assets/css/tailwind.css` is render-blocking but relatively small (`20,615` bytes). It is less suspicious than the 3D JavaScript for TBT.
+- Critical CSS is partly inline, which helps body/hero basic styling, but the hero layout uses Tailwind utility classes from the external stylesheet, so the external CSS remains important for correct first paint.
+- Safest CSS/font fixes are secondary: keep local CSS render-blocking for now, reduce font variants later, and consider preloading only the truly critical font files if production traces show font delay.
+
+### Hero image preload / picture setup assessment
+
+Current homepage hero setup is materially better than the prior single large fallback:
+
+- The head preloads `/assets/hero/hero.webp` as `image` with `type="image/webp"` and `fetchpriority="high"`.
+- The hero uses a `<picture>` with a WebP `<source>` and a fallback `<img src="/assets/hero/hero.jpg">`.
+- The hero `<img>` is `loading="eager"`, `fetchpriority="high"`, and has `width="1500" height="1024"`.
+- Local file sizes checked in this pass: `assets/hero/hero.webp` is `87,976` bytes and `assets/hero/hero.jpg` is `2,310,570` bytes.
+- `sharp` metadata reports `assets/hero/hero.webp` as `1500 × 1024 webp`. It reports `assets/hero/hero.jpg` as `1500 × 1024 png`, meaning the fallback path still appears to contain PNG bytes despite the `.jpg` extension. That mismatch is less urgent for modern WebP-capable browsers but remains a fallback/content-type risk.
+
+Assessment: the WebP preload and `<picture>` target are aligned for modern browsers. The LCP issue is now less likely to be caused by the hero file size alone, unless production is not serving the updated markup, a CDN/browser cache is serving old HTML, the preload is not reaching production, or main-thread contention delays image decode/paint.
+
+### Is LCP likely still the hero image or another element?
+
+Likely candidates from source:
+
+1. **Most likely: hero image / hero background area.** The hero is above the fold, uses an eager high-priority image, and visually dominates the initial viewport. Even with a smaller WebP, decode/paint can be delayed if main-thread work from the 3D scripts begins too early.
+2. **Possible: hero heading text (`Realism.`).** If the browser reports text as LCP because the background image is treated as decorative or paints earlier/later differently, Google Fonts CSS and font file timing could contribute to a 4.4s LCP. A PageSpeed/Lighthouse LCP element screenshot is needed to confirm.
+3. **Less likely: navigation or lower content.** The nav is injected by deferred JS, and below-the-fold content is not visually dominant at initial viewport size.
+
+Production trace needed: confirm the actual LCP element in PageSpeed diagnostics. Do not assume the LCP node without that evidence.
+
+### Why Total Blocking Time could be extremely high
+
+Most likely source-level explanation:
+
+- The homepage initializes a complex Three.js scene immediately after the hero, while the page is still loading.
+- It loads three large third-party animation libraries early: Three.js, GSAP, and ScrollTrigger.
+- It constructs many geometries, materials, meshes, lights, and shadows in one parser-time task.
+- It starts a continuous `requestAnimationFrame` render loop immediately, before user interaction and before the section is necessarily visible.
+- On mobile hardware, WebGL context creation, shader/program setup, geometry creation, shadow setup, and continuous rendering can compete with parsing, style/layout, image decode, font work, and input responsiveness.
+- The reported **30,660ms TBT** is so high that a browser trace should also check for WebGL fallback problems, long GPU/CPU tasks, third-party CDN delays, device overheating/throttling, repeated script errors/retries, or production-only injected scripts. None of those can be confirmed from source alone.
+
+Secondary contributors:
+
+- DOMContentLoaded page script builds 20 portfolio cards, 6 gallery cards, FAQ items, and initial reviews. This is visible main-thread DOM work, but much smaller than the 3D/WebGL work.
+- `components.js` injects nav/footer/sticky CTA, motion styles, reveal classes, hero parallax, and IntersectionObserver after DOMContentLoaded. This is reasonable but should remain behind the 3D work in priority.
+- Google Fonts and render-blocking CSS can affect FCP/LCP but do not normally produce 30s+ TBT.
+
+### Safest first fixes to try in an implementation PR
+
+Recommended safest first implementation PR: **defer/lazy-load the 3D machine stack, without redesigning the page**.
+
+Suggested patch order:
+
+1. **Gate the 3D machine before loading libraries.** If `prefers-reduced-motion: reduce` is true, do not load Three.js/GSAP at all; show a static/non-animated fallback or the existing reduced-height section.
+2. **Lazy-load Three.js, GSAP, and ScrollTrigger only when the machine section approaches the viewport.** Use `IntersectionObserver` with a generous root margin, or initialize after `load` plus section proximity.
+3. **Move the 3D initialization into a function** that runs only after dependencies are loaded and the container exists.
+4. **Start the render loop only while the machine section is visible or near-visible.** Pause/cancel `requestAnimationFrame` when out of range.
+5. **Cap mobile rendering more aggressively.** Consider `renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))` or lower on mobile if visual quality remains acceptable.
+6. **Keep the hero image preload/picture unchanged in the first 3D performance PR.** This isolates the TBT fix and reduces rollback risk.
+7. **After TBT improves, evaluate font/CSS changes.** Reduce font variants or self-host/preload critical fonts only if the LCP element and trace point to font delay.
+
+Lower-risk follow-up fixes:
+
+- Add `decoding="async"` to the hero image if not already tested; this was recommended previously and is still a small improvement candidate.
+- Convert the fallback `assets/hero/hero.jpg` to a true JPEG or rename it accurately in a separate compatibility cleanup, because metadata still reports PNG bytes.
+- Move bottom inline page logic into a deferred external file only after the 3D bottleneck is addressed; expected benefit is smaller.
+
+### Risks
+
+- **Animation regression:** lazy-loading the 3D stack can cause a blank machine section if dependency loading fails or initializes too late. Use a visible static fallback/status state.
+- **Order/dependency risk:** Three.js, GSAP, and ScrollTrigger must load in a reliable order before the 3D init function uses globals.
+- **ScrollTrigger timing risk:** initializing ScrollTrigger after the page has loaded may require `ScrollTrigger.refresh()` after the canvas and section are ready.
+- **Mobile visual quality risk:** reducing pixel ratio or pausing rendering can soften the 3D model or make scroll animation feel less smooth.
+- **Measurement risk:** PageSpeed scores vary by run. Compare before/after using the same URL type, region/device settings where possible.
+- **Production cache risk:** if production HTML is cached, PageSpeed may continue testing old script tags until cache is purged.
+- **CSP risk:** dynamic script loading from cdnjs should remain allowed by the existing CSP, but changing script loading patterns must be checked against `_headers` before deploy.
+
+### Rollback plan
+
+If the first implementation PR causes visual or functional issues:
+
+1. Revert the implementation commit to restore the current static script tags and immediate 3D initialization.
+2. Purge CDN/cache for `index.html` and affected JS if production uses Cloudflare or Pages caching.
+3. Re-run local static validation.
+4. Re-test the homepage at mobile widths to confirm the hero, 3D machine, portfolio, FAQ, reviews, lightbox, nav, and sticky CTA still work.
+5. If only lazy loading fails, keep any harmless refactor only if proven safe; otherwise fully revert to reduce production risk.
+
+### Preview checklist
+
+Before merging a future implementation PR:
+
+1. Verify no production behavior changes are included beyond the intended script-loading/animation timing change.
+2. Open the homepage at `375px`, `390px`, `768px`, and desktop widths.
+3. Confirm hero text and image appear immediately, with no blank hero and no text contrast regression.
+4. Confirm only the WebP hero candidate downloads in modern browsers, and the preload URL matches the selected image.
+5. Confirm Three.js, GSAP, and ScrollTrigger are not requested before first paint / before the machine section approaches the viewport.
+6. Confirm the 3D machine initializes when scrolled near the section and no console errors occur.
+7. Confirm the render loop pauses or does not start while the section is off-screen.
+8. Confirm `prefers-reduced-motion: reduce` avoids heavy animation work.
+9. Confirm nav, mobile menu, sticky CTA, FAQ, reviews, AI buttons, portfolio grid, and lightbox still work.
+10. Run `npm run validate:site`.
+11. Run Lighthouse/PageSpeed on a preview or production URL and record actual before/after diagnostics, including the LCP element and long-task attribution.
+
+### Files reviewed for this homepage performance audit
+
+- `index.html`
+- `components.js`
+- `assets/css/tailwind.css`
+- `assets/css/input.css`
+- `assets/hero/hero.webp`
+- `assets/hero/hero.jpg`
+- `package.json`
+- `_headers`
+- `TECHNICAL_AUDIT.md`
+
+### Commands run for this report-only audit
+
+- `pwd && rg --files -g 'AGENTS.md' -g 'SKILL.md' -g 'TECHNICAL_AUDIT.md' -g 'index.html' -g 'package.json' -g '*.js' -g '*.css' | sed -n '1,120p'`
+  - Result: identified the repository path and relevant files; output included untracked `node_modules/` files.
+- `cat /workspace/Vishar-site/.agents/skills/website-technical-audit/SKILL.md && git status --short --branch && rg --files -g '!node_modules' | sed -n '1,200p'`
+  - Result: confirmed report-only audit workflow, current branch `work`, and untracked `node_modules/`.
+- `git remote -v && git branch --show-current && git fetch origin main && git status --short --branch`
+  - Result: current branch is `work`; fetch failed because no `origin` remote is configured.
+- `git branch -a --verbose --no-abbrev && git log --oneline --decorate -5 --all`
+  - Result: only local `work` branch is visible; latest local commit is `34ca2f4`.
+- `sed -n '1,260p' index.html`, `sed -n '1,260p' components.js`, `sed -n '1,220p' assets/css/input.css`, `sed -n '1,80p' assets/css/tailwind.css`, `cat package.json`
+  - Result: reviewed homepage structure, scripts, CSS entrypoint, compiled CSS, and available npm scripts.
+- `rg -n "<script|<link|<picture|<img|hero|gsap|three|ScrollTrigger|importmap|module|defer|async|DOMContentLoaded|requestAnimationFrame|setInterval|setTimeout" index.html components.js assets/css/input.css package.json _headers robots.txt sitemap.xml | sed -n '1,260p'`
+  - Result: found homepage render-blocking CSS/fonts, Three.js/GSAP/ScrollTrigger script tags, inline animation code, deferred `components.js`, and DOMContentLoaded work.
+- `wc -c index.html components.js assets/css/tailwind.css assets/css/input.css assets/hero/hero.webp assets/hero/hero.jpg`
+  - Result: measured local file sizes, including `assets/hero/hero.webp` at `87,976` bytes and `assets/hero/hero.jpg` at `2,310,570` bytes.
+- `node -e "const sharp=require('sharp'); ... sharp(f).metadata() ..."`
+  - Result: confirmed hero WebP dimensions/format and found the fallback `.jpg` path is still detected as PNG bytes.
+- `nl -ba index.html | sed -n '115,230p'`, `nl -ba index.html | sed -n '190,470p'`, `nl -ba index.html | sed -n '600,835p'`, `nl -ba index.html | sed -n '684,760p'`
+  - Result: collected line-numbered evidence for fonts/CSS/preload, hero, 3D scripts/init, bottom scripts, and DOMContentLoaded behavior.
+- `rg -n "new THREE|function (create|add|make)|CylinderGeometry|TorusGeometry|BoxGeometry|SphereGeometry|ExtrudeGeometry|Shape|Mesh\(|Group\(|Canvas|renderer|shadow|gsap|ScrollTrigger|requestAnimationFrame" index.html | sed -n '1,200p'`
+  - Result: identified immediate WebGL renderer setup, shadow setup, many geometry/mesh creations, GSAP ScrollTrigger, and continuous render loop.
+- `nl -ba components.js | sed -n '1,330p'` and `nl -ba components.js | sed -n '112,165p'`
+  - Result: reviewed shared nav/footer/sticky CTA, motion styles, hero parallax, reveal observer, and scroll handlers.
+- `nl -ba _headers | sed -n '1,200p'` and `nl -ba package.json`
+  - Result: reviewed CSP allowances and npm scripts.
+- `npm run validate:site`
+  - Result: passed: `9 passed, 0 warnings, 0 failures`; npm printed a warning about unknown env config `http-proxy`.
+- `curl -sIL ...cdnjs...` and `curl -sIL ...fonts.googleapis.com...`
+  - Result: returned `403 Forbidden` from this environment, so CDN/font response sizes were not measured here.
+
+### Safest first implementation PR
+
+Create a focused performance PR titled along the lines of: **"Lazy-load homepage 3D animation scripts"**.
+
+PR scope should be limited to:
+
+- Replace initial Three.js/GSAP/ScrollTrigger script tags with ordered lazy loading.
+- Wrap the 3D machine code in an initializer instead of executing at parser time.
+- Gate initialization by viewport proximity and `prefers-reduced-motion`.
+- Start/pause the render loop based on visibility.
+- Preserve current hero image preload/picture markup and all page copy.
+- Include local validation and a mobile preview screenshot if the web app can be served locally.
+
+Expected impact: largest reduction should be TBT/main-thread blocking. LCP may also improve if main-thread contention was delaying hero image decode/paint or font/text paint.
