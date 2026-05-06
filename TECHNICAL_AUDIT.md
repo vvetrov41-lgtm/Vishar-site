@@ -1,3 +1,7 @@
+## 2026-05-06 — Hero/LCP WebP patch
+
+Hero/LCP WebP patch implemented: hero.webp is preloaded and served via <picture>, with hero.jpg retained as fallback.
+
 # Technical Website Audit
 
 ## 1. Executive Summary
