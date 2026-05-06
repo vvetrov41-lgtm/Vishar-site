@@ -747,3 +747,152 @@ Phase 1B runtime switch: Tailwind CDN replaced by compiled /assets/css/tailwind.
 - If a valid pull request is blocked by a false positive, temporarily disable `.github/workflows/static-validation.yml` or change the specific rule in `scripts/validate-site.mjs` from failure to warning while investigating.
 - If Tailwind output proves non-deterministic in CI, keep the validator available locally and temporarily remove or isolate the workflow Tailwind build step until deterministic output is restored.
 - Because no runtime website files, HTML content, gallery logic, images, Tailwind runtime behavior, CSP behavior, or Cloudflare Functions are changed by this implementation, rollback is limited to CI/validation files and documentation.
+
+## Final Post-Implementation Regression Audit
+
+Date: 2026-05-05.
+Scope: repository-only final regression audit after the recent Tailwind/static-validation/image-optimization implementation work. This pass did not modify HTML, CSS, JavaScript, images, workflows, package files, or headers. Production behavior is unchanged by this report-only update.
+
+### Baseline / branch note
+
+- Attempted to refresh from `origin/main` with `git fetch origin main`, but this checkout has no configured `origin` remote, so the audit was performed on the current `work` branch at `9bae5f448f1176ddeed4889ce1195ffa0dc78d6e` (`Merge pull request #27 from vvetrov41-lgtm/codex/add-static-validation-ci`).
+- Existing untracked `node_modules/` was present before this audit and was left unchanged/uncommitted.
+
+### What passed
+
+1. **Tailwind CDN removed from scoped HTML pages.**
+   - Checked all 8 HTML pages.
+   - `cdn.tailwindcss.com` references found in HTML: **0**.
+   - All scoped HTML pages now reference `/assets/css/tailwind.css` instead.
+
+2. **Compiled Tailwind artifact exists and is not tiny.**
+   - `assets/css/tailwind.css` exists.
+   - Current size after `npm run build:tailwind`: **20,615 bytes**.
+   - The validator threshold is greater than 10 KiB, so the artifact passes the non-tiny guard.
+
+3. **Static Validation workflow exists.**
+   - `.github/workflows/static-validation.yml` exists.
+   - It runs on pull requests targeting `main` and on manual `workflow_dispatch`.
+
+4. **Build Tailwind workflow exists.**
+   - `.github/workflows/build-tailwind.yml` exists.
+   - It installs dependencies, runs `npm run build:tailwind`, verifies `assets/css/tailwind.css`, uploads the artifact, and conditionally commits generated CSS changes.
+
+5. **Optimize Images workflow exists.**
+   - `.github/workflows/optimize-images.yml` exists.
+   - It is manually triggered and runs `npm run optimize:images` with inputs for image root, image limit, WebP/AVIF generation, and force regeneration.
+
+6. **No HTML page references `.avif`.**
+   - Checked all 8 HTML pages.
+   - `.avif` references found in HTML: **0**.
+
+7. **WebP serving is limited to known safe thumbnail allowlists.**
+   - `npm run validate:site` passed the WebP allowlist guard.
+   - Known allowlists cover portfolio thumbnails, black-and-grey thumbnails, colour-realism thumbnails, and cover-up before/after thumbnails only.
+   - The repository still contains WebP/AVIF derivative files, but runtime HTML/JS serving is restricted by the allowlist checks.
+
+8. **Lightbox behavior remains JPG/JPEG-only.**
+   - Homepage `galleryFiles` and `portfolioImages` arrays use `.jpg` originals for lightbox/gallery state.
+   - Black-and-grey gallery candidates use `.jpg`/`.jpeg` originals.
+   - Colour-realism gallery candidates use original `.jpg` / `.jpg.JPG` names.
+   - Cover-up lightbox sources are still based on the original `before-*` / `after-*` `.jpg` pairs.
+   - WebP `<picture>` usage is limited to thumbnail card markup and does not change the lightbox source arrays to WebP or AVIF.
+
+9. **`_headers` no longer allows `cdn.tailwindcss.com`.**
+   - Direct scan of `_headers` found no `cdn.tailwindcss.com` entry.
+   - `npm run validate:site` also passed the CSP guard for this condition.
+
+10. **Core static deployment files exist.**
+    - `robots.txt` exists.
+    - `sitemap.xml` exists.
+    - `_headers` exists.
+
+11. **Required npm scripts exist.**
+    - `build:tailwind` exists.
+    - `optimize:images` exists.
+    - `validate:site` exists.
+
+12. **Requested checks passed.**
+    - `npm run build:tailwind`: passed; npm emitted a warning about unknown `http-proxy` env config and Browserslist/caniuse-lite being outdated, but the command exited successfully and produced the same tracked CSS state.
+    - `npm run validate:site`: passed with 9 passes, 1 warning, 0 failures.
+    - `node --check scripts/validate-site.mjs`: passed with no syntax errors.
+
+### Remaining warnings
+
+- **Large hero image still lacks a WebP sidecar.** `npm run validate:site` reported: `assets/hero/hero.jpg is 2310570 bytes and has no WebP sidecar at assets/hero/hero.webp.` This is warning-only and does not fail validation, but it remains a performance risk for LCP and mobile bandwidth.
+- **Dependency freshness warning.** `npm run build:tailwind` reported the Browserslist/caniuse-lite database is outdated. This did not break the build, but dependency refresh should be handled in a normal maintenance task.
+- **Environment/npm config warning.** npm reported `Unknown env config "http-proxy"`; this appears environment-specific and did not affect command success.
+- **Latest-main verification was limited.** No `origin` remote is configured in this checkout, so the repository could not be fetched from remote `main` during this audit.
+
+### Known deferred work
+
+- Run production Lighthouse/PageSpeed checks against the live site URL to verify actual LCP/CLS/INP impact after Tailwind and thumbnail serving changes. This requires production URL access and was not run here.
+- Verify live Cloudflare response headers, cache headers, redirects, and 404 behavior from a network path that can reach production. This requires production URL access.
+- Review whether the hero image should receive a safe WebP derivative and markup/header strategy in a dedicated implementation task, because this audit intentionally made no runtime changes.
+- Review dependency maintenance (`npm update`, Browserslist DB refresh, lockfile update) in a separate implementation task, not as part of this report-only audit.
+- Continue avoiding AVIF runtime references until a separate browser/device QA pass explicitly validates AVIF behavior across the targeted pages.
+
+### Recommended next priorities
+
+1. **Create a dedicated performance patch plan for the hero image.** Keep it separate from this regression audit; validate WebP sidecar generation, fallback behavior, preload behavior, and LCP impact before implementation.
+2. **Run a production smoke/audit pass.** Check status codes, redirects, response headers, cache-control, static asset delivery, CSP in the browser, and Core Web Vitals lab metrics from the deployed site.
+3. **Keep Static Validation required for PRs.** The current validation script is now the primary safety net for Tailwind CDN removal, AVIF avoidance, known WebP allowlists, local reference resolution, and required deployment files.
+4. **Schedule dependency/tooling maintenance.** Refresh Browserslist/caniuse-lite and review npm warning sources without combining that work with runtime behavior changes.
+5. **Document the remote/main workflow.** Configure or document the expected `origin` remote for future report-only audits so "latest main" can be verified before checks are run.
+
+### Commands run in this final audit
+
+- `cat /workspace/Vishar-site/.agents/skills/website-technical-audit/SKILL.md && printf '\n---ROOT---\n' && pwd && printf '\n---AGENTS---\n' && find .. -name AGENTS.md -print`
+  - Result: read audit-skill instructions, confirmed repository root, and found root `AGENTS.md`.
+- `cat AGENTS.md && git status --short --branch && git remote -v && git branch --show-current`
+  - Result: confirmed report-only audit instructions, current branch `work`, and no configured remote output.
+- `git fetch origin main && git rev-parse HEAD origin/main && git log --oneline -5 --decorate --graph --all`
+  - Result: failed because `origin` is not configured in this checkout; no remote update was possible.
+- `rg --files -g '!node_modules'`
+  - Result: repository structure reviewed without scanning `node_modules`.
+- `find .github -maxdepth 3 -type f -print 2>/dev/null | sort`
+  - Result: confirmed the three workflow files exist.
+- `wc -c assets/css/tailwind.css`
+  - Result: reported `20615 assets/css/tailwind.css`.
+- `find . -path './node_modules' -prune -o -name '*.html' -print | sort`
+  - Result: confirmed 8 HTML pages in scope.
+- `rg -n "cdn\.tailwindcss\.com|tailwindcdn|https://cdn\.tailwindcss\.com" --glob '*.html' --glob '!node_modules/**' . || true`
+  - Result: no Tailwind CDN references found in scoped HTML pages.
+- `rg -n "assets/css/tailwind\.css|/assets/css/tailwind\.css" --glob '*.html' --glob '!node_modules/**' . || true`
+  - Result: scoped pages reference the compiled Tailwind CSS file.
+- `rg -n "\.avif" --glob '*.html' --glob '!node_modules/**' . || true`
+  - Result: no `.avif` references found in HTML pages.
+- `rg -n "\.webp|webp" --glob '*.html' --glob '*.js' --glob '*.mjs' --glob '!node_modules/**' . || true`
+  - Result: reviewed WebP references and validation script allowlists.
+- `for f in .github/workflows/*.yml; do nl -ba "$f" | sed -n '1,220p'; done`
+  - Result: reviewed workflow content.
+- `nl -ba package.json | sed -n '1,80p'`
+  - Result: confirmed required npm scripts.
+- `for f in robots.txt sitemap.xml _headers; do test -f "$f" && echo "PASS $f" || echo "FAIL $f"; done`
+  - Result: all required static deployment files exist.
+- `nl -ba index.html | sed -n '625,710p'`, `nl -ba black-and-grey-realism-manchester/index.html | sed -n '240,365p'`, `nl -ba colour-realism-tattoo-manchester/index.html | sed -n '380,490p'`, and `nl -ba cover-up-tattoo-manchester/index.html | sed -n '190,300p'`
+  - Result: reviewed thumbnail and lightbox source behavior.
+- `npm run build:tailwind`
+  - Result: passed; emitted npm/Browserslist warnings but exited 0.
+- `npm run validate:site`
+  - Result: passed; 9 passed, 1 warning, 0 failures.
+- `node --check scripts/validate-site.mjs`
+  - Result: passed with no output and exit 0.
+- Python repository scan for HTML Tailwind CDN count, HTML AVIF count, Tailwind CSS size, and required-file existence.
+  - Result: 8 HTML pages checked; Tailwind CDN count 0; HTML AVIF count 0; Tailwind CSS size 20,615 bytes; required workflows/static files exist.
+- `rg -n "cdn\.tailwindcss\.com" -g '!node_modules/**' -g '!TECHNICAL_AUDIT.md' . || true` and `rg -n "cdn\.tailwindcss\.com" _headers || true`
+  - Result: only validation-script guard strings reference `cdn.tailwindcss.com`; `_headers` has no matching reference.
+
+### Files changed
+
+- `TECHNICAL_AUDIT.md` only.
+
+### Production behavior unchanged
+
+Yes. This task changed only `TECHNICAL_AUDIT.md`. No runtime website files, assets, workflows, package files, or headers were changed.
+
+### Remaining technical risks
+
+- Hero/LCP image payload remains a performance risk until production metrics and a safe derivative strategy are validated.
+- Production headers/cache behavior still requires live URL verification.
+- Future audits should be run from a checkout with a configured remote so latest `main` can be fetched and verified.
