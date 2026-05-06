@@ -265,14 +265,36 @@
       if('IntersectionObserver'in window){
         var loadObserver=new IntersectionObserver(function(entries){
           entries.forEach(function(entry){if(entry.isIntersecting){loadObserver.disconnect();initMachineWhenReady()}});
-        },{rootMargin:'700px 0px',threshold:0});
+        },{rootMargin:'0px 0px -50% 0px',threshold:0});
         loadObserver.observe(section);
       }else{
-        window.addEventListener('load',function(){setTimeout(initMachineWhenReady,1)},{once:true});
+        var fallbackMargin=300;
+        var fallbackQueued=false;
+        var removeFallbackListeners=function(){
+          window.removeEventListener('scroll',queueFallbackCheck);
+          window.removeEventListener('resize',queueFallbackCheck);
+          window.removeEventListener('orientationchange',queueFallbackCheck);
+        };
+        var checkFallbackProximity=function(){
+          fallbackQueued=false;
+          if(initStarted||!section)return;
+          var rect=section.getBoundingClientRect();
+          var viewportHeight=window.innerHeight||document.documentElement.clientHeight;
+          if(rect.top<=viewportHeight+fallbackMargin&&rect.bottom>=-fallbackMargin){
+            removeFallbackListeners();
+            initMachineWhenReady();
+          }
+        };
+        var queueFallbackCheck=function(){
+          if(fallbackQueued)return;
+          fallbackQueued=true;
+          setTimeout(checkFallbackProximity,100);
+        };
+        window.addEventListener('scroll',queueFallbackCheck,{passive:true});
+        window.addEventListener('resize',queueFallbackCheck);
+        window.addEventListener('orientationchange',queueFallbackCheck);
+        if(window.location.hash==='#machine-section')queueFallbackCheck();
       }
-
-      var requestIdle=window.requestIdleCallback||function(cb){return setTimeout(cb,3500)};
-      requestIdle(function(){loadMachineLibraries().catch(function(){})},{timeout:6000});
 
       function initMachine3D(){
       var container=document.getElementById('machine-canvas-wrap');
