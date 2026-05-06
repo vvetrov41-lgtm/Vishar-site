@@ -896,3 +896,179 @@ Yes. This task changed only `TECHNICAL_AUDIT.md`. No runtime website files, asse
 - Hero/LCP image payload remains a performance risk until production metrics and a safe derivative strategy are validated.
 - Production headers/cache behavior still requires live URL verification.
 - Future audits should be run from a checkout with a configured remote so latest `main` can be fetched and verified.
+
+## Hero/LCP Image Performance Plan
+
+Report-only plan prepared on 2026-05-06 UTC. No production code or asset changes were made.
+
+### Base / branch note
+
+- Requested base: latest `main`.
+- Local repository state: only local branch `work` is present; no `main` branch or remote-tracking branch is available in this checkout.
+- `git fetch origin main` could not run because this checkout has no configured `origin` remote (`fatal: 'origin' does not appear to be a git repository`). Findings below are therefore based on the current local checkout at commit `7fc4f2e`.
+
+### Current hero image file
+
+- Homepage hero/LCP candidate markup is in `index.html`:
+  - Preload: `<link rel="preload" as="image" href="/assets/hero/hero.jpg" fetchpriority="high">` at `index.html:124`.
+  - Hero image: `<img src="/assets/hero/hero.jpg" ... loading="eager" fetchpriority="high" ...>` at `index.html:177`.
+- Current file path: `assets/hero/hero.jpg`.
+- Current file size: `2,310,570` bytes (`2.20 MiB`).
+- Current dimensions: `1500 × 1024` px.
+- Important file-type finding: despite the `.jpg` extension and `.jpg` URL, the file signature is PNG (`89 50 4e 47 ...`) with an IHDR of `1500 × 1024`, not a JPEG. This can create MIME/content-type confusion on static hosts that infer `Content-Type` from extension.
+- WebP sidecar status: no `assets/hero/hero.webp` exists. Current files in `assets/hero/` are `.keep` and `hero.jpg` only.
+
+### Whether WebP is safe for the hero
+
+WebP is safe as a progressive enhancement if implemented with a fallback, but the patch should not replace the existing URL outright in the first step.
+
+Recommended safe approach:
+
+1. Keep the current `/assets/hero/hero.jpg` URL as the `<img>` fallback for rollback compatibility.
+2. Generate a real WebP derivative beside it, e.g. `/assets/hero/hero.webp` or versioned `/assets/hero/hero-1500.webp`.
+3. Use `<picture>` with `<source type="image/webp">` so browsers that support WebP select the smaller derivative and browsers that do not support it keep using the fallback.
+4. Verify the derivative visually against the existing hero overlay because compression artifacts may be visible in dark gradients, skin tones, or tattoo detail.
+
+Extra safety note: because the current `hero.jpg` is actually PNG bytes, the implementation patch should either:
+
+- leave the fallback URL unchanged to avoid breaking references, but document that it is a PNG served from a `.jpg` path; or
+- in a later cleanup, create a correctly named fallback such as `hero.png` or a true `hero.jpg` and update markup/schema references in one coordinated change. Do not do that rename in the first performance patch unless tested carefully.
+
+### Recommended derivative strategy
+
+Recommended first patch derivatives:
+
+- `assets/hero/hero.webp`: WebP encoded from the current hero source at the existing intrinsic size (`1500 × 1024`) for a minimal safe patch.
+- Optional follow-up responsive set after first preview passes:
+  - `hero-768.webp` for small/mobile screens.
+  - `hero-1200.webp` for tablet/medium screens.
+  - `hero-1500.webp` for desktop/high-DPR screens.
+  - Equivalent fallback PNG/JPG derivatives only if browser support or analytics justify them.
+
+Suggested constraints for the implementation pass:
+
+- Preserve the visual crop and dimensions/aspect ratio unless explicitly approving a content/crop change.
+- Target a materially smaller WebP than the current `2.20 MiB` source; ideally keep the primary desktop hero derivative well below 300–500 KB if quality remains acceptable.
+- Keep derivative generation reproducible by recording the conversion command/tool and output byte sizes in the follow-up implementation note.
+- Do not delete `assets/hero/hero.jpg` in the initial patch.
+
+### Recommended markup strategy
+
+Current markup has good intent (`preload`, `loading="eager"`, `fetchpriority="high"`) but misses key details for a hero/LCP image.
+
+Recommended first implementation patch:
+
+```html
+<link
+  rel="preload"
+  as="image"
+  href="/assets/hero/hero.webp"
+  type="image/webp"
+  fetchpriority="high"
+>
+
+<picture>
+  <source srcset="/assets/hero/hero.webp" type="image/webp">
+  <img
+    src="/assets/hero/hero.jpg"
+    alt="Hero Background"
+    width="1500"
+    height="1024"
+    loading="eager"
+    fetchpriority="high"
+    decoding="async"
+    class="w-full h-full object-cover scale-105 opacity-60"
+  >
+</picture>
+```
+
+If responsive derivatives are added in the same patch, use matching `srcset`/`sizes` on both the preload and `<source>` instead of a single `href`. Example direction, to be finalized only after derivative filenames exist:
+
+```html
+<link
+  rel="preload"
+  as="image"
+  href="/assets/hero/hero-1500.webp"
+  imagesrcset="/assets/hero/hero-768.webp 768w, /assets/hero/hero-1200.webp 1200w, /assets/hero/hero-1500.webp 1500w"
+  imagesizes="100vw"
+  type="image/webp"
+  fetchpriority="high"
+>
+```
+
+Preload target recommendation:
+
+- If the patch adds a WebP `<source>` and modern browsers are expected to use it, preload WebP, not JPG/PNG. Preloading the fallback JPG/PNG while the `<picture>` selects WebP can waste bandwidth or cause duplicate network work.
+- Keep `type="image/webp"` on the preload so browsers that cannot use WebP can ignore that preload and load the fallback image normally.
+- If no WebP markup is implemented yet, keep the current preload pointed at `/assets/hero/hero.jpg`; do not preload a file that markup does not select.
+
+### Width / height / fetchpriority / loading assessment
+
+- `fetchpriority="high"`: present on both the preload and hero `<img>`, which is appropriate for an above-the-fold LCP candidate.
+- `loading="eager"`: present on the hero `<img>`, which is appropriate. Do not lazy-load the LCP hero.
+- `width` / `height`: missing on the current hero `<img>`. Add `width="1500" height="1024"` in the implementation patch to expose the intrinsic aspect ratio and reduce layout/CLS risk, even though the absolute-positioned wrapper and `h-[95vh]` reduce visible layout-shift risk.
+- `decoding`: missing on the current hero `<img>`. Add `decoding="async"` unless browser testing shows decode timing harms first paint; this is a safe default for non-critical synchronous decode avoidance.
+- `alt`: currently `Hero Background`. Because this image is decorative behind text and a gradient, consider `alt=""` in a future accessibility cleanup, but do not combine copy/accessibility semantics with the first performance-only patch unless approved.
+
+### Whether current markup risks LCP delay
+
+Yes, there are credible LCP-delay risks visible from source, although Lighthouse was not run in this report-only pass:
+
+- The likely LCP image is a `2.20 MiB` PNG payload served from a `.jpg` URL. This is large for an above-the-fold hero and likely increases download and decode time on mobile connections.
+- There is no WebP sidecar for the hero, so browsers cannot select a smaller modern image.
+- The hero `<img>` lacks `width` and `height`, reducing the browser's ability to reserve intrinsic image geometry early.
+- The current preload points at the same URL selected by the `<img>`, which is good for discovery today. However, once WebP is introduced, leaving the preload on `/assets/hero/hero.jpg` would become a performance bug because the browser may fetch the fallback while rendering WebP.
+- The hero is directly in initial HTML at `index.html:175-178`, so it is not delayed by JavaScript injection. That is good and should be preserved.
+- The image uses CSS `object-cover`, `scale-105`, and `opacity-60`. These do not block discovery, but the oversized bitmap still has to download/decode before the background image can fully render.
+
+### Risks
+
+- **Visual regression risk:** WebP compression may soften detail or create banding in dark gradients/skin tones. Preview at mobile and desktop sizes before merge.
+- **Preload mismatch risk:** if preload remains on `/assets/hero/hero.jpg` while markup selects WebP, the browser may download the wrong file early.
+- **Content-type risk:** current fallback path is named `.jpg` but contains PNG bytes. Some hosting/proxy combinations may serve `image/jpeg` by extension, while browsers may sniff and still display it. Keep fallback unchanged for the first patch, then plan a separate cleanup if desired.
+- **Duplicate request risk:** incorrect `srcset`/`sizes` or missing `type` on preload can cause duplicate image downloads.
+- **Cache risk:** replacing a same-named image can be hidden by browser/CDN cache. Prefer adding new derivative filenames or verify cache purge strategy before deployment.
+- **SEO/social risk:** Open Graph and structured-data images are separate (`assets/og/og-2.jpg`, `assets/gallery/02.jpg`) and should not be changed in the hero performance patch.
+
+### Preview checklist
+
+Before merging the implementation patch:
+
+1. Confirm generated files exist in `assets/hero/` and record exact byte sizes.
+2. Confirm `index.html` uses `<picture>` and the preload points to the same selected WebP candidate.
+3. Confirm only one hero image candidate downloads in Chrome DevTools on a WebP-capable browser.
+4. Confirm fallback still displays if the WebP `<source>` is disabled or renamed locally.
+5. Preview viewport widths around `375px`, `768px`, `1024px`, and desktop width to verify crop, text contrast, and no unexpected blank/flash.
+6. Confirm the hero `<img>` has `width="1500"`, `height="1024"`, `loading="eager"`, `fetchpriority="high"`, and `decoding="async"`.
+7. Run a local static preview if available and capture a screenshot because the hero is visible UI.
+8. Run Lighthouse/PageSpeed only if a stable local or preview URL is available; do not invent scores.
+9. Confirm response headers/content types on production or preview URL if possible; this requires production/preview URL access.
+
+### Rollback plan
+
+Safe rollback should be simple because the first patch should add derivatives without deleting the existing hero source.
+
+1. Revert the implementation commit or restore `index.html` to the current single-image markup:
+   - preload `/assets/hero/hero.jpg`
+   - `<img src="/assets/hero/hero.jpg" loading="eager" fetchpriority="high" ...>`
+2. Leave the newly generated WebP derivative in the repository only if unused files are acceptable; otherwise remove it in the rollback commit.
+3. Purge/refresh CDN cache for `index.html` after rollback so clients stop receiving the `<picture>` markup.
+4. No schema, OG, sitemap, or route changes should be involved in the first implementation patch, so rollback should not affect SEO metadata.
+5. Verify the homepage hero renders after rollback at mobile and desktop widths.
+
+### Commands run for this report-only plan
+
+- `git status --short --branch && git remote -v`
+  - Result: current branch is `work`; `node_modules/` is untracked; no remotes are configured.
+- `git branch -vv && git fetch origin main`
+  - Result: local branch listed; fetch failed because `origin` is not configured.
+- `git branch -a --no-color && git log --oneline --decorate --graph --all -n 20`
+  - Result: only local `work` branch is available; latest visible commit is `7fc4f2e`.
+- `rg -n "/assets/hero/hero\.jpg|fetchpriority|loading=\"eager\"|width=|height=" index.html`
+  - Result: found the homepage hero preload and hero `<img>`; no `width`/`height` on the hero `<img>`.
+- `find assets/hero -maxdepth 1 -type f -print -exec stat -c '%n %s bytes' {} \;`
+  - Result: found `.keep` and `hero.jpg`; no WebP sidecar in `assets/hero/`.
+- `od -An -tx1 -N32 assets/hero/hero.jpg`
+  - Result: file begins with PNG signature and IHDR bytes showing `1500 × 1024` dimensions.
+- `python3` PNG/JPEG dimension check attempt
+  - Result: confirmed `assets/hero/hero.jpg` is not JPEG; Python Pillow is not installed, so dimensions were read from the PNG header bytes instead.
