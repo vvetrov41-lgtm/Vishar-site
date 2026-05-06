@@ -1457,3 +1457,64 @@ PR scope should be limited to:
 - Include local validation and a mobile preview screenshot if the web app can be served locally.
 
 Expected impact: largest reduction should be TBT/main-thread blocking. LCP may also improve if main-thread contention was delaying hero image decode/paint or font/text paint.
+
+## Homepage 3D Lazy Loading Implementation
+
+### Files changed
+
+- `index.html` — removed parser-path Three.js, GSAP, and ScrollTrigger `<script src>` tags from the homepage 3D section; added an inline bootstrap that gates dependency loading, initializes the existing WebGL scene only when appropriate, and pauses rendering when the 3D section is not visible.
+- `TECHNICAL_AUDIT.md` — documented this implementation, validation scope, rollback plan, and preview checklist.
+
+### Scripts deferred
+
+The following external 3D/animation libraries are no longer loaded by static parser-discovered script tags in the initial homepage HTML path:
+
+- `https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js`
+- `https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js`
+- `https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js`
+
+They are now injected dynamically in order by the homepage 3D bootstrap, preserving the existing dependency order: Three.js first, GSAP second, ScrollTrigger third.
+
+### Trigger strategy
+
+- A small inline bootstrap remains near the 3D section so the browser can discover the section markup without immediately downloading or executing the heavy 3D libraries.
+- `IntersectionObserver` watches `#machine-section` with a generous `700px` vertical root margin. When the 3D section approaches the viewport, the bootstrap loads the external scripts and then runs the existing machine initializer.
+- A `requestIdleCallback` fallback/preload path starts only after initial work is idle, with a timeout, so supporting browsers can warm the library cache after first paint without parser-blocking the hero path.
+- Browsers without `IntersectionObserver` defer initialization until after `load`.
+
+### Reduced-motion behavior
+
+- If `prefers-reduced-motion: reduce` is enabled, the bootstrap does not load Three.js, GSAP, or ScrollTrigger and does not initialize the WebGL scene.
+- The machine area is reduced to a safe static fallback message rather than starting animation work.
+
+### Render-loop behavior
+
+- The WebGL renderer and scene are created only after the lazy-load trigger runs and dependencies are available.
+- The continuous `requestAnimationFrame` loop no longer starts at parser time.
+- Rendering starts when the 3D section is visible/intersecting and is cancelled when the section leaves view.
+- ScrollTrigger updates also render a frame during scroll progress, preserving assembly behavior while avoiding a permanent off-screen render loop.
+
+### Safe fallback
+
+- If WebGL is unavailable, the page shows the existing safe text fallback and skips dependency loading.
+- If any external 3D script fails to load or the expected globals are unavailable, the section shows a lightweight fallback message: `3D preview could not be loaded.`
+
+### Rollback plan
+
+1. Revert the implementation commit to restore the prior static cdnjs script tags and immediate 3D initializer.
+2. Purge any CDN/edge cache for `index.html` if the preview or production environment caches HTML.
+3. Run `npm run validate:site` after revert.
+4. Re-test homepage hero, 3D section, mobile menu, gallery/lightbox, FAQ/reviews, and sticky CTA behavior before redeploying.
+
+### Preview checklist
+
+- Confirm the hero, copy, layout, CTA, gallery cards, and lightbox still behave as before.
+- Confirm mobile menu opens/closes normally.
+- Confirm no Tailwind CDN script or stylesheet has returned; homepage should still use `/assets/css/tailwind.css`.
+- Confirm no AVIF references were introduced.
+- Confirm static homepage HTML no longer contains parser-discovered `<script src>` tags for Three.js, GSAP, or ScrollTrigger.
+- Confirm the 3D libraries are requested only when the machine section approaches the viewport or after the browser reaches idle time.
+- Confirm scrolling to the machine section initializes the 3D scene and preserves the scroll-to-assemble behavior.
+- Confirm the render loop stops when the machine section is not visible.
+- Confirm `prefers-reduced-motion: reduce` skips 3D dependency loading and WebGL initialization.
+- Run `npm run validate:site`.
