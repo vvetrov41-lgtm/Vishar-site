@@ -141,7 +141,7 @@ function buildStickyCta() {
 const el = document.getElementById('sticky-cta');
 if (!el) return;
 
-const text = el.dataset.ctaText || 'Book Your Session — from £140/hr';
+const text = el.dataset.ctaText || 'Send your concept — from £140/hr';
 el.className = 'sticky-cta hidden-cta';
 el.innerHTML = `<a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
 
