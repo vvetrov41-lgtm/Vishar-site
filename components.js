@@ -164,6 +164,43 @@ window.addEventListener('scroll', function () {
 
 }
 
+/* ── Homepage Specialities Cards ── */
+function refineSpecialitiesCards() {
+if (pageId !== 'home') return;
+
+const markers = {
+  'Colour Realism': '01',
+  'Black & Grey': '02',
+  'Cover-ups': '03'
+};
+
+Object.keys(markers).forEach(function (title) {
+  const heading = Array.from(document.querySelectorAll('main h2, main h3, main h4')).find(function (el) {
+    return el.textContent.trim() === title;
+  });
+  if (!heading) return;
+
+  const card = heading.closest('a, article, li, div');
+  if (!card) return;
+
+  card.classList.remove('text-center');
+  card.classList.add('text-left');
+
+  card.querySelectorAll('.text-center').forEach(function (el) {
+    el.classList.remove('text-center');
+    el.classList.add('text-left');
+  });
+
+  if (heading.previousElementSibling && heading.previousElementSibling.classList.contains('speciality-marker')) return;
+
+  const marker = document.createElement('p');
+  marker.className = 'speciality-marker mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35';
+  marker.textContent = markers[title];
+  heading.parentNode.insertBefore(marker, heading);
+});
+
+}
+
 /* ── Mobile Menu Toggle ── */
 window.toggleMenu = function () {
 const overlay = document.getElementById('mobile-overlay');
@@ -302,6 +339,7 @@ document.addEventListener('DOMContentLoaded', function () {
 buildNav();
 buildFooter();
 buildStickyCta();
+refineSpecialitiesCards();
 injectMotionStyles();
 applyRevealToSections();
 initHeroParallax();
