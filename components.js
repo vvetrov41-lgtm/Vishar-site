@@ -215,6 +215,48 @@ document.head.appendChild(style);
 
 }
 
+/* ── Homepage Specialities Cards ── */
+function refineHomepageSpecialitiesCards() {
+if (pageId !== 'home') return;
+
+const cards = [
+  { title: 'Colour Realism', marker: '01', snippet: 'Portraits, wildlife, florals.' },
+  { title: 'Black & Grey', marker: '02', snippet: 'Contrast and shading.' },
+  { title: 'Cover-ups', marker: '03', snippet: 'Old ink into something' }
+];
+
+cards.forEach(function (item) {
+  const heading = Array.from(document.querySelectorAll('main h2, main h3, main h4')).find(function (el) {
+    return el.textContent.trim() === item.title;
+  });
+  if (!heading) return;
+
+  let card = heading.parentElement;
+  while (card && card !== document.body) {
+    const text = card.textContent || '';
+    if (text.indexOf(item.snippet) !== -1) break;
+    card = card.parentElement;
+  }
+  if (!card || card === document.body) card = heading.parentElement;
+
+  card.classList.remove('text-center');
+  card.classList.add('text-left');
+
+  card.querySelectorAll('.text-center').forEach(function (el) {
+    el.classList.remove('text-center');
+    el.classList.add('text-left');
+  });
+
+  if (heading.previousElementSibling && heading.previousElementSibling.classList.contains('speciality-marker')) return;
+
+  const marker = document.createElement('p');
+  marker.className = 'speciality-marker mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35';
+  marker.textContent = item.marker;
+  heading.parentNode.insertBefore(marker, heading);
+});
+
+}
+
 /* ── Mobile Menu Toggle ── */
 window.toggleMenu = function () {
 const overlay = document.getElementById('mobile-overlay');
@@ -354,6 +396,7 @@ buildNav();
 buildFooter();
 buildStickyCta();
 refineHomepageTabletLayout();
+refineHomepageSpecialitiesCards();
 injectMotionStyles();
 applyRevealToSections();
 initHeroParallax();
