@@ -257,6 +257,51 @@ cards.forEach(function (item) {
 
 }
 
+/* ── Homepage Approach Block ── */
+function addHomepageApproachBlock() {
+if (pageId !== 'home' || document.getElementById('homepage-approach')) return;
+
+const aboutHeading = Array.from(document.querySelectorAll('main h2, main h3')).find(function (el) {
+  return el.textContent.trim() === 'Precision in Every Needle.';
+});
+if (!aboutHeading) return;
+
+const aboutSection = aboutHeading.closest('section, article, div');
+if (!aboutSection || !aboutSection.parentNode) return;
+
+const section = document.createElement('section');
+section.id = 'homepage-approach';
+section.className = 'px-6 pb-20';
+section.innerHTML = `
+  <div class="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[0.9fr_1.4fr] gap-8 lg:gap-12 items-start">
+    <div>
+      <p class="text-[10px] uppercase tracking-[0.35em] text-white/30 mb-4">Approach</p>
+      <h2 class="text-3xl md:text-5xl font-semibold tracking-tight mb-5">How I approach a project</h2>
+      <p class="text-base md:text-lg leading-relaxed text-white/50 max-w-xl">Every piece starts with placement, skin, references, and what the tattoo needs to do on the body. The goal is a custom design that reads clearly now and still holds up over time.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+        <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">01</p>
+        <h3 class="text-lg font-semibold mb-3">Fit first</h3>
+        <p class="text-sm leading-relaxed text-white/45">The design is built around placement, flow, scale, and how the image will sit on the body.</p>
+      </article>
+      <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+        <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">02</p>
+        <h3 class="text-lg font-semibold mb-3">Reference-led</h3>
+        <p class="text-sm leading-relaxed text-white/45">Your references set the direction. The final image is adjusted into a custom tattoo design.</p>
+      </article>
+      <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+        <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">03</p>
+        <h3 class="text-lg font-semibold mb-3">Realistic scope</h3>
+        <p class="text-sm leading-relaxed text-white/45">Cover-ups, detail level, time estimate, and limitations are assessed before you decide to book.</p>
+      </article>
+    </div>
+  </div>`;
+
+aboutSection.parentNode.insertBefore(section, aboutSection.nextSibling);
+
+}
+
 /* ── Mobile Menu Toggle ── */
 window.toggleMenu = function () {
 const overlay = document.getElementById('mobile-overlay');
@@ -397,6 +442,7 @@ buildFooter();
 buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
+addHomepageApproachBlock();
 injectMotionStyles();
 applyRevealToSections();
 initHeroParallax();
