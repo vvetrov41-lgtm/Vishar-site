@@ -164,6 +164,57 @@ window.addEventListener('scroll', function () {
 
 }
 
+/* ── Homepage Tablet Layout ── */
+function refineHomepageTabletLayout() {
+if (pageId !== 'home') return;
+
+const hero = document.querySelector('main > header');
+if (hero) {
+  hero.classList.add('homepage-hero');
+
+  const title = hero.querySelector('h1');
+  if (title) title.classList.add('homepage-hero-title');
+
+  const heroFlexRows = Array.from(hero.querySelectorAll('.flex'));
+  const ctaRow = heroFlexRows.find(function (el) {
+    return el.querySelector('a[href="https://shorturl.at/orgVK"]') && el.querySelector('a[href="#portfolio"]');
+  });
+  if (ctaRow) ctaRow.classList.add('homepage-hero-cta-row');
+}
+
+const processTexts = [
+  'You send your idea',
+  'A tattoo consultant gets back to you',
+  'We meet for a consultation',
+  'You choose whether to book'
+];
+const processGrid = Array.from(document.querySelectorAll('main .grid')).find(function (grid) {
+  const text = grid.textContent || '';
+  return processTexts.every(function (item) { return text.indexOf(item) !== -1; });
+});
+if (processGrid) processGrid.classList.add('homepage-process-grid');
+
+if (document.getElementById('homepage-tablet-layout-styles')) return;
+
+const style = document.createElement('style');
+style.id = 'homepage-tablet-layout-styles';
+style.textContent = [
+  '@media (min-width: 768px) and (max-width: 1279px){',
+  '.homepage-hero-title{font-size:clamp(3.75rem,7vw,4.5rem)!important;line-height:1.02!important;}',
+  '.homepage-hero .max-w-4xl{max-width:48rem!important;}',
+  '.homepage-hero-cta-row{flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:.75rem!important;}',
+  '.homepage-hero-cta-row>a[href="#portfolio"]{padding-top:.25rem!important;padding-bottom:.25rem!important;}',
+  '.homepage-process-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;}',
+  '}',
+  '@media (min-width: 1280px){',
+  '.homepage-process-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;}',
+  '}'
+].join('');
+
+document.head.appendChild(style);
+
+}
+
 /* ── Mobile Menu Toggle ── */
 window.toggleMenu = function () {
 const overlay = document.getElementById('mobile-overlay');
@@ -302,6 +353,7 @@ document.addEventListener('DOMContentLoaded', function () {
 buildNav();
 buildFooter();
 buildStickyCta();
+refineHomepageTabletLayout();
 injectMotionStyles();
 applyRevealToSections();
 initHeroParallax();
