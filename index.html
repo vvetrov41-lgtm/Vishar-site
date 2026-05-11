@@ -151,6 +151,8 @@
     .sticky-cta.hidden-cta{transform:translateY(100%);opacity:0;pointer-events:none}
     .sticky-cta a{display:block;width:100%;text-align:center;padding:14px 24px;background:#fff;color:#000;border-radius:9999px;font-weight:600;font-size:.875rem;transition:background .2s,transform .15s}
     .sticky-cta a:active{transform:scale(.97)}
+    #machine-ambient-layer{position:fixed;inset:0;z-index:20;pointer-events:none;opacity:1;mix-blend-mode:screen;transition:opacity .8s ease}
+    #machine-ambient-layer canvas{width:100%!important;height:100%!important}
     @media(min-width:769px){.sticky-cta{display:none}}
     .fade-in{animation:fadeIn 1s ease-out forwards}
     @keyframes fadeIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
@@ -309,7 +311,7 @@
       scene.fog=new THREE.FogExp2(0x000000,0.08);
       var camera=new THREE.PerspectiveCamera(40,container.clientWidth/container.clientHeight,0.1,100);
       camera.position.set(4,2.5,6);camera.lookAt(0,0.5,0);
-      var renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
+      var renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'high-performance'});
       renderer.setSize(container.clientWidth,container.clientHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
       renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -317,7 +319,8 @@
       renderer.outputEncoding=THREE.sRGBEncoding;
       renderer.shadowMap.enabled=true;
       renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-      renderer.setClearColor(0x000000,1);
+      renderer.setClearColor(0x000000,0);
+      renderer.domElement.style.pointerEvents='none';
       container.appendChild(renderer.domElement);
 
       /* Lighting */
@@ -473,11 +476,33 @@
 
       var partNames=['Frame','Rear Coil','Front Coil','Binding Posts','Clip Cord','Capacitor','Back Spring','Front Spring','Contact Screw','Armature Bar','Tube Vise','Grip','Needle Bar','Tip'];
 
+      var ambientMode=false;
+      var ambientLayer=null;
+      function activateAmbientMode(){
+        if(ambientMode)return;
+        ambientMode=true;
+        updateAsm(1);
+        if(!ambientLayer){
+          ambientLayer=document.createElement('div');
+          ambientLayer.id='machine-ambient-layer';
+          ambientLayer.setAttribute('aria-hidden','true');
+          document.body.appendChild(ambientLayer);
+        }
+        ambientLayer.style.opacity='1';
+        ambientLayer.appendChild(renderer.domElement);
+        requestAnimationFrame(function(){ambientLayer.style.opacity=window.innerWidth<=768?'0.09':'0.13'});
+        camera.aspect=window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth,window.innerHeight);
+        startRendering();
+        renderFrame();
+      }
+
       /* GSAP ScrollTrigger */
       gsap.registerPlugin(ScrollTrigger);
 
       if(!prefersRM){
-        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:startRendering,onEnterBack:startRendering,onLeave:stopRendering,onLeaveBack:stopRendering,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
+        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:startRendering,onEnterBack:startRendering,onLeave:function(){activateAmbientMode()},onLeaveBack:function(){if(!ambientMode)stopRendering()},onUpdate:function(self){updateAsm(self.progress);if(self.progress>=0.995)activateAmbientMode();renderFrame()}}});
       }
 
       function updateAsm(t){
@@ -515,17 +540,18 @@
         parts.frontSpring.position.y=assembled.frontSpring.y+Math.sin(now*60+0.5)*0.003*int}
       }
 
-      /* Render loop: start only while the 3D section is visible. */
+      /* Render loop: keep running after the assembled machine becomes ambient. */
       var animId=null;
       function renderFrame(){renderer.render(scene,camera)}
       function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
-      function startRendering(){if(animId===null)animate()}
-      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
+      function startRendering(){if(animId===null&&!document.hidden)animate()}
+      function stopRendering(){if(ambientMode)return;if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
 
-      var renderObserver;if('IntersectionObserver'in window){renderObserver=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting){startRendering()}else{stopRendering()}})},{rootMargin:'0px',threshold:0.01});renderObserver.observe(document.getElementById('machine-section'))}else{startRendering()}
+      var renderObserver;if('IntersectionObserver'in window){renderObserver=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting||ambientMode){startRendering()}else{stopRendering()}})},{rootMargin:'0px',threshold:0.01});renderObserver.observe(document.getElementById('machine-section'))}else{startRendering()}
+      document.addEventListener('visibilitychange',function(){if(document.hidden&&animId!==null){cancelAnimationFrame(animId);animId=null}else if(!document.hidden&&(ambientMode||section.getBoundingClientRect().bottom>0&&section.getBoundingClientRect().top<(window.innerHeight||document.documentElement.clientHeight))){startRendering()}});
       renderFrame();
 
-      window.addEventListener('resize',function(){camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);renderFrame()});
+      window.addEventListener('resize',function(){var w=ambientMode?window.innerWidth:container.clientWidth;var h=ambientMode?window.innerHeight:container.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);renderFrame()});
 
       /* Mobile: hide progress bar */
       if(window.innerWidth<640){var pb=document.getElementById('machine-progress');if(pb)pb.style.display='none'}
