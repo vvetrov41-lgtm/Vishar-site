@@ -203,7 +203,7 @@
     </section>
 
     <!-- ═══ 3D INDUCTION TATTOO MACHINE — Scroll Assembly ═══ -->
-    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:180vh;background:#000;overflow:hidden">
+    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:150vh;background:#000;overflow:hidden">
       <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center">
         <div id="machine-progress" style="position:absolute;left:24px;top:50%;transform:translateY(-50%);width:2px;height:120px;background:rgba(255,255,255,0.06);border-radius:1px;z-index:10">
           <div id="machine-progress-fill" style="width:100%;height:0%;background:rgba(255,255,255,0.3);border-radius:1px;transition:height 0.1s linear"></div>
@@ -472,31 +472,19 @@
       if(!prefersRM){keys.forEach(function(k){var p=parts[k];var e=exploded[k];p.position.set(e.x,e.y,e.z);p.rotation.set(e.rx,e.ry,e.rz)})}
 
       var partNames=['Frame','Rear Coil','Front Coil','Binding Posts','Clip Cord','Capacitor','Back Spring','Front Spring','Contact Screw','Armature Bar','Tube Vise','Grip','Needle Bar','Tip'];
-      var ASSEMBLY_END=0.74;
-      var HOLD_END=0.9;
-      var currentSectionProgress=0;
-      var machineCompleted=false;
-      var isMobile=window.innerWidth<640;
-      var holdRotationRate=isMobile?0.045:0.08;
-
-      function clamp01(v){return Math.max(0,Math.min(1,v))}
 
       /* GSAP ScrollTrigger */
       gsap.registerPlugin(ScrollTrigger);
 
       if(!prefersRM){
-        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:startRendering,onEnterBack:startRendering,onLeave:stopRendering,onLeaveBack:function(){machineCompleted=false;updateAsm(0);stopRendering()},onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
+        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:startRendering,onEnterBack:startRendering,onLeave:stopRendering,onLeaveBack:stopRendering,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
       }
 
       function updateAsm(t){
-        currentSectionProgress=clamp01(t);
-        if(currentSectionProgress<=0.001)machineCompleted=false;
-        if(currentSectionProgress>=ASSEMBLY_END)machineCompleted=true;
-        var assemblyProgress=machineCompleted?1:clamp01(currentSectionProgress/ASSEMBLY_END);
         var n=keys.length;
         keys.forEach(function(k,i){
           var ss=i/n*0.35,se=ss+0.65;
-          var lt=clamp01((assemblyProgress-ss)/(se-ss));
+          var lt=Math.max(0,Math.min(1,(t-ss)/(se-ss)));
           var e2=lt<0.5?4*lt*lt*lt:1-Math.pow(-2*lt+2,3)/2;
           var p=parts[k],a=assembled[k],ex=exploded[k];
           p.position.x=ex.x+(a.x-ex.x)*e2;
@@ -508,38 +496,31 @@
         });
 
         var pf=document.getElementById('machine-progress-fill');
-        if(pf)pf.style.height=(assemblyProgress*100)+'%';
-        var li=Math.min(Math.floor(assemblyProgress*partNames.length),partNames.length-1);
+        if(pf)pf.style.height=(t*100)+'%';
+        var li=Math.min(Math.floor(t*partNames.length),partNames.length-1);
         var le=document.getElementById('machine-part-label');
-        if(le){le.textContent=assemblyProgress>0.02&&assemblyProgress<1?partNames[li]:(assemblyProgress<=0.02?' ':'Assembled')}
+        if(le){le.textContent=t>0.02&&t<0.98?partNames[li]:(t<0.02?' ':'Assembled')}
         var tl=document.getElementById('machine-label-top');
-        if(tl)tl.style.opacity=currentSectionProgress<0.15?1:Math.max(0,1-(currentSectionProgress-0.15)*5);
+        if(tl)tl.style.opacity=t<0.15?1:Math.max(0,1-(t-0.15)*5);
 
-        var ang=-0.3+currentSectionProgress*0.6;
+        var ang=-0.3+t*0.6;
         camera.position.x=4*Math.cos(ang)+2*Math.sin(ang);
         camera.position.z=6*Math.cos(ang*0.5);
-        camera.position.y=2.5-currentSectionProgress*0.8;
+        camera.position.y=2.5-t*0.8;
         camera.lookAt(0,0.3,0);
 
-        if(currentSectionProgress>0.95){var int=(currentSectionProgress-0.95)*20;var now=performance.now()*0.001;
+        if(t>0.95){var int=(t-0.95)*20;var now=performance.now()*0.001;
         parts.armature.position.y=assembled.armature.y+Math.sin(now*60)*0.008*int;
         parts.needleBar.position.y=assembled.needleBar.y+Math.sin(now*60)*0.006*int;
         parts.frontSpring.position.y=assembled.frontSpring.y+Math.sin(now*60+0.5)*0.003*int}
       }
 
       /* Render loop: start only while the 3D section is visible. */
-      var animId=null,lastFrameTime=null;
+      var animId=null;
       function renderFrame(){renderer.render(scene,camera)}
-      function animate(now){
-        animId=requestAnimationFrame(animate);
-        if(lastFrameTime===null)lastFrameTime=now;
-        var delta=Math.min((now-lastFrameTime)/1000,0.05);
-        lastFrameTime=now;
-        if(currentSectionProgress>=ASSEMBLY_END&&currentSectionProgress<=HOLD_END){mg.rotation.y+=holdRotationRate*delta}
-        renderFrame()
-      }
-      function startRendering(){if(animId===null){lastFrameTime=null;animId=requestAnimationFrame(animate)}}
-      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;lastFrameTime=null;renderFrame()}}
+      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
+      function startRendering(){if(animId===null)animate()}
+      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
 
       var renderObserver;if('IntersectionObserver'in window){renderObserver=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting){startRendering()}else{stopRendering()}})},{rootMargin:'0px',threshold:0.01});renderObserver.observe(document.getElementById('machine-section'))}else{startRendering()}
       renderFrame();
@@ -552,6 +533,16 @@
       }
     })();
     </script>
+
+    <!-- Portfolio (20 photos) -->
+    <section id="portfolio" class="py-20 md:py-24 px-4 bg-apple-darkGray/30 border-y border-violet-400/10">
+        <div class="max-w-[1200px] mx-auto text-center mb-12 md:mb-16">
+            <p class="text-xs uppercase tracking-[0.35em] text-violet-200/50 mb-4">Selected Realism Work</p>
+            <h2 class="text-4xl md:text-5xl font-semibold tracking-tight">Colour, black-and-grey, and cover-up realism</h2>
+            <p class="max-w-2xl mx-auto text-white/50 mt-5 leading-relaxed">Custom realism built around contrast, placement, and how the image will age on skin — from vivid colour work to black-and-grey depth and considered cover-up solutions.</p>
+        </div>
+        <div id="portfolio-grid" class="max-w-[1400px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+    </section>
 
     <section class="pt-8 pb-6 px-6 border-b border-white/5 bg-black" aria-labelledby="inquiry-process-title">
         <div class="max-w-[1100px] mx-auto">
@@ -604,15 +595,6 @@
                 <a href="/cover-up-tattoo-manchester/" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift group"><h3 class="text-lg font-semibold mb-2 group-hover:text-white transition-colors">Cover-ups</h3><p class="text-sm text-white/40">Old ink into something you'd actually choose. Photo assessment first, no obligation.</p></a>
             </div>
         </div>
-    </section>
-
-    <!-- Portfolio (20 photos) -->
-    <section id="portfolio" class="py-24 px-4 bg-apple-darkGray/30">
-        <div class="max-w-[1200px] mx-auto text-center mb-16">
-            <h2 class="text-4xl font-semibold tracking-tight">Portfolio</h2>
-            <p class="text-white/40 mt-2">Latest Realistic Works</p>
-        </div>
-        <div id="portfolio-grid" class="max-w-[1400px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-2"></div>
     </section>
 
     <!-- Gallery (6 photos) -->
