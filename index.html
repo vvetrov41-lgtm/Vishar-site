@@ -203,7 +203,7 @@
     </section>
 
     <!-- ═══ 3D INDUCTION TATTOO MACHINE — Scroll Assembly ═══ -->
-    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:150vh;background:#000;overflow:hidden">
+    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:190vh;background:#000;overflow:hidden">
       <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center">
         <div id="machine-progress" style="position:absolute;left:24px;top:50%;transform:translateY(-50%);width:2px;height:120px;background:rgba(255,255,255,0.06);border-radius:1px;z-index:10">
           <div id="machine-progress-fill" style="width:100%;height:0%;background:rgba(255,255,255,0.3);border-radius:1px;transition:height 0.1s linear"></div>
@@ -313,19 +313,21 @@
       renderer.setSize(container.clientWidth,container.clientHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
       renderer.toneMapping=THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure=1.1;
+      renderer.toneMappingExposure=1.18;
       renderer.outputEncoding=THREE.sRGBEncoding;
       renderer.shadowMap.enabled=true;
       renderer.shadowMap.type=THREE.PCFSoftShadowMap;
       renderer.setClearColor(0x000000,1);
+      renderer.domElement.style.pointerEvents='none';
+      container.style.pointerEvents='none';
       container.appendChild(renderer.domElement);
 
       /* Lighting */
       var kl=new THREE.DirectionalLight(0xffeedd,1.4);kl.position.set(5,8,4);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-0.001;scene.add(kl);
-      var fl=new THREE.DirectionalLight(0x8899bb,0.4);fl.position.set(-4,3,-2);scene.add(fl);
-      var rl=new THREE.DirectionalLight(0xffffff,0.8);rl.position.set(-2,5,-5);scene.add(rl);
-      scene.add(new THREE.AmbientLight(0x111122,0.3));
-      var gl=new THREE.PointLight(0x334466,0.3,10);gl.position.set(0,-2,0);scene.add(gl);
+      var fl=new THREE.DirectionalLight(0x8899bb,0.55);fl.position.set(-4,3,-2);scene.add(fl);
+      var rl=new THREE.DirectionalLight(0xffffff,0.9);rl.position.set(-2,5,-5);scene.add(rl);
+      scene.add(new THREE.AmbientLight(0x222236,0.5));
+      var gl=new THREE.PointLight(0x334466,0.42,10);gl.position.set(0,-2,0);scene.add(gl);
 
       var gp=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.ShadowMaterial({opacity:0.3}));
       gp.rotation.x=-Math.PI/2;gp.position.y=-1.8;gp.receiveShadow=true;scene.add(gp);
@@ -440,7 +442,13 @@
       var sr=mk(new THREE.CylinderGeometry(0.05,0.07,0.12,10),rubber);sr.position.y=0.18;g.add(sr);
       g.position.set(-0.12,0.5,-0.25);parts.clipCord=g;mg.add(g)})();
 
-      mg.position.set(-0.4,1.2,0);mg.scale.setScalar(0.7);
+      var isMobile=window.innerWidth<768;
+      function applyMachineComposition(){
+        isMobile=window.innerWidth<768;
+        if(isMobile){mg.position.set(-0.18,0.45,0);mg.scale.setScalar(0.48)}
+        else{mg.position.set(-0.4,1.05,0);mg.scale.setScalar(0.66)}
+      }
+      applyMachineComposition();
 
       /* Assembled/Exploded states */
       var assembled={},exploded={};
@@ -476,8 +484,20 @@
       /* GSAP ScrollTrigger */
       gsap.registerPlugin(ScrollTrigger);
 
+      var assemblyLock=0;
+      function setCanvasMode(mode){
+        if(mode==='fixed'){
+          container.style.position='fixed';container.style.top='0';container.style.left='0';container.style.right='0';container.style.bottom='auto';container.style.zIndex='1';
+        }else if(mode==='end'){
+          container.style.position='absolute';container.style.top='auto';container.style.left='0';container.style.right='0';container.style.bottom='0';container.style.zIndex='1';
+        }else{
+          container.style.position='absolute';container.style.top='0';container.style.left='0';container.style.right='0';container.style.bottom='auto';container.style.zIndex='1';
+        }
+      }
+      setCanvasMode('start');
+
       if(!prefersRM){
-        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:startRendering,onEnterBack:startRendering,onLeave:stopRendering,onLeaveBack:stopRendering,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
+        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:function(){setCanvasMode('fixed');startRendering()},onEnterBack:function(){setCanvasMode('fixed');startRendering()},onLeave:function(){assemblyLock=1;setCanvasMode('end');stopRendering()},onLeaveBack:function(){setCanvasMode('start');stopRendering()},onUpdate:function(self){var p=Math.min(1,self.progress/0.72);assemblyLock=Math.max(assemblyLock,p);updateAsm(assemblyLock);renderFrame()}}});
       }
 
       function updateAsm(t){
@@ -504,10 +524,17 @@
         if(tl)tl.style.opacity=t<0.15?1:Math.max(0,1-(t-0.15)*5);
 
         var ang=-0.3+t*0.6;
-        camera.position.x=4*Math.cos(ang)+2*Math.sin(ang);
-        camera.position.z=6*Math.cos(ang*0.5);
-        camera.position.y=2.5-t*0.8;
-        camera.lookAt(0,0.3,0);
+        if(isMobile){
+          camera.position.x=2.15+0.2*t;
+          camera.position.z=7.2;
+          camera.position.y=1.25;
+          camera.lookAt(0,0.0,0);
+        }else{
+          camera.position.x=4*Math.cos(ang)+2*Math.sin(ang);
+          camera.position.z=6*Math.cos(ang*0.5);
+          camera.position.y=2.45-t*0.55;
+          camera.lookAt(0,0.2,0);
+        }
 
         if(t>0.95){var int=(t-0.95)*20;var now=performance.now()*0.001;
         parts.armature.position.y=assembled.armature.y+Math.sin(now*60)*0.008*int;
@@ -517,15 +544,17 @@
 
       /* Render loop: start only while the 3D section is visible. */
       var animId=null;
+      var pausedByVisibility=false;
       function renderFrame(){renderer.render(scene,camera)}
-      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
-      function startRendering(){if(animId===null)animate()}
+      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=isMobile?0.00045:0.00075;renderFrame()}
+      function startRendering(){if(document.hidden)return;pausedByVisibility=false;if(animId===null)animate()}
       function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
+      document.addEventListener('visibilitychange',function(){if(document.hidden){pausedByVisibility=animId!==null;stopRendering()}else if(pausedByVisibility){startRendering()}})
 
       var renderObserver;if('IntersectionObserver'in window){renderObserver=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting){startRendering()}else{stopRendering()}})},{rootMargin:'0px',threshold:0.01});renderObserver.observe(document.getElementById('machine-section'))}else{startRendering()}
       renderFrame();
 
-      window.addEventListener('resize',function(){camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);renderFrame()});
+      window.addEventListener('resize',function(){applyMachineComposition();camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);updateAsm(assemblyLock);renderFrame()});
 
       /* Mobile: hide progress bar */
       if(window.innerWidth<640){var pb=document.getElementById('machine-progress');if(pb)pb.style.display='none'}
