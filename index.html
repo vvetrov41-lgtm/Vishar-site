@@ -159,6 +159,7 @@
     .card-lift{transition:transform .35s cubic-bezier(.4,0,.2,1),box-shadow .35s ease}
     .card-lift:hover{transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.4)}
     .glow-border{position:relative}.glow-border::before{content:'';position:absolute;inset:-1px;border-radius:inherit;background:linear-gradient(135deg,rgba(0,113,227,.3),rgba(255,255,255,.05),rgba(0,113,227,.15));z-index:-1;opacity:0;transition:opacity .4s ease}.glow-border:hover::before{opacity:1}
+    #machine-section ~ section,#machine-section ~ #site-footer{position:relative;z-index:1}
     @media(prefers-reduced-motion:reduce){*,::before,::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.reveal{opacity:1;transform:none}}
     @media print{body{background:#fff!important;color:#000!important}nav,.sticky-cta,#lightbox,.lb-nav,.lb-counter,footer,.glass{display:none!important}.faq-content{max-height:none!important;overflow:visible!important}}
     </style>
@@ -203,16 +204,16 @@
     </section>
 
     <!-- ═══ 3D INDUCTION TATTOO MACHINE — Scroll Assembly ═══ -->
-    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:150vh;background:#000;overflow:hidden">
-      <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center">
-        <div id="machine-progress" style="position:absolute;left:24px;top:50%;transform:translateY(-50%);width:2px;height:120px;background:rgba(255,255,255,0.06);border-radius:1px;z-index:10">
+    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:220vh;background:#000;overflow:visible;z-index:0">
+      <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity 0.7s ease;z-index:0">
+        <div id="machine-progress" style="position:absolute;left:24px;top:50%;transform:translateY(-50%);width:2px;height:120px;background:rgba(255,255,255,0.06);border-radius:1px;z-index:2;pointer-events:none">
           <div id="machine-progress-fill" style="width:100%;height:0%;background:rgba(255,255,255,0.3);border-radius:1px;transition:height 0.1s linear"></div>
         </div>
-        <div id="machine-label-top" style="position:absolute;z-index:10;pointer-events:none;text-align:center;top:max(80px,10vh);left:50%;transform:translateX(-50%);transition:opacity 0.6s ease">
+        <div id="machine-label-top" style="position:absolute;z-index:2;pointer-events:none;text-align:center;top:max(80px,10vh);left:50%;transform:translateX(-50%);transition:opacity 0.6s ease">
           <h3 style="font-family:'Playfair Display',serif;font-size:clamp(1.2rem,3vw,2rem);font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:-0.02em;margin:0">The Instrument.</h3>
           <p style="font-size:clamp(0.65rem,1.2vw,0.8rem);color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.25em;margin:6px 0 0">Scroll to assemble</p>
         </div>
-        <div style="position:absolute;z-index:10;pointer-events:none;text-align:center;bottom:max(40px,6vh);left:50%;transform:translateX(-50%)">
+        <div id="machine-part-label-wrap" style="position:absolute;z-index:2;pointer-events:none;text-align:center;bottom:max(40px,6vh);left:50%;transform:translateX(-50%);transition:opacity 0.4s ease">
           <p id="machine-part-label" style="font-size:clamp(0.65rem,1.2vw,0.8rem);color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.25em;margin:0">&nbsp;</p>
         </div>
       </div>
@@ -233,6 +234,8 @@
         if(section)section.style.height='auto';
         wrap.style.position='relative';
         wrap.style.height='60vh';
+        wrap.style.opacity='1';
+        wrap.style.transition='none';
       }
 
       function hasWebGL(){try{var c=document.createElement('canvas');return!!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')))}catch(e){return false}}
@@ -272,10 +275,10 @@
       if('IntersectionObserver'in window){
         var loadObserver=new IntersectionObserver(function(entries){
           entries.forEach(function(entry){if(entry.isIntersecting){loadObserver.disconnect();initMachineWhenReady()}});
-        },{rootMargin:'0px 0px -50% 0px',threshold:0});
+        },{rootMargin:'700px 0px 700px 0px',threshold:0});
         loadObserver.observe(section);
       }else{
-        var fallbackMargin=300;
+        var fallbackMargin=700;
         var fallbackQueued=false;
         var removeFallbackListeners=function(){
           window.removeEventListener('scroll',queueFallbackCheck);
@@ -309,7 +312,7 @@
       scene.fog=new THREE.FogExp2(0x000000,0.08);
       var camera=new THREE.PerspectiveCamera(40,container.clientWidth/container.clientHeight,0.1,100);
       camera.position.set(4,2.5,6);camera.lookAt(0,0.5,0);
-      var renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
+      var renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'high-performance'});
       renderer.setSize(container.clientWidth,container.clientHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
       renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -317,7 +320,13 @@
       renderer.outputEncoding=THREE.sRGBEncoding;
       renderer.shadowMap.enabled=true;
       renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-      renderer.setClearColor(0x000000,1);
+      renderer.setClearColor(0x000000,0);
+      renderer.domElement.style.position='absolute';
+      renderer.domElement.style.inset='0';
+      renderer.domElement.style.width='100%';
+      renderer.domElement.style.height='100%';
+      renderer.domElement.style.pointerEvents='none';
+      renderer.domElement.style.zIndex='1';
       container.appendChild(renderer.domElement);
 
       /* Lighting */
@@ -440,7 +449,7 @@
       var sr=mk(new THREE.CylinderGeometry(0.05,0.07,0.12,10),rubber);sr.position.y=0.18;g.add(sr);
       g.position.set(-0.12,0.5,-0.25);parts.clipCord=g;mg.add(g)})();
 
-      mg.position.set(-0.4,1.2,0);mg.scale.setScalar(0.7);
+      mg.position.set(-0.18,0.15,0);mg.scale.setScalar(0.62);
 
       /* Assembled/Exploded states */
       var assembled={},exploded={};
@@ -476,16 +485,55 @@
       /* GSAP ScrollTrigger */
       gsap.registerPlugin(ScrollTrigger);
 
-      if(!prefersRM){
-        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:startRendering,onEnterBack:startRendering,onLeave:stopRendering,onLeaveBack:stopRendering,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
+      var ASSEMBLY_END=0.72;
+      var HOLD_END=0.92;
+      var state={scrollProgress:0,mode:'hidden',active:false,hasAssembled:false};
+      var baseRotationY=-0.18;
+      var mobileQuery=window.matchMedia?window.matchMedia('(max-width: 640px)'):null;
+      var progressFill=document.getElementById('machine-progress-fill');
+      var partLabel=document.getElementById('machine-part-label');
+      var partLabelWrap=document.getElementById('machine-part-label-wrap');
+      var topLabel=document.getElementById('machine-label-top');
+      var progressBar=document.getElementById('machine-progress');
+
+      function clamp01(v){return Math.max(0,Math.min(1,v))}
+      function easeInOutCubic(v){v=clamp01(v);return v<0.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2}
+      function isMobile(){return mobileQuery?mobileQuery.matches:window.innerWidth<640}
+      function assemblyProgressFromScroll(t){return clamp01(t/ASSEMBLY_END)}
+      function holdProgressFromScroll(t){return clamp01((t-ASSEMBLY_END)/(HOLD_END-ASSEMBLY_END))}
+
+      function setLayerMode(mode){
+        state.mode=mode;
+        if(mode==='hidden'){
+          container.style.position='sticky';
+          container.style.top='0';
+          container.style.opacity='0';
+          container.style.inset='';
+          container.style.zIndex='0';
+        }else if(mode==='section'){
+          container.style.position='sticky';
+          container.style.top='0';
+          container.style.opacity=isMobile()?'0.42':'0.62';
+          container.style.inset='';
+          container.style.zIndex='0';
+        }else{
+          container.style.position='fixed';
+          container.style.inset='0';
+          container.style.opacity=isMobile()?'0.07':'0.10';
+          container.style.zIndex='0';
+        }
+        var uiVisible=mode==='section';
+        if(progressBar)progressBar.style.opacity=uiVisible?'1':'0';
+        if(topLabel)topLabel.style.display=uiVisible?'block':'none';
+        if(partLabelWrap)partLabelWrap.style.opacity=uiVisible?'1':'0';
       }
 
-      function updateAsm(t){
+      function applyAssemblyProgress(t){
         var n=keys.length;
         keys.forEach(function(k,i){
-          var ss=i/n*0.35,se=ss+0.65;
-          var lt=Math.max(0,Math.min(1,(t-ss)/(se-ss)));
-          var e2=lt<0.5?4*lt*lt*lt:1-Math.pow(-2*lt+2,3)/2;
+          var ss=i/n*0.34,se=ss+0.66;
+          var lt=clamp01((t-ss)/(se-ss));
+          var e2=easeInOutCubic(lt);
           var p=parts[k],a=assembled[k],ex=exploded[k];
           p.position.x=ex.x+(a.x-ex.x)*e2;
           p.position.y=ex.y+(a.y-ex.y)*e2;
@@ -494,41 +542,104 @@
           p.rotation.y=ex.ry+(a.ry-ex.ry)*e2;
           p.rotation.z=ex.rz+(a.rz-ex.rz)*e2;
         });
-
-        var pf=document.getElementById('machine-progress-fill');
-        if(pf)pf.style.height=(t*100)+'%';
-        var li=Math.min(Math.floor(t*partNames.length),partNames.length-1);
-        var le=document.getElementById('machine-part-label');
-        if(le){le.textContent=t>0.02&&t<0.98?partNames[li]:(t<0.02?' ':'Assembled')}
-        var tl=document.getElementById('machine-label-top');
-        if(tl)tl.style.opacity=t<0.15?1:Math.max(0,1-(t-0.15)*5);
-
-        var ang=-0.3+t*0.6;
-        camera.position.x=4*Math.cos(ang)+2*Math.sin(ang);
-        camera.position.z=6*Math.cos(ang*0.5);
-        camera.position.y=2.5-t*0.8;
-        camera.lookAt(0,0.3,0);
-
-        if(t>0.95){var int=(t-0.95)*20;var now=performance.now()*0.001;
-        parts.armature.position.y=assembled.armature.y+Math.sin(now*60)*0.008*int;
-        parts.needleBar.position.y=assembled.needleBar.y+Math.sin(now*60)*0.006*int;
-        parts.frontSpring.position.y=assembled.frontSpring.y+Math.sin(now*60+0.5)*0.003*int}
       }
 
-      /* Render loop: start only while the 3D section is visible. */
-      var animId=null;
-      function renderFrame(){renderer.render(scene,camera)}
-      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
-      function startRendering(){if(animId===null)animate()}
-      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
+      function updateCamera(t){
+        var mobile=isMobile();
+        var ang=-0.18+t*0.18;
+        camera.position.x=(mobile?1.25:2.55)*Math.sin(ang);
+        camera.position.y=(mobile?1.05:1.35)-t*0.10;
+        camera.position.z=mobile?8.8:7.0;
+        camera.lookAt(0,0.05,0);
+      }
 
-      var renderObserver;if('IntersectionObserver'in window){renderObserver=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting){startRendering()}else{stopRendering()}})},{rootMargin:'0px',threshold:0.01});renderObserver.observe(document.getElementById('machine-section'))}else{startRendering()}
+      function updateMachineUi(scrollProgress,assemblyProgress){
+        if(progressFill)progressFill.style.height=(assemblyProgress*100)+'%';
+        var li=Math.min(Math.floor(assemblyProgress*partNames.length),partNames.length-1);
+        if(partLabel){partLabel.textContent=assemblyProgress>0.02&&assemblyProgress<0.99?partNames[li]:(assemblyProgress<0.02?' ':'Assembled')}
+        if(topLabel)topLabel.style.opacity=scrollProgress<0.14?1:Math.max(0,1-(scrollProgress-0.14)*5);
+      }
+
+      function applySceneState(now){
+        var t=clamp01(state.scrollProgress);
+        if(t>=ASSEMBLY_END)state.hasAssembled=true;
+        if(t<=0.001)state.hasAssembled=false;
+        var ap=state.hasAssembled?1:assemblyProgressFromScroll(t);
+        applyAssemblyProgress(ap);
+        updateCamera(ap);
+        mg.rotation.y=baseRotationY;
+        if(t>=ASSEMBLY_END){
+          mg.rotation.y=baseRotationY+holdProgressFromScroll(t)*0.34+Math.sin(now*0.35)*0.025;
+        }
+        updateMachineUi(t,ap);
+      }
+
+      function renderFrame(now){
+        renderer.toneMappingExposure=state.mode==='ambient'?0.7:0.95;
+        applySceneState((now||performance.now())*0.001);
+        renderer.render(scene,camera);
+      }
+
+      function animate(now){
+        if(!state.active){animId=null;renderFrame(now);return}
+        renderFrame(now);
+        animId=requestAnimationFrame(animate);
+      }
+      var animId=null;
+      function startRendering(){state.active=true;if(animId===null)animId=requestAnimationFrame(animate)}
+      function stopRendering(){state.active=false;if(animId!==null){cancelAnimationFrame(animId);animId=null}renderFrame()}
+
+      function resizeMachine(){
+        var mobile=isMobile();
+        container.style.height='100vh';
+        camera.aspect=container.clientWidth/container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,mobile?1.2:1.75));
+        renderer.setSize(container.clientWidth,container.clientHeight,false);
+        mg.position.set(mobile?-0.02:-0.14,mobile?-0.28:-0.05,0);
+        mg.scale.setScalar(mobile?0.36:0.54);
+        if(progressBar)progressBar.style.display=mobile?'none':'block';
+        if(state.mode==='section'||state.mode==='ambient')setLayerMode(state.mode);
+        renderFrame();
+        if(window.ScrollTrigger)ScrollTrigger.refresh();
+      }
+
+      resizeMachine();
+      state.scrollProgress=0;
+      applyAssemblyProgress(0);
+      updateCamera(0);
+      mg.rotation.y=baseRotationY;
+      setLayerMode('hidden');
       renderFrame();
 
-      window.addEventListener('resize',function(){camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);renderFrame()});
+      ScrollTrigger.create({
+        trigger:section,
+        start:'top top',
+        end:'bottom bottom',
+        scrub:true,
+        onEnter:function(self){state.scrollProgress=self.progress;state.hasAssembled=false;renderFrame();setLayerMode('section');startRendering()},
+        onEnterBack:function(self){state.scrollProgress=self.progress;renderFrame();setLayerMode('section');startRendering()},
+        onLeave:function(){state.scrollProgress=1;renderFrame();setLayerMode('ambient');startRendering()},
+        onLeaveBack:function(){state.scrollProgress=0;state.hasAssembled=false;renderFrame();setLayerMode('hidden');stopRendering()},
+        onUpdate:function(self){
+          state.scrollProgress=self.progress;
+          if(self.isActive){
+            renderFrame();
+            if(state.mode!=='section')setLayerMode('section');
+            startRendering();
+          }
+        }
+      });
+      ScrollTrigger.refresh();
 
-      /* Mobile: hide progress bar */
-      if(window.innerWidth<640){var pb=document.getElementById('machine-progress');if(pb)pb.style.display='none'}
+      var resizeQueued=false;
+      function queueResize(){
+        if(resizeQueued)return;
+        resizeQueued=true;
+        requestAnimationFrame(function(){resizeQueued=false;resizeMachine()});
+      }
+      window.addEventListener('resize',queueResize);
+      window.addEventListener('orientationchange',queueResize);
 
       }
     })();
