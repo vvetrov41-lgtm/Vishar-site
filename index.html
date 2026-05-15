@@ -206,7 +206,7 @@
     </section>
 
     <!-- ═══ 3D INDUCTION TATTOO MACHINE — Scroll Assembly ═══ -->
-    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:150vh;background:#000;overflow:hidden">
+    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:150vh;background:transparent;overflow:hidden">
       <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;pointer-events:none">
         <div id="machine-progress" style="position:absolute;left:24px;top:50%;transform:translateY(-50%);width:2px;height:120px;background:rgba(255,255,255,0.06);border-radius:1px;z-index:10">
           <div id="machine-progress-fill" style="width:100%;height:0%;background:rgba(255,255,255,0.3);border-radius:1px;transition:height 0.1s linear"></div>
@@ -484,7 +484,7 @@
 
       if(!prefersRM){
         gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
-        var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top bottom',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
+        var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top top',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
         if(rangeST&&rangeST.isActive)showBg();
       }
 
