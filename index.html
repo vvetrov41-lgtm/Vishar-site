@@ -483,8 +483,8 @@
       gsap.registerPlugin(ScrollTrigger);
 
       if(!prefersRM){
-        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
-        var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top top',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
+        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top 40px',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
+        var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top 40px',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
         if(rangeST&&rangeST.isActive)showBg();
       }
 
