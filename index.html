@@ -319,7 +319,7 @@
       renderer.setSize(window.innerWidth,window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));
       renderer.toneMapping=THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure=1.1;
+      renderer.toneMappingExposure=0.95;
       renderer.outputEncoding=THREE.sRGBEncoding;
       renderer.shadowMap.enabled=!isMobile;
       renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -327,22 +327,56 @@
       bgWrap.appendChild(renderer.domElement);
 
       /* Lighting */
-      var kl=new THREE.DirectionalLight(0xffeedd,1.4);kl.position.set(5,8,4);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-0.001;scene.add(kl);
-      var fl=new THREE.DirectionalLight(0x8899bb,0.4);fl.position.set(-4,3,-2);scene.add(fl);
-      var rl=new THREE.DirectionalLight(0xffffff,0.8);rl.position.set(-2,5,-5);scene.add(rl);
+      var kl=new THREE.DirectionalLight(0xffeedd,1.6);kl.position.set(5,8,4);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-0.001;scene.add(kl);
+      var fl=new THREE.DirectionalLight(0x6a85b5,0.5);fl.position.set(-4,3,-2);scene.add(fl);
+      var rl=new THREE.DirectionalLight(0xe6c9a1,0.95);rl.position.set(-2,5,-5);scene.add(rl);
       scene.add(new THREE.AmbientLight(0x111122,0.3));
       var gl=new THREE.PointLight(0x334466,0.3,10);gl.position.set(0,-2,0);scene.add(gl);
 
       var gp=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.ShadowMaterial({opacity:0.3}));
       gp.rotation.x=-Math.PI/2;gp.position.y=-1.8;gp.receiveShadow=true;scene.add(gp);
 
+      /* Procedural studio reflections */
+      var envW=(typeof isMobile!=='undefined'&&isMobile)?256:512;
+      var envH=(typeof isMobile!=='undefined'&&isMobile)?128:256;
+      var envCanvas=document.createElement('canvas');
+      envCanvas.width=envW;envCanvas.height=envH;
+      var envCtx=envCanvas.getContext('2d');
+      var skyGrad=envCtx.createLinearGradient(0,0,0,envH);
+      skyGrad.addColorStop(0,'#050810');
+      skyGrad.addColorStop(0.45,'#090a0d');
+      skyGrad.addColorStop(1,'#010101');
+      envCtx.fillStyle=skyGrad;envCtx.fillRect(0,0,envW,envH);
+      var warmKey=envCtx.createRadialGradient(envW*0.22,envH*0.38,0,envW*0.22,envH*0.38,envW*0.34);
+      warmKey.addColorStop(0,'rgba(255,214,158,0.72)');
+      warmKey.addColorStop(0.38,'rgba(150,87,39,0.22)');
+      warmKey.addColorStop(1,'rgba(0,0,0,0)');
+      envCtx.fillStyle=warmKey;envCtx.fillRect(0,0,envW,envH);
+      var coolRim=envCtx.createRadialGradient(envW*0.78,envH*0.28,0,envW*0.78,envH*0.28,envW*0.28);
+      coolRim.addColorStop(0,'rgba(110,155,220,0.5)');
+      coolRim.addColorStop(0.42,'rgba(44,68,108,0.2)');
+      coolRim.addColorStop(1,'rgba(0,0,0,0)');
+      envCtx.fillStyle=coolRim;envCtx.fillRect(0,0,envW,envH);
+      var copperSide=envCtx.createLinearGradient(0,0,envW,0);
+      copperSide.addColorStop(0,'rgba(120,56,28,0.24)');
+      copperSide.addColorStop(0.45,'rgba(0,0,0,0)');
+      copperSide.addColorStop(1,'rgba(20,32,56,0.18)');
+      envCtx.fillStyle=copperSide;envCtx.fillRect(0,0,envW,envH);
+      var envTexture=new THREE.CanvasTexture(envCanvas);
+      envTexture.mapping=THREE.EquirectangularReflectionMapping;
+      envTexture.encoding=THREE.sRGBEncoding;
+      var pmremGenerator=new THREE.PMREMGenerator(renderer);
+      scene.environment=pmremGenerator.fromEquirectangular(envTexture).texture;
+      envTexture.dispose();
+      pmremGenerator.dispose();
+
       /* Materials */
-      var blackSteel=new THREE.MeshStandardMaterial({color:0x1a1a1e,metalness:0.85,roughness:0.35});
-      var darkSteel=new THREE.MeshStandardMaterial({color:0x2a2a2e,metalness:0.9,roughness:0.3});
-      var brass=new THREE.MeshStandardMaterial({color:0x8b7533,metalness:0.95,roughness:0.25});
-      var copper=new THREE.MeshStandardMaterial({color:0x7f4422,metalness:0.9,roughness:0.3});
-      var chrome=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.98,roughness:0.1});
-      var darkCopper=new THREE.MeshStandardMaterial({color:0x5a3018,metalness:0.85,roughness:0.4});
+      var blackSteel=new THREE.MeshStandardMaterial({color:0x0e0e12,metalness:0.9,roughness:0.42});
+      var darkSteel=new THREE.MeshStandardMaterial({color:0x1a1c22,metalness:0.92,roughness:0.28});
+      var brass=new THREE.MeshStandardMaterial({color:0xa07a2e,metalness:0.95,roughness:0.22});
+      var copper=new THREE.MeshStandardMaterial({color:0x914a26,metalness:0.92,roughness:0.28});
+      var chrome=new THREE.MeshStandardMaterial({color:0xc7ccd2,metalness:1.0,roughness:0.08});
+      var darkCopper=new THREE.MeshStandardMaterial({color:0x4a2410,metalness:0.88,roughness:0.38});
       var rubber=new THREE.MeshStandardMaterial({color:0x111111,metalness:0.0,roughness:0.9});
 
       function mk(geo,mat){var m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;return m}
@@ -526,7 +560,7 @@
       /* Render loop: start only while the 3D section is visible. */
       var animId=null;
       function renderFrame(){renderer.render(scene,camera)}
-      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
+      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0005;renderFrame()}
       function startRendering(){if(animId===null)animate()}
       function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
 
