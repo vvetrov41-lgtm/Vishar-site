@@ -1,0 +1,193 @@
+From: Claude / ChatGPT
+Subject: [PATCH V2] homepage: 3D machine becomes background layer after assembly
+
+Purpose:
+Rework the homepage 3D tattoo machine so the existing scroll-driven assembly is preserved, and after assembly the machine becomes a fixed background layer behind subsequent homepage sections, visible until the end of #ai-assistant.
+
+Changes are limited to index.html.
+
+IMPORTANT FOR CODEX:
+This file is an exact-replacement patch, not a git-apply-only patch.
+Apply every replacement below strictly.
+The Find blocks include the exact indentation expected in index.html.
+Do not apply approximate replacements.
+If any Find block does not match exactly once, stop and report the failed block.
+
+============================================================
+STRUCTURAL REPLACEMENTS
+============================================================
+
+--- Replacement S1: add fixed 3D background container after body open ---
+Find exact:
+```html
+<body class="antialiased">
+
+    <!-- Nav (injected by components.js) -->
+```
+Replace with:
+```html
+<body class="antialiased">
+
+    <!-- 3D machine background layer (canvas mounted here by the 3D script). Sits behind all page content. -->
+    <div id="machine-bg" aria-hidden="true" style="position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity .6s ease;contain:strict;will-change:opacity"></div>
+
+    <!-- Nav (injected by components.js) -->
+```
+
+--- Replacement S2: keep page content above fixed 3D background ---
+Find exact:
+```html
+    <main>
+```
+Replace with:
+```html
+    <main style="position:relative;z-index:1">
+```
+
+--- Replacement S3: prevent the 3D canvas wrapper from intercepting clicks ---
+Find exact:
+```html
+      <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center">
+```
+Replace with:
+```html
+      <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;pointer-events:none">
+```
+
+--- Replacement S4: make portfolio section background transparent ---
+Find exact:
+```html
+    <section id="portfolio" class="py-20 md:py-24 px-4 bg-apple-darkGray/30 border-y border-violet-400/10">
+```
+Replace with:
+```html
+    <section id="portfolio" class="py-20 md:py-24 px-4 border-y border-violet-400/10">
+```
+
+--- Replacement S5: make inquiry process section background transparent ---
+Find exact:
+```html
+    <section class="pt-8 pb-6 px-6 border-b border-white/5 bg-black" aria-labelledby="inquiry-process-title">
+```
+Replace with:
+```html
+    <section class="pt-8 pb-6 px-6 border-b border-white/5" aria-labelledby="inquiry-process-title">
+```
+
+--- Replacement S6: make AI assistant section background transparent ---
+Find exact:
+```html
+    <section id="ai-assistant" class="py-24 px-6 bg-apple-darkGray/10 border-y border-white/5">
+```
+Replace with:
+```html
+    <section id="ai-assistant" class="py-24 px-6 border-y border-white/5">
+```
+
+============================================================
+3D SCRIPT REPLACEMENTS
+============================================================
+Apply these only inside the inline script directly after #machine-section.
+
+--- Replacement A: renderer setup ---
+Find exact:
+```js
+      var renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
+      renderer.setSize(container.clientWidth,container.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+      renderer.toneMapping=THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure=1.1;
+      renderer.outputEncoding=THREE.sRGBEncoding;
+      renderer.shadowMap.enabled=true;
+      renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+      renderer.setClearColor(0x000000,1);
+      container.appendChild(renderer.domElement);
+```
+Replace with:
+```js
+      var bgWrap=document.getElementById('machine-bg');
+      var isMobile=window.matchMedia('(max-width: 767px)').matches;
+      var isTablet=window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches;
+      var renderer=new THREE.WebGLRenderer({antialias:!isMobile,alpha:true,powerPreference:'high-performance'});
+      renderer.setSize(window.innerWidth,window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));
+      renderer.toneMapping=THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure=1.1;
+      renderer.outputEncoding=THREE.sRGBEncoding;
+      renderer.shadowMap.enabled=!isMobile;
+      renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+      renderer.setClearColor(0x000000,0);
+      bgWrap.appendChild(renderer.domElement);
+```
+
+--- Replacement B: responsive machine group scale ---
+Find exact:
+```js
+      mg.position.set(-0.4,1.2,0);mg.scale.setScalar(0.7);
+```
+Replace with:
+```js
+      mg.position.set(-0.4,1.2,0);mg.scale.setScalar(isMobile?0.5:(isTablet?0.6:0.7));
+```
+
+--- Replacement C: keep assembly ScrollTrigger and add background range ScrollTrigger ---
+Find exact:
+```js
+        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onEnter:startRendering,onEnterBack:startRendering,onLeave:stopRendering,onLeaveBack:stopRendering,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
+```
+Replace with:
+```js
+        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top top',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
+        var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top bottom',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
+        if(rangeST&&rangeST.isActive)showBg();
+```
+
+--- Replacement D: render loop and background visibility state ---
+Find exact:
+```js
+      var animId=null;
+      function renderFrame(){renderer.render(scene,camera)}
+      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
+      function startRendering(){if(animId===null)animate()}
+      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
+
+      var renderObserver;if('IntersectionObserver'in window){renderObserver=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting){startRendering()}else{stopRendering()}})},{rootMargin:'0px',threshold:0.01});renderObserver.observe(document.getElementById('machine-section'))}else{startRendering()}
+      renderFrame();
+```
+Replace with:
+```js
+      var animId=null;
+      function renderFrame(){renderer.render(scene,camera)}
+      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
+      function startRendering(){if(animId===null)animate()}
+      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
+
+      var bgVisible=false,fadeTimer=null;
+      function showBg(){if(bgVisible)return;bgVisible=true;if(fadeTimer){clearTimeout(fadeTimer);fadeTimer=null}bgWrap.style.opacity='1';startRendering()}
+      function hideBg(){if(!bgVisible)return;bgVisible=false;bgWrap.style.opacity='0';if(fadeTimer)clearTimeout(fadeTimer);fadeTimer=setTimeout(function(){if(!bgVisible)stopRendering()},700)}
+
+      renderFrame();
+```
+
+--- Replacement E: resize handler for fixed full-viewport renderer ---
+Find exact:
+```js
+      window.addEventListener('resize',function(){camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);renderFrame()});
+```
+Replace with:
+```js
+      window.addEventListener('resize',function(){isMobile=window.matchMedia('(max-width: 767px)').matches;isTablet=window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches;camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));renderer.shadowMap.enabled=!isMobile;mg.scale.setScalar(isMobile?0.5:(isTablet?0.6:0.7));renderFrame()});
+```
+
+============================================================
+EXPECTED BEHAVIOUR AFTER APPLYING
+============================================================
+- #machine-bg exists after <body class="antialiased">.
+- <main> has position:relative;z-index:1.
+- 3D canvas is mounted into #machine-bg.
+- Canvas layer uses pointer-events:none.
+- Hero stays clean because #machine-bg is opacity:0 until the range begins and page content is above it.
+- 3D background is active from #machine-section until #ai-assistant bottom top.
+- #contact remains after the active background range.
+- No booking URL changes.
+- No asset, CSP, workflow, package, gallery, or lightbox changes.
