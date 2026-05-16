@@ -136,7 +136,7 @@ el.innerHTML = `
         </div>
         <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
            class="text-xs text-white/40 hover:text-white transition-colors">
-          Send your concept →
+          Start an inquiry →
         </a>
       </div>
     </div>
