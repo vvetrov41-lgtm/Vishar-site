@@ -339,13 +339,16 @@
       /* Materials */
       var blackSteel=new THREE.MeshStandardMaterial({color:0x1a1a1e,metalness:0.85,roughness:0.35});
       var darkSteel=new THREE.MeshStandardMaterial({color:0x2a2a2e,metalness:0.9,roughness:0.3});
+      var edgeSteel=new THREE.MeshStandardMaterial({color:0xb8b8b8,metalness:0.98,roughness:0.16});
       var brass=new THREE.MeshStandardMaterial({color:0x8b7533,metalness:0.95,roughness:0.25});
-      var copper=new THREE.MeshStandardMaterial({color:0x7f4422,metalness:0.9,roughness:0.3});
+      var copper=new THREE.MeshStandardMaterial({color:0x9c5528,metalness:0.92,roughness:0.24});
       var chrome=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.98,roughness:0.1});
       var darkCopper=new THREE.MeshStandardMaterial({color:0x5a3018,metalness:0.85,roughness:0.4});
       var rubber=new THREE.MeshStandardMaterial({color:0x111111,metalness:0.0,roughness:0.9});
 
       function mk(geo,mat){var m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;return m}
+      function addScrew(g,x,y,z,r,mat){var s=mk(new THREE.CylinderGeometry(r,r,0.035,12),mat||brass);s.rotation.x=Math.PI/2;s.position.set(x,y,z);g.add(s);var slot=mk(new THREE.BoxGeometry(r*1.35,0.008,0.038),blackSteel);slot.position.set(x,y,z+0.02);g.add(slot);return s}
+      function addWasher(g,x,y,z,r,mat){var w=mk(new THREE.TorusGeometry(r,0.01,6,20),mat||chrome);w.rotation.x=Math.PI/2;w.position.set(x,y,z);g.add(w);return w}
 
       var parts={};
       var mg=new THREE.Group();scene.add(mg);
@@ -353,100 +356,130 @@
       /* 1. FRAME */
       (function(){var g=new THREE.Group();
       g.add(mk(new THREE.BoxGeometry(0.18,2.6,0.22),blackSteel));
-      var tb=mk(new THREE.BoxGeometry(1.4,0.16,0.2),blackSteel);tb.position.set(0.6,1.2,0);g.add(tb);
-      var fp=mk(new THREE.BoxGeometry(0.16,1.3,0.2),blackSteel);fp.position.set(1.2,0.15,0);fp.rotation.z=0.12;g.add(fp);
-      var yk=mk(new THREE.BoxGeometry(1.0,0.16,0.22),blackSteel);yk.position.set(0.4,-1.15,0);g.add(yk);
-      var br=mk(new THREE.BoxGeometry(0.1,1.1,0.12),darkSteel);br.position.set(0.7,0.05,0);br.rotation.z=-0.5;g.add(br);
-      var cn=mk(new THREE.CylinderGeometry(0.1,0.1,0.22,12),blackSteel);cn.rotation.x=Math.PI/2;cn.position.set(1.3,1.2,0);g.add(cn);
+      var spineEdge=mk(new THREE.BoxGeometry(0.22,2.7,0.035),edgeSteel);spineEdge.position.set(-0.01,0,0.13);g.add(spineEdge);
+      var tb=mk(new THREE.BoxGeometry(1.45,0.18,0.24),blackSteel);tb.position.set(0.62,1.2,0);g.add(tb);
+      var tbEdge=mk(new THREE.BoxGeometry(1.48,0.035,0.03),edgeSteel);tbEdge.position.set(0.62,1.29,0.13);g.add(tbEdge);
+      var fp=mk(new THREE.BoxGeometry(0.18,1.34,0.24),blackSteel);fp.position.set(1.2,0.15,0);fp.rotation.z=0.12;g.add(fp);
+      var fpEdge=mk(new THREE.BoxGeometry(0.035,1.32,0.03),edgeSteel);fpEdge.position.set(1.29,0.18,0.13);fpEdge.rotation.z=0.12;g.add(fpEdge);
+      var yk=mk(new THREE.BoxGeometry(1.06,0.18,0.24),blackSteel);yk.position.set(0.42,-1.15,0);g.add(yk);
+      var ykEdge=mk(new THREE.BoxGeometry(1.08,0.035,0.03),edgeSteel);ykEdge.position.set(0.42,-1.06,0.13);g.add(ykEdge);
+      var br=mk(new THREE.BoxGeometry(0.12,1.15,0.14),darkSteel);br.position.set(0.7,0.05,0);br.rotation.z=-0.5;g.add(br);
+      var brEdge=mk(new THREE.BoxGeometry(0.035,1.08,0.035),edgeSteel);brEdge.position.set(0.76,0.05,0.13);brEdge.rotation.z=-0.5;g.add(brEdge);
+      var cn=mk(new THREE.CylinderGeometry(0.12,0.12,0.26,16),blackSteel);cn.rotation.x=Math.PI/2;cn.position.set(1.3,1.2,0);g.add(cn);
+      addWasher(g,1.3,1.2,0.15,0.13,chrome);
+      addScrew(g,0.02,1.05,0.14,0.055,brass);addScrew(g,0.02,-0.95,0.14,0.055,brass);
+      addScrew(g,1.18,0.52,0.14,0.05,brass);addScrew(g,0.45,-1.15,0.14,0.05,brass);
       parts.frame=g;mg.add(g)})();
 
       /* 2. COILS */
       function buildCoil(px){var g=new THREE.Group();
-      g.add(mk(new THREE.CylinderGeometry(0.12,0.12,0.7,16),darkSteel));
-      for(var i=0;i<8;i++){var w=mk(new THREE.TorusGeometry(0.26,0.04,6,24),copper);w.position.y=-0.28+i*0.08;g.add(w)}
-      var c1=mk(new THREE.CylinderGeometry(0.28,0.28,0.06,16),darkSteel);c1.position.y=0.38;g.add(c1);
-      var c2=mk(new THREE.CylinderGeometry(0.28,0.28,0.06,16),darkSteel);c2.position.y=-0.38;g.add(c2);
+      g.add(mk(new THREE.CylinderGeometry(0.13,0.13,0.78,20),darkSteel));
+      for(var i=0;i<14;i++){var w=mk(new THREE.TorusGeometry(0.29+(i%2)*0.012,0.028,8,28),copper);w.rotation.x=Math.PI/2;w.position.y=-0.34+i*0.052;g.add(w)}
+      for(var j=0;j<3;j++){var band=mk(new THREE.TorusGeometry(0.315,0.012,6,28),darkCopper);band.rotation.x=Math.PI/2;band.position.y=-0.22+j*0.22;g.add(band)}
+      var c1=mk(new THREE.CylinderGeometry(0.33,0.33,0.07,20),darkSteel);c1.position.y=0.43;g.add(c1);
+      var c2=mk(new THREE.CylinderGeometry(0.33,0.33,0.07,20),darkSteel);c2.position.y=-0.43;g.add(c2);
+      var c1r=mk(new THREE.TorusGeometry(0.33,0.012,6,28),edgeSteel);c1r.rotation.x=Math.PI/2;c1r.position.y=0.47;g.add(c1r);
+      var c2r=mk(new THREE.TorusGeometry(0.33,0.012,6,28),edgeSteel);c2r.rotation.x=Math.PI/2;c2r.position.y=-0.47;g.add(c2r);
+      var boltA=mk(new THREE.CylinderGeometry(0.035,0.035,0.9,8),chrome);boltA.position.set(0.2,0,0.08);g.add(boltA);
+      var boltB=mk(new THREE.CylinderGeometry(0.035,0.035,0.9,8),chrome);boltB.position.set(-0.2,0,-0.08);g.add(boltB);
       g.position.set(px,-0.35,0);return g}
       parts.coilFront=buildCoil(0.65);mg.add(parts.coilFront);
       parts.coilRear=buildCoil(0.2);mg.add(parts.coilRear);
 
       /* 3. ARMATURE */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(1.1,0.06,0.16),darkSteel));
-      var t=mk(new THREE.CylinderGeometry(0.04,0.04,0.2,8),chrome);t.rotation.z=Math.PI/2;t.position.set(0.55,0,0);g.add(t);
+      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(1.16,0.075,0.18),darkSteel));
+      var edge=mk(new THREE.BoxGeometry(1.18,0.018,0.035),edgeSteel);edge.position.set(0,0.045,0.11);g.add(edge);
+      var t=mk(new THREE.CylinderGeometry(0.05,0.05,0.24,10),chrome);t.rotation.z=Math.PI/2;t.position.set(0.58,0,0);g.add(t);
+      addWasher(g,0.58,0,0.14,0.07,chrome);addScrew(g,-0.36,0,0.12,0.045,brass);
       g.position.set(0.4,0.35,0);parts.armature=g;mg.add(g)})();
 
       /* 4. FRONT SPRING */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.8,0.015,0.08),chrome));
-      var t=mk(new THREE.BoxGeometry(0.25,0.012,0.06),chrome);t.position.set(0.5,0.02,0);t.rotation.z=-0.08;g.add(t);
+      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.86,0.018,0.09),chrome));
+      var t=mk(new THREE.BoxGeometry(0.28,0.014,0.07),edgeSteel);t.position.set(0.52,0.02,0);t.rotation.z=-0.08;g.add(t);
+      addWasher(g,-0.22,0,0.07,0.055,chrome);
       g.position.set(0.5,1.38,0);parts.frontSpring=g;mg.add(g)})();
 
       /* 5. BACK SPRING */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.6,0.02,0.1),chrome));
+      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.64,0.022,0.11),chrome));
+      addWasher(g,-0.22,0,0.08,0.055,chrome);addScrew(g,0.18,0,0.08,0.04,brass);
       g.position.set(0.4,1.32,0);parts.backSpring=g;mg.add(g)})();
 
       /* 6. CONTACT SCREW */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.03,0.03,0.5,8),brass));
-      var k=mk(new THREE.CylinderGeometry(0.08,0.08,0.12,12),brass);k.position.y=0.3;g.add(k);
-      var kn=mk(new THREE.CylinderGeometry(0.09,0.09,0.06,6),brass);kn.position.y=0.25;g.add(kn);
+      (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.035,0.035,0.58,10),brass));
+      var k=mk(new THREE.CylinderGeometry(0.085,0.085,0.14,14),brass);k.position.y=0.32;g.add(k);
+      var kn=mk(new THREE.CylinderGeometry(0.1,0.1,0.065,6),brass);kn.position.y=0.25;g.add(kn);
+      var cw1=mk(new THREE.TorusGeometry(0.105,0.012,6,20),chrome);cw1.rotation.x=Math.PI/2;cw1.position.y=0.18;g.add(cw1);
+      var cw2=mk(new THREE.TorusGeometry(0.095,0.01,6,20),chrome);cw2.rotation.x=Math.PI/2;cw2.position.y=-0.18;g.add(cw2);
       g.position.set(1.0,1.55,0);parts.contactScrew=g;mg.add(g)})();
 
       /* 7. CAPACITOR */
       (function(){var g=new THREE.Group();var b=mk(new THREE.CylinderGeometry(0.12,0.12,0.45,16),darkCopper);b.rotation.z=Math.PI/2;g.add(b);
-      var w1=mk(new THREE.CylinderGeometry(0.015,0.015,0.2,6),copper);w1.position.set(0.3,0,0);w1.rotation.z=Math.PI/2;g.add(w1);
-      var w2=mk(new THREE.CylinderGeometry(0.015,0.015,0.2,6),copper);w2.position.set(-0.3,0,0);w2.rotation.z=Math.PI/2;g.add(w2);
+      var cap1=mk(new THREE.CylinderGeometry(0.125,0.125,0.035,16),brass);cap1.rotation.z=Math.PI/2;cap1.position.x=0.24;g.add(cap1);
+      var cap2=mk(new THREE.CylinderGeometry(0.125,0.125,0.035,16),brass);cap2.rotation.z=Math.PI/2;cap2.position.x=-0.24;g.add(cap2);
+      var w1=mk(new THREE.CylinderGeometry(0.015,0.015,0.2,6),copper);w1.position.set(0.34,0,0);w1.rotation.z=Math.PI/2;g.add(w1);
+      var w2=mk(new THREE.CylinderGeometry(0.015,0.015,0.2,6),copper);w2.position.set(-0.34,0,0);w2.rotation.z=Math.PI/2;g.add(w2);
       g.position.set(0.4,-0.9,-0.2);parts.capacitor=g;mg.add(g)})();
 
       /* 8. TUBE VISE */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.35,0.4,0.35),blackSteel));
-      var s=mk(new THREE.CylinderGeometry(0.05,0.05,0.4,8),brass);s.rotation.z=Math.PI/2;s.position.set(0.25,0,0);g.add(s);
-      var h=mk(new THREE.CylinderGeometry(0.09,0.09,0.08,6),brass);h.rotation.z=Math.PI/2;h.position.set(0.46,0,0);g.add(h);
+      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.38,0.42,0.38),blackSteel));
+      var clampEdge=mk(new THREE.BoxGeometry(0.4,0.035,0.035),edgeSteel);clampEdge.position.set(0,0.2,0.2);g.add(clampEdge);
+      var s=mk(new THREE.CylinderGeometry(0.055,0.055,0.44,10),brass);s.rotation.z=Math.PI/2;s.position.set(0.27,0,0);g.add(s);
+      var h=mk(new THREE.CylinderGeometry(0.095,0.095,0.085,6),brass);h.rotation.z=Math.PI/2;h.position.set(0.5,0,0);g.add(h);
+      addWasher(g,0.22,0,0.21,0.075,chrome);addScrew(g,-0.1,0.12,0.21,0.045,brass);
       g.position.set(0.7,-1.35,0);parts.tubeVise=g;mg.add(g)})();
 
       /* 9. GRIP (knurled cylindrical holder - thick) */
       (function(){var g=new THREE.Group();
       /* Main stainless tube */
-      g.add(mk(new THREE.CylinderGeometry(0.22,0.22,2.4,32),darkSteel));
+      g.add(mk(new THREE.CylinderGeometry(0.23,0.23,2.45,32),darkSteel));
       /* Top collet/chuck section */
-      var collet=mk(new THREE.CylinderGeometry(0.32,0.26,0.5,32),chrome);collet.position.y=0.95;g.add(collet);
+      var collet=mk(new THREE.CylinderGeometry(0.34,0.27,0.52,32),chrome);collet.position.y=0.98;g.add(collet);
       /* Collet ridges */
-      for(var j=0;j<3;j++){var cr=mk(new THREE.TorusGeometry(0.33,0.01,6,32),darkSteel);cr.position.y=0.78+j*0.15;g.add(cr)}
+      for(var j=0;j<5;j++){var cr=mk(new THREE.TorusGeometry(0.34,0.011,6,32),j%2?edgeSteel:darkSteel);cr.rotation.x=Math.PI/2;cr.position.y=0.72+j*0.1;g.add(cr)}
       /* Knurled grip body - THICK */
-      var knurlBody=mk(new THREE.CylinderGeometry(0.38,0.38,1.4,32),darkSteel);knurlBody.position.y=-0.15;g.add(knurlBody);
-      /* Knurling rings (dense for textured look) */
-      for(var i=0;i<18;i++){var r=mk(new THREE.TorusGeometry(0.39,0.014,8,32),chrome);r.position.y=-0.75+i*0.09;g.add(r)}
+      var knurlBody=mk(new THREE.CylinderGeometry(0.42,0.42,1.45,32),darkSteel);knurlBody.position.y=-0.16;g.add(knurlBody);
+      /* Knurling rings and raised side cuts make the grip read in silhouette. */
+      for(var i=0;i<22;i++){var r=mk(new THREE.TorusGeometry(0.43,0.014,8,32),i%3===0?edgeSteel:chrome);r.rotation.x=Math.PI/2;r.position.y=-0.82+i*0.073;g.add(r)}
+      for(var k=0;k<10;k++){var a=k*Math.PI*2/10;var strip=mk(new THREE.BoxGeometry(0.018,1.28,0.035),edgeSteel);strip.position.set(Math.cos(a)*0.43,-0.16,Math.sin(a)*0.43);strip.rotation.y=-a;g.add(strip)}
       /* Bottom taper */
-      var btm=mk(new THREE.CylinderGeometry(0.3,0.18,0.5,32),darkSteel);btm.position.y=-1.1;g.add(btm);
+      var btm=mk(new THREE.CylinderGeometry(0.32,0.18,0.52,32),darkSteel);btm.position.y=-1.13;g.add(btm);
+      var lip=mk(new THREE.TorusGeometry(0.23,0.016,8,32),chrome);lip.rotation.x=Math.PI/2;lip.position.y=-1.39;g.add(lip);
       /* Backstem */
-      var stem=mk(new THREE.CylinderGeometry(0.07,0.07,0.6,12),chrome);stem.position.y=1.45;g.add(stem);
+      var stem=mk(new THREE.CylinderGeometry(0.08,0.08,0.64,12),chrome);stem.position.y=1.48;g.add(stem);
       g.position.set(0.7,-2.5,0);parts.grip=g;mg.add(g)})();
 
       /* 10. TIP (tube tip) */
       (function(){var g=new THREE.Group();
-      var tip=mk(new THREE.CylinderGeometry(0.07,0.03,0.7,12),chrome);g.add(tip);
-      var opening=mk(new THREE.CylinderGeometry(0.04,0.02,0.2,8),darkSteel);opening.position.y=-0.4;g.add(opening);
+      var tip=mk(new THREE.CylinderGeometry(0.08,0.035,0.78,14),chrome);g.add(tip);
+      var bevel1=mk(new THREE.TorusGeometry(0.072,0.008,6,20),edgeSteel);bevel1.rotation.x=Math.PI/2;bevel1.position.y=0.23;g.add(bevel1);
+      var bevel2=mk(new THREE.TorusGeometry(0.046,0.007,6,20),edgeSteel);bevel2.rotation.x=Math.PI/2;bevel2.position.y=-0.28;g.add(bevel2);
+      var opening=mk(new THREE.CylinderGeometry(0.045,0.022,0.22,8),darkSteel);opening.position.y=-0.44;g.add(opening);
       g.position.set(0.7,-3.6,0);parts.tip=g;mg.add(g)})();
 
       /* 11. NEEDLE BAR */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.015,0.015,3.8,8),chrome));
-      var nt=mk(new THREE.ConeGeometry(0.02,0.15,6),chrome);nt.position.y=-1.95;g.add(nt);
-      var lp=mk(new THREE.TorusGeometry(0.04,0.012,6,12),chrome);lp.position.y=1.9;lp.rotation.x=Math.PI/2;g.add(lp);
+      (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.018,0.018,3.95,8),chrome));
+      var guide=mk(new THREE.CylinderGeometry(0.026,0.026,1.4,8),edgeSteel);guide.position.y=-0.55;g.add(guide);
+      var nt=mk(new THREE.ConeGeometry(0.024,0.18,6),chrome);nt.position.y=-2.05;g.add(nt);
+      var lp=mk(new THREE.TorusGeometry(0.052,0.012,6,14),chrome);lp.position.y=1.98;lp.rotation.x=Math.PI/2;g.add(lp);
       g.position.set(0.7,-1.5,0);parts.needleBar=g;mg.add(g)})();
 
       /* 12. BINDING POSTS */
-      function buildBP(x,z){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.04,0.04,0.35,8),brass));
-      var n=mk(new THREE.CylinderGeometry(0.065,0.065,0.08,6),brass);n.position.y=0.2;g.add(n);
-      var ws=mk(new THREE.CylinderGeometry(0.07,0.07,0.02,12),darkSteel);ws.position.y=0.1;g.add(ws);
+      function buildBP(x,z){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.045,0.045,0.38,10),brass));
+      var n=mk(new THREE.CylinderGeometry(0.075,0.075,0.08,6),brass);n.position.y=0.22;g.add(n);
+      var ws=mk(new THREE.CylinderGeometry(0.09,0.09,0.022,14),chrome);ws.position.y=0.1;g.add(ws);
+      var lower=mk(new THREE.CylinderGeometry(0.08,0.08,0.018,14),edgeSteel);lower.position.y=-0.08;g.add(lower);
       g.position.set(x,0.9,z);return g}
       parts.bindingPostL=buildBP(-0.12,-0.18);mg.add(parts.bindingPostL);
       parts.bindingPostR=buildBP(-0.12,0.18);mg.add(parts.bindingPostR);
 
       /* 13. CLIP CORD */
       (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.06,0.06,0.25,12),rubber));
-      var p=mk(new THREE.CylinderGeometry(0.025,0.025,0.12,8),chrome);p.position.y=-0.18;g.add(p);
-      var sr=mk(new THREE.CylinderGeometry(0.05,0.07,0.12,10),rubber);sr.position.y=0.18;g.add(sr);
+      var p=mk(new THREE.CylinderGeometry(0.028,0.028,0.16,8),chrome);p.position.y=-0.2;g.add(p);
+      var collar=mk(new THREE.TorusGeometry(0.062,0.01,6,16),edgeSteel);collar.rotation.x=Math.PI/2;collar.position.y=-0.08;g.add(collar);
+      var sr=mk(new THREE.CylinderGeometry(0.05,0.075,0.14,10),rubber);sr.position.y=0.19;g.add(sr);
       g.position.set(-0.12,0.5,-0.25);parts.clipCord=g;mg.add(g)})();
 
-      mg.position.set(-0.4,1.2,0);mg.scale.setScalar(isMobile?0.5:(isTablet?0.6:0.7));
+      mg.position.set(-0.35,1.15,0);mg.scale.setScalar(isMobile?0.44:(isTablet?0.52:0.68));
 
       /* Assembled/Exploded states */
       var assembled={},exploded={};
@@ -485,7 +518,7 @@
       if(!prefersRM){
         gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top 40px',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
         var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top 40px',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
-        if(rangeST&&rangeST.isActive)showBg();
+        if(rangeST&&rangeST.isActive){showBg()}else{hideBg()};
       }
 
       function updateAsm(t){
@@ -536,7 +569,7 @@
 
       renderFrame();
 
-      window.addEventListener('resize',function(){isMobile=window.matchMedia('(max-width: 767px)').matches;isTablet=window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches;camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));renderer.shadowMap.enabled=!isMobile;mg.scale.setScalar(isMobile?0.5:(isTablet?0.6:0.7));renderFrame()});
+      window.addEventListener('resize',function(){isMobile=window.matchMedia('(max-width: 767px)').matches;isTablet=window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches;camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));renderer.shadowMap.enabled=!isMobile;mg.scale.setScalar(isMobile?0.44:(isTablet?0.52:0.68));renderFrame()});
 
       /* Mobile: hide progress bar */
       if(window.innerWidth<640){var pb=document.getElementById('machine-progress');if(pb)pb.style.display='none'}
@@ -697,7 +730,7 @@
     </section>
 
     <!-- Contact -->
-    <section id="contact" class="py-32 px-6">
+    <section id="contact" class="py-32 px-6" style="background:#000">
         <div class="max-w-[1000px] mx-auto">
             <div class="grid md:grid-cols-2 gap-16">
                 <div>
