@@ -93,6 +93,11 @@ el.innerHTML = `
     </div>
   </nav>`;
 
+const overlay = el.querySelector('#mobile-overlay');
+if (overlay && overlay.parentElement !== document.body) {
+  document.body.appendChild(overlay);
+}
+
 }
 
 /* ── Footer ── */
@@ -386,7 +391,15 @@ function injectMotionStyles() {
     '.reveal{opacity:1;transform:none;filter:none;transition:opacity .9s cubic-bezier(.22,1,.36,1),transform .9s cubic-bezier(.22,1,.36,1),filter .9s cubic-bezier(.22,1,.36,1)}',
     '.motion-ready .reveal{opacity:0;transform:translate3d(0,28px,0) scale(.985);filter:blur(6px) brightness(.72)}',
     '.motion-ready .reveal.visible{opacity:1;transform:translate3d(0,0,0) scale(1);filter:blur(0) brightness(1)}',
-    '.hero-parallax{will-change:transform,opacity;transform-origin:center top}'
+    '.hero-parallax{will-change:transform,opacity;transform-origin:center top}',
+    '#mobile-overlay.hidden{display:none!important}',
+    '#mobile-overlay{position:fixed!important;left:0!important;right:0!important;top:3.5rem!important;bottom:0!important;z-index:999!important;display:flex!important;flex-direction:column!important;padding:1.75rem!important;padding-top:2rem!important;gap:.95rem!important;overflow-y:auto!important;background:linear-gradient(180deg,rgba(10,10,12,.48),rgba(0,0,0,.30))!important;-webkit-backdrop-filter:blur(8px) saturate(110%)!important;backdrop-filter:blur(8px) saturate(110%)!important}',
+    '#mobile-overlay a{position:relative!important;z-index:1!important;text-shadow:0 2px 12px rgba(0,0,0,.45)!important}',
+    '#mobile-overlay>a{font-size:clamp(1.55rem,7vw,2.25rem)!important;line-height:1.12!important;font-weight:560!important;color:rgba(255,255,255,.94)!important;text-decoration:none!important}',
+    '#mobile-overlay>a.text-apple-blue{color:#0a84ff!important}',
+    '#mobile-overlay>div{margin-top:auto!important;padding-top:1.25rem!important;border-top:1px solid rgba(255,255,255,.14)!important}',
+    '#mobile-overlay>div>a{display:block!important;width:100%!important;border-radius:9999px!important;background:rgba(255,255,255,.92)!important;color:#000!important;text-align:center!important;padding:.9rem 1.15rem!important;font-size:1rem!important;font-weight:650!important;text-shadow:none!important}',
+    'body.lightbox-active{overflow:hidden!important;touch-action:none!important}'
   ].join('');
 
   document.head.appendChild(style);
