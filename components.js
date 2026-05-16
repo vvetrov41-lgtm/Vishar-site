@@ -302,6 +302,27 @@ aboutSection.parentNode.insertBefore(section, aboutSection.nextSibling);
 
 }
 
+/* ── Homepage Booking Window ── */
+function updateHomepageBookingWindow() {
+if (pageId !== 'home') return;
+
+const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+const replacements = [
+  ['booking Jul–Aug 2026', 'booking Sep–Oct 2026'],
+  ['booking Jul-Aug 2026', 'booking Sep-Oct 2026'],
+  ['booking July-August 2026', 'booking September-October 2026']
+];
+
+while (walker.nextNode()) {
+  let text = walker.currentNode.nodeValue;
+  replacements.forEach(function (pair) {
+    text = text.split(pair[0]).join(pair[1]);
+  });
+  walker.currentNode.nodeValue = text;
+}
+
+}
+
 /* ── Mobile Menu Toggle ── */
 window.toggleMenu = function () {
 const overlay = document.getElementById('mobile-overlay');
@@ -443,6 +464,7 @@ buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
 addHomepageApproachBlock();
+updateHomepageBookingWindow();
 injectMotionStyles();
 applyRevealToSections();
 initHeroParallax();
