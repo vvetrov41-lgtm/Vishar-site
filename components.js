@@ -38,6 +38,14 @@ d.textContent = str;
 return d.innerHTML;
 }
 
+function normaliseCtaText(text) {
+if (!text) return 'Send your concept — from £140/hr';
+return text
+  .replace(/Book Your Session\s*[—-]\s*from £140\/hr/g, 'Send your concept — from £140/hr')
+  .replace(/Book Your Session/g, 'Send your concept')
+  .replace(/Book a session/g, 'Send your concept');
+}
+
 /* ── Navigation ── */
 function buildNav() {
 const el = document.getElementById('site-nav');
@@ -80,7 +88,7 @@ el.innerHTML = `
       <div class="pt-4 mt-auto border-t border-white/10">
         <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
            class="block w-full text-center py-3 bg-white text-black rounded-full font-semibold text-base"
-           onclick="toggleMenu()">Book Your Session</a>
+           onclick="toggleMenu()">Start an inquiry</a>
       </div>
     </div>
   </nav>`;
@@ -128,7 +136,7 @@ el.innerHTML = `
         </div>
         <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
            class="text-xs text-white/40 hover:text-white transition-colors">
-          Book a session →
+          Start an inquiry →
         </a>
       </div>
     </div>
@@ -141,7 +149,7 @@ function buildStickyCta() {
 const el = document.getElementById('sticky-cta');
 if (!el) return;
 
-const text = el.dataset.ctaText || 'Send your concept — from £140/hr';
+const text = normaliseCtaText(el.dataset.ctaText || 'Send your concept — from £140/hr');
 el.className = 'sticky-cta hidden-cta';
 el.innerHTML = `<a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
 
