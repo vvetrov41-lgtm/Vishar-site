@@ -88,7 +88,7 @@ el.innerHTML = `
       <div class="pt-4 mt-auto border-t border-white/10">
         <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
            class="block w-full text-center py-3 bg-white text-black rounded-full font-semibold text-base"
-           onclick="toggleMenu()">Send your concept</a>
+           onclick="toggleMenu()">Start an inquiry</a>
       </div>
     </div>
   </nav>`;
