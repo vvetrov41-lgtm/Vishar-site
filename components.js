@@ -93,6 +93,11 @@ el.innerHTML = `
     </div>
   </nav>`;
 
+const overlay = el.querySelector('#mobile-overlay');
+if (overlay && overlay.parentElement !== document.body) {
+  document.body.appendChild(overlay);
+}
+
 }
 
 /* ── Footer ── */
