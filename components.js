@@ -190,7 +190,7 @@ function setupBookingCircleVideo() {
       observer.disconnect();
 
       const source = document.createElement('source');
-      source.src = '/Logo_video.MP4';
+      source.src = '/assets/brand/logo-video.mp4';
       source.type = 'video/mp4';
       video.appendChild(source);
       video.load();
