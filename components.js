@@ -114,12 +114,8 @@ const socialLinks = SOCIALS.map(s =>
 ).join('\n');
 
 el.innerHTML = `
-  <footer class="relative overflow-hidden py-20 border-t border-white/5 px-6" style="background:linear-gradient(180deg,#0a0a0d 0%,#050507 60%,#000 100%)">
-    <div aria-hidden="true" class="absolute inset-0 z-0 pointer-events-none">
-      <video id="footer-video" class="absolute inset-0 w-full h-full object-cover" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback style="opacity:0;transition:opacity .7s ease"></video>
-      <div class="absolute inset-0" style="background:linear-gradient(180deg,rgba(0,0,0,0.65) 0%,rgba(0,0,0,0.4) 45%,rgba(0,0,0,0.65) 100%)"></div>
-    </div>
-    <div class="relative z-10 max-w-[1200px] mx-auto">
+  <footer class="py-20 border-t border-white/5 px-6">
+    <div class="max-w-[1200px] mx-auto">
       <div class="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
         <div>
           <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
@@ -153,13 +149,29 @@ el.innerHTML = `
 
 }
 
-/* ── Footer video (lazy via IntersectionObserver) ── */
-function setupFooterVideo() {
-  if (!('IntersectionObserver' in window)) return;
-  const footer = document.getElementById('site-footer');
-  if (!footer) return;
-  const video = footer.querySelector('#footer-video');
-  if (!video) return;
+/* ── Homepage Book Now video orb ── */
+function setupBookingCircleVideo() {
+  if (pageId !== 'home') return;
+
+  const button = document.querySelector('#contact a[href="' + BOOKING_URL + '"]');
+  if (!button || button.querySelector('.booking-orb-media')) return;
+
+  button.classList.add('booking-video-orb');
+
+  const media = document.createElement('span');
+  media.className = 'booking-orb-media';
+  media.setAttribute('aria-hidden', 'true');
+  media.innerHTML = `
+    <video class="booking-orb-video" muted loop playsinline preload="none" tabindex="-1" disablepictureinpicture disableremoteplayback></video>
+    <span class="booking-orb-shade"></span>`;
+  button.insertBefore(media, button.firstChild);
+
+  Array.from(button.children).forEach(function (child) {
+    if (child !== media) child.classList.add('booking-orb-content');
+  });
+
+  const video = media.querySelector('video');
+  if (!video || !('IntersectionObserver' in window)) return;
 
   const prefersRM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (prefersRM) return;
@@ -185,16 +197,16 @@ function setupFooterVideo() {
 
       const playPromise = video.play();
       if (playPromise && typeof playPromise.catch === 'function') {
-        playPromise.catch(function () { /* autoplay blocked: keep static gradient */ });
+        playPromise.catch(function () { /* autoplay blocked: keep static orb */ });
       }
 
-      const reveal = function () { video.style.opacity = '1'; };
+      const reveal = function () { button.classList.add('video-ready'); };
       video.addEventListener('canplay', reveal, { once: true });
       window.setTimeout(reveal, 4000);
     });
-  }, { rootMargin: '0px 0px 400px 0px', threshold: 0.01 });
+  }, { rootMargin: '0px 0px 360px 0px', threshold: 0.01 });
 
-  observer.observe(footer);
+  observer.observe(button);
 }
 
 /* ── Sticky Mobile CTA ── */
@@ -447,7 +459,15 @@ function injectMotionStyles() {
     '#mobile-overlay>a.text-apple-blue{color:#0a84ff!important}',
     '#mobile-overlay>div{margin-top:auto!important;padding-top:1.25rem!important;border-top:1px solid rgba(255,255,255,.14)!important}',
     '#mobile-overlay>div>a{display:block!important;width:100%!important;border-radius:9999px!important;background:rgba(255,255,255,.92)!important;color:#000!important;text-align:center!important;padding:.9rem 1.15rem!important;font-size:1rem!important;font-weight:650!important;text-shadow:none!important}',
-    'body.lightbox-active{overflow:hidden!important;touch-action:none!important}'
+    'body.lightbox-active{overflow:hidden!important;touch-action:none!important}',
+    '.booking-video-orb{position:relative!important;overflow:hidden!important;background:#050505!important;color:#fff!important}',
+    '.booking-video-orb:hover,.booking-video-orb:focus-visible{background:#050505!important;color:#fff!important}',
+    '.booking-video-orb .booking-orb-media{position:absolute!important;inset:0!important;z-index:0!important;border-radius:inherit!important;overflow:hidden!important;pointer-events:none!important;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.08),rgba(255,255,255,.02) 48%,rgba(0,0,0,.8) 100%)!important}',
+    '.booking-video-orb .booking-orb-video{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;display:block!important;object-fit:cover!important;opacity:0!important;transform:scale(1.16)!important;filter:brightness(1.12) contrast(1.05)!important;transition:opacity .7s ease!important}',
+    '.booking-video-orb.video-ready .booking-orb-video{opacity:.82!important}',
+    '.booking-video-orb .booking-orb-shade{position:absolute!important;inset:0!important;background:radial-gradient(circle at 50% 46%,rgba(0,0,0,.08),rgba(0,0,0,.38) 72%),linear-gradient(180deg,rgba(0,0,0,.22),rgba(0,0,0,.44))!important}',
+    '.booking-video-orb .booking-orb-content{position:relative!important;z-index:1!important;text-shadow:0 2px 18px rgba(0,0,0,.55)!important}',
+    '@media (prefers-reduced-motion:reduce){.booking-video-orb .booking-orb-video{display:none!important}}'
   ].join('');
 
   document.head.appendChild(style);
@@ -529,7 +549,7 @@ els.forEach(function (el) { observer.observe(el); });
 document.addEventListener('DOMContentLoaded', function () {
 buildNav();
 buildFooter();
-setupFooterVideo();
+setupBookingCircleVideo();
 buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
