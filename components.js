@@ -114,8 +114,12 @@ const socialLinks = SOCIALS.map(s =>
 ).join('\n');
 
 el.innerHTML = `
-  <footer class="py-20 border-t border-white/5 px-6">
-    <div class="max-w-[1200px] mx-auto">
+  <footer class="relative overflow-hidden py-20 border-t border-white/5 px-6" style="background:linear-gradient(180deg,#0a0a0d 0%,#050507 60%,#000 100%)">
+    <div aria-hidden="true" class="absolute inset-0 z-0 pointer-events-none">
+      <video id="footer-video" class="absolute inset-0 w-full h-full object-cover" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1" disablepictureinpicture disableremoteplayback style="opacity:0;transition:opacity .7s ease"></video>
+      <div class="absolute inset-0" style="background:linear-gradient(180deg,rgba(0,0,0,0.65) 0%,rgba(0,0,0,0.4) 45%,rgba(0,0,0,0.65) 100%)"></div>
+    </div>
+    <div class="relative z-10 max-w-[1200px] mx-auto">
       <div class="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
         <div>
           <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
@@ -147,6 +151,50 @@ el.innerHTML = `
     </div>
   </footer>`;
 
+}
+
+/* ── Footer video (lazy via IntersectionObserver) ── */
+function setupFooterVideo() {
+  if (!('IntersectionObserver' in window)) return;
+  const footer = document.getElementById('site-footer');
+  if (!footer) return;
+  const video = footer.querySelector('#footer-video');
+  if (!video) return;
+
+  const prefersRM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (prefersRM) return;
+
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (conn) {
+    if (conn.saveData) return;
+    if (/^(2g|slow-2g)$/i.test(conn.effectiveType || '')) return;
+  }
+
+  let loaded = false;
+  const observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting || loaded) return;
+      loaded = true;
+      observer.disconnect();
+
+      const source = document.createElement('source');
+      source.src = '/Logo_video.MP4';
+      source.type = 'video/mp4';
+      video.appendChild(source);
+      video.load();
+
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(function () { /* autoplay blocked: keep static gradient */ });
+      }
+
+      const reveal = function () { video.style.opacity = '1'; };
+      video.addEventListener('canplay', reveal, { once: true });
+      window.setTimeout(reveal, 4000);
+    });
+  }, { rootMargin: '0px 0px 400px 0px', threshold: 0.01 });
+
+  observer.observe(footer);
 }
 
 /* ── Sticky Mobile CTA ── */
@@ -481,6 +529,7 @@ els.forEach(function (el) { observer.observe(el); });
 document.addEventListener('DOMContentLoaded', function () {
 buildNav();
 buildFooter();
+setupFooterVideo();
 buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
