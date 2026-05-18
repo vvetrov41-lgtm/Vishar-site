@@ -360,7 +360,16 @@ titles.forEach(function (title, index) {
   });
 
   const previous = heading.previousElementSibling;
-  if (previous && previous.classList.contains('text-3xl')) previous.remove();
+  const previousText = previous ? previous.textContent.trim() : '';
+  const emojiMarkers = ['🎨', '💡', '✦', '🖤', '🌑', '⏳', '📸', '🧩'];
+
+  if (
+    previous &&
+    previous.classList.contains('text-3xl') &&
+    emojiMarkers.includes(previousText)
+  ) {
+    previous.remove();
+  }
 
   if (heading.previousElementSibling && heading.previousElementSibling.classList.contains('service-feature-marker')) return;
 
