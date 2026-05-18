@@ -689,8 +689,30 @@
         <div class="max-w-[1000px] mx-auto">
             <div class="text-center mb-16"><span class="text-apple-blue font-semibold tracking-wide text-sm">Studio Tool</span><h2 class="text-4xl md:text-5xl font-semibold mt-2 tracking-tight">AI Concierge.</h2><p class="text-white/40 mt-4 text-lg">Instant guidance for your next project or healing stage.</p></div>
             <div class="grid md:grid-cols-2 gap-8">
-                <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift"><h3 class="text-2xl font-semibold mb-2">Concept Consultant</h3><p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Refine your idea</p><textarea id="ai-idea-input" placeholder="Describe your tattoo idea (e.g., A lion's portrait with a crown on my shoulder)..." class="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all resize-none mb-6"></textarea><button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyze Concept</button><div id="ai-idea-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic"></div></div>
-                <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift"><h3 class="text-2xl font-semibold mb-2">Aftercare AI</h3><p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Instant healing support</p><input id="ai-care-input" type="text" placeholder="Ask anything (e.g., Can I go to the gym tomorrow?)" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all mb-6"><button onclick="aiCare()" id="ai-care-btn" class="w-full py-4 bg-white/10 text-white rounded-full font-semibold transition-all hover:bg-white/20 active:scale-95 border border-white/10">Ask Assistant</button><div id="ai-care-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic"></div></div>
+                <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift"><h3 class="text-2xl font-semibold mb-2">Concept Consultant</h3><p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Refine your idea</p><textarea id="ai-idea-input" placeholder="Describe your tattoo idea (e.g., A lion's portrait with a crown on my shoulder)..." class="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all resize-none mb-6"></textarea><button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyze Concept</button><div id="ai-idea-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic whitespace-pre-line break-words overflow-visible"></div>
+                <form id="ai-idea-lead" class="mt-4 hidden rounded-2xl border border-white/10 bg-black/70 p-5 sm:p-6 space-y-4 overflow-hidden box-border">
+                    <div>
+                        <label for="ai-idea-name" class="block px-1 text-xs font-medium uppercase tracking-widest text-white/40 mb-2">Name</label>
+                        <input id="ai-idea-name" type="text" autocomplete="name" placeholder="Your name" class="w-full box-border bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all">
+                    </div>
+                    <div>
+                        <label for="ai-idea-contact" class="block px-1 text-xs font-medium uppercase tracking-widest text-white/40 mb-2">Email, WhatsApp or Instagram</label>
+                        <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="How should Vladimir reply?" class="w-full box-border bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all">
+                    </div>
+                    <div>
+                        <label for="ai-idea-reply" class="block px-1 text-xs font-medium uppercase tracking-widest text-white/40 mb-2">Preferred reply</label>
+                        <select id="ai-idea-reply" class="w-full box-border bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all">
+                            <option value="Email">Email</option>
+                            <option value="WhatsApp">WhatsApp</option>
+                            <option value="Instagram">Instagram</option>
+                            <option value="No preference">No preference</option>
+                        </select>
+                    </div>
+                    <p class="px-1 text-xs leading-relaxed text-white/40">I'll use this only to reply about your tattoo idea.</p>
+                    <button id="ai-idea-send-btn" type="button" class="w-full box-border py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Send this idea to Vladimir</button>
+                    <p id="ai-idea-send-status" class="min-h-5 px-1 text-sm leading-relaxed break-words text-white/60"></p>
+                </form></div>
+                <div class="glass p-8 rounded-3xl border border-white/10 flex flex-col card-lift"><h3 class="text-2xl font-semibold mb-2">Aftercare AI</h3><p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Instant healing support</p><input id="ai-care-input" type="text" placeholder="Ask anything (e.g., Can I go to the gym tomorrow?)" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all mb-6"><button onclick="aiCare()" id="ai-care-btn" class="w-full py-4 bg-white/10 text-white rounded-full font-semibold transition-all hover:bg-white/20 active:scale-95 border border-white/10">Ask Assistant</button><div id="ai-care-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic whitespace-pre-line break-words overflow-visible"></div></div>
             </div>
             <div class="text-center mt-8"><a href="/ai-tools/" class="inline-flex items-center gap-2 text-white/60 hover:text-white transition-colors text-sm font-medium">Open full AI Tools page →</a></div>
         </div>
@@ -772,15 +794,83 @@
       }
     }
 
+    function resetIdeaLeadForm() {
+      const lead = document.getElementById("ai-idea-lead");
+      const status = document.getElementById("ai-idea-send-status");
+      const sendBtn = document.getElementById("ai-idea-send-btn");
+      if (lead) lead.classList.add("hidden");
+      if (status) {
+        status.innerText = "";
+        status.classList.remove("text-red-300");
+        status.classList.add("text-white/60");
+      }
+      if (sendBtn) {
+        sendBtn.disabled = false;
+        sendBtn.innerText = "Send this idea to Vladimir";
+      }
+    }
+
     async function aiIdea() {
       const input = document.getElementById("ai-idea-input").value;
       const btn = document.getElementById("ai-idea-btn");
       const res = document.getElementById("ai-idea-res");
+      const lead = document.getElementById("ai-idea-lead");
       if (!input.trim()) return;
+      resetIdeaLeadForm();
       btn.disabled = true; btn.innerText = "Analyzing..."; res.classList.add("hidden");
       const result = await callAiWorker("idea", input);
       res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyze Concept";
+      if (lead && result !== AI_ERROR_MESSAGE) lead.classList.remove("hidden");
     }
+
+    async function sendIdeaToVladimir() {
+      const sendBtn = document.getElementById("ai-idea-send-btn");
+      const status = document.getElementById("ai-idea-send-status");
+      const contact = document.getElementById("ai-idea-contact").value.trim();
+      const name = document.getElementById("ai-idea-name").value.trim();
+      const preferredReply = document.getElementById("ai-idea-reply").value;
+      const originalIdea = document.getElementById("ai-idea-input").value.trim();
+      const aiSummary = document.getElementById("ai-idea-res").innerText.trim();
+
+      status.classList.remove("text-white/60", "text-red-300");
+      if (!contact) {
+        status.innerText = "Please add an email, WhatsApp number or Instagram username first.";
+        status.classList.add("text-red-300");
+        return;
+      }
+
+      sendBtn.disabled = true;
+      sendBtn.innerText = "Sending...";
+      status.innerText = "Sending to Vladimir...";
+      status.classList.add("text-white/60");
+
+      try {
+        const response = await fetch(AI_WORKER_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "lead",
+            name,
+            contact,
+            preferredReply,
+            originalIdea,
+            aiSummary,
+            page: window.location.href
+          })
+        });
+        if (!response.ok) throw new Error(`Lead Worker returned ${response.status}`);
+        status.innerText = "Sent. Vladimir will review your idea.";
+        sendBtn.innerText = "Sent";
+      } catch (error) {
+        console.error("Lead request failed", error);
+        status.classList.remove("text-white/60");
+        status.classList.add("text-red-300");
+        status.innerText = "Sorry, something went wrong. Please email info@vishartattoo.com";
+        sendBtn.disabled = false;
+        sendBtn.innerText = "Send this idea to Vladimir";
+      }
+    }
+
     async function aiCare() {
       const input = document.getElementById("ai-care-input").value;
       const btn = document.getElementById("ai-care-btn");
@@ -964,6 +1054,11 @@
       buildImageGrid();
       buildFaq();
       renderReviews(3);
+      const sendBtn = document.getElementById("ai-idea-send-btn");
+      if (sendBtn && !sendBtn.dataset.bound) {
+        sendBtn.addEventListener("click", sendIdeaToVladimir);
+        sendBtn.dataset.bound = "true";
+      }
     });
     </script>
 </body>
