@@ -505,6 +505,23 @@ titles.forEach(function (title, index) {
 
 }
 
+/* ── Style Navigation Cards ── */
+function normaliseStyleCardDestinations() {
+const labelsByHref = {
+  '/colour-realism-tattoo-manchester/': 'Colour Realism',
+  '/black-and-grey-realism-manchester/': 'Black & Grey',
+  '/cover-up-tattoo-manchester/': 'Cover-ups'
+};
+
+Object.keys(labelsByHref).forEach(function (href) {
+  document.querySelectorAll('main a[href="' + href + '"]').forEach(function (link) {
+    const heading = link.querySelector('h3, h4');
+    if (!heading) return;
+    heading.textContent = labelsByHref[href];
+  });
+});
+}
+
 /* ── Other Specialities Cross-links ── */
 function removeOtherSpecialitiesMarkers() {
 Array.from(document.querySelectorAll('main section')).forEach(function (section) {
@@ -744,6 +761,7 @@ buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
 refineServiceFeatureCards();
+normaliseStyleCardDestinations();
 removeOtherSpecialitiesMarkers();
 addHomepageApproachBlock();
 updateHomepageBookingWindow();
