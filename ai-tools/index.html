@@ -114,18 +114,22 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                 <textarea id="ai-idea-input" placeholder="Describe your tattoo idea (e.g., A lion's portrait with a crown on my shoulder)..." class="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all resize-none mb-6"></textarea>
                 <button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyze Concept</button>
                 <div id="ai-idea-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic whitespace-pre-line break-words overflow-visible"></div>
-                <form id="ai-idea-lead" class="mt-4 hidden space-y-4 rounded-2xl border border-white/10 bg-black/30 p-5">
-                    <div>
-                        <label for="ai-idea-name" class="mb-2 block text-xs uppercase tracking-[0.2em] text-white/30">Name</label>
-                        <input id="ai-idea-name" name="name" type="text" autocomplete="name" class="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none transition-all focus:border-white" placeholder="Your name">
+                <form id="ai-idea-lead" class="mt-5 hidden space-y-4 rounded-2xl border border-white/10 bg-black/80 p-5 shadow-2xl">
+                    <div class="space-y-2">
+                        <h4 class="text-lg font-semibold text-white">Send this idea to Vladimir?</h4>
+                        <p class="text-sm leading-relaxed text-white/50">Add your contact details and this tattoo idea will be sent directly to Vladimir.</p>
                     </div>
                     <div>
-                        <label for="ai-idea-contact" class="mb-2 block text-xs uppercase tracking-[0.2em] text-white/30">Email, WhatsApp or Instagram</label>
-                        <input id="ai-idea-contact" name="contact" type="text" autocomplete="email" class="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none transition-all focus:border-white" placeholder="How Vladimir can reply">
+                        <label for="ai-idea-name" class="mb-2 block text-xs uppercase tracking-[0.2em] text-white/30">Name</label>
+                        <input id="ai-idea-name" name="name" type="text" autocomplete="name" class="w-full rounded-2xl border border-white/10 bg-black/80 p-4 text-sm text-white outline-none transition-all focus:border-white" placeholder="Your name">
+                    </div>
+                    <div>
+                        <label for="ai-idea-contact" class="mb-2 block text-xs uppercase tracking-[0.2em] text-white/30">Contact</label>
+                        <input id="ai-idea-contact" name="contact" type="text" autocomplete="email" class="w-full rounded-2xl border border-white/10 bg-black/80 p-4 text-sm text-white outline-none transition-all focus:border-white" placeholder="Email, WhatsApp or Instagram">
                     </div>
                     <div>
                         <label for="ai-idea-reply" class="mb-2 block text-xs uppercase tracking-[0.2em] text-white/30">Preferred reply</label>
-                        <select id="ai-idea-reply" name="preferredReply" class="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none transition-all focus:border-white">
+                        <select id="ai-idea-reply" name="preferredReply" class="w-full rounded-2xl border border-white/10 bg-black/80 p-4 text-sm text-white outline-none transition-all focus:border-white">
                             <option value="Email">Email</option>
                             <option value="WhatsApp">WhatsApp</option>
                             <option value="Instagram">Instagram</option>
@@ -208,12 +212,20 @@ async function callAiWorker(type, message) {
     }
 }
 
+function setIdeaLeadStatus(message, tone = "neutral") {
+    const status = document.getElementById("ai-idea-send-status");
+    if (!status) return;
+    const toneClass = tone === "neutral" ? "text-white/60" : "";
+    status.className = `min-h-5 text-sm ${toneClass}`.trim();
+    status.style.color = tone === "error" ? "#fca5a5" : tone === "success" ? "#6ee7b7" : "";
+    status.innerText = message;
+}
+
 function resetIdeaLeadForm() {
     const lead = document.getElementById("ai-idea-lead");
     const sendBtn = document.getElementById("ai-idea-send-btn");
-    const status = document.getElementById("ai-idea-send-status");
     if (lead) lead.classList.add("hidden");
-    if (status) status.innerText = "";
+    setIdeaLeadStatus("");
     if (sendBtn) {
         sendBtn.disabled = false;
         sendBtn.innerText = "Send this idea to Vladimir";
@@ -244,13 +256,13 @@ async function sendIdeaToVladimir() {
     if (!input || !res || !name || !contact || !preferredReply || !btn || !status) return;
 
     if (!contact.value.trim()) {
-        status.innerText = "Please add an email, WhatsApp number or Instagram username first.";
+        setIdeaLeadStatus("Please add an email, WhatsApp number or Instagram username first.", "error");
         return;
     }
 
     btn.disabled = true;
     btn.innerText = "Sending...";
-    status.innerText = "Sending to Vladimir...";
+    setIdeaLeadStatus("Sending to Vladimir...");
 
     try {
         const response = await fetch(AI_WORKER_ENDPOINT, {
@@ -269,12 +281,12 @@ async function sendIdeaToVladimir() {
 
         if (!response.ok) throw new Error(`Lead Worker returned ${response.status}`);
 
-        status.innerText = "Sent. Vladimir will review your idea.";
+        setIdeaLeadStatus("Sent. Vladimir will review your idea.", "success");
         btn.innerText = "Sent";
         btn.disabled = true;
     } catch (error) {
         console.error("Lead request failed", error);
-        status.innerText = "Sorry, something went wrong. Please email info@vishartattoo.com";
+        setIdeaLeadStatus("Sorry, something went wrong. Please email info@vishartattoo.com", "error");
         btn.innerText = "Send this idea to Vladimir";
         btn.disabled = false;
     }
@@ -292,9 +304,17 @@ async function aiCare() {
 
 document.addEventListener("DOMContentLoaded", () => {
     const sendIdeaBtn = document.getElementById("ai-idea-send-btn");
+    const ideaLeadForm = document.getElementById("ai-idea-lead");
     if (sendIdeaBtn && !sendIdeaBtn.dataset.bound) {
         sendIdeaBtn.addEventListener("click", sendIdeaToVladimir);
         sendIdeaBtn.dataset.bound = "true";
+    }
+    if (ideaLeadForm && !ideaLeadForm.dataset.bound) {
+        ideaLeadForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            sendIdeaToVladimir();
+        });
+        ideaLeadForm.dataset.bound = "true";
     }
 });
 </script>
