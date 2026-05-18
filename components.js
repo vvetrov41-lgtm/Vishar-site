@@ -372,6 +372,20 @@ titles.forEach(function (title, index) {
 
 }
 
+/* ── Other Specialities Cross-links ── */
+function removeOtherSpecialitiesMarkers() {
+Array.from(document.querySelectorAll('main section')).forEach(function (section) {
+  const hasOtherSpecialitiesLabel = Array.from(section.querySelectorAll('p')).some(function (el) {
+    return el.textContent.trim().toLowerCase() === 'other specialities';
+  });
+  if (!hasOtherSpecialitiesLabel) return;
+
+  section.querySelectorAll('.speciality-marker, .service-feature-marker').forEach(function (marker) {
+    marker.remove();
+  });
+});
+}
+
 /* ── Homepage Approach Block ── */
 function addHomepageApproachBlock() {
 if (pageId !== 'home' || document.getElementById('homepage-approach')) return;
@@ -596,6 +610,7 @@ buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
 refineServiceFeatureCards();
+removeOtherSpecialitiesMarkers();
 addHomepageApproachBlock();
 updateHomepageBookingWindow();
 injectMotionStyles();
