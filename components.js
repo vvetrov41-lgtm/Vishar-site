@@ -10,6 +10,7 @@ Single source of truth for nav, footer, mobile CTA
 const BOOKING_URL = 'https://shorturl.at/orgVK';
 const EMAIL = 'info@vishartattoo.com';
 const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
+const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
 
 const NAV_LINKS = [
 { id: 'home',           label: 'Home',           href: '/' },
@@ -222,7 +223,7 @@ leadBox.id = 'ai-idea-lead';
 leadBox.className = 'mt-4 hidden rounded-2xl border border-violet-300/15 bg-violet-300/[0.06] p-5';
 leadBox.innerHTML = `
   <p class="text-sm font-medium text-white mb-2">Send this idea to Vladimir?</p>
-  <p class="text-xs leading-relaxed text-white/45 mb-4">Add your contact details and your email app will open with this tattoo idea already prepared.</p>
+  <p class="text-xs leading-relaxed text-white/45 mb-4">Add your contact details and this tattoo idea will be sent directly to Vladimir.</p>
   <div class="grid gap-3 md:grid-cols-2">
     <label class="block">
       <span class="mb-1 block text-[10px] uppercase tracking-[0.25em] text-white/35">Name</span>
@@ -250,6 +251,7 @@ ideaResult.insertAdjacentElement('afterend', leadBox);
 
 const sendButton = leadBox.querySelector('#ai-idea-send-btn');
 const status = leadBox.querySelector('#ai-idea-send-status');
+const defaultButtonText = sendButton ? sendButton.textContent : 'Send this idea to Vladimir';
 
 function setStatus(message, isError) {
   if (!status) return;
@@ -258,7 +260,7 @@ function setStatus(message, isError) {
   status.classList.add(isError ? 'text-red-200' : 'text-white/50');
 }
 
-window.sendIdeaToVladimir = function () {
+window.sendIdeaToVladimir = async function () {
   const originalIdea = ideaInput.value.trim();
   const aiSummary = ideaResult.innerText.trim();
   const name = (document.getElementById('ai-idea-name') || {}).value || '';
@@ -270,32 +272,42 @@ window.sendIdeaToVladimir = function () {
     return;
   }
 
-  const subject = 'Tattoo idea from website';
-  const body = [
-    'Hi Vladimir,',
-    '',
-    'I used the tattoo idea assistant on your website.',
-    '',
-    'Name:',
-    name.trim() || 'Not provided',
-    '',
-    'Contact:',
-    contact.trim(),
-    '',
-    'Preferred reply:',
-    preferredReply,
-    '',
-    'My original idea:',
-    originalIdea || 'Not provided',
-    '',
-    'AI summary:',
-    aiSummary || 'Not provided',
-    '',
-    'I would like to discuss this tattoo.'
-  ].join('\n');
+  if (sendButton) {
+    sendButton.disabled = true;
+    sendButton.textContent = 'Sending...';
+  }
+  setStatus('Sending to Vladimir...', false);
 
-  setStatus('Opening your email app...', false);
-  window.location.href = 'mailto:' + EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  try {
+    const response = await fetch(AI_WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'lead',
+        name: name.trim(),
+        contact: contact.trim(),
+        preferredReply,
+        originalIdea,
+        aiSummary,
+        page: window.location.href
+      })
+    });
+
+    const data = await response.json().catch(function () { return {}; });
+
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.error || 'Lead request failed.');
+    }
+
+    setStatus('Sent. Vladimir will review your idea.', false);
+    if (sendButton) sendButton.textContent = 'Sent';
+  } catch (error) {
+    setStatus('Sorry, something went wrong. Please email info@vishartattoo.com', true);
+    if (sendButton) {
+      sendButton.disabled = false;
+      sendButton.textContent = defaultButtonText;
+    }
+  }
 };
 
 if (sendButton) {
@@ -307,6 +319,10 @@ if (typeof originalAiIdea === 'function') {
   window.aiIdea = async function () {
     leadBox.classList.add('hidden');
     if (status) status.classList.add('hidden');
+    if (sendButton) {
+      sendButton.disabled = false;
+      sendButton.textContent = defaultButtonText;
+    }
     await originalAiIdea.apply(this, arguments);
     const resultText = ideaResult.innerText.trim();
     if (resultText && !ideaResult.classList.contains('hidden')) {
