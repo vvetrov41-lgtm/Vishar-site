@@ -209,6 +209,114 @@ function setupBookingCircleVideo() {
   observer.observe(button);
 }
 
+/* ── AI idea lead capture ── */
+function setupAiIdeaLeadCapture() {
+if (pageId !== 'home') return;
+
+const ideaInput = document.getElementById('ai-idea-input');
+const ideaResult = document.getElementById('ai-idea-res');
+if (!ideaInput || !ideaResult || document.getElementById('ai-idea-lead')) return;
+
+const leadBox = document.createElement('div');
+leadBox.id = 'ai-idea-lead';
+leadBox.className = 'mt-4 hidden rounded-2xl border border-violet-300/15 bg-violet-300/[0.06] p-5';
+leadBox.innerHTML = `
+  <p class="text-sm font-medium text-white mb-2">Send this idea to Vladimir?</p>
+  <p class="text-xs leading-relaxed text-white/45 mb-4">Add your contact details and your email app will open with this tattoo idea already prepared.</p>
+  <div class="grid gap-3 md:grid-cols-2">
+    <label class="block">
+      <span class="mb-1 block text-[10px] uppercase tracking-[0.25em] text-white/35">Name</span>
+      <input id="ai-idea-name" type="text" autocomplete="name" placeholder="Your name" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/40">
+    </label>
+    <label class="block">
+      <span class="mb-1 block text-[10px] uppercase tracking-[0.25em] text-white/35">Contact</span>
+      <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="Email, WhatsApp or Instagram" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/40">
+    </label>
+  </div>
+  <label class="mt-3 block">
+    <span class="mb-1 block text-[10px] uppercase tracking-[0.25em] text-white/35">Preferred reply</span>
+    <select id="ai-idea-reply" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-white/40">
+      <option>Email</option>
+      <option>WhatsApp</option>
+      <option>Instagram</option>
+      <option>No preference</option>
+    </select>
+  </label>
+  <p class="mt-3 text-[11px] leading-relaxed text-white/35">I’ll use this only to reply about your tattoo idea.</p>
+  <button type="button" id="ai-idea-send-btn" class="mt-4 w-full rounded-full border border-violet-300/20 bg-violet-400/20 px-5 py-3 text-sm font-semibold text-white transition-all hover:bg-violet-400/30 active:scale-95">Send this idea to Vladimir</button>
+  <p id="ai-idea-send-status" class="mt-3 hidden text-xs leading-relaxed text-white/50"></p>
+`;
+ideaResult.insertAdjacentElement('afterend', leadBox);
+
+const sendButton = leadBox.querySelector('#ai-idea-send-btn');
+const status = leadBox.querySelector('#ai-idea-send-status');
+
+function setStatus(message, isError) {
+  if (!status) return;
+  status.textContent = message;
+  status.classList.remove('hidden', 'text-red-200', 'text-white/50');
+  status.classList.add(isError ? 'text-red-200' : 'text-white/50');
+}
+
+window.sendIdeaToVladimir = function () {
+  const originalIdea = ideaInput.value.trim();
+  const aiSummary = ideaResult.innerText.trim();
+  const name = (document.getElementById('ai-idea-name') || {}).value || '';
+  const contact = (document.getElementById('ai-idea-contact') || {}).value || '';
+  const preferredReply = (document.getElementById('ai-idea-reply') || {}).value || 'No preference';
+
+  if (!contact.trim()) {
+    setStatus('Please add an email, WhatsApp number or Instagram username first.', true);
+    return;
+  }
+
+  const subject = 'Tattoo idea from website';
+  const body = [
+    'Hi Vladimir,',
+    '',
+    'I used the tattoo idea assistant on your website.',
+    '',
+    'Name:',
+    name.trim() || 'Not provided',
+    '',
+    'Contact:',
+    contact.trim(),
+    '',
+    'Preferred reply:',
+    preferredReply,
+    '',
+    'My original idea:',
+    originalIdea || 'Not provided',
+    '',
+    'AI summary:',
+    aiSummary || 'Not provided',
+    '',
+    'I would like to discuss this tattoo.'
+  ].join('\n');
+
+  setStatus('Opening your email app...', false);
+  window.location.href = 'mailto:' + EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+};
+
+if (sendButton) {
+  sendButton.addEventListener('click', window.sendIdeaToVladimir);
+}
+
+const originalAiIdea = window.aiIdea;
+if (typeof originalAiIdea === 'function') {
+  window.aiIdea = async function () {
+    leadBox.classList.add('hidden');
+    if (status) status.classList.add('hidden');
+    await originalAiIdea.apply(this, arguments);
+    const resultText = ideaResult.innerText.trim();
+    if (resultText && !ideaResult.classList.contains('hidden')) {
+      leadBox.classList.remove('hidden');
+    }
+  };
+}
+
+}
+
 /* ── Sticky Mobile CTA ── */
 function buildStickyCta() {
 const el = document.getElementById('sticky-cta');
@@ -615,6 +723,7 @@ document.addEventListener('DOMContentLoaded', function () {
 buildNav();
 buildFooter();
 setupBookingCircleVideo();
+setupAiIdeaLeadCapture();
 buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
