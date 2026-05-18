@@ -224,22 +224,31 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
   function buildGallery() {
     var grid = document.getElementById('coverup-gallery');
     if (!grid) return;
+    coverUpSlides = [];
     pairs.forEach(function(pair, i) {
+      var beforeSrc = basePath + pair.before;
+      var afterSrc = basePath + pair.after;
       var card = document.createElement('div');
       card.className = 'rounded-2xl border border-white/10 bg-white/5 overflow-hidden card-lift';
+      var beforeIndex = coverUpSlides.push(beforeSrc) - 1;
+      var afterIndex = coverUpSlides.push(afterSrc) - 1;
       card.innerHTML =
         '<div class="grid grid-cols-2 gap-px bg-white/10">' +
-          '<div class="relative">' +
+          '<button type="button" class="relative cursor-zoom-in text-left" data-slide-index="' + beforeIndex + '" aria-label="Open before image ' + (i+1) + '">' +
             buildImageMarkup(pair.before, 'Cover-up before – ' + (i+1)) +
             '<span class="absolute top-3 left-3 text-[10px] uppercase tracking-[0.2em] bg-black/70 text-white/60 px-3 py-1 rounded-full backdrop-blur-sm">Before</span>' +
-          '</div>' +
-          '<div class="relative">' +
+          '</button>' +
+          '<button type="button" class="relative cursor-zoom-in text-left" data-slide-index="' + afterIndex + '" aria-label="Open after image ' + (i+1) + '">' +
             buildImageMarkup(pair.after, 'Cover-up after – ' + (i+1)) +
             '<span class="absolute top-3 left-3 text-[10px] uppercase tracking-[0.2em] bg-white/90 text-black px-3 py-1 rounded-full backdrop-blur-sm">After</span>' +
-          '</div>' +
+          '</button>' +
         '</div>' +
         (pair.desc ? '<p class="p-4 text-sm text-white/40">' + pair.desc + '</p>' : '');
       grid.appendChild(card);
+      card.querySelectorAll('[data-slide-index]').forEach(function(btn){
+        var index = Number(btn.getAttribute('data-slide-index'));
+        btn.addEventListener('click', function(){ openCoverUpLightbox(index); });
+      });
     });
   }
   document.addEventListener('DOMContentLoaded', buildGallery);
@@ -304,11 +313,57 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </section>
 </main>
 
+<div id="lightbox" class="fixed inset-0 z-[1000] bg-black/98 hidden items-center justify-center p-4 backdrop-blur-xl" onclick="onCoverUpLightboxClick(event)" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Image preview">
+    <button class="lb-nav lb-nav--prev" onclick="navigateCoverUpLightbox(-1)" aria-label="Previous image"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <img id="lightbox-img" src="" class="max-w-full max-h-[90vh] object-contain shadow-2xl transition-transform duration-500 cursor-zoom-out" alt="Fullscreen view">
+    <button class="lb-nav lb-nav--next" onclick="navigateCoverUpLightbox(1)" aria-label="Next image"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+    <div class="lb-counter" id="lb-counter"></div>
+</div>
+
 <div id="sticky-cta" data-cta-text="Free Cover-up Assessment — Send Photos"></div>
 <div id="site-footer"></div>
 <script src="/components.js" defer></script>
 <script>
 function toggleFaq(btn){const item=btn.parentElement;const was=item.classList.contains('active');document.querySelectorAll('.faq-item').forEach(i=>{i.classList.remove('active');i.querySelector('button').setAttribute('aria-expanded','false');});if(!was){item.classList.add('active');btn.setAttribute('aria-expanded','true');}}
+let coverUpSlides=[],coverUpLbIndex=0;
+function openCoverUpLightbox(i){
+  if(!coverUpSlides.length||i<0)return;
+  coverUpLbIndex=i;
+  updateCoverUpLightbox();
+  const lb=document.getElementById('lightbox');
+  lb.classList.remove('hidden');
+  lb.setAttribute('data-open','true');
+  lb.setAttribute('aria-hidden','false');
+  document.body.classList.add('lightbox-active');
+}
+window.closeLightbox=function(){
+  const lb=document.getElementById('lightbox');
+  lb.classList.add('hidden');
+  lb.removeAttribute('data-open');
+  lb.setAttribute('aria-hidden','true');
+  document.body.classList.remove('lightbox-active');
+};
+function navigateCoverUpLightbox(d){
+  if(!coverUpSlides.length)return;
+  coverUpLbIndex=(coverUpLbIndex+d+coverUpSlides.length)%coverUpSlides.length;
+  updateCoverUpLightbox();
+}
+function updateCoverUpLightbox(){
+  const img=document.getElementById('lightbox-img');
+  img.src=coverUpSlides[coverUpLbIndex];
+  img.alt='Cover-up tattoo – fullscreen';
+  document.getElementById('lb-counter').textContent=(coverUpLbIndex+1)+' / '+coverUpSlides.length;
+}
+function onCoverUpLightboxClick(e){
+  if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lightbox-img'))closeLightbox();
+}
+(function(){let sx=0;const lb=document.getElementById('lightbox');lb.addEventListener('touchstart',e=>{sx=e.changedTouches[0].screenX},{passive:true});lb.addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-sx;if(Math.abs(d)>50)navigateCoverUpLightbox(d>0?-1:1);},{passive:true});})();
+document.addEventListener('keydown',e=>{
+  if(document.getElementById('lightbox').classList.contains('hidden'))return;
+  if(e.key==='ArrowRight')navigateCoverUpLightbox(1);
+  if(e.key==='ArrowLeft')navigateCoverUpLightbox(-1);
+  if(e.key==='Escape')closeLightbox();
+});
 </script>
 
 </body>
