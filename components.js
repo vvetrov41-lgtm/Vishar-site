@@ -157,7 +157,12 @@ function setupBookingCircleVideo() {
     if (button.closest('#sticky-cta, #site-footer, #site-nav, nav')) return false;
 
     const className = button.className || '';
-    return className.indexOf('rounded-full') !== -1;
+    const isEndPageCircle = !!button.closest('#contact, #book') &&
+      className.indexOf('rounded-full') !== -1 &&
+      className.indexOf('w-64') !== -1 &&
+      className.indexOf('h-64') !== -1;
+
+    return isEndPageCircle;
   });
 
   if (!buttons.length) return;
