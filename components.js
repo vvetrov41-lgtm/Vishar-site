@@ -345,6 +345,8 @@ function buildStickyCta() {
 const el = document.getElementById('sticky-cta');
 if (!el) return;
 
+document.body.classList.add('has-sticky-cta');
+
 const text = normaliseCtaText(el.dataset.ctaText || 'Send your concept — from £140/hr');
 el.className = 'sticky-cta hidden-cta';
 el.innerHTML = `<a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
@@ -658,6 +660,7 @@ function injectMotionStyles() {
     '.booking-video-orb.video-ready .booking-orb-video{opacity:.82!important}',
     '.booking-video-orb .booking-orb-shade{position:absolute!important;inset:0!important;background:radial-gradient(circle at 50% 46%,rgba(0,0,0,.08),rgba(0,0,0,.38) 72%),linear-gradient(180deg,rgba(0,0,0,.22),rgba(0,0,0,.44))!important}',
     '.booking-video-orb .booking-orb-content{position:relative!important;z-index:1!important;text-shadow:0 2px 18px rgba(0,0,0,.55)!important}',
+    '@media (max-width:768px){body.has-sticky-cta #site-footer footer{padding-bottom:calc(9rem + env(safe-area-inset-bottom))!important}}',
     '@media (prefers-reduced-motion:reduce){.booking-video-orb .booking-orb-video{display:none!important}}'
   ].join('');
 
