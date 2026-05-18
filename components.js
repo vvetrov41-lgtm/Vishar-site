@@ -288,14 +288,12 @@ document.head.appendChild(style);
 
 }
 
-/* ── Homepage Specialities Cards ── */
+/* ── Shared Specialities Cards ── */
 function refineHomepageSpecialitiesCards() {
-if (pageId !== 'home') return;
-
 const cards = [
-  { title: 'Colour Realism', marker: '01', snippet: 'Portraits, wildlife, florals.' },
-  { title: 'Black & Grey', marker: '02', snippet: 'Contrast and shading.' },
-  { title: 'Cover-ups', marker: '03', snippet: 'Old ink into something' }
+  { title: 'Colour Realism', marker: '01', snippet: 'Colour Realism', emoji: '🎨' },
+  { title: 'Black & Grey', marker: '02', snippet: 'Black & Grey', emoji: '🖤' },
+  { title: 'Cover-ups', marker: '03', snippet: 'Cover-ups', emoji: '🔄' }
 ];
 
 cards.forEach(function (item) {
@@ -304,7 +302,7 @@ cards.forEach(function (item) {
   });
   if (!heading) return;
 
-  let card = heading.parentElement;
+  let card = heading.closest('a, article, div');
   while (card && card !== document.body) {
     const text = card.textContent || '';
     if (text.indexOf(item.snippet) !== -1) break;
@@ -319,6 +317,9 @@ cards.forEach(function (item) {
     el.classList.remove('text-center');
     el.classList.add('text-left');
   });
+
+  const previous = heading.previousElementSibling;
+  if (previous && previous.textContent.trim() === item.emoji) previous.remove();
 
   if (heading.previousElementSibling && heading.previousElementSibling.classList.contains('speciality-marker')) return;
 
