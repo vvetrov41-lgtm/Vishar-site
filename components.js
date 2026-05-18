@@ -331,6 +331,47 @@ cards.forEach(function (item) {
 
 }
 
+/* ── Service Feature Cards ── */
+function refineServiceFeatureCards() {
+const serviceCards = {
+  'colour-realism': ['True-to-Life Colour', 'Light & Shadow', 'Custom Composition'],
+  'black-grey': ['Full Tonal Range', 'Dramatic Contrast', 'Ages Gracefully'],
+  'cover-up': ['Free Assessment', 'Strategic Design', 'Complete Concealment']
+};
+
+const titles = serviceCards[pageId];
+if (!titles) return;
+
+titles.forEach(function (title, index) {
+  const heading = Array.from(document.querySelectorAll('main h3')).find(function (el) {
+    return el.textContent.trim() === title;
+  });
+  if (!heading) return;
+
+  const card = heading.closest('.card-lift') || heading.closest('div');
+  if (!card) return;
+
+  card.classList.remove('text-center');
+  card.classList.add('text-left');
+
+  card.querySelectorAll('.text-center').forEach(function (el) {
+    el.classList.remove('text-center');
+    el.classList.add('text-left');
+  });
+
+  const previous = heading.previousElementSibling;
+  if (previous && previous.classList.contains('text-3xl')) previous.remove();
+
+  if (heading.previousElementSibling && heading.previousElementSibling.classList.contains('service-feature-marker')) return;
+
+  const marker = document.createElement('p');
+  marker.className = 'service-feature-marker mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35';
+  marker.textContent = String(index + 1).padStart(2, '0');
+  heading.parentNode.insertBefore(marker, heading);
+});
+
+}
+
 /* ── Homepage Approach Block ── */
 function addHomepageApproachBlock() {
 if (pageId !== 'home' || document.getElementById('homepage-approach')) return;
@@ -554,6 +595,7 @@ setupBookingCircleVideo();
 buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
+refineServiceFeatureCards();
 addHomepageApproachBlock();
 updateHomepageBookingWindow();
 injectMotionStyles();
