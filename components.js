@@ -466,7 +466,7 @@ const serviceCards = {
 const titles = serviceCards[pageId];
 if (!titles) return;
 
-titles.forEach(function (title, index) {
+titles.forEach(function (title) {
   const heading = Array.from(document.querySelectorAll('main h3')).find(function (el) {
     return el.textContent.trim() === title;
   });
@@ -494,13 +494,6 @@ titles.forEach(function (title, index) {
   ) {
     previous.remove();
   }
-
-  if (heading.previousElementSibling && heading.previousElementSibling.classList.contains('service-feature-marker')) return;
-
-  const marker = document.createElement('p');
-  marker.className = 'service-feature-marker mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35';
-  marker.textContent = String(index + 1).padStart(2, '0');
-  heading.parentNode.insertBefore(marker, heading);
 });
 
 }
