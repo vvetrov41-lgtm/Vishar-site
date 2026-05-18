@@ -489,6 +489,35 @@ titles.forEach(function (title, index) {
 
 }
 
+function addServiceFeatureSectionLabel() {
+const labels = {
+  'colour-realism': { title: 'Colour Realism', firstCard: 'True-to-Life Colour' },
+  'black-grey': { title: 'Black & Grey', firstCard: 'Full Tonal Range' },
+  'cover-up': { title: 'Cover-ups', firstCard: 'Free Assessment' }
+};
+
+const label = labels[pageId];
+if (!label) return;
+
+const firstHeading = Array.from(document.querySelectorAll('main h3')).find(function (el) {
+  return el.textContent.trim() === label.firstCard;
+});
+if (!firstHeading) return;
+
+const grid = firstHeading.closest('.grid');
+if (!grid || !grid.parentNode) return;
+
+if (grid.previousElementSibling && grid.previousElementSibling.classList.contains('service-feature-section-label')) return;
+
+const block = document.createElement('div');
+block.className = 'service-feature-section-label text-center mb-8';
+block.innerHTML = `
+  <p class="text-[10px] uppercase tracking-[0.35em] text-white/30 mb-3">Service</p>
+  <h2 class="text-2xl md:text-3xl font-semibold tracking-tight">${esc(label.title)}</h2>`;
+
+grid.parentNode.insertBefore(block, grid);
+}
+
 /* ── Other Specialities Cross-links ── */
 function removeOtherSpecialitiesMarkers() {
 Array.from(document.querySelectorAll('main section')).forEach(function (section) {
@@ -728,6 +757,7 @@ buildStickyCta();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
 refineServiceFeatureCards();
+addServiceFeatureSectionLabel();
 removeOtherSpecialitiesMarkers();
 addHomepageApproachBlock();
 updateHomepageBookingWindow();
