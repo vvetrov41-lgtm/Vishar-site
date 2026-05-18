@@ -615,6 +615,30 @@ document.body.classList.toggle('lightbox-active', isOpen);
 
 };
 
+
+/* ── Shared Lightbox Zoom ── */
+window.initLightboxZoom = function () {
+const lb = document.getElementById('lightbox');
+const img = document.getElementById('lightbox-img');
+if (!lb || !img || img.dataset.zoomBound === 'true') return;
+
+function setZoom(isZoomed) {
+  img.style.transform = isZoomed ? 'scale(2)' : 'scale(1)';
+  img.style.cursor = isZoomed ? 'zoom-out' : 'zoom-in';
+  img.dataset.zoomed = isZoomed ? 'true' : 'false';
+}
+
+window.resetLightboxZoom = function () { setZoom(false); };
+window.toggleLightboxZoom = function () { setZoom(img.dataset.zoomed !== 'true'); };
+
+setZoom(false);
+img.addEventListener('click', function (e) {
+  e.stopPropagation();
+  window.toggleLightboxZoom();
+});
+img.dataset.zoomBound = 'true';
+};
+
 /* ── Keyboard: Escape to close overlays ── */
 document.addEventListener('keydown', function (e) {
 if (e.key !== 'Escape') return;

@@ -330,11 +330,14 @@ function openCoverUpLightbox(i){
   if(!coverUpSlides.length||i<0)return;
   coverUpLbIndex=i;
   updateCoverUpLightbox();
+  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
   const lb=document.getElementById('lightbox');
   lb.classList.remove('hidden');
   lb.setAttribute('data-open','true');
   lb.setAttribute('aria-hidden','false');
   document.body.classList.add('lightbox-active');
+  if (typeof window.initLightboxZoom === 'function') window.initLightboxZoom();
+  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
 }
 window.closeLightbox=function(){
   const lb=document.getElementById('lightbox');
@@ -342,11 +345,13 @@ window.closeLightbox=function(){
   lb.removeAttribute('data-open');
   lb.setAttribute('aria-hidden','true');
   document.body.classList.remove('lightbox-active');
+  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
 };
 function navigateCoverUpLightbox(d){
   if(!coverUpSlides.length)return;
   coverUpLbIndex=(coverUpLbIndex+d+coverUpSlides.length)%coverUpSlides.length;
   updateCoverUpLightbox();
+  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
 }
 function updateCoverUpLightbox(){
   const img=document.getElementById('lightbox-img');
@@ -355,7 +360,7 @@ function updateCoverUpLightbox(){
   document.getElementById('lb-counter').textContent=(coverUpLbIndex+1)+' / '+coverUpSlides.length;
 }
 function onCoverUpLightboxClick(e){
-  if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lightbox-img'))closeLightbox();
+  if(e.target===document.getElementById('lightbox'))closeLightbox();
 }
 (function(){let sx=0;const lb=document.getElementById('lightbox');lb.addEventListener('touchstart',e=>{sx=e.changedTouches[0].screenX},{passive:true});lb.addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-sx;if(Math.abs(d)>50)navigateCoverUpLightbox(d>0?-1:1);},{passive:true});})();
 document.addEventListener('keydown',e=>{

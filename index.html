@@ -909,18 +909,23 @@
     /* ── Lightbox ── */
     function openLb(i) {
       lbIdx = i; upLb();
+  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
       const l = document.getElementById('lightbox');
       l.classList.remove('hidden'); l.setAttribute('data-open','true');
       l.setAttribute('aria-hidden','false');
       document.body.classList.add('lightbox-active');
+  if (typeof window.initLightboxZoom === 'function') window.initLightboxZoom();
+  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
     }
     window.closeLightbox = function() {
       const l = document.getElementById('lightbox');
       l.classList.add('hidden'); l.removeAttribute('data-open');
       l.setAttribute('aria-hidden','true');
       document.body.classList.remove('lightbox-active');
+  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
     };
-    function navLb(d) { lbIdx = (lbIdx + d + portfolioImages.length) % portfolioImages.length; upLb(); }
+    function navLb(d) { lbIdx = (lbIdx + d + portfolioImages.length) % portfolioImages.length; upLb();
+  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom(); }
     function upLb() {
       const img = document.getElementById('lightbox-img');
       const file = portfolioImages[lbIdx];
@@ -928,7 +933,7 @@
       img.alt = 'Realism tattoo – fullscreen';
       document.getElementById('lb-counter').textContent = (lbIdx+1) + ' / ' + portfolioImages.length;
     }
-    function onLbClick(e) { if (e.target === document.getElementById('lightbox') || e.target === document.getElementById('lightbox-img')) closeLightbox(); }
+    function onLbClick(e) { if (e.target === document.getElementById('lightbox')) closeLightbox(); }
     (function(){let sx=0;const l=document.getElementById('lightbox');l.addEventListener('touchstart',e=>{sx=e.changedTouches[0].screenX},{passive:true});l.addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-sx;if(Math.abs(d)>50)navLb(d>0?-1:1);},{passive:true});})();
     document.addEventListener('keydown', e => {
       if (document.getElementById('lightbox').classList.contains('hidden')) return;
