@@ -395,6 +395,31 @@ Array.from(document.querySelectorAll('main section')).forEach(function (section)
 });
 }
 
+function normaliseOtherSpecialitiesLabels() {
+const labelsByHref = {
+  '/colour-realism-tattoo-manchester/': 'Colour Realism',
+  '/black-and-grey-realism-manchester/': 'Black & Grey',
+  '/cover-up-tattoo-manchester/': 'Cover-ups'
+};
+
+Array.from(document.querySelectorAll('main section')).forEach(function (section) {
+  const hasOtherSpecialitiesLabel = Array.from(section.querySelectorAll('p')).some(function (el) {
+    return el.textContent.trim().toLowerCase() === 'other specialities';
+  });
+  if (!hasOtherSpecialitiesLabel) return;
+
+  Object.keys(labelsByHref).forEach(function (href) {
+    const link = section.querySelector('a[href="' + href + '"]');
+    if (!link) return;
+
+    const heading = link.querySelector('h3, h4');
+    if (!heading) return;
+
+    heading.textContent = labelsByHref[href];
+  });
+});
+}
+
 /* ── Homepage Approach Block ── */
 function addHomepageApproachBlock() {
 if (pageId !== 'home' || document.getElementById('homepage-approach')) return;
@@ -620,6 +645,7 @@ refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
 refineServiceFeatureCards();
 removeOtherSpecialitiesMarkers();
+normaliseOtherSpecialitiesLabels();
 addHomepageApproachBlock();
 updateHomepageBookingWindow();
 injectMotionStyles();
