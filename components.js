@@ -150,64 +150,66 @@ el.innerHTML = `
 
 }
 
-/* ── Homepage Book Now video orb ── */
+/* ── Booking video orbs ── */
 function setupBookingCircleVideo() {
-  if (pageId !== 'home') return;
+  const buttons = Array.from(document.querySelectorAll('main a[href="' + BOOKING_URL + '"]')).filter(function (button) {
+    if (button.querySelector('.booking-orb-media')) return false;
+    if (button.closest('#sticky-cta, #site-footer, #site-nav, nav')) return false;
 
-  const button = document.querySelector('#contact a[href="' + BOOKING_URL + '"]');
-  if (!button || button.querySelector('.booking-orb-media')) return;
-
-  button.classList.add('booking-video-orb');
-
-  const media = document.createElement('span');
-  media.className = 'booking-orb-media';
-  media.setAttribute('aria-hidden', 'true');
-  media.innerHTML = `
-    <video class="booking-orb-video" muted loop playsinline preload="none" tabindex="-1" disablepictureinpicture disableremoteplayback></video>
-    <span class="booking-orb-shade"></span>`;
-  button.insertBefore(media, button.firstChild);
-
-  Array.from(button.children).forEach(function (child) {
-    if (child !== media) child.classList.add('booking-orb-content');
+    const className = button.className || '';
+    return className.indexOf('rounded-full') !== -1;
   });
 
-  const video = media.querySelector('video');
-  if (!video || !('IntersectionObserver' in window)) return;
+  if (!buttons.length) return;
 
   const prefersRM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (prefersRM) return;
-
   const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-  if (conn) {
-    if (conn.saveData) return;
-    if (/^(2g|slow-2g)$/i.test(conn.effectiveType || '')) return;
-  }
+  const shouldLoadVideo = !prefersRM && !(conn && (conn.saveData || /^(2g|slow-2g)$/i.test(conn.effectiveType || '')));
 
-  let loaded = false;
-  const observer = new IntersectionObserver(function (entries) {
-    entries.forEach(function (entry) {
-      if (!entry.isIntersecting || loaded) return;
-      loaded = true;
-      observer.disconnect();
+  buttons.forEach(function (button) {
+    button.classList.add('booking-video-orb');
 
-      const source = document.createElement('source');
-      source.src = '/assets/brand/logo-video.mp4';
-      source.type = 'video/mp4';
-      video.appendChild(source);
-      video.load();
+    const media = document.createElement('span');
+    media.className = 'booking-orb-media';
+    media.setAttribute('aria-hidden', 'true');
+    media.innerHTML = `
+      <video class="booking-orb-video" muted loop playsinline preload="none" tabindex="-1" disablepictureinpicture disableremoteplayback></video>
+      <span class="booking-orb-shade"></span>`;
+    button.insertBefore(media, button.firstChild);
 
-      const playPromise = video.play();
-      if (playPromise && typeof playPromise.catch === 'function') {
-        playPromise.catch(function () { /* autoplay blocked: keep static orb */ });
-      }
-
-      const reveal = function () { button.classList.add('video-ready'); };
-      video.addEventListener('canplay', reveal, { once: true });
-      window.setTimeout(reveal, 4000);
+    Array.from(button.children).forEach(function (child) {
+      if (child !== media) child.classList.add('booking-orb-content');
     });
-  }, { rootMargin: '0px 0px 360px 0px', threshold: 0.01 });
 
-  observer.observe(button);
+    const video = media.querySelector('video');
+    if (!video || !shouldLoadVideo || !('IntersectionObserver' in window)) return;
+
+    let loaded = false;
+    const observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting || loaded) return;
+        loaded = true;
+        observer.disconnect();
+
+        const source = document.createElement('source');
+        source.src = '/assets/brand/logo-video.mp4';
+        source.type = 'video/mp4';
+        video.appendChild(source);
+        video.load();
+
+        const playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(function () { /* autoplay blocked: keep static orb */ });
+        }
+
+        const reveal = function () { button.classList.add('video-ready'); };
+        video.addEventListener('canplay', reveal, { once: true });
+        window.setTimeout(reveal, 4000);
+      });
+    }, { rootMargin: '0px 0px 360px 0px', threshold: 0.01 });
+
+    observer.observe(button);
+  });
 }
 
 /* ── AI idea lead capture ── */
