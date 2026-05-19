@@ -842,9 +842,10 @@
             page: window.location.href
           })
         });
+        const data = await response.json().catch(function () { return {}; });
 
-        if (!response.ok) {
-          throw new Error(`Lead Worker returned ${response.status}`);
+        if (!response.ok || data.ok === false) {
+          throw new Error((data && data.error) || "Lead request failed.");
         }
 
         status.innerText = "Sent. Vladimir will review your idea.";
@@ -854,8 +855,8 @@
       } catch (error) {
         console.error("AI idea lead request failed", error);
         status.innerText = "Sorry, something went wrong. Please email info@vishartattoo.com";
-        status.classList.remove("text-red-400");
-        status.classList.add("text-white/60");
+        status.classList.remove("text-white/60");
+        status.classList.add("text-red-400");
         sendBtn.disabled = false;
         sendBtn.innerText = "Send this idea to Vladimir";
       }
