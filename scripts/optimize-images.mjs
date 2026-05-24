@@ -5,7 +5,7 @@ import sharp from 'sharp';
 const TARGET_MAP = {
   'cover-ups': 'assets/cover-ups',
   portfolio: 'assets/portfolio',
-  'black-and-grey': 'assets/black-and-grey',
+  'black-and-grey': 'assets/black-grey',
   'colour-realism': 'assets/colour-realism',
   hero: 'assets/hero',
 };
@@ -138,6 +138,13 @@ async function main() {
   const target = resolveTargetKey();
   const relativeDir = TARGET_MAP[target];
   const targetDir = path.resolve(relativeDir);
+
+  try {
+    await fs.access(targetDir);
+  } catch {
+    throw new Error(`Mapped target directory does not exist for target "${target}": ${relativeDir} (${targetDir})`);
+  }
+
   const files = await getJpegFiles(targetDir);
 
   if (files.length === 0) {
