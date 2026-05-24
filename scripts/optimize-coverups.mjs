@@ -3,6 +3,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 
 const COVER_UPS_DIR = path.resolve('assets/cover-ups');
+const REPORT_FILE = path.resolve('optimize-coverups-report.md');
 const EXTENSION = '.jpg';
 const SIZE_THRESHOLD_BYTES = Math.floor(2.5 * 1024 * 1024);
 const MAX_EDGE_PX = 2400;
@@ -22,10 +23,15 @@ async function getJpgFiles(dir) {
 
 async function optimizeFile(filePath) {
   const beforeStats = await fs.stat(filePath);
+  const relativePath = path.relative(process.cwd(), filePath);
 
   if (beforeStats.size <= SIZE_THRESHOLD_BYTES) {
-    console.log(`SKIP ${path.relative(process.cwd(), filePath)} (${formatBytes(beforeStats.size)}) - under threshold`);
-    return;
+    console.log(`SKIP ${relativePath} (${formatBytes(beforeStats.size)}) - under threshold`);
+    return {
+      type: 'skipped',
+      file: relativePath,
+      currentSize: beforeStats.size,
+    };
   }
 
   const input = sharp(filePath, { failOn: 'none' });
@@ -59,22 +65,72 @@ async function optimizeFile(filePath) {
   const afterStats = await fs.stat(filePath);
   const delta = beforeStats.size - afterStats.size;
 
-  console.log(
-    `OK   ${path.relative(process.cwd(), filePath)} ${formatBytes(beforeStats.size)} -> ${formatBytes(afterStats.size)} (${formatBytes(delta)} saved)`
-  );
+  console.log(`OK   ${relativePath} ${formatBytes(beforeStats.size)} -> ${formatBytes(afterStats.size)} (${formatBytes(delta)} saved)`);
+
+  return {
+    type: 'optimized',
+    file: relativePath,
+    beforeSize: beforeStats.size,
+    afterSize: afterStats.size,
+    savedSize: delta,
+  };
+}
+
+async function writeReport(results) {
+  const optimized = results.filter((result) => result.type === 'optimized');
+  const skipped = results.filter((result) => result.type === 'skipped');
+  const totalSavedBytes = optimized.reduce((sum, result) => sum + result.savedSize, 0);
+
+  const lines = [
+    '# Optimize cover-up gallery images report',
+    '',
+    '## Settings',
+    `- Threshold: files larger than ${formatBytes(SIZE_THRESHOLD_BYTES)}`,
+    `- Max edge: ${MAX_EDGE_PX}px`,
+    `- JPEG quality: ${JPEG_QUALITY}`,
+    '',
+    '## Optimized files',
+  ];
+
+  if (optimized.length === 0) {
+    lines.push('- None');
+  } else {
+    for (const file of optimized) {
+      lines.push(`- \`${file.file}\`: ${formatBytes(file.beforeSize)} → ${formatBytes(file.afterSize)} (saved ${formatBytes(file.savedSize)})`);
+    }
+  }
+
+  lines.push('', '## Skipped files');
+
+  if (skipped.length === 0) {
+    lines.push('- None');
+  } else {
+    for (const file of skipped) {
+      lines.push(`- \`${file.file}\`: ${formatBytes(file.currentSize)}`);
+    }
+  }
+
+  lines.push('', `## Total saved`, `- ${formatBytes(totalSavedBytes)}`, '');
+
+  await fs.writeFile(REPORT_FILE, `${lines.join('\n')}`);
 }
 
 async function main() {
   const files = await getJpgFiles(COVER_UPS_DIR);
 
   if (files.length === 0) {
+    await writeReport([]);
     console.log('No JPG files found in assets/cover-ups.');
     return;
   }
 
+  const results = [];
   for (const filePath of files) {
-    await optimizeFile(filePath);
+    const result = await optimizeFile(filePath);
+    results.push(result);
   }
+
+  await writeReport(results);
 }
 
 main().catch((error) => {

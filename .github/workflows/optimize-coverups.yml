@@ -34,9 +34,6 @@ jobs:
           branch: chore/optimize-coverups-images
           delete-branch: true
           title: Optimize cover-up gallery images
-          body: |
-            This PR was created automatically by the manual cover-up optimization workflow.
-
-            Only `assets/cover-ups/*.jpg` files were processed and updated by the automation.
+          body-path: optimize-coverups-report.md
           add-paths: |
             assets/cover-ups/*.jpg
