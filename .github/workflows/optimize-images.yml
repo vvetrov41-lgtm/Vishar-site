@@ -50,3 +50,4 @@ jobs:
           body-path: optimize-images-${{ inputs.target }}-report.md
           add-paths: |
             assets/**/*.jpg
+            assets/**/*.jpeg
