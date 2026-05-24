@@ -1,0 +1,42 @@
+name: Optimize Cover-up Images
+
+on:
+  workflow_dispatch:
+
+jobs:
+  optimize-coverups:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Sharp
+        run: npm install sharp
+
+      - name: Optimize cover-up JPG images
+        run: node scripts/optimize-coverups.mjs
+
+      - name: Validate site
+        run: npm run validate:site
+
+      - name: Create pull request with optimized images
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: Optimize cover-up gallery images
+          branch: chore/optimize-coverups-images
+          delete-branch: true
+          title: Optimize cover-up gallery images
+          body: |
+            This PR was created automatically by the manual cover-up optimization workflow.
+
+            Only `assets/cover-ups/*.jpg` files were processed and updated by the automation.
+          add-paths: |
+            assets/cover-ups/*.jpg
