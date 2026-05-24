@@ -3,78 +3,50 @@ name: Optimize Images
 on:
   workflow_dispatch:
     inputs:
-      image_root:
-        description: Folder to scan for source images
+      target:
+        description: Select target folder to optimize
         required: true
-        default: assets
-      image_limit:
-        description: Number of largest images to optimize
-        required: true
-        default: '15'
-      generate_webp:
-        description: Generate WebP derivatives
-        required: true
-        default: 'true'
-      generate_avif:
-        description: Generate AVIF derivatives
-        required: true
-        default: 'true'
-      force:
-        description: Regenerate derivatives even if they are newer than originals
-        required: true
-        default: 'false'
-
-permissions:
-  contents: write
+        type: choice
+        options:
+          - cover-ups
+          - portfolio
+          - black-and-grey
+          - colour-realism
+          - hero
 
 jobs:
   optimize-images:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install Sharp
+        run: npm install sharp
 
-      - name: Run optimization
+      - name: Optimize selected JPG/JPEG images
         env:
-          IMAGE_ROOT: ${{ github.event.inputs.image_root || 'assets' }}
-          IMAGE_LIMIT: ${{ github.event.inputs.image_limit || '15' }}
-          GENERATE_WEBP: ${{ github.event.inputs.generate_webp || 'true' }}
-          GENERATE_AVIF: ${{ github.event.inputs.generate_avif || 'true' }}
-          FORCE: ${{ github.event.inputs.force || 'false' }}
-        run: npm run optimize:images
+          OPTIMIZE_TARGET: ${{ inputs.target }}
+        run: node scripts/optimize-images.mjs
 
-      - name: Upload reports
-        uses: actions/upload-artifact@v4
+      - name: Validate site
+        run: npm run validate:site
+
+      - name: Create pull request with optimized images
+        uses: peter-evans/create-pull-request@v6
         with:
-          name: image-optimization-reports
-          path: |
-            IMAGE_OPTIMIZATION_REPORT.md
-            IMAGE_OPTIMIZATION_REPORT.json
-
-      - name: Commit generated files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add IMAGE_OPTIMIZATION_REPORT.md IMAGE_OPTIMIZATION_REPORT.json
-          find assets -type f \( -name "*.webp" -o -name "*.avif" \) -print0 | xargs -0 -r git add
-          if git diff --cached --quiet; then
-            echo "No generated image/report changes to commit."
-            exit 0
-          fi
-          git commit -m "chore: optimize top images and update reports"
-          if ! git pull --rebase origin main; then
-            echo "Rebase failed while updating from origin/main before push. Resolve conflicts and re-run workflow."
-            exit 1
-          fi
-          git push origin HEAD:main
+          commit-message: Optimize ${{ inputs.target }} images
+          branch: chore/optimize-${{ inputs.target }}-images
+          delete-branch: true
+          title: Optimize ${{ inputs.target }} images
+          body-path: optimize-images-${{ inputs.target }}-report.md
+          add-paths: |
+            assets/**/*.jpg
