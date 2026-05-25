@@ -121,6 +121,7 @@ el.innerHTML = `
         <div>
           <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
           <p class="text-sm text-white/30 leading-relaxed">Colour &amp; Black-Grey Realism<br>Manchester &amp; Salford</p>
+          <p class="text-sm text-white/40 leading-relaxed mt-3">Studio: No Regrets Studios, UNIT 73 Yorkshire St, Salford M3 5EG<br>By appointment only · Bookings via studio form</p>
           <a href="mailto:${EMAIL}" class="text-sm text-white/50 hover:text-white mt-3 inline-block transition-colors">${EMAIL}</a>
         </div>
         <div>
