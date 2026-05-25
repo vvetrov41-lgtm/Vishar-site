@@ -83,7 +83,7 @@ el.innerHTML = `
       </button>
     </div>
     <div id="mobile-overlay"
-         class="hidden fixed inset-0 top-14 bg-black/95 backdrop-blur-md z-[90] flex flex-col p-8 pt-10 space-y-5 text-xl font-medium"
+         class="hidden fixed inset-0 left-0 right-0 top-14 max-w-full box-border overflow-x-hidden bg-black/95 backdrop-blur-md z-[90] flex flex-col px-6 pt-10 pb-8 space-y-5 text-xl font-medium"
          aria-hidden="true">
       ${mobileLinks}
       <div class="pt-4 mt-auto border-t border-white/10">
