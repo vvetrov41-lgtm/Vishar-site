@@ -20,7 +20,7 @@ const NAV_LINKS = [
 { id: 'about',          label: 'About',           href: '/about/' },
 { id: 'aftercare',      label: 'Aftercare',       href: '/aftercare/' },
 { id: 'faq',            label: 'FAQ',              href: '/faq/' },
-{ id: 'ai-tools',       label: 'AI Tools',        href: '/ai-tools/' }
+{ id: 'ai-tools',       label: 'Studio Tools',    href: '/ai-tools/' }
 ];
 
 const SOCIALS = [
