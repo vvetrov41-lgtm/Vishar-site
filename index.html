@@ -240,6 +240,19 @@
 
       function hasWebGL(){try{var c=document.createElement('canvas');return!!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')))}catch(e){return false}}
 
+      function shouldSkipMachine3DForWeakConditions(){
+        var connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+        if(connection){
+          if(connection.saveData===true)return true;
+          if(connection.effectiveType==='slow-2g'||connection.effectiveType==='2g')return true;
+        }
+        var isMobileViewport=window.matchMedia&&window.matchMedia('(max-width: 767px)').matches;
+        if(!isMobileViewport)return false;
+        if(typeof navigator.hardwareConcurrency==='number'&&navigator.hardwareConcurrency<=2)return true;
+        if(typeof navigator.deviceMemory==='number'&&navigator.deviceMemory<=2)return true;
+        return false;
+      }
+
       if(prefersRM){setMachineFallback('3D animation disabled because reduced motion is enabled.');return}
       if(!hasWebGL()){setMachineFallback('3D preview requires WebGL.');return}
 
@@ -265,6 +278,11 @@
 
       function initMachineWhenReady(){
         if(initStarted)return;
+        if(shouldSkipMachine3DForWeakConditions()){
+          initStarted=true;
+          setMachineFallback('3D preview disabled on this device to preserve performance.');
+          return;
+        }
         initStarted=true;
         loadMachineLibraries().then(function(){
           if(!window.THREE||!window.gsap||!window.ScrollTrigger){setMachineFallback('3D preview could not be loaded.');return}
