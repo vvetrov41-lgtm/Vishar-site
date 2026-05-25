@@ -1,0 +1,7 @@
+name = "tattooai"
+main = "workers/tattooai.js"
+compatibility_date = "2026-05-25"
+workers_dev = true
+
+[[ai]]
+binding = "AI"
