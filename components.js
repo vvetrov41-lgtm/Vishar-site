@@ -424,6 +424,8 @@ document.head.appendChild(style);
 
 /* ── Shared Specialities Cards ── */
 function refineHomepageSpecialitiesCards() {
+if (pageId !== 'home') return;
+
 const cards = [
   { title: 'Colour Realism', marker: '01', snippet: 'Colour Realism', emoji: '🎨' },
   { title: 'Black & Grey', marker: '02', snippet: 'Black & Grey', emoji: '🖤' },
