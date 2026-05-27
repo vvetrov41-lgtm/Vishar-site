@@ -8,6 +8,7 @@ Single source of truth for nav, footer, mobile CTA
 
 /* ── Config ── */
 const BOOKING_URL = 'https://shorturl.at/orgVK';
+const BOOKING_WINDOW = 'Currently booking September – October 2026';
 const EMAIL = 'info@vishartattoo.com';
 const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
 const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
@@ -44,7 +45,14 @@ if (!text) return 'Send your concept — from £140/hr';
 return text
   .replace(/Book Your Session\s*[—-]\s*from £140\/hr/g, 'Send your concept — from £140/hr')
   .replace(/Book Your Session/g, 'Send your concept')
-  .replace(/Book a session/g, 'Send your concept');
+  .replace(/Book a session/g, 'Send your concept')
+  .replace(/Get a Free Quote/g, 'Send your concept');
+}
+
+function populateBookingWindow() {
+  document.querySelectorAll('[data-booking-window]').forEach(function (el) {
+    el.textContent = BOOKING_WINDOW;
+  });
 }
 
 /* ── Navigation ── */
@@ -773,6 +781,7 @@ buildFooter();
 setupBookingCircleVideo();
 setupAiIdeaLeadCapture();
 buildStickyCta();
+populateBookingWindow();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
 refineServiceFeatureCards();
