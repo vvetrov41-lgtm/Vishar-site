@@ -724,10 +724,9 @@ function initHeroParallax() {
     const y = Math.max(window.scrollY, 0);
     const p = Math.min(y / 700, 1);
     const translate = p * 24;
-    const scale = 1 + p * 0.03;
     const opacity = 1 - p * 0.14;
 
-    hero.style.transform = 'translate3d(0,' + translate + 'px,0) scale(' + scale.toFixed(3) + ')';
+    hero.style.transform = 'translate3d(0,' + translate + 'px,0)';
     hero.style.opacity = opacity.toFixed(3);
     ticking = false;
   }
