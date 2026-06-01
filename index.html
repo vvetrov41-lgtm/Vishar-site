@@ -330,6 +330,24 @@
       renderer.setClearColor(0x000000,0);
       bgWrap.appendChild(renderer.domElement);
 
+      /* Environment (IBL): procedural dark-studio gradient, no external asset.
+         Gives metals something to reflect so they read as machined steel/brass
+         instead of flat. Kept intentionally dark to preserve the minimalist look. */
+      (function(){
+        var ec=document.createElement('canvas');ec.width=16;ec.height=128;
+        var ex=ec.getContext('2d');var grad=ex.createLinearGradient(0,0,0,128);
+        grad.addColorStop(0.0,'#43474e');  /* up: soft cool key */
+        grad.addColorStop(0.42,'#26282d');
+        grad.addColorStop(0.55,'#3a332a');  /* faint warm horizon streak (brass) */
+        grad.addColorStop(0.72,'#141518');
+        grad.addColorStop(1.0,'#060607');   /* down: near-black floor */
+        ex.fillStyle=grad;ex.fillRect(0,0,16,128);
+        var envSrc=new THREE.CanvasTexture(ec);envSrc.mapping=THREE.EquirectangularReflectionMapping;
+        var pmrem=new THREE.PMREMGenerator(renderer);pmrem.compileEquirectangularShader();
+        scene.environment=pmrem.fromEquirectangular(envSrc).texture;
+        envSrc.dispose();pmrem.dispose();
+      })();
+
       /* Lighting */
       var kl=new THREE.DirectionalLight(0xffeedd,1.4);kl.position.set(5,8,4);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-0.001;scene.add(kl);
       var fl=new THREE.DirectionalLight(0x8899bb,0.4);fl.position.set(-4,3,-2);scene.add(fl);
@@ -341,13 +359,13 @@
       gp.rotation.x=-Math.PI/2;gp.position.y=-1.8;gp.receiveShadow=true;scene.add(gp);
 
       /* Materials */
-      var blackSteel=new THREE.MeshStandardMaterial({color:0x1a1a1e,metalness:0.85,roughness:0.35});
-      var darkSteel=new THREE.MeshStandardMaterial({color:0x2a2a2e,metalness:0.9,roughness:0.3});
-      var brass=new THREE.MeshStandardMaterial({color:0x8b7533,metalness:0.95,roughness:0.25});
-      var copper=new THREE.MeshStandardMaterial({color:0x7f4422,metalness:0.9,roughness:0.3});
-      var chrome=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.98,roughness:0.1});
-      var darkCopper=new THREE.MeshStandardMaterial({color:0x5a3018,metalness:0.85,roughness:0.4});
-      var rubber=new THREE.MeshStandardMaterial({color:0x111111,metalness:0.0,roughness:0.9});
+      var blackSteel=new THREE.MeshStandardMaterial({color:0x1a1a1e,metalness:0.85,roughness:0.35,envMapIntensity:0.5});
+      var darkSteel=new THREE.MeshStandardMaterial({color:0x2a2a2e,metalness:0.9,roughness:0.3,envMapIntensity:0.55});
+      var brass=new THREE.MeshStandardMaterial({color:0x9c7d35,metalness:0.95,roughness:0.28,envMapIntensity:0.85});
+      var copper=new THREE.MeshStandardMaterial({color:0x7f4422,metalness:0.9,roughness:0.3,envMapIntensity:0.7});
+      var chrome=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.98,roughness:0.16,envMapIntensity:0.9});
+      var darkCopper=new THREE.MeshStandardMaterial({color:0x5a3018,metalness:0.85,roughness:0.4,envMapIntensity:0.6});
+      var rubber=new THREE.MeshStandardMaterial({color:0x111111,metalness:0.0,roughness:0.9,envMapIntensity:0.15});
 
       function mk(geo,mat){var m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;return m}
 
