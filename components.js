@@ -7,7 +7,7 @@ Single source of truth for nav, footer, mobile CTA
 'use strict';
 
 /* ── Config ── */
-const BOOKING_URL = 'https://shorturl.at/orgVK';
+const BOOKING_URL = 'https://bit.ly/43RhJPA';
 const BOOKING_WINDOW = 'Currently booking September – October 2026';
 const EMAIL = 'info@vishartattoo.com';
 const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
@@ -392,7 +392,7 @@ if (hero) {
 
   const heroFlexRows = Array.from(hero.querySelectorAll('.flex'));
   const ctaRow = heroFlexRows.find(function (el) {
-    return el.querySelector('a[href="https://shorturl.at/orgVK"]') && el.querySelector('a[href="#portfolio"]');
+    return el.querySelector('a[href="https://bit.ly/43RhJPA"]') && el.querySelector('a[href="#portfolio"]');
   });
   if (ctaRow) ctaRow.classList.add('homepage-hero-cta-row');
 }
