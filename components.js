@@ -46,6 +46,8 @@ return text
   .replace(/Book Your Session\s*[—-]\s*from £140\/hr/g, 'Send your concept — from £140/hr')
   .replace(/Book Your Session/g, 'Send your concept')
   .replace(/Book a session/g, 'Send your concept')
+  .replace(/Book Now/g, 'Send your concept')
+  .replace(/Starts at £140/g, '£140/hr')
   .replace(/Get a Free Quote/g, 'Send your concept');
 }
 
