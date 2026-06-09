@@ -663,9 +663,10 @@
     <section id="reviews" class="py-24 px-6">
         <div class="max-w-[1000px] mx-auto">
             <div class="rounded-[32px] border border-white/10 bg-black/80 p-8 md:p-10 shadow-2xl">
-                <div class="w-full text-left flex flex-col md:flex-row md:items-center md:justify-between gap-6"><div><p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-2">Reviews</p><h2 class="text-4xl md:text-5xl font-semibold text-white">Client feedback.</h2><p class="text-white/50 mt-3 text-lg">A few words from clients I’ve tattooed at No Regrets.</p></div></div>
+                <div class="w-full text-left flex flex-col md:flex-row md:items-center md:justify-between gap-6"><div><p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-2">Reviews</p><h2 class="text-4xl md:text-5xl font-semibold text-white">Client feedback.</h2><p class="text-white/50 mt-3 text-lg">Verified Google reviews from clients I’ve tattooed at No Regrets Studios — every one links to the original on Google Maps.</p></div><div class="flex items-center gap-3 shrink-0"><span class="text-yellow-300 text-lg" aria-hidden="true">★★★★★</span><span class="text-white/60 text-sm"><span id="reviews-count"></span> five-star reviews on Google</span></div></div>
                 <div id="reviews-content" class="mt-10"><div id="reviews-grid" class="grid gap-6 md:grid-cols-2"></div></div>
                 <div class="mt-8 flex justify-center"><button type="button" class="inline-flex items-center gap-3 text-white/70 text-sm font-medium" onclick="toggleReviews()" aria-expanded="false" aria-controls="reviews-content" id="reviews-toggle"><span id="reviews-toggle-label">Show more</span><span id="reviews-toggle-icon" class="transition-transform">⌄</span></button></div>
+                <p class="mt-6 text-center text-sm text-white/40">Tattooed by me? My personal Google profile is new — <a href="https://g.page/r/CRBB4T36uQ6wEBI/review" target="_blank" rel="noopener noreferrer" class="text-white/70 underline decoration-white/30 underline-offset-4 hover:text-white transition-colors">a review there genuinely helps</a>.</p>
             </div>
         </div>
     </section>
@@ -1071,6 +1072,8 @@
       buildImageGrid();
       buildFaq();
       renderReviews(3);
+      const rc = document.getElementById('reviews-count');
+      if (rc) rc.textContent = reviewsData.length;
       bindAiIdeaLeadForm();
     });
     </script>
