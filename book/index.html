@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <meta name="robots" content="index, follow">
+    <title>Composition &amp; Light in Tattooing — Book by Vladimir Vishar</title>
+    <meta name="description" content="Composition & Light in Tattooing — a field manual for realism tattoo artists by Vladimir Vishar. Composition, light logic, tonal maps, edges and placement as objective criteria you can check before tattooing. In development — join the waitlist.">
+    <link rel="canonical" href="https://vishartattoo.com/book/">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://vishartattoo.com/" },
+        { "@type": "ListItem", "position": 2, "name": "Book", "item": "https://vishartattoo.com/book/" }
+      ]
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://vishartattoo.com/book/#webpage",
+      "url": "https://vishartattoo.com/book/",
+      "name": "Composition & Light in Tattooing — Book by Vladimir Vishar",
+      "isPartOf": { "@id": "https://vishartattoo.com/#website" },
+      "about": { "@id": "https://vishartattoo.com/book/#book" }
+    },
+    {
+      "@type": "Book",
+      "@id": "https://vishartattoo.com/book/#book",
+      "name": "Composition & Light in Tattooing",
+      "alternativeHeadline": "A field manual for the realism tattoo artist",
+      "author": { "@id": "https://vishartattoo.com/#person" },
+      "inLanguage": "en",
+      "creativeWorkStatus": "In development",
+      "url": "https://vishartattoo.com/book/",
+      "genre": "Instructional manual",
+      "about": [
+        "Tattoo composition",
+        "Light and volume in realism tattooing",
+        "Tonal mapping",
+        "Tattoo placement and body flow",
+        "Black and grey realism",
+        "Colour realism"
+      ],
+      "publisher": { "@id": "https://vishartattoo.com/#person" }
+    }
+  ]
+}
+    </script>
+
+    <meta property="og:type" content="book">
+    <meta property="og:title" content="Composition &amp; Light in Tattooing — Book by Vladimir Vishar">
+    <meta property="og:description" content="A field manual for the realism tattoo artist. Composition, light logic and placement as objective criteria you can check before tattooing. In development — join the waitlist.">
+    <meta property="og:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
+    <meta property="og:url" content="https://vishartattoo.com/book/">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <!-- Fonts: site chrome (Inter) + book identity (Bodoni Moda / Spectral / IBM Plex Mono), this page only -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Bodoni+Moda:opsz,wght@6..96,500&family=Spectral:ital,wght@0,300;0,500;1,300&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="/assets/css/tailwind.css">
+    <style>
+    :root{
+      --oxide:#b14a3c;
+      --graphite:#8f9296;
+      --panel:#131315;
+      --panel2:#1a1a1d;
+      --hair:rgba(255,255,255,.08)
+    }
+    @supports (color: oklch(0.5 0.1 30)){
+      :root{--oxide:oklch(0.585 0.14 28);--graphite:oklch(0.62 0.005 250)}
+    }
+    body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
+    ::selection{background:rgba(177,74,60,.4);color:#fff}
+    :focus-visible{outline:2px solid var(--oxide);outline-offset:3px;border-radius:4px}
+    :focus:not(:focus-visible){outline:none}
+    ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:0 0}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:10px}
+    .glass{background:rgba(29,29,31,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
+
+    .font-bodoni{font-family:'Bodoni Moda',Georgia,serif;font-weight:500}
+    .font-spectral{font-family:'Spectral',Georgia,serif;font-weight:300}
+    .font-plex{font-family:'IBM Plex Mono',ui-monospace,monospace}
+
+    .book-body{font-family:'Spectral',Georgia,serif;font-weight:300;font-size:1.0625rem;line-height:1.75;color:rgba(245,245,247,.78)}
+    .book-label{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.6875rem;letter-spacing:.22em;text-transform:uppercase;color:var(--graphite)}
+    .hair-top{border-top:1px solid var(--hair)}
+
+    /* Hero corner crop marks (single use) */
+    .crop-frame{position:relative}
+    .crop-frame::before,.crop-frame::after,
+    .crop-frame .crop-b::before,.crop-frame .crop-b::after{
+      content:'';position:absolute;width:18px;height:18px;border-color:rgba(255,255,255,.22);border-style:solid
+    }
+    .crop-frame::before{top:0;left:0;border-width:1px 0 0 1px}
+    .crop-frame::after{top:0;right:0;border-width:1px 1px 0 0}
+    .crop-frame .crop-b::before{bottom:0;left:0;border-width:0 0 1px 1px}
+    .crop-frame .crop-b::after{bottom:0;right:0;border-width:0 1px 1px 0}
+
+    /* TOC rows */
+    .toc-row{display:flex;gap:1.25rem;padding:.8rem 0;border-bottom:1px solid var(--hair);align-items:baseline}
+    .toc-num{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.75rem;color:var(--graphite);min-width:2rem;flex-shrink:0}
+    .toc-title{font-family:'Spectral',Georgia,serif;font-weight:300;font-size:1rem;color:rgba(245,245,247,.85);line-height:1.5}
+
+    /* Preview panels — book design system, promo register */
+    .spread-panel{background:var(--panel);border:1px solid var(--hair);padding:1.5rem;min-height:15rem;display:flex;flex-direction:column;justify-content:center}
+    .kp-rule{border-top:2px solid var(--oxide)}
+    .caution-tag{color:var(--oxide);font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.6875rem;letter-spacing:.22em;text-transform:uppercase}
+    .value-cell{flex:1;height:2.75rem}
+    .meta-chip{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.625rem;letter-spacing:.12em;text-transform:uppercase;color:var(--graphite);border:1px solid var(--hair);padding:.15rem .5rem}
+
+    /* Status block */
+    .status-grid{display:grid;grid-template-columns:auto 1fr;column-gap:1.5rem;row-gap:.6rem;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.8125rem}
+    .status-grid dt{color:var(--graphite);white-space:nowrap}
+    .status-grid dd{color:rgba(245,245,247,.85)}
+
+    /* Waitlist form */
+    .field{width:100%;background:var(--panel2);border:1px solid var(--hair);color:#f5f5f7;padding:.85rem 1rem;font-size:1rem;border-radius:4px;transition:border-color .2s}
+    .field::placeholder{color:rgba(245,245,247,.3)}
+    .field:focus{border-color:rgba(177,74,60,.6)}
+    .btn-oxide{display:inline-block;background:var(--oxide);color:#fff;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.8125rem;letter-spacing:.18em;text-transform:uppercase;padding:.95rem 1.75rem;border-radius:4px;transition:filter .2s,transform .15s;cursor:pointer}
+    .btn-oxide:hover{filter:brightness(1.12)}
+    .btn-oxide:active{transform:scale(.98)}
+    .btn-oxide:disabled{opacity:.5;cursor:wait}
+
+    /* Book sticky CTA (mobile only, page-local) */
+    .book-sticky{position:fixed;bottom:0;left:0;right:0;z-index:90;padding:12px 16px;padding-bottom:max(12px,env(safe-area-inset-bottom));background:rgba(0,0,0,.88);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:1px solid var(--hair);transform:translateY(100%);opacity:0;pointer-events:none;transition:transform .35s cubic-bezier(.4,0,.2,1),opacity .35s ease}
+    .book-sticky.is-visible{transform:translateY(0);opacity:1;pointer-events:auto}
+    .book-sticky a{display:block;width:100%;text-align:center}
+    @media(min-width:769px){.book-sticky{display:none}}
+
+    details.faq-item{border-bottom:1px solid var(--hair)}
+    details.faq-item summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1.1rem 0;font-family:'Spectral',Georgia,serif;font-weight:500;font-size:1.0625rem;color:rgba(245,245,247,.9)}
+    details.faq-item summary::-webkit-details-marker{display:none}
+    details.faq-item summary::after{content:'+';font-family:'IBM Plex Mono',ui-monospace,monospace;color:var(--graphite);flex-shrink:0;transition:transform .25s}
+    details.faq-item[open] summary::after{transform:rotate(45deg)}
+
+    .reveal{opacity:0;transform:translateY(24px);transition:opacity .7s cubic-bezier(.4,0,.2,1),transform .7s cubic-bezier(.4,0,.2,1)}
+    .reveal.visible{opacity:1;transform:translateY(0)}
+    .fade-in{animation:fadeIn 1s ease-out forwards}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    @media(prefers-reduced-motion:reduce){*,::before,::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.reveal{opacity:1;transform:none}}
+    @media print{body{background:#fff!important;color:#000!important}nav,.book-sticky,footer{display:none!important}}
+    @media(max-width:400px){.status-grid{grid-template-columns:1fr;row-gap:.15rem}.status-grid dd{margin-bottom:.55rem}}
+    </style>
+</head>
+<body>
+
+<div id="site-nav"></div>
+
+<main>
+
+    <!-- ───── Hero ───── -->
+    <header class="pt-32 pb-20 md:pt-44 md:pb-28 px-6">
+        <div class="max-w-[760px] mx-auto crop-frame px-5 py-12 md:px-12 md:py-16 fade-in">
+            <span class="crop-b" aria-hidden="true"></span>
+            <p class="book-label mb-7">Studio Edition · Volume One · In Development</p>
+            <h1 class="font-bodoni leading-[1.05] tracking-tight" style="font-size:clamp(2.4rem,8.5vw,4.5rem)">Composition &amp; Light in&nbsp;Tattooing</h1>
+            <p class="font-spectral italic text-white/60 mt-6" style="font-size:clamp(1.05rem,3vw,1.3rem)">A field manual for the realism tattoo artist. By&nbsp;Vladimir&nbsp;Vishar.</p>
+            <p class="book-body mt-8 max-w-[560px]">How to build a design that reads on skin — and keeps reading in five years. Composition, light logic, focal control and placement, written as objective criteria you can check at the bench, not taste you have to guess.</p>
+            <div class="mt-10 flex flex-col sm:flex-row items-start sm:items-center gap-5">
+                <a href="#waitlist" class="btn-oxide">Get notified when it’s ready</a>
+                <a href="#inside" class="font-plex text-[11px] tracking-[0.22em] uppercase text-white/50 hover:text-white transition-colors py-2">Read what’s inside ↓</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ───── 01 · What this book is ───── -->
+    <section class="py-16 md:py-24 px-6 hair-top">
+        <div class="max-w-[760px] mx-auto reveal">
+            <p class="book-label mb-3">01 · What this book is</p>
+            <h2 class="font-bodoni text-3xl md:text-4xl mb-10">Criteria instead of taste</h2>
+            <p class="book-body mb-10">“I like it” and “something feels off” are not professional tools. This manual replaces them with a working system: how the eye enters a design, how light builds volume, how a five-tone map predicts readability, and how the body’s own forms decide where a composition can live. Every chapter ends in criteria you can check on a real project — before the machine is switched on.</p>
+            <div class="grid md:grid-cols-2 gap-8 md:gap-12">
+                <div>
+                    <p class="font-plex text-[11px] tracking-[0.22em] uppercase text-white/70 mb-4">It is</p>
+                    <ul class="book-body space-y-2.5 text-[0.95rem]">
+                        <li>— A working manual: principles, checklists, diagrams</li>
+                        <li>— Written by a working realism artist, from the bench</li>
+                        <li>— Objective checks for focus, tone, edges and placement</li>
+                        <li>— Built for daily use, not a single read</li>
+                    </ul>
+                </div>
+                <div>
+                    <p class="font-plex text-[11px] tracking-[0.22em] uppercase text-white/40 mb-4">It is not</p>
+                    <ul class="book-body space-y-2.5 text-[0.95rem] text-white/45">
+                        <li>— Not a portfolio monograph</li>
+                        <li>— Not a beginner’s “how to tattoo” course</li>
+                        <li>— Not style imitation or recipe copying</li>
+                        <li>— Not theory for theory’s sake</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ───── 02 · Who it's for ───── -->
+    <section class="py-16 md:py-24 px-6 hair-top">
+        <div class="max-w-[760px] mx-auto reveal">
+            <p class="book-label mb-3">02 · Who it’s for</p>
+            <h2 class="font-bodoni text-3xl md:text-4xl mb-10">Written for working artists</h2>
+            <div class="grid md:grid-cols-3 gap-6">
+                <div class="spread-panel" style="min-height:auto">
+                    <p class="font-plex text-xs text-white/70 mb-3">REALISM ARTISTS</p>
+                    <p class="book-body text-[0.95rem]">Who want a repeatable way to check focus, tonal structure and edges in a design — instead of sensing that “something is off” after it's healed.</p>
+                </div>
+                <div class="spread-panel" style="min-height:auto">
+                    <p class="font-plex text-xs text-white/70 mb-3">BLACK &amp; GREY AND COLOUR</p>
+                    <p class="book-body text-[0.95rem]">Both registers share one foundation: tonal contrast outranks colour. The manual works from that base for black &amp; grey and colour realism alike.</p>
+                </div>
+                <div class="spread-panel" style="min-height:auto">
+                    <p class="font-plex text-xs text-white/70 mb-3">LARGE-SCALE PROJECTS</p>
+                    <p class="book-body text-[0.95rem]">Sleeves, difficult zones, flow across muscle — where composition on paper and composition on the body stop being the same thing.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ───── 03 · What you’ll learn ───── -->
+    <section id="inside" class="py-16 md:py-24 px-6 hair-top">
+        <div class="max-w-[760px] mx-auto reveal">
+            <p class="book-label mb-3">03 · What you’ll learn</p>
+            <h2 class="font-bodoni text-3xl md:text-4xl mb-4">Contents, first edition</h2>
+            <p class="book-body mb-12 text-[0.95rem] text-white/50">Sixteen chapters in four parts. Manuscript complete; titles may receive final polish in layout.</p>
+
+            <p class="font-plex text-[11px] tracking-[0.22em] uppercase text-white/70 mt-2 mb-1">Part I — Working optics, in plain language</p>
+            <div class="mb-10">
+                <div class="toc-row"><span class="toc-num">01</span><span class="toc-title">How the eye reads a tattoo: focus, accents and visual noise</span></div>
+                <div class="toc-row"><span class="toc-num">02</span><span class="toc-title">Light and volume</span></div>
+                <div class="toc-row"><span class="toc-num">03</span><span class="toc-title">The tonal map and the contrast budget</span></div>
+                <div class="toc-row"><span class="toc-num">04</span><span class="toc-title">The four types of edges</span></div>
+                <div class="toc-row"><span class="toc-num">05</span><span class="toc-title">Negative space and the logic of backgrounds</span></div>
+                <div class="toc-row"><span class="toc-num">06</span><span class="toc-title">Working on dark skin</span></div>
+            </div>
+
+            <p class="font-plex text-[11px] tracking-[0.22em] uppercase text-white/70 mb-1">Part II — Composition on the body</p>
+            <div class="mb-10">
+                <div class="toc-row"><span class="toc-num">07</span><span class="toc-title">Flow along the muscles and lines of force</span></div>
+                <div class="toc-row"><span class="toc-num">08</span><span class="toc-title">Carrier forms: the cylinder, the sphere, the curved plane</span></div>
+                <div class="toc-row"><span class="toc-num">09</span><span class="toc-title">Difficult zones: elbow, armpit, wrist, upper shoulder</span></div>
+            </div>
+
+            <p class="font-plex text-[11px] tracking-[0.22em] uppercase text-white/70 mb-1">Part III — Building a large-scale project</p>
+            <div class="mb-10">
+                <div class="toc-row"><span class="toc-num">10</span><span class="toc-title">Composition errors in sleeves</span></div>
+                <div class="toc-row"><span class="toc-num">11</span><span class="toc-title">Dynamics, contrast and rhythm</span></div>
+                <div class="toc-row"><span class="toc-num">12</span><span class="toc-title">Detail scale and longevity</span></div>
+                <div class="toc-row"><span class="toc-num">13</span><span class="toc-title">Fresh, healed, photographed: three different objects</span></div>
+            </div>
+
+            <p class="font-plex text-[11px] tracking-[0.22em] uppercase text-white/70 mb-1">Part IV — Process</p>
+            <div>
+                <div class="toc-row"><span class="toc-num">14</span><span class="toc-title">Two processes: the artist and the tattooist</span></div>
+                <div class="toc-row"><span class="toc-num">15</span><span class="toc-title">From brief to stencil</span></div>
+                <div class="toc-row"><span class="toc-num">16</span><span class="toc-title">The pre-session checklist</span></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ───── 04 · Inside the manual (design-system previews) ───── -->
+    <section class="py-16 md:py-24 px-6 hair-top">
+        <div class="max-w-[980px] mx-auto reveal">
+            <div class="max-w-[760px] mx-auto">
+                <p class="book-label mb-3">04 · Inside the manual</p>
+                <h2 class="font-bodoni text-3xl md:text-4xl mb-4">How the pages will work</h2>
+                <p class="book-body mb-12 text-[0.95rem] text-white/50">These panels are rendered live from the book’s frozen design system — not finished spreads. Final layout and 22 commissioned figures are in production.</p>
+            </div>
+
+            <div class="flex md:grid md:grid-cols-3 gap-5 overflow-x-auto md:overflow-visible snap-x snap-mandatory pb-4 md:pb-0 -mx-6 px-6 md:mx-0 md:px-0">
+
+                <!-- Panel: Key Principle -->
+                <div class="spread-panel kp-rule snap-center shrink-0 w-[85vw] max-w-[340px] md:w-auto md:max-w-none">
+                    <p class="font-plex text-[10px] tracking-[0.22em] uppercase mb-4" style="color:var(--oxide)">Key Principle</p>
+                    <p class="font-spectral text-[1.05rem] leading-relaxed text-white/85">If the silhouette and the focal point read in a five-tone map, they will read in the finished work. If everything on the map is the same grey, no amount of detail will save it.</p>
+                    <p class="font-plex text-[10px] tracking-[0.15em] uppercase mt-5" style="color:var(--graphite)">CH. 03 · TONAL MAP</p>
+                </div>
+
+                <!-- Panel: Value scale -->
+                <div class="spread-panel snap-center shrink-0 w-[85vw] max-w-[340px] md:w-auto md:max-w-none">
+                    <p class="font-plex text-[10px] tracking-[0.22em] uppercase mb-5" style="color:var(--graphite)">Value Scale · 11 Steps</p>
+                    <div class="flex gap-px" role="img" aria-label="Eleven-step value scale from near-black to near-white">
+                        <div class="value-cell" style="background:#1e1e20"></div>
+                        <div class="value-cell" style="background:#2c2c2f"></div>
+                        <div class="value-cell" style="background:#3c3c40"></div>
+                        <div class="value-cell" style="background:#4e4e52"></div>
+                        <div class="value-cell" style="background:#616165"></div>
+                        <div class="value-cell" style="background:#757579"></div>
+                        <div class="value-cell" style="background:#8b8b8f"></div>
+                        <div class="value-cell" style="background:#a3a3a6"></div>
+                        <div class="value-cell" style="background:#bcbcbf"></div>
+                        <div class="value-cell" style="background:#d7d7d9"></div>
+                        <div class="value-cell" style="background:#f2f2f3"></div>
+                    </div>
+                    <div class="flex justify-between mt-2 font-plex text-[10px]" style="color:var(--graphite)"><span>00</span><span>05</span><span>10</span></div>
+                    <p class="font-spectral italic text-[0.9rem] text-white/55 mt-5 leading-relaxed">Skin compresses the scale: the working range of a tattoo is narrower than the range of a screen.</p>
+                </div>
+
+                <!-- Panel: Caution -->
+                <div class="spread-panel snap-center shrink-0 w-[85vw] max-w-[340px] md:w-auto md:max-w-none" style="background:var(--panel2)">
+                    <p class="caution-tag mb-4">At the Skin · Caution</p>
+                    <p class="font-spectral text-[1.05rem] leading-relaxed text-white/85">A reference shot in flat, overcast light looks “fine” on screen — and heals into a flat grey mass without form. No application technique compensates for a missing light structure in the design.</p>
+                    <div class="flex gap-2 mt-5 flex-wrap">
+                        <span class="meta-chip">CH. 02</span>
+                        <span class="meta-chip">REFERENCE CHECK</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- ───── 05 · Author ───── -->
+    <section class="py-16 md:py-24 px-6 hair-top">
+        <div class="max-w-[760px] mx-auto reveal">
+            <p class="book-label mb-3">05 · The author</p>
+            <h2 class="font-bodoni text-3xl md:text-4xl mb-10">Vladimir Vishar</h2>
+            <div class="md:flex md:gap-10 items-start">
+                <img src="/assets/gallery/02.jpg" alt="Vladimir Vishar, realism tattoo artist" loading="lazy" class="w-36 h-36 md:w-44 md:h-44 object-cover rounded-sm mb-6 md:mb-0 shrink-0" style="border:1px solid var(--hair)">
+                <div>
+                    <p class="book-body mb-5">Realism tattoo artist working in colour and black &amp; grey at No Regrets Studios, Manchester. This manual is the checking system behind that work — the criteria used on real projects, written down so they can be used by other artists.</p>
+                    <div class="flex gap-6 flex-wrap">
+                        <a href="/colour-realism-tattoo-manchester/" class="font-plex text-[11px] tracking-[0.18em] uppercase text-white/50 hover:text-white transition-colors">Colour realism →</a>
+                        <a href="/black-and-grey-realism-manchester/" class="font-plex text-[11px] tracking-[0.18em] uppercase text-white/50 hover:text-white transition-colors">Black &amp; grey →</a>
+                        <a href="/about/" class="font-plex text-[11px] tracking-[0.18em] uppercase text-white/50 hover:text-white transition-colors">About →</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ───── 06 · Status ───── -->
+    <section class="py-16 md:py-24 px-6 hair-top">
+        <div class="max-w-[760px] mx-auto reveal">
+            <p class="book-label mb-3">06 · Where the book stands</p>
+            <h2 class="font-bodoni text-3xl md:text-4xl mb-10">Development status</h2>
+            <div class="spread-panel" style="min-height:auto;padding:2rem">
+                <p class="font-plex text-[11px] tracking-[0.22em] uppercase mb-6" style="color:var(--oxide)">Status — June 2026</p>
+                <dl class="status-grid">
+                    <dt>Manuscript</dt><dd>complete — final author-approved text</dd>
+                    <dt>Design system</dt><dd>frozen — dark editorial, single accent</dd>
+                    <dt>Illustrations</dt><dd>22 figures planned, briefs approved, in production</dd>
+                    <dt>Layout</dt><dd>in progress</dd>
+                    <dt>Format</dt><dd>170 × 240 mm, print-first</dd>
+                    <dt>Release</dt><dd>announced to the waitlist first</dd>
+                </dl>
+            </div>
+            <p class="book-body mt-6 text-[0.95rem] text-white/50">No pre-orders are taken and no release date is promised until the figures and layout meet the standard of the text.</p>
+        </div>
+    </section>
+
+    <!-- ───── 07 · FAQ ───── -->
+    <section class="py-16 md:py-24 px-6 hair-top">
+        <div class="max-w-[760px] mx-auto reveal">
+            <p class="book-label mb-3">07 · Questions</p>
+            <h2 class="font-bodoni text-3xl md:text-4xl mb-8">FAQ</h2>
+
+            <details class="faq-item">
+                <summary>When will the book be released?</summary>
+                <p class="book-body pb-6 text-[0.95rem]">When it’s ready. The text is complete; the 22 commissioned figures and the final layout are in production, and the release won’t be rushed past them. The waitlist hears first.</p>
+            </details>
+            <details class="faq-item">
+                <summary>What format will it be?</summary>
+                <p class="book-body pb-6 text-[0.95rem]">Designed print-first at 170 × 240 mm — a bench-side working format. Digital options will be confirmed closer to release.</p>
+            </details>
+            <details class="faq-item">
+                <summary>What level is it written for?</summary>
+                <p class="book-body pb-6 text-[0.95rem]">For working tattoo artists. It assumes you can already tattoo and want a stronger design system — it is not a beginner's introduction to equipment or technique.</p>
+            </details>
+            <details class="faq-item">
+                <summary>Is it only for realism?</summary>
+                <p class="book-body pb-6 text-[0.95rem]">It’s written from realism — black &amp; grey and colour — but the core system (focus, tonal mapping, edges, placement, longevity) applies to any style that has to read on a body.</p>
+            </details>
+            <details class="faq-item">
+                <summary>Will there be a sample chapter?</summary>
+                <p class="book-body pb-6 text-[0.95rem]">Yes — once the layout is far enough along to show the manual as it will actually look. It will go to the waitlist first.</p>
+            </details>
+        </div>
+    </section>
+
+    <!-- ───── 08 · Waitlist ───── -->
+    <section id="waitlist" class="py-20 md:py-28 px-6 hair-top">
+        <div class="max-w-[560px] mx-auto reveal">
+            <p class="book-label mb-3 text-center">08 · Waitlist</p>
+            <h2 class="font-bodoni text-3xl md:text-4xl mb-5 text-center">Get notified when it’s ready</h2>
+            <p class="book-body mb-10 text-center text-[0.95rem]">One email when the book is released, and the sample chapter before that. Nothing else.</p>
+
+            <form id="waitlist-form" novalidate>
+                <div class="space-y-4">
+                    <div>
+                        <label for="wl-name" class="book-label block mb-2" style="font-size:.625rem">Name · optional</label>
+                        <input type="text" id="wl-name" name="name" class="field" autocomplete="name" maxlength="120" placeholder="Your name">
+                    </div>
+                    <div>
+                        <label for="wl-email" class="book-label block mb-2" style="font-size:.625rem">Email · required</label>
+                        <input type="email" id="wl-email" name="email" class="field" autocomplete="email" required maxlength="320" placeholder="you@studio.com" inputmode="email">
+                    </div>
+                    <!-- honeypot -->
+                    <div class="hidden" aria-hidden="true">
+                        <label for="wl-website">Website</label>
+                        <input type="text" id="wl-website" name="website" tabindex="-1" autocomplete="off">
+                    </div>
+                    <button type="submit" id="wl-submit" class="btn-oxide w-full">Get notified when it’s ready</button>
+                </div>
+                <p id="wl-status" class="font-plex text-[12px] mt-4 min-h-[1.25rem] text-center" aria-live="polite"></p>
+                <p class="font-plex text-[10px] tracking-[0.05em] text-white/30 mt-3 text-center leading-relaxed">Your email is sent directly to Vladimir as a private notification. It is not stored in a database or shared.</p>
+            </form>
+        </div>
+    </section>
+
+</main>
+
+<!-- Book sticky CTA (mobile) -->
+<div class="book-sticky" id="book-sticky">
+    <a href="#waitlist" class="btn-oxide">Get notified — Composition &amp; Light</a>
+</div>
+
+<div id="site-footer"></div>
+
+<script>
+window.PAGE_ID = 'book';
+</script>
+<script src="/components.js" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  var WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
+
+  /* Scroll reveal */
+  if ('IntersectionObserver' in window) {
+    var revealObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08 });
+    document.querySelectorAll('.reveal').forEach(function (el) { revealObserver.observe(el); });
+  } else {
+    document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('visible'); });
+  }
+
+  /* Sticky CTA: show after hero, hide while waitlist is on screen */
+  var sticky = document.getElementById('book-sticky');
+  var waitlist = document.getElementById('waitlist');
+  var waitlistVisible = false;
+
+  if (sticky && waitlist && 'IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      waitlistVisible = entries[0].isIntersecting;
+      update();
+    }, { threshold: 0.15 }).observe(waitlist);
+
+    var ticking = false;
+    window.addEventListener('scroll', function () {
+      if (!ticking) {
+        window.requestAnimationFrame(function () { update(); ticking = false; });
+        ticking = true;
+      }
+    }, { passive: true });
+
+    function update() {
+      var show = window.scrollY > 500 && !waitlistVisible;
+      sticky.classList.toggle('is-visible', show);
+    }
+  }
+
+  /* Waitlist form */
+  var form = document.getElementById('waitlist-form');
+  if (!form) return;
+
+  var statusEl = document.getElementById('wl-status');
+  var submitBtn = document.getElementById('wl-submit');
+
+  function setStatus(message, isError) {
+    statusEl.textContent = message;
+    statusEl.style.color = isError ? '#e08577' : 'rgba(245,245,247,.7)';
+  }
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+
+    var name = document.getElementById('wl-name').value.trim();
+    var email = document.getElementById('wl-email').value.trim();
+    var honeypot = document.getElementById('wl-website').value;
+
+    if (honeypot) { setStatus('Thank you — you are on the list.', false); form.reset(); return; }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setStatus('Please enter a valid email address.', true);
+      document.getElementById('wl-email').focus();
+      return;
+    }
+
+    submitBtn.disabled = true;
+    setStatus('Sending…', false);
+
+    fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'book-waitlist',
+        name: name,
+        email: email,
+        source: '/book/',
+        book: 'Composition & Light in Tattooing'
+      })
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        if (response.ok && data.ok) {
+          setStatus('Thank you — you are on the list.', false);
+          form.reset();
+          submitBtn.disabled = false;
+        } else {
+          setStatus('Something went wrong. Please try again, or email info@vishartattoo.com.', true);
+          submitBtn.disabled = false;
+        }
+      });
+    }).catch(function () {
+      setStatus('Network error. Please try again, or email info@vishartattoo.com.', true);
+      submitBtn.disabled = false;
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

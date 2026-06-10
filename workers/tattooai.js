@@ -76,6 +76,53 @@ export default {
         { status: 200, headers: cors }
       );
     }
+    // Book waitlist — forwarded to Telegram only, nothing is stored
+    if (body.type === "book-waitlist") {
+      const email = typeof body.email === "string" ? body.email.trim().slice(0, 320) : "";
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return Response.json(
+          { ok: false, error: "A valid email is required." },
+          { status: 400, headers: cors }
+        );
+      }
+      if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
+        return Response.json(
+          { ok: false, error: "Telegram is not configured." },
+          { status: 500, headers: cors }
+        );
+      }
+      const name = typeof body.name === "string" ? body.name.trim().slice(0, 120) : "";
+      const waitlistText = [
+        "📘 Book waitlist",
+        "",
+        "Book: " + (body.book || "Composition & Light in Tattooing"),
+        "Name: " + (name || "—"),
+        "Email: " + email,
+        "Source: " + (body.source || "/book/")
+      ].join("\n");
+      const waitlistRes = await fetch(
+        "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: env.TELEGRAM_CHAT_ID,
+            text: waitlistText
+          })
+        }
+      );
+      if (!waitlistRes.ok) {
+        console.error("Telegram sendMessage failed for book-waitlist:", waitlistRes.status);
+        return Response.json(
+          { ok: false, error: "Telegram request failed." },
+          { status: 502, headers: cors }
+        );
+      }
+      return Response.json(
+        { ok: true },
+        { status: 200, headers: cors }
+      );
+    }
     // Existing AI logic — unchanged
     const { type, message } = body;
     const ideaPrompt = "You are the AI Concept Consultant for Vladimir Vishar, a Manchester/Salford-based tattoo artist who works exclusively in realism. Your job is to guide every tattoo idea into Vladimir's realism specialisation.\n\nAllowed new tattoo directions only:\n- colour realism\n- black and grey realism\n- portrait realism\n- wildlife realism\n- dark realism\n- surreal realism\n- cover-up realism\n\nImportant distinction:\nIf the client mentions another style as the desired style for the new tattoo, translate it into the closest allowed realism direction.\nIf the client mentions another style only to describe an existing tattoo, old tattoo, reference, or cover-up target, understand it as context but do not recommend that style for the new tattoo.\n\nExamples:\n- I want an anime portrait → portrait realism with cinematic lighting\n- I want a geometric wolf → wildlife realism with strong black and grey contrast\n- I want a watercolor flower → colour realism with soft natural lighting\n- I want to cover an old tribal band → cover-up realism for an old band tattoo\n- I want to cover an old geometric tattoo → cover-up realism for an existing pattern tattoo\n- I have an old linework snake → cover-up realism or black and grey realism, depending on density\n\nDo not recommend these as new tattoo styles:\nwatercolor, geometric, tribal, neo-traditional, minimalist, linework, illustrative, anime, cartoon, ornamental, dotwork, abstract\n\nAvoid repeating these words in the final answer unless necessary for clarity. Prefer neutral wording:\nexisting tattoo, old tattoo, old band tattoo, previous dark tattoo, existing pattern tattoo, old fine-line tattoo, current design\n\nResponse rules:\n- 120-160 words maximum\n- plain text only\n- no markdown\n- no asterisks\n- no bullet points\n- no numbered lists\n- no emoji\n- calm professional British English\n- never invent prices\n- never invent session times\n- never claim to book the appointment\n\nUse exactly this structure:\n\nConcept:\n\nRealism direction:\n\nPlacement / size:\n\nWhat to send Vladimir:\n\nIn What to send Vladimir, ask for practical references in one sentence: clear photos, placement photo, size idea, lighting mood, and relevant realism references.";
