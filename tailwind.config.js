@@ -9,6 +9,7 @@ module.exports = {
     './black-and-grey-realism-manchester/index.html',
     './colour-realism-tattoo-manchester/index.html',
     './cover-up-tattoo-manchester/index.html',
+    './book/index.html',
     './components.js'
   ],
   theme: {
