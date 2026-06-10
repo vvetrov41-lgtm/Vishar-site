@@ -19,6 +19,7 @@ const NAV_LINKS = [
 { id: 'black-grey',     label: 'Black & Grey',   href: '/black-and-grey-realism-manchester/' },
 { id: 'cover-up',       label: 'Cover-ups',      href: '/cover-up-tattoo-manchester/' },
 { id: 'about',          label: 'About',           href: '/about/' },
+{ id: 'book',           label: 'Book',            href: '/book/' },
 { id: 'aftercare',      label: 'Aftercare',       href: '/aftercare/' },
 { id: 'faq',            label: 'FAQ',              href: '/faq/' },
 { id: 'ai-tools',       label: 'Studio Tools',    href: '/ai-tools/' }
