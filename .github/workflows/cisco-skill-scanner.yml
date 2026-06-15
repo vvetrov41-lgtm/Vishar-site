@@ -1,0 +1,50 @@
+name: Cisco AI Skill Scanner
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  skill-scan:
+    name: Scan AI skills for security issues
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Cisco AI Skill Scanner
+        run: pip install cisco-ai-skill-scanner
+
+      - name: Run skill scanner
+        run: |
+          set +e
+          cisco-ai-skill-scanner \
+            --path .agents/skills \
+            --recursive \
+            --lenient \
+            --min-severity high \
+            --format markdown \
+            | tee scan-report.md
+          SCAN_EXIT=$?
+          set -e
+
+          echo "## Cisco AI Skill Scanner" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s scan-report.md ]; then
+            cat scan-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No output from scanner." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit $SCAN_EXIT
