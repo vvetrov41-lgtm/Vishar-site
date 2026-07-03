@@ -37,7 +37,7 @@ Independent audit of the codebase, run against a Yell Business audit report (ove
 
 These cannot be confirmed or fixed from the repo — they depend on Cloudflare dashboard configuration, third-party accounts, or DNS:
 
-1. **www / apex canonical enforcement.** I added a `_redirects` rule (`www.vishartattoo.com/* → vishartattoo.com/:splat 301`), but it only takes effect if `www.vishartattoo.com` is attached to the Cloudflare Pages project as a custom domain. If it isn't attached, the rule is inert and requests to `www` may not resolve at all, or may be handled elsewhere. **Check in the Cloudflare dashboard**: Pages project → Custom domains (is `www` attached?), and/or set up a zone-level Bulk Redirect / Redirect Rule for `www.vishartattoo.com/*` → `https://vishartattoo.com/$1` (301) as a more robust alternative that works regardless of Pages attachment.
+1. **www / apex canonical enforcement.** This was **not fixed in the codebase** — Cloudflare Pages' `_redirects` file matches on request path, not on request host, so a rule like `https://www.vishartattoo.com/* https://vishartattoo.com/:splat 301` does not reliably redirect the `www` host to the apex; it is not a supported way to do domain-level source matching on Pages. An earlier version of this branch shipped a `_redirects` file attempting this, and it has been removed as inaccurate. **This must be handled in the Cloudflare dashboard**, not the repo: configure a Bulk Redirect or Redirect Rule at the zone level — `www.vishartattoo.com/*` → `https://vishartattoo.com/$1`, using a 301, with path and query string preserved. Confirm afterward with `curl -I https://www.vishartattoo.com/about/` that it 301s to the apex.
 2. **http→https enforcement.** `_headers` already sends `Strict-Transport-Security` with `preload` and the CSP has `upgrade-insecure-requests`, which is good, but actual HTTP→HTTPS redirection at the edge is a Cloudflare zone setting ("Always Use HTTPS" under SSL/TLS → Edge Certificates). Worth confirming it's on.
 3. **Google Business Profile** — Yell flagged it as an "incomplete listing." This can't be touched from the codebase; needs completing directly in Google Business Profile (hours, category, phone, photos, services list matching the site's service pages).
 4. **Real GA4 measurement ID** — I've wired up the analytics code and consent banner (see below), but it ships with the placeholder `G-XXXXXXXXXX` and stays inert until a real ID replaces it.
@@ -71,7 +71,6 @@ The scanner appears to have several blind spots typical of automated crawlers (J
 - Fix the two spelling issues.
 
 ### Important (fixed in this pass)
-- Add `_redirects` for www→apex (needs Cloudflare dashboard confirmation — see Section B).
 - Restructure homepage schema so the studio is a standalone entity.
 - Add "horror" / "dark realism" / "custom tattoo design" into natural copy (no keyword stuffing — a handful of insertions).
 - Fix keyboard-inaccessible gallery tiles.
@@ -106,7 +105,6 @@ The scanner appears to have several blind spots typical of automated crawlers (J
 | `_headers` | Added `www.googletagmanager.com` to `script-src`, `*.google-analytics.com`/`*.analytics.google.com`/`www.googletagmanager.com` to `connect-src` | Lets GA4 load once a real ID is set, without weakening the CSP elsewhere |
 | `privacy/index.html` (new) | New page: what's collected, why, cookies/consent, third parties, retention, UK GDPR rights, ICO link | Directly answers the Yell GDPR flag; gives lead-capture forms a legally-expected privacy notice |
 | `404.html` (new) | On-brand 404 page with links back to home/portfolio | Cloudflare Pages serves this automatically for unmatched routes; addresses "server behaviour" flag and improves UX for broken/old links |
-| `_redirects` (new) | `www.vishartattoo.com/* → vishartattoo.com/:splat` 301 | Prevents duplicate-URL indexing between www/apex — **needs Cloudflare dashboard confirmation to actually take effect, see Section B** |
 | `sitemap.xml` | Bumped `lastmod` to 2026-07-03 on all 9 existing pages (all changed at minimum via `lang`), added `/privacy/` entry | Signals freshness to crawlers; makes the new page discoverable |
 | `tailwind.config.js` | Added `./privacy/index.html`, `./404.html` to `content` | Ensures Tailwind generates the utility classes these new pages use |
 | `assets/css/tailwind.css` | Regenerated via `npm run build:tailwind` | Ships the CSS for the consent banner and new pages |
@@ -181,6 +179,6 @@ Headless Chromium smoke test (Playwright, local http.server):
 ## Remaining risks
 
 - The CSP change in `_headers` is a single long line — a typo there would break inline scripts site-wide. It was edited surgically (two token additions) and validated via `npm run validate:site`, but it's worth watching the browser console for CSP violations after the first production deploy, especially once a real GA4 ID is set.
-- The `_redirects` file does nothing unless `www.vishartattoo.com` is actually attached to the Cloudflare Pages project — see Section B item 1.
+- The www→apex redirect has no in-repo fix at all (see Section B item 1) — until it's configured in the Cloudflare dashboard, `www.vishartattoo.com` and `vishartattoo.com` remain two separately-crawlable URLs for the same content.
 - Several large source images (1.7–2.5MB) are still shipped uncompressed. This wasn't touched in this pass because it's a bulk, reviewable image operation (`npm run optimize:images` / the `optimize-images.yml` workflow already exists for this) — better run deliberately and reviewed for visual quality than bundled into an SEO/content commit.
 - "Manage cookie preferences" on the privacy page uses an inline `onclick`, consistent with the rest of the site's existing patterns and covered by the current CSP's `'unsafe-inline'` allowance for scripts — if the CSP is ever tightened to remove `'unsafe-inline'`, this (and several other inline handlers already in the codebase) would need revisiting together.
