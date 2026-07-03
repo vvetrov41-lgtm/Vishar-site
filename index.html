@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en-GB" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +10,11 @@
     <title>Vladimir Vishar — Manchester Tattoo Artist | Colour & Black-Grey Realism</title>
     <meta name="description" content="Official portfolio of Vladimir Vishar. High-end Colour and Black-Grey Realism in Manchester & Salford. Custom designs, professional finish. Hourly rate £140.">
     <link rel="canonical" href="https://vishartattoo.com/">
+
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
     <!-- Schema.org -->
     <script type="application/ld+json">
@@ -41,29 +46,31 @@
       "caption": "Vladimir Vishar portrait"
     },
     {
+      "@type": "TattooParlor",
+      "@id": "https://vishartattoo.com/#studio",
+      "name": "No Regrets Studios Manchester",
+      "hasMap": "https://maps.app.goo.gl/mCQcaojR2MR6upBYA",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "UNIT 73 Yorkshire St",
+        "addressLocality": "Salford",
+        "postalCode": "M3 5EG",
+        "addressCountry": "GB"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 53.4837352,
+        "longitude": -2.2531864
+      }
+    },
+    {
       "@type": "Person",
       "@id": "https://vishartattoo.com/#person",
       "name": "Vladimir Vishar",
       "url": "https://vishartattoo.com/",
       "image": { "@id": "https://vishartattoo.com/#portrait" },
       "jobTitle": "Tattoo artist",
-      "worksFor": {
-        "@type": "TattooParlor",
-        "name": "No Regrets Studios Manchester",
-        "url": "https://maps.app.goo.gl/mCQcaojR2MR6upBYA",
-        "address": {
-          "@type": "PostalAddress",
-          "streetAddress": "UNIT 73 Yorkshire St",
-          "addressLocality": "Salford",
-          "postalCode": "M3 5EG",
-          "addressCountry": "GB"
-        },
-        "geo": {
-          "@type": "GeoCoordinates",
-          "latitude": 53.4837352,
-          "longitude": -2.2531864
-        }
-      },
+      "worksFor": { "@id": "https://vishartattoo.com/#studio" },
       "knowsAbout": [
         "Tattooing",
         "Black and grey realism tattoo",
@@ -101,7 +108,8 @@
       "provider": { "@id": "https://vishartattoo.com/#person" },
       "areaServed": [
         { "@type": "City", "name": "Manchester" },
-        { "@type": "City", "name": "Salford" }
+        { "@type": "City", "name": "Salford" },
+        { "@type": "AdministrativeArea", "name": "Greater Manchester" }
       ],
       "description": "High-end Colour and Black-Grey Realism tattoos in Manchester & Salford by Vladimir Vishar."
     }
@@ -114,8 +122,13 @@
     <meta property="og:title" content="Vladimir Vishar — High-End Realism Tattooing">
     <meta property="og:description" content="Bespoke realism tattoos in Manchester. Hourly rate £140, with estimates after reviewing your idea, placement, size, skin, references, and old ink where relevant.">
     <meta property="og:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <meta property="og:url" content="https://vishartattoo.com/">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Vladimir Vishar — High-End Realism Tattooing">
+    <meta name="twitter:description" content="Bespoke realism tattoos in Manchester. Hourly rate £140, with estimates after reviewing your idea, placement, size, skin, references, and old ink where relevant.">
+    <meta name="twitter:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -198,7 +211,7 @@
           <div id="machine-progress-fill" style="width:100%;height:0%;background:rgba(255,255,255,0.3);border-radius:1px;transition:height 0.1s linear"></div>
         </div>
         <div id="machine-label-top" style="position:absolute;z-index:10;pointer-events:none;text-align:center;top:max(80px,10vh);left:50%;transform:translateX(-50%);transition:opacity 0.6s ease">
-          <h3 style="font-family:'Playfair Display',serif;font-size:clamp(1.2rem,3vw,2rem);font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:-0.02em;margin:0">The Instrument.</h3>
+          <h2 style="font-family:'Playfair Display',serif;font-size:clamp(1.2rem,3vw,2rem);font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:-0.02em;margin:0">The Instrument.</h2>
           <p style="font-size:clamp(0.65rem,1.2vw,0.8rem);color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.25em;margin:6px 0 0">Scroll to assemble</p>
         </div>
         <div style="position:absolute;z-index:10;pointer-events:none;text-align:center;bottom:max(40px,6vh);left:50%;transform:translateX(-50%)">
@@ -601,7 +614,7 @@
             <h2 class="text-3xl md:text-5xl font-semibold mb-8 tracking-tight">Precision in Every Needle.</h2>
             <div class="space-y-6 text-xl text-white/50 leading-relaxed font-light">
                 <p>I am <span class="text-white font-medium">Vladimir Vishar</span>, a Manchester-based specialist in realistic tattooing. My practice focuses on two primary disciplines: vivid <a href="/colour-realism-tattoo-manchester/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">Colour Realism</a> and evocative <a href="/black-and-grey-realism-manchester/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">Black &amp; Grey</a> works.</p>
-                <p>Operating out of Salford, I believe in a custom approach where every design is a unique collaboration between artist and client.</p>
+                <p>Operating out of Salford, I believe in custom tattoo design — every piece is a unique collaboration between artist and client.</p>
                 <p><a href="/about/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">More about me &amp; the studio →</a></p>
             </div>
         </div>
@@ -612,7 +625,7 @@
         <div class="max-w-[1000px] mx-auto">
             <div class="grid sm:grid-cols-3 gap-4">
                 <a href="/colour-realism-tattoo-manchester/" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift group"><h3 class="text-lg font-semibold mb-2 group-hover:text-white transition-colors">Colour Realism</h3><p class="text-sm text-white/40">Portraits, wildlife, florals. Built around your reference, your skin, your placement.</p></a>
-                <a href="/black-and-grey-realism-manchester/" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift group"><h3 class="text-lg font-semibold mb-2 group-hover:text-white transition-colors">Black &amp; Grey</h3><p class="text-sm text-white/40">Contrast and shading. Portraits, mythology, animals.</p></a>
+                <a href="/black-and-grey-realism-manchester/" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift group"><h3 class="text-lg font-semibold mb-2 group-hover:text-white transition-colors">Black &amp; Grey</h3><p class="text-sm text-white/40">Contrast and shading. Portraits, mythology, dark realism and horror pieces.</p></a>
                 <a href="/cover-up-tattoo-manchester/" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift group"><h3 class="text-lg font-semibold mb-2 group-hover:text-white transition-colors">Cover-ups</h3><p class="text-sm text-white/40">Old ink into something you'd actually choose. Photo assessment first, no obligation.</p></a>
             </div>
         </div>
@@ -689,7 +702,7 @@
                     <h3 class="text-2xl font-semibold mb-2">Concept Consultant</h3>
                     <p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Refine your idea</p>
                     <textarea id="ai-idea-input" placeholder="Describe your tattoo idea (e.g., A lion's portrait with a crown on my shoulder)..." class="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all resize-none mb-6"></textarea>
-                    <button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyze Concept</button>
+                    <button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyse Concept</button>
                     <div id="ai-idea-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic whitespace-pre-line break-words overflow-visible"></div>
                     <div id="ai-idea-lead" class="mt-6 hidden rounded-2xl border border-white/10 bg-white/5 p-5">
                         <div class="space-y-4">
@@ -815,9 +828,9 @@
         sendBtn.disabled = false;
         sendBtn.innerText = "Send this idea to Vladimir";
       }
-      btn.disabled = true; btn.innerText = "Analyzing..."; res.classList.add("hidden");
+      btn.disabled = true; btn.innerText = "Analysing..."; res.classList.add("hidden");
       const result = await callAiWorker("idea", input);
-      res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyze Concept";
+      res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyse Concept";
       if (lead && result && result !== AI_ERROR_MESSAGE) lead.classList.remove("hidden");
     }
 
@@ -897,6 +910,14 @@
     /* ── Portfolio + Gallery grids ── */
     const portfolioImages = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg','07.jpg','08.jpg','09.jpg','10.jpg','11.jpg','12.jpg','13.jpg','14.jpg','15.jpg','16.jpg','17.jpg','18.jpg','19.jpg','20.jpg'];
     const galleryFiles = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg'];
+    const galleryAlts = [
+      'Vladimir Vishar holding a tattoo convention award, with a colour realism sleeve visible',
+      'Portrait of Vladimir Vishar, Manchester realism tattoo artist',
+      'Vladimir Vishar featured on the cover of Ink Legends Magazine',
+      'Vladimir Vishar painting a dark realism skull piece',
+      'Vladimir Vishar at a tattoo convention next to a client\'s healed leg tattoo',
+      'Vladimir Vishar tattooing a client\'s arm in the studio'
+    ];
     const webpPortfolioPilot = new Set(['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg','07.jpg','08.jpg','09.jpg','10.jpg','11.jpg','12.jpg','13.jpg','14.jpg','15.jpg','16.jpg','17.jpg','18.jpg','19.jpg','20.jpg']);
     let lbIdx = 0;
     function buildPortfolioImage(file, altText) {
@@ -911,8 +932,10 @@
       const pg = document.getElementById('portfolio-grid');
       if (pg) {
         portfolioImages.forEach((file, i) => {
-          const w = document.createElement('div');
-          w.className = 'aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';
+          const w = document.createElement('button');
+          w.type = 'button';
+          w.className = 'aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full';
+          w.setAttribute('aria-label', `Open portfolio image ${i+1} of ${portfolioImages.length}`);
           w.addEventListener('click', () => openLb(i));
           w.innerHTML = `${buildPortfolioImage(file, `Realism tattoo by Vladimir Vishar, Manchester &amp; Salford — portfolio piece ${i+1}`)}<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
           pg.appendChild(w);
@@ -920,10 +943,10 @@
       }
       const gg = document.getElementById('gallery-grid');
       if (gg) {
-        galleryFiles.forEach((file) => {
+        galleryFiles.forEach((file, i) => {
           const w = document.createElement('div');
           w.className = 'aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group';
-          w.innerHTML = `<img src="/assets/gallery/${file}" loading="lazy" decoding="async" width="900" height="900" alt="Inside No Regrets Manchester — Vladimir Vishar's tattoo workspace" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500">`;
+          w.innerHTML = `<img src="/assets/gallery/${file}" loading="lazy" decoding="async" width="900" height="900" alt="${galleryAlts[i] || 'Vladimir Vishar, Manchester realism tattoo artist'}" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500">`;
           gg.appendChild(w);
         });
       }
@@ -1041,7 +1064,7 @@
       { link:"https://maps.app.goo.gl/pqEJ5veTssaemUXe7", author:"Soumyadeep Datta", rating:5, date:"10 months ago", text:"The biggest thank you to No Regrets Manchester. Vladimir did an absolutely beautiful piece and the finishing couldn't have been better anywhere else for my first tattoo." },
       { link:"https://maps.app.goo.gl/NYZ1fMUPzKcX82Mk9", author:"Dionne", rating:5, date:"5 months ago", text:"I had my tattoo done by Vladimir. He done an amazing job. Made me feel very comfortable and relaxed. I will definitely be visiting no regrets studios in the near future." },
       { link:"https://maps.app.goo.gl/2P2L2ojG2ZuGWvQn9", author:"Dan Bentham", rating:5, date:"5 months ago", text:"Vlad absolutely smashed my tattoo. Done me a nice cover up.. I'm buzzing with it. The whole team at no regrets Manchester were so helpful from start to finish." },
-      { link:"https://maps.app.goo.gl/NoDBFtdH7i8pJdjM8", author:"Tracey Russell", rating:5, date:"4 months ago", text:"I'm very happy with my tattoo. Vlad did a fantastic job and got the exact likeness of Medussa that I was hoping for. Great overall experience. Vlad is an amazing artist." },
+      { link:"https://maps.app.goo.gl/NoDBFtdH7i8pJdjM8", author:"Tracey Russell", rating:5, date:"4 months ago", text:"I'm very happy with my tattoo. Vlad did a fantastic job and got the exact likeness of Medusa that I was hoping for. Great overall experience. Vlad is an amazing artist." },
       { link:"https://maps.app.goo.gl/L2o8Gs4whu7kcbVH9", author:"Danielle Jon-Baptiste", rating:5, date:"6 months ago", text:"Had a tattoo done by Vladimir today! What an absolute AMAZING experience! Everyone is so welcoming, and professional. The studio is lovely and clean!" },
       { link:"https://maps.app.goo.gl/muXo5PCxNDfRx8ZeA", author:"tone2p", rating:5, date:"2 months ago", text:"Had some work done by Vladimir! Exceptionally good artist, really nice guy. The whole experience from start to finish was unbelievable..." },
       { link:"https://maps.app.goo.gl/61EvXJmJRHuLSjrRA", author:"Shane Bailey", rating:5, date:"5 months ago", text:"Have had 2 seven hour sessions with Vladimir on a cover up. What an exceptional place No Regrets is. Everyone is so friendly. Vladimir is an exceptionally talented artist..." },

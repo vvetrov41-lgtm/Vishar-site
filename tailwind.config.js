@@ -10,6 +10,8 @@ module.exports = {
     './colour-realism-tattoo-manchester/index.html',
     './cover-up-tattoo-manchester/index.html',
     './book/index.html',
+    './privacy/index.html',
+    './404.html',
     './components.js'
   ],
   theme: {

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 
-<html lang="en" class="scroll-smooth">
+<html lang="en-GB" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -40,8 +40,13 @@
 <meta property="og:title" content="Studio Tools | Vladimir Vishar">
 <meta property="og:description" content="Simple tools to help with tattoo ideas and aftercare questions.">
 <meta property="og:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta property="og:url" content="https://vishartattoo.com/ai-tools/">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Studio Tools | Vladimir Vishar">
+<meta name="twitter:description" content="Simple tools to help with tattoo ideas and aftercare questions.">
+<meta name="twitter:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -112,7 +117,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                 <p class="text-sm text-white/40 mb-6 uppercase tracking-widest font-medium">Refine your idea</p>
                 <p class="text-sm text-white/50 mb-6 leading-relaxed">Describe your tattoo idea and get suggestions on composition, lighting, placement, and how to make it work best in a realistic style.</p>
                 <textarea id="ai-idea-input" placeholder="Describe your tattoo idea (e.g., A lion's portrait with a crown on my shoulder)..." class="w-full h-32 bg-black/40 border border-white/10 rounded-2xl p-4 text-sm focus:border-white outline-none transition-all resize-none mb-6"></textarea>
-                <button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyze Concept</button>
+                <button onclick="aiIdea()" id="ai-idea-btn" class="w-full py-4 bg-white text-black rounded-full font-semibold transition-all hover:bg-white/90 active:scale-95">Analyse Concept</button>
                 <div id="ai-idea-res" class="mt-6 text-sm leading-relaxed text-white/70 hidden p-6 bg-black/40 rounded-2xl border border-white/5 italic whitespace-pre-line break-words overflow-visible"></div>
                 <div id="ai-idea-lead" class="mt-6 hidden rounded-2xl border border-white/10 bg-white/5 p-5">
                     <div class="space-y-4">
@@ -221,9 +226,9 @@ async function aiIdea() {
         sendBtn.disabled = false;
         sendBtn.innerText = "Send this idea to Vladimir";
     }
-    btn.disabled = true; btn.innerText = "Analyzing..."; res.classList.add("hidden");
+    btn.disabled = true; btn.innerText = "Analysing..."; res.classList.add("hidden");
     const result = await callAiWorker("idea", input);
-    res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyze Concept";
+    res.innerText = result; res.classList.remove("hidden"); btn.disabled = false; btn.innerText = "Analyse Concept";
     if (lead && result && result !== AI_ERROR_MESSAGE) lead.classList.remove("hidden");
 }
 

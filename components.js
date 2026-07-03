@@ -13,6 +13,10 @@ const EMAIL = 'info@vishartattoo.com';
 const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
 const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
 
+// Replace with the real GA4 measurement ID when analytics goes live — until then this is a harmless placeholder.
+const GA_MEASUREMENT_ID = 'G-XXXXXXXXXX';
+const CONSENT_KEY = 'vishar-cookie-consent';
+
 const NAV_LINKS = [
 { id: 'home',           label: 'Home',           href: '/' },
 { id: 'colour-realism', label: 'Colour Realism', href: '/colour-realism-tattoo-manchester/' },
@@ -152,10 +156,13 @@ el.innerHTML = `
         <div class="text-[10px] text-white/20 uppercase tracking-[0.4em]">
           &copy; ${new Date().getFullYear()} Vladimir Vishar. All rights reserved.
         </div>
-        <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
-           class="text-xs text-white/40 hover:text-white transition-colors">
-          Start an inquiry →
-        </a>
+        <div class="flex items-center gap-6">
+          <a href="/privacy/" class="text-xs text-white/40 hover:text-white transition-colors">Privacy &amp; Cookies</a>
+          <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
+             class="text-xs text-white/40 hover:text-white transition-colors">
+            Start an inquiry →
+          </a>
+        </div>
       </div>
     </div>
   </footer>`;
@@ -381,6 +388,70 @@ window.addEventListener('scroll', function () {
 }, { passive: true });
 
 }
+
+/* ── Analytics (GA4, consent-gated) ── */
+function loadAnalytics() {
+if (GA_MEASUREMENT_ID.indexOf('G-XXXX') === 0) return; // placeholder — no-op until a real ID is set
+if (document.getElementById('ga4-script')) return; // already loaded
+
+window.dataLayer = window.dataLayer || [];
+window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
+window.gtag('js', new Date());
+window.gtag('config', GA_MEASUREMENT_ID);
+
+const s = document.createElement('script');
+s.id = 'ga4-script';
+s.async = true;
+s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_MEASUREMENT_ID;
+document.head.appendChild(s);
+}
+
+function getConsent() {
+try { return localStorage.getItem(CONSENT_KEY); } catch (e) { return null; }
+}
+
+function setConsent(value) {
+try { localStorage.setItem(CONSENT_KEY, value); } catch (e) { /* private browsing: banner will just reappear */ }
+}
+
+/* ── Cookie consent banner ── */
+function buildConsentBanner() {
+const stored = getConsent();
+if (stored === 'granted') { loadAnalytics(); return; }
+if (stored === 'denied') return;
+if (document.getElementById('cookie-consent')) return;
+
+const banner = document.createElement('div');
+banner.id = 'cookie-consent';
+banner.setAttribute('role', 'region');
+banner.setAttribute('aria-label', 'Cookie consent');
+banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
+banner.innerHTML = `
+  <p class="text-sm leading-relaxed text-white/60 mb-4">This site uses optional analytics cookies to see which pages are useful. Nothing is set unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p>
+  <div class="flex gap-3">
+    <button type="button" id="cookie-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button>
+    <button type="button" id="cookie-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button>
+  </div>`;
+document.body.appendChild(banner);
+
+banner.querySelector('#cookie-accept').addEventListener('click', function () {
+  setConsent('granted');
+  banner.remove();
+  loadAnalytics();
+});
+banner.querySelector('#cookie-decline').addEventListener('click', function () {
+  setConsent('denied');
+  banner.remove();
+});
+}
+
+/* Re-open the banner from the privacy page ("Manage cookie preferences"). */
+window.visharManageCookies = function () {
+try { localStorage.removeItem(CONSENT_KEY); } catch (e) {}
+const existing = document.getElementById('cookie-consent');
+if (existing) existing.remove();
+buildConsentBanner();
+};
 
 /* ── Homepage Tablet Layout ── */
 function refineHomepageTabletLayout() {
@@ -783,6 +854,7 @@ buildFooter();
 setupBookingCircleVideo();
 setupAiIdeaLeadCapture();
 buildStickyCta();
+buildConsentBanner();
 populateBookingWindow();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();

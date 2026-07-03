@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 
-<html lang="en" class="scroll-smooth">
+<html lang="en-GB" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -121,7 +121,7 @@
 <meta name="twitter:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -408,8 +408,10 @@ function buildGallery(){
   g.innerHTML='';
 
   colourCandidates.forEach((file,i)=>{
-    const w=document.createElement('div');
-    w.className='aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative';
+    const w=document.createElement('button');
+    w.type='button';
+    w.className='aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full';
+    w.setAttribute('aria-label', `Open colour realism tattoo photo ${i+1}`);
     w.dataset.file=file;
     w.dataset.slot=String(i);
     w.innerHTML=colourPlaceholderCard(i)+`<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
