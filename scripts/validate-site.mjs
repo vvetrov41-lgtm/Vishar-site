@@ -48,10 +48,22 @@ const GALLERY_CONFIGS = [
       'before-06.jpg', 'after-06.jpg',
     ],
   },
+  {
+    name: 'studio-gallery',
+    dir: 'assets/gallery',
+    stems: ['01', '02', '03', '04', '05', '06'],
+    originalJpgs: ['01.jpg', '02.jpg', '03.jpg', '04.jpg', '05.jpg', '06.jpg'],
+    // This gallery's canonical source is JPG only — there is no full-size
+    // WebP sidecar to require, unlike the WebP-sourced galleries above.
+    requireFullSizeWebp: false,
+    // Homepage cards are square with a centred `object-cover` crop, so each
+    // thumbnail's height must equal its width descriptor.
+    squareThumbs: true,
+  },
 ];
 
 function galleryConfigNamesLabel() {
-  const labels = { 'colour-realism': 'Colour Realism', 'black-grey': 'Black & Grey', 'cover-ups': 'Cover-ups' };
+  const labels = { 'colour-realism': 'Colour Realism', 'black-grey': 'Black & Grey', 'cover-ups': 'Cover-ups', 'studio-gallery': 'Studio Gallery' };
   const names = GALLERY_CONFIGS.map((gallery) => labels[gallery.name] || gallery.name);
   if (names.length <= 1) return names.join('');
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -402,6 +414,10 @@ async function checkGalleryOriginalsIntact() {
       }
     }
 
+    // Galleries with requireFullSizeWebp: false (e.g. Studio Gallery) have
+    // no full-size WebP sidecar by design — only the JPG is canonical.
+    if (gallery.requireFullSizeWebp === false) continue;
+
     for (const stem of gallery.stems) {
       const webpRel = `${gallery.dir}/${stem}.webp`;
       if (!await pathExists(path.join(rootDir, webpRel))) {
@@ -410,7 +426,7 @@ async function checkGalleryOriginalsIntact() {
     }
   }
 
-  pass(`${galleryConfigNamesLabel()} original JPG/JPEG and WebP source files are present. This confirms presence and readable format only, not byte-for-byte immutability.`);
+  pass(`${galleryConfigNamesLabel()} original JPG/JPEG (and, where applicable, full-size WebP) source files are present. This confirms presence and readable format only, not byte-for-byte immutability.`);
 }
 
 async function checkGalleryThumbnails() {
@@ -448,6 +464,11 @@ async function checkGalleryThumbnails() {
 
         if (metadata.width !== width) {
           fail(`Gallery thumbnail ${thumbRel} has width ${metadata.width}px, expected ${width}px.`);
+          continue;
+        }
+
+        if (gallery.squareThumbs && metadata.height !== width) {
+          fail(`Gallery thumbnail ${thumbRel} has height ${metadata.height}px, expected ${width}px (square).`);
           continue;
         }
 
