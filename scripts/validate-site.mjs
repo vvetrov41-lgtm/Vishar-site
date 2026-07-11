@@ -12,6 +12,23 @@ const HTML_EXTENSIONS = new Set(['.html']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
 const PORTFOLIO_NUMBERS = Array.from({ length: 20 }, (_, i) => String(i + 1).padStart(2, '0'));
 const PORTFOLIO_THUMB_WIDTHS = [320, 480, 720, 960];
+const GALLERY_THUMB_WIDTHS = [320, 480, 720, 960];
+const GALLERY_CONFIGS = [
+  {
+    name: 'colour-realism',
+    dir: 'assets/colour-realism',
+    // Image 03's WebP sidecar carries the irregular stem "03.jpg" (from the
+    // original "03.jpg.JPG" source), so its thumbnails are "03.jpg-{w}.webp".
+    stems: ['01', '02', '03.jpg', '04', '05', '06', '07', '08', '09', '10', '11', '12'],
+    originalJpgs: ['01.jpg', '02.jpg', '03.jpg.JPG', '04.jpg', '05.jpg', '06.jpg', '07.jpg', '08.jpg', '09.jpg', '10.jpg', '11.jpg', '12.jpg'],
+  },
+  {
+    name: 'black-grey',
+    dir: 'assets/black-grey',
+    stems: ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'],
+    originalJpgs: ['01.jpg', '02.jpg', '03.jpeg', '04.jpg', '05.jpg', '06.jpg', '07.jpg', '08.jpg', '09.jpg', '10.jpg', '11.jpg', '12.jpg'],
+  },
+];
 
 const failures = [];
 const warnings = [];
@@ -349,6 +366,72 @@ async function checkPortfolioOriginalsIntact() {
   pass('Portfolio original JPG/WebP source files are intact and unreplaced.');
 }
 
+async function checkGalleryOriginalsIntact() {
+  for (const gallery of GALLERY_CONFIGS) {
+    for (const jpgName of gallery.originalJpgs) {
+      const jpgRel = `${gallery.dir}/${jpgName}`;
+      if (!await pathExists(path.join(rootDir, jpgRel))) {
+        fail(`Original gallery JPG/JPEG missing or replaced: ${jpgRel}.`);
+      }
+    }
+
+    for (const stem of gallery.stems) {
+      const webpRel = `${gallery.dir}/${stem}.webp`;
+      if (!await pathExists(path.join(rootDir, webpRel))) {
+        fail(`Original gallery WebP source missing or replaced: ${webpRel}.`);
+      }
+    }
+  }
+
+  pass('Colour Realism and Black & Grey original JPG/JPEG and WebP source files are present.');
+}
+
+async function checkGalleryThumbnails() {
+  let checkedCount = 0;
+
+  for (const gallery of GALLERY_CONFIGS) {
+    for (const stem of gallery.stems) {
+      for (const width of GALLERY_THUMB_WIDTHS) {
+        const thumbRel = `${gallery.dir}/thumbs/${stem}-${width}.webp`;
+        const thumbPath = path.join(rootDir, thumbRel);
+
+        if (!await pathExists(thumbPath)) {
+          fail(`Expected gallery thumbnail is missing: ${thumbRel}.`);
+          continue;
+        }
+
+        const stats = await stat(thumbPath);
+        if (stats.size === 0) {
+          fail(`Gallery thumbnail is empty: ${thumbRel}.`);
+          continue;
+        }
+
+        let metadata;
+        try {
+          metadata = await sharp(thumbPath).metadata();
+        } catch (error) {
+          fail(`Gallery thumbnail could not be read: ${thumbRel} (${error.message}).`);
+          continue;
+        }
+
+        if (metadata.format !== 'webp') {
+          fail(`Gallery thumbnail ${thumbRel} is not a valid WebP file (detected format: ${metadata.format}).`);
+          continue;
+        }
+
+        if (metadata.width !== width) {
+          fail(`Gallery thumbnail ${thumbRel} has width ${metadata.width}px, expected ${width}px.`);
+          continue;
+        }
+
+        checkedCount += 1;
+      }
+    }
+  }
+
+  pass(`Gallery responsive thumbnails checked (${checkedCount} derivatives across Colour Realism and Black & Grey).`);
+}
+
 function printResults() {
   console.log('Static site validation results');
   console.log('==============================');
@@ -381,6 +464,8 @@ async function main() {
   await checkLargeImagesWithoutWebpWarnings();
   await checkPortfolioOriginalsIntact();
   await checkPortfolioThumbnails();
+  await checkGalleryOriginalsIntact();
+  await checkGalleryThumbnails();
 
   printResults();
 

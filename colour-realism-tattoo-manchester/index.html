@@ -395,6 +395,13 @@ const webpColourRealismPilot=new Map([
   ['12.jpg','12.webp']
 ]);
 const colourSlides=[];
+const GALLERY_THUMB_WIDTHS=[320,480,720,960];
+const GALLERY_SIZES='(min-width: 1024px) min(calc((100vw - 56px) / 4), 344px), (min-width: 768px) calc((100vw - 48px) / 3), calc((100vw - 40px) / 2)';
+
+function galleryThumbSrcset(basePath,webpFile){
+  const stem=webpFile.replace(/\.webp$/i,'');
+  return GALLERY_THUMB_WIDTHS.map(w=>`${basePath}thumbs/${stem}-${w}.webp ${w}w`).join(', ');
+}
 
 function colourPlaceholderCard(i){
   return `<div class="absolute inset-0 bg-apple-darkGray flex flex-col items-center justify-center text-white/20 text-xs gap-2"><svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg><span>Photo ${i+1}</span></div>`;
@@ -428,8 +435,8 @@ function buildGallery(){
 
     card.dataset.real='1';
     if(webpColourRealismPilot.has(file)){
-      const webpSrc=`${colourBasePath}${webpColourRealismPilot.get(file)}`;
-      card.innerHTML=`<picture><source srcset="${webpSrc}" type="image/webp"><img src="${src}" loading="lazy" decoding="async" width="900" height="1200" alt="Colour realism tattoo by Vladimir Vishar, Manchester — piece ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
+      const webpSrcset=galleryThumbSrcset(colourBasePath,webpColourRealismPilot.get(file));
+      card.innerHTML=`<picture><source srcset="${webpSrcset}" sizes="${GALLERY_SIZES}" type="image/webp"><img src="${src}" loading="lazy" decoding="async" width="900" height="1200" alt="Colour realism tattoo by Vladimir Vishar, Manchester — piece ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
     }else{
       card.innerHTML=`<img src="${src}" loading="lazy" decoding="async" width="900" height="1200" alt="Colour realism tattoo by Vladimir Vishar, Manchester — piece ${i+1}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
     }
