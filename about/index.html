@@ -64,8 +64,8 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:0 0}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:10px}
 .glass{background:rgba(29,29,31,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
 .hero-title{letter-spacing:-.025em}
-.faq-content{max-height:0;overflow:hidden;transition:max-height .5s cubic-bezier(.4,0,.2,1)}
-.faq-item.active .faq-content{max-height:1000px}
+.faq-content{max-height:0;overflow:hidden;visibility:hidden;transition:max-height .5s cubic-bezier(.4,0,.2,1),visibility 0s linear .5s}
+.faq-item.active .faq-content{max-height:1000px;visibility:visible;transition-delay:0s}
 .faq-item.active .faq-icon{transform:rotate(180deg)}
 .faq-item button{transition:color .2s ease}.faq-item button:hover{color:#fff}
 .lightbox-active{overflow:hidden;touch-action:none}
@@ -88,17 +88,18 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 .card-lift:hover{transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.4)}
 .glow-border{position:relative}.glow-border::before{content:'';position:absolute;inset:-1px;border-radius:inherit;background:linear-gradient(135deg,rgba(0,113,227,.3),rgba(255,255,255,.05),rgba(0,113,227,.15));z-index:-1;opacity:0;transition:opacity .4s ease}.glow-border:hover::before{opacity:1}
 @media(prefers-reduced-motion:reduce){*,::before,::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.reveal{opacity:1;transform:none}}
-@media print{body{background:#fff!important;color:#000!important}nav,.sticky-cta,#lightbox,.lb-nav,.lb-counter,footer,.glass{display:none!important}.faq-content{max-height:none!important;overflow:visible!important}}
+@media print{body{background:#fff!important;color:#000!important}nav,.sticky-cta,#lightbox,.lb-nav,.lb-counter,footer,.glass{display:none!important}.faq-content{max-height:none!important;overflow:visible!important;visibility:visible!important}}
 </style>
 <script>window.PAGE_ID = 'about';</script>
 
 </head>
 <body class="antialiased">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <div id="site-nav"></div>
-    <main>
+    <main id="main-content" tabindex="-1">
 
 <div class="pt-20 px-6 max-w-[1200px] mx-auto">
-    <nav aria-label="Breadcrumb" class="text-xs text-white/30"><a href="/" class="hover:text-white/60 transition-colors">Home</a><span class="mx-2">/</span><span class="text-white/60">About</span></nav>
+    <nav aria-label="Breadcrumb" class="text-xs text-white/50"><a href="/" class="text-white/60 hover:text-white transition-colors">Home</a><span class="mx-2">/</span><span class="text-white/70">About</span></nav>
 </div>
 
 <header class="py-24 md:py-32 px-6">
@@ -138,17 +139,17 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">01</p>
                     <h3 class="text-lg font-semibold mb-3">Fit first</h3>
-                    <p class="text-sm leading-relaxed text-white/45">The design is built around placement, flow, scale, and how the image will sit on the body.</p>
+                    <p class="text-sm leading-relaxed text-white/60">The design is built around placement, flow, scale, and how the image will sit on the body.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">02</p>
                     <h3 class="text-lg font-semibold mb-3">Reference-led</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Your references set the direction. The final image is adjusted into a custom tattoo design.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Your references set the direction. The final image is adjusted into a custom tattoo design.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">03</p>
                     <h3 class="text-lg font-semibold mb-3">Realistic scope</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Cover-ups, detail level, time estimate, and limitations are assessed before you decide to book.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Cover-ups, detail level, time estimate, and limitations are assessed before you decide to book.</p>
                 </article>
             </div>
         </div>
@@ -167,17 +168,17 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Feature</p>
                     <h3 class="text-lg font-semibold mb-3">Global Tattoo Mag</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Featured publication, 2025.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Featured publication, 2025.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Feature</p>
                     <h3 class="text-lg font-semibold mb-3">Ink Legends Magazine</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Artist feature and profile.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Artist feature and profile.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Award</p>
                     <h3 class="text-lg font-semibold mb-3">Runner Up - Best Portrait</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Second place in the Realistic Portrait category, Big London Tattoo Show 2025.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Second place in the Realistic Portrait category, Big London Tattoo Show 2025.</p>
                 </article>
             </div>
         </div>
@@ -196,34 +197,34 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Rate</p>
                     <h3 class="text-lg font-semibold mb-3">£140 per hour</h3>
-                    <p class="text-sm leading-relaxed text-white/45">You will receive an estimate after I review your idea, placement, size, skin, references, and old ink where relevant.</p>
+                    <p class="text-sm leading-relaxed text-white/60">You will receive an estimate after I review your idea, placement, size, skin, references, and old ink where relevant.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Format</p>
                     <h3 class="text-lg font-semibold mb-3">Full-day sessions</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Most projects I take on are medium or large custom realism pieces, usually planned as full-day sessions of around 7 hours.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Most projects I take on are medium or large custom realism pieces, usually planned as full-day sessions of around 7 hours.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Smaller work</p>
                     <h3 class="text-lg font-semibold mb-3">3-4 hour projects</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Smaller projects may be possible if the idea fits my style, placement, and booking schedule.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Smaller projects may be possible if the idea fits my style, placement, and booking schedule.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Booking</p>
                     <h3 class="text-lg font-semibold mb-3">Free consultation</h3>
-                    <p class="text-sm leading-relaxed text-white/45">After your idea and references have been reviewed, a free consultation can be arranged before you decide to book.</p>
+                    <p class="text-sm leading-relaxed text-white/60">After your idea and references have been reviewed, a free consultation can be arranged before you decide to book.</p>
                 </article>
             </div>
             <div class="lg:col-start-2 grid sm:grid-cols-2 gap-4">
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Studio booking</p>
                     <h3 class="text-lg font-semibold mb-3">Chair rental fee</h3>
-                    <p class="text-sm leading-relaxed text-white/45">After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. This comes off the overall tattoo cost.</p>
+                    <p class="text-sm leading-relaxed text-white/60">After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. This comes off the overall tattoo cost.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">Finance</p>
                     <h3 class="text-lg font-semibold mb-3">0% interest options</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Finance options may be available through No Regrets Studios, including 0% interest plans over 6 or 12 months. Current terms are handled by the studio.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Finance options may be available through No Regrets Studios, including 0% interest plans over 6 or 12 months. Current terms are handled by the studio.</p>
                     <a href="https://noregrets.tattoo/uk/tattoo-finance/" target="_blank" rel="noopener noreferrer" class="mt-4 inline-flex text-sm text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">View No Regrets finance information</a>
                 </article>
             </div>
@@ -243,32 +244,32 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">01</p>
                     <h3 class="text-lg font-semibold mb-3">Forearm / smaller area</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Usually 1-2 full-day sessions, depending on detail and colour.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Usually 1-2 full-day sessions, depending on detail and colour.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">02</p>
                     <h3 class="text-lg font-semibold mb-3">Shoulder / upper arm</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Usually 2-3 full-day sessions.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Usually 2-3 full-day sessions.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">03</p>
                     <h3 class="text-lg font-semibold mb-3">Full arm sleeve</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Usually 6-8+ sessions for black and grey realism, or 8-10+ sessions for colour realism.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Usually 6-8+ sessions for black and grey realism, or 8-10+ sessions for colour realism.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">04</p>
                     <h3 class="text-lg font-semibold mb-3">Full leg sleeve</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Usually around +2 sessions compared with an arm, depending on scale, placement, and complexity.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Usually around +2 sessions compared with an arm, depending on scale, placement, and complexity.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">05</p>
                     <h3 class="text-lg font-semibold mb-3">Back / torso / large multi-area projects</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Often 6-12+ sessions, depending on scale and complexity.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Often 6-12+ sessions, depending on scale and complexity.</p>
                 </article>
                 <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                     <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">06</p>
                     <h3 class="text-lg font-semibold mb-3">Cover-ups</h3>
-                    <p class="text-sm leading-relaxed text-white/45">Always need assessment first. Old ink, darkness, scarring, and available space can change the plan. Cover-ups often take a similar amount of time to colour realism, and some areas may need a refresh after full healing.</p>
+                    <p class="text-sm leading-relaxed text-white/60">Always need assessment first. Old ink, darkness, scarring, and available space can change the plan. Cover-ups often take a similar amount of time to colour realism, and some areas may need a refresh after full healing.</p>
                 </article>
             </div>
         </div>
@@ -287,7 +288,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                         <p>The studio is equipped with dedicated workstations, professional sterilisation, and a comfortable setup designed for sessions of up to 7 hours.</p>
                     </div>
                     <div class="mt-6 space-y-2 text-sm">
-                        <p class="text-white/30 uppercase tracking-widest text-[10px] mb-2">Address</p>
+                        <p class="text-white/50 uppercase tracking-widest text-xs mb-2">Address</p>
                         <p class="text-white/60">UNIT 73 Yorkshire St, Salford M3 5EG</p>
                         <a href="https://maps.app.goo.gl/mCQcaojR2MR6upBYA?g_st=ic" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-white hover:text-white/80 transition-colors mt-2">Open in Google Maps →</a>
                     </div>
@@ -348,11 +349,11 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 <section id="book" class="py-32 px-6">
     <div class="max-w-[1000px] mx-auto text-center">
         <h2 class="text-4xl md:text-5xl font-semibold mb-4 tracking-tighter">Ready to start?</h2>
-        <p class="text-white/40 text-sm mb-8" data-booking-window>Currently booking September – October 2026</p>
+        <p class="text-white/60 text-sm mb-8" data-booking-window>Currently booking September – October 2026</p>
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
             <div class="flex flex-col items-center max-w-xs">
                 <a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Send your concept</a>
-                <p class="mt-3 text-[11px] leading-relaxed text-white/40 text-center">Enquiry via No Regrets Manchester. The team will arrange an in-person or video consultation with me before any tattoo session is booked.</p>
+                <p class="mt-3 text-xs leading-relaxed text-white/60 text-center">Enquiry via No Regrets Manchester. The team will arrange an in-person or video consultation with me before any tattoo session is booked.</p>
             </div>
             <a href="mailto:info@vishartattoo.com" class="px-8 py-3 text-white font-medium hover:underline">info@vishartattoo.com</a>
         </div>

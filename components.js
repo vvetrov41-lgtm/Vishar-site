@@ -135,31 +135,31 @@ el.innerHTML = `
       <div class="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
         <div>
           <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
-          <p class="text-sm text-white/30 leading-relaxed">Colour &amp; Black-Grey Realism<br>Manchester &amp; Salford</p>
-          <p class="text-sm text-white/40 leading-relaxed mt-3">Studio: No Regrets Studios, UNIT 73 Yorkshire St, Salford M3 5EG<br>By appointment only · Bookings via studio form</p>
-          <a href="mailto:${EMAIL}" class="text-sm text-white/50 hover:text-white mt-3 inline-block transition-colors">${EMAIL}</a>
+          <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>Manchester &amp; Salford</p>
+          <p class="text-sm text-white/60 leading-relaxed mt-3">Studio: No Regrets Studios, UNIT 73 Yorkshire St, Salford M3 5EG<br>By appointment only · Bookings via studio form</p>
+          <a href="mailto:${EMAIL}" class="text-sm text-white/60 hover:text-white mt-3 inline-block transition-colors">${EMAIL}</a>
         </div>
         <div>
-          <p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-4">Pages</p>
-          <div class="flex flex-col space-y-2 text-sm text-white/40">
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Pages</p>
+          <div class="flex flex-col space-y-2 text-sm text-white/60">
             ${pageLinks}
           </div>
         </div>
         <div>
-          <p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-4">Social</p>
-          <div class="flex flex-col space-y-2 text-sm text-white/40">
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Social</p>
+          <div class="flex flex-col space-y-2 text-sm text-white/60">
             ${socialLinks}
           </div>
         </div>
       </div>
       <div class="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div class="text-[10px] text-white/20 uppercase tracking-[0.4em]">
+        <div class="text-xs text-white/40 uppercase tracking-[0.4em]">
           &copy; ${new Date().getFullYear()} Vladimir Vishar. All rights reserved.
         </div>
         <div class="flex items-center gap-6">
-          <a href="/privacy/" class="text-xs text-white/40 hover:text-white transition-colors">Privacy &amp; Cookies</a>
+          <a href="/privacy/" class="text-xs text-white/60 hover:text-white transition-colors">Privacy &amp; Cookies</a>
           <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
-             class="text-xs text-white/40 hover:text-white transition-colors">
+             class="text-xs text-white/60 hover:text-white transition-colors">
             Start an inquiry →
           </a>
         </div>
@@ -249,19 +249,19 @@ leadBox.id = 'ai-idea-lead';
 leadBox.className = 'mt-4 hidden rounded-2xl border border-violet-300/15 bg-violet-300/[0.06] p-5';
 leadBox.innerHTML = `
   <p class="text-sm font-medium text-white mb-2">Send this idea to Vladimir?</p>
-  <p class="text-xs leading-relaxed text-white/45 mb-4">Add your contact details and this tattoo idea will be sent directly to Vladimir.</p>
+  <p class="text-xs leading-relaxed text-white/60 mb-4">Add your contact details and this tattoo idea will be sent directly to Vladimir.</p>
   <div class="grid gap-3 md:grid-cols-2">
     <label class="block">
-      <span class="mb-1 block text-[10px] uppercase tracking-[0.25em] text-white/35">Name</span>
+      <span class="mb-1 block text-xs uppercase tracking-[0.25em] text-white/60">Name</span>
       <input id="ai-idea-name" type="text" autocomplete="name" placeholder="Your name" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/40">
     </label>
     <label class="block">
-      <span class="mb-1 block text-[10px] uppercase tracking-[0.25em] text-white/35">Contact</span>
+      <span class="mb-1 block text-xs uppercase tracking-[0.25em] text-white/60">Contact</span>
       <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="Email, WhatsApp or Instagram" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/40">
     </label>
   </div>
   <label class="mt-3 block">
-    <span class="mb-1 block text-[10px] uppercase tracking-[0.25em] text-white/35">Preferred reply</span>
+    <span class="mb-1 block text-xs uppercase tracking-[0.25em] text-white/60">Preferred reply</span>
     <select id="ai-idea-reply" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-white/40">
       <option>Email</option>
       <option>WhatsApp</option>
@@ -269,7 +269,7 @@ leadBox.innerHTML = `
       <option>No preference</option>
     </select>
   </label>
-  <p class="mt-3 text-[11px] leading-relaxed text-white/35">I’ll use this only to reply about your tattoo idea.</p>
+  <p class="mt-3 text-xs leading-relaxed text-white/60">I’ll use this only to reply about your tattoo idea.</p>
   <button type="button" id="ai-idea-send-btn" class="mt-4 w-full rounded-full border border-violet-300/20 bg-violet-400/20 px-5 py-3 text-sm font-semibold text-white transition-all hover:bg-violet-400/30 active:scale-95">Send this idea to Vladimir</button>
   <p id="ai-idea-send-status" class="mt-3 hidden text-xs leading-relaxed text-white/50"></p>
 `;
@@ -632,17 +632,17 @@ section.innerHTML = `
       <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
         <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">01</p>
         <h3 class="text-lg font-semibold mb-3">Fit first</h3>
-        <p class="text-sm leading-relaxed text-white/45">The design is built around placement, flow, scale, and how the image will sit on the body.</p>
+        <p class="text-sm leading-relaxed text-white/60">The design is built around placement, flow, scale, and how the image will sit on the body.</p>
       </article>
       <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
         <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">02</p>
         <h3 class="text-lg font-semibold mb-3">Reference-led</h3>
-        <p class="text-sm leading-relaxed text-white/45">Your references set the direction. The final image is adjusted into a custom tattoo design.</p>
+        <p class="text-sm leading-relaxed text-white/60">Your references set the direction. The final image is adjusted into a custom tattoo design.</p>
       </article>
       <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
         <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">03</p>
         <h3 class="text-lg font-semibold mb-3">Realistic scope</h3>
-        <p class="text-sm leading-relaxed text-white/45">Cover-ups, detail level, time estimate, and limitations are assessed before you decide to book.</p>
+        <p class="text-sm leading-relaxed text-white/60">Cover-ups, detail level, time estimate, and limitations are assessed before you decide to book.</p>
       </article>
     </div>
   </div>`;
@@ -675,6 +675,25 @@ while (walker.nextNode()) {
 }
 
 /* ── Mobile Menu Toggle ── */
+// Every other body-level element (skip link, footer, sticky CTA, lightbox,
+// cookie consent banner, ...) is made inert while the overlay is open, so
+// Tab/Shift+Tab and screen-reader browse-mode can never land outside it —
+// mirrors the lightbox's own background-inert helper instead of hand-
+// maintaining a partial list. #site-nav is deliberately excluded: it holds
+// the menu toggle button itself, which must stay mouse-clickable so the
+// existing "click the X icon to close" behaviour keeps working; keyboard
+// Tab is still kept out of it by the explicit trap in initMobileMenuA11y().
+function setMobileMenuBackgroundInert(overlay, makeInert) {
+  const siteNav = document.getElementById('site-nav');
+  Array.from(document.body.children).forEach(function (el) {
+    if (el === overlay || el === siteNav) return;
+    const tag = el.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK') return;
+    if (makeInert) el.setAttribute('inert', '');
+    else el.removeAttribute('inert');
+  });
+}
+
 window.toggleMenu = function () {
 const overlay = document.getElementById('mobile-overlay');
 const toggle = document.getElementById('mobile-menu-toggle');
@@ -698,7 +717,49 @@ if (iconClose) iconClose.classList.toggle('hidden', !isOpen);
 
 document.body.classList.toggle('lightbox-active', isOpen);
 
+// Keep keyboard focus inside the menu: the rest of the page is made inert
+// while it's open, and focus moves into the menu / back to the toggle.
+setMobileMenuBackgroundInert(overlay, isOpen);
+
+if (isOpen) {
+  const firstLink = overlay.querySelector('a');
+  if (firstLink) firstLink.focus();
+} else if (toggle) {
+  toggle.focus();
+}
+
 };
+
+/* ── Mobile menu: explicit Tab/Shift+Tab trap ──
+ * Belt-and-suspenders alongside `inert`: keeps the same guarantee on engines
+ * where `inert` support is incomplete, and mirrors the lightbox's own trap. */
+function initMobileMenuA11y() {
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+
+    const overlay = document.getElementById('mobile-overlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+
+    const focusables = Array.from(overlay.querySelectorAll('a[href]')).filter(function (el) {
+      return el.offsetParent !== null;
+    });
+    if (!focusables.length) return;
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+
+    if (e.shiftKey) {
+      if (active === first || !overlay.contains(active)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (active === last || !overlay.contains(active)) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+}
 
 
 /* ── Shared Lightbox Zoom ── */
@@ -723,6 +784,113 @@ img.addEventListener('click', function (e) {
 });
 img.dataset.zoomBound = 'true';
 };
+
+/* ── Shared FAQ accordion accessibility wiring ── */
+function initFaqA11y() {
+document.querySelectorAll('.faq-item').forEach(function (item, i) {
+  const btn = item.querySelector('button');
+  const panel = item.querySelector('.faq-content');
+  if (!btn || !panel) return;
+
+  if (!btn.id) btn.id = 'faq-toggle-' + i;
+  if (!panel.id) panel.id = 'faq-panel-' + i;
+  btn.setAttribute('aria-controls', panel.id);
+  panel.setAttribute('aria-labelledby', btn.id);
+});
+}
+
+/* ── Shared Lightbox accessibility (close button, focus trap, focus restore) ── */
+function initLightboxA11y() {
+const lb = document.getElementById('lightbox');
+if (!lb || lb.dataset.a11yBound === 'true') return;
+lb.dataset.a11yBound = 'true';
+
+if (!lb.getAttribute('aria-label')) lb.setAttribute('aria-label', 'Portfolio image preview');
+
+if (!document.getElementById('vishar-lightbox-a11y-styles')) {
+  const style = document.createElement('style');
+  style.id = 'vishar-lightbox-a11y-styles';
+  style.textContent = [
+    '.lb-close{position:absolute;top:16px;right:16px;width:48px;height:48px;display:none;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.12);cursor:pointer;transition:all .25s ease;z-index:20;backdrop-filter:blur(12px)}',
+    '#lightbox[data-open="true"] .lb-close{display:flex}',
+    '.lb-close:hover{background:rgba(255,255,255,.15);color:#fff}',
+    '@media (max-width:768px){.lb-close{top:8px;right:8px}}',
+    '@media print{.lb-close{display:none!important}}'
+  ].join('');
+  document.head.appendChild(style);
+}
+
+const closeBtn = document.createElement('button');
+closeBtn.type = 'button';
+closeBtn.className = 'lb-close';
+closeBtn.setAttribute('aria-label', 'Close image preview');
+closeBtn.innerHTML = '<svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18L18 6M6 6l12 12"/></svg>';
+closeBtn.addEventListener('click', function () {
+  if (typeof window.closeLightbox === 'function') window.closeLightbox();
+});
+lb.appendChild(closeBtn);
+
+let lastFocused = null;
+
+function setBackgroundInert(makeInert) {
+  Array.from(document.body.children).forEach(function (el) {
+    if (el === lb) return;
+    const tag = el.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK') return;
+    if (makeInert) el.setAttribute('inert', '');
+    else el.removeAttribute('inert');
+  });
+}
+
+function onOpen() {
+  lastFocused = document.activeElement;
+  setBackgroundInert(true);
+  closeBtn.focus();
+}
+
+function onClose() {
+  setBackgroundInert(false);
+  if (lastFocused && lastFocused.isConnected && typeof lastFocused.focus === 'function') {
+    lastFocused.focus();
+  }
+  lastFocused = null;
+}
+
+// The page gallery scripts toggle aria-hidden when opening/closing; observing it
+// keeps focus management in one place without touching any gallery logic.
+let wasOpen = lb.getAttribute('aria-hidden') === 'false';
+const observer = new MutationObserver(function () {
+  const isOpen = lb.getAttribute('aria-hidden') === 'false';
+  if (isOpen === wasOpen) return;
+  wasOpen = isOpen;
+  if (isOpen) onOpen();
+  else onClose();
+});
+observer.observe(lb, { attributes: true, attributeFilter: ['aria-hidden'] });
+
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Tab' || lb.classList.contains('hidden')) return;
+
+  const focusables = Array.from(lb.querySelectorAll('button')).filter(function (el) {
+    return el.offsetParent !== null;
+  });
+  if (!focusables.length) return;
+
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+
+  if (e.shiftKey) {
+    if (active === first || !lb.contains(active)) {
+      e.preventDefault();
+      last.focus();
+    }
+  } else if (active === last || !lb.contains(active)) {
+    e.preventDefault();
+    first.focus();
+  }
+});
+}
 
 /* ── Keyboard: Escape to close overlays ── */
 document.addEventListener('keydown', function (e) {
@@ -866,5 +1034,8 @@ injectMotionStyles();
 applyRevealToSections();
 initHeroParallax();
 initReveal();
+initFaqA11y();
+initLightboxA11y();
+initMobileMenuA11y();
 });
 })();
