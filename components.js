@@ -675,6 +675,25 @@ while (walker.nextNode()) {
 }
 
 /* ── Mobile Menu Toggle ── */
+// Every other body-level element (skip link, footer, sticky CTA, lightbox,
+// cookie consent banner, ...) is made inert while the overlay is open, so
+// Tab/Shift+Tab and screen-reader browse-mode can never land outside it —
+// mirrors the lightbox's own background-inert helper instead of hand-
+// maintaining a partial list. #site-nav is deliberately excluded: it holds
+// the menu toggle button itself, which must stay mouse-clickable so the
+// existing "click the X icon to close" behaviour keeps working; keyboard
+// Tab is still kept out of it by the explicit trap in initMobileMenuA11y().
+function setMobileMenuBackgroundInert(overlay, makeInert) {
+  const siteNav = document.getElementById('site-nav');
+  Array.from(document.body.children).forEach(function (el) {
+    if (el === overlay || el === siteNav) return;
+    const tag = el.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK') return;
+    if (makeInert) el.setAttribute('inert', '');
+    else el.removeAttribute('inert');
+  });
+}
+
 window.toggleMenu = function () {
 const overlay = document.getElementById('mobile-overlay');
 const toggle = document.getElementById('mobile-menu-toggle');
@@ -698,14 +717,9 @@ if (iconClose) iconClose.classList.toggle('hidden', !isOpen);
 
 document.body.classList.toggle('lightbox-active', isOpen);
 
-// Keep keyboard focus inside the menu: the page behind the overlay is made
-// inert while the menu is open, and focus moves into the menu / back to the toggle.
-[document.querySelector('main'), document.getElementById('site-footer'), document.getElementById('sticky-cta')]
-  .forEach(function (el) {
-    if (!el) return;
-    if (isOpen) el.setAttribute('inert', '');
-    else el.removeAttribute('inert');
-  });
+// Keep keyboard focus inside the menu: the rest of the page is made inert
+// while it's open, and focus moves into the menu / back to the toggle.
+setMobileMenuBackgroundInert(overlay, isOpen);
 
 if (isOpen) {
   const firstLink = overlay.querySelector('a');
@@ -715,6 +729,37 @@ if (isOpen) {
 }
 
 };
+
+/* ── Mobile menu: explicit Tab/Shift+Tab trap ──
+ * Belt-and-suspenders alongside `inert`: keeps the same guarantee on engines
+ * where `inert` support is incomplete, and mirrors the lightbox's own trap. */
+function initMobileMenuA11y() {
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab') return;
+
+    const overlay = document.getElementById('mobile-overlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+
+    const focusables = Array.from(overlay.querySelectorAll('a[href]')).filter(function (el) {
+      return el.offsetParent !== null;
+    });
+    if (!focusables.length) return;
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+
+    if (e.shiftKey) {
+      if (active === first || !overlay.contains(active)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (active === last || !overlay.contains(active)) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+}
 
 
 /* ── Shared Lightbox Zoom ── */
@@ -991,5 +1036,6 @@ initHeroParallax();
 initReveal();
 initFaqA11y();
 initLightboxA11y();
+initMobileMenuA11y();
 });
 })();
