@@ -5,6 +5,7 @@
   "scripts": {
     "optimize:images": "node scripts/optimize-images.mjs",
     "thumbs:portfolio": "node scripts/generate-portfolio-thumbs.mjs",
+    "thumbs:galleries": "node scripts/generate-gallery-thumbs.mjs",
     "build:tailwind": "tailwindcss -i ./assets/css/input.css -o ./assets/css/tailwind.css --minify",
     "validate:site": "node scripts/validate-site.mjs"
   },
