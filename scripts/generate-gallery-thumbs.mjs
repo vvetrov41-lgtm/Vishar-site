@@ -35,6 +35,19 @@ const GALLERIES = [
       'before-06', 'after-06',
     ],
   },
+  {
+    name: 'studio-gallery',
+    sourceDir: path.resolve('assets/gallery'),
+    outputDir: path.resolve('assets/gallery', 'thumbs'),
+    stems: ['01', '02', '03', '04', '05', '06'],
+    // This gallery's canonical source is JPG (no full-size WebP sidecar),
+    // unlike the WebP-sourced galleries above.
+    sourceExtension: '.jpg',
+    // Homepage Studio Gallery cards are square with a centred `object-cover`
+    // crop, so thumbnails must be pre-cropped to match — the other
+    // galleries use a proportional width-only resize instead.
+    crop: { square: true },
+  },
 ];
 
 const FORCE = process.argv.includes('--force');
@@ -69,6 +82,24 @@ async function generateThumb(sourcePath, outputPath, width) {
   return buffer.length;
 }
 
+// Square, centre-cropped variant used only by galleries with `crop.square`
+// (currently Studio Gallery). Kept as a separate function, rather than a
+// branch inside generateThumb(), so the proportional resize path used by
+// every other gallery is untouched and stays byte-identical.
+async function generateSquareThumb(sourcePath, outputPath, size) {
+  const buffer = await sharp(sourcePath)
+    .resize({ width: size, height: size, fit: 'cover', position: 'centre', withoutEnlargement: true })
+    // Normalize to sRGB explicitly rather than relying on the decoder's
+    // default interpretation, since a couple of the source JPGs carry a
+    // small embedded ICC profile.
+    .toColorspace('srgb')
+    .webp({ quality: WEBP_QUALITY, effort: WEBP_EFFORT, smartSubsample: true })
+    .toBuffer();
+
+  await fs.writeFile(outputPath, buffer);
+  return buffer.length;
+}
+
 async function processGallery(gallery) {
   await fs.mkdir(gallery.outputDir, { recursive: true });
 
@@ -77,8 +108,10 @@ async function processGallery(gallery) {
   let generatedCount = 0;
   let skippedCount = 0;
 
+  const sourceExtension = gallery.sourceExtension ?? '.webp';
+
   for (const stem of gallery.stems) {
-    const sourcePath = path.join(gallery.sourceDir, `${stem}.webp`);
+    const sourcePath = path.join(gallery.sourceDir, `${stem}${sourceExtension}`);
 
     if (!await fileExists(sourcePath)) {
       throw new Error(`Required full-size source is missing: ${path.relative(process.cwd(), sourcePath)}`);
@@ -96,7 +129,9 @@ async function processGallery(gallery) {
         continue;
       }
 
-      const size = await generateThumb(sourcePath, outputPath, width);
+      const size = gallery.crop?.square
+        ? await generateSquareThumb(sourcePath, outputPath, width)
+        : await generateThumb(sourcePath, outputPath, width);
       outputBytesTotal += size;
       generatedCount += 1;
       console.log(`${gallery.name}/thumbs/${stem}-${width}.webp: ${formatBytes(size)}`);
@@ -119,9 +154,11 @@ async function main() {
     inputBytesGrand += result.inputBytesTotal;
     outputBytesGrand += result.outputBytesTotal;
 
+    const sourceLabel = (gallery.sourceExtension ?? '.webp').replace(/^\./, '').toUpperCase();
+
     console.log('');
     console.log(`${gallery.name}: generated ${result.generatedCount}, skipped (up to date) ${result.skippedCount}`);
-    console.log(`${gallery.name}: source (full-size WebP) total ${formatBytes(result.inputBytesTotal)}`);
+    console.log(`${gallery.name}: source (full-size ${sourceLabel}) total ${formatBytes(result.inputBytesTotal)}`);
     console.log(`${gallery.name}: thumbnail output total ${formatBytes(result.outputBytesTotal)}`);
   }
 
