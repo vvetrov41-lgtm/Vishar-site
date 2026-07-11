@@ -955,8 +955,10 @@
       if (!webpPortfolioPilot.has(file)) {
         return `<img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">`;
       }
-      const webpFile = file.replace(/\.jpg$/i, '.webp');
-      return `<picture><source srcset="/assets/portfolio/${webpFile}" type="image/webp"><img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture>`;
+      const base = file.replace(/\.jpg$/i, '');
+      const srcset = [320, 480, 720, 960].map(w => `/assets/portfolio/thumbs/${base}-${w}.webp ${w}w`).join(', ');
+      const sizes = '(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)';
+      return `<picture><source type="image/webp" srcset="${srcset}" sizes="${sizes}"><img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture>`;
     }
 
     function buildImageGrid() {
