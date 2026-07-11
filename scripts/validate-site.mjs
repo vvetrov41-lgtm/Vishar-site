@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +10,35 @@ const MIN_TAILWIND_BYTES = 10 * 1024;
 const LARGE_IMAGE_BYTES = 2 * 1024 * 1024;
 const REQUIRED_FILES = ['robots.txt', 'sitemap.xml', '_headers'];
 const HTML_EXTENSIONS = new Set(['.html']);
+const RUNTIME_EXTENSIONS = new Set(['.html', '.js', '.mjs', '.css']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
+
+// Self-hosted homepage 3D libraries (Three.js r128 / GSAP+ScrollTrigger
+// 3.12.5), vendored from pinned npm packages by scripts/vendor-3d-libs.mjs.
+// These hashes are checked independently here (not imported from that
+// script) so validation still catches drift even if the vendor script itself
+// were ever edited incorrectly.
+const VENDOR_3D_FILES = [
+  {
+    rel: 'assets/vendor/three/0.128.0/three.min.js',
+    sha256: '9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2',
+    homepageReference: '/assets/vendor/three/0.128.0/three.min.js',
+  },
+  {
+    rel: 'assets/vendor/three/0.128.0/LICENSE',
+    sha256: '7dddf7c5b8fd10ee654db8857d75d104b5557889aa5a91fc4ca545ea7c07062f',
+  },
+  {
+    rel: 'assets/vendor/gsap/3.12.5/gsap.min.js',
+    sha256: '28033e449a31ebcc396e5be8b13b63152bf03094288fb5867034321927bce087',
+    homepageReference: '/assets/vendor/gsap/3.12.5/gsap.min.js',
+  },
+  {
+    rel: 'assets/vendor/gsap/3.12.5/ScrollTrigger.min.js',
+    sha256: 'ad33c2df9ada8a663c2147357828f980d0b7ca731ef33eb3c6e4f327c3b2cda5',
+    homepageReference: '/assets/vendor/gsap/3.12.5/ScrollTrigger.min.js',
+  },
+];
 const PORTFOLIO_NUMBERS = Array.from({ length: 20 }, (_, i) => String(i + 1).padStart(2, '0'));
 const PORTFOLIO_THUMB_WIDTHS = [320, 480, 720, 960];
 const GALLERY_THUMB_WIDTHS = [320, 480, 720, 960];
@@ -159,6 +188,97 @@ async function checkHtmlRuntimeStrings(htmlFiles) {
   }
 
   pass('HTML Tailwind CDN/config and AVIF guards completed.');
+}
+
+// Directories/files that are Node-only build tooling or server-side Worker
+// code — never fetched or executed by a visitor's browser during page load —
+// are out of scope for this check, same in spirit as the Markdown carve-out:
+// only code that actually runs as part of the site's runtime matters here.
+function isBrowserRuntimeFile(filePath) {
+  const fileRel = rel(filePath);
+  if (fileRel.startsWith('scripts/')) return false;
+  if (fileRel.startsWith('workers/')) return false;
+  if (fileRel.endsWith('.config.js')) return false;
+  return true;
+}
+
+async function checkNoRuntimeCdnjsReferences() {
+  const runtimeFiles = (await listFiles(rootDir, (file) => RUNTIME_EXTENSIONS.has(path.extname(file).toLowerCase())))
+    .filter(isBrowserRuntimeFile);
+  let checkedCount = 0;
+
+  for (const file of runtimeFiles) {
+    const contents = await readFile(file, 'utf8');
+    checkedCount += 1;
+    if (contents.includes('cdnjs.cloudflare.com')) {
+      fail(`${rel(file)} references cdnjs.cloudflare.com (executable files must be self-hosted).`);
+    }
+  }
+
+  const headersPath = path.join(rootDir, '_headers');
+  if (await pathExists(headersPath)) {
+    checkedCount += 1;
+    const headersContents = await readFile(headersPath, 'utf8');
+    if (headersContents.includes('cdnjs.cloudflare.com')) {
+      fail('_headers references cdnjs.cloudflare.com.');
+    }
+  }
+
+  // Historical prose in Markdown docs (e.g. TECHNICAL_AUDIT.md) intentionally
+  // documents the prior cdnjs-based implementation and must not fail this
+  // check — only executable HTML/JS/CSS and _headers are runtime-relevant.
+  pass(`No executable HTML/JS/CSS or _headers file references cdnjs.cloudflare.com (${checkedCount} files checked).`);
+}
+
+async function checkVendor3DLibraries() {
+  for (const file of VENDOR_3D_FILES) {
+    const filePath = path.join(rootDir, file.rel);
+
+    if (!await pathExists(filePath)) {
+      fail(`Vendored 3D library file is missing: ${file.rel}.`);
+      continue;
+    }
+
+    const stats = await stat(filePath);
+    if (stats.size === 0) {
+      fail(`Vendored 3D library file is empty: ${file.rel}.`);
+      continue;
+    }
+
+    const buffer = await readFile(filePath);
+    const actualHash = createHash('sha256').update(buffer).digest('hex');
+    if (actualHash !== file.sha256) {
+      fail(`Vendored 3D library file SHA-256 mismatch: ${file.rel} (expected ${file.sha256}, got ${actualHash}).`);
+      continue;
+    }
+
+    if (!file.rel.match(/\/(0\.128\.0|3\.12\.5)\//)) {
+      fail(`Vendored 3D library path is not version-scoped: ${file.rel}.`);
+    }
+  }
+
+  pass(`Vendored 3D library files (Three.js r128, GSAP 3.12.5, ScrollTrigger 3.12.5) exist, are non-empty, version-scoped, and match pinned SHA-256 hashes (${VENDOR_3D_FILES.length} files checked, no network access used).`);
+}
+
+async function checkHomepageReferencesLocalVendorPaths() {
+  const homepagePath = path.join(rootDir, 'index.html');
+  if (!await pathExists(homepagePath)) {
+    fail('index.html is missing; cannot verify local 3D vendor references.');
+    return;
+  }
+
+  const contents = await readFile(homepagePath, 'utf8');
+  const expectedReferences = VENDOR_3D_FILES
+    .map((file) => file.homepageReference)
+    .filter(Boolean);
+
+  for (const reference of expectedReferences) {
+    if (!contents.includes(reference)) {
+      fail(`index.html does not reference local vendor path: ${reference}.`);
+    }
+  }
+
+  pass(`index.html references all ${expectedReferences.length} local 3D vendor paths.`);
 }
 
 async function checkHeadersCsp() {
@@ -506,6 +626,9 @@ async function main() {
   await checkTailwindArtifact();
   await checkRequiredFiles();
   await checkHtmlRuntimeStrings(htmlFiles);
+  await checkNoRuntimeCdnjsReferences();
+  await checkVendor3DLibraries();
+  await checkHomepageReferencesLocalVendorPaths();
   await checkHeadersCsp();
   await checkLocalHtmlReferences(htmlFiles);
   await checkWebpAllowlists();
