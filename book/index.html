@@ -80,8 +80,8 @@
     ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:0 0}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:10px}
     .glass{background:rgba(29,29,31,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
     .hero-title{letter-spacing:-.025em}
-    .faq-content{max-height:0;overflow:hidden;transition:max-height .5s cubic-bezier(.4,0,.2,1)}
-    .faq-item.active .faq-content{max-height:1000px}
+    .faq-content{max-height:0;overflow:hidden;visibility:hidden;transition:max-height .5s cubic-bezier(.4,0,.2,1),visibility 0s linear .5s}
+    .faq-item.active .faq-content{max-height:1000px;visibility:visible;transition-delay:0s}
     .faq-item.active .faq-icon{transform:rotate(180deg)}
     .faq-item button{transition:color .2s ease}.faq-item button:hover{color:#fff}
     .fade-in{animation:fadeIn 1s ease-out forwards}
@@ -91,7 +91,7 @@
     .card-lift{transition:transform .35s cubic-bezier(.4,0,.2,1),box-shadow .35s ease}
     .card-lift:hover{transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.4)}
     @media(prefers-reduced-motion:reduce){*,::before,::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.reveal{opacity:1;transform:none}}
-    @media print{body{background:#fff!important;color:#000!important}nav,footer{display:none!important}.faq-content{max-height:none!important;overflow:visible!important}}
+    @media print{body{background:#fff!important;color:#000!important}nav,footer{display:none!important}.faq-content{max-height:none!important;overflow:visible!important;visibility:visible!important}}
 
     .book-title{font-family:'Bodoni Moda',Georgia,serif;font-weight:500;line-height:1.03;letter-spacing:-.015em}
     .mono-label{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.6875rem;letter-spacing:.18em;text-transform:uppercase}
@@ -113,16 +113,17 @@
     <script>window.PAGE_ID = 'book';</script>
 </head>
 <body class="antialiased">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
 
 <div id="site-nav"></div>
 
-<main>
+<main id="main-content" tabindex="-1">
 
 <div class="pt-20 px-6 max-w-[1200px] mx-auto">
-    <nav aria-label="Breadcrumb" class="text-xs text-white/30">
-        <a href="/" class="hover:text-white/60 transition-colors">Home</a>
+    <nav aria-label="Breadcrumb" class="text-xs text-white/50">
+        <a href="/" class="text-white/60 hover:text-white transition-colors">Home</a>
         <span class="mx-2">/</span>
-        <span class="text-white/60">Book</span>
+        <span class="text-white/70">Book</span>
     </nav>
 </div>
 
@@ -357,11 +358,11 @@
         <form id="waitlist-form" novalidate class="text-left">
             <div class="space-y-4">
                 <div>
-                    <label for="wl-name" class="text-[10px] uppercase tracking-[0.25em] text-white/30 block mb-2">Name &middot; optional</label>
+                    <label for="wl-name" class="text-xs uppercase tracking-[0.25em] text-white/60 block mb-2">Name &middot; optional</label>
                     <input type="text" id="wl-name" name="name" class="wl-field" autocomplete="name" maxlength="120" placeholder="Your name">
                 </div>
                 <div>
-                    <label for="wl-email" class="text-[10px] uppercase tracking-[0.25em] text-white/30 block mb-2">Email &middot; required</label>
+                    <label for="wl-email" class="text-xs uppercase tracking-[0.25em] text-white/60 block mb-2">Email &middot; required</label>
                     <input type="email" id="wl-email" name="email" class="wl-field" autocomplete="email" required maxlength="320" placeholder="you@studio.com" inputmode="email">
                 </div>
                 <div class="hidden" aria-hidden="true">
@@ -370,7 +371,7 @@
                 </div>
                 <button type="submit" id="wl-submit" class="btn-book w-full">Get notified when it's ready</button>
             </div>
-            <p id="wl-status" class="text-[12px] mt-4 min-h-[1.25rem] text-center text-white/50" aria-live="polite"></p>
+            <p id="wl-status" class="text-[12px] mt-4 min-h-[1.25rem] text-center text-white/60" aria-live="polite"></p>
             <p class="text-[10px] text-white/25 mt-3 text-center leading-relaxed tracking-wide">Your email is sent directly to Vladimir as a private notification. It is not stored in a database or shared.</p>
         </form>
     </div>

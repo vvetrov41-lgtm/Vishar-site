@@ -108,17 +108,18 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 .card-lift:hover{transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,.4)}
 .glow-border{position:relative}.glow-border::before{content:'';position:absolute;inset:-1px;border-radius:inherit;background:linear-gradient(135deg,rgba(0,113,227,.3),rgba(255,255,255,.05),rgba(0,113,227,.15));z-index:-1;opacity:0;transition:opacity .4s ease}.glow-border:hover::before{opacity:1}
 @media(prefers-reduced-motion:reduce){*,::before,::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.reveal{opacity:1;transform:none}}
-@media print{body{background:#fff!important;color:#000!important}nav,.sticky-cta,#lightbox,.lb-nav,.lb-counter,footer,.glass{display:none!important}.faq-content{max-height:none!important;overflow:visible!important}}
+@media print{body{background:#fff!important;color:#000!important}nav,.sticky-cta,#lightbox,.lb-nav,.lb-counter,footer,.glass{display:none!important}.faq-content{max-height:none!important;overflow:visible!important;visibility:visible!important}}
 </style>
 <script>window.PAGE_ID = 'cover-up';</script>
 
 </head>
 <body class="antialiased">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <div id="site-nav"></div>
-    <main>
+    <main id="main-content" tabindex="-1">
 
 <div class="pt-20 px-6 max-w-[1200px] mx-auto">
-    <nav aria-label="Breadcrumb" class="text-xs text-white/30"><a href="/" class="hover:text-white/60 transition-colors">Home</a><span class="mx-2">/</span><span class="text-white/60">Cover-up Tattoo Manchester</span></nav>
+    <nav aria-label="Breadcrumb" class="text-xs text-white/50"><a href="/" class="text-white/60 hover:text-white transition-colors">Home</a><span class="mx-2">/</span><span class="text-white/70">Cover-up Tattoo Manchester</span></nav>
 </div>
 
 <header class="relative py-24 md:py-32 px-6 overflow-hidden">
@@ -126,11 +127,11 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
         <p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-4">Speciality</p>
         <h1 class="text-4xl md:text-7xl font-semibold mb-6 tracking-tight hero-title">Cover-ups.</h1>
         <p class="text-xl md:text-2xl text-white/50 mb-4 font-light max-w-2xl mx-auto">Transforming old or unwanted tattoos into artwork you'll genuinely love. Expert assessment, honest advice.</p>
-        <p class="text-white/30 text-sm mb-10">Manchester &amp; Salford · £140/hr · Free photo assessment</p>
+        <p class="text-white/60 text-sm mb-10">Manchester &amp; Salford · £140/hr · Free photo assessment</p>
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
             <div class="flex flex-col items-center max-w-xs">
                 <a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Send photos for assessment</a>
-                <p class="mt-3 text-[11px] leading-relaxed text-white/40 text-center">Enquiry via No Regrets Manchester. The team will arrange an in-person or video consultation with me before any tattoo session is booked.</p>
+                <p class="mt-3 text-xs leading-relaxed text-white/60 text-center">Enquiry via No Regrets Manchester. The team will arrange an in-person or video consultation with me before any tattoo session is booked.</p>
             </div>
             <a href="#how-it-works" class="px-8 py-3 text-white font-medium hover:underline flex items-center gap-2">How cover-ups work →</a>
         </div>
@@ -300,19 +301,19 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                 <p class="text-white/40 text-sm mb-8">Free photo assessment · No obligation</p>
                 <div class="space-y-6 text-white/50 leading-relaxed"><p>Send me photos of your old tattoo and I'll give you an honest assessment of what's possible. After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. This comes off the overall tattoo cost.</p></div>
                 <div class="mt-8 space-y-4">
-                    <div><p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Location</p><a href="https://maps.app.goo.gl/mCQcaojR2MR6upBYA?g_st=ic" target="_blank" rel="noopener noreferrer" class="text-xl font-light hover:text-white transition-colors underline decoration-white/20 underline-offset-8">No Regrets Studios, Manchester / Salford</a></div>
-                    <div><p class="text-[10px] uppercase tracking-[0.3em] text-white/30 mb-2">Inquiries</p><a href="mailto:info@vishartattoo.com" class="text-xl font-light hover:text-white transition-colors">info@vishartattoo.com</a></div>
+                    <div><p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Location</p><a href="https://maps.app.goo.gl/mCQcaojR2MR6upBYA?g_st=ic" target="_blank" rel="noopener noreferrer" class="text-xl font-light hover:text-white transition-colors underline decoration-white/20 underline-offset-8">No Regrets Studios, Manchester / Salford</a></div>
+                    <div><p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Inquiries</p><a href="mailto:info@vishartattoo.com" class="text-xl font-light hover:text-white transition-colors">info@vishartattoo.com</a></div>
                 </div>
             </div>
-            <div class="flex items-center justify-center md:justify-end"><div class="flex flex-col items-center gap-3"><a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="w-64 h-64 rounded-full border border-white/10 flex items-center justify-center text-center p-8 group hover:bg-white hover:text-black transition-all duration-500 scale-100 hover:scale-110 glow-border"><span class="text-xl font-medium tracking-tight">Send photos <br><span class="text-sm font-light opacity-60">Free assessment</span></span></a><p class="text-[11px] leading-relaxed text-white/40 text-center max-w-xs">Enquiry via No Regrets Manchester. The team will arrange an in-person or video consultation with me before any tattoo session is booked.</p></div></div>
+            <div class="flex items-center justify-center md:justify-end"><div class="flex flex-col items-center gap-3"><a href="https://shorturl.at/orgVK" target="_blank" rel="noopener noreferrer" class="w-64 h-64 rounded-full border border-white/10 flex items-center justify-center text-center p-8 group hover:bg-white hover:text-black transition-all duration-500 scale-100 hover:scale-110 glow-border"><span class="text-xl font-medium tracking-tight">Send photos <br><span class="text-sm font-light opacity-60">Free assessment</span></span></a><p class="text-xs leading-relaxed text-white/60 text-center max-w-xs">Enquiry via No Regrets Manchester. The team will arrange an in-person or video consultation with me before any tattoo session is booked.</p></div></div>
         </div>
     </div>
 </section>
 </main>
 
-<div id="lightbox" class="fixed inset-0 z-[1000] bg-black/98 hidden items-center justify-center p-4 backdrop-blur-xl" onclick="onCoverUpLightboxClick(event)" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Image preview">
+<div id="lightbox" class="fixed inset-0 z-[1000] bg-black/98 hidden items-center justify-center p-4 backdrop-blur-xl" onclick="onCoverUpLightboxClick(event)" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Portfolio image preview">
     <button class="lb-nav lb-nav--prev" onclick="navigateCoverUpLightbox(-1)" aria-label="Previous image"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
-    <img id="lightbox-img" src="" class="max-w-full max-h-[90vh] object-contain shadow-2xl transition-transform duration-500 cursor-zoom-out" alt="Fullscreen view">
+    <img id="lightbox-img" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" class="max-w-full max-h-[90vh] object-contain shadow-2xl transition-transform duration-500 cursor-zoom-out" alt="Fullscreen view">
     <button class="lb-nav lb-nav--next" onclick="navigateCoverUpLightbox(1)" aria-label="Next image"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
     <div class="lb-counter" id="lb-counter"></div>
 </div>

@@ -3,14 +3,41 @@
 @tailwind utilities;
 
 @layer components {
+  .skip-link {
+    position: fixed;
+    top: -100px;
+    left: 16px;
+    z-index: 400;
+    padding: 12px 20px;
+    border-radius: 9999px;
+    background: #fff;
+    color: #000;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .skip-link:focus {
+    top: 16px;
+  }
+
+  main:focus-visible {
+    outline: none;
+  }
+
+  /* Closed panels are also visibility:hidden so they leave the accessibility
+     tree and their links stop being focusable; the delayed visibility keeps
+     the max-height close animation intact. */
   .faq-content {
     max-height: 0;
     overflow: hidden;
-    transition: max-height .5s cubic-bezier(.4, 0, .2, 1);
+    visibility: hidden;
+    transition: max-height .5s cubic-bezier(.4, 0, .2, 1), visibility 0s linear .5s;
   }
 
   .faq-item.active .faq-content {
     max-height: 1000px;
+    visibility: visible;
+    transition-delay: 0s;
   }
 
   .faq-item.active .faq-icon {
