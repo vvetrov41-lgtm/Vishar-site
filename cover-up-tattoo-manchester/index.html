@@ -210,13 +210,23 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
     'after-06.jpg': 'after-06.webp'
   };
 
+  var COVERUP_THUMB_WIDTHS = [320, 480, 720, 960];
+  var COVERUP_SIZES = '(min-width: 768px) min(calc((100vw - 66px) / 4), 291.5px), calc((100vw - 33px) / 2)';
+
+  function coverUpThumbSrcset(webpFile) {
+    var stem = webpFile.replace(/\.webp$/i, '');
+    return COVERUP_THUMB_WIDTHS.map(function(w){
+      return basePath + 'thumbs/' + stem + '-' + w + '.webp ' + w + 'w';
+    }).join(', ');
+  }
+
   function buildImageMarkup(fileName, altText) {
     var fallbackSrc = basePath + fileName;
     var webpFile = webpCoverUpMap[fileName];
     if (!webpFile) {
       return "<img src=\"" + fallbackSrc + "\" loading=\"lazy\" decoding=\"async\" width=\"600\" height=\"800\" alt=\"" + altText + "\" class=\"w-full aspect-[3/4] object-cover bg-apple-darkGray\">";
     }
-    return "<picture><source srcset=\"" + basePath + webpFile + "\" type=\"image/webp\"><img src=\"" + fallbackSrc + "\" loading=\"lazy\" decoding=\"async\" width=\"600\" height=\"800\" alt=\"" + altText + "\" class=\"w-full aspect-[3/4] object-cover bg-apple-darkGray\"></picture>";
+    return "<picture><source srcset=\"" + coverUpThumbSrcset(webpFile) + "\" sizes=\"" + COVERUP_SIZES + "\" type=\"image/webp\"><img src=\"" + fallbackSrc + "\" loading=\"lazy\" decoding=\"async\" width=\"600\" height=\"800\" alt=\"" + altText + "\" class=\"w-full aspect-[3/4] object-cover bg-apple-darkGray\"></picture>";
   }
 
   function buildGallery() {

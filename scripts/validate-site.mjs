@@ -28,7 +28,34 @@ const GALLERY_CONFIGS = [
     stems: ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'],
     originalJpgs: ['01.jpg', '02.jpg', '03.jpeg', '04.jpg', '05.jpg', '06.jpg', '07.jpg', '08.jpg', '09.jpg', '10.jpg', '11.jpg', '12.jpg'],
   },
+  {
+    name: 'cover-ups',
+    dir: 'assets/cover-ups',
+    stems: [
+      'before-01', 'after-01',
+      'before-02', 'after-02',
+      'before-03', 'after-03',
+      'before-04', 'after-04',
+      'before-05', 'after-05',
+      'before-06', 'after-06',
+    ],
+    originalJpgs: [
+      'before-01.jpg', 'after-01.jpg',
+      'before-02.jpg', 'after-02.jpg',
+      'before-03.jpg', 'after-03.jpg',
+      'before-04.jpg', 'after-04.jpg',
+      'before-05.jpg', 'after-05.jpg',
+      'before-06.jpg', 'after-06.jpg',
+    ],
+  },
 ];
+
+function galleryConfigNamesLabel() {
+  const labels = { 'colour-realism': 'Colour Realism', 'black-grey': 'Black & Grey', 'cover-ups': 'Cover-ups' };
+  const names = GALLERY_CONFIGS.map((gallery) => labels[gallery.name] || gallery.name);
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
 
 const failures = [];
 const warnings = [];
@@ -383,7 +410,7 @@ async function checkGalleryOriginalsIntact() {
     }
   }
 
-  pass('Colour Realism and Black & Grey original JPG/JPEG and WebP source files are present.');
+  pass(`${galleryConfigNamesLabel()} original JPG/JPEG and WebP source files are present. This confirms presence and readable format only, not byte-for-byte immutability.`);
 }
 
 async function checkGalleryThumbnails() {
@@ -429,7 +456,7 @@ async function checkGalleryThumbnails() {
     }
   }
 
-  pass(`Gallery responsive thumbnails checked (${checkedCount} derivatives across Colour Realism and Black & Grey).`);
+  pass(`Gallery responsive thumbnails checked (${checkedCount} derivatives across ${galleryConfigNamesLabel()}).`);
 }
 
 function printResults() {
