@@ -2,6 +2,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIN_TAILWIND_BYTES = 10 * 1024;
@@ -9,6 +10,8 @@ const LARGE_IMAGE_BYTES = 2 * 1024 * 1024;
 const REQUIRED_FILES = ['robots.txt', 'sitemap.xml', '_headers'];
 const HTML_EXTENSIONS = new Set(['.html']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
+const PORTFOLIO_NUMBERS = Array.from({ length: 20 }, (_, i) => String(i + 1).padStart(2, '0'));
+const PORTFOLIO_THUMB_WIDTHS = [320, 480, 720, 960];
 
 const failures = [];
 const warnings = [];
@@ -279,6 +282,73 @@ async function checkLargeImagesWithoutWebpWarnings() {
   pass('Large JPG/JPEG/PNG warning-only scan completed.');
 }
 
+async function checkPortfolioThumbnails() {
+  const portfolioDir = path.join(rootDir, 'assets/portfolio');
+
+  for (const number of PORTFOLIO_NUMBERS) {
+    const sourceRel = `assets/portfolio/${number}.webp`;
+    if (!await pathExists(path.join(portfolioDir, `${number}.webp`))) {
+      fail(`Portfolio thumbnail source is missing: ${sourceRel}.`);
+      continue;
+    }
+
+    for (const width of PORTFOLIO_THUMB_WIDTHS) {
+      const thumbRel = `assets/portfolio/thumbs/${number}-${width}.webp`;
+      const thumbPath = path.join(rootDir, thumbRel);
+
+      if (!await pathExists(thumbPath)) {
+        fail(`Expected portfolio thumbnail is missing: ${thumbRel}.`);
+        continue;
+      }
+
+      const stats = await stat(thumbPath);
+      if (stats.size === 0) {
+        fail(`Portfolio thumbnail is empty: ${thumbRel}.`);
+        continue;
+      }
+
+      let metadata;
+      try {
+        metadata = await sharp(thumbPath).metadata();
+      } catch (error) {
+        fail(`Portfolio thumbnail could not be read: ${thumbRel} (${error.message}).`);
+        continue;
+      }
+
+      if (metadata.width !== width) {
+        fail(`Portfolio thumbnail ${thumbRel} has width ${metadata.width}px, expected ${width}px.`);
+      }
+    }
+  }
+
+  pass(`Portfolio responsive thumbnails checked (${PORTFOLIO_NUMBERS.length} images x ${PORTFOLIO_THUMB_WIDTHS.length} widths).`);
+}
+
+async function checkPortfolioOriginalsIntact() {
+  const portfolioDir = path.join(rootDir, 'assets/portfolio');
+  const entries = await readdir(portfolioDir, { withFileTypes: true });
+  const topLevelJpg = entries.filter((entry) => entry.isFile() && /\.jpe?g$/i.test(entry.name));
+  const topLevelWebp = entries.filter((entry) => entry.isFile() && entry.name.endsWith('.webp'));
+
+  if (topLevelJpg.length !== PORTFOLIO_NUMBERS.length) {
+    fail(`Expected ${PORTFOLIO_NUMBERS.length} top-level portfolio JPG files, found ${topLevelJpg.length}.`);
+  }
+  if (topLevelWebp.length !== PORTFOLIO_NUMBERS.length) {
+    fail(`Expected ${PORTFOLIO_NUMBERS.length} top-level portfolio WebP files, found ${topLevelWebp.length}.`);
+  }
+
+  for (const number of PORTFOLIO_NUMBERS) {
+    if (!await pathExists(path.join(portfolioDir, `${number}.jpg`))) {
+      fail(`Original portfolio JPG missing or replaced: assets/portfolio/${number}.jpg.`);
+    }
+    if (!await pathExists(path.join(portfolioDir, `${number}.webp`))) {
+      fail(`Original portfolio WebP missing or replaced: assets/portfolio/${number}.webp.`);
+    }
+  }
+
+  pass('Portfolio original JPG/WebP source files are intact and unreplaced.');
+}
+
 function printResults() {
   console.log('Static site validation results');
   console.log('==============================');
@@ -309,6 +379,8 @@ async function main() {
   await checkLocalHtmlReferences(htmlFiles);
   await checkWebpAllowlists();
   await checkLargeImagesWithoutWebpWarnings();
+  await checkPortfolioOriginalsIntact();
+  await checkPortfolioThumbnails();
 
   printResults();
 
