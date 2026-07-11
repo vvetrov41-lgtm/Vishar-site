@@ -135,7 +135,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
     <link rel="preload" as="image" href="/assets/hero/hero.webp" type="image/webp" fetchpriority="high">
-    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 
     <!-- Tailwind CDN -->
     <link rel="stylesheet" href="/assets/css/tailwind.css">
@@ -267,9 +266,9 @@
 
       function loadMachineLibraries(){
         if(librariesPromise)return librariesPromise;
-        librariesPromise=loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')
-          .then(function(){return loadScript('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js')})
-          .then(function(){return loadScript('https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js')})
+        librariesPromise=loadScript('/assets/vendor/three/0.128.0/three.min.js')
+          .then(function(){return loadScript('/assets/vendor/gsap/3.12.5/gsap.min.js')})
+          .then(function(){return loadScript('/assets/vendor/gsap/3.12.5/ScrollTrigger.min.js')})
           .catch(function(error){console.warn(error);setMachineFallback('3D preview could not be loaded.');throw error});
         return librariesPromise;
       }

@@ -7,10 +7,14 @@
     "thumbs:portfolio": "node scripts/generate-portfolio-thumbs.mjs",
     "thumbs:galleries": "node scripts/generate-gallery-thumbs.mjs",
     "build:tailwind": "tailwindcss -i ./assets/css/input.css -o ./assets/css/tailwind.css --minify",
-    "validate:site": "node scripts/validate-site.mjs"
+    "validate:site": "node scripts/validate-site.mjs",
+    "vendor:3d-libs": "node scripts/vendor-3d-libs.mjs",
+    "vendor:3d-libs:check": "node scripts/vendor-3d-libs.mjs --check"
   },
   "devDependencies": {
+    "gsap": "3.12.5",
     "sharp": "^0.33.5",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "three": "0.128.0"
   }
 }
