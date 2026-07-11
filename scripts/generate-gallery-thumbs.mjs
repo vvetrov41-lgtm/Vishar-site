@@ -22,6 +22,19 @@ const GALLERIES = [
     outputDir: path.resolve('assets/black-grey', 'thumbs'),
     stems: ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'],
   },
+  {
+    name: 'cover-ups',
+    sourceDir: path.resolve('assets/cover-ups'),
+    outputDir: path.resolve('assets/cover-ups', 'thumbs'),
+    stems: [
+      'before-01', 'after-01',
+      'before-02', 'after-02',
+      'before-03', 'after-03',
+      'before-04', 'after-04',
+      'before-05', 'after-05',
+      'before-06', 'after-06',
+    ],
+  },
 ];
 
 const FORCE = process.argv.includes('--force');
