@@ -135,6 +135,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
     <link rel="preload" as="image" href="/assets/hero/hero.webp" type="image/webp" fetchpriority="high">
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 
     <!-- Tailwind CDN -->
     <link rel="stylesheet" href="/assets/css/tailwind.css">
@@ -253,9 +254,6 @@
         return false;
       }
 
-      if(prefersRM){setMachineFallback('3D animation disabled because reduced motion is enabled.');return}
-      if(!hasWebGL()){setMachineFallback('3D preview requires WebGL.');return}
-
       function loadScript(src){
         return new Promise(function(resolve,reject){
           var script=document.createElement('script');
@@ -278,22 +276,23 @@
 
       function initMachineWhenReady(){
         if(initStarted)return;
+        initStarted=true;
         if(shouldSkipMachine3DForWeakConditions()){
-          initStarted=true;
           setMachineFallback('3D preview disabled on this device to preserve performance.');
           return;
         }
-        initStarted=true;
+        /* WebGL probe deferred to this point so no GPU context is created during initial page load. */
+        if(!hasWebGL()){setMachineFallback('3D preview requires WebGL.');return}
         loadMachineLibraries().then(function(){
           if(!window.THREE||!window.gsap||!window.ScrollTrigger){setMachineFallback('3D preview could not be loaded.');return}
-          initMachine3D();
+          try{initMachine3D()}catch(error){console.warn(error);setMachineFallback('3D preview could not be loaded.')}
         }).catch(function(){});
       }
 
       if('IntersectionObserver'in window){
         var loadObserver=new IntersectionObserver(function(entries){
           entries.forEach(function(entry){if(entry.isIntersecting){loadObserver.disconnect();initMachineWhenReady()}});
-        },{rootMargin:'0px 0px -50% 0px',threshold:0});
+        },{rootMargin:'0px 0px -20% 0px',threshold:0});
         loadObserver.observe(section);
       }else{
         var fallbackMargin=300;
@@ -497,14 +496,29 @@
 
       var partNames=['Frame','Rear Coil','Front Coil','Binding Posts','Clip Cord','Capacitor','Back Spring','Front Spring','Contact Screw','Armature Bar','Tube Vise','Grip','Needle Bar','Tip'];
 
+      /* Render loop: run only while the 3D background is in range. Under reduced motion the
+         machine stays assembled and static, so a single frame is rendered instead of a loop.
+         Declared before the ScrollTriggers below because their callbacks can fire on creation. */
+      var animId=null;
+      function renderFrame(){renderer.render(scene,camera)}
+      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
+      function startRendering(){if(document.hidden)return;if(prefersRM){renderFrame();return}if(animId===null)animate()}
+      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
+
+      var bgVisible=false,fadeTimer=null;
+      function showBg(){if(bgVisible)return;bgVisible=true;if(fadeTimer){clearTimeout(fadeTimer);fadeTimer=null}bgWrap.style.opacity='1';startRendering()}
+      function hideBg(){if(!bgVisible)return;bgVisible=false;bgWrap.style.opacity='0';if(fadeTimer)clearTimeout(fadeTimer);fadeTimer=setTimeout(function(){if(!bgVisible)stopRendering()},700)}
+
+      document.addEventListener('visibilitychange',function(){if(document.hidden){stopRendering()}else if(bgVisible){startRendering()}});
+
       /* GSAP ScrollTrigger */
       gsap.registerPlugin(ScrollTrigger);
 
       if(!prefersRM){
-        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top 40px',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress);renderFrame()}}});
-        var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top 40px',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
-        if(rangeST&&rangeST.isActive)showBg();
+        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top 40px',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress);if(animId===null)renderFrame()}}});
       }
+      var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top 40px',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
+      if(rangeST&&rangeST.isActive)showBg();
 
       function updateAsm(t){
         var n=keys.length;
@@ -541,20 +555,25 @@
         parts.frontSpring.position.y=assembled.frontSpring.y+Math.sin(now*60+0.5)*0.003*int}
       }
 
-      /* Render loop: start only while the 3D section is visible. */
-      var animId=null;
-      function renderFrame(){renderer.render(scene,camera)}
-      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
-      function startRendering(){if(animId===null)animate()}
-      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
-
-      var bgVisible=false,fadeTimer=null;
-      function showBg(){if(bgVisible)return;bgVisible=true;if(fadeTimer){clearTimeout(fadeTimer);fadeTimer=null}bgWrap.style.opacity='1';startRendering()}
-      function hideBg(){if(!bgVisible)return;bgVisible=false;bgWrap.style.opacity='0';if(fadeTimer)clearTimeout(fadeTimer);fadeTimer=setTimeout(function(){if(!bgVisible)stopRendering()},700)}
-
       renderFrame();
 
-      window.addEventListener('resize',function(){isMobile=window.matchMedia('(max-width: 767px)').matches;isTablet=window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches;camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));renderer.shadowMap.enabled=!isMobile;mg.scale.setScalar(isMobile?0.5:(isTablet?0.6:0.7));renderFrame()});
+      /* Debounced: mobile URL-bar show/hide fires resize repeatedly, and setSize reallocates the drawing buffer. */
+      var resizeTimer=null,lastW=window.innerWidth,lastH=window.innerHeight;
+      function applyResize(){
+        resizeTimer=null;
+        if(window.innerWidth===lastW&&window.innerHeight===lastH)return;
+        lastW=window.innerWidth;lastH=window.innerHeight;
+        isMobile=window.matchMedia('(max-width: 767px)').matches;
+        isTablet=window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches;
+        camera.aspect=window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth,window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));
+        renderer.shadowMap.enabled=!isMobile;
+        mg.scale.setScalar(isMobile?0.5:(isTablet?0.6:0.7));
+        renderFrame();
+      }
+      window.addEventListener('resize',function(){if(resizeTimer)clearTimeout(resizeTimer);resizeTimer=setTimeout(applyResize,150)});
 
       /* Mobile: hide progress bar */
       if(window.innerWidth<640){var pb=document.getElementById('machine-progress');if(pb)pb.style.display='none'}
