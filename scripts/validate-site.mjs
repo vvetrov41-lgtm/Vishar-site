@@ -39,6 +39,26 @@ const VENDOR_3D_FILES = [
     homepageReference: '/assets/vendor/gsap/3.12.5/ScrollTrigger.min.js',
   },
 ];
+// Self-hosted fonts (Inter, Playfair Display, Bodoni Moda, IBM Plex Mono),
+// vendored from pinned @fontsource/* npm packages by
+// scripts/vendor-fonts.mjs. These hashes are checked independently here
+// (not imported from that script) so validation still catches drift even
+// if the vendor script itself were ever edited incorrectly.
+const VENDOR_FONT_FILES = [
+  { rel: 'assets/vendor/fonts/inter/5.2.8/inter-latin-300-normal.woff2', sha256: 'be0276550393a72b94d673505567dceba801511d5e1ca5a87793190dc5d5a6ca' },
+  { rel: 'assets/vendor/fonts/inter/5.2.8/inter-latin-400-normal.woff2', sha256: '8909904ab6c872eb994093482a88a28eca2cd95912d7b6fecd72103b0dc07edc' },
+  { rel: 'assets/vendor/fonts/inter/5.2.8/inter-latin-500-normal.woff2', sha256: 'f3779f1efccc4bdcdf9c0a02ab95bf6bd092ed09c48c08cedc725889edd1d19f' },
+  { rel: 'assets/vendor/fonts/inter/5.2.8/inter-latin-600-normal.woff2', sha256: 'f9a06e79cd3a2a20951c0f0e28f66dd0e6d3fda73911d640a2125c8fcb78f21a' },
+  { rel: 'assets/vendor/fonts/inter/5.2.8/LICENSE', sha256: '3b0a5fca3d17942cde889069889dedbbbd075e9b599968c82a95f4d944e9b345' },
+  { rel: 'assets/vendor/fonts/playfair-display/5.2.8/playfair-display-latin-700-normal.woff2', sha256: '28453852ea165c47b5a941be00e418402e1407002ed87507f062a1e316328fe6' },
+  { rel: 'assets/vendor/fonts/playfair-display/5.2.8/LICENSE', sha256: 'c052aafd2a71e90bcee6e69f475029d430a10d548c08ffcae350171f0e9668b1' },
+  { rel: 'assets/vendor/fonts/bodoni-moda/5.2.7/bodoni-moda-latin-500-normal.woff2', sha256: 'ec5b785abb85d087b5101a74671933b1bab5f96d9d85f868cc33964e69758748' },
+  { rel: 'assets/vendor/fonts/bodoni-moda/5.2.7/LICENSE', sha256: '6c64f717433eadd29b058d6254fe25c1ee2d249ce3772f843bb21f73285779c2' },
+  { rel: 'assets/vendor/fonts/ibm-plex-mono/5.2.7/ibm-plex-mono-latin-400-normal.woff2', sha256: '08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7' },
+  { rel: 'assets/vendor/fonts/ibm-plex-mono/5.2.7/LICENSE', sha256: '23b0a9d0c6d3f140a0b77e483c5cfa6bba574325ef5cb189ed9f2fec4884533f' },
+];
+const FONTS_STYLESHEET_REFERENCE = '/assets/css/fonts.css';
+const FONTS_BOOK_STYLESHEET_REFERENCE = '/assets/css/fonts-book.css';
 const PORTFOLIO_NUMBERS = Array.from({ length: 20 }, (_, i) => String(i + 1).padStart(2, '0'));
 const PORTFOLIO_THUMB_WIDTHS = [320, 480, 720, 960];
 const GALLERY_THUMB_WIDTHS = [320, 480, 720, 960];
@@ -281,6 +301,93 @@ async function checkHomepageReferencesLocalVendorPaths() {
   pass(`index.html references all ${expectedReferences.length} local 3D vendor paths.`);
 }
 
+async function checkVendorFontFiles() {
+  for (const file of VENDOR_FONT_FILES) {
+    const filePath = path.join(rootDir, file.rel);
+
+    if (!await pathExists(filePath)) {
+      fail(`Vendored font file is missing: ${file.rel}.`);
+      continue;
+    }
+
+    const stats = await stat(filePath);
+    if (stats.size === 0) {
+      fail(`Vendored font file is empty: ${file.rel}.`);
+      continue;
+    }
+
+    const buffer = await readFile(filePath);
+    const actualHash = createHash('sha256').update(buffer).digest('hex');
+    if (actualHash !== file.sha256) {
+      fail(`Vendored font file SHA-256 mismatch: ${file.rel} (expected ${file.sha256}, got ${actualHash}).`);
+      continue;
+    }
+
+    if (!file.rel.match(/\/(5\.2\.8|5\.2\.7)\//)) {
+      fail(`Vendored font path is not version-scoped: ${file.rel}.`);
+    }
+  }
+
+  pass(`Vendored font files (Inter 5.2.8, Playfair Display 5.2.8, Bodoni Moda 5.2.7, IBM Plex Mono 5.2.7) exist, are non-empty, version-scoped, and match pinned SHA-256 hashes (${VENDOR_FONT_FILES.length} files checked, no network access used).`);
+}
+
+async function checkPagesReferenceLocalFontStylesheets(htmlFiles) {
+  let checkedCount = 0;
+
+  for (const file of htmlFiles) {
+    const contents = await readFile(file, 'utf8');
+    const fileRel = rel(file);
+    const isBookPage = fileRel === 'book/index.html';
+
+    if (!contents.includes(FONTS_STYLESHEET_REFERENCE)) {
+      fail(`${fileRel} does not reference ${FONTS_STYLESHEET_REFERENCE}.`);
+    }
+
+    if (isBookPage) {
+      if (!contents.includes(FONTS_BOOK_STYLESHEET_REFERENCE)) {
+        fail(`${fileRel} does not reference ${FONTS_BOOK_STYLESHEET_REFERENCE}.`);
+      }
+    } else if (contents.includes(FONTS_BOOK_STYLESHEET_REFERENCE)) {
+      fail(`${fileRel} references ${FONTS_BOOK_STYLESHEET_REFERENCE}, but only book/index.html should.`);
+    }
+
+    checkedCount += 1;
+  }
+
+  pass(`All ${checkedCount} HTML pages reference ${FONTS_STYLESHEET_REFERENCE}, and only book/index.html additionally references ${FONTS_BOOK_STYLESHEET_REFERENCE}.`);
+}
+
+async function checkNoRuntimeGoogleFontsReferences() {
+  const runtimeFiles = (await listFiles(rootDir, (file) => RUNTIME_EXTENSIONS.has(path.extname(file).toLowerCase())))
+    .filter(isBrowserRuntimeFile);
+  let checkedCount = 0;
+
+  for (const file of runtimeFiles) {
+    const contents = await readFile(file, 'utf8');
+    checkedCount += 1;
+    if (contents.includes('fonts.googleapis.com') || contents.includes('fonts.gstatic.com')) {
+      fail(`${rel(file)} references fonts.googleapis.com or fonts.gstatic.com (fonts must be self-hosted).`);
+    }
+    if (/rel\s*=\s*["']preconnect["']\s+href\s*=\s*["']https:\/\/fonts\.(googleapis|gstatic)\.com["']/i.test(contents)) {
+      fail(`${rel(file)} still contains a Google Fonts preconnect link.`);
+    }
+  }
+
+  const headersPath = path.join(rootDir, '_headers');
+  if (await pathExists(headersPath)) {
+    checkedCount += 1;
+    const headersContents = await readFile(headersPath, 'utf8');
+    if (headersContents.includes('fonts.googleapis.com') || headersContents.includes('fonts.gstatic.com')) {
+      fail('_headers references fonts.googleapis.com or fonts.gstatic.com.');
+    }
+  }
+
+  // Historical prose in Markdown docs (e.g. TECHNICAL_AUDIT.md) intentionally
+  // documents the prior Google-Fonts-based implementation and must not fail
+  // this check — only executable HTML/JS/CSS and _headers are runtime-relevant.
+  pass(`No executable HTML/JS/CSS or _headers file references fonts.googleapis.com, fonts.gstatic.com, or a Google Fonts preconnect link (${checkedCount} files checked).`);
+}
+
 async function checkHeadersCsp() {
   const headersPath = path.join(rootDir, '_headers');
   if (!await pathExists(headersPath)) return;
@@ -295,7 +402,12 @@ async function checkHeadersCsp() {
     return;
   }
 
-  pass('_headers CSP does not contain cdn.tailwindcss.com.');
+  if (cspLines.some((line) => line.includes('fonts.googleapis.com') || line.includes('fonts.gstatic.com'))) {
+    fail('_headers Content-Security-Policy still permits fonts.googleapis.com or fonts.gstatic.com.');
+    return;
+  }
+
+  pass('_headers CSP does not contain cdn.tailwindcss.com, fonts.googleapis.com, or fonts.gstatic.com.');
 }
 
 function isIgnorableReference(value) {
@@ -629,6 +741,9 @@ async function main() {
   await checkNoRuntimeCdnjsReferences();
   await checkVendor3DLibraries();
   await checkHomepageReferencesLocalVendorPaths();
+  await checkVendorFontFiles();
+  await checkPagesReferenceLocalFontStylesheets(htmlFiles);
+  await checkNoRuntimeGoogleFontsReferences();
   await checkHeadersCsp();
   await checkLocalHtmlReferences(htmlFiles);
   await checkWebpAllowlists();

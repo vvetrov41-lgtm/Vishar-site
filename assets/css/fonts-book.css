@@ -1,0 +1,20 @@
+/* Self-hosted Bodoni Moda + IBM Plex Mono faces used only on /book/,
+   replacing the former Google Fonts runtime requests. Loaded in addition
+   to fonts.css, which supplies Inter. See scripts/vendor-fonts.mjs for
+   provenance and assets/vendor/fonts/*/LICENSE for the OFL license text. */
+
+@font-face {
+  font-family: 'Bodoni Moda';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/assets/vendor/fonts/bodoni-moda/5.2.7/bodoni-moda-latin-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/vendor/fonts/ibm-plex-mono/5.2.7/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+}

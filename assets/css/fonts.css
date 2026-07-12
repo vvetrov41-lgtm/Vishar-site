@@ -1,0 +1,45 @@
+/* Self-hosted Inter + Playfair Display faces, replacing the former Google
+   Fonts runtime requests. Latin-subset, static, roman-only files matching
+   what was actually requested and rendered before self-hosting — see
+   scripts/vendor-fonts.mjs for provenance and assets/vendor/fonts/*/LICENSE
+   for the OFL license text. */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/assets/vendor/fonts/inter/5.2.8/inter-latin-300-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/vendor/fonts/inter/5.2.8/inter-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/assets/vendor/fonts/inter/5.2.8/inter-latin-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/assets/vendor/fonts/inter/5.2.8/inter-latin-600-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Playfair Display';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/assets/vendor/fonts/playfair-display/5.2.8/playfair-display-latin-700-normal.woff2') format('woff2');
+}
