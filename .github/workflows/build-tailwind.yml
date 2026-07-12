@@ -3,11 +3,17 @@ name: Build Tailwind CSS
 on:
   workflow_dispatch:
 
+concurrency:
+  group: build-tailwind
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   build-tailwind:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,7 +27,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build Tailwind CSS
         run: npm run build:tailwind
@@ -36,28 +42,19 @@ jobs:
             exit 1
           fi
 
-      - name: Upload compiled CSS artifact
-        uses: actions/upload-artifact@v4
+      - name: Validate full site
+        run: npm run validate:site
+
+      - name: Open or update pull request
+        uses: peter-evans/create-pull-request@v6
         with:
-          name: tailwind-css
-          path: assets/css/tailwind.css
+          commit-message: "chore: build Tailwind CSS artifact"
+          branch: chore/build-tailwind
+          delete-branch: true
+          title: "chore: rebuild Tailwind CSS"
+          body: |
+            Automated rebuild of `assets/css/tailwind.css` from `assets/css/input.css` and the current page content, triggered manually via `workflow_dispatch`.
 
-      - name: Commit generated files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/css/tailwind.css package-lock.json || true
-          if git diff --cached --quiet; then
-            echo "No generated changes to commit"
-            exit 0
-          fi
-          git commit -m "chore: build tailwind css artifact"
-
-      - name: Rebase and push to main
-        run: |
-          if git log -1 --pretty=%B | grep -q "chore: build tailwind css artifact"; then
-            git pull --rebase origin main
-            git push origin HEAD:main
-          else
-            echo "No commit created; skipping push"
-          fi
+            This PR was opened by the `Build Tailwind CSS` workflow after `npm run validate:site` passed against the rebuilt CSS. It contains no changes if the compiled output is unchanged from what's already committed.
+          add-paths: |
+            assets/css/tailwind.css
