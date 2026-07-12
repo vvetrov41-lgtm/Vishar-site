@@ -183,6 +183,142 @@ async function checkTailwindArtifact() {
   pass(`assets/css/tailwind.css exists and is ${size} bytes.`);
 }
 
+function parseRobotsGroups(contents) {
+  const lines = contents.split(/\r?\n/).map((line) => line.trim());
+  const groups = [];
+  let current = null;
+
+  for (const line of lines) {
+    if (!line || line.startsWith('#')) continue;
+
+    const uaMatch = /^User-agent:\s*(.+)$/i.exec(line);
+    if (uaMatch) {
+      if (current && current.rules.length > 0) {
+        groups.push(current);
+        current = null;
+      }
+      if (!current) current = { agents: [], rules: [] };
+      current.agents.push(uaMatch[1].trim());
+      continue;
+    }
+
+    const ruleMatch = /^(Allow|Disallow):\s*(.*)$/i.exec(line);
+    if (ruleMatch && current) {
+      current.rules.push({ type: ruleMatch[1].toLowerCase(), path: ruleMatch[2].trim() });
+    }
+  }
+
+  if (current) groups.push(current);
+  return groups;
+}
+
+async function checkRobotsOpenAiCrawlers() {
+  const robotsPath = path.join(rootDir, 'robots.txt');
+  if (!await pathExists(robotsPath)) {
+    fail('robots.txt is missing; cannot verify OpenAI crawler rules.');
+    return;
+  }
+
+  const contents = await readFile(robotsPath, 'utf8');
+  const groups = parseRobotsGroups(contents);
+
+  function checkGroupAllowsSiteButNotApi(agent) {
+    const group = groups.find((g) => g.agents.some((a) => a.toLowerCase() === agent.toLowerCase()));
+    if (!group) {
+      fail(`robots.txt does not declare an explicit User-agent: ${agent} group.`);
+      return;
+    }
+
+    if (group.rules.some((r) => r.type === 'disallow' && (r.path === '/' || r.path === ''))) {
+      fail(`robots.txt disallows ${agent} from "/".`);
+    }
+    if (!group.rules.some((r) => r.type === 'allow' && r.path === '/')) {
+      fail(`robots.txt does not explicitly Allow: / for ${agent}.`);
+    }
+    if (!group.rules.some((r) => r.type === 'disallow' && r.path === '/api/')) {
+      fail(`robots.txt does not Disallow: /api/ for ${agent}.`);
+    }
+  }
+
+  // OAI-SearchBot (ChatGPT search discovery) and ChatGPT-User (user-request
+  // fetches) are the two OpenAI crawlers this check is required to protect.
+  // GPTBot (training) is checked too since it shares the same explicit group.
+  checkGroupAllowsSiteButNotApi('OAI-SearchBot');
+  checkGroupAllowsSiteButNotApi('ChatGPT-User');
+  checkGroupAllowsSiteButNotApi('GPTBot');
+  checkGroupAllowsSiteButNotApi('*');
+
+  const sitemapLines = contents.split(/\r?\n/).map((line) => line.trim()).filter((line) => /^Sitemap:/i.test(line));
+  const expectedSitemapLine = 'Sitemap: https://vishartattoo.com/sitemap.xml';
+  if (sitemapLines.length !== 1 || sitemapLines[0] !== expectedSitemapLine) {
+    fail(`robots.txt Sitemap declaration is not exactly "${expectedSitemapLine}" (found: ${sitemapLines.length ? sitemapLines.join(' | ') : 'none'}).`);
+  }
+
+  pass('robots.txt explicitly allows OAI-SearchBot, ChatGPT-User, and GPTBot to crawl the public site, keeps /api/ disallowed for those crawlers and the wildcard User-agent: * group, and declares the sitemap exactly as expected.');
+}
+
+async function checkLlmsTxt() {
+  const llmsPath = path.join(rootDir, 'llms.txt');
+  if (!await pathExists(llmsPath)) {
+    fail('llms.txt is missing.');
+    return;
+  }
+
+  const contents = await readFile(llmsPath, 'utf8');
+  if (!contents.trim()) {
+    fail('llms.txt is empty.');
+    return;
+  }
+
+  const urls = contents.match(/https?:\/\/[^\s)>\]]+/g) || [];
+  if (urls.length === 0) {
+    fail('llms.txt contains no page URLs.');
+    return;
+  }
+
+  let checkedPageUrls = 0;
+  for (const url of urls) {
+    if (/^http:\/\//i.test(url)) {
+      fail(`llms.txt contains a non-HTTPS URL: "${url}".`);
+      continue;
+    }
+    if (/(^|\.)pages\.dev(\/|$)/i.test(url)) {
+      fail(`llms.txt contains a pages.dev preview URL: "${url}".`);
+      continue;
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      fail(`llms.txt contains an invalid URL: "${url}".`);
+      continue;
+    }
+
+    if (parsed.protocol !== 'https:' || parsed.hostname !== SITE_HOST) {
+      fail(`llms.txt URL is not a canonical https://${SITE_HOST}/ apex-domain URL: "${url}".`);
+      continue;
+    }
+    if (!parsed.pathname.endsWith('/')) {
+      fail(`llms.txt URL does not use the trailing-slash format: "${url}".`);
+      continue;
+    }
+
+    const filePath = parsed.pathname === '/'
+      ? path.join(rootDir, 'index.html')
+      : path.join(rootDir, parsed.pathname.slice(1), 'index.html');
+
+    if (!await pathExists(filePath)) {
+      fail(`llms.txt references "${url}" but no local page exists for it.`);
+      continue;
+    }
+
+    checkedPageUrls += 1;
+  }
+
+  pass(`llms.txt exists, is non-empty, and contains ${checkedPageUrls} canonical HTTPS apex-domain trailing-slash page URLs, each resolving to an existing local page (no pages.dev, www, or HTTP URLs).`);
+}
+
 async function checkRequiredFiles() {
   for (const file of REQUIRED_FILES) {
     if (await pathExists(path.join(rootDir, file))) {
@@ -1069,6 +1205,8 @@ async function main() {
 
   await checkTailwindArtifact();
   await checkRequiredFiles();
+  await checkRobotsOpenAiCrawlers();
+  await checkLlmsTxt();
   await checkHtmlRuntimeStrings(htmlFiles);
   await checkNoRuntimeCdnjsReferences();
   await checkVendor3DLibraries();
