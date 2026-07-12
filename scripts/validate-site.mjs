@@ -12,6 +12,8 @@ const REQUIRED_FILES = ['robots.txt', 'sitemap.xml', '_headers'];
 const HTML_EXTENSIONS = new Set(['.html']);
 const RUNTIME_EXTENSIONS = new Set(['.html', '.js', '.mjs', '.css']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
+const SITE_HOST = 'vishartattoo.com';
+const NOT_FOUND_FILE_REL = '404.html';
 
 // Self-hosted homepage 3D libraries (Three.js r128 / GSAP+ScrollTrigger
 // 3.12.5), vendored from pinned npm packages by scripts/vendor-3d-libs.mjs.
@@ -475,6 +477,336 @@ function extractHtmlReferences(contents) {
   return references;
 }
 
+function decodeXmlEntities(value) {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+// Matches opening tags like `<h1>`, `<h1 class="...">`, or one whose
+// attributes wrap across lines. `[^>]` matches newlines (unlike `.` without
+// the `s` flag), so multi-line attribute lists are still counted correctly.
+// The `(?:\s[^>]*)?` (rather than `[^>]*`) ensures "h1" is a whole tag name,
+// not a prefix of something like a hypothetical `<h1x>`.
+function findTags(contents, tagName) {
+  const regex = new RegExp(`<${tagName}(?:\\s[^>]*)?>`, 'gi');
+  return contents.match(regex) || [];
+}
+
+function extractTagAttributes(tagSource) {
+  const attrs = {};
+  const attrRegex = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)')/g;
+  let match;
+
+  while ((match = attrRegex.exec(tagSource)) !== null) {
+    const [, name, , doubleQuoted, singleQuoted] = match;
+    const value = doubleQuoted !== undefined ? doubleQuoted : singleQuoted;
+    attrs[name.toLowerCase()] = decodeXmlEntities(value);
+  }
+
+  return attrs;
+}
+
+// Maps a repo-relative HTML file path to the site path it is expected to be
+// served at (e.g. `about/index.html` -> `/about/`). Returns null for files
+// with no such clean path (currently only 404.html), which are excluded from
+// canonical/sitemap correspondence checks.
+function expectedPublicPathFor(fileRel) {
+  if (fileRel === 'index.html') return '/';
+  if (fileRel.endsWith('/index.html')) return `/${fileRel.slice(0, -'index.html'.length)}`;
+  return null;
+}
+
+function expectedCanonicalUrlFor(fileRel) {
+  const publicPath = expectedPublicPathFor(fileRel);
+  return publicPath === null ? null : `https://${SITE_HOST}${publicPath}`;
+}
+
+function isValidIsoDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12) return false;
+
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day >= 1 && day <= daysInMonth;
+}
+
+async function readSitemapEntries() {
+  const sitemapPath = path.join(rootDir, 'sitemap.xml');
+  if (!await pathExists(sitemapPath)) return null;
+
+  const contents = await readFile(sitemapPath, 'utf8');
+  const urlBlocks = contents.match(/<url(?:\s[^>]*)?>[\s\S]*?<\/url>/gi) || [];
+
+  return urlBlocks.map((block) => {
+    const locMatch = /<loc(?:\s[^>]*)?>([\s\S]*?)<\/loc>/i.exec(block);
+    const lastmodMatch = /<lastmod(?:\s[^>]*)?>([\s\S]*?)<\/lastmod>/i.exec(block);
+    return {
+      loc: locMatch ? decodeXmlEntities(locMatch[1].trim()) : null,
+      lastmod: lastmodMatch ? decodeXmlEntities(lastmodMatch[1].trim()) : null,
+    };
+  });
+}
+
+async function checkCanonicalTags(htmlFiles) {
+  const sitemapEntries = await readSitemapEntries();
+  const sitemapLocs = new Set((sitemapEntries || []).map((entry) => entry.loc).filter(Boolean));
+  const indexablePages = htmlFiles.filter((file) => rel(file) !== NOT_FOUND_FILE_REL);
+
+  for (const file of indexablePages) {
+    const fileRel = rel(file);
+    const contents = await readFile(file, 'utf8');
+
+    const canonicalTags = findTags(contents, 'link').filter((tag) => {
+      const attrs = extractTagAttributes(tag);
+      return attrs.rel && attrs.rel.toLowerCase() === 'canonical';
+    });
+
+    if (canonicalTags.length !== 1) {
+      fail(`${fileRel} has ${canonicalTags.length} canonical link tags; expected exactly 1.`);
+      continue;
+    }
+
+    const href = extractTagAttributes(canonicalTags[0]).href;
+    if (!href) {
+      fail(`${fileRel} canonical link tag has no href.`);
+      continue;
+    }
+
+    let url;
+    try {
+      url = new URL(href);
+    } catch {
+      fail(`${fileRel} canonical href is not a valid absolute URL: "${href}".`);
+      continue;
+    }
+
+    if (url.protocol !== 'https:') {
+      fail(`${fileRel} canonical URL is not HTTPS: "${href}".`);
+    }
+    if (url.hostname !== SITE_HOST) {
+      fail(`${fileRel} canonical host is "${url.hostname}", expected "${SITE_HOST}": "${href}".`);
+    }
+    if (url.search || url.hash) {
+      fail(`${fileRel} canonical URL contains a query string or fragment: "${href}".`);
+    }
+    if (!url.pathname.endsWith('/')) {
+      fail(`${fileRel} canonical URL does not use the trailing-slash format: "${href}".`);
+    }
+
+    const expectedUrl = expectedCanonicalUrlFor(fileRel);
+    if (expectedUrl && href !== expectedUrl) {
+      fail(`${fileRel} canonical URL "${href}" does not match its expected page path "${expectedUrl}".`);
+    }
+
+    if (!sitemapLocs.has(href)) {
+      fail(`${fileRel} canonical URL "${href}" does not match any <loc> in sitemap.xml.`);
+    }
+  }
+
+  pass(`Canonical link tags checked on ${indexablePages.length} indexable HTML pages (exactly one absolute HTTPS apex-host trailing-slash canonical matching the page's path and a sitemap <loc>).`);
+}
+
+async function checkSitemapConsistency(htmlFiles) {
+  const sitemapEntries = await readSitemapEntries();
+  if (sitemapEntries === null) {
+    fail('sitemap.xml is missing; cannot validate sitemap consistency.');
+    return;
+  }
+  if (sitemapEntries.length === 0) {
+    fail('sitemap.xml contains no <url> entries.');
+    return;
+  }
+
+  const seenLocs = new Set();
+  const duplicateLocs = new Set();
+  for (const entry of sitemapEntries) {
+    if (!entry.loc) {
+      fail('sitemap.xml contains a <url> entry with no <loc>.');
+      continue;
+    }
+    if (seenLocs.has(entry.loc)) {
+      duplicateLocs.add(entry.loc);
+    }
+    seenLocs.add(entry.loc);
+  }
+  for (const loc of duplicateLocs) {
+    fail(`sitemap.xml contains duplicate <loc>: ${loc}.`);
+  }
+
+  for (const entry of sitemapEntries) {
+    if (!entry.loc) continue;
+
+    let url;
+    try {
+      url = new URL(entry.loc);
+    } catch {
+      fail(`sitemap.xml <loc> is not a valid absolute URL: "${entry.loc}".`);
+      continue;
+    }
+
+    if (url.protocol !== 'https:') {
+      fail(`sitemap.xml <loc> is not HTTPS: "${entry.loc}".`);
+    }
+    if (url.hostname !== SITE_HOST) {
+      fail(`sitemap.xml <loc> host is "${url.hostname}", expected "${SITE_HOST}": "${entry.loc}".`);
+    }
+    if (!url.pathname.endsWith('/')) {
+      fail(`sitemap.xml <loc> does not use the trailing-slash format: "${entry.loc}".`);
+    }
+    if (url.pathname.toLowerCase().includes('404')) {
+      fail(`sitemap.xml must not include the 404 page: "${entry.loc}".`);
+    }
+
+    if (!entry.lastmod) {
+      fail(`sitemap.xml <url> for "${entry.loc}" is missing <lastmod>.`);
+    } else if (!isValidIsoDate(entry.lastmod)) {
+      fail(`sitemap.xml <lastmod> for "${entry.loc}" is not a valid YYYY-MM-DD date: "${entry.lastmod}".`);
+    }
+  }
+
+  const indexablePages = htmlFiles.filter((file) => rel(file) !== NOT_FOUND_FILE_REL);
+  const expectedUrlToFile = new Map();
+  for (const file of indexablePages) {
+    const fileRel = rel(file);
+    const expectedUrl = expectedCanonicalUrlFor(fileRel);
+    if (expectedUrl) expectedUrlToFile.set(expectedUrl, fileRel);
+  }
+
+  const locCounts = new Map();
+  for (const entry of sitemapEntries) {
+    if (!entry.loc) continue;
+    locCounts.set(entry.loc, (locCounts.get(entry.loc) || 0) + 1);
+    if (!expectedUrlToFile.has(entry.loc)) {
+      fail(`sitemap.xml <loc> "${entry.loc}" does not correspond to any indexable HTML page in the repository.`);
+    }
+  }
+
+  for (const [expectedUrl, fileRel] of expectedUrlToFile) {
+    const count = locCounts.get(expectedUrl) || 0;
+    if (count !== 1) {
+      fail(`${fileRel} expected exactly one sitemap.xml entry for "${expectedUrl}", found ${count}.`);
+    }
+  }
+
+  pass(`sitemap.xml has ${sitemapEntries.length} <url> entries with unique, HTTPS apex-host, trailing-slash <loc> values and valid <lastmod> dates, each corresponding to exactly one indexable HTML page (404.html excluded).`);
+}
+
+async function checkH1Counts(htmlFiles) {
+  for (const file of htmlFiles) {
+    const fileRel = rel(file);
+    const contents = await readFile(file, 'utf8');
+    const h1Count = findTags(contents, 'h1').length;
+    if (h1Count !== 1) {
+      fail(`${fileRel} has ${h1Count} <h1> elements; expected exactly 1.`);
+    }
+  }
+
+  pass(`Exactly one <h1> element found on each of ${htmlFiles.length} HTML pages.`);
+}
+
+async function checkTitlesAndDescriptions(htmlFiles) {
+  const indexablePages = htmlFiles.filter((file) => rel(file) !== NOT_FOUND_FILE_REL);
+  const titlesByFile = new Map();
+  const descriptionsByFile = new Map();
+
+  for (const file of htmlFiles) {
+    const fileRel = rel(file);
+    const contents = await readFile(file, 'utf8');
+    const isIndexable = fileRel !== NOT_FOUND_FILE_REL;
+
+    const titleMatches = [...contents.matchAll(/<title(?:\s[^>]*)?>([\s\S]*?)<\/title>/gi)];
+    if (titleMatches.length !== 1) {
+      fail(`${fileRel} has ${titleMatches.length} <title> elements; expected exactly 1.`);
+    } else {
+      const titleText = decodeXmlEntities(titleMatches[0][1]).trim();
+      if (!titleText) {
+        fail(`${fileRel} <title> is empty.`);
+      } else if (isIndexable) {
+        titlesByFile.set(fileRel, titleText);
+      }
+    }
+
+    if (!isIndexable) continue;
+
+    const descriptionTags = findTags(contents, 'meta').filter((tag) => {
+      const attrs = extractTagAttributes(tag);
+      return attrs.name && attrs.name.toLowerCase() === 'description';
+    });
+
+    if (descriptionTags.length !== 1) {
+      fail(`${fileRel} has ${descriptionTags.length} meta description tags; expected exactly 1.`);
+      continue;
+    }
+
+    const descriptionText = (extractTagAttributes(descriptionTags[0]).content || '').trim();
+    if (!descriptionText) {
+      fail(`${fileRel} meta description is empty.`);
+      continue;
+    }
+    descriptionsByFile.set(fileRel, descriptionText);
+  }
+
+  const filesByTitle = new Map();
+  for (const [fileRel, title] of titlesByFile) {
+    if (!filesByTitle.has(title)) filesByTitle.set(title, []);
+    filesByTitle.get(title).push(fileRel);
+  }
+  for (const [title, files] of filesByTitle) {
+    if (files.length > 1) fail(`Duplicate <title> "${title}" used by: ${files.join(', ')}.`);
+  }
+
+  const filesByDescription = new Map();
+  for (const [fileRel, description] of descriptionsByFile) {
+    if (!filesByDescription.has(description)) filesByDescription.set(description, []);
+    filesByDescription.get(description).push(fileRel);
+  }
+  for (const [description, files] of filesByDescription) {
+    if (files.length > 1) fail(`Duplicate meta description "${description}" used by: ${files.join(', ')}.`);
+  }
+
+  pass(`Titles checked on ${htmlFiles.length} HTML pages and meta descriptions checked on ${indexablePages.length} indexable pages (each present, non-empty, and unique across indexable pages).`);
+}
+
+async function checkRobotsIndexability(htmlFiles) {
+  for (const file of htmlFiles) {
+    const fileRel = rel(file);
+    const contents = await readFile(file, 'utf8');
+    const isNotFoundPage = fileRel === NOT_FOUND_FILE_REL;
+
+    const robotsTags = findTags(contents, 'meta').filter((tag) => {
+      const attrs = extractTagAttributes(tag);
+      return attrs.name && attrs.name.toLowerCase() === 'robots';
+    });
+
+    if (robotsTags.length !== 1) {
+      fail(`${fileRel} has ${robotsTags.length} robots meta tags; expected exactly 1.`);
+      continue;
+    }
+
+    const content = (extractTagAttributes(robotsTags[0]).content || '').toLowerCase();
+
+    if (isNotFoundPage) {
+      if (!content.includes('noindex')) {
+        fail(`${fileRel} robots meta tag does not contain noindex: "${content}".`);
+      }
+    } else if (content.includes('noindex')) {
+      fail(`${fileRel} is an indexable page but its robots meta tag contains noindex: "${content}".`);
+    } else if (!content.includes('index')) {
+      fail(`${fileRel} robots meta tag does not allow indexing: "${content}".`);
+    }
+  }
+
+  pass(`Robots meta tags checked on ${htmlFiles.length} HTML pages (indexable pages allow indexing; 404.html contains noindex).`);
+}
+
 async function checkLocalHtmlReferences(htmlFiles) {
   for (const file of htmlFiles) {
     const contents = await readFile(file, 'utf8');
@@ -745,6 +1077,11 @@ async function main() {
   await checkPagesReferenceLocalFontStylesheets(htmlFiles);
   await checkNoRuntimeGoogleFontsReferences();
   await checkHeadersCsp();
+  await checkCanonicalTags(htmlFiles);
+  await checkSitemapConsistency(htmlFiles);
+  await checkH1Counts(htmlFiles);
+  await checkTitlesAndDescriptions(htmlFiles);
+  await checkRobotsIndexability(htmlFiles);
   await checkLocalHtmlReferences(htmlFiles);
   await checkWebpAllowlists();
   await checkLargeImagesWithoutWebpWarnings();
