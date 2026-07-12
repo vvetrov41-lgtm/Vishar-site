@@ -212,10 +212,10 @@ function parseRobotsGroups(contents) {
   return groups;
 }
 
-async function checkRobotsOpenAiCrawlers() {
+async function checkRobotsAiCrawlers() {
   const robotsPath = path.join(rootDir, 'robots.txt');
   if (!await pathExists(robotsPath)) {
-    fail('robots.txt is missing; cannot verify OpenAI crawler rules.');
+    fail('robots.txt is missing; cannot verify AI crawler rules.');
     return;
   }
 
@@ -240,12 +240,21 @@ async function checkRobotsOpenAiCrawlers() {
     }
   }
 
-  // OAI-SearchBot (ChatGPT search discovery) and ChatGPT-User (user-request
-  // fetches) are the two OpenAI crawlers this check is required to protect.
-  // GPTBot (training) is checked too since it shares the same explicit group.
-  checkGroupAllowsSiteButNotApi('OAI-SearchBot');
-  checkGroupAllowsSiteButNotApi('ChatGPT-User');
-  checkGroupAllowsSiteButNotApi('GPTBot');
+  // Search and user-request crawlers are kept separate from training/product
+  // control tokens so their different purposes remain explicit in robots.txt.
+  const searchAndUserAgents = [
+    'OAI-SearchBot',
+    'ChatGPT-User',
+    'Claude-SearchBot',
+    'Claude-User',
+    'PerplexityBot',
+    'Perplexity-User',
+  ];
+  const trainingAndProductAgents = ['GPTBot', 'ClaudeBot', 'Google-Extended'];
+
+  for (const agent of [...searchAndUserAgents, ...trainingAndProductAgents]) {
+    checkGroupAllowsSiteButNotApi(agent);
+  }
   checkGroupAllowsSiteButNotApi('*');
 
   const sitemapLines = contents.split(/\r?\n/).map((line) => line.trim()).filter((line) => /^Sitemap:/i.test(line));
@@ -254,7 +263,7 @@ async function checkRobotsOpenAiCrawlers() {
     fail(`robots.txt Sitemap declaration is not exactly "${expectedSitemapLine}" (found: ${sitemapLines.length ? sitemapLines.join(' | ') : 'none'}).`);
   }
 
-  pass('robots.txt explicitly allows OAI-SearchBot, ChatGPT-User, and GPTBot to crawl the public site, keeps /api/ disallowed for those crawlers and the wildcard User-agent: * group, and declares the sitemap exactly as expected.');
+  pass(`robots.txt explicitly allows ${searchAndUserAgents.length} AI search/user crawlers and ${trainingAndProductAgents.length} training/product crawler tokens to access the public site, keeps /api/ disallowed for those crawlers and the wildcard User-agent: * group, and declares the sitemap exactly as expected.`);
 }
 
 async function checkLlmsTxt() {
@@ -1205,7 +1214,7 @@ async function main() {
 
   await checkTailwindArtifact();
   await checkRequiredFiles();
-  await checkRobotsOpenAiCrawlers();
+  await checkRobotsAiCrawlers();
   await checkLlmsTxt();
   await checkHtmlRuntimeStrings(htmlFiles);
   await checkNoRuntimeCdnjsReferences();
