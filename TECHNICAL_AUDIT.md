@@ -1638,3 +1638,89 @@ These are optional follow-ups, not urgent blockers:
 ### Recommendation
 
 No further urgent homepage performance changes are needed right now. The recommended next step is to keep the current implementation, monitor production/PageSpeed over several runs, and only plan small non-urgent refinements if repeated PageSpeed diagnostics or field data show a persistent issue.
+
+## July 2026 Audit Remediation Summary
+
+Date recorded: 2026-07-13.
+
+Scope: consolidated record of the audit-driven changes merged in PRs #147–#159 and the subsequent read-only/limited-write Cloudflare configuration audit for `vishartattoo.com`. This section records completed work and verified outcomes; it does not introduce additional runtime changes.
+
+### Executive summary
+
+- Accessibility, performance, responsive image delivery, dependency self-hosting, SEO validation, deployment workflow safety, and AI-crawler access were improved through small, independently reviewable pull requests.
+- The four portfolio/gallery surfaces now use responsive WebP thumbnail candidates while retaining original full-resolution images for lightboxes and fallbacks.
+- The homepage 3D stack and all web fonts are served from the same origin; the former cdnjs and Google Fonts runtime dependencies were removed.
+- Site validation now covers metadata, canonical URLs, sitemap consistency, responsive derivatives, vendored asset integrity, and AI-crawler files.
+- The final Cloudflare audit confirmed correct DNS, redirects, SSL mode, Pages deployment, preview protection, caching, and Worker separation. It also fixed two live configuration issues: AI crawlers were being blocked at the edge, and the minimum TLS version was still 1.0.
+
+### Merged pull requests
+
+| PR | Result |
+| --- | --- |
+| #147 | Restored the Tracey Russell Google review to its verbatim published wording and added a code comment protecting client quotations from future editorial rewriting. |
+| #148 | Improved accessibility across dialogs, mobile navigation, FAQ accordions, forms, and lightboxes. Added focus trapping/restoration, background `inert` handling, ARIA relationships/labels, and keyboard behavior without redesigning the site. |
+| #149 | Reduced homepage 3D cost on mobile and weak devices. WebGL probing and library loading are deferred, the render loop pauses when appropriate, and reduced-motion/weak-condition fallbacks avoid unnecessary work while preserving the section. |
+| #150 | Added 80 responsive WebP thumbnails for the 20-image homepage portfolio (`320`, `480`, `720`, and `960` widths), plus deterministic generation and validation. Full-size originals remain available to the lightbox. |
+| #151 | Added 96 responsive WebP thumbnails to the Colour Realism and Black & Grey specialist galleries, including support for the irregular `03.jpg` source stem. |
+| #152 | Added 48 responsive WebP thumbnails to the Cover-up before/after gallery without changing the original source images or lightbox paths. |
+| #153 | Added 24 square responsive WebP thumbnails to the six-image Studio Gallery and extended the shared generator/validator to support JPEG sources. |
+| #154 | Self-hosted Three.js `0.128.0`, GSAP `3.12.5`, and ScrollTrigger `3.12.5`; removed the cdnjs runtime dependency and DNS prefetch; tightened CSP; added immutable versioned caching, licences/notices, deterministic vendoring, and SHA-256 validation. |
+| #155 | Self-hosted the required Inter, Playfair Display, Bodoni Moda, and IBM Plex Mono WOFF2 files; removed Google Fonts requests and related CSP origins; retained `font-display: swap`, existing family names, weights, and fallbacks; added licences, deterministic vendoring, and integrity checks. |
+| #156 | Refreshed all ten sitemap `lastmod` values after the site-wide font change so the sitemap again reflects real page modification dates. |
+| #157 | Added regression checks for canonical URLs, robots metadata, titles/descriptions, H1 counts, sitemap uniqueness/mapping, local references, and related SEO/indexation invariants. |
+| #158 | Replaced the Tailwind workflow's direct push to `main` with a validated pull-request workflow using a fixed branch and concurrency control. The compiled CSS remains committed, but generated changes now receive a reviewable diff. |
+| #159 | Added `llms.txt`, explicit `robots.txt` rules for OpenAI, Anthropic, Perplexity, and Google AI crawlers, and validation that prevents accidental removal or contradictory blocking rules. `/api/` remains disallowed. |
+
+Across PRs #150–#153, 248 width-specific WebP derivatives were added. Thumbnail delivery is separated from the original JPG/WebP assets used by fallbacks and lightboxes.
+
+### Post-implementation validation
+
+The post-PR #158 regression audit reported:
+
+- `npm ci`: completed with zero reported vulnerabilities at the time of the audit.
+- `npm run validate:site`: 24 checks passed, with no warnings or failures in that audit run.
+- `npm run vendor:3d-libs:check` and `npm run vendor:fonts:check`: committed vendor files matched their pinned hashes.
+- A fresh Tailwind build matched the committed `assets/css/tailwind.css` byte-for-byte.
+- Production HTML, CSP, robots, sitemap, redirects, font delivery, vendor caching, and responsive image markup matched the intended repository state in the checked samples.
+- Cloudflare Pages branch/commit previews were protected by Cloudflare Access, while the production apex domain remained publicly indexable.
+- A fresh revalidation after PR #159 on 2026-07-13 passed all 26 site checks with zero warnings and zero failures.
+
+These are dated audit observations, not permanent guarantees; current validation should still be run before each future merge.
+
+### Cloudflare configuration audit and remediation
+
+The Cloudflare account audit used scoped temporary credentials and live HTTP verification. No repository files were changed by the Cloudflare remediation itself.
+
+#### Changes applied
+
+| Setting | Before | After | Verification |
+| --- | --- | --- | --- |
+| AI Bots Protection | `block` | `disabled` | GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot, ChatGPT-User, Perplexity-User, Claude-SearchBot, and Claude-User changed from live `403` responses to consistent `200` responses, matching the repository's explicit crawler policy. |
+| Minimum TLS version | `1.0` | `1.2` | The settings API returned `1.2`, TLS 1.2 requests continued to succeed, and deprecated TLS 1.0/1.1 support was removed. |
+
+#### Confirmed correct; no change applied
+
+- The apex and `www` DNS records point to the Pages project without stale A/AAAA records.
+- HTTP redirects to HTTPS and `www` redirects to the apex domain.
+- SSL mode is strict, TLS 1.3 is enabled, Always Use HTTPS and Automatic HTTPS Rewrites are enabled, and the Universal SSL certificate is active.
+- HSTS is supplied once through the repository `_headers` file; no duplicate edge-level HSTS setting was added.
+- HTML is not cached with an immutable or long-lived policy; versioned vendor assets receive the intended one-year immutable cache header.
+- No legacy Page Rules or zone Worker routes were present.
+- `tattooai` remains separate from the Pages site; no route overlap with `vishartattoo.com` was found.
+- Cloudflare Access covers the `*.vishar-site.pages.dev` preview hosts and is restricted to the authorised email, while `vishartattoo.com` is not placed behind Access.
+- Rocket Loader and Development Mode are off.
+- MX, SPF, and DKIM records were present and intentionally left unchanged.
+- DNSSEC was observed as disabled and recorded as informational rather than treated as a confirmed defect.
+
+The wildcard `Access-Control-Allow-Origin: *` response header was traced to Cloudflare Pages' static-serving behavior rather than a repository Transform Rule. Because the site content is public and non-credentialed, no unsupported security claim or speculative change was made.
+
+### Credential and repository hygiene
+
+- Temporary Cloudflare credentials were not committed to the repository.
+- Wrangler OAuth was logged out after the audit and its local credential cache was removed.
+- The temporary scoped API token was scheduled for manual revocation in the Cloudflare dashboard after completion.
+- No Cloudflare audit scratch files, rollback snapshots, or `.wrangler/` cache directories were committed.
+
+### Current conclusion
+
+The urgent audit backlog addressed by PRs #147–#159 is complete. No further broad redesign or speculative optimization is justified from these results. Future work should be driven by a reproducible regression, current validation failure, repeated PageSpeed diagnostics, field Core Web Vitals/Search Console evidence, or a confirmed business requirement.
