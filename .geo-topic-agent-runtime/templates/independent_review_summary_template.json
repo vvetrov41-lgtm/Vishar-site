@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "purpose": "Template only. Copy to geo_agent/data/quality-gates/independent-review-summary.json after approved independent reviewers finish.",
+  "independent_execution": true,
+  "self_review_only": false,
+  "project_under_review": "<project/topic evidence bundle or review scope>",
+  "reviews": [
+    {
+      "id": "first-run-onboarding",
+      "kind": "scenario",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "happy-path-full-run",
+      "kind": "scenario",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "missing-permission",
+      "kind": "scenario",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "direct-skill",
+      "kind": "scenario",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "semantic-tz-handoff-delivery",
+      "kind": "scenario",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "memory-state",
+      "kind": "scenario",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "consistency-routing-auditor",
+      "kind": "auditor",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "geo-workflow-design-auditor",
+      "kind": "auditor",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "evidence-quality-auditor",
+      "kind": "auditor",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    },
+    {
+      "id": "claim-boundary-auditor",
+      "kind": "auditor",
+      "reviewer_id": "<reviewer-or-agent-id>",
+      "independent": true,
+      "status": "pass|warn|fail",
+      "inspected_files": ["<path>"],
+      "work_trace": ["<step attempted>"],
+      "confusion_points": [],
+      "findings": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "<finding-id>",
+      "status": "fixed|rejected_with_reason|known_limitation|not_applicable",
+      "reason": "<required for rejected_with_reason or known_limitation>",
+      "evidence_refs": ["<required for fixed>"]
+    }
+  ],
+  "all_findings_dispositioned": true
+}

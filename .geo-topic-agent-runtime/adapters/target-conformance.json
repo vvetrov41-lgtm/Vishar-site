@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "canonical_contract": "geo-topic-contract.json",
+  "targets": [
+    {
+      "platform": "Codex",
+      "adapter": "AGENTS.md and adapters/CODEX.md",
+      "semantic_parity": "full for router, skills, CLI, permission gates, and GEO workflow; includes qfo-query-analysis workflow routing and CLI availability; includes page-tz-generator workflow routing and CLI availability; includes citation-visibility tracking workflow routing and CLI availability; includes XMLRiver engine/region/language contract, top-N URL depth semantics, paid page request count, and xmlriver-serp-method reference; includes first-run birth flow, runtime detection/adaptation, project context intake, and attribution timing boundaries; includes product-placement-opportunities workflow routing, CLI availability, score fields, and draft-only placement boundary; includes project-context-collector workflow routing and strict context/audit separation; includes topic + semantic_cluster_queries contract and topic-only downstream block behavior; includes analytics-dashboard-planner metric/data-contract co-design while shipping no bundled dashboard UI, frontend, mock data, or fixed layout. Uses `.geo-topic-agent-runtime/` as canonical root, persistent `geo_agent_cli.py`, no temporary PYTHONPATH, strict brand/context/audit/topic order, and dashboard knowledge-only boundary.",
+      "unsupported_features": [],
+      "degraded_behavior": "multi-agent independent validation depends on explicit user authorization in the active runtime",
+      "permission_mapping": "workspace local writes allowed; network/paid/external writes approval-gated or denied",
+      "install_scope": "Native bootstrap points to `.geo-topic-agent-runtime/`; persistent CLI is `.geo-topic-agent-runtime/geo_agent_cli.py`."
+    },
+    {
+      "platform": "Claude Code",
+      "adapter": "CLAUDE.md and adapters/CLAUDE.md",
+      "semantic_parity": "full when CLAUDE.md imports AGENTS.md and geo-topic-contract.json; includes qfo-query-analysis workflow routing and CLI availability; includes page-tz-generator workflow routing and CLI availability; includes citation-visibility tracking workflow routing and CLI availability; includes XMLRiver engine/region/language contract, top-N URL depth semantics, paid page request count, and xmlriver-serp-method reference; includes first-run birth flow, runtime detection/adaptation, project context intake, and attribution timing boundaries; includes product-placement-opportunities workflow routing, CLI availability, score fields, and draft-only placement boundary; includes project-context-collector workflow routing and strict context/audit separation; includes topic + semantic_cluster_queries contract and topic-only downstream block behavior; includes analytics-dashboard-planner metric/data-contract co-design while shipping no bundled dashboard UI, frontend, mock data, or fixed layout. Uses `.geo-topic-agent-runtime/` as canonical root, persistent `geo_agent_cli.py`, no temporary PYTHONPATH, strict brand/context/audit/topic order, and dashboard knowledge-only boundary.",
+      "unsupported_features": [],
+      "degraded_behavior": "native skill conversion is optional and approval-gated after import",
+      "permission_mapping": "local writes allowed; live provider and URL fetches approval-gated; external writes denied",
+      "install_scope": "Native bootstrap points to `.geo-topic-agent-runtime/`; persistent CLI is `.geo-topic-agent-runtime/geo_agent_cli.py`."
+    },
+    {
+      "platform": "Cursor Agent",
+      "adapter": ".cursor/rules/geo-topic-agent.mdc",
+      "semantic_parity": "full routing and permission summary; detailed procedures remain in AGENTS.md, skills, and references; includes qfo-query-analysis workflow routing and CLI availability; includes page-tz-generator workflow routing and CLI availability; includes citation-visibility tracking workflow routing and CLI availability; includes XMLRiver engine/region/language contract, top-N URL depth semantics, paid page request count, and xmlriver-serp-method reference; includes first-run birth flow, runtime detection/adaptation, project context intake, and attribution timing boundaries; includes product-placement-opportunities workflow routing, CLI availability, score fields, and draft-only placement boundary; includes project-context-collector workflow routing and strict context/audit separation; includes topic + semantic_cluster_queries contract and topic-only downstream block behavior; includes analytics-dashboard-planner metric/data-contract co-design while shipping no bundled dashboard UI, frontend, mock data, or fixed layout. Uses `.geo-topic-agent-runtime/` as canonical root, persistent `geo_agent_cli.py`, no temporary PYTHONPATH, strict brand/context/audit/topic order, and dashboard knowledge-only boundary.",
+      "unsupported_features": [],
+      "degraded_behavior": "Cursor rule points to canonical agent files instead of repeating the whole workflow",
+      "permission_mapping": "local writes allowed; live provider and URL fetches approval-gated; external writes denied",
+      "install_scope": "Native bootstrap points to `.geo-topic-agent-runtime/`; persistent CLI is `.geo-topic-agent-runtime/geo_agent_cli.py`."
+    },
+    {
+      "platform": "OpenCode",
+      "adapter": "opencode.json, AGENTS.md, and adapters/OPENCODE.md",
+      "semantic_parity": "full when opencode.json loads AGENTS.md; includes qfo-query-analysis workflow routing and CLI availability; includes page-tz-generator workflow routing and CLI availability; includes citation-visibility tracking workflow routing and CLI availability; includes XMLRiver engine/region/language contract, top-N URL depth semantics, paid page request count, and xmlriver-serp-method reference; includes first-run birth flow, runtime detection/adaptation, project context intake, and attribution timing boundaries; includes product-placement-opportunities workflow routing, CLI availability, score fields, and draft-only placement boundary; includes project-context-collector workflow routing and strict context/audit separation; includes topic + semantic_cluster_queries contract and topic-only downstream block behavior; includes analytics-dashboard-planner metric/data-contract co-design while shipping no bundled dashboard UI, frontend, mock data, or fixed layout. Uses `.geo-topic-agent-runtime/` as canonical root, persistent `geo_agent_cli.py`, no temporary PYTHONPATH, strict brand/context/audit/topic order, and dashboard knowledge-only boundary.",
+      "unsupported_features": [],
+      "degraded_behavior": "native instruction merge is approval-gated and may remain as an adapter summary",
+      "permission_mapping": "local writes allowed; live provider and URL fetches approval-gated; external writes denied",
+      "install_scope": "Native bootstrap points to `.geo-topic-agent-runtime/`; persistent CLI is `.geo-topic-agent-runtime/geo_agent_cli.py`."
+    },
+    {
+      "platform": "local CLI and Python project",
+      "adapter": "adapters/PYTHON_MODULE.md",
+      "semantic_parity": "full CLI and Python function access; includes qfo-query-analysis workflow routing and CLI availability; includes page-tz-generator workflow routing and CLI availability; includes citation-visibility tracking workflow routing and CLI availability; includes XMLRiver engine/region/language contract, top-N URL depth semantics, paid page request count, and xmlriver-serp-method reference; includes first-run birth flow, runtime detection/adaptation, project context intake, and attribution timing boundaries; includes product-placement-opportunities workflow routing, CLI availability, score fields, and draft-only placement boundary; includes project-context-collector workflow routing and strict context/audit separation; includes topic + semantic_cluster_queries contract and topic-only downstream block behavior; includes analytics-dashboard-planner metric/data-contract co-design while shipping no bundled dashboard UI, frontend, mock data, or fixed layout. Uses `.geo-topic-agent-runtime/` as canonical root, persistent `geo_agent_cli.py`, no temporary PYTHONPATH, strict brand/context/audit/topic order, and dashboard knowledge-only boundary.",
+      "unsupported_features": [],
+      "degraded_behavior": "interactive agent guidance depends on the host agent reading AGENTS.md",
+      "permission_mapping": "CLI exposes approval flags; host process enforces external permissions",
+      "install_scope": "Native bootstrap points to `.geo-topic-agent-runtime/`; persistent CLI is `.geo-topic-agent-runtime/geo_agent_cli.py`."
+    },
+    {
+      "platform": "Node or mixed project",
+      "adapter": "adapters/NODE_PROJECT.md",
+      "semantic_parity": "full sidecar CLI behavior; not a native Node implementation; includes qfo-query-analysis workflow routing and CLI availability; includes page-tz-generator workflow routing and CLI availability; includes citation-visibility tracking workflow routing and CLI availability; includes XMLRiver engine/region/language contract, top-N URL depth semantics, paid page request count, and xmlriver-serp-method reference; includes first-run birth flow, runtime detection/adaptation, project context intake, and attribution timing boundaries; includes product-placement-opportunities workflow routing, CLI availability, score fields, and draft-only placement boundary; includes project-context-collector workflow routing and strict context/audit separation; includes topic + semantic_cluster_queries contract and topic-only downstream block behavior; includes analytics-dashboard-planner metric/data-contract co-design while shipping no bundled dashboard UI, frontend, mock data, or fixed layout. Uses `.geo-topic-agent-runtime/` as canonical root, persistent `geo_agent_cli.py`, no temporary PYTHONPATH, strict brand/context/audit/topic order, and dashboard knowledge-only boundary.",
+      "unsupported_features": [
+        "native npm package runtime"
+      ],
+      "degraded_behavior": "Node integration should call Python CLI as sidecar",
+      "permission_mapping": "same CLI approval flags and host permission gates",
+      "install_scope": "Native bootstrap points to `.geo-topic-agent-runtime/`; persistent CLI is `.geo-topic-agent-runtime/geo_agent_cli.py`."
+    },
+    {
+      "platform": "Antigravity",
+      "adapter": ".antigravity/AGENTS.md plus adapters/ANTIGRAVITY.md",
+      "semantic_parity": "Full parity through canonical AGENTS.md, geo-topic-contract.json, skills/, and tool registry; includes analytics-dashboard-planner metric/data-contract co-design while shipping no bundled dashboard UI, frontend, mock data, or fixed layout. Uses `.geo-topic-agent-runtime/` as canonical root, persistent `geo_agent_cli.py`, no temporary PYTHONPATH, strict brand/context/audit/topic order, and dashboard knowledge-only boundary.",
+      "permission_mapping": "Uses host approval gates for network, paid APIs, external writes, and local file changes; CLI tool gates still require explicit flags.",
+      "install_scope": "Native bootstrap points to `.geo-topic-agent-runtime/`; persistent CLI is `.geo-topic-agent-runtime/geo_agent_cli.py`.",
+      "unsupported_features": [
+        "No guaranteed native skill package format across Antigravity versions."
+      ],
+      "degraded_behavior": "Falls back to canonical skills/ and .agents/skills mirrors."
+    },
+    {
+      "platform": "Generic Agent",
+      "adapter": "AGENT.md plus adapters/GENERIC_AGENT.md",
+      "semantic_parity": "Full parity through canonical AGENTS.md, geo-topic-contract.json, skills/, and tool registry; includes analytics-dashboard-planner metric/data-contract co-design while shipping no bundled dashboard UI, frontend, mock data, or fixed layout. Uses `.geo-topic-agent-runtime/` as canonical root, persistent `geo_agent_cli.py`, no temporary PYTHONPATH, strict brand/context/audit/topic order, and dashboard knowledge-only boundary.",
+      "permission_mapping": "Host runtime must enforce local command/network/paid-action approval; CLI flags record agent-side approval state.",
+      "install_scope": "Native bootstrap points to `.geo-topic-agent-runtime/`; persistent CLI is `.geo-topic-agent-runtime/geo_agent_cli.py`.",
+      "unsupported_features": [
+        "Generic runtimes may not have native skill discovery or approval metadata."
+      ],
+      "degraded_behavior": "Use AGENT.md as bootstrap and read canonical skills/ directly."
+    }
+  ]
+}

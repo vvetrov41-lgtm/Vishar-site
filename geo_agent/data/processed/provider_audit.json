@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-07-14T16:46:50+00:00",
+  "provider_scope": "all",
+  "xmlriver": {
+    "configured": false,
+    "account_count": 0,
+    "supported_engines": [
+      "google",
+      "yandex"
+    ],
+    "credential_keys": [],
+    "network_test": "not_run"
+  },
+  "dataforseo": {
+    "configured": false,
+    "implemented": true,
+    "implemented_scope": "Google Organic Live Advanced parser and approval-gated live adapter",
+    "credential_keys": [],
+    "network_test": "not_run",
+    "limitation": "Live DataForSEO calls require --network-approved, --paid-approved, credentials, query count, requested top URL count (`--depth`, not pagination pages), GEO/language approval, and explicit --load-async-ai-overview when that paid option is needed."
+  },
+  "permission_boundary": "Live provider calls require explicit --network-approved and provider credentials. Secrets are masked and not written to reports."
+}

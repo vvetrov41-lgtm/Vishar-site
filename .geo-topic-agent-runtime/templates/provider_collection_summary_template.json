@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "purpose": "Template only. Approved live collect-serp writes collection_summary.json automatically under geo_agent/data/raw/serp/<run_id>/.",
+  "run_id": "<serp_provider_hash>",
+  "provider": "xmlriver|dataforseo",
+  "topic": "<topic>",
+  "topic_slug": "<topic-slug>",
+  "network_approved": true,
+  "region": "<approved region>",
+  "language": "<approved language>",
+  "engines": ["google"],
+  "depth": 20,
+  "include_ai": false,
+  "load_async_ai_overview": false,
+  "planned_requests": 1,
+  "serp_rows": 1,
+  "ai_answer_rows": 0,
+  "errors": [],
+  "generated_at": "YYYY-MM-DDTHH:MM:SS+00:00"
+}

@@ -1,0 +1,24 @@
+{
+  "domain": "",
+  "brand": "",
+  "products_services": [],
+  "target_regions": [
+    "RU-Moscow"
+  ],
+  "language": "ru",
+  "search_engines": [
+    "google",
+    "yandex"
+  ],
+  "competitors": [],
+  "priority_topics": [],
+  "site_pages": [],
+  "target_goal": "both",
+  "documents": [],
+  "context_notes": "",
+  "site_discovery_approved": false,
+  "context_acquisition": {
+    "mode": "manual_or_approved_public_site_discovery",
+    "approval_required_for_network": true
+  }
+}

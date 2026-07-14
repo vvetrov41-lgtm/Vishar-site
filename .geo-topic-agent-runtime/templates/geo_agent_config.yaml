@@ -1,0 +1,36 @@
+agent:
+  name: geo-topic-agent
+  mode: interactive
+  storage: csv_json
+  language: ru
+project:
+  domain: ""
+  brand: ""
+  brand_variants: []
+  brand_variants_status: missing
+  brand_variants_source: not_provided
+  target_goal: both
+  competitors: []
+region:
+  country: RU
+  city: Moscow
+  language: ru
+  google_gl: ru
+  google_hl: ru
+  yandex_lr: 213
+search_engines:
+  google_enabled: true
+  yandex_enabled: true
+  bing_enabled: false
+  brave_enabled: false
+xmlriver:
+  enabled: true
+  use_existing_client: true
+ai_answers:
+  enabled: false
+  provider: existing_or_manual
+outputs:
+  reports_dir: geo_agent/reports
+  data_dir: geo_agent/data
+  handoff_dir: geo_agent/data/handoff
+

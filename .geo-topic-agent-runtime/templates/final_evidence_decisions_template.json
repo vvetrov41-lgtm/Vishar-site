@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "purpose": "Template only. Copy to geo_agent/data/quality-gates/final_evidence_decisions.json only after explicit user/reviewer descope approval.",
+  "decisions": [
+    {
+      "id": "xmlriver_live_run",
+      "decision": "descoped",
+      "approved_by": "<user-or-reviewer>",
+      "reason": "<why this external evidence is out of scope for this release>",
+      "date": "YYYY-MM-DD",
+      "scope": "<optional release/scope note>"
+    }
+  ]
+}

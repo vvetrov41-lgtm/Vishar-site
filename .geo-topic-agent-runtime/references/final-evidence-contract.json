@@ -1,0 +1,187 @@
+{
+  "version": "1.4.0",
+  "package": "geo-topic-agent",
+  "purpose": "Define the exact external evidence required before claiming a full 100% live-proven GEO topic run beyond local, fixture, manual-import, or approval-gated proof.",
+  "status_semantics": {
+    "local_pass": "The local GEO workflow artifacts prove the workflow in offline, fixture, manual-import, or approval-gated form.",
+    "external_pending": "The implementation exists, but the proof requires explicit user approval, credentials, budget, network access, target data, or independent reviewers.",
+    "external_pass": "The required external run or independent audit has completed and produced bounded evidence artifacts.",
+    "descoped": "The user explicitly accepted that this evidence is out of scope for the current release, with reason and date.",
+    "ready_with_descopes": "All required external evidence items are either external_pass or user-descoped. This permits a limited release claim with explicit limitations, not a full live-proven claim."
+  },
+  "required_external_evidence": [
+    {
+      "id": "xmlriver_live_run",
+      "requirement_refs": [
+        "TZ section 6",
+        "TZ section 12",
+        "TZ acceptance 24.2"
+      ],
+      "current_local_status": "adapter, dry-run plan, raw XML parser fixture, normalized SERP/AI rows, topic-bound collection summary, raw_ref linkage validator, and report paths are implemented",
+      "approval_required": {
+        "network": true,
+        "credentials": [
+          "XMLRIVER_USER + XMLRIVER_KEY"
+        ],
+        "budget_scope": [
+          "provider",
+          "engine list",
+          "query count",
+          "requested top URL count (`--depth`, not pagination pages)",
+          "region",
+          "language",
+          "topic",
+          "maximum cost or request count",
+          "paid XMLRiver page request count = query count * engine count * ceil(depth / 10)"
+        ]
+      },
+      "required_command_patterns": [
+        "python .geo-topic-agent-runtime/geo_agent_cli.py provider-audit --project-dir <target>",
+        "python .geo-topic-agent-runtime/geo_agent_cli.py collect-serp --project-dir <target> --topic <topic> --provider xmlriver --engines <google,yandex> --region <approved-region-or-id> --language <approved-language> --network-approved --paid-approved --max-queries <n> --depth <d>"
+      ],
+      "required_evidence_artifacts": [
+        "geo_agent/data/quality-gates/external_approval_ledger.json with approved_by, approval_ref, approved_at, topic_slug, scope, and budget/request limits",
+        "geo_agent/reports/PROVIDER_AUDIT.md",
+        "geo_agent/reports/SERP_COLLECTION.md",
+        "geo_agent/data/raw/serp/<run_id>/collection_summary.json with provider=xmlriver, topic_slug, network_approved=true, errors=[]",
+        "geo_agent/data/raw/serp/<run_id>/*.xml referenced by live CSV raw_ref",
+        "geo_agent/data/processed/*_live_serp_rows.csv with source_type=xmlriver_live and valid raw_ref",
+        "geo_agent/data/processed/*_live_ai_answers.csv when AI blocks are returned, with valid raw_ref",
+        "geo_agent/data/quality-gates/*_completion_audit.json"
+      ],
+      "pass_condition": "At least one approved XMLRiver live request completes for the approved topic/scope, collection_summary.json is bound to the same topic_slug with network_approved=true, explicit region/language/engines, requested_top_urls, xmlriver_serp_pages_per_query_engine, planned_paid_requests, XMLRiver reference files, and errors=[], raw XML is preserved, every live CSV raw_ref resolves to an existing raw file inside the approved run directory, organic rows are normalized, and completion audit records no live-provider warning for that approved scope. A matching external approval ledger row must record scope and budget before the live evidence can count as external_pass.",
+      "forbidden_claim_until_pass": "Do not claim that XMLRiver live data was collected in a target project."
+    },
+    {
+      "id": "dataforseo_live_run",
+      "requirement_refs": [
+        "TZ section 7",
+        "TZ section 12",
+        "TZ acceptance 24.4"
+      ],
+      "current_local_status": "Google Organic Live Advanced adapter, dry-run plan, parser fixture, AI Overview reference parsing, topic-bound collection summary, raw_ref linkage validator, and budget gate are implemented",
+      "approval_required": {
+        "network": true,
+        "credentials": [
+          "DATAFORSEO_BASIC",
+          "DATAFORSEO_LOGIN + DATAFORSEO_PASSWORD",
+          "DATA_FOR_SEO_LOGIN + DATA_FOR_SEO_PASSWORD"
+        ],
+        "budget_scope": [
+          "provider",
+          "Google-only engine scope",
+          "query count",
+          "requested top URL count (`--depth`, not pagination pages)",
+          "location",
+          "language",
+          "topic",
+          "whether --load-async-ai-overview is allowed",
+          "maximum cost or request count"
+        ]
+      },
+      "required_command_patterns": [
+        "python .geo-topic-agent-runtime/geo_agent_cli.py provider-audit --project-dir <target>",
+        "python .geo-topic-agent-runtime/geo_agent_cli.py collect-serp --project-dir <target> --topic <topic> --provider dataforseo --engines google --include-ai --network-approved --paid-approved --max-queries <n> --depth <d>"
+      ],
+      "required_evidence_artifacts": [
+        "geo_agent/data/quality-gates/external_approval_ledger.json with approved_by, approval_ref, approved_at, topic_slug, scope, and budget/request limits",
+        "geo_agent/reports/PROVIDER_AUDIT.md",
+        "geo_agent/reports/SERP_COLLECTION.md",
+        "geo_agent/data/raw/serp/<run_id>/collection_summary.json with provider=dataforseo, topic_slug, network_approved=true, errors=[]",
+        "geo_agent/data/raw/serp/<run_id>/*.json referenced by live CSV raw_ref",
+        "geo_agent/data/processed/*_live_serp_rows.csv with source_type=dataforseo_live and valid raw_ref",
+        "geo_agent/data/processed/*_live_ai_answers.csv when AI Overview or answer rows are returned, with valid raw_ref",
+        "geo_agent/data/quality-gates/*_completion_audit.json"
+      ],
+      "pass_condition": "At least one approved DataForSEO Google Organic Live request completes for the approved topic/scope, collection_summary.json is bound to the same topic_slug with network_approved=true and errors=[], raw JSON is preserved, every live CSV raw_ref resolves to an existing raw file inside the approved run directory, SERP rows are normalized, AI rows are normalized when present, and completion audit records no live-provider warning for that approved scope. A matching external approval ledger row must record scope and budget before the live evidence can count as external_pass.",
+      "forbidden_claim_until_pass": "Do not claim that DataForSEO live data was collected in a target project."
+    },
+    {
+      "id": "url_enrichment_live_fetch",
+      "requirement_refs": [
+        "TZ section 10",
+        "TZ section 13",
+        "TZ acceptance 24.5"
+      ],
+      "current_local_status": "approval gate, planned URL report, live URL enrichment summary, raw HTML path, raw_ref linkage validator, chunk signal extraction, and no-network blocked observation are implemented",
+      "approval_required": {
+        "network": true,
+        "target_urls": true,
+        "budget_scope": [
+          "URL list",
+          "max URL count",
+          "timeout",
+          "user-agent policy",
+          "robots/WAF handling"
+        ]
+      },
+      "required_command_patterns": [
+        "python .geo-topic-agent-runtime/geo_agent_cli.py enrich-urls --project-dir <target> --topic <topic> --urls <comma-separated-urls> --network-approved --max-urls <n>"
+      ],
+      "required_evidence_artifacts": [
+        "geo_agent/data/quality-gates/external_approval_ledger.json with approved_by, approval_ref, approved_at, topic_slug, scope, and budget/request limits",
+        "geo_agent/reports/URL_ENRICHMENT.md",
+        "geo_agent/data/quality-gates/*_url_enrichment_summary.json with topic_slug, network_approved=true, enriched_rows>0",
+        "geo_agent/data/raw/pages/* referenced by url_enrichment.csv raw_ref",
+        "geo_agent/data/processed/*_url_enrichment.csv with status=success and valid raw_ref",
+        "geo_agent/data/quality-gates/*_completion_audit.json"
+      ],
+      "pass_condition": "Approved and ledger-recorded target URLs are fetched, URL enrichment summary is bound to the same topic_slug with network_approved=true and enriched_rows>0, each successful row raw_ref resolves to an existing raw page file under geo_agent/data/raw/pages, URL_ENRICHMENT.md summarizes page type, main content, chunk, WAF/JS risks, the run respects max URL bounds, and completion audit records no warnings or blocks for that approved scope.",
+      "forbidden_claim_until_pass": "Do not claim live URL/page enrichment was completed for a target site."
+    },
+    {
+      "id": "independent_geo_workflow_review",
+      "requirement_refs": [
+        "independent GEO workflow review",
+        "final evidence independent reviewers"
+      ],
+      "current_local_status": "independent audit pack, self-review reports, structured summary validator, and markdown-only guard are implemented; actual independent execution is not claimed",
+      "approval_required": {
+        "independent_reviewers": true,
+        "scope": [
+          "six scenario agents",
+          "clean consistency/routing auditor",
+          "GEO workflow design auditor",
+          "evidence quality auditor"
+        ]
+      },
+      "required_command_patterns": [
+        "python .geo-topic-agent-runtime/geo_agent_cli.py independent-audit-pack --project-dir <target> --topic <topic>",
+        "Run approved independent scenario and clean-audit reviewers against the current GEO project artifacts and allowed agent references.",
+        "Record reviewer results in geo_agent/data/quality-gates/independent-review-summary.json with independent_execution=true, 6 scenario reviews, 4 auditor reviews, work traces, inspected files, and closed finding dispositions.",
+        "python .geo-topic-agent-runtime/geo_agent_cli.py final-evidence-audit --project-dir <target> --topic <topic>"
+      ],
+      "required_evidence_artifacts": [
+        "geo_agent/reports/INDEPENDENT_AUDIT_PACK.md",
+        "geo_agent/data/quality-gates/independent-review-summary.json",
+        "geo_agent/data/quality-gates/independent-audit-pack/prompts/*.md",
+        "geo_agent/reports/INDEPENDENT_SCENARIO_VALIDATION.md",
+        "geo_agent/reports/INDEPENDENT_CLEAN_AUDIT.md",
+        "geo_agent/data/quality-gates/independent-review-summary.json with all findings dispositioned"
+      ],
+      "pass_condition": "Independent evaluators inspect the GEO project artifacts and allowed agent references without being given intended fixes; independent-review-summary.json records independent_execution=true, all six scenario review ids, all four auditor review ids, reviewer ids, inspected files, work traces, all_findings_dispositioned=true, and every finding is fixed, rejected with reason, known limitation, or not applicable.",
+      "forbidden_claim_until_pass": "Do not claim independent GEO workflow review."
+    }
+  ],
+  "final_claim_rule": "A full 100% live-proven claim requires every required_external_evidence item to be external_pass. A limited 100% readiness claim may use ready_with_descopes only when every non-passed item is explicitly descoped by the user with reason and date; descoped rows are limitations, not live evidence. Until then, claim only the validated GEO workflow artifacts and the exact accepted evidence from the evidence ledger.",
+  "forbidden_global_claims_until_external_pass": [
+    "100% live-proven on real provider data",
+    "live XMLRiver or DataForSEO collection was executed in the target project",
+    "live URL enrichment was completed for target pages",
+    "independent GEO workflow review was completed"
+  ],
+  "decision_record_contract": {
+    "path": "geo_agent/data/quality-gates/final_evidence_decisions.json",
+    "required_fields_for_descope": [
+      "id",
+      "decision",
+      "approved_by",
+      "reason",
+      "date"
+    ],
+    "allowed_decisions": [
+      "descoped"
+    ],
+    "rule": "A descope decision removes an item from external_pending only when it has id, decision=descoped, approved_by, reason, and date. It never increments external_pass and never proves live execution."
+  }
+}

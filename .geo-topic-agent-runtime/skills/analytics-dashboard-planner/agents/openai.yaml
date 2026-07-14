@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEO Analytics Dashboard Planner"
+  short_description: "Design a project-specific GEO/AEO dashboard contract"
+  default_prompt: "Design a GEO/AEO dashboard with me from my project goals, metrics, engines, regions, queries, and history requirements. Do not assume a fixed UI."

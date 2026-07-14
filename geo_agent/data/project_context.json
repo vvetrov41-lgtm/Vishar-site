@@ -1,0 +1,494 @@
+{
+  "domain": "https://vishartattoo.com/",
+  "brand": "Vladimir Vishar",
+  "brand_variants": [
+    "Vladimir Vishar",
+    "Vishar Tattoo",
+    "Vladimir Vishar Tattoo",
+    "vishartattoo.com",
+    "vladimir_vishar",
+    "Custom Black & Grey Realism tattoos",
+    "Custom Colour Realism tattoos",
+    "Tattoo cover-ups by assessment",
+    "Custom tattoo design",
+    "Free tattoo consultations",
+    "Realism portraits",
+    "Wildlife, floral, mythology, dark realism and horror compositions",
+    "Medium and large multi-session realism projects"
+  ],
+  "brand_variants_status": "confirmed",
+  "brand_variants_source": "explicit_user_confirmation",
+  "brand_variants_confirmation_required": false,
+  "target_goal": "both",
+  "topic": "Realism tattoo artist in Manchester and Salford",
+  "topic_cluster_intake_deferred": false,
+  "semantic_cluster_queries": [
+    "realism tattoo artist Manchester",
+    "black and grey realism tattoo Manchester",
+    "colour realism tattoo Manchester",
+    "tattoo cover up Manchester",
+    "custom tattoo artist Manchester",
+    "realism tattoo artist Salford",
+    "tattoo artist Salford",
+    "tattoo consultation Manchester",
+    "portrait tattoo artist Manchester",
+    "Vladimir Vishar tattoo artist"
+  ],
+  "cluster_query_count": 10,
+  "semantic_cluster_topic": "Realism tattoo artist in Manchester and Salford",
+  "semantic_cluster_status": "confirmed",
+  "semantic_cluster_source": "explicit_user_confirmation",
+  "semantic_cluster_confirmed": true,
+  "semantic_cluster_confirmation_required": false,
+  "region": {
+    "country": "United Kingdom",
+    "city": "Salford, Greater Manchester",
+    "language": "English (en-GB)",
+    "scope_status": "resolved",
+    "scope_provenance": "project_context",
+    "google": {
+      "gl": "gb",
+      "hl": "en"
+    },
+    "yandex": {
+      "lr": 213
+    },
+    "device": {
+      "default": "desktop",
+      "collect_mobile": true
+    }
+  },
+  "language": "English (en-GB)",
+  "search_engines": [
+    "google"
+  ],
+  "competitors": [],
+  "site_pages": [
+    "https://vishartattoo.com/",
+    "https://vishartattoo.com/about/",
+    "https://vishartattoo.com/black-and-grey-realism-manchester/",
+    "https://vishartattoo.com/colour-realism-tattoo-manchester/",
+    "https://vishartattoo.com/cover-up-tattoo-manchester/",
+    "https://vishartattoo.com/faq/",
+    "https://vishartattoo.com/aftercare/"
+  ],
+  "products_services": [
+    "Custom Black & Grey Realism tattoos",
+    "Custom Colour Realism tattoos",
+    "Tattoo cover-ups by assessment",
+    "Custom tattoo design",
+    "Free tattoo consultations",
+    "Realism portraits",
+    "Wildlife, floral, mythology, dark realism and horror compositions",
+    "Medium and large multi-session realism projects"
+  ],
+  "documents": [],
+  "site_discovery_approved": true,
+  "context_notes": "Personal brand and qualified-enquiry website for tattoo artist Vladimir Vishar. Vladimir works from No Regrets Studios Manchester in Salford but does not own or represent the studio as his own business. Primary physical location: Salford. Primary commercial market: Manchester. Wider service area: Greater Manchester. Conversion goal: qualified project enquiries and consultations, not traffic alone. Appointments only; no walk-ins. Do not invent awards, prices, availability, reviews, medical claims or superlatives. Do not over-promote No Regrets Studios. Do not create near-duplicate location pages or mass-generate pages. Treat brand mention, URL citation and recommendation as separate outcomes. Technical SEO and LLM accessibility remediation through PR #159 is complete.",
+  "context_not_applicable_decisions": [],
+  "audit_decisions": {},
+  "context_quality_gate": {
+    "status": "pass",
+    "site_context_status": "success",
+    "brand_variants_status": "confirmed",
+    "brand_variants_confirmed": true,
+    "brand_variants_waivable": false,
+    "material_open_questions": [],
+    "missing_context_fields": [],
+    "accepted_not_applicable_fields": [],
+    "accepted_not_applicable_decisions": [],
+    "rejected_not_applicable_decisions": []
+  },
+  "context_acquisition": {
+    "documents_provided": false,
+    "site_discovery_approved": true,
+    "network_required_for_site_discovery": true,
+    "accessibility_audit_separate": true,
+    "deep_context_collection_status": "success",
+    "deep_context_completed_at": "2026-07-14T17:13:10+00:00",
+    "post_context_next_step": "offer_site_and_target_page_audit",
+    "deep_context_offer_required": false,
+    "deep_context_run_recommended": false,
+    "recommended_deep_context_max_pages": 30,
+    "recommended_deep_context_scope": [
+      "homepage",
+      "user-provided core landing pages",
+      "main product/service/course pages",
+      "header and navigation links",
+      "footer links",
+      "pricing, tariffs, payment, subscription, checkout",
+      "trial, demo, free-access, delivery or shipping pages when relevant",
+      "contacts, about/company/team/author, legal, terms, refund, requisites",
+      "cases, reviews, FAQ and trust pages"
+    ],
+    "recommended_deep_context_command": "python .geo-topic-agent-runtime/geo_agent_cli.py collect-context --domain \"https://vishartattoo.com/\" --allow-site-discovery --network-approved --max-pages 30 --pages \"https://vishartattoo.com/; https://vishartattoo.com/about/; https://vishartattoo.com/black-and-grey-realism-manchester/; https://vishartattoo.com/colour-realism-tattoo-manchester/; https://vishartattoo.com/cover-up-tattoo-manchester/; https://vishartattoo.com/faq/; https://vishartattoo.com/aftercare/\"",
+    "network_approved": false,
+    "site_html_dir": "",
+    "site_context_source": "repository HTML snapshots",
+    "audit_access_was_not_run": true
+  },
+  "assumptions": [
+    "No major missing project context fields detected."
+  ],
+  "updated_at": "2026-07-14T17:13:10+00:00",
+  "site_context": {
+    "status": "success",
+    "collection_status": "success",
+    "collection_summary": "Local HTML site context collected. No accessibility audit was run.",
+    "summary": "Local HTML site context collected. No accessibility audit was run.",
+    "topic": "Realism tattoo artist in Manchester and Salford",
+    "language": "English (en-GB)",
+    "pages": [
+      {
+        "url": "https://vishartattoo.com/about",
+        "source": "local_snapshot",
+        "page_type": "commercial_about",
+        "title": "About Vladimir Vishar | Tattoo Artist Manchester & Salford",
+        "meta_description": "Meet Vladimir Vishar — specialist in colour and black & grey realism tattooing at No Regrets Studios, Manchester. Learn about the artist and the studio.",
+        "h1": "Vladimir Vishar.",
+        "headings": "Vladimir Vishar. | How I approach a project | Fit first | Reference-led | Realistic scope | Selected features and awards | Global Tattoo Mag | Ink Legends Magazine | Runner Up - Best Portrait | Pricing and booking context",
+        "cta_texts": "",
+        "text_chars": 5087,
+        "value_snippets": "",
+        "product_snippets": "",
+        "pricing_payment_snippets": "Session planning Pricing and booking context A realistic estimate depends on size, detail, placement, skin, and whether the project is a cover-up. || This comes off the overall tattoo cost. || Finance 0% interest options Finance options may be available through No Regrets Studios, including 0% interest plans over 6 or 12 months.",
+        "trial_delivery_snippets": "Booking Free consultation After your idea and references have been reviewed, a free consultation can be arranged before you decide to book. || Address UNIT 73 Yorkshire St, Salford M3 5EG Open in Google Maps → What to Expect ✦ Private workstation for every client ✦ All equipment single-use or autoclave-sterilised ✦ Comfortable seating for long sessions ✦ Tea, coffee, and water ava... || Free photo assessment.",
+        "limitations_snippets": "03 Realistic scope Cover-ups, detail level, time estimate, and limitations are assessed before you decide to book. || Studio booking Chair rental fee After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. || Current terms are handled by the studio.",
+        "trust_snippets": "Rate £140 per hour You will receive an estimate after I review your idea, placement, size, skin, references, and old ink where relevant. || Booking Free consultation After your idea and references have been reviewed, a free consultation can be arranged before you decide to book. || Studio booking Chair rental fee After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. || View No Regrets finance information Project scale How long larger projects can take Every project is estimated after reviewing the idea, placement, size, skin, references, and old ink where relevant.",
+        "topic_mentions": 31,
+        "language": "English (en-GB)",
+        "status": "collected"
+      },
+      {
+        "url": "https://vishartattoo.com/aftercare",
+        "source": "local_snapshot",
+        "page_type": "commercial_about",
+        "title": "Tattoo Aftercare Guide | Vladimir Vishar Manchester",
+        "meta_description": "Complete tattoo aftercare guide by Vladimir Vishar. Step-by-step healing instructions for new tattoos — with and without healing film.",
+        "h1": "Heal it properly.",
+        "headings": "Heal it properly. | Essentials | Option 1: No Film | Initial Care | Day 0 (Evening) | Day 1 | Routine (Days 1–3) | Late Stage (Day 4+) | Option 2: Healing Film | Application",
+        "cta_texts": "Try the Aftercare AI Assistant →",
+        "text_chars": 3802,
+        "value_snippets": "Try the Aftercare AI Assistant → (function () { var tablist = document.getElementById('aftercare-tabs'); var tabs = [document.getElementById('opt1-btn'), document.getElementById('opt2-btn')]; var panels = [document.getElementById('opt1'), d...",
+        "product_snippets": "",
+        "pricing_payment_snippets": "",
+        "trial_delivery_snippets": "✓ Quick lukewarm shower with mild fragrance-free soap.",
+        "limitations_snippets": "",
+        "trust_snippets": "",
+        "topic_mentions": 7,
+        "language": "English (en-GB)",
+        "status": "collected"
+      },
+      {
+        "url": "https://vishartattoo.com/black-and-grey-realism-manchester",
+        "source": "local_snapshot",
+        "page_type": "commercial_about",
+        "title": "Black & Grey Realism Tattoo Manchester | Vladimir Vishar",
+        "meta_description": "Black and grey realism tattoos in Manchester & Salford. Dramatic contrast, smooth shading, photorealistic detail by Vladimir Vishar. Hourly rate £140.",
+        "h1": "Black & Grey.",
+        "headings": "Black & Grey. | The Art of Monochrome | Full Tonal Range | Dramatic Contrast | Ages Gracefully | Black & Grey Portfolio | How It Works | Consultation | Custom Design | Tattooing",
+        "cta_texts": "",
+        "text_chars": 8223,
+        "value_snippets": "Black and grey realism is usually slightly faster than colour realism, but it still needs careful structure, contrast, smooth shading, and detail.",
+        "product_snippets": "",
+        "pricing_payment_snippets": "How much does a black and grey realism tattoo cost? || This comes off the overall tattoo cost.",
+        "trial_delivery_snippets": "",
+        "limitations_snippets": "I build the design around body flow, scale, readability, skin, and placement limits. || After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "trust_snippets": "Larger areas are estimated after reviewing your idea, placement, size, skin, and references. || I give an estimate after reviewing your idea, placement, size, skin, and references. || After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "topic_mentions": 38,
+        "language": "English (en-GB)",
+        "status": "collected"
+      },
+      {
+        "url": "https://vishartattoo.com/colour-realism-tattoo-manchester",
+        "source": "local_snapshot",
+        "page_type": "commercial_about",
+        "title": "Colour Realism Tattoo Manchester | Vladimir Vishar",
+        "meta_description": "Vivid colour realism tattoos in Manchester & Salford by Vladimir Vishar. Portraits, wildlife, florals — custom photorealistic colour work. Hourly rate £140.",
+        "h1": "Colour Realism.",
+        "headings": "Colour Realism. | What is Colour Realism? | True-to-Life Colour | Light & Shadow | Custom Composition | Colour Realism Portfolio | How It Works | Consultation | Design | Session",
+        "cta_texts": "",
+        "text_chars": 8728,
+        "value_snippets": "Does colour realism fade faster than black and grey? || Colour tattoos can fade faster if exposed to UV without protection.",
+        "product_snippets": "",
+        "pricing_payment_snippets": "I'll respond with an honest assessment — what will work, what I'd adjust, and a time/cost estimate. || How much does a colour realism tattoo cost in Manchester? || This comes off the overall tattoo cost.",
+        "trial_delivery_snippets": "",
+        "limitations_snippets": "I build the design around body flow, scale, readability, skin, and placement limits. || After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "trust_snippets": "Larger areas are estimated after reviewing your idea, placement, size, skin, and references. || I give an estimate after reviewing your idea, placement, size, skin, and references. || After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "topic_mentions": 50,
+        "language": "English (en-GB)",
+        "status": "collected"
+      },
+      {
+        "url": "https://vishartattoo.com/cover-up-tattoo-manchester",
+        "source": "local_snapshot",
+        "page_type": "commercial_about",
+        "title": "Cover-Up Tattoo Manchester | Transform Old Ink | Vladimir Vishar",
+        "meta_description": "Professional cover-up tattoos in Manchester by Vladimir Vishar. Transform old ink into artwork you",
+        "h1": "Cover-ups.",
+        "headings": "Cover-ups. | A Second Chance for Your Skin | Free Assessment | Strategic Design | Complete Concealment | Cover-up Process | Photo Assessment | Honest Feedback | Custom Design | Tattoo & Aftercare",
+        "cta_texts": "",
+        "text_chars": 9420,
+        "value_snippets": "If laser lightening would help, I'll recommend it. || Faded or lighter tattoos offer more design freedom, and some tattoos may benefit from laser lightening first.",
+        "product_snippets": "",
+        "pricing_payment_snippets": "How much does a cover-up tattoo cost in Manchester? || This comes off the overall tattoo cost.",
+        "trial_delivery_snippets": "Manchester & Salford · £140/hr · Free photo assessment Send photos for assessment Enquiry via No Regrets Manchester. || 📸 Free Assessment Send photos of your old tattoo. || Lighter, faded tattoos give more design freedom. || Faded or lighter tattoos offer more design freedom, and some tattoos may benefit from laser lightening first.",
+        "limitations_snippets": "After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "trust_snippets": "Most tattoos can be covered, but every case needs assessment first. || I give an estimate after reviewing your photos, idea, placement, size, skin, old ink, and references. || After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "topic_mentions": 50,
+        "language": "English (en-GB)",
+        "status": "collected"
+      },
+      {
+        "url": "https://vishartattoo.com/faq",
+        "source": "local_snapshot",
+        "page_type": "commercial_contacts",
+        "title": "Tattoo FAQ | Vladimir Vishar Manchester",
+        "meta_description": "Frequently asked questions about tattooing with Vladimir Vishar in Manchester. Sessions, preparation, pain relief, healing, cover-ups and more.",
+        "h1": "Questions. Answered.",
+        "headings": "Questions. Answered. | Before Your Session | Pain & Medical | During & After | Still have questions?",
+        "cta_texts": "Try AI Assistant",
+        "text_chars": 6797,
+        "value_snippets": "Wear comfortable clothing that gives easy access to the area — for shoulder work, a vest is better than a T-shirt; for legs, wear shorts. || Yes, I film parts of the process and take final photos of the tattoo, usually without showing your face.",
+        "product_snippets": "Make sure you are not allergic to lidocaine before using any numbing product. || If you have allergies (latex, plasters/adhesives, antiseptics, medications, etc.), tell me in advance so we can choose suitable products.",
+        "pricing_payment_snippets": "How much does a tattoo cost? || This comes off the overall tattoo cost. || Finance options may be available through No Regrets Studios, including 0% interest plans over 6 or 12 months. || Do I need to pay a deposit?",
+        "trial_delivery_snippets": "Is the consultation free? || After your idea and references have been reviewed, a free consultation can be arranged before you decide to book. || There is free on-street or nearby parking.",
+        "limitations_snippets": "I use this to build the tattoo around body flow, scale, readability, skin, and the limits of the placement. || After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. || Current terms are handled by the studio.",
+        "trust_snippets": "Every project is estimated after reviewing the idea, placement, size, skin, references, and old ink where relevant. || I give an estimate after reviewing your idea, placement, size, skin, references, and old ink where relevant, so you can plan your budget before booking. || After your idea and references have been reviewed, a free consultation can be arranged before you decide to book. || After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "topic_mentions": 18,
+        "language": "English (en-GB)",
+        "status": "collected"
+      },
+      {
+        "url": "https://vishartattoo.com",
+        "source": "local_homepage",
+        "page_type": "homepage",
+        "title": "Realism Tattoo Artist in Manchester | Vladimir Vishar",
+        "meta_description": "Manchester realism tattoo artist Vladimir Vishar, based at No Regrets Studios Manchester. Colour and black-and-grey realism, custom tattoos and cover-ups.",
+        "h1": "Realism, made to last.",
+        "headings": "Realism, made to last. | The Instrument. | Colour, black-and-grey, and cover-up realism | What happens after you send the form | You send your idea | A tattoo consultant gets back to you | We meet for a consultation | You choose whether to book | Precision in Every Needle. | Colour Realism",
+        "cta_texts": "",
+        "text_chars": 32170,
+        "value_snippets": "My personal Google profile is new — a review there genuinely helps . || Simple tools to help with tattoo ideas and aftercare questions. || Bring charged headphones and download films or series.\" }, { q: \"Clothing & skin preparation\", a: \"Wear comfortable clothing with easy access to the area. || For large projects, preparation can take up to a couple of hours.\" }, { q: \"Photo / video\", a: \"Yes, I film parts of the process and take final photos of the tattoo, usually without showing your face.",
+        "product_snippets": "*/ var resizeTimer=null,lastW=window.innerWidth,lastH=window.innerHeight; function applyResize(){ resizeTimer=null; if(window.innerWidth===lastW&&window.innerHeight===lastH)return; lastW=window.innerWidth;lastH=window.innerHeight; isMobile=... || View all FAQ → Studio Tools Studio Tools. || Simple tools to help with tattoo ideas and aftercare questions. || Send this idea to Vladimir Aftercare Assistant Instant healing support Your aftercare question Ask Assistant Open full AI Tools page → Let's build your piece.",
+        "pricing_payment_snippets": "This comes off the overall tattoo cost.",
+        "trial_delivery_snippets": "",
+        "limitations_snippets": "After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. || Vlad is truly a master of their craft...\" } ]; let reviewsExpanded = false; function renderReviews(limit) { const g = document.getElementById('reviews-grid'); if (!g) return; g.innerHTML = ''; const items = typeof limit === 'number' ? || reviewsData.slice(0, limit) : reviewsData; items.forEach(r => { const c = document.createElement('div'); c.className = 'rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4'; c.innerHTML = ` ${r.author} ${r.date} ${'★'.repe...",
+        "trust_snippets": "Step 2 A tattoo consultant gets back to you The studio team reviews the enquiry and usually replies within two working days. || After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. || Read the full aftercare guide → ✓ Keep it clean and protected ✓ Avoid soaking, sauna, heavy sweating, and direct sun while healing ✓ Use SPF after healing to protect contrast and colour Reviews Client feedback. || Verified Google reviews from clients I’ve tattooed at No Regrets Studios Manchester — every one links to the original on Google Maps.",
+        "topic_mentions": 85,
+        "language": "English (en-GB)",
+        "status": "collected"
+      }
+    ],
+    "page_type_counts": {
+      "commercial_about": 5,
+      "commercial_contacts": 1,
+      "homepage": 1
+    },
+    "brief": {
+      "brand_surface": [
+        "Realism Tattoo Artist in Manchester | Vladimir Vishar",
+        "Vladimir Vishar.",
+        "Heal it properly.",
+        "Black & Grey.",
+        "Colour Realism.",
+        "Cover-ups."
+      ],
+      "value_proposition_snippets": [
+        "commercial_about: Try the Aftercare AI Assistant → (function () { var tablist = document.getElementById('aftercare-tabs'); var tabs = [document.getElementById('opt1-btn'), document.getElementById('opt2-btn')]; var panels = [document.getElementById('opt1'), d...",
+        "commercial_about: Black and grey realism is usually slightly faster than colour realism, but it still needs careful structure, contrast, smooth shading, and detail.",
+        "commercial_about: Does colour realism fade faster than black and grey?",
+        "commercial_about: Colour tattoos can fade faster if exposed to UV without protection.",
+        "commercial_about: If laser lightening would help, I'll recommend it.",
+        "commercial_about: Faded or lighter tattoos offer more design freedom, and some tattoos may benefit from laser lightening first.",
+        "commercial_contacts: Wear comfortable clothing that gives easy access to the area — for shoulder work, a vest is better than a T-shirt; for legs, wear shorts.",
+        "commercial_contacts: Yes, I film parts of the process and take final photos of the tattoo, usually without showing your face."
+      ],
+      "product_snippets": [
+        "commercial_contacts: Make sure you are not allergic to lidocaine before using any numbing product.",
+        "commercial_contacts: If you have allergies (latex, plasters/adhesives, antiseptics, medications, etc.), tell me in advance so we can choose suitable products.",
+        "homepage: */ var resizeTimer=null,lastW=window.innerWidth,lastH=window.innerHeight; function applyResize(){ resizeTimer=null; if(window.innerWidth===lastW&&window.innerHeight===lastH)return; lastW=window.innerWidth;lastH=window.innerHeight; isMobile=...",
+        "homepage: View all FAQ → Studio Tools Studio Tools.",
+        "homepage: Simple tools to help with tattoo ideas and aftercare questions.",
+        "homepage: Send this idea to Vladimir Aftercare Assistant Instant healing support Your aftercare question Ask Assistant Open full AI Tools page → Let's build your piece."
+      ],
+      "pricing_payment_snippets": [
+        "commercial_about: Session planning Pricing and booking context A realistic estimate depends on size, detail, placement, skin, and whether the project is a cover-up.",
+        "commercial_about: This comes off the overall tattoo cost.",
+        "commercial_about: Finance 0% interest options Finance options may be available through No Regrets Studios, including 0% interest plans over 6 or 12 months.",
+        "commercial_about: How much does a black and grey realism tattoo cost?",
+        "commercial_about: I'll respond with an honest assessment — what will work, what I'd adjust, and a time/cost estimate.",
+        "commercial_about: How much does a colour realism tattoo cost in Manchester?",
+        "commercial_about: How much does a cover-up tattoo cost in Manchester?",
+        "commercial_contacts: How much does a tattoo cost?"
+      ],
+      "trial_delivery_snippets": [
+        "commercial_about: Booking Free consultation After your idea and references have been reviewed, a free consultation can be arranged before you decide to book.",
+        "commercial_about: Address UNIT 73 Yorkshire St, Salford M3 5EG Open in Google Maps → What to Expect ✦ Private workstation for every client ✦ All equipment single-use or autoclave-sterilised ✦ Comfortable seating for long sessions ✦ Tea, coffee, and water ava...",
+        "commercial_about: Free photo assessment.",
+        "commercial_about: ✓ Quick lukewarm shower with mild fragrance-free soap.",
+        "commercial_about: Manchester & Salford · £140/hr · Free photo assessment Send photos for assessment Enquiry via No Regrets Manchester.",
+        "commercial_about: 📸 Free Assessment Send photos of your old tattoo.",
+        "commercial_about: Lighter, faded tattoos give more design freedom.",
+        "commercial_about: Faded or lighter tattoos offer more design freedom, and some tattoos may benefit from laser lightening first."
+      ],
+      "limitations_snippets": [
+        "commercial_about: 03 Realistic scope Cover-ups, detail level, time estimate, and limitations are assessed before you decide to book.",
+        "commercial_about: Studio booking Chair rental fee After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "commercial_about: Current terms are handled by the studio.",
+        "commercial_about: I build the design around body flow, scale, readability, skin, and placement limits.",
+        "commercial_about: After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "commercial_contacts: I use this to build the tattoo around body flow, scale, readability, skin, and the limits of the placement.",
+        "commercial_contacts: After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "commercial_contacts: Current terms are handled by the studio."
+      ],
+      "trust_snippets": [
+        "commercial_about: Rate £140 per hour You will receive an estimate after I review your idea, placement, size, skin, references, and old ink where relevant.",
+        "commercial_about: Booking Free consultation After your idea and references have been reviewed, a free consultation can be arranged before you decide to book.",
+        "commercial_about: Studio booking Chair rental fee After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "commercial_about: View No Regrets finance information Project scale How long larger projects can take Every project is estimated after reviewing the idea, placement, size, skin, references, and old ink where relevant.",
+        "commercial_about: Larger areas are estimated after reviewing your idea, placement, size, skin, and references.",
+        "commercial_about: I give an estimate after reviewing your idea, placement, size, skin, and references.",
+        "commercial_about: After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment.",
+        "commercial_about: Most tattoos can be covered, but every case needs assessment first."
+      ],
+      "conversion_actions": [
+        "Try the Aftercare AI Assistant →",
+        "Try AI Assistant"
+      ],
+      "important_pages": [
+        {
+          "url": "https://vishartattoo.com/about",
+          "page_type": "commercial_about",
+          "source": "local_snapshot"
+        },
+        {
+          "url": "https://vishartattoo.com/aftercare",
+          "page_type": "commercial_about",
+          "source": "local_snapshot"
+        },
+        {
+          "url": "https://vishartattoo.com/black-and-grey-realism-manchester",
+          "page_type": "commercial_about",
+          "source": "local_snapshot"
+        },
+        {
+          "url": "https://vishartattoo.com/colour-realism-tattoo-manchester",
+          "page_type": "commercial_about",
+          "source": "local_snapshot"
+        },
+        {
+          "url": "https://vishartattoo.com/cover-up-tattoo-manchester",
+          "page_type": "commercial_about",
+          "source": "local_snapshot"
+        },
+        {
+          "url": "https://vishartattoo.com/faq",
+          "page_type": "commercial_contacts",
+          "source": "local_snapshot"
+        },
+        {
+          "url": "https://vishartattoo.com",
+          "page_type": "homepage",
+          "source": "local_homepage"
+        }
+      ]
+    },
+    "quality_gate": {
+      "status": "pass",
+      "checks": [
+        {
+          "id": "homepage",
+          "passed": true,
+          "critical": true,
+          "detail": "Homepage must be reviewed.",
+          "evidence_passed": true,
+          "resolution": "evidence"
+        },
+        {
+          "id": "multiple_important_pages",
+          "passed": true,
+          "critical": true,
+          "detail": "Homepage-only context is insufficient; review core landing/commercial pages.",
+          "evidence_passed": true,
+          "resolution": "evidence"
+        },
+        {
+          "id": "brand_surface",
+          "passed": true,
+          "critical": true,
+          "detail": "Brand naming evidence is required.",
+          "evidence_passed": true,
+          "resolution": "evidence"
+        },
+        {
+          "id": "value_proposition",
+          "passed": true,
+          "critical": true,
+          "detail": "Value proposition/UTP evidence is required.",
+          "evidence_passed": true,
+          "resolution": "evidence"
+        },
+        {
+          "id": "product_mechanics",
+          "passed": true,
+          "critical": true,
+          "detail": "Product/service mechanics evidence is required.",
+          "evidence_passed": true,
+          "resolution": "evidence"
+        },
+        {
+          "id": "pricing_payment_evidence",
+          "passed": true,
+          "critical": true,
+          "detail": "Pricing/payment model must be evidenced or explicitly resolved by the user.",
+          "evidence_passed": true,
+          "resolution": "evidence"
+        },
+        {
+          "id": "limitations_evidence",
+          "passed": true,
+          "critical": true,
+          "detail": "Limitations, terms, geography, refund or delivery constraints must be evidenced or explicitly resolved by the user.",
+          "evidence_passed": true,
+          "resolution": "evidence"
+        },
+        {
+          "id": "conversion_actions",
+          "passed": true,
+          "critical": true,
+          "detail": "At least one concrete conversion action must be evidenced.",
+          "evidence_passed": true,
+          "resolution": "evidence"
+        }
+      ],
+      "blocking_check_ids": [],
+      "pages_reviewed": 7,
+      "missing_context_fields": [],
+      "not_applicable_schema_version": "geo-topic-agent.context-not-applicable.v1",
+      "not_applicable_allowed_fields": [
+        "conversion_actions",
+        "limitations_evidence",
+        "pricing_payment_evidence"
+      ],
+      "not_applicable_non_waivable_fields": [
+        "brand_surface",
+        "brand_variants",
+        "homepage",
+        "multiple_important_pages",
+        "product_mechanics",
+        "value_proposition"
+      ],
+      "accepted_not_applicable_fields": [],
+      "accepted_not_applicable_decisions": [],
+      "rejected_not_applicable_decisions": [],
+      "applied_not_applicable_fields": []
+    },
+    "open_questions": [
+      "No major product-context questions detected from collected pages."
+    ],
+    "errors": [],
+    "accessibility_audit_run": false,
+    "generated_at": "2026-07-14T17:13:10+00:00"
+  }
+}
