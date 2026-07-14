@@ -15,11 +15,24 @@
       "vishartattoo.com",
       "vladimir_vishar"
     ],
-    "brand_variants_status": "needs_user_confirmation",
-    "brand_variants_source": "agent_proposed",
+    "brand_variants_status": "confirmed",
+    "brand_variants_source": "explicit_user_confirmation",
     "target_goal": "both",
-    "priority_topics": [],
-    "semantic_cluster_queries": [],
+    "priority_topics": [
+      "Realism tattoo artist in Manchester and Salford"
+    ],
+    "semantic_cluster_queries": [
+      "realism tattoo artist Manchester",
+      "black and grey realism tattoo Manchester",
+      "colour realism tattoo Manchester",
+      "tattoo cover up Manchester",
+      "custom tattoo artist Manchester",
+      "realism tattoo artist Salford",
+      "tattoo artist Salford",
+      "tattoo consultation Manchester",
+      "portrait tattoo artist Manchester",
+      "Vladimir Vishar tattoo artist"
+    ],
     "competitors": [],
     "site_pages": [
       "https://vishartattoo.com/",
@@ -33,18 +46,33 @@
     "products_services": [
       "Custom Black & Grey Realism tattoos",
       "Custom Colour Realism tattoos",
-      "Tattoo cover-ups",
-      "Tattoo consultations"
+      "Tattoo cover-ups by assessment",
+      "Custom tattoo design",
+      "Free tattoo consultations",
+      "Realism portraits",
+      "Wildlife, floral, mythology, dark realism and horror compositions",
+      "Medium and large multi-session realism projects"
     ],
     "documents": [],
-    "context_notes": "Personal portfolio and enquiry website for tattoo artist Vladimir Vishar, based at No Regrets Studios Manchester in Salford. Technical SEO and LLM accessibility remediation through PR #159 is already complete; future GEO work must distinguish confirmed evidence from inference and must not mass-generate pages.",
-    "site_discovery_approved": false,
+    "context_notes": "Personal brand and qualified-enquiry website for tattoo artist Vladimir Vishar. Vladimir works from No Regrets Studios Manchester in Salford but does not own or represent the studio as his own business. Primary physical location: Salford. Primary commercial market: Manchester. Wider service area: Greater Manchester. Conversion goal: qualified project enquiries and consultations, not traffic alone. Appointments only; no walk-ins. Do not invent awards, prices, availability, reviews, medical claims or superlatives. Do not over-promote No Regrets Studios. Do not create near-duplicate location pages or mass-generate pages. Treat brand mention, URL citation and recommendation as separate outcomes. Technical SEO and LLM accessibility remediation through PR #159 is complete.",
+    "site_discovery_approved": true,
     "context_not_applicable_decisions": [],
-    "audit_decisions": {}
+    "audit_decisions": {},
+    "semantic_cluster_topic": "Realism tattoo artist in Manchester and Salford",
+    "semantic_cluster_status": "confirmed",
+    "semantic_cluster_source": "explicit_user_confirmation",
+    "semantic_cluster_confirmed_at": "2026-07-14T17:12:00+00:00",
+    "brand_variants_confirmed_at": "2026-07-14T17:07:58+00:00",
+    "brand_variants_confirmation": {
+      "variants_sha256": "1d8cfa909e36ec1ee3b2d7285efab5434098e1ea0c2c04c7e2edd0318f0eccd8",
+      "confirmation_ref": "User approval in ChatGPT work chat on 2026-07-14",
+      "confirmed_by": "Vladimir Vishar",
+      "confirmed_at": "2026-07-14T17:07:58+00:00"
+    }
   },
   "region": {
     "country": "United Kingdom",
-    "city": "Manchester and Salford",
+    "city": "Salford, Greater Manchester",
     "language": "English (en-GB)",
     "scope_status": "resolved",
     "scope_provenance": "project_context",
@@ -57,7 +85,7 @@
     },
     "device": {
       "default": "desktop",
-      "collect_mobile": false
+      "collect_mobile": true
     }
   },
   "search_engines": {

@@ -47,3 +47,9 @@ above. In particular, it must not modify production site files during an audit
 unless explicitly requested, and any proposed production change still requires
 a patch plan first. Network, paid-provider, and external actions remain subject
 to the runtime's approval gates.
+
+Before any GEO/AEO task, also read `geo_agent/PROJECT_PROFILE.md` and the saved
+configuration in `geo_agent/config/geo_agent_config.json`. The project profile
+defines the approved positioning, location hierarchy, service taxonomy, query
+cluster, evidence boundaries, and claims that must not be invented. Do not
+replace those facts with generic tattoo-industry assumptions.
