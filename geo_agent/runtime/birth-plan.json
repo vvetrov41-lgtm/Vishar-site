@@ -1,7 +1,7 @@
 {
   "active_runtime": "claude",
   "apply_allowed": true,
-  "managed_runtime_root": "/home/user/Vishar-site/.geo-topic-agent-runtime",
+  "managed_runtime_root": "./.geo-topic-agent-runtime",
   "cleanup_mode": "retain_canonical_adapters_install_active_native_bootstrap_only",
   "actions": [],
   "kept_entrypoints": [
