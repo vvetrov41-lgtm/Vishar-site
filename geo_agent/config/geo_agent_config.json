@@ -168,7 +168,7 @@
     "birth_plan": {
       "active_runtime": "claude",
       "apply_allowed": true,
-      "managed_runtime_root": "/home/user/Vishar-site/.geo-topic-agent-runtime",
+      "managed_runtime_root": "./.geo-topic-agent-runtime",
       "cleanup_mode": "retain_canonical_adapters_install_active_native_bootstrap_only",
       "actions": [],
       "kept_entrypoints": [
@@ -184,29 +184,29 @@
   },
   "discovery": {
     "updated_at": "2026-07-14T18:28:44+00:00",
-    "project_root": "/home/user/Vishar-site",
+    "project_root": ".",
     "env_files": [
-      "/home/user/Vishar-site/.env.example"
+      "./.env.example"
     ],
     "env_keys_present_masked": {},
     "matches_count": 2,
     "matches_preview": [
       {
         "pattern": "ai_answer",
-        "path": "/home/user/Vishar-site/geo_agent/data/import/ai_answers_template.csv"
+        "path": "./geo_agent/data/import/ai_answers_template.csv"
       },
       {
         "pattern": "serp",
-        "path": "/home/user/Vishar-site/geo_agent/data/import/manual_serp_template.csv"
+        "path": "./geo_agent/data/import/manual_serp_template.csv"
       }
     ],
     "semantic_tz_generators": [],
     "xmlriver_clients": [],
     "ai_answer_modules": [
-      "/home/user/Vishar-site/geo_agent/data/import/ai_answers_template.csv"
+      "./geo_agent/data/import/ai_answers_template.csv"
     ],
     "serp_modules": [
-      "/home/user/Vishar-site/geo_agent/data/import/manual_serp_template.csv"
+      "./geo_agent/data/import/manual_serp_template.csv"
     ],
     "scan_neighbors": false
   }
