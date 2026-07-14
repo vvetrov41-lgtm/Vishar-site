@@ -138,15 +138,17 @@
   },
   "runtime": {
     "profile": {
-      "active_runtime": "codex",
+      "active_runtime": "claude",
       "confidence": "explicit",
       "source": "setup_argument",
-      "requested_runtime": "codex",
+      "requested_runtime": "claude",
       "markers": {
         "codex": [
           "AGENTS.md"
         ],
-        "claude": [],
+        "claude": [
+          "CLAUDE.md"
+        ],
         "cursor": [],
         "opencode": [],
         "antigravity": [],
@@ -158,28 +160,30 @@
       },
       "present_runtimes": [
         "codex",
+        "claude",
         "node"
       ],
-      "generated_at": "2026-07-14T16:41:18+00:00"
+      "generated_at": "2026-07-14T18:28:44+00:00"
     },
     "birth_plan": {
-      "active_runtime": "codex",
+      "active_runtime": "claude",
       "apply_allowed": true,
       "managed_runtime_root": "./.geo-topic-agent-runtime",
       "cleanup_mode": "retain_canonical_adapters_install_active_native_bootstrap_only",
       "actions": [],
       "kept_entrypoints": [
-        ".agents",
-        "AGENTS.md"
+        ".claude",
+        "AGENTS.md",
+        "CLAUDE.md"
       ],
-      "active_adapter": "adapters/CODEX.md",
-      "generated_at": "2026-07-14T16:41:18+00:00",
-      "plan_hash": "84bd3c0f8163358356c97dbcc5b0927516c5b91fe30e99088528aab182823272"
+      "active_adapter": "adapters/CLAUDE.md",
+      "generated_at": "2026-07-14T18:28:44+00:00",
+      "plan_hash": "eb853d1d4d8043aa2bbdb20688e84eef80cfd5761f4de2c9b4ec502b0342db4f"
     },
     "applied_actions": []
   },
   "discovery": {
-    "updated_at": "2026-07-14T16:41:18+00:00",
+    "updated_at": "2026-07-14T18:28:44+00:00",
     "project_root": ".",
     "env_files": [
       "./.env.example"

@@ -1,18 +1,18 @@
 # ADAPTATION_REPORT
 
-Generated: 2026-07-14T16:41:18+00:00
+Generated: 2026-07-14T18:28:44+00:00
 
 ## Environment
 
-- OS: Linux-6.12.47-x86_64-with-glibc2.39
-- Python: 3.12.13
+- OS: Linux-6.18.5-x86_64-with-glibc2.39
+- Python: 3.11.15
 - Working directory: .
 - Project root: .
 - Agent runtime: geo-topic-agent 1.4.0
 
 ## Runtime / IDE
 
-- active runtime: codex
+- active runtime: claude
 - detection confidence: explicit
 - detection source: setup_argument
 - runtime profile: geo_agent/runtime/runtime-profile.json
@@ -34,7 +34,7 @@ Generated: 2026-07-14T16:41:18+00:00
 ## AI Answers
 
 - found module: yes
-- paths:
+- paths: 
   - ./geo_agent/data/import/ai_answers_template.csv
 - manual import template: geo_agent/data/import/ai_answers_template.csv
 

@@ -1,13 +1,15 @@
 {
-  "active_runtime": "codex",
+  "active_runtime": "claude",
   "confidence": "explicit",
   "source": "setup_argument",
-  "requested_runtime": "codex",
+  "requested_runtime": "claude",
   "markers": {
     "codex": [
       "AGENTS.md"
     ],
-    "claude": [],
+    "claude": [
+      "CLAUDE.md"
+    ],
     "cursor": [],
     "opencode": [],
     "antigravity": [],
@@ -19,7 +21,8 @@
   },
   "present_runtimes": [
     "codex",
+    "claude",
     "node"
   ],
-  "generated_at": "2026-07-14T16:41:18+00:00"
+  "generated_at": "2026-07-14T18:28:44+00:00"
 }
