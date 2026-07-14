@@ -1,7 +1,7 @@
 # LLM_ACCESSIBILITY_AUDIT
 
-Generated: 2026-07-14T20:07:55+00:00
-URL: https://vishartattoo.com
+Generated: 2026-07-14T20:28:22+00:00
+URL: https://vishartattoo.com/black-and-grey-realism-manchester
 Network approved: True
 Render requested: True
 
@@ -12,7 +12,7 @@ Render requested: True
 | Robots permission | [OK] | robots tokens evaluated |
 | Ordinary server baseline | [WARN] | security/captcha code is present, but the main page content is still accessible |
 | LLM/search bot HTTP probes with full User-Agent strings | [OK] | bot probes used full HTTP User-Agent strings and returned accessible responses |
-| Rendered screenshot/text | [WARN] | Navigation failed after 3 attempt(s): Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/ Call log:   - navigating to "https://vishartattoo.com/", waiting until "domcontentloaded"  |
+| Rendered screenshot/text | [WARN] | Navigation failed after 3 attempt(s): Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/black-and-grey-realism-manchester Call log:   - navigating to "https://vishartattoo.com/black-and-grey-realism-manchester", waiting until "domcontentloaded"  |
 | Clean LLM-style content | [OK] | clean LLM-style content extracted |
 | Rendered vs clean-content parity | [SKIP] | rendered text is unavailable; screenshot comparison needs Playwright |
 | Commercial content correctness | [OK] | no commercial extraction warnings |
@@ -23,7 +23,7 @@ Render requested: True
 
 ## Warnings
 
-- Playwright render failed (transient_network_error): Navigation failed after 3 attempt(s): Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/ Call log:   - navigating to "https://vishartattoo.com/", waiting until "domcontentloaded" 
+- Playwright render failed (transient_network_error): Navigation failed after 3 attempt(s): Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/black-and-grey-realism-manchester Call log:   - navigating to "https://vishartattoo.com/black-and-grey-realism-manchester", waiting until "domcontentloaded" 
 
 ## Robots Permission Summary
 
@@ -52,8 +52,8 @@ Render requested: True
 
 - status: success
 - HTTP: 200
-- summary: HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible
-- text chars: 45660
+- summary: HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible
+- text chars: 17254
 - main content risk: unknown
 - WAF signals: cloudflare, cf-ray
 - access barrier class: security_code_present_content_accessible
@@ -61,8 +61,8 @@ Render requested: True
 - page block markers: cloudflare_challenge
 - form captcha markers: none
 - captcha outside forms: none
-- main text chars without forms: 3624
-- main block count without forms: 32
+- main text chars without forms: 5191
+- main block count without forms: 47
 
 ## LLM User-Agent HTTP Matrix
 
@@ -70,24 +70,24 @@ HTTP probes must use the full `HTTP User-Agent` string below. The `Robots token`
 
 | Provider | Role | Robots token | HTTP User-Agent | HTTP status | Status | Text chars | Delta | Barrier | WAF signals | Summary |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| OpenAI | AI search indexing | `OAI-SearchBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| OpenAI | ChatGPT user-triggered fetch | `ChatGPT-User` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| OpenAI | model-training crawler | `GPTBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.3; +https://openai.com/gptbot` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Google | Google Search crawl/render | `Googlebot` | `Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Perplexity | AI answer crawler | `PerplexityBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Perplexity | Perplexity user-triggered fetch | `Perplexity-User` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Perplexity-User/1.0; +https://perplexity.ai/perplexity-user)` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Anthropic | Claude crawler | `ClaudeBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ClaudeBot/1.0; +https://www.anthropic.com/claudebot` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Anthropic | Claude search fetch | `Claude-SearchBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; Claude-SearchBot/1.0; +https://www.anthropic.com/claude-searchbot` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Microsoft | Bing/Copilot search crawl | `bingbot` | `Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Microsoft | Bing preview fetch | `BingPreview` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 BingPreview/1.0b` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Yandex | Yandex main indexing | `YandexBot` | `Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
-| Yandex | Yandex availability/accessibility check | `YandexAccessibilityBot` | `Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots)` | 200 | success | 45660 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible |
+| OpenAI | AI search indexing | `OAI-SearchBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| OpenAI | ChatGPT user-triggered fetch | `ChatGPT-User` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| OpenAI | model-training crawler | `GPTBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.3; +https://openai.com/gptbot` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Google | Google Search crawl/render | `Googlebot` | `Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Perplexity | AI answer crawler | `PerplexityBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Perplexity | Perplexity user-triggered fetch | `Perplexity-User` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Perplexity-User/1.0; +https://perplexity.ai/perplexity-user)` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Anthropic | Claude crawler | `ClaudeBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ClaudeBot/1.0; +https://www.anthropic.com/claudebot` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Anthropic | Claude search fetch | `Claude-SearchBot` | `Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; Claude-SearchBot/1.0; +https://www.anthropic.com/claude-searchbot` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Microsoft | Bing/Copilot search crawl | `bingbot` | `Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Microsoft | Bing preview fetch | `BingPreview` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 BingPreview/1.0b` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Yandex | Yandex main indexing | `YandexBot` | `Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
+| Yandex | Yandex availability/accessibility check | `YandexAccessibilityBot` | `Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots)` | 200 | success | 17254 | 0 | security_code_present_content_accessible | cloudflare, cf-ray | HTTP 200, 35117 bytes, text_chars=17254, barrier=security_code_present_content_accessible |
 
 ## Render And Clean Content
 
 - clean extraction status: success
-- clean text chars: 3799
-- clean text ref: geo_agent/data/raw/llm-accessibility/vishartattoo-com-cd75802a3d63/llm_clean_content.txt
+- clean text chars: 5244
+- clean text ref: geo_agent/data/raw/llm-accessibility/vishartattoo-com-4209e609effe/llm_clean_content.txt
 - render status: error
 - render classification: transient_network_error
 - render attempts: 3
@@ -119,7 +119,8 @@ HTTP probes must use the full `HTTP User-Agent` string below. The `Robots token`
 
 ### Extracted Commercial Signals
 
-- clean prices: £140
+- clean prices: £140, £140.
+, £140. 
 - rendered prices: none
 - struck/old-price markers in HTML: False
 - struck/old-price text: none
