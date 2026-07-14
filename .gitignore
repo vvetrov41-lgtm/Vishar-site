@@ -3,3 +3,12 @@ __pycache__/
 *.py[cod]
 .env
 .env.*
+
+# GeoAgent LLM accessibility audit evidence (generated, local-only)
+# Narrow patterns are used deliberately: the broader *_audit.json and *_AUDIT.md
+# patterns would also suppress ACCESSIBILITY_AUDIT.md, PROVIDER_AUDIT.md,
+# accessibility_audit.json, and provider_audit.json, which are distinct workflow
+# artifacts already tracked and potentially recommitted after future runs.
+geo_agent/data/raw/llm-accessibility/
+geo_agent/data/processed/llm_accessibility_audit.json
+geo_agent/reports/LLM_ACCESSIBILITY_AUDIT.md
