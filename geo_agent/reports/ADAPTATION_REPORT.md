@@ -21,7 +21,7 @@ Generated: 2026-07-14T18:28:44+00:00
 
 ## Found Configs
 
-- env files: /home/user/Vishar-site/.env.example
+- env files: ./.env.example
 - masked env keys: {}
 - project marker files: .env.example, package.json
 
@@ -35,7 +35,7 @@ Generated: 2026-07-14T18:28:44+00:00
 
 - found module: yes
 - paths: 
-  - /home/user/Vishar-site/geo_agent/data/import/ai_answers_template.csv
+  - ./geo_agent/data/import/ai_answers_template.csv
 - manual import template: geo_agent/data/import/ai_answers_template.csv
 
 ## Semantic SEO TZ Generator
@@ -46,12 +46,12 @@ Generated: 2026-07-14T18:28:44+00:00
 
 ## Created By Agent
 
-- config: /home/user/Vishar-site/geo_agent/config/geo_agent_config.json
-- reports: /home/user/Vishar-site/geo_agent/reports
-- data: /home/user/Vishar-site/geo_agent/data
-- import templates: /home/user/Vishar-site/geo_agent/data/import
-- final evidence templates: /home/user/Vishar-site/geo_agent/data/import/final_evidence
-- handoff dir: /home/user/Vishar-site/geo_agent/data/handoff
+- config: ./geo_agent/config/geo_agent_config.json
+- reports: ./geo_agent/reports
+- data: ./geo_agent/data
+- import templates: ./geo_agent/data/import
+- final evidence templates: ./geo_agent/data/import/final_evidence
+- handoff dir: ./geo_agent/data/handoff
 
 ## First-Run Intake
 
