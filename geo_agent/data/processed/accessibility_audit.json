@@ -1,0 +1,213 @@
+{
+  "domain": "https://vishartattoo.com/",
+  "network_approved": true,
+  "robots": {
+    "status": "success",
+    "http_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "http_status": 200,
+    "bytes_read": 365,
+    "content_type": "text/plain; charset=utf-8",
+    "main_content_risk": "low_text",
+    "waf_signals": [
+      "cloudflare",
+      "cf-ray"
+    ],
+    "summary": "HTTP 200, 365 bytes"
+  },
+  "sitemap": {
+    "status": "success",
+    "http_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "http_status": 200,
+    "bytes_read": 1825,
+    "content_type": "application/xml",
+    "main_content_risk": "unknown",
+    "waf_signals": [
+      "cloudflare",
+      "cf-ray"
+    ],
+    "summary": "HTTP 200, 1825 bytes"
+  },
+  "user_agent_matrix": [
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "googlebot",
+      "provider": "Google",
+      "role": "Google Search crawl/render",
+      "robots_token": "Googlebot",
+      "user_agent": "Googlebot"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "bingbot",
+      "provider": "Microsoft",
+      "role": "Bing/Copilot search crawl",
+      "robots_token": "bingbot",
+      "user_agent": "bingbot"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "yandexbot",
+      "provider": "Yandex",
+      "role": "Yandex main indexing",
+      "robots_token": "YandexBot",
+      "user_agent": "YandexBot"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "openai_searchbot",
+      "provider": "OpenAI",
+      "role": "AI search indexing",
+      "robots_token": "OAI-SearchBot",
+      "user_agent": "OAI-SearchBot"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "chatgpt_user",
+      "provider": "OpenAI",
+      "role": "ChatGPT user-triggered fetch",
+      "robots_token": "ChatGPT-User",
+      "user_agent": "ChatGPT-User"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.3; +https://openai.com/gptbot",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "gptbot",
+      "provider": "OpenAI",
+      "role": "model-training crawler",
+      "robots_token": "GPTBot",
+      "user_agent": "GPTBot"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ClaudeBot/1.0; +https://www.anthropic.com/claudebot",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "claudebot",
+      "provider": "Anthropic",
+      "role": "Claude crawler",
+      "robots_token": "ClaudeBot",
+      "user_agent": "ClaudeBot"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; Claude-SearchBot/1.0; +https://www.anthropic.com/claude-searchbot",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "claude_searchbot",
+      "provider": "Anthropic",
+      "role": "Claude search fetch",
+      "robots_token": "Claude-SearchBot",
+      "user_agent": "Claude-SearchBot"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "perplexitybot",
+      "provider": "Perplexity",
+      "role": "AI answer crawler",
+      "robots_token": "PerplexityBot",
+      "user_agent": "PerplexityBot"
+    },
+    {
+      "status": "success",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Perplexity-User/1.0; +https://perplexity.ai/perplexity-user)",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "summary": "HTTP 200, 81253 bytes",
+      "id": "perplexity_user",
+      "provider": "Perplexity",
+      "role": "Perplexity user-triggered fetch",
+      "robots_token": "Perplexity-User",
+      "user_agent": "Perplexity-User"
+    }
+  ],
+  "generated_at": "2026-07-14T18:29:12+00:00"
+}

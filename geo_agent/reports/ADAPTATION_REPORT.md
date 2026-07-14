@@ -1,18 +1,18 @@
 # ADAPTATION_REPORT
 
-Generated: 2026-07-14T16:41:18+00:00
+Generated: 2026-07-14T18:28:44+00:00
 
 ## Environment
 
-- OS: Linux-6.12.47-x86_64-with-glibc2.39
-- Python: 3.12.13
+- OS: Linux-6.18.5-x86_64-with-glibc2.39
+- Python: 3.11.15
 - Working directory: .
 - Project root: .
 - Agent runtime: geo-topic-agent 1.4.0
 
 ## Runtime / IDE
 
-- active runtime: codex
+- active runtime: claude
 - detection confidence: explicit
 - detection source: setup_argument
 - runtime profile: geo_agent/runtime/runtime-profile.json
@@ -21,7 +21,7 @@ Generated: 2026-07-14T16:41:18+00:00
 
 ## Found Configs
 
-- env files: ./.env.example
+- env files: /home/user/Vishar-site/.env.example
 - masked env keys: {}
 - project marker files: .env.example, package.json
 
@@ -34,8 +34,8 @@ Generated: 2026-07-14T16:41:18+00:00
 ## AI Answers
 
 - found module: yes
-- paths:
-  - ./geo_agent/data/import/ai_answers_template.csv
+- paths: 
+  - /home/user/Vishar-site/geo_agent/data/import/ai_answers_template.csv
 - manual import template: geo_agent/data/import/ai_answers_template.csv
 
 ## Semantic SEO TZ Generator
@@ -46,12 +46,12 @@ Generated: 2026-07-14T16:41:18+00:00
 
 ## Created By Agent
 
-- config: ./geo_agent/config/geo_agent_config.json
-- reports: ./geo_agent/reports
-- data: ./geo_agent/data
-- import templates: ./geo_agent/data/import
-- final evidence templates: ./geo_agent/data/import/final_evidence
-- handoff dir: ./geo_agent/data/handoff
+- config: /home/user/Vishar-site/geo_agent/config/geo_agent_config.json
+- reports: /home/user/Vishar-site/geo_agent/reports
+- data: /home/user/Vishar-site/geo_agent/data
+- import templates: /home/user/Vishar-site/geo_agent/data/import
+- final evidence templates: /home/user/Vishar-site/geo_agent/data/import/final_evidence
+- handoff dir: /home/user/Vishar-site/geo_agent/data/handoff
 
 ## First-Run Intake
 
