@@ -179,7 +179,12 @@ def llm_accessibility_audit(project_dir: Path, url: str = "", network_approved: 
         parity = {"status": "skipped", "summary": "clean content extraction skipped", "missing_rendered_blocks": [], "extra_clean_blocks": []}
     else:
         parity = compare_content_projection(rendered_text, clean.get("text", ""), clean.get("blocks", []))
-    commercial = commercial_content_audit(clean.get("text", ""), rendered_text, baseline.get("body_text", "") if isinstance(baseline, dict) else "")
+    commercial = commercial_content_audit(
+        clean.get("text", ""),
+        rendered_text,
+        baseline.get("body_text", "") if isinstance(baseline, dict) else "",
+        render_result.get("status") if isinstance(render_result, dict) else "",
+    )
     summary_payload = {
         "url": page_url,
         "network_approved": network_approved,
@@ -551,7 +556,8 @@ def compare_content_projection(rendered_text: str, clean_text: str, clean_blocks
     }
 
 
-def commercial_content_audit(clean_text: str, rendered_text: str, raw_html: str) -> dict[str, Any]:
+def commercial_content_audit(clean_text: str, rendered_text: str, raw_html: str, render_status: str = "") -> dict[str, Any]:
+    rendered_checked = render_status == "success"
     if not clean_text and not rendered_text and not raw_html:
         return {
             "status": "skipped",
@@ -559,9 +565,11 @@ def commercial_content_audit(clean_text: str, rendered_text: str, raw_html: str)
             "warnings": [],
             "clean_signals": commercial_signals("", ""),
             "rendered_signals": commercial_signals("", ""),
+            "rendered_checked": rendered_checked,
+            "evidence_basis": "none",
         }
     clean = commercial_signals(clean_text, raw_html)
-    rendered = commercial_signals(rendered_text, raw_html)
+    rendered = commercial_signals(rendered_text, raw_html) if rendered_checked else commercial_signals("", "")
     warnings = []
     for price in rendered.get("prices", []):
         if price not in clean.get("prices", []):
@@ -572,7 +580,15 @@ def commercial_content_audit(clean_text: str, rendered_text: str, raw_html: str)
         warnings.append("HTML contains struck/old-price markers but clean text may not preserve old-vs-current price semantics")
     if clean.get("hidden_commercial_risk"):
         warnings.append("raw HTML contains commercial-looking hidden/stale text risk")
-    return {"status": "warn" if warnings else "pass", "warnings": warnings, "clean_signals": clean, "rendered_signals": rendered}
+    evidence_basis = "source_html_and_rendered" if rendered_checked else "source_html_only"
+    return {
+        "status": "warn" if warnings else "pass",
+        "warnings": warnings,
+        "clean_signals": clean,
+        "rendered_signals": rendered,
+        "rendered_checked": rendered_checked,
+        "evidence_basis": evidence_basis,
+    }
 
 
 def commercial_signals(text: str, raw_html: str = "") -> dict[str, Any]:
@@ -591,25 +607,88 @@ def commercial_signals(text: str, raw_html: str = "") -> dict[str, Any]:
     return {"prices": prices, "discount_terms": discount_terms, "cta_terms": cta_terms, "service_terms": service_terms, "struck_price_markers": struck_markers, "struck_price_text": dedupe_local(struck_text)[:20], "hidden_commercial_risk": hidden_risk}
 
 
-def render_page_capture(page_url: str, raw_dir: Path, timeout: int, root: Path) -> dict[str, Any]:
+RENDER_TRANSIENT_ERROR_MARKERS = (
+    "ERR_CONNECTION_RESET",
+    "ERR_CONNECTION_REFUSED",
+    "ERR_CONNECTION_CLOSED",
+    "ERR_EMPTY_RESPONSE",
+    "ERR_TIMED_OUT",
+    "ERR_NETWORK_CHANGED",
+    "ERR_ADDRESS_UNREACHABLE",
+    "Timeout",
+)
+RENDER_BLOCKED_RESOURCE_SUFFIXES = (
+    ".mp4", ".webm", ".mov", ".m4v", ".avi",
+    ".glb", ".gltf", ".bin", ".hdr", ".ktx2", ".usdz",
+)
+
+
+def render_page_capture(page_url: str, raw_dir: Path, timeout: int, root: Path, max_attempts: int = 3, settle_wait_ms: int = 4000) -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
     except Exception as exc:  # noqa: BLE001
         return {"status": "blocked_missing_playwright", "summary": f"Playwright is not available: {type(exc).__name__}: {exc}"}
     screenshot_path = raw_dir / "rendered_page.png"
     rendered_text_path = raw_dir / "rendered_text.txt"
+    effective_timeout_ms = max(timeout, 45) * 1000
+    attempts: list[dict[str, Any]] = []
+
+    def block_heavy_assets(route: Any) -> None:
+        request = route.request
+        url_lower = request.url.lower()
+        if request.resource_type == "media" or url_lower.endswith(RENDER_BLOCKED_RESOURCE_SUFFIXES):
+            route.abort()
+        else:
+            route.continue_()
+
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(user_agent=GENERIC_BROWSER_UA, viewport={"width": 1366, "height": 1600})
-            page.goto(page_url, wait_until="networkidle", timeout=max(timeout, 5) * 1000)
+            page.route("**/*", block_heavy_assets)
+
+            last_error: Exception | None = None
+            navigated = False
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    page.goto(page_url, wait_until="domcontentloaded", timeout=effective_timeout_ms)
+                    attempts.append({"attempt": attempt, "status": "success"})
+                    navigated = True
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+                    attempts.append({"attempt": attempt, "status": "error", "error": f"{type(exc).__name__}: {exc}"})
+                    transient = any(marker in str(exc) for marker in RENDER_TRANSIENT_ERROR_MARKERS)
+                    if not transient or attempt == max_attempts:
+                        break
+                    page.wait_for_timeout(1500 * attempt)
+
+            if not navigated:
+                browser.close()
+                transient = bool(last_error) and any(marker in str(last_error) for marker in RENDER_TRANSIENT_ERROR_MARKERS)
+                return {
+                    "status": "error",
+                    "summary": f"Navigation failed after {len(attempts)} attempt(s): {type(last_error).__name__}: {last_error}",
+                    "classification": "transient_network_error" if transient else "navigation_error",
+                    "attempts": attempts,
+                }
+
+            page.wait_for_timeout(settle_wait_ms)
             page.screenshot(path=str(screenshot_path), full_page=True)
-            rendered_text = page.locator("body").inner_text(timeout=max(timeout, 5) * 1000)
+            rendered_text = page.locator("body").inner_text(timeout=effective_timeout_ms)
             browser.close()
         write_text(rendered_text_path, rendered_text)
-        return {"status": "success", "summary": "rendered screenshot and text captured", "screenshot_ref": portable_ref(root, screenshot_path), "rendered_text_ref": portable_ref(root, rendered_text_path), "rendered_text": rendered_text, "rendered_text_chars": len(rendered_text)}
+        return {
+            "status": "success",
+            "summary": "rendered screenshot and text captured",
+            "screenshot_ref": portable_ref(root, screenshot_path),
+            "rendered_text_ref": portable_ref(root, rendered_text_path),
+            "rendered_text": rendered_text,
+            "rendered_text_chars": len(rendered_text),
+            "attempts": attempts,
+        }
     except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "summary": f"{type(exc).__name__}: {exc}"}
+        return {"status": "error", "summary": f"{type(exc).__name__}: {exc}", "attempts": attempts}
 
 
 def compact_http_response(response: dict[str, Any]) -> dict[str, Any]:
@@ -712,6 +791,8 @@ def build_llm_accessibility_report(payload: dict[str, Any]) -> str:
     ]
     critical_items = [f"{row.get('robots_token')}: {row.get('http_status')} {row.get('summary', '')}" for row in http_blocked] + [f"short HTTP UA used for {row.get('robots_token')}" for row in short_ua_rows]
     warning_items = [f"robots blocked: {row.get('robots_token')}" for row in robots_blocked] + [f"{row.get('robots_token')}: {row.get('summary', '')}" for row in http_errors + http_warn] + [str(warning) for warning in commercial.get("warnings", [])]
+    if render.get("status") in {"error", "blocked_missing_playwright"}:
+        warning_items.append(f"Playwright render failed ({render.get('classification', render.get('status'))}): {render.get('summary', 'render evidence missing')}")
     lines = [
         "# LLM_ACCESSIBILITY_AUDIT",
         "",
@@ -787,8 +868,18 @@ def build_llm_accessibility_report(payload: dict[str, Any]) -> str:
         f"- clean text chars: {payload.get('content_extraction', {}).get('text_chars', 0)}",
         f"- clean text ref: {payload.get('content_extraction', {}).get('text_ref', '')}",
         f"- render status: {render.get('status')}",
+        f"- render classification: {render.get('classification', '') or ('n/a' if render.get('status') in {'success', 'skipped'} else 'unclassified')}",
+        f"- render attempts: {len(render.get('attempts', []))}",
         f"- screenshot: {render.get('screenshot_ref', '')}",
         f"- rendered text ref: {render.get('rendered_text_ref', '')}",
+    ])
+    if render.get("status") not in {"success", "skipped"}:
+        confirmed_block = baseline.get("access_barrier_class") == "page_block" or bool(http_blocked)
+        if confirmed_block:
+            lines.append("- render failure note: baseline/bot probes in this same run also show a page-level block; treat render failure as consistent with a confirmed access block.")
+        else:
+            lines.append("- render failure note: not a confirmed website or WAF access block by itself; ordinary HTTP and all crawler probes in this same run returned full page content (HTTP 200). Cloudflare/WAF response headers alone (e.g. `cf-ray`) are not evidence of a block.")
+    lines.extend([
         "",
         "## Block Parity",
         "",
@@ -803,7 +894,9 @@ def build_llm_accessibility_report(payload: dict[str, Any]) -> str:
     lines.extend([f"- {escape_md(block)}" for block in parity.get("missing_rendered_blocks", [])] or ["- none"])
     lines.extend(["", "### Extra Clean Blocks Not Found In Rendered Text", ""])
     lines.extend([f"- {escape_md(block)}" for block in parity.get("extra_clean_blocks", [])] or ["- none"])
-    lines.extend(["", "## Commercial Correctness", "", f"- status: {commercial.get('status')}"])
+    lines.extend(["", "## Commercial Correctness", "", f"- status: {commercial.get('status')}", f"- evidence basis: {commercial.get('evidence_basis', 'source_html_only')}"])
+    if not commercial.get("rendered_checked"):
+        lines.append("- rendered commercial parity: not verified (rendering did not succeed or was not requested); this check reflects source HTML / clean extraction only.")
     lines.extend([f"- {escape_md(warning)}" for warning in commercial.get("warnings", [])] or ["- no commercial extraction warnings"])
     clean_signals = commercial.get("clean_signals", {})
     rendered_signals = commercial.get("rendered_signals", {})

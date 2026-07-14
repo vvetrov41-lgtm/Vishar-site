@@ -722,7 +722,25 @@
   },
   "render": {
     "status": "error",
-    "summary": "Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/\nCall log:\n  - navigating to \"https://vishartattoo.com/\", waiting until \"networkidle\"\n"
+    "summary": "Navigation failed after 3 attempt(s): Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/\nCall log:\n  - navigating to \"https://vishartattoo.com/\", waiting until \"domcontentloaded\"\n",
+    "classification": "transient_network_error",
+    "attempts": [
+      {
+        "attempt": 1,
+        "status": "error",
+        "error": "Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/\nCall log:\n  - navigating to \"https://vishartattoo.com/\", waiting until \"domcontentloaded\"\n"
+      },
+      {
+        "attempt": 2,
+        "status": "error",
+        "error": "Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/\nCall log:\n  - navigating to \"https://vishartattoo.com/\", waiting until \"domcontentloaded\"\n"
+      },
+      {
+        "attempt": 3,
+        "status": "error",
+        "error": "Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/\nCall log:\n  - navigating to \"https://vishartattoo.com/\", waiting until \"domcontentloaded\"\n"
+      }
+    ]
   },
   "content_parity": {
     "status": "skipped",
@@ -754,7 +772,9 @@
       "struck_price_markers": false,
       "struck_price_text": [],
       "hidden_commercial_risk": false
-    }
+    },
+    "rendered_checked": false,
+    "evidence_basis": "source_html_only"
   },
-  "generated_at": "2026-07-14T19:34:15+00:00"
+  "generated_at": "2026-07-14T20:07:55+00:00"
 }
