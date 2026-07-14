@@ -1,0 +1,25 @@
+{
+  "active_runtime": "codex",
+  "confidence": "explicit",
+  "source": "setup_argument",
+  "requested_runtime": "codex",
+  "markers": {
+    "codex": [
+      "AGENTS.md"
+    ],
+    "claude": [],
+    "cursor": [],
+    "opencode": [],
+    "antigravity": [],
+    "generic": [],
+    "cli": [],
+    "node": [
+      "package.json"
+    ]
+  },
+  "present_runtimes": [
+    "codex",
+    "node"
+  ],
+  "generated_at": "2026-07-14T16:41:18+00:00"
+}

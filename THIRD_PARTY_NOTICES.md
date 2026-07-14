@@ -1,7 +1,22 @@
 # Third-Party Notices
 
-This file lists third-party software vendored into this repository under
-`assets/vendor/`.
+This file lists third-party software vendored into this repository.
+
+## GEO Topic Agent
+
+- **Package:** `geo-topic-agent-runtime`
+- **Version:** `1.4.0`
+- **Source:** user-provided distribution archive
+- **Purpose:** repository-scoped GEO/AEO research and planning runtime for Codex
+- **Installed paths:** `.geo-topic-agent-runtime/` and `.agents/skills/`
+- **License:** GEO Topic Agent Usage License 1.0
+- **License file:** `.geo-topic-agent-runtime/LICENSE.md`
+- **Local compatibility patch:** the installed copy corrects the reviewed-plan
+  keyword passed by `setup_environment()` to `apply_runtime_adaptation()`;
+  attribution and license enforcement are unchanged.
+
+Use of this runtime remains subject to its attribution and redistribution
+conditions. It is development tooling and is not loaded by the public website.
 
 ## Three.js
 

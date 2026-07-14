@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "purpose": "Template only. Approved enrich-urls writes this automatically as <topic_slug>_url_enrichment_summary.json.",
+  "topic": "<topic>",
+  "topic_slug": "<topic-slug>",
+  "network_approved": true,
+  "selected_urls": ["https://example.com/page"],
+  "max_urls": 10,
+  "timeout": 12,
+  "enriched_rows": 1,
+  "errors": [],
+  "raw_dir": "geo_agent/data/raw/pages/<run_id>",
+  "generated_at": "YYYY-MM-DDTHH:MM:SS+00:00"
+}

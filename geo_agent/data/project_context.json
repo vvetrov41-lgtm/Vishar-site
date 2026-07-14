@@ -1,0 +1,110 @@
+{
+  "domain": "https://vishartattoo.com/",
+  "brand": "Vladimir Vishar",
+  "brand_variants": [
+    "Vladimir Vishar",
+    "Vishar Tattoo",
+    "Vladimir Vishar Tattoo",
+    "vishartattoo.com",
+    "vladimir_vishar"
+  ],
+  "brand_variants_status": "needs_user_confirmation",
+  "brand_variants_source": "agent_proposed",
+  "brand_variants_confirmation_required": true,
+  "target_goal": "both",
+  "topic": "",
+  "topic_cluster_intake_deferred": false,
+  "semantic_cluster_queries": [],
+  "cluster_query_count": 0,
+  "semantic_cluster_topic": "",
+  "semantic_cluster_status": "missing",
+  "semantic_cluster_source": "not_provided",
+  "semantic_cluster_confirmed": false,
+  "semantic_cluster_confirmation_required": true,
+  "region": {
+    "country": "United Kingdom",
+    "city": "Manchester and Salford",
+    "language": "English (en-GB)",
+    "scope_status": "resolved",
+    "scope_provenance": "project_context",
+    "google": {
+      "gl": "gb",
+      "hl": "en"
+    },
+    "yandex": {
+      "lr": 213
+    },
+    "device": {
+      "default": "desktop",
+      "collect_mobile": false
+    }
+  },
+  "language": "English (en-GB)",
+  "search_engines": [
+    "google"
+  ],
+  "competitors": [],
+  "site_pages": [
+    "https://vishartattoo.com/",
+    "https://vishartattoo.com/about/",
+    "https://vishartattoo.com/black-and-grey-realism-manchester/",
+    "https://vishartattoo.com/colour-realism-tattoo-manchester/",
+    "https://vishartattoo.com/cover-up-tattoo-manchester/",
+    "https://vishartattoo.com/faq/",
+    "https://vishartattoo.com/aftercare/"
+  ],
+  "products_services": [
+    "Custom Black & Grey Realism tattoos",
+    "Custom Colour Realism tattoos",
+    "Tattoo cover-ups",
+    "Tattoo consultations"
+  ],
+  "documents": [],
+  "site_discovery_approved": false,
+  "context_notes": "Personal portfolio and enquiry website for tattoo artist Vladimir Vishar, based at No Regrets Studios Manchester in Salford. Technical SEO and LLM accessibility remediation through PR #159 is already complete; future GEO work must distinguish confirmed evidence from inference and must not mass-generate pages.",
+  "context_not_applicable_decisions": [],
+  "audit_decisions": {},
+  "context_quality_gate": {
+    "status": "fail",
+    "site_context_status": "not_collected",
+    "brand_variants_status": "needs_user_confirmation",
+    "brand_variants_confirmed": false,
+    "brand_variants_waivable": false,
+    "material_open_questions": [],
+    "missing_context_fields": [],
+    "accepted_not_applicable_fields": [],
+    "accepted_not_applicable_decisions": [],
+    "rejected_not_applicable_decisions": []
+  },
+  "context_acquisition": {
+    "documents_provided": false,
+    "site_discovery_approved": false,
+    "network_required_for_site_discovery": true,
+    "accessibility_audit_separate": true,
+    "deep_context_collection_status": "not_collected",
+    "deep_context_completed_at": "",
+    "post_context_next_step": "confirm_brand_variants",
+    "deep_context_offer_required": true,
+    "deep_context_run_recommended": true,
+    "recommended_deep_context_max_pages": 30,
+    "recommended_deep_context_scope": [
+      "homepage",
+      "user-provided core landing pages",
+      "main product/service/course pages",
+      "header and navigation links",
+      "footer links",
+      "pricing, tariffs, payment, subscription, checkout",
+      "trial, demo, free-access, delivery or shipping pages when relevant",
+      "contacts, about/company/team/author, legal, terms, refund, requisites",
+      "cases, reviews, FAQ and trust pages"
+    ],
+    "recommended_deep_context_command": "python .geo-topic-agent-runtime/geo_agent_cli.py collect-context --domain \"https://vishartattoo.com/\" --allow-site-discovery --network-approved --max-pages 30 --pages \"https://vishartattoo.com/; https://vishartattoo.com/about/; https://vishartattoo.com/black-and-grey-realism-manchester/; https://vishartattoo.com/colour-realism-tattoo-manchester/; https://vishartattoo.com/cover-up-tattoo-manchester/; https://vishartattoo.com/faq/; https://vishartattoo.com/aftercare/\""
+  },
+  "assumptions": [
+    "Brand variants are not confirmed. Ask the user to confirm or edit all brand spellings, aliases, transliterations, domain spellings, and product-name aliases before citation visibility or monitoring work.",
+    "Topic was not provided.",
+    "No project documents were provided and public site discovery was not approved yet.",
+    "Deep product/business site context has not been collected yet. Ask the user to approve public site discovery or provide documents/local HTML snapshots before SERP, QFO, TZ, placement, visibility, or monitoring work."
+  ],
+  "updated_at": "2026-07-14T16:44:33+00:00"
+}

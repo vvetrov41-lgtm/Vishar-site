@@ -1,0 +1,14 @@
+# Base runtime intentionally uses only Python standard library.
+# Optional packages may be installed by the target project after approval:
+# python-dotenv
+# pydantic
+# pyyaml
+# typer
+# rich
+# httpx
+# beautifulsoup4
+# lxml
+# trafilatura
+# pandas
+# scikit-learn
+# playwright

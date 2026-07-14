@@ -1,0 +1,472 @@
+{
+  "name": "geo-topic-agent",
+  "version": "1.4.0",
+  "maturity": "production",
+  "job_to_be_done": "Guide one site topic plus its semantic query cluster through GEO/AEO setup, evidence collection or import, fan-out/QFO analysis, content planning, semantic SEO TZ handoff, product-fit external placement strategy, and monitoring, plus page-level LLM accessibility audits for specific user-provided URLs. It also measures citation visibility like a small SEO rank tracker across queries, search engines, and regions, and co-designs project-specific GEO/AEO dashboard requirements and data contracts without shipping a fixed UI.",
+  "target_users": [
+    "SEO/GEO/AEO specialist",
+    "site owner",
+    "content strategist",
+    "GEO workflow operator"
+  ],
+  "scope": {
+    "in": [
+      "one project environment adaptation",
+      "one topic + semantic query cluster workflow",
+      "project context capture",
+      "site accessibility audit",
+      "SERP evidence import or approved collection planning",
+      "AI answer evidence import or approved collection planning",
+      "fan-out and QFO map",
+      "content plan",
+      "semantic SEO TZ generator handoff JSON",
+      "external placement strategy",
+      "monitoring plan",
+      "provider credential audit",
+      "approved XMLRiver live SERP collection with raw XML preservation",
+      "approved URL enrichment and page signal extraction",
+      "SQLite persistence",
+      "requirement-level completion audit",
+      "approved DataForSEO Google Organic Live collection with AI Overview parser",
+      "approved semantic TZ generator invocation with generator_contract_ref",
+      "page-level LLM/search/agent accessibility audit for a user-provided URL",
+      "robots.txt permission matrix for OpenAI, Google/Gemini, Perplexity, Claude, Bing/Copilot, Yandex, and generic bot tokens",
+      "baseline server access, LLM user-agent probing, clean content extraction, rendered text/screenshot evidence, block parity, and commercial content correctness checks",
+      "dedicated QFO query analysis workflow from a user-provided query batch",
+      "approved XMLRiver QFO SERP+AI collection for every supplied seed query",
+      "AI-cited title extraction, title-as-semantics inventory, agent/subagent logical clustering, hub/child content plan, and optional ChatGPT QFO import",
+      "deterministic page-level TZ generation from QFO and AI-cited competitor evidence",
+      "competitor content parsing, parsing quality checks, n-gram analysis, and AI-citeable chunk specifications",
+      "query-level organic SERP position and AI-answer citation visibility measurement across search engines and regions",
+      "append-only citation visibility history for repeated measurements and dynamics",
+      "product-fit external placement opportunities for one query cluster",
+      "enter_existing and create_owned placement strategy cards with product-fit, signal-strength, platform-value, and feasibility scoring",
+      "quality gate for artificial product insertion, domain-popularity-only ideas, language/GEO mismatch, weak AI-signal format, invented published URLs, and duplicate angles",
+      "separate product/site context collection from homepage, landing pages, header/footer links, and commercial pages",
+      "project context brief for UTP, product mechanics, CTA, pricing/payment/trial/delivery, limitations, proof, and important page roles",
+      "hard boundary that project context collection must not run accessibility, robots, sitemap, user-agent, WAF, anti-bot, or LLM access audits",
+      "after successful deep project-context collection, offer site-level audit and target-page LLM accessibility audit before topic/semantic cluster intake",
+      "checklist-first accessibility audit output with [OK], [WARN], [CRIT], and [SKIP] rows plus full HTTP User-Agent bot probes",
+      "co-design of project-specific GEO/AEO dashboard requirements, metrics, data grain, dimensions, filters, screens, refresh policy, and acceptance criteria",
+      "dashboard data-quality metrics for paid request reconciliation, parser completeness, raw evidence coverage, freshness, and encoding integrity"
+    ],
+    "out": [
+      "autonomous paid API use without approval",
+      "external publishing",
+      "CMS edits",
+      "outreach sending",
+      "guaranteeing AI citations",
+      "multi-project portfolio dashboard",
+      "complex multi-project dashboard UI for rank tracking",
+      "using a bare topic name as the query list for SERP, AI citation, QFO, TZ, placement, monitoring, or visibility work",
+      "a bundled fixed dashboard UI, frontend project, mock dataset, or demo project",
+      "dashboard UI implementation before user approval of requirements and implementation stack"
+    ]
+  },
+  "autonomy": "local_write_and_draft_only; external paid or network reads require explicit approval; external writes denied",
+  "risk_level": [
+    "private_read",
+    "local_write",
+    "external_paid_or_metered_read_when_approved"
+  ],
+  "trigger_surface": {
+    "should_trigger": [
+      "run GEO agent for a site and topic",
+      "build GEO/AEO plan for one topic",
+      "prepare QFO/fan-out map",
+      "turn SERP/AI evidence into a content plan",
+      "prepare semantic SEO TZ handoff",
+      "find external cited URL placement opportunities",
+      "make monitoring prompts and KPIs",
+      "check whether a specific URL is accessible to ChatGPT, OpenAI search, Perplexity, Claude, Bing/Copilot, Google/Gemini, or Yandex bots",
+      "audit robots.txt, server access, rendered page evidence, clean LLM-style content, and commercial price/service visibility for one page",
+      "analyze this batch of QFO queries through live SERP and AI-answer evidence",
+      "cluster AI-cited page titles into hub and child content themes",
+      "generate a TZ for this page topic from QFO and competitor evidence",
+      "create page structure, n-grams, and required chunks for a GEO/AEO content brief",
+      "measure my site positions and AI citations for this query list across Google/Yandex and regions",
+      "track whether AI answers cite my URL and mention my brand or product as a solution",
+      "find product-fit external placement ideas for this cluster",
+      "where can we naturally place or mention this product based on SERP, AI citations, and QFO evidence",
+      "collect project context from my site",
+      "understand product, UTP, commercial pages, and important site pages before GEO work",
+      "co-design a GEO/AEO analytics dashboard and metric dictionary for this project",
+      "define dashboard screens, filters, history, and data-quality indicators before building the UI"
+    ],
+    "should_not_trigger": [
+      "generic one-off SEO advice",
+      "semantic content rewrite only",
+      "large multi-project AEO dashboard work",
+      "publishing or outreach",
+      "paid API collection without approval",
+      "security penetration testing or bypassing anti-bot systems",
+      "building a dashboard UI for many projects without explicit scope",
+      "generic list of ad platforms without cluster/product fit",
+      "claims that a placement was secured or published without external evidence",
+      "run technical accessibility audit when user only asked to collect project context",
+      "check robots/sitemap/user-agent access inside product context collection",
+      "copy a prebuilt dashboard without project requirements",
+      "ship demo or test-project data as a user dashboard"
+    ],
+    "near_neighbors": [
+      "semantic SEO content optimizer",
+      "GEO/AEO analytics dashboard agent",
+      "commercial proposal builder",
+      "research agent"
+    ]
+  },
+  "core_loop": [
+    "read state and project config",
+    "adapt or verify environment",
+    "build context pack",
+    "propose local or approved external tool use",
+    "validate permission and inputs",
+    "execute or record skip observation",
+    "write reports and compact data artifacts",
+    "run quality gates",
+    "write state",
+    "return next valid action"
+  ],
+  "primary_outputs": [
+    "ADAPTATION_REPORT.md",
+    "PROJECT_CONTEXT.md",
+    "ACCESSIBILITY_AUDIT.md",
+    "FANOUT_MAP.md",
+    "SERP_AI_ANALYSIS.md",
+    "CONTENT_PLAN.md",
+    "TZ_HANDOFF_REPORT.md",
+    "PLACEMENT_STRATEGY.md",
+    "MONITORING_PLAN.md",
+    "semantic TZ handoff JSON",
+    "PROVIDER_AUDIT.md",
+    "SERP_COLLECTION.md",
+    "URL_ENRICHMENT.md",
+    "COMPLETION_AUDIT.md",
+    "geo_topic_agent.sqlite",
+    "TZ_GENERATOR_INVOCATION.md",
+    "generated TZ output artifacts",
+    "FINAL_EVIDENCE_AUDIT.md",
+    "LLM_ACCESSIBILITY_AUDIT.md",
+    "QFO_QUERY_ANALYSIS.md",
+    "QFO_CHATGPT_REQUEST.md",
+    "PAGE_TZ.md",
+    "PAGE_TZ_GENERATION.md",
+    "runtime-profile.json",
+    "birth-plan.json",
+    "placement opportunity CSV",
+    "placement opportunity quality summary JSON",
+    "project context pages CSV",
+    "project context site discovery JSON",
+    "DASHBOARD_REQUIREMENTS.md",
+    "dashboard_data_contract.json",
+    "metric_dictionary.csv",
+    "DASHBOARD_ACCEPTANCE.md",
+    "CITATION_SOURCE_INVENTORY.md",
+    "citation_source_inventory.csv"
+  ],
+  "data_sources": [
+    "user-provided topic/cluster name and confirmed semantic_cluster_queries query list; topic-only input must ask for queries or draft a pending cluster for approval",
+    "user-provided domain, brand, confirmed brand variants/aliases, topic, region, language, competitors, pages",
+    "local .env names only with masked values",
+    "existing project XMLRiver/SERP/AI-answer modules",
+    "manual SERP CSV",
+    "manual AI answer CSV",
+    "approved XMLRiver or DataForSEO provider output",
+    "existing semantic SEO TZ generator",
+    "approved XMLRiver live XML responses",
+    "official XMLRiver region and language reference files: https://xmlriver.com/files/geo.csv and https://xmlriver.com/files/langs.xlsx",
+    "approved fetched URL HTML snapshots",
+    "approved DataForSEO Google Organic Live JSON responses",
+    "semantic TZ generator command output",
+    "approved public page URL, robots.txt, HTTP response metadata, raw HTML snapshot, clean content projection, rendered screenshot/text when Playwright is available",
+    "user-provided QFO seed query batch",
+    "optional user-provided ChatGPT QFO export",
+    "previously parsed AI citation competitors",
+    "local competitor content snapshots or approved HTTP competitor page fetches",
+    "user-provided cluster queries, product/service description, target action, GEO, language, preferred platforms, SERP URLs, AI citation/source URLs, and QFO/fan-out queries",
+    "previously generated fan-out, QFO, SERP rows, AI answer rows, and SERP/AI analysis artifacts for the same topic",
+    "homepage, header/footer links, user-provided landing pages, commercial pages, local HTML snapshots, and documents for product context collection"
+  ],
+  "tool_contracts": [
+    "install_runtime",
+    "setup_environment",
+    "init_project_context",
+    {
+      "id": "collect_project_context",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py collect-context",
+      "purpose": "Collect evidence-backed site/product/brand context without accessibility audits or topic/cluster intake.",
+      "permission": "local snapshots/documents allowed; public site fetch requires --network-approved; no robots/sitemap/user-agent/WAF/LLM access checks",
+      "outputs": [
+        "PROJECT_CONTEXT.md",
+        "project_context.json",
+        "project_context_site_discovery.json",
+        "project_context_pages.csv"
+      ],
+      "post_success_next_actions": [
+        "review_context_quality",
+        "obtain_explicit_user_confirmation_of_all_brand_variants",
+        "resolve_or_mark_not_applicable_all_mandatory_context_fields",
+        "offer_site_audit",
+        "offer_target_page_llm_audit",
+        "then_collect_topic_and_user_semantic_cluster"
+      ]
+    },
+    "audit_accessibility",
+    "run_topic_workflow",
+    "generate_semantic_tz_handoff",
+    {
+      "id": "find_placements",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py find-placements",
+      "purpose": "Generate 10-30 draft product-fit external placement opportunity cards for one cluster, split into enter_existing and create_owned strategies.",
+      "quality_gate": "downgrade or remove ideas when product fit is artificial, evidence is only domain popularity, language/GEO is wrong, AI signal is implausible, URL is invented, or angle duplicates another card",
+      "outputs": [
+        "PLACEMENT_STRATEGY.md",
+        "placement opportunities CSV",
+        "placement opportunities summary JSON"
+      ]
+    },
+    "build_monitoring_plan",
+    "provider_audit",
+    {
+      "id": "collect_serp",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py collect-serp",
+      "purpose": "Plan or run SERP collection with explicit provider, search engine, region, language, requested top URL count (`--depth`, not pagination pages), calculated paid page request count, XMLRiver max thread scope (`XMLRIVER_MAX_THREADS=10`), and AI-answer scope.",
+      "xmlriver_scope": "Google XMLRiver uses loc from https://xmlriver.com/files/geo.csv plus lr language; Yandex XMLRiver uses numeric lr region id plus lang; no live run may rely on account defaults.",
+      "outputs": [
+        "SERP_COLLECTION.md",
+        "serp_collection_plan.json",
+        "collection_summary.json",
+        "raw XML/JSON request and response files"
+      ]
+    },
+    "enrich_urls",
+    "completion_audit",
+    "invoke_tz_generator",
+    "validate_project_state",
+    "final_evidence_audit",
+    "llm_accessibility_audit",
+    "qfo_query_analysis",
+    "page_tz_generator",
+    {
+      "id": "citation_visibility_tracker",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py citation-visibility",
+      "purpose": "Create query x search engine x region visibility rows for organic position, AI answer presence, user URL citation, and answer-body brand/product mention as two separate AI visibility layers.",
+      "permission": "local imported-data analysis allowed; live provider collection requires explicit network and paid-provider approval",
+      "outputs": [
+        "CITATION_VISIBILITY.md",
+        "visibility run folder",
+        "append-only visibility history CSV/JSONL",
+        "separate url_citation and brand_mention metrics"
+      ]
+    }
+  ],
+  "permission_model": {
+    "local_files_under_geo_agent": "allowed",
+    "target_project_read": "allowed for adaptation and approved source files",
+    "env_secret_values": "tool may detect presence and mask only",
+    "network_access": "approval-gated",
+    "paid_provider_access": "approval-gated with provider, query count, requested top URL count (`--depth`, not pagination pages), calculated paid page request count, GEO, language, and budget",
+    "external_writes": "denied",
+    "llm_accessibility_audit": "approval-gated network read; local artifact writes under geo_agent; no bypassing WAF/captcha; no external writes",
+    "qfo_query_analysis": "local artifact writes allowed; XMLRiver SERP+AI collection requires explicit network and paid-provider approval with engines, query count, requested top URL count (`--depth`, not pagination pages), calculated paid page request count, region, language, and budget scope; ChatGPT QFO import is optional user-supplied local input",
+    "page_tz_generator": "local artifact writes allowed; competitor HTTP fetch requires explicit network approval; local snapshots are allowed; external publishing denied",
+    "product_placement_opportunities": "local artifact writes allowed; external outreach, publishing, sponsored buys, account actions, and third-party edits are denied; URLs may be cited only when supplied or collected as evidence",
+    "project_context_collection": "local documents/snapshots allowed; public homepage/landing/commercial page fetch requires explicit network approval; accessibility audits and external writes denied in this workflow"
+  },
+  "state_and_memory": {
+    "state_file": "geo_agent/STATE.md after setup; state/STATE.md is the startup template for a new GEO/AEO project",
+    "project_config": "geo_agent/config/geo_agent_config.json",
+    "reports_dir": "geo_agent/reports",
+    "data_dir": "geo_agent/data",
+    "handoff_dir": "geo_agent/data/handoff",
+    "local_memory_template": "memory/LOCAL_MEMORY.md"
+  },
+  "budgets": {
+    "default_max_steps": 40,
+    "default_max_tool_calls": 20,
+    "default_max_runtime_minutes": 60,
+    "default_max_serp_queries_without_explicit_budget": 50,
+    "default_max_repair_iterations": 3
+  },
+  "claim_boundary": {
+    "accepted_evidence": "local smoke validation, XMLRiver parser fixture, DataForSEO parser fixture, provider audit, manual SERP/AI evidence import, SERP dry-run plans, semantic TZ generator invocation fixture, URL enrichment approval gate, generated reports, SQLite persistence, schema checks, safe path checks; final evidence contract and runbook for external proof boundary; LLM accessibility contract gate, no-network approval guard fixture, and install-simulation skip evidence. QFO local contract, blocked-no-approval reports, parser/cluster smoke checks, and install simulation prove the workflow shape. Page TZ generator contract, local snapshot fixture, parse-quality gate, n-gram output, chunk output, and install simulation prove deterministic generation behavior. Product placement opportunity contract, deterministic scoring fields, summary JSON, and CLI smoke fixture prove draft strategy generation behavior. Project context collector contract, local HTML fixture, no-accessibility-audit guard, and report artifacts prove context/audit separation.",
+    "pending_evidence": "actual live XMLRiver provider run with explicit search engine, region, language, requested top URL count (`--depth`, not pagination pages), calculated paid page request count, request budget, raw XML, request params, and XMLRiver reference-file scope; actual live DataForSEO provider run; actual live URL enrichment fetches; and independent GEO workflow reviews unless the target user explicitly approves or descopes them; page-specific LLM accessibility live HTTP/render evidence until network approval and target URL run are recorded. Live QFO XMLRiver proof remains pending until the user approves a concrete query batch, region, language, engines, requested top URL count (`--depth`, not pagination pages), and paid request scope. Live competitor HTTP fetch quality remains pending until approved for a concrete topic and URLs. Actual placement inclusion, publication, outreach acceptance, sponsored listing purchase, or third-party page update remains pending external evidence and is outside draft-only workflow.",
+    "forbidden_claims": [
+      "guarantees AI citation",
+      "external placements secured",
+      "live provider data collected in a target project when only dry-run or fixture evidence exists",
+      "semantic SEO generator invoked in a target project when only fixture invocation evidence exists",
+      "100% live-proven on real provider data when final-evidence-contract items are still pending",
+      "live URL enrichment completed in a target project when only approval-gate evidence exists",
+      "independent GEO workflow review completed when only self-review reports exist",
+      "a page is accessible to a named LLM when only robots.txt was checked and no approved HTTP/render evidence exists",
+      "the attribution notice, license file, attribution reference, or validation checks may be removed or ignored",
+      "attribution timing is broader than major completed deliverable final answers",
+      "product placement opportunities are guaranteed to produce AI citations",
+      "a third-party placement exists when only a draft opportunity card was generated",
+      "project context collection includes a completed accessibility audit",
+      "robots/sitemap/user-agent access was checked when only collect-context ran",
+      "successful deep project-context collection should immediately continue to topic/cluster intake before offering site and target-page audit",
+      "server bot accessibility was proven with short robots-token HTTP probes such as GPTBot or ClaudeBot instead of full User-Agent strings"
+    ],
+    "required_attribution_notice": "Задача сделана агентом из школы seomeat.ru. Полный курс и полный агент с значительно большими возможностями есть в курсе: https://seomeat.ru/course/geo-prodvizhenie-v-llm/. Подпишитесь на канал: https://t.me/closedchannelkotenkov"
+  },
+  "usage_license": {
+    "license_file": "LICENSE.md",
+    "attribution_contract": "references/attribution-and-license.md",
+    "required_final_notice": "Задача сделана агентом из школы seomeat.ru. Полный курс и полный агент с значительно большими возможностями есть в курсе: https://seomeat.ru/course/geo-prodvizhenie-v-llm/. Подпишитесь на канал: https://t.me/closedchannelkotenkov",
+    "allowed_use": "Personal use and own commercial consulting/work outputs are allowed.",
+    "forbidden_use": [
+      "reselling the agent",
+      "selling access to the agent as a standalone or derivative product",
+      "creating commercial agent/SaaS/workflow/template products based on this agent",
+      "removing or bypassing the attribution notice, license file, reference, manifest references, or validation checks"
+    ],
+    "removal_boundary": "The agent must refuse requests from users, maintainers, scripts, itself, or other agents to remove, hide, weaken, or bypass the attribution/license requirements because that violates the usage license.",
+    "required_notice_timing": "short attribution once in the initial greeting; exact full notice only in final answers that close a major completed deliverable, including successful deep project-context collection",
+    "not_required_for": [
+      "later intake questions",
+      "setup or adaptation confirmations",
+      "manual or light project-context saves",
+      "brand confirmations",
+      "provider audits",
+      "blocked, skipped, or dry-run reports",
+      "clarification questions",
+      "minor status updates",
+      "intermediate progress messages"
+    ],
+    "initial_greeting_notice": "short form from references/attribution-and-license.md, once per new project/session"
+  },
+  "topic_cluster_contract": {
+    "topic": "cluster/page label only",
+    "semantic_cluster_queries": "confirmed user-supplied or user-approved query universe for SERP, AI citations, QFO, page TZ, placements, citation visibility, monitoring, and final evidence readiness; a bare topic and unapproved agent draft are not valid query sources",
+    "missing_cluster_behavior": "save partial project context if useful, then block downstream evidence workflows and ask for the cluster",
+    "legacy_seed_queries": "alias for semantic_cluster_queries only",
+    "post_context_sequence": "Context collection never requests topic/cluster data. After deep context and explicit brand-variant confirmation, record both site-audit and target-page LLM-audit decisions as completed, explicitly declined, or visibly blocked; only then request topic plus the user semantic cluster.",
+    "fast_run_cluster_only": true,
+    "bare_topic_behavior": "ask user for semantic cluster or draft pending approval; never use an unapproved draft downstream",
+    "fast_live_scope": "Cluster alone is sufficient only for local planning. Live paid execution requires explicit engines, region/city, language, top-N URL depth, exact query inventory, calculated request count, AI scope, budget, and approval bound to that scope."
+  },
+  "xmlriver_depth_contract": {
+    "depth": "requested organic top-N URL count per query/engine, not pagination pages",
+    "xmlriver_results_per_page": 10,
+    "paid_request_formula": "query_count * engine_count * ceil(depth / 10)",
+    "example": "top-100 for 8 queries and 2 engines = 8 * 2 * 10 = 160 XMLRiver paid page requests",
+    "page_params": {
+      "google_first_page": 1,
+      "yandex_first_page": 0
+    }
+  },
+  "xmlriver_thread_contract": {
+    "official_reference": "https://xmlriver.com/api/api-alt/",
+    "max_threads": 10,
+    "runtime_constant": "XMLRIVER_MAX_THREADS",
+    "execution_policy": "approved live XMLRiver collection always uses a bounded 10-worker queue for paid page requests",
+    "accounting_boundary": "threads control parallelism only; paid request count remains query_count * engine_count * ceil(depth / 10)",
+    "required_artifact_fields": [
+      "xmlriver_max_threads",
+      "xmlriver_thread_slots_planned",
+      "planned_paid_requests"
+    ]
+  },
+  "resources": [
+    "deep site/product/brand context gate without topic/cluster intake",
+    "explicit user confirmation of all brand/domain/product variants",
+    "separate site and target-page audit decisions before topic intake",
+    "skills/analytics-dashboard-planner/SKILL.md",
+    "references/dashboard-analytics-contract.md"
+  ],
+  "workflow": [
+    "adapt environment",
+    "collect and quality-gate deep context without running audits or requesting topic/cluster",
+    "obtain explicit user confirmation of all brand variants",
+    "complete, decline, or visibly block both site and target-page LLM audits",
+    "request topic plus exact user semantic cluster",
+    "run exact-scope QFO evidence and user-approved content planning",
+    "generate page TZ",
+    "measure append-only monitoring layers",
+    "co-design dashboard requirements only when requested; construct nothing before user approval"
+  ],
+  "permission_matrix": {
+    "project_context_collection": "local documents/snapshots allowed; public site fetch requires explicit network approval; audit checks and topic/cluster intake are forbidden in this stage; incomplete mandatory facts remain lower-assurance"
+  },
+  "first_run_paths": {
+    "full": [
+      "environment_adaptation",
+      "deep_site_product_brand_context",
+      "explicit_user_confirmation_of_all_brand_variants",
+      "site_audit_decision",
+      "target_page_llm_audit_decision",
+      "topic_plus_user_semantic_cluster",
+      "qfo_and_user_approved_content_plan",
+      "page_tz",
+      "monitoring"
+    ],
+    "context_completion_gate": "Every mandatory context fact is evidenced or explicitly user-confirmed not applicable; unknown fields remain lower-assurance with open questions.",
+    "fast": {
+      "required_new_input": "confirmed semantic query cluster; topic label is naming metadata",
+      "planning_scope": "reuse explicit saved project scope",
+      "live_scope_gate": "ask for any missing engines, region/city, language, or top-N URL depth, then obtain exact approval bound to queries, AI scope, paid request count, and budget",
+      "forbidden": "no bare topic, unapproved cluster, implicit provider defaults, or implicit Moscow/Russian/depth-10 scope"
+    }
+  },
+  "installation_contract": {
+    "source": "freshly extracted runtime archive with exact FILES.sha256 inventory",
+    "destination": "<project>/.geo-topic-agent-runtime",
+    "staging_launcher": "python geo_agent_cli.py",
+    "installed_launcher": "python .geo-topic-agent-runtime/geo_agent_cli.py",
+    "canonical_path_resolution": "all package-relative contracts, skills, references, schemas, state, memory, and adapters resolve under .geo-topic-agent-runtime",
+    "pythonpath_dependency": false,
+    "overwrite_policy": "never overwrite existing installation or native project instructions",
+    "native_adapter_policy": "explicit install only; collision produces a package-owned merge candidate"
+  },
+  "qfo_content_plan_contract": {
+    "semantic_unit": "provider AI-cited page title or exact organic URL-title match",
+    "deterministic_stage": "full title semantics workpack only; quality_fail until agent clustering and user approval",
+    "required_page_fields": [
+      "page_id",
+      "cluster_name",
+      "page_type",
+      "intent",
+      "target_title",
+      "included_title_ids",
+      "cannibalization_guard",
+      "approval_status",
+      "approved_by"
+    ],
+    "coverage": "every title ID assigned exactly once or excluded with a reason",
+    "reuse": "approved plan is validated with --reuse-existing-evidence and planned_paid_requests=0"
+  },
+  "citation_measurement_contract": {
+    "layers": [
+      "organic_position",
+      "ai_answer_present",
+      "url_citation",
+      "answer_body_brand_or_product_mention"
+    ],
+    "provider_error": "append to history with metric_eligible=false and exclude from every visibility-rate denominator",
+    "history": "append-only rows and run log; latest report may update but history may not be overwritten"
+  },
+  "encoding_process_contract": {
+    "artifacts": "UTF-8; CSV UTF-8 with BOM; generated HTML declares utf-8",
+    "windows": "never pipe non-ASCII here-strings through PowerShell into Python; use UTF-8 files/arguments or Unicode escapes",
+    "subprocess": "capture bytes, decode losslessly, preserve bounded stdout/stderr on timeout, never errors=ignore"
+  },
+  "dashboard_knowledge_contract": {
+    "ship_boundary": "knowledge and co-design contract only; no UI, HTML/CSS/JS, frontend, screenshots, mock data, fixed layout, client data, or test project",
+    "construction_boundary": "construct only in the user's project after explicit requirements and stack approval",
+    "required_metrics": [
+      "ordinary SERP position by query, engine, region/city, and language",
+      "AI answer presence",
+      "user URL citation",
+      "answer-body brand mention",
+      "product mention",
+      "brand/product presented as a solution",
+      "source coverage",
+      "provider/parser errors",
+      "observation and run timestamps"
+    ],
+    "history": "full measurement log is append-only; reruns never overwrite prior measurements",
+    "comparability": "trend only across compatible query, engine, region, language, device, provider, target, and scope dimensions"
+  }
+}

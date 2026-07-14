@@ -1,0 +1,18 @@
+{
+  "active_runtime": "codex",
+  "apply_allowed": true,
+  "managed_runtime_root": "./.geo-topic-agent-runtime",
+  "cleanup_mode": "retain_canonical_adapters_install_active_native_bootstrap_only",
+  "actions": [],
+  "kept_entrypoints": [
+    ".agents",
+    "AGENTS.md"
+  ],
+  "active_adapter": "adapters/CODEX.md",
+  "generated_at": "2026-07-14T16:41:18+00:00",
+  "plan_hash": "84bd3c0f8163358356c97dbcc5b0927516c5b91fe30e99088528aab182823272",
+  "apply_requested": true,
+  "reviewed_plan_hash": "84bd3c0f8163358356c97dbcc5b0927516c5b91fe30e99088528aab182823272",
+  "applied": false,
+  "applied_actions": []
+}

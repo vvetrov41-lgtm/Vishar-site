@@ -1,0 +1,1870 @@
+{
+  "version": "1.4.0",
+  "observation_contract": {
+    "required_fields": [
+      "status",
+      "summary",
+      "items",
+      "evidence_refs",
+      "next_valid_actions"
+    ],
+    "status_values": [
+      "success",
+      "blocked",
+      "invalid_args",
+      "timeout",
+      "quality_fail",
+      "error",
+      "skipped"
+    ]
+  },
+  "tools": [
+    {
+      "id": "install_runtime",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py install",
+      "purpose": "Verify the extracted runtime FILES.sha256 inventory and copy the canonical package into a separate user project without overwriting existing project or native instruction files.",
+      "risk_class": "local_read_write_install",
+      "side_effects": [
+        "verifies every extracted runtime file against FILES.sha256",
+        "creates <project>/.geo-topic-agent-runtime only when absent",
+        "optionally installs one native adapter only when explicitly requested and collision-free",
+        "writes INSTALLATION.json inside the package-owned installation directory"
+      ],
+      "permission_gate": "requires an explicit separate --project-dir; blocks on checksum mismatch, unlisted/missing files, symlinks, unsafe inventory paths, existing installation, or native adapter collision; never unzips over the project",
+      "timeout_seconds": 120,
+      "retry_policy": "re-extract the official archive or use a versioned upgrade process; never delete/overwrite an existing installation automatically",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "project_dir"
+        ],
+        "properties": {
+          "project_dir": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "codex",
+              "claude",
+              "cursor",
+              "opencode",
+              "antigravity",
+              "generic",
+              "cli",
+              "node"
+            ]
+          },
+          "install_native_adapter": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "success, partial_success, blocked, invalid_args, or error. partial_success means at least one provider request returned usable rows while other planned requests failed and require review_errors."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "bounded observation plus INSTALLATION.json",
+      "audit_policy": "record inventory verification, package version, installed runtime path, active runtime, native adapter status/collision and next actions",
+      "token_budget": "N/A for deterministic local installer",
+      "cost_budget": "local-only; no network or paid provider calls"
+    },
+    {
+      "id": "setup_environment",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py setup",
+      "purpose": "Detect the active IDE/runtime, adapt installed entrypoints, and discover existing XMLRiver, SERP, AI-answer, and semantic TZ generator assets.",
+      "risk_class": "local_read_write",
+      "side_effects": [
+        "creates geo_agent/config",
+        "creates geo_agent/reports/ADAPTATION_REPORT.md",
+        "writes geo_agent/runtime/runtime-profile.json",
+        "writes geo_agent/runtime/birth-plan.json",
+        "retains canonical adapters inside the managed runtime and installs only an explicitly requested active native bootstrap after a reviewed adaptation plan",
+        "may create .env.example if missing",
+        "copies final evidence templates to geo_agent/data/import/final_evidence"
+      ],
+      "permission_gate": "allowed in target project; no network and no secret printing; runtime adaptation requires an explicit --runtime value or high-confidence detection, then a second hash-bound --apply-runtime-adaptation command; canonical package assets are retained",
+      "timeout_seconds": 60,
+      "retry_policy": "fix filesystem permissions or run from intended project root",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry.",
+        "required": [
+          "project_dir"
+        ],
+        "properties": {
+          "project_dir": {
+            "type": "string",
+            "description": "Target project root for installed-agent setup."
+          },
+          "scan_neighbors": {
+            "description": "Whether to scan sibling/neighbor folders for evidence assets.",
+            "default": false,
+            "type": "boolean"
+          },
+          "runtime": {
+            "enum": [
+              "auto",
+              "codex",
+              "claude",
+              "cursor",
+              "opencode",
+              "cli",
+              "node"
+            ],
+            "default": "auto",
+            "description": "Active IDE/runtime. Adapters should pass an explicit value when known.",
+            "type": "string"
+          },
+          "apply_runtime_adaptation": {
+            "description": "When true, move inactive native entrypoints/adapters to geo_agent/runtime/inactive-adapters according to the birth plan.",
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "zero unless an explicit approval ledger records provider/request/URL budget and scope"
+    },
+    {
+      "id": "init_project_context",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py init-project",
+      "purpose": "Capture manual project context fields and save config/report scaffolding without crawling the site and without running accessibility audit. Proposes likely brand_variants from brand/domain/products when the user has not supplied them, marks them for confirmation, and records confirmed variants when provided. Records semantic_cluster_queries only when supplied or explicitly user-approved; topic-only context is allowed but downstream evidence workflows remain blocked until the cluster is confirmed. Agent-drafted semantics are pending proposals only. When a domain is present and no successful site_context exists, the observation must route the agent to ask_user_to_approve_deep_project_context_collection or run_deep_project_context_collection before downstream evidence workflows.",
+      "risk_class": "local_read_write",
+      "side_effects": [
+        "writes PROJECT_CONTEXT.md",
+        "writes project_context.json",
+        "updates config"
+      ],
+      "permission_gate": "allowed for user-supplied facts; does not fetch pages, does not check robots/sitemap/user agents, and does not create ACCESSIBILITY_AUDIT.md",
+      "timeout_seconds": 30,
+      "retry_policy": "ask for missing facts, documents, local snapshots, or approval for the separate deep collect-context workflow; after a domain is known, do not skip the deep context offer gate",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry.",
+        "required": [
+          "project_dir"
+        ],
+        "properties": {
+          "project_dir": {
+            "type": "string",
+            "description": "Target project root."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Project site/domain."
+          },
+          "brand": {
+            "type": "string",
+            "description": "Brand or product name."
+          },
+          "topic": {
+            "type": "string",
+            "description": "Priority GEO/AEO topic."
+          },
+          "region": {
+            "type": "string",
+            "description": "Explicit region/GEO, such as RU-Moscow or numeric provider ID."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code, such as ru or en."
+          },
+          "engines": {
+            "type": "string",
+            "description": "Comma-separated search engines, such as google,yandex."
+          },
+          "competitors": {
+            "type": "string",
+            "description": "Comma-separated competitor domains or URLs."
+          },
+          "pages": {
+            "type": "string",
+            "description": "Comma-separated important site pages."
+          },
+          "products": {
+            "type": "string",
+            "description": "Comma-separated products or services."
+          },
+          "documents": {
+            "type": "string",
+            "description": "Comma-separated document paths supplied by the user."
+          },
+          "allow_site_discovery": {
+            "description": "Records that the user allows separate public site context collection; init-project itself does not fetch pages.",
+            "default": false,
+            "type": "boolean"
+          },
+          "context_notes": {
+            "type": "string",
+            "description": "Freeform project facts and constraints from the user."
+          },
+          "goal": {
+            "enum": [
+              "citation",
+              "mention",
+              "both"
+            ],
+            "default": "both",
+            "description": "Target GEO outcome.",
+            "type": "string"
+          },
+          "cluster_queries": {
+            "type": "string",
+            "description": "Semicolon/comma/newline separated semantic cluster queries for the topic."
+          },
+          "cluster_queries_file": {
+            "type": "string",
+            "description": "TXT or CSV file with semantic cluster queries."
+          },
+          "brand_variants": {
+            "type": "string",
+            "description": "Semicolon/comma/newline separated confirmed brand spellings, aliases, transliterations, domain spellings, and product aliases used for AI answer body mention tracking."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, brand_variants confirmation state, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "collect_project_context",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py collect-context",
+      "purpose": "Collect deep product and business context plus brand variant confirmation state from homepage, user-provided core landing pages, header/navigation links, footer links, product/service/course pages, commercial pages, local HTML snapshots, and user-provided page lists without running accessibility audit. First-run public discovery should use max_pages=30 unless the user asks for a smaller bounded scope. Records semantic_cluster_queries only when supplied or explicitly user-approved; topic-only context is allowed but downstream evidence workflows remain blocked until the cluster is confirmed. Agent-drafted semantics are pending proposals only. On success, next_valid_actions must offer site-level audit-access and target-page llm-access-audit before topic/semantic cluster intake.",
+      "risk_class": "local_read_write; external_public_read_when_network_approved",
+      "side_effects": [
+        "writes PROJECT_CONTEXT.md",
+        "writes project_context.json",
+        "writes project_context_site_discovery.json",
+        "writes project_context_pages.csv",
+        "updates config and STATE.md"
+      ],
+      "permission_gate": "local HTML snapshots/documents allowed; public site fetches require --network-approved; robots.txt, sitemap, user-agent probing, WAF/captcha checks, server accessibility diagnostics, LLM accessibility checks, and ACCESSIBILITY_AUDIT.md creation are denied in this workflow",
+      "timeout_seconds": 180,
+      "retry_policy": "rerun with domain, local HTML snapshots, explicit page list, documents, network approval, or smaller max-pages; do not replace missing product facts with guesses",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "project_dir"
+        ],
+        "properties": {
+          "project_dir": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "brand": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "products": {
+            "type": "string"
+          },
+          "pages": {
+            "type": "string",
+            "description": "Important landing/commercial pages supplied by the user."
+          },
+          "documents": {
+            "type": "string"
+          },
+          "allow_site_discovery": {
+            "type": "boolean"
+          },
+          "network_approved": {
+            "type": "boolean"
+          },
+          "site_html_dir": {
+            "type": "string",
+            "description": "Local HTML snapshot folder for offline context collection."
+          },
+          "max_pages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 30,
+            "description": "Maximum context pages to review. Use 30 for the first deep context collection unless the user asks for a smaller bounded scope."
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          },
+          "cluster_queries": {
+            "type": "string",
+            "description": "Semicolon/comma/newline separated semantic cluster queries for the topic."
+          },
+          "cluster_queries_file": {
+            "type": "string",
+            "description": "TXT or CSV file with semantic cluster queries."
+          },
+          "brand_variants": {
+            "type": "string",
+            "description": "Semicolon/comma/newline separated confirmed brand spellings, aliases, transliterations, domain spellings, and product aliases used for AI answer body mention tracking."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "artifact_fields": [
+          "brand_surface",
+          "value_proposition_snippets",
+          "product_snippets",
+          "pricing_payment_snippets",
+          "trial_delivery_snippets",
+          "limitations_snippets",
+          "trust_snippets",
+          "conversion_actions",
+          "important_pages",
+          "open_questions"
+        ]
+      },
+      "result_size_limit": "stdout observation is bounded; detailed page rows in CSV and compact site discovery JSON",
+      "audit_policy": "record pages reviewed, page types, source of each page, open questions, network/html-source mode, brand_variants confirmation state, and explicit statement that accessibility audit was not run; on success record post_context_next_step=offer_site_and_target_page_audit and do not route directly to run_topic_workflow",
+      "token_budget": "N/A for deterministic local CLI; model may later synthesize the evidence but must not invent facts",
+      "cost_budget": "zero unless public site network fetches are approved; no paid providers are used",
+      "post_success_next_actions": [
+        "review_project_context",
+        "offer_site_and_target_page_audit",
+        "run_site_audit_if_user_approves",
+        "run_target_page_llm_access_audit_if_user_approves",
+        "then_collect_topic_and_semantic_cluster"
+      ]
+    },
+    {
+      "id": "audit_accessibility",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py audit-access",
+      "purpose": "Check or prepare a checklist-style site accessibility audit for robots, sitemap, HTTP status, raw HTML, main content, WAF/captcha signs, and bot access using full HTTP User-Agent strings while keeping robots tokens separate.",
+      "risk_class": "local_write; external_public_read_when_network_approved",
+      "side_effects": [
+        "writes ACCESSIBILITY_AUDIT.md",
+        "optionally fetches public URLs when --network-approved is used"
+      ],
+      "permission_gate": "network fetch requires explicit approval for domain and user-agent matrix",
+      "timeout_seconds": 120,
+      "retry_policy": "retry only failed public reads after checking approval and timeout",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, checklist statuses ([OK]/[WARN]/[CRIT]/[SKIP]), robots_token versus full http_user_agent, critical/warning rows, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "llm_accessibility_audit",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py llm-access-audit",
+      "purpose": "Audit one exact page for robots.txt permissions, ordinary server access, deep HTML/code access-barrier classification, LLM/search/agent access using full HTTP User-Agent strings, rendered screenshot availability, clean LLM-style content extraction, block parity, and commercial content correctness; separate page-level blocks from form-only captcha protection.",
+      "risk_class": "local_read_write; external_public_read_when_network_approved; optional_browser_render",
+      "side_effects": [
+        "writes LLM_ACCESSIBILITY_AUDIT.md",
+        "writes llm_accessibility_audit.json",
+        "writes raw baseline HTML and clean extracted content",
+        "optionally writes rendered screenshot and rendered text when Playwright is available and --render is used",
+        "optionally fetches public URLs when --network-approved is used"
+      ],
+      "permission_gate": "network fetch/render requires explicit approval for the exact URL, bounded user-agent matrix, timeout, and no WAF/captcha bypass; the tool must inspect HTML/code context and distinguish page_block from form_protection_only before reporting block risk; Playwright render is optional and records blocked_missing_playwright when unavailable",
+      "timeout_seconds": 300,
+      "retry_policy": "do not bypass robots, WAF, captcha, login, or paywall; retry only after user-approved site/WAF/robots changes or timeout adjustment",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Exact page URL to audit"
+          },
+          "network_approved": {
+            "type": "boolean",
+            "description": "Required for live HTTP and render checks"
+          },
+          "render": {
+            "type": "boolean",
+            "description": "Attempt Playwright screenshot and rendered text capture"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout observation is bounded; durable details are stored in Markdown/JSON plus raw HTML/text/screenshot artifacts under geo_agent/data/raw/llm-accessibility/<run_id>/",
+      "audit_policy": "record URL, network approval state, checklist statuses ([OK]/[WARN]/[CRIT]/[SKIP]), robots matrix, baseline result, full http_user_agent LLM matrix, content extraction refs, render refs, parity warnings, commercial warnings, and next valid actions; short robots tokens must not be used as HTTP User-Agent headers",
+      "token_budget": "N/A for deterministic local CLI; any later visual/human review uses the report and screenshot path only",
+      "cost_budget": "zero external API cost; public HTTP/render requests only after explicit approval"
+    },
+    {
+      "id": "run_topic_workflow",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py run-topic",
+      "purpose": "Run the one-topic + semantic-cluster workflow and create fan-out, SERP/AI analysis, content plan, TZ handoff, placements, and two-layer monitoring artifacts using the cluster queries as the default query universe and confirmed brand_variants for answer-body brand mention checks.",
+      "risk_class": "local_read_write; external_paid_or_metered_read only if future provider adapter is explicitly approved",
+      "side_effects": [
+        "writes reports and processed CSV/JSON artifacts under geo_agent"
+      ],
+      "permission_gate": "local mode allowed only with a topic and semantic cluster queries; live collection requires separate provider-specific approval",
+      "timeout_seconds": 180,
+      "retry_policy": "fix input CSV/config; do not retry live provider calls without renewed approval",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "project_dir",
+          "topic"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "Topic/cluster name."
+          },
+          "cluster_queries": {
+            "type": "string",
+            "description": "Required semantic cluster queries unless already saved in project context."
+          },
+          "cluster_queries_file": {
+            "type": "string"
+          },
+          "seed_queries": {
+            "type": "string",
+            "description": "Legacy alias for cluster_queries only."
+          },
+          "brand_variants": {
+            "type": "string",
+            "description": "Semicolon/comma/newline separated confirmed brand spellings, aliases, transliterations, domain spellings, and product aliases used for AI answer body mention tracking."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, brand_variants used for answer-body mention tracking, two-layer monitoring rows, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "generate_semantic_tz_handoff",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py generate-tz",
+      "purpose": "Refresh an existing handoff JSON/report for the discovered semantic SEO TZ generator without running the full topic workflow.",
+      "risk_class": "local_read_write",
+      "side_effects": [
+        "writes TZ_HANDOFF_REPORT.md",
+        "writes data/handoff JSON"
+      ],
+      "permission_gate": "local refresh allowed only after run-topic has created the handoff; missing handoff returns blocked instead of expanding scope",
+      "timeout_seconds": 60,
+      "retry_policy": "fix missing topic run artifacts before retry",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "find_placements",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py find-placements",
+      "purpose": "Generate product-fit external placement opportunity cards for one query cluster by combining cluster intent, product moment, QFO/fan-out queries, SERP URLs, AI citation/source URLs, visible source types, allowed platforms, and a deterministic priority score.",
+      "risk_class": "local_read_write",
+      "side_effects": [
+        "writes PLACEMENT_STRATEGY.md",
+        "writes <topic>_placement_opportunities.csv",
+        "writes <topic>_placement_opportunities_summary.json under data/quality-gates"
+      ],
+      "permission_gate": "draft-only; local artifact writes allowed; no outreach, ads, external publishing, sponsored listing purchase, account creation, or edits to third-party pages",
+      "timeout_seconds": 60,
+      "retry_policy": "rerun with better cluster queries, product description, target action, QFO/SERP/AI evidence, language/GEO, or allowed platforms; do not invent published URLs or claim placements were secured",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for product-fit placement opportunity generation; reject generic placement generation without a cluster and product context.",
+        "required": [
+          "topic_or_cluster_name"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "Cluster/topic name."
+          },
+          "cluster_name": {
+            "type": "string",
+            "description": "Alias for topic when the user names a cluster."
+          },
+          "queries": {
+            "type": "string",
+            "description": "Semicolon/comma/newline separated cluster queries."
+          },
+          "queries_file": {
+            "type": "string",
+            "description": "Optional query file, CSV/TXT/JSON."
+          },
+          "product": {
+            "type": "string",
+            "description": "Product/service to naturally position as a solution."
+          },
+          "target_action": {
+            "type": "string",
+            "description": "Desired conversion or next step."
+          },
+          "geo": {
+            "type": "string",
+            "description": "Region/GEO for language/platform fit."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code or language name."
+          },
+          "serp_urls": {
+            "type": "string",
+            "description": "Visible SERP URLs when supplied manually."
+          },
+          "ai_urls": {
+            "type": "string",
+            "description": "AI citation/source URLs when supplied manually."
+          },
+          "qfo_queries": {
+            "type": "string",
+            "description": "QFO/fan-out queries when supplied manually."
+          },
+          "qfo_queries_file": {
+            "type": "string",
+            "description": "Optional QFO/fan-out query file."
+          },
+          "allowed_platforms": {
+            "type": "string",
+            "description": "Allowed or preferred external platforms/domains/formats."
+          },
+          "max_ideas": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 30
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "artifact_fields": [
+          "topic",
+          "product",
+          "strategy_type",
+          "platform_or_domain",
+          "content_format",
+          "placement_angle",
+          "why_user_would_need_product",
+          "expected_ai_signal",
+          "evidence",
+          "priority_score",
+          "product_fit_score",
+          "signal_strength_score",
+          "platform_value_score",
+          "feasibility_score",
+          "effort",
+          "risk_or_limitation"
+        ]
+      },
+      "result_size_limit": "stdout observation is bounded; full 10-30 card table is stored in CSV plus Markdown report and summary JSON",
+      "audit_policy": "record cluster/query counts, QFO/SERP/AI URL counts, strategy_type counts, score formula, quality-gate downgrades, source-signal boundary, and generated artifact refs",
+      "token_budget": "N/A for deterministic local CLI; model review may refine wording but cannot invent evidence or URLs",
+      "cost_budget": "local-only by default; live SERP/AI evidence collection is a separate approved provider workflow"
+    },
+    {
+      "id": "build_monitoring_plan",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py monitor-plan",
+      "purpose": "Create prompts, cadence, KPI split, and tracking table templates with two independent layers: url_citation for cited user URL/domain and brand_mention for confirmed brand/product variants in the AI answer body.",
+      "risk_class": "local_read_write",
+      "side_effects": [
+        "writes MONITORING_PLAN.md",
+        "writes monitoring_prompts.csv"
+      ],
+      "permission_gate": "local draft only",
+      "timeout_seconds": 30,
+      "retry_policy": "fix missing topic or region inputs",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, brand_variants source/status, separate url_citation and brand_mention layers, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "provider_audit",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py provider-audit",
+      "purpose": "Audit configured provider credentials and implemented adapters without making live network calls.",
+      "risk_class": "local_read_write",
+      "side_effects": [
+        "writes PROVIDER_AUDIT.md",
+        "writes provider_audit.json"
+      ],
+      "permission_gate": "allowed; detects credential presence only and masks secrets",
+      "timeout_seconds": 30,
+      "retry_policy": "fix .env path or provider config and rerun",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "collect_serp",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py collect-serp",
+      "purpose": "Create a SERP collection plan or run approved XMLRiver/DataForSEO live collection for every semantic cluster query x selected search engine x region/language scope.",
+      "risk_class": "local_read_write; external_paid_or_metered_read_when_network_approved",
+      "side_effects": [
+        "writes SERP_COLLECTION.md",
+        "writes topic-bound collection_summary.json under data/raw/serp/<run_id>",
+        "writes byte-preserved raw XML/JSON plus one non-secret planned/success/error request ledger per paid request under data/raw/serp/<run_id>",
+        "writes provider-specific and aggregate live SERP/AI CSV files with raw_ref links; provider error payloads contribute zero processed rows"
+      ],
+      "permission_gate": "dry-run allowed only with confirmed semantic cluster queries; topic-only or unapproved agent-drafted queries are blocked; unknown region aliases and bare numeric dual-engine regions block before network; live collection requires --network-approved, --paid-approved, credentials, explicit provider/engine/language scope, and either a documented region alias or google=<loc>;yandex=<lr>; --depth is requested URL count and paid pages equal ceil(depth / 10) per query/engine; XMLRiver execution uses XMLRIVER_MAX_THREADS=10 and never relies on account defaults Region IDs: https://xmlriver.com/files/geo.csv; language reference: https://xmlriver.com/files/langs.xlsx; canonical method: references/xmlriver-serp-method.md.",
+      "timeout_seconds": 600,
+      "retry_policy": "do not retry paid calls blindly; inspect raw response/errors first",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "project_dir",
+          "topic"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "Topic/cluster name."
+          },
+          "cluster_queries": {
+            "type": "string",
+            "description": "Semantic cluster queries to parse in SERP/AI."
+          },
+          "cluster_queries_file": {
+            "type": "string"
+          },
+          "max_queries": {
+            "type": "integer",
+            "description": "0 means all cluster queries; positive values intentionally cap the cluster."
+          },
+          "engines": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Requested organic top-N URL count per query/engine, not pagination pages. For XMLRiver, paid page requests per query/engine = ceil(depth / 10)."
+          },
+          "network_approved": {
+            "type": "boolean"
+          },
+          "paid_approved": {
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "success, partial_success, blocked, invalid_args, or error. partial_success means at least one provider request returned usable rows while other planned requests failed and require review_errors."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, confirmed semantic cluster query inventory, requested_top_urls, query x engine pairs, XMLRiver pages per pair, planned/succeeded/failed paid request reconciliation, xmlriver_max_threads=10, used thread slots, non-secret credential_slot, approval state, byte-preserved raw refs and SHA-256, Google <answer>/Yandex <content> AI parsing status, expanded_ai_capture status for browser/manual evidence, and next actions; return partial_success when usable rows and provider errors coexist; request_validation_errors are persisted and no network function is called when region/depth validation fails",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only for dry-run; XMLRiver live paid request count is semantic_cluster_queries * engines * ceil(depth / 10); DataForSEO live collection also requires explicit paid approval; approved XMLRiver live execution uses a bounded 10-worker queue for paid page requests"
+    },
+    {
+      "id": "enrich_urls",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py enrich-urls",
+      "purpose": "Fetch approved cited/SERP URLs, save raw HTML, and create page-level enrichment signals for chunk and content planning.",
+      "risk_class": "local_read_write; external_public_read_when_network_approved",
+      "side_effects": [
+        "writes URL_ENRICHMENT.md",
+        "writes URL enrichment summary under data/quality-gates",
+        "writes raw HTML under data/raw/pages",
+        "writes url_enrichment.csv with raw_ref links"
+      ],
+      "permission_gate": "network fetch requires explicit approval and bounded max URL count",
+      "timeout_seconds": 300,
+      "retry_policy": "retry only failed URLs after checking approval, robots/WAF signals, and timeout",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "zero unless an explicit approval ledger records provider/request/URL budget and scope"
+    },
+    {
+      "id": "completion_audit",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py completion-audit",
+      "purpose": "Create a requirement-level audit separating local artifact completion, warnings, and missing live evidence.",
+      "risk_class": "local_read_write",
+      "side_effects": [
+        "writes COMPLETION_AUDIT.md",
+        "writes data/quality-gates/*_completion_audit.json"
+      ],
+      "permission_gate": "allowed; no network",
+      "timeout_seconds": 30,
+      "retry_policy": "fix missing artifacts or accept explicit limitations",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "final_evidence_readiness",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py final-evidence-readiness",
+      "purpose": "Create approval packets and exact command/evidence checklists for remaining final evidence items without network, paid provider, or subagent execution.",
+      "risk_class": "local_read_write; approval_planning_only",
+      "side_effects": [
+        "writes FINAL_EVIDENCE_READINESS.md",
+        "writes data/quality-gates/*_final_evidence_readiness.json",
+        "includes final evidence template paths for decision records, provider summaries, URL enrichment summaries, and independent review summaries"
+      ],
+      "permission_gate": "allowed; no network, no paid provider calls, no subagents, and no secret printing",
+      "timeout_seconds": 30,
+      "retry_policy": "fix topic/config/env path, then use the generated approval packets before live execution",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "independent_audit_pack",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py independent-audit-pack",
+      "purpose": "Prepare compact scenario and clean-auditor context packs for approved independent reviewers without spawning subagents or claiming independent evidence; the later reviewer output must be summarized in independent-review-summary.json.",
+      "risk_class": "local_read_write; independent_review_preparation_only",
+      "side_effects": [
+        "writes INDEPENDENT_AUDIT_PACK.md",
+        "writes data/quality-gates/*_independent_audit_pack.json",
+        "writes data/quality-gates/independent-audit-pack/prompts/*.md"
+      ],
+      "permission_gate": "allowed; does not spawn subagents, does not run network, and does not count as independent validation evidence",
+      "timeout_seconds": 30,
+      "retry_policy": "fix missing topic/project artifacts, then request explicit approval before running actual independent reviewers",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "final_evidence_audit",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py final-evidence-audit",
+      "purpose": "Audit machine evidence and user descope decisions required before claiming the final 100% boundary: live XMLRiver, live DataForSEO, live URL enrichment, structured independent review summary, and explicit limitations.",
+      "risk_class": "local_read_write",
+      "side_effects": [
+        "writes FINAL_EVIDENCE_AUDIT.md",
+        "writes data/quality-gates/*_final_evidence_audit.json",
+        "reads optional data/quality-gates/final_evidence_decisions.json",
+        "validates optional independent-review-summary.json",
+        "validates provider collection_summary topic/network/errors fields",
+        "validates live CSV and URL enrichment raw_ref linkage"
+      ],
+      "permission_gate": "allowed; no network or paid calls; reads only local evidence artifacts and contract files",
+      "timeout_seconds": 30,
+      "retry_policy": "close missing evidence through approved live runs, approved independent audits, or explicit user descope decisions, then rerun",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "zero unless an explicit approval ledger records provider/request/URL budget and scope"
+    },
+    {
+      "id": "record_descope",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py record-descope",
+      "purpose": "Record an explicitly approved final-evidence descope decision in the local decision ledger.",
+      "risk_class": "local_read_write; claim_boundary_sensitive",
+      "side_effects": [
+        "writes or updates data/quality-gates/final_evidence_decisions.json"
+      ],
+      "permission_gate": "requires explicit user/reviewer approval metadata: evidence id, approved_by, reason, date, and optional scope; never records live evidence",
+      "timeout_seconds": 30,
+      "retry_policy": "fix invalid evidence id or missing approval metadata, then rerun final-evidence-audit",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "description": "CLI flags for this command; reject unknown command surfaces outside this registry."
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "invoke_tz_generator",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py invoke-tz-generator",
+      "purpose": "Invoke an approved semantic SEO TZ generator command template with the GEO/AEO handoff JSON and collect generated output artifacts.",
+      "risk_class": "local_subprocess_write; command_template_must_be_user_or_project_approved",
+      "side_effects": [
+        "executes explicit local command after --invoke-approved",
+        "writes TZ_GENERATOR_INVOCATION.md",
+        "writes generated TZ output under data/generated-tz"
+      ],
+      "permission_gate": "blocked unless --invoke-approved, a bounded command template, and --generator-contract-ref are provided; no shell is used by default",
+      "timeout_seconds": 300,
+      "retry_policy": "fix generator command, handoff compatibility, or stderr before retry",
+      "output": "structured JSON observation",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "topic",
+          "generator_command",
+          "invoke_approved",
+          "generator_contract_ref"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "generator_command": {
+            "type": "string"
+          },
+          "invoke_approved": {
+            "type": "boolean"
+          },
+          "generator_contract_ref": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "stdout/stderr and observations are bounded; reports store durable details under geo_agent with compact CSV/JSON/Markdown artifacts",
+      "audit_policy": "record command, scope, approval/skip state, generated artifact refs, and next valid actions in reports or quality-gate JSON",
+      "token_budget": "N/A for deterministic local CLI; model/subagent review budgets are governed by independent-audit-pack and user approval",
+      "cost_budget": "local-only by default; external costs require explicit approval and ledger evidence"
+    },
+    {
+      "id": "qfo_query_analysis",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py qfo-analyze",
+      "purpose": "Collect approved XMLRiver Google/Yandex SERP+AI evidence for every user query; resolve citation titles by strict precedence from provider title, exact same-run organic URL title, then network-approved public HTML title with og:title fallback; and create a complete title semantics workpack. Never derive titles from URL slugs, domains, paths, hostnames, or anchor/source labels. The deterministic pass never invents queries or approves clustering. An agent/clean subagent logically clusters the full title inventory; only a full user-approved title disposition can return success.",
+      "risk_class": "local_read_write; external_paid_xmlriver_read_when_network_and_paid_approved; external_public_http_title_read_when_network_approved",
+      "side_effects": [
+        "writes QFO_QUERY_ANALYSIS.md and QFO_CHATGPT_REQUEST.md",
+        "writes full seed/SERP/AI/title/title-semantics/workpack artifacts",
+        "writes a complete <topic>_qfo_title_enrichment.csv ledger for every unique cited URL",
+        "writes raw XMLRiver bytes and one request ledger per paid call on the live run",
+        "writes raw public HTML response bytes once per unique fetched title URL when network-approved",
+        "writes an authoritative approved QFO content plan only after typed full-title disposition validation"
+      ],
+      "permission_gate": "the first live XMLRiver run requires user-supplied/approved queries, explicit Google/Yandex region/language/top-N scope, --network-approved, --paid-approved, and credentials; unknown region aliases block before network. Public HTTP(S) title enrichment is allowed only with --network-approved, requires no paid-provider approval, and is never counted as an XMLRiver paid request. The later --reuse-existing-evidence approval run always records planned_paid_requests=0 and may still perform separately counted network-approved public title fetches; it requires --approved-content-plan-file with approval_status=approved, non-empty approved_by, and complete non-overlapping title disposition. Region IDs: https://xmlriver.com/files/geo.csv; language reference: https://xmlriver.com/files/langs.xlsx; canonical methods: references/xmlriver-serp-method.md and references/qfo-query-analysis-method.md.",
+      "timeout_seconds": 600,
+      "retry_policy": "retry provider calls only with corrected query batch, credentials, region/language/engine scope, timeout, or queries likely to produce AI answer blocks; retry public title fetches only after reviewing network, HTTP, content-type, or decoding errors; never invent AI rows or titles",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "queries_or_queries_file"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "queries": {
+            "type": "string"
+          },
+          "queries_file": {
+            "type": "string"
+          },
+          "engines": {
+            "type": "string",
+            "description": "Comma-separated XMLRiver engines; default is google,yandex."
+          },
+          "region": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "depth": {
+            "maximum": 100,
+            "type": "integer",
+            "minimum": 1
+          },
+          "network_approved": {
+            "type": "boolean",
+            "description": "Required for live XMLRiver and for public HTTP title enrichment; public title fetches may run without paid_approved."
+          },
+          "paid_approved": {
+            "type": "boolean",
+            "description": "Required only for live paid XMLRiver requests, not for public HTTP title enrichment."
+          },
+          "chatgpt_qfo_file": {
+            "type": "string"
+          },
+          "selected_themes": {
+            "type": "string",
+            "description": "Optional review aid only; it does not approve a plan."
+          },
+          "approved_content_plan_file": {
+            "type": "string",
+            "description": "CSV/JSON typed plan covering every AI title ID exactly once or excluding it with a reason."
+          },
+          "reuse_existing_evidence": {
+            "type": "boolean",
+            "description": "Revalidate saved processed QFO evidence with planned_paid_requests=0; when network_approved is true, unresolved titles may still use separately counted public HTTP fetches."
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120,
+            "description": "Bounded per-request timeout in seconds for provider calls and approved public title fetches."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions",
+          "title_enrichment_stats",
+          "title_enrichment_refs"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "blocked, quality_fail, success, error, or invalid_args. Initial title workpack is quality_fail; success requires approved full title disposition. Unresolved title URLs require a visible lower-assurance quality gap."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "description": "Bounded run summary; it must not omit unresolved title URL or public-fetch counts."
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "description": "Includes QFO report, analysis JSON, title-enrichment ledger, and applicable raw XML/page refs."
+          },
+          "next_valid_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title_enrichment_stats": {
+            "type": "object",
+            "required": [
+              "unique_cited_urls",
+              "provider_titles",
+              "same_run_organic_titles",
+              "public_fetch_candidates",
+              "public_fetch_unique_urls",
+              "public_fetch_successes",
+              "html_titles",
+              "og_titles",
+              "skipped_no_network_approval",
+              "fetch_errors",
+              "unresolved_title_urls",
+              "title_fetch_max_concurrency",
+              "title_fetch_timeout_seconds"
+            ],
+            "properties": {
+              "unique_cited_urls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "provider_titles": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "same_run_organic_titles": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "public_fetch_candidates": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "public_fetch_unique_urls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "public_fetch_successes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "html_titles": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "og_titles": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "skipped_no_network_approval": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "fetch_errors": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "unresolved_title_urls": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "title_fetch_max_concurrency": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10
+              },
+              "title_fetch_timeout_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 120
+              }
+            }
+          },
+          "title_enrichment_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Portable refs to the complete title-enrichment CSV ledger and preserved raw public page bytes."
+          }
+        },
+        "title_enrichment_ledger_fields": [
+          "url",
+          "status",
+          "http_status",
+          "final_url",
+          "content_type",
+          "decoded_with",
+          "title",
+          "title_source",
+          "raw_ref",
+          "error"
+        ]
+      },
+      "result_size_limit": "stdout observation is bounded; the complete URL-level title-enrichment ledger, full title inventory, and title semantics live in compact CSV/JSON/Markdown artifacts with raw XML/public-page byte refs in the analysis JSON",
+      "audit_policy": "record every seed query, query x engine scope, requested_top_urls, paid request reconciliation, XMLRiver ten-thread scope, credential slot, raw byte/hash/ledger refs, provider errors, AI title count, title semantics count, content_plan_approval, every assigned/excluded/uncovered title ID, approved_by, and evidence_mode; enforce title precedence provider_title -> exact same_run_organic_url_title -> network-approved html_title -> og_title fallback and prohibit slug/domain/path/hostname/anchor/source-label derivation; record one complete title-enrichment ledger row per unique cited URL with url/status/http_status/final_url/content_type/decoded_with/title/title_source/raw_ref/error; fetch each unique public URL once with max concurrency 10 and bounded timeout while preserving raw bytes and lossless decoding; record title_enrichment_stats and title_enrichment_refs including provider/organic/html/og counts, unique fetch candidates/attempts/successes, no-network skips, fetch/decoding errors, unresolved URL count, ledger ref, and raw page refs; unresolved URLs remain visible and lower assurance; every reuse run records planned_paid_requests=0 even when separately counted network-approved public title fetches occur; persist title_semantic_rows as the complete source of truth for logical clustering",
+      "token_budget": "N/A for deterministic collection; agent/subagent logical clustering reads the compact title inventory after artifact generation",
+      "cost_budget": "paid XMLRiver cost is zero unless --network-approved and --paid-approved are both present; XMLRiver paid request count is seed_queries * engines * ceil(depth / 10) and is recorded in the approval ledger; approved live QFO collection uses a bounded 10-worker XMLRiver queue. Public HTTP title enrichment requires --network-approved, is not a paid XMLRiver request, may occur during reuse with planned_paid_requests=0, and uses a separate bounded queue of at most 10 concurrent unique-URL fetches."
+    },
+    {
+      "id": "page_tz_generator",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py generate-page-tz",
+      "purpose": "Generate a clean standalone copywriter-facing page TZ from an exact approved QFO content-plan page (approved plan + page_id) or from an explicit confirmed quick-run cluster. Use AI-cited competitor evidence, deterministic parse QA, balanced 1/2/3-grams with strong bigram coverage and median competitor densities, and explicit AI-citation chunks.",
+      "risk_class": "local_read_write; external_public_read_when_network_approved",
+      "side_effects": [
+        "writes PAGE_TZ.md",
+        "writes PAGE_TZ_GENERATION.md",
+        "writes page TZ JSON and CSV artifacts",
+        "writes raw competitor content snapshots when local or approved HTTP content is collected"
+      ],
+      "permission_gate": "QFO-derived generation requires --approved-content-plan-file and exact --page-id; pending title rows and arbitrary *qfo*.csv discovery are forbidden. A direct quick run requires explicit confirmed cluster queries. Competitor HTTP fetches require --network-approved; publishing/CMS writes are denied.",
+      "timeout_seconds": 300,
+      "retry_policy": "rerun with better local snapshots, corrected competitor URLs, network approval, or a smaller competitor set; do not invent competitor content",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "topic"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "approved_content_plan_file": {
+            "type": "string"
+          },
+          "page_id": {
+            "type": "string"
+          },
+          "cluster_queries": {
+            "type": "string"
+          },
+          "cluster_queries_file": {
+            "type": "string"
+          },
+          "qfo_queries_file": {
+            "type": "string",
+            "description": "Explicit user/imported title semantics only; no automatic glob discovery."
+          },
+          "competitor_urls": {
+            "type": "string"
+          },
+          "competitor_content_dir": {
+            "type": "string"
+          },
+          "max_competitors": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "network_approved": {
+            "type": "boolean"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          },
+          "language": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "next_valid_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "result_size_limit": "stdout observation is bounded; clean copywriter TZ, n-grams with density fields, quality rows, chunk specs, and raw refs are stored as artifacts under geo_agent",
+      "audit_policy": "record competitor selection source, parse quality per competitor, n-gram distribution by n, median density fields, chunk count, clean copywriter-output boundary, weak/blocked parses, artifact refs, and next valid actions; record approved plan source/page_id or explicit quick-run cluster source; reject pending QFO files and glob-based query discovery",
+      "token_budget": "N/A for deterministic local CLI; model review is limited to inspecting generated artifacts and improving wording",
+      "cost_budget": "zero unless network-approved competitor HTTP fetches are run; no paid provider calls are made by this tool"
+    },
+    {
+      "id": "citation_visibility_tracker",
+      "command": "python .geo-topic-agent-runtime/geo_agent_cli.py citation-visibility",
+      "purpose": "Measure organic position and two independent AI visibility layers for every query x engine x region row: URL/domain citation and answer-body brand/product mention. Preserve append-only history and request-ledger measurement status; provider failures remain provider_error and are excluded from all visibility-rate denominators.",
+      "risk_class": "local_read_write; external_paid_public_read_when_collect_live_is_approved",
+      "side_effects": [
+        "writes CITATION_VISIBILITY.md",
+        "writes per-run visibility snapshots",
+        "appends citation visibility row history",
+        "writes CITATION_SOURCE_INVENTORY.md",
+        "writes citation_source_inventory.csv URL-level cited-source inventory",
+        "appends citation citation source inventory row history",
+        "may call approved SERP provider when collect-live/network/paid approvals are present"
+      ],
+      "permission_gate": "imported/local analysis allowed; live provider collection requires --collect-live, --network-approved, --paid-approved, explicit queries/engines/regions/requested top URL count (`--depth`, not pagination pages) scope, and credentials; external publishing denied",
+      "timeout_seconds": 300,
+      "retry_policy": "no automatic paid retries; rerun only after reviewing provider errors or imported data",
+      "input_schema": {
+        "topic": "string optional",
+        "domain": "string target domain",
+        "brand": "string optional",
+        "products": "semicolon/comma separated aliases",
+        "queries": "semicolon/newline separated queries or --queries-file",
+        "engines": "comma separated search engines",
+        "regions": "semicolon/comma separated regions",
+        "serp_csv": "optional imported SERP CSV",
+        "ai_csv": "optional imported AI answers CSV",
+        "collect_live": "boolean approval-gated",
+        "brand_variants": "semicolon/comma/newline separated confirmed brand spellings, domain spellings, product names, and aliases used for answer-body brand mention tracking",
+        "visibility_layers": "url_citation and brand_mention are reported separately; citation_title alone must not satisfy brand_mention"
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "items",
+          "evidence_refs",
+          "next_valid_actions"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "success, partial_success, error, blocked, or invalid_args; never skipped for a measurement run"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_valid_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "result_size_limit": "bounded observation; full rows in CSV/JSON artifacts",
+      "audit_policy": "append every run and row; preserve request ledgers/raw refs; report measured_rows and provider_error_rows separately; exclude metric_eligible=false/provider_error rows from organic, AI-answer, URL-citation and brand-mention denominators; store confirmed brand variants and every cited URL in the citation source inventory; never infer brand mention from citation title alone; write a URL-level citation source inventory for audit and placement follow-up",
+      "token_budget": 4000,
+      "cost_budget": "local-only unless approved live provider collection is requested"
+    }
+  ]
+}
