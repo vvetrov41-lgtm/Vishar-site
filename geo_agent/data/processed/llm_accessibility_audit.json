@@ -1,0 +1,760 @@
+{
+  "url": "https://vishartattoo.com",
+  "network_approved": true,
+  "render_requested": false,
+  "robots_url": "https://vishartattoo.com/robots.txt",
+  "robots_response": {
+    "status": "success",
+    "url": "https://vishartattoo.com/robots.txt",
+    "http_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "final_url": "https://vishartattoo.com/robots.txt",
+    "http_status": 200,
+    "bytes_read": 365,
+    "content_type": "text/plain; charset=utf-8",
+    "text_chars": 365,
+    "main_content_risk": "low_text",
+    "waf_signals": [
+      "cloudflare",
+      "cf-ray"
+    ],
+    "access_barrier": {
+      "class": "page_block",
+      "summary": "page-level block markers are present and the main content outside forms is weak or missing",
+      "confidence": "high",
+      "form_count": 0,
+      "page_block_markers": [
+        "cloudflare_challenge"
+      ],
+      "captcha_markers_in_forms": [],
+      "captcha_markers_outside_forms": [],
+      "captcha_markers_total": [],
+      "main_text_chars_without_forms": 361,
+      "main_block_count_without_forms": 1,
+      "has_main_content": false
+    },
+    "access_barrier_class": "page_block",
+    "summary": "HTTP 200, 365 bytes, text_chars=365, barrier=page_block"
+  },
+  "robots_matrix": [
+    {
+      "id": "generic_browser",
+      "provider": "Generic",
+      "role": "ordinary browser baseline",
+      "robots_token": "*",
+      "http_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "openai_searchbot",
+      "provider": "OpenAI",
+      "role": "AI search indexing",
+      "robots_token": "OAI-SearchBot",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "chatgpt_user",
+      "provider": "OpenAI",
+      "role": "ChatGPT user-triggered fetch",
+      "robots_token": "ChatGPT-User",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "gptbot",
+      "provider": "OpenAI",
+      "role": "model-training crawler",
+      "robots_token": "GPTBot",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.3; +https://openai.com/gptbot",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "googlebot",
+      "provider": "Google",
+      "role": "Google Search crawl/render",
+      "robots_token": "Googlebot",
+      "http_user_agent": "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "google_extended",
+      "provider": "Google",
+      "role": "Gemini/AI product control token",
+      "robots_token": "Google-Extended",
+      "http_user_agent": "",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "perplexitybot",
+      "provider": "Perplexity",
+      "role": "AI answer crawler",
+      "robots_token": "PerplexityBot",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "perplexity_user",
+      "provider": "Perplexity",
+      "role": "Perplexity user-triggered fetch",
+      "robots_token": "Perplexity-User",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Perplexity-User/1.0; +https://perplexity.ai/perplexity-user)",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "claudebot",
+      "provider": "Anthropic",
+      "role": "Claude crawler",
+      "robots_token": "ClaudeBot",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ClaudeBot/1.0; +https://www.anthropic.com/claudebot",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "claude_searchbot",
+      "provider": "Anthropic",
+      "role": "Claude search fetch",
+      "robots_token": "Claude-SearchBot",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; Claude-SearchBot/1.0; +https://www.anthropic.com/claude-searchbot",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "bingbot",
+      "provider": "Microsoft",
+      "role": "Bing/Copilot search crawl",
+      "robots_token": "bingbot",
+      "http_user_agent": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "bingpreview",
+      "provider": "Microsoft",
+      "role": "Bing preview fetch",
+      "robots_token": "BingPreview",
+      "http_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 BingPreview/1.0b",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "yandexbot",
+      "provider": "Yandex",
+      "role": "Yandex main indexing",
+      "robots_token": "YandexBot",
+      "http_user_agent": "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    },
+    {
+      "id": "yandex_accessibility",
+      "provider": "Yandex",
+      "role": "Yandex availability/accessibility check",
+      "robots_token": "YandexAccessibilityBot",
+      "http_user_agent": "Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots)",
+      "robots_allowed": true,
+      "robots_status": "allowed",
+      "reason": "matched robots.txt rules"
+    }
+  ],
+  "server_baseline": {
+    "status": "success",
+    "url": "https://vishartattoo.com",
+    "http_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "final_url": "https://vishartattoo.com",
+    "http_status": 200,
+    "bytes_read": 81253,
+    "content_type": "text/html; charset=utf-8",
+    "text_chars": 45660,
+    "main_content_risk": "unknown",
+    "waf_signals": [
+      "cloudflare",
+      "cf-ray"
+    ],
+    "access_barrier": {
+      "class": "security_code_present_content_accessible",
+      "summary": "security/captcha code is present, but the main page content is still accessible",
+      "confidence": "medium",
+      "form_count": 0,
+      "page_block_markers": [
+        "cloudflare_challenge"
+      ],
+      "captcha_markers_in_forms": [],
+      "captcha_markers_outside_forms": [],
+      "captcha_markers_total": [],
+      "main_text_chars_without_forms": 3624,
+      "main_block_count_without_forms": 32,
+      "has_main_content": true
+    },
+    "access_barrier_class": "security_code_present_content_accessible",
+    "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+    "raw_ref": "geo_agent/data/raw/llm-accessibility/vishartattoo-com-cd75802a3d63/baseline.html"
+  },
+  "llm_user_agent_matrix": [
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "openai_searchbot",
+      "provider": "OpenAI",
+      "role": "AI search indexing",
+      "robots_token": "OAI-SearchBot",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ChatGPT-User/1.0; +https://openai.com/bot",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "chatgpt_user",
+      "provider": "OpenAI",
+      "role": "ChatGPT user-triggered fetch",
+      "robots_token": "ChatGPT-User",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.3; +https://openai.com/gptbot",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "gptbot",
+      "provider": "OpenAI",
+      "role": "model-training crawler",
+      "robots_token": "GPTBot",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "googlebot",
+      "provider": "Google",
+      "role": "Google Search crawl/render",
+      "robots_token": "Googlebot",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "perplexitybot",
+      "provider": "Perplexity",
+      "role": "AI answer crawler",
+      "robots_token": "PerplexityBot",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Perplexity-User/1.0; +https://perplexity.ai/perplexity-user)",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "perplexity_user",
+      "provider": "Perplexity",
+      "role": "Perplexity user-triggered fetch",
+      "robots_token": "Perplexity-User",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; ClaudeBot/1.0; +https://www.anthropic.com/claudebot",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "claudebot",
+      "provider": "Anthropic",
+      "role": "Claude crawler",
+      "robots_token": "ClaudeBot",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; Claude-SearchBot/1.0; +https://www.anthropic.com/claude-searchbot",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "claude_searchbot",
+      "provider": "Anthropic",
+      "role": "Claude search fetch",
+      "robots_token": "Claude-SearchBot",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "bingbot",
+      "provider": "Microsoft",
+      "role": "Bing/Copilot search crawl",
+      "robots_token": "bingbot",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 BingPreview/1.0b",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "bingpreview",
+      "provider": "Microsoft",
+      "role": "Bing preview fetch",
+      "robots_token": "BingPreview",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "yandexbot",
+      "provider": "Yandex",
+      "role": "Yandex main indexing",
+      "robots_token": "YandexBot",
+      "text_chars_delta_vs_baseline": 0
+    },
+    {
+      "status": "success",
+      "url": "https://vishartattoo.com",
+      "http_user_agent": "Mozilla/5.0 (compatible; YandexAccessibilityBot/3.0; +http://yandex.com/bots)",
+      "final_url": "https://vishartattoo.com",
+      "http_status": 200,
+      "bytes_read": 81253,
+      "content_type": "text/html; charset=utf-8",
+      "text_chars": 45660,
+      "main_content_risk": "unknown",
+      "waf_signals": [
+        "cloudflare",
+        "cf-ray"
+      ],
+      "access_barrier": {
+        "class": "security_code_present_content_accessible",
+        "summary": "security/captcha code is present, but the main page content is still accessible",
+        "confidence": "medium",
+        "form_count": 0,
+        "page_block_markers": [
+          "cloudflare_challenge"
+        ],
+        "captcha_markers_in_forms": [],
+        "captcha_markers_outside_forms": [],
+        "captcha_markers_total": [],
+        "main_text_chars_without_forms": 3624,
+        "main_block_count_without_forms": 32,
+        "has_main_content": true
+      },
+      "access_barrier_class": "security_code_present_content_accessible",
+      "summary": "HTTP 200, 81253 bytes, text_chars=45660, barrier=security_code_present_content_accessible",
+      "id": "yandex_accessibility",
+      "provider": "Yandex",
+      "role": "Yandex availability/accessibility check",
+      "robots_token": "YandexAccessibilityBot",
+      "text_chars_delta_vs_baseline": 0
+    }
+  ],
+  "content_extraction": {
+    "status": "success",
+    "summary": "clean content extracted",
+    "url": "https://vishartattoo.com",
+    "text_chars": 3799,
+    "blocks": [
+      "Title: Realism Tattoo Artist in Manchester | Vladimir Vishar",
+      "Meta description: Manchester realism tattoo artist Vladimir Vishar, based at No Regrets Studios Manchester. Colour and black-and-grey realism, custom tattoos and cover-ups.",
+      "Realism Tattoo Artist in Manchester | Vladimir Vishar",
+      "Skip to main content",
+      "[image: Black and grey realism hannya demon artwork by Vladimir Vishar, Manchester tattoo artist]",
+      "Realism, made to last.",
+      "Colour and black-and-grey realism tattoos in Manchester. Cover-ups by assessment.",
+      "Enquiry through the studio. The team will arrange an in-person or video consultation before booking.",
+      "✦ Custom designs only, no flash",
+      "✦ No Regrets Studios Manchester",
+      "✦ £140/hr · Currently booking September – October 2026",
+      "Featured in Global Tattoo Mag · Ink Legends Magazine · Big London Tattoo Show 2025",
+      "Scroll to assemble",
+      "Selected Realism Work",
+      "Colour, black-and-grey, and cover-up realism",
+      "Custom realism built around contrast, placement, and how the image will age on skin — from vivid colour work to black-and-grey depth and considered cover-up solutions.",
+      "What happens after you send the form",
+      "You send your idea",
+      "The studio form goes to No Regrets. Add your concept, placement, size, references, and whether it is a cover-up.",
+      "A tattoo consultant gets back to you",
+      "The studio team reviews the enquiry and usually replies within two working days. They may ask for more details before booking a consultation.",
+      "We meet for a consultation",
+      "Your consultation can be in person, by video, or by phone. We discuss the idea, references, placement, time estimate, and what is realistic for the tattoo.",
+      "You choose whether to book",
+      "There is no pressure to book during the consultation. After your concept has been reviewed and you decide to book, No Regrets Studios requires a non-refundable chair rental fee to secure the appointment. This comes off the overall tattoo cost.",
+      "Precision in Every Needle.",
+      "I am Vladimir Vishar , a Manchester-based specialist in realistic tattooing. My practice focuses on two primary disciplines: vivid Colour Realism and evocative Black & Grey works.",
+      "Operating out of Salford, I believe in custom tattoo design — every piece is a unique collaboration between artist and client.",
+      "More about me & the studio →",
+      "Portraits, wildlife, florals. Built around your reference, your skin, your placement.",
+      "Contrast and shading. Portraits, mythology, dark realism and horror pieces.",
+      "Old ink into something you'd actually choose. Photo assessment first, no obligation.",
+      "Environment & Creative Process",
+      "Good healing keeps the tattoo clean, settled, and long-lasting.",
+      "Read the full aftercare guide →",
+      "✓ Keep it clean and protected",
+      "✓ Avoid soaking, sauna, heavy sweating, and direct sun while healing",
+      "✓ Use SPF after healing to protect contrast and colour",
+      "Verified Google reviews from clients I’ve tattooed at No Regrets Studios Manchester — every one links to the original on Google Maps.",
+      "★★★★★ five-star reviews on Google",
+      "Tattooed by me? My personal Google profile is new — a review there genuinely helps .",
+      "Questions. Answered.",
+      "Simple tools to help with tattoo ideas and aftercare questions.",
+      "Concept Consultant",
+      "Your tattoo idea · required",
+      "Contact · required",
+      "I'll use this only to reply about your tattoo idea.",
+      "Send this idea to Vladimir",
+      "Aftercare Assistant",
+      "Instant healing support",
+      "Your aftercare question",
+      "Open full AI Tools page →",
+      "Let's build your piece.",
+      "Manchester / Salford"
+    ],
+    "block_count": 54,
+    "text_ref": "geo_agent/data/raw/llm-accessibility/vishartattoo-com-cd75802a3d63/llm_clean_content.txt"
+  },
+  "render": {
+    "status": "skipped",
+    "summary": "render flag not set"
+  },
+  "content_parity": {
+    "status": "skipped",
+    "summary": "rendered text is unavailable; screenshot comparison needs Playwright",
+    "missing_rendered_blocks": [],
+    "extra_clean_blocks": []
+  },
+  "commercial_audit": {
+    "status": "pass",
+    "warnings": [],
+    "clean_signals": {
+      "prices": [
+        "£140"
+      ],
+      "discount_terms": [],
+      "cta_terms": [
+        "book"
+      ],
+      "service_terms": [],
+      "struck_price_markers": false,
+      "struck_price_text": [],
+      "hidden_commercial_risk": false
+    },
+    "rendered_signals": {
+      "prices": [],
+      "discount_terms": [],
+      "cta_terms": [],
+      "service_terms": [],
+      "struck_price_markers": false,
+      "struck_price_text": [],
+      "hidden_commercial_risk": false
+    }
+  },
+  "generated_at": "2026-07-14T19:10:50+00:00"
+}
