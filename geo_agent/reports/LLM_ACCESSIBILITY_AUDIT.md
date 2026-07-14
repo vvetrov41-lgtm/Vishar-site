@@ -1,9 +1,9 @@
 # LLM_ACCESSIBILITY_AUDIT
 
-Generated: 2026-07-14T19:10:50+00:00
+Generated: 2026-07-14T19:34:15+00:00
 URL: https://vishartattoo.com
 Network approved: True
-Render requested: False
+Render requested: True
 
 ## Audit Checklist
 
@@ -12,7 +12,7 @@ Render requested: False
 | Robots permission | [OK] | robots tokens evaluated |
 | Ordinary server baseline | [WARN] | security/captcha code is present, but the main page content is still accessible |
 | LLM/search bot HTTP probes with full User-Agent strings | [OK] | bot probes used full HTTP User-Agent strings and returned accessible responses |
-| Rendered screenshot/text | [SKIP] | render flag not set |
+| Rendered screenshot/text | [WARN] | Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/ Call log:   - navigating to "https://vishartattoo.com/", waiting until "networkidle"  |
 | Clean LLM-style content | [OK] | clean LLM-style content extracted |
 | Rendered vs clean-content parity | [SKIP] | rendered text is unavailable; screenshot comparison needs Playwright |
 | Commercial content correctness | [OK] | no commercial extraction warnings |
@@ -88,7 +88,7 @@ HTTP probes must use the full `HTTP User-Agent` string below. The `Robots token`
 - clean extraction status: success
 - clean text chars: 3799
 - clean text ref: geo_agent/data/raw/llm-accessibility/vishartattoo-com-cd75802a3d63/llm_clean_content.txt
-- render status: skipped
+- render status: error
 - screenshot: 
 - rendered text ref: 
 

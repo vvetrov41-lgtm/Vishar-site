@@ -1,7 +1,7 @@
 {
   "url": "https://vishartattoo.com",
   "network_approved": true,
-  "render_requested": false,
+  "render_requested": true,
   "robots_url": "https://vishartattoo.com/robots.txt",
   "robots_response": {
     "status": "success",
@@ -721,8 +721,8 @@
     "text_ref": "geo_agent/data/raw/llm-accessibility/vishartattoo-com-cd75802a3d63/llm_clean_content.txt"
   },
   "render": {
-    "status": "skipped",
-    "summary": "render flag not set"
+    "status": "error",
+    "summary": "Error: Page.goto: net::ERR_CONNECTION_RESET at https://vishartattoo.com/\nCall log:\n  - navigating to \"https://vishartattoo.com/\", waiting until \"networkidle\"\n"
   },
   "content_parity": {
     "status": "skipped",
@@ -756,5 +756,5 @@
       "hidden_commercial_risk": false
     }
   },
-  "generated_at": "2026-07-14T19:10:50+00:00"
+  "generated_at": "2026-07-14T19:34:15+00:00"
 }
