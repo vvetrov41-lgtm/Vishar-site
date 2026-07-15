@@ -42,6 +42,30 @@ RUNTIME_PROFILE_REL = RUNTIME_STATE_REL / "runtime-profile.json"
 BIRTH_PLAN_REL = RUNTIME_STATE_REL / "birth-plan.json"
 INACTIVE_ADAPTERS_REL = RUNTIME_STATE_REL / "inactive-adapters"
 RUNTIME_INSTALL_REL = Path(".geo-topic-agent-runtime")
+RUNTIME_LOCAL_ENV = "GEO_AGENT_RUNTIME_LOCAL_ROOT"
+
+
+def runtime_local_root(root: Path) -> Path:
+    """Return runtime-local state root, or the shared geo_agent root for legacy CLI use."""
+    configured = os.environ.get(RUNTIME_LOCAL_ENV, "").strip()
+    if not configured:
+        return root / DEFAULT_OUTPUT_ROOT
+    path = Path(configured).expanduser()
+    if not path.is_absolute():
+        path = root / path
+    return path
+
+
+def runtime_profile_path(root: Path) -> Path:
+    return runtime_local_root(root) / "runtime" / "runtime-profile.json"
+
+
+def birth_plan_path(root: Path) -> Path:
+    return runtime_local_root(root) / "runtime" / "birth-plan.json"
+
+
+def runtime_state_path(root: Path) -> Path:
+    return runtime_local_root(root) / "STATE.md"
 
 XMLRIVER_ENDPOINTS = {
     "google": "https://xmlriver.com/search/xml",
@@ -1023,8 +1047,11 @@ def setup_environment(
         and applied_runtime_actions
         and all(row.get("status") not in {"skip", "blocked"} for row in applied_runtime_actions)
     )
-    write_json(root / RUNTIME_PROFILE_REL, runtime_profile)
-    write_json(root / BIRTH_PLAN_REL, {
+    profile_path = runtime_profile_path(root)
+    plan_path = birth_plan_path(root)
+    runtime_profile["runtime_local_root"] = portable_ref(root, runtime_local_root(root))
+    write_json(profile_path, runtime_profile)
+    write_json(plan_path, {
         **runtime_plan,
         "apply_requested": apply_runtime_adaptation_flag,
         "reviewed_plan_hash": reviewed_runtime_plan_hash,
@@ -1059,7 +1086,7 @@ def setup_environment(
             {"active_runtime": runtime_profile.get("active_runtime"), "runtime_confidence": runtime_profile.get("confidence")},
             {"runtime_adaptation_applied": runtime_adaptation_applied, "runtime_plan_hash": runtime_plan.get("plan_hash", ""), "runtime_actions": len(applied_runtime_actions)},
         ],
-        evidence_refs=[str(report_path), str(root / CONFIG_REL), str(root / RUNTIME_PROFILE_REL), str(root / BIRTH_PLAN_REL)],
+        evidence_refs=[str(report_path), str(root / CONFIG_REL), str(profile_path), str(plan_path)],
         next_valid_actions=["answer_project_context_intake", "offer_deep_project_context_collection", "collect_project_context", "then_offer_site_and_target_page_audit"],
     )
 
@@ -1113,8 +1140,9 @@ Generated: {utc_now()}
 - active runtime: {config.get("runtime", {}).get("profile", {}).get("active_runtime", "unknown")}
 - detection confidence: {config.get("runtime", {}).get("profile", {}).get("confidence", "unknown")}
 - detection source: {config.get("runtime", {}).get("profile", {}).get("source", "unknown")}
-- runtime profile: {portable_ref(root, root / RUNTIME_PROFILE_REL)}
-- birth plan: {portable_ref(root, root / BIRTH_PLAN_REL)}
+- runtime profile: {portable_ref(root, runtime_profile_path(root))}
+- birth plan: {portable_ref(root, birth_plan_path(root))}
+- runtime-local state root: {portable_ref(root, runtime_local_root(root))}
 - inactive adapter actions applied: {len(config.get("runtime", {}).get("applied_actions", []))}
 
 ## Found Configs
@@ -7187,7 +7215,7 @@ def update_state(
     blockers: list[str] | None = None,
     next_valid_actions: list[str] | None = None,
 ) -> None:
-    state_path = root / DEFAULT_OUTPUT_ROOT / "STATE.md"
+    state_path = runtime_state_path(root)
     blockers = blockers if blockers is not None else ["not evaluated by this action; inspect the latest structured CLI observation"]
     next_valid_actions = next_valid_actions or ["review the latest structured CLI observation before starting another stage"]
     text = f"""# STATE
