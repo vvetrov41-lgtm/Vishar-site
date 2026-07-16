@@ -42,5 +42,5 @@ jobs:
       - name: Compile GEO runtime and launcher
         run: python -m compileall .geo-topic-agent-runtime scripts
 
-      - name: Test dual-runtime integration
-        run: pytest tests/test_geo_agent_dual_runtime.py -q
+      - name: Test GEO runtime
+        run: pytest tests -q
