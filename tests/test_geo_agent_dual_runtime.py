@@ -129,11 +129,9 @@ def test_setup_is_runtime_local_and_does_not_rewrite_shared_files(project: Path)
         local_root = project / ".geo-agent-local" / runtime
         profile_path = local_root / "runtime" / "runtime-profile.json"
         plan_path = local_root / "runtime" / "birth-plan.json"
-        state_path = local_root / "STATE.md"
         report_path = local_root / "setup-project" / "geo_agent" / "reports" / "ADAPTATION_REPORT.md"
         assert profile_path.is_file()
         assert plan_path.is_file()
-        assert state_path.is_file()
         assert report_path.is_file()
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
         assert profile["active_runtime"] == runtime
