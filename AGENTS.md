@@ -1,4 +1,4 @@
-# Project instructions for Codex
+# Shared project instructions for Codex and Claude Code
 
 This repository contains the website for tattoo artist Vladimir Vishar / Vishar Tattoo.
 
@@ -24,23 +24,43 @@ Before making any production change, produce a patch plan first.
 ## GEO Topic Agent
 
 The installed GEO Topic Agent is available for explicitly requested GEO/AEO
-research and planning tasks. Its canonical runtime is
+research and planning tasks only. Normal repository development tasks must not
+automatically become GEO intake sessions. Its canonical runtime is
 `.geo-topic-agent-runtime/`; read and follow
 `.geo-topic-agent-runtime/AGENTS.md` as the source of truth for those tasks.
 Resolve package-relative paths under `.geo-topic-agent-runtime/`, including
 `skills/`, `references/`, `geo-topic-contract.json`, `LICENSE.md`, and adapters.
 
-Run its commands through:
+Run its commands through the dual-runtime launcher so Codex and Claude Code do
+not overwrite each other's runtime-local operational state:
 
 ```bash
-python .geo-topic-agent-runtime/geo_agent_cli.py <command>
+python scripts/geo_agent_launcher.py --runtime codex <command>
+python scripts/geo_agent_launcher.py --runtime claude <command>
 ```
+
+The launcher invokes the same canonical CLI at
+`.geo-topic-agent-runtime/geo_agent_cli.py`, selects the requested runtime
+adapter, and stores active-runtime/session state under ignored
+`.geo-agent-local/<runtime>/`.
+
+Before a launcher-driven GEO session, read
+`.geo-agent-local/<runtime>/STATE.md` when it exists. The tracked
+`geo_agent/STATE.md` is a legacy baseline for direct CLI compatibility only and
+must not override newer runtime-local state. This host-specific routing rule
+overrides the canonical runtime's generic STATE lookup whenever the dual-runtime
+launcher is used.
 
 The first setup command is:
 
 ```bash
-python .geo-topic-agent-runtime/geo_agent_cli.py setup --project-dir "." --runtime codex
+python scripts/geo_agent_launcher.py --runtime codex setup --project-dir "."
 ```
+
+Launcher-driven `setup` executes against an ignored shadow project at
+`.geo-agent-local/<runtime>/setup-project/`. Its runtime profile, birth plan,
+adaptation report, and generated setup files are local. It must not rewrite the
+tracked shared `geo_agent/config/geo_agent_config.json` or tracked reports.
 
 The GEO runtime supplements rather than replaces the project instructions
 above. In particular, it must not modify production site files during an audit
@@ -53,3 +73,17 @@ configuration in `geo_agent/config/geo_agent_config.json`. The project profile
 defines the approved positioning, location hierarchy, service taxonomy, query
 cluster, evidence boundaries, and claims that must not be invented. Do not
 replace those facts with generic tattoo-industry assumptions.
+
+## Dual-runtime safety
+
+Shared durable GEO facts remain in `geo_agent/PROJECT_PROFILE.md` and
+`geo_agent/config/geo_agent_config.json`. Runtime-local state such as the active
+runtime profile, birth/adaptation plan, session state, raw provider responses,
+temporary exports, and logs must not be committed and must not be shared between
+Codex and Claude Code. See `docs/GEO_AGENT_DUAL_RUNTIME.md`.
+
+Parallel GEO work requires separate Git branches and preferably separate
+worktrees or isolated cloud checkouts. Do not run simultaneous paid provider
+collections for an identical query scope. Before any live paid run, compare the
+approval ledger and dry-run scope for provider, engines, region, language,
+device, depth, and normalized query inventory.
