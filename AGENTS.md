@@ -57,8 +57,8 @@ python scripts/geo_agent_launcher.py --runtime codex setup --project-dir "."
 
 Launcher-driven `setup` executes against an ignored shadow project at
 `.geo-agent-local/<runtime>/setup-project/`. Its runtime profile, birth plan,
-adaptation report, and STATE are local. It must not rewrite the tracked shared
-`geo_agent/config/geo_agent_config.json` or tracked reports.
+adaptation report, and generated setup files are local. It must not rewrite the
+tracked shared `geo_agent/config/geo_agent_config.json` or tracked reports.
 
 The GEO runtime supplements rather than replaces the project instructions
 above. In particular, it must not modify production site files during an audit
