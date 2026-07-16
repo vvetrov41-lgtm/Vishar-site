@@ -1,6 +1,8 @@
 # Claude Code bootstrap
 
-Read `AGENTS.md` first; it is the shared repository and GEO Topic Agent instruction source for both Codex and Claude Code.
+@AGENTS.md
+
+`AGENTS.md` is the shared repository and GEO Topic Agent instruction source for both Codex and Claude Code.
 
 Claude Code-specific GEO command entry point:
 
