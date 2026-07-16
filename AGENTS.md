@@ -44,11 +44,21 @@ The launcher invokes the same canonical CLI at
 adapter, and stores active-runtime/session state under ignored
 `.geo-agent-local/<runtime>/`.
 
+Before a launcher-driven GEO session, read
+`.geo-agent-local/<runtime>/STATE.md` when it exists. The tracked
+`geo_agent/STATE.md` is a legacy baseline for direct CLI compatibility only and
+must not override newer runtime-local state.
+
 The first setup command is:
 
 ```bash
 python scripts/geo_agent_launcher.py --runtime codex setup --project-dir "."
 ```
+
+Launcher-driven `setup` executes against an ignored shadow project at
+`.geo-agent-local/<runtime>/setup-project/`. Its runtime profile, birth plan,
+adaptation report, and STATE are local. It must not rewrite the tracked shared
+`geo_agent/config/geo_agent_config.json` or tracked reports.
 
 The GEO runtime supplements rather than replaces the project instructions
 above. In particular, it must not modify production site files during an audit
