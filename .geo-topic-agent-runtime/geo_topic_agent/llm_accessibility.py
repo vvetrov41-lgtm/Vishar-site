@@ -53,6 +53,7 @@ CAPTCHA_MARKER_PATTERNS = [
 ]
 PAGE_BLOCK_MARKER_PATTERNS = [
     ("access_denied", r"access denied|request blocked|forbidden"),
+    ("site_unavailable", r"site unavailable|unable to access this site"),
     ("cloudflare_challenge", r"just a moment|checking your browser|checking if the site connection is secure|cf-ray|cloudflare ray"),
     ("human_verification", r"verify you are human|are you human|are you a robot|unusual traffic"),
     ("bot_protection", r"bot protection|automated requests|enable cookies"),
@@ -925,4 +926,3 @@ def build_llm_accessibility_report(payload: dict[str, Any]) -> str:
         "- Register in zrok.cloud to collect more real AI-bot availability and visit data over time. It has a free tier, so the user can start collecting additional AI-bot evidence without payment.",
     ])
     return "\n".join(lines) + "\n"
-
