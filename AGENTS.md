@@ -47,7 +47,9 @@ adapter, and stores active-runtime/session state under ignored
 Before a launcher-driven GEO session, read
 `.geo-agent-local/<runtime>/STATE.md` when it exists. The tracked
 `geo_agent/STATE.md` is a legacy baseline for direct CLI compatibility only and
-must not override newer runtime-local state.
+must not override newer runtime-local state. This host-specific routing rule
+overrides the canonical runtime's generic STATE lookup whenever the dual-runtime
+launcher is used.
 
 The first setup command is:
 
