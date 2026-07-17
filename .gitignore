@@ -1,8 +1,13 @@
 node_modules/
 __pycache__/
 *.py[cod]
+.venv-gsc/
 .env
 .env.*
+
+# Search Console credentials and generated evidence
+*service-account*.json
+geo_agent/data/gsc/
 
 # GeoAgent LLM accessibility audit evidence (generated, local-only)
 # Narrow patterns are used deliberately: the broader *_audit.json and *_AUDIT.md
