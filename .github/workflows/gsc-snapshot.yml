@@ -1,0 +1,45 @@
+name: GSC snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      inspect_sitemap:
+        description: "Inspect URLs from the live sitemap"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  gsc:
+    runs-on: ubuntu-latest
+    env:
+      GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare isolated GSC environment
+        run: python scripts/setup_gsc.py
+
+      - name: Check Search Console access
+        run: .venv-gsc/bin/python -m geo_agent.tools.gsc.cli doctor --live
+
+      - name: Build snapshot
+        run: |
+          if [ "${{ inputs.inspect_sitemap }}" = "true" ]; then
+            .venv-gsc/bin/python -m geo_agent.tools.gsc.cli snapshot --inspect-sitemap
+          else
+            .venv-gsc/bin/python -m geo_agent.tools.gsc.cli snapshot
+          fi
+
+      - name: Upload GSC report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gsc-report
+          path: geo_agent/data/gsc
+          if-no-files-found: warn
+          retention-days: 14
