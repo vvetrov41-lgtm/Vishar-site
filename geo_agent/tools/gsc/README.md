@@ -32,6 +32,16 @@ GSC_SERVICE_ACCOUNT_PATH=~/.config/vishar-site/gsc-service-account.json
 `GSC_PROPERTY` is already defaulted in code. The key path can be overridden with
 `GSC_SERVICE_ACCOUNT_PATH` or `GOOGLE_APPLICATION_CREDENTIALS`.
 
+For a cloud agent, prefer its protected secret settings instead of a file:
+
+```text
+GSC_SERVICE_ACCOUNT_JSON=<complete JSON key stored as a secret>
+```
+
+Base64 content is also accepted through `GSC_SERVICE_ACCOUNT_JSON_B64`. Never
+put either value in `.env`, Claude settings committed to Git, a prompt, or a
+normal chat message.
+
 ## Commands
 
 ```bash
@@ -76,7 +86,9 @@ summary. With
 1. Create or select a Google Cloud project.
 2. Enable **Google Search Console API**.
 3. Create a Service Account and download its JSON key.
-4. Save the key outside the repository at the path above and set permission 600.
+4. Put the complete JSON into the agent's protected
+   `GSC_SERVICE_ACCOUNT_JSON` secret. For a local-only agent, save it outside the
+   repository at the path above and set permission 600.
 5. In Search Console, add the Service Account email to
    `sc-domain:vishartattoo.com` with the lowest permission that allows the
    required reports. If URL Inspection rejects restricted access, grant Full

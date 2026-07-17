@@ -20,6 +20,7 @@ from .api import (
 from .config import (
     PROJECT_ROOT,
     ConfigurationError,
+    credential_source,
     credential_permissions_warning,
     load_credentials_info,
     load_settings,
@@ -111,13 +112,17 @@ def command_doctor(args: argparse.Namespace) -> int:
     credentials_ready = True
     try:
         info = load_credentials_info(settings.credentials_path)
-        print(f"credential path: OK ({settings.credentials_path})")
+        source = credential_source(settings.credentials_path)
+        print(f"credential source: OK ({source})")
         print(f"service account: {masked_email(info['client_email'])}")
-        warning = credential_permissions_warning(settings.credentials_path)
-        if warning:
-            print(f"credential permissions: WARN ({warning})")
+        if source == str(settings.credentials_path):
+            warning = credential_permissions_warning(settings.credentials_path)
+            if warning:
+                print(f"credential permissions: WARN ({warning})")
+            else:
+                print("credential permissions: OK")
         else:
-            print("credential permissions: OK")
+            print("credential permissions: managed by environment secret store")
     except ConfigurationError as exc:
         credentials_ready = False
         print(f"credentials: MISSING ({exc})")

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from geo_agent.tools.gsc.api import normalize_rows, validate_inspection_urls
 from geo_agent.tools.gsc.cli import parse_dimensions, parse_period, sitemap_urls
-from geo_agent.tools.gsc.config import ConfigurationError, validate_property
+from geo_agent.tools.gsc.config import (
+    ConfigurationError,
+    load_credentials_info,
+    validate_property,
+)
 from geo_agent.tools.gsc.io import compare_periods, new_queries
 
 
@@ -16,6 +20,16 @@ class GscToolkitTests(unittest.TestCase):
         validate_property("https://vishartattoo.com/")
         with self.assertRaises(ConfigurationError):
             validate_property("sc-domain:example.com")
+
+    def test_credentials_can_come_from_protected_environment_secret(self) -> None:
+        payload = (
+            '{"type":"service_account","project_id":"p","private_key":"secret",'
+            '"client_email":"reader@example.iam.gserviceaccount.com",'
+            '"token_uri":"https://oauth2.googleapis.com/token"}'
+        )
+        with patch.dict("os.environ", {"GSC_SERVICE_ACCOUNT_JSON": payload}, clear=False):
+            info = load_credentials_info(Path("/does/not/exist"))
+        self.assertEqual(info["project_id"], "p")
 
     def test_inspection_url_guard(self) -> None:
         self.assertEqual(

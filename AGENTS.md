@@ -101,7 +101,9 @@ read-only toolkit documented in `geo_agent/tools/gsc/README.md`:
 The target property is `sc-domain:vishartattoo.com`. Keep the Service Account
 JSON outside the repository and pass its path through
 `GSC_SERVICE_ACCOUNT_PATH`; never print, paste, commit, or copy the key into an
-agent prompt. Generated exports belong in ignored `geo_agent/data/gsc/`.
+agent prompt. A cloud runtime may instead use a protected
+`GSC_SERVICE_ACCOUNT_JSON` environment secret. Generated exports belong in
+ignored `geo_agent/data/gsc/`.
 
 Treat GSC evidence as observed historical data. Search Analytics query rows are
 affected by anonymisation, and URL Inspection returns cached index information,

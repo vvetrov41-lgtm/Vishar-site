@@ -16,7 +16,7 @@ PAGE_SIZE = 25_000
 
 def build_service(credentials_path: Path, version: str = "v1") -> Any:
     """Build an authenticated Search Console service without printing secrets."""
-    load_credentials_info(credentials_path)
+    credentials_info = load_credentials_info(credentials_path)
     try:
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
@@ -26,8 +26,8 @@ def build_service(credentials_path: Path, version: str = "v1") -> Any:
             "python scripts/setup_gsc.py"
         ) from exc
 
-    credentials = service_account.Credentials.from_service_account_file(
-        str(credentials_path), scopes=[READONLY_SCOPE]
+    credentials = service_account.Credentials.from_service_account_info(
+        credentials_info, scopes=[READONLY_SCOPE]
     )
     return build(
         "searchconsole",

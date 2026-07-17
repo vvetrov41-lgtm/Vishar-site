@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import stat
@@ -61,16 +63,44 @@ def validate_property(property_url: str) -> None:
     )
 
 
+def credential_source(path: Path) -> str:
+    if os.environ.get("GSC_SERVICE_ACCOUNT_JSON"):
+        return "GSC_SERVICE_ACCOUNT_JSON secret"
+    if os.environ.get("GSC_SERVICE_ACCOUNT_JSON_B64"):
+        return "GSC_SERVICE_ACCOUNT_JSON_B64 secret"
+    return str(path)
+
+
 def load_credentials_info(path: Path) -> dict[str, Any]:
-    if not path.is_file():
+    raw_json = os.environ.get("GSC_SERVICE_ACCOUNT_JSON")
+    raw_b64 = os.environ.get("GSC_SERVICE_ACCOUNT_JSON_B64")
+    if raw_json and raw_b64:
         raise ConfigurationError(
-            f"Service Account key not found at {path}. "
-            "Keep it outside the repository and set GSC_SERVICE_ACCOUNT_PATH."
+            "Set only one of GSC_SERVICE_ACCOUNT_JSON or GSC_SERVICE_ACCOUNT_JSON_B64."
+        )
+    if raw_b64:
+        try:
+            raw_json = base64.b64decode(raw_b64, validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError) as exc:
+            raise ConfigurationError("GSC_SERVICE_ACCOUNT_JSON_B64 is invalid.") from exc
+
+    if raw_json:
+        source = credential_source(path)
+    elif path.is_file():
+        source = str(path)
+        try:
+            raw_json = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ConfigurationError(f"Cannot read Service Account JSON: {exc}") from exc
+    else:
+        raise ConfigurationError(
+            f"Service Account key not found at {path}. Use a protected GSC_SERVICE_ACCOUNT_JSON "
+            "environment secret or keep the file outside the repository."
         )
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ConfigurationError(f"Cannot read Service Account JSON: {exc}") from exc
+        data = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"Cannot parse Service Account JSON from {source}.") from exc
 
     required = {"type", "project_id", "private_key", "client_email", "token_uri"}
     missing = sorted(required.difference(data))
