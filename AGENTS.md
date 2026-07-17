@@ -87,3 +87,24 @@ worktrees or isolated cloud checkouts. Do not run simultaneous paid provider
 collections for an identical query scope. Before any live paid run, compare the
 approval ledger and dry-run scope for provider, engines, region, language,
 device, depth, and normalized query inventory.
+
+## Google Search Console
+
+For explicitly requested Search Console diagnostics, use the project-local
+read-only toolkit documented in `geo_agent/tools/gsc/README.md`:
+
+```bash
+.venv-gsc/bin/python -m geo_agent.tools.gsc.cli doctor
+.venv-gsc/bin/python -m geo_agent.tools.gsc.cli snapshot --inspect-sitemap
+```
+
+The target property is `sc-domain:vishartattoo.com`. Keep the Service Account
+JSON outside the repository and pass its path through
+`GSC_SERVICE_ACCOUNT_PATH`; never print, paste, commit, or copy the key into an
+agent prompt. Generated exports belong in ignored `geo_agent/data/gsc/`.
+
+Treat GSC evidence as observed historical data. Search Analytics query rows are
+affected by anonymisation, and URL Inspection returns cached index information,
+not a live test. Do not infer zero organic visibility from an empty query export
+without checking page-level totals, date coverage, property access, and URL
+Inspection evidence.
