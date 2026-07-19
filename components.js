@@ -36,6 +36,39 @@ const SOCIALS = [
 { label: 'Facebook',  href: 'https://www.facebook.com/profile.php?id=100088974927193' }
 ];
 
+const MOBILE_SOCIALS = [
+  {
+    label: 'Instagram',
+    href: INSTAGRAM,
+    icon: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.25"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor" stroke="none"/>'
+  },
+  {
+    label: 'TikTok',
+    href: 'https://www.tiktok.com/@vladimir.vishar',
+    icon: '<path d="M14.5 4v10.2a4.2 4.2 0 1 1-3.6-4.16v2.82a1.6 1.6 0 1 0 1 1.48V4h2.6Zm0 0c.35 2.05 1.55 3.25 3.5 3.6v2.65A6.45 6.45 0 0 1 14.5 8.9"/>'
+  },
+  {
+    label: 'Facebook',
+    href: 'https://www.facebook.com/profile.php?id=100088974927193',
+    icon: '<path d="M14.2 8.2h3V4.4c-.52-.07-2.3-.2-4.4-.2-4.1 0-6.9 2.5-6.9 7.1v4H2v4.3h3.9V24h4.8v-4.4h4l.64-4.3h-4.64v-3.58c0-1.25.34-2.1 2.12-2.1h2.38V8.2Z" transform="translate(3 -2) scale(.82)" fill="currentColor" stroke="none"/>'
+  },
+  {
+    label: 'Pinterest',
+    href: 'https://uk.pinterest.com/VladimirVisharTatt/',
+    icon: '<path d="M12 3.2a8.8 8.8 0 0 0-3.2 17c-.08-1.45-.02-3.2.36-4.83l1.13-4.78s-.28-.58-.28-1.43c0-1.34.77-2.34 1.74-2.34.82 0 1.22.62 1.22 1.36 0 .83-.53 2.06-.8 3.2-.23.96.48 1.75 1.43 1.75 1.72 0 3.04-1.81 3.04-4.43 0-2.32-1.67-3.94-4.05-3.94-2.76 0-4.38 2.07-4.38 4.21 0 .84.32 1.73.72 2.22.08.1.09.18.07.28l-.27 1.1c-.04.18-.14.22-.33.13-1.23-.57-2-2.37-2-3.82 0-3.1 2.25-5.95 6.5-5.95 3.41 0 6.06 2.43 6.06 5.68 0 3.39-2.14 6.12-5.1 6.12-1 0-1.93-.52-2.25-1.13l-.61 2.33c-.22.85-.82 1.92-1.22 2.57.92.28 1.89.43 2.9.43a8.8 8.8 0 1 0 0-17.6Z" fill="currentColor" stroke="none"/>'
+  },
+  {
+    label: 'YouTube',
+    href: 'https://youtube.com/@vladimir_vishar',
+    icon: '<path d="M21.6 7.2a2.5 2.5 0 0 0-1.76-1.77C18.3 5 12 5 12 5s-6.3 0-7.84.43A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.76 1.77C5.7 19 12 19 12 19s6.3 0 7.84-.43a2.5 2.5 0 0 0 1.76-1.77A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8Z" fill="currentColor" stroke="none"/><path d="m10 15 5.2-3L10 9v6Z" fill="#000" stroke="none"/>'
+  },
+  {
+    label: 'Email',
+    href: 'mailto:' + EMAIL,
+    icon: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/>'
+  }
+];
+
 const pageId = window.PAGE_ID || '';
 
 /* ── Helpers ── */
@@ -77,6 +110,15 @@ const mobileLinks = NAV_LINKS.map(l => {
   return `<a href="${l.href}" onclick="toggleMenu()" class="transition-colors ${active ? 'text-apple-blue' : 'hover:text-white/80'}">${esc(l.label)}</a>`;
 }).join('\n');
 
+const mobileSocialLinks = MOBILE_SOCIALS.map(s => {
+  const isEmail = s.href.indexOf('mailto:') === 0;
+  return `<a href="${s.href}"${isEmail ? '' : ' target="_blank" rel="noopener noreferrer"'}
+    class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+    aria-label="${esc(s.label)}" title="${esc(s.label)}">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s.icon}</svg>
+  </a>`;
+}).join('\n');
+
 el.innerHTML = `
   <nav class="fixed top-0 w-full z-[100] glass border-b border-white/10" role="navigation" aria-label="Main">
     <div class="max-w-[1200px] mx-auto px-6 h-14 flex justify-between items-center">
@@ -98,10 +140,13 @@ el.innerHTML = `
       </button>
     </div>
     <div id="mobile-overlay"
-         class="hidden fixed inset-0 left-0 right-0 top-14 max-w-full box-border overflow-x-hidden bg-black/95 backdrop-blur-md z-[90] flex flex-col px-6 pt-10 pb-8 space-y-5 text-xl font-medium"
+         class="hidden fixed inset-0 left-0 right-0 top-14 max-w-full box-border overflow-x-hidden overflow-y-auto bg-black/95 backdrop-blur-md z-[90] flex flex-col px-6 pt-10 pb-8 space-y-5 text-xl font-medium"
          aria-hidden="true">
       ${mobileLinks}
       <div class="pt-4 mt-auto border-t border-white/10">
+        <div class="mb-5 flex items-center justify-center gap-1" role="group" aria-label="Social media and email">
+          ${mobileSocialLinks}
+        </div>
         <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
            class="block w-full text-center py-3 bg-white text-black rounded-full font-semibold text-base"
            onclick="toggleMenu()">Start an inquiry</a>
