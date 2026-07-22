@@ -385,14 +385,14 @@ async function checkBookingWindowSingleSource(htmlFiles) {
   }
 
   const expectedFallback = 'Check current availability';
-  const markerPattern = /<([a-z][\\w-]*)\\b[^>]*\\bdata-booking-window\\b[^>]*>([\\s\\S]*?)<\\/\\1>/gi;
-  const datedAvailabilityPattern = /(?:booking|availability)[^\\n]{0,120}\\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+20\\d{2}\\b/i;
+  const markerPattern = /<([a-z][\w-]*)\b[^>]*\bdata-booking-window\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  const datedAvailabilityPattern = /(?:booking|availability)[^\n]{0,120}\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+20\d{2}\b/i;
   let markerCount = 0;
 
   for (const file of htmlFiles) {
     const contents = await readFile(file, 'utf8');
     const fileRel = rel(file);
-    const plainText = contents.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ');
+    const plainText = contents.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
     if (datedAvailabilityPattern.test(plainText)) {
       fail(`${fileRel} hard-codes a dated booking/availability message; use data-booking-window instead.`);
@@ -400,7 +400,7 @@ async function checkBookingWindowSingleSource(htmlFiles) {
 
     for (const match of contents.matchAll(markerPattern)) {
       markerCount += 1;
-      const fallback = match[2].replace(/<[^>]+>/g, '').replace(/\\s+/g, ' ').trim();
+      const fallback = match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
       if (fallback !== expectedFallback) {
         fail(`${fileRel} data-booking-window fallback is "${fallback}", expected "${expectedFallback}".`);
       }
