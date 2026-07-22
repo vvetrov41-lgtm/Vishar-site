@@ -63,7 +63,13 @@ export default {
         );
       }
 
-      const images = Array.isArray(body.images) ? body.images.slice(0, 3) : [];
+      const images = Array.isArray(body.images) ? body.images : [];
+      if (images.length < 1 || images.length > 3) {
+        return Response.json(
+          { ok: false, error: "Please attach 1–3 reference images." },
+          { status: 400, headers: cors }
+        );
+      }
       const validImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
       for (const image of images) {
         if (!image || !validImageTypes.has(image.type) || typeof image.data !== "string" || image.data.length > 5_600_000) {

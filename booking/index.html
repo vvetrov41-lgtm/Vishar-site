@@ -104,7 +104,7 @@
             <label><span class="field-label">Existing tattoo / cover-up? <span class="required">*</span></span><select class="form-field" name="coverUp" required><option value="">Choose one</option><option>No</option><option>Yes</option><option>Not sure</option></select></label>
             <label class="form-span"><span class="field-label">When would you like to start?</span><input class="form-field" type="text" name="timing" maxlength="160" placeholder="Preferred month, flexible dates, or as soon as available"></label>
             <label class="form-span"><span class="field-label">Your idea <span class="required">*</span></span><textarea class="form-field idea-field" name="idea" maxlength="3500" placeholder="Describe the subject, mood, composition and any important personal details." required></textarea></label>
-            <label class="form-span"><span class="field-label">Reference images</span><input id="reference-files" class="form-field" type="file" name="references" accept="image/jpeg,image/png,image/webp" multiple><span class="mt-2 block text-xs leading-relaxed text-white/35">Up to 3 JPG, PNG or WebP images, 4 MB each. For a cover-up, include one close-up and one wider placement photo.</span></label>
+            <label class="form-span"><span class="field-label">Reference images <span class="required">*</span></span><input id="reference-files" class="form-field" type="file" name="references" accept="image/jpeg,image/png,image/webp" multiple required><span class="mt-2 block text-xs leading-relaxed text-white/35">Attach 1–3 JPG, PNG or WebP images, 4 MB each. For a cover-up, include one close-up and one wider placement photo.</span></label>
           </div>
 
           <div class="mt-6 hidden" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
@@ -142,8 +142,8 @@
       if (!form.reportValidity()) return;
 
       const files = Array.from(filesInput.files || []);
-      if (files.length > 3 || files.some(function (file) { return file.size > 4 * 1024 * 1024; })) {
-        status.textContent = 'Please attach no more than 3 images, up to 4 MB each.';
+      if (files.length < 1 || files.length > 3 || files.some(function (file) { return file.size > 4 * 1024 * 1024; })) {
+        status.textContent = 'Please attach 1–3 reference images, up to 4 MB each.';
         status.classList.add('text-red-400');
         return;
       }
