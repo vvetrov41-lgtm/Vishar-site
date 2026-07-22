@@ -8,7 +8,7 @@ Single source of truth for nav, footer, mobile CTA
 
 /* ── Config ── */
 const BOOKING_URL = 'https://shorturl.at/orgVK';
-const BOOKING_WINDOW = 'Next availability: December 2026';
+// Single source of truth for availability. Change only this line; HTML uses a neutral fallback.\nconst BOOKING_WINDOW = 'Next availability: December 2026';
 const EMAIL = 'info@vishartattoo.com';
 const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
 const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
@@ -696,29 +696,6 @@ aboutSection.parentNode.insertBefore(section, aboutSection.nextSibling);
 
 }
 
-/* ── Booking Window ── */
-function updateBookingWindow() {
-const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-const replacements = [
-  ['booking Jul–Aug 2026', 'Next availability: December 2026'],
-  ['booking Jul-Aug 2026', 'Next availability: December 2026'],
-  ['booking July-August 2026', 'Next availability: December 2026'],
-  ['Currently booking July – August 2026', 'Next availability: December 2026'],
-  ['Currently booking July-August 2026', 'Next availability: December 2026'],
-  ['Currently booking June – July 2026', 'Next availability: December 2026'],
-  ['Currently booking June-July 2026', 'Next availability: December 2026']
-];
-
-while (walker.nextNode()) {
-  let text = walker.currentNode.nodeValue;
-  replacements.forEach(function (pair) {
-    text = text.split(pair[0]).join(pair[1]);
-  });
-  walker.currentNode.nodeValue = text;
-}
-
-}
-
 /* ── Mobile Menu Toggle ── */
 // Every other body-level element (skip link, footer, sticky CTA, lightbox,
 // cookie consent banner, ...) is made inert while the overlay is open, so
@@ -1074,7 +1051,6 @@ refineHomepageSpecialitiesCards();
 refineServiceFeatureCards();
 removeOtherSpecialitiesMarkers();
 addHomepageApproachBlock();
-updateBookingWindow();
 injectMotionStyles();
 applyRevealToSections();
 initHeroParallax();
