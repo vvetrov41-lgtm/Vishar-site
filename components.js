@@ -182,7 +182,7 @@ el.innerHTML = `
       <div class="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
         <div>
           <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
-          <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>London bookings open in advance</p>
+          <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>London enquiries now open</p>
           <p class="text-sm text-white/60 leading-relaxed mt-3">Private studio details are confirmed with each appointment.<br>By appointment only · No walk-ins</p>
           <a href="mailto:${EMAIL}" class="text-sm text-white/60 hover:text-white mt-3 inline-block transition-colors">${EMAIL}</a>
         </div>
