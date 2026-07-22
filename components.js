@@ -700,13 +700,18 @@ aboutSection.parentNode.insertBefore(section, aboutSection.nextSibling);
 function updateBookingWindow() {
 const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
 const replacements = [
-  ['booking Jul–Aug 2026', 'booking Sep–Oct 2026'],
-  ['booking Jul-Aug 2026', 'booking Sep-Oct 2026'],
-  ['booking July-August 2026', 'booking September-October 2026'],
-  ['Currently booking July – August 2026', 'Currently booking September – October 2026'],
-  ['Currently booking July-August 2026', 'Currently booking September-October 2026'],
-  ['Currently booking June – July 2026', 'Currently booking September – October 2026'],
-  ['Currently booking June-July 2026', 'Currently booking September-October 2026']
+  ['booking Sep–Oct 2026', 'Next availability: December 2026'],
+  ['booking Sep-Oct 2026', 'Next availability: December 2026'],
+  ['booking September-October 2026', 'Next availability: December 2026'],
+  ['Currently booking September – October 2026', 'Next availability: December 2026'],
+  ['Currently booking September-October 2026', 'Next availability: December 2026'],
+  ['booking Jul–Aug 2026', 'Next availability: December 2026'],
+  ['booking Jul-Aug 2026', 'Next availability: December 2026'],
+  ['booking July-August 2026', 'Next availability: December 2026'],
+  ['Currently booking July – August 2026', 'Next availability: December 2026'],
+  ['Currently booking July-August 2026', 'Next availability: December 2026'],
+  ['Currently booking June – July 2026', 'Next availability: December 2026'],
+  ['Currently booking June-July 2026', 'Next availability: December 2026']
 ];
 
 while (walker.nextNode()) {
