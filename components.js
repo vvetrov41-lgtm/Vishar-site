@@ -8,7 +8,7 @@ Single source of truth for nav, footer, mobile CTA
 
 /* ── Config ── */
 const BOOKING_URL = 'https://shorturl.at/orgVK';
-const BOOKING_WINDOW = 'Currently booking September – October 2026';
+const BOOKING_WINDOW = 'Next availability: December 2026';
 const EMAIL = 'info@vishartattoo.com';
 const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
 const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
