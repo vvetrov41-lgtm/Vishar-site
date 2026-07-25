@@ -8,6 +8,9 @@ on:
         required: false
         type: boolean
         default: true
+  push:
+    paths:
+      - ".github/gsc-audit-trigger"
 
 permissions:
   contents: read
@@ -29,10 +32,10 @@ jobs:
 
       - name: Build snapshot
         run: |
-          if [ "${{ inputs.inspect_sitemap }}" = "true" ]; then
-            .venv-gsc/bin/python -m geo_agent.tools.gsc.cli snapshot --inspect-sitemap
-          else
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.inspect_sitemap }}" = "false" ]; then
             .venv-gsc/bin/python -m geo_agent.tools.gsc.cli snapshot
+          else
+            .venv-gsc/bin/python -m geo_agent.tools.gsc.cli snapshot --inspect-sitemap
           fi
 
       - name: Upload GSC report
@@ -43,3 +46,4 @@ jobs:
           path: geo_agent/data/gsc
           if-no-files-found: warn
           retention-days: 14
+          overwrite: true
