@@ -1,0 +1,57 @@
+{
+  "content_plan": [
+    {
+      "page_id": "qfo_page_001",
+      "cluster_name": "Cover-up tattoo Manchester",
+      "page_type": "standalone",
+      "intent": "commercial_investigation",
+      "target_title": "Cover-Up Tattoo Manchester | Transform Old Ink | Vladimir Vishar",
+      "target_url": "/cover-up-tattoo-manchester/",
+      "page_action": "strengthen_existing_page",
+      "included_title_ids": "qfo_title_0002 | qfo_title_0009 | qfo_title_0016 | qfo_title_0018",
+      "page_job": "The one page job the AI-answer evidence actually supports: a dedicated cover-up service page that states assessment terms, what can and cannot be covered, session logic and the consultation route.",
+      "evidence_note": "All four assigned titles are dedicated cover-up service pages from studios cited in the Google AI answer for 'tattoo cover up Manchester'. Two are Manchester-area (Last Supper), two are London (London Blue Lady) and are kept as page-job analogues, not as local competitors.",
+      "cannibalization_guard": "No new page is created. The existing /cover-up-tattoo-manchester/ page absorbs this work. Do not split cover-up content into a second page and do not duplicate the cover-up FAQ block that already exists on /faq/; link to it instead."
+    },
+    {
+      "disposition": "excluded",
+      "included_title_ids": "qfo_title_0010 | qfo_title_0019 | qfo_title_0014 | qfo_title_0015",
+      "exclusion_reason": "Search and platform infrastructure rather than competitor content: a Google privacy policy, the Google homepage, a Reddit bot-verification interstitial and the bare Instagram root. None carries a page job."
+    },
+    {
+      "disposition": "excluded",
+      "included_title_ids": "qfo_title_0013",
+      "exclusion_reason": "Title reads 'Book tattoo artists in Ashburn', so the enrichment fetch resolved from a US datacentre location instead of the United Kingdom. It is a collection artefact, not the UK page a Manchester searcher sees."
+    },
+    {
+      "disposition": "excluded",
+      "included_title_ids": "qfo_title_0007 | qfo_title_0012",
+      "exclusion_reason": "Keep The Faith Tattoo is a Liverpool studio and the second title is an individual artist bio there. GEO does not match the Manchester and Salford cluster, so neither defines a page job for this project."
+    },
+    {
+      "disposition": "excluded",
+      "included_title_ids": "qfo_title_0008 | qfo_title_0017",
+      "exclusion_reason": "Duplicate pair of the same North of Winter studio homepage title. A studio homepage is not a cover-up page job, and this project must not build a studio-style homepage clone."
+    },
+    {
+      "disposition": "excluded",
+      "included_title_ids": "qfo_title_0006 | qfo_title_0011",
+      "exclusion_reason": "No Regrets studio pages. These are external placement surfaces already ranked first in PLACEMENT_STRATEGY.md, and the project profile forbids presenting the studio as Vladimir's own business. They are an outreach target, not a page to build."
+    },
+    {
+      "disposition": "excluded",
+      "included_title_ids": "qfo_title_0001",
+      "exclusion_reason": "The r/manchester cover-up thread is an external participation surface recorded as placement rank 3. Rebuilding a forum thread as a site page would be an artificial duplicate."
+    },
+    {
+      "disposition": "excluded",
+      "included_title_ids": "qfo_title_0003 | qfo_title_0004",
+      "exclusion_reason": "Instagram surfaces, one of them the project's own cited profile. They are owned external assets recorded as placement rank 2, not site pages."
+    },
+    {
+      "disposition": "excluded",
+      "included_title_ids": "qfo_title_0005",
+      "exclusion_reason": "Tattoodo cover-up artist directory listing. It is a third-party directory placement recorded as placement rank 4; the project cannot and should not reproduce a directory."
+    }
+  ]
+}
