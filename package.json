@@ -8,8 +8,6 @@
     "thumbs:galleries": "node scripts/generate-gallery-thumbs.mjs",
     "build:tailwind": "tailwindcss -i ./assets/css/input.css -o ./assets/css/tailwind.css --minify",
     "validate:site": "node scripts/validate-site.mjs",
-    "vendor:3d-libs": "node scripts/vendor-3d-libs.mjs",
-    "vendor:3d-libs:check": "node scripts/vendor-3d-libs.mjs --check",
     "vendor:fonts": "node scripts/vendor-fonts.mjs",
     "vendor:fonts:check": "node scripts/vendor-fonts.mjs --check"
   },
@@ -18,9 +16,7 @@
     "@fontsource/ibm-plex-mono": "5.2.7",
     "@fontsource/inter": "5.2.8",
     "@fontsource/playfair-display": "5.2.8",
-    "gsap": "3.12.5",
     "sharp": "^0.33.5",
-    "tailwindcss": "^3.4.17",
-    "three": "0.128.0"
+    "tailwindcss": "^3.4.17"
   }
 }

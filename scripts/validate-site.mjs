@@ -15,32 +15,20 @@ const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
 const SITE_HOST = 'vishartattoo.com';
 const NOT_FOUND_FILE_REL = '404.html';
 
-// Self-hosted homepage 3D libraries (Three.js r128 / GSAP+ScrollTrigger
-// 3.12.5), vendored from pinned npm packages by scripts/vendor-3d-libs.mjs.
-// These hashes are checked independently here (not imported from that
-// script) so validation still catches drift even if the vendor script itself
-// were ever edited incorrectly.
-const VENDOR_3D_FILES = [
-  {
-    rel: 'assets/vendor/three/0.128.0/three.min.js',
-    sha256: '9274bbcec8d96168626c732b5d31c775aa8cfb7eaa0599bec0c175908a2c1ce2',
-    homepageReference: '/assets/vendor/three/0.128.0/three.min.js',
-  },
-  {
-    rel: 'assets/vendor/three/0.128.0/LICENSE',
-    sha256: '7dddf7c5b8fd10ee654db8857d75d104b5557889aa5a91fc4ca545ea7c07062f',
-  },
-  {
-    rel: 'assets/vendor/gsap/3.12.5/gsap.min.js',
-    sha256: '28033e449a31ebcc396e5be8b13b63152bf03094288fb5867034321927bce087',
-    homepageReference: '/assets/vendor/gsap/3.12.5/gsap.min.js',
-  },
-  {
-    rel: 'assets/vendor/gsap/3.12.5/ScrollTrigger.min.js',
-    sha256: 'ad33c2df9ada8a663c2147357828f980d0b7ca731ef33eb3c6e4f327c3b2cda5',
-    homepageReference: '/assets/vendor/gsap/3.12.5/ScrollTrigger.min.js',
-  },
+// Homepage machine section media. The clip is scroll-scrubbed, so it must stay
+// self-hosted (no third-party player or CDN) and its paths must stay in sync
+// with the loader in index.html, which sets them from script rather than from
+// markup attributes.
+const MACHINE_MEDIA_FILES = [
+  { rel: 'assets/machine/machine-scrub.mp4', homepageReference: '/assets/machine/machine-scrub.mp4' },
+  { rel: 'assets/machine/machine-scrub-mobile.mp4', homepageReference: '/assets/machine/machine-scrub-mobile.mp4' },
+  { rel: 'assets/machine/machine-scrub-portrait.mp4', homepageReference: '/assets/machine/machine-scrub-portrait.mp4' },
+  { rel: 'assets/machine/machine-poster.jpg', homepageReference: '/assets/machine/machine-poster.jpg' },
+  { rel: 'assets/machine/machine-poster.webp', homepageReference: '/assets/machine/machine-poster.webp' },
+  { rel: 'assets/machine/machine-poster-portrait.jpg', homepageReference: '/assets/machine/machine-poster-portrait.jpg' },
+  { rel: 'assets/machine/machine-poster-portrait.webp', homepageReference: '/assets/machine/machine-poster-portrait.webp' },
 ];
+const MACHINE_VIDEO_MAX_BYTES = 4 * 1024 * 1024;
 // Self-hosted fonts (Inter, Playfair Display, Bodoni Moda, IBM Plex Mono),
 // vendored from pinned @fontsource/* npm packages by
 // scripts/vendor-fonts.mjs. These hashes are checked independently here
@@ -442,55 +430,48 @@ async function checkNoRuntimeCdnjsReferences() {
   pass(`No executable HTML/JS/CSS or _headers file references cdnjs.cloudflare.com (${checkedCount} files checked).`);
 }
 
-async function checkVendor3DLibraries() {
-  for (const file of VENDOR_3D_FILES) {
+async function checkMachineMediaFiles() {
+  for (const file of MACHINE_MEDIA_FILES) {
     const filePath = path.join(rootDir, file.rel);
 
     if (!await pathExists(filePath)) {
-      fail(`Vendored 3D library file is missing: ${file.rel}.`);
+      fail(`Homepage machine media file is missing: ${file.rel}.`);
       continue;
     }
 
     const stats = await stat(filePath);
     if (stats.size === 0) {
-      fail(`Vendored 3D library file is empty: ${file.rel}.`);
+      fail(`Homepage machine media file is empty: ${file.rel}.`);
       continue;
     }
 
-    const buffer = await readFile(filePath);
-    const actualHash = createHash('sha256').update(buffer).digest('hex');
-    if (actualHash !== file.sha256) {
-      fail(`Vendored 3D library file SHA-256 mismatch: ${file.rel} (expected ${file.sha256}, got ${actualHash}).`);
-      continue;
-    }
-
-    if (!file.rel.match(/\/(0\.128\.0|3\.12\.5)\//)) {
-      fail(`Vendored 3D library path is not version-scoped: ${file.rel}.`);
+    if (file.rel.endsWith('.mp4') && stats.size > MACHINE_VIDEO_MAX_BYTES) {
+      fail(`Homepage machine video is too large for a scroll-scrubbed background: ${file.rel} is ${stats.size} bytes (limit ${MACHINE_VIDEO_MAX_BYTES}).`);
     }
   }
 
-  pass(`Vendored 3D library files (Three.js r128, GSAP 3.12.5, ScrollTrigger 3.12.5) exist, are non-empty, version-scoped, and match pinned SHA-256 hashes (${VENDOR_3D_FILES.length} files checked, no network access used).`);
+  pass(`Homepage machine media files exist, are non-empty, and stay within the video size budget (${MACHINE_MEDIA_FILES.length} files checked).`);
 }
 
-async function checkHomepageReferencesLocalVendorPaths() {
+async function checkHomepageReferencesMachineMedia() {
   const homepagePath = path.join(rootDir, 'index.html');
   if (!await pathExists(homepagePath)) {
-    fail('index.html is missing; cannot verify local 3D vendor references.');
+    fail('index.html is missing; cannot verify homepage machine media references.');
     return;
   }
 
   const contents = await readFile(homepagePath, 'utf8');
-  const expectedReferences = VENDOR_3D_FILES
+  const expectedReferences = MACHINE_MEDIA_FILES
     .map((file) => file.homepageReference)
     .filter(Boolean);
 
   for (const reference of expectedReferences) {
     if (!contents.includes(reference)) {
-      fail(`index.html does not reference local vendor path: ${reference}.`);
+      fail(`index.html does not reference local machine media path: ${reference}.`);
     }
   }
 
-  pass(`index.html references all ${expectedReferences.length} local 3D vendor paths.`);
+  pass(`index.html references all ${expectedReferences.length} local machine media paths.`);
 }
 
 async function checkVendorFontFiles() {
@@ -1264,8 +1245,8 @@ async function main() {
   await checkHtmlRuntimeStrings(htmlFiles);
   await checkBookingWindowSingleSource(htmlFiles);
   await checkNoRuntimeCdnjsReferences();
-  await checkVendor3DLibraries();
-  await checkHomepageReferencesLocalVendorPaths();
+  await checkMachineMediaFiles();
+  await checkHomepageReferencesMachineMedia();
   await checkVendorFontFiles();
   await checkPagesReferenceLocalFontStylesheets(htmlFiles);
   await checkNoRuntimeGoogleFontsReferences();

@@ -166,9 +166,6 @@
 <body class="antialiased">
     <a class="skip-link" href="#main-content">Skip to main content</a>
 
-    <!-- 3D machine background layer (canvas mounted here by the 3D script). Sits behind all page content. -->
-    <div id="machine-bg" aria-hidden="true" style="position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity .6s ease;contain:strict;will-change:opacity"></div>
-
     <!-- Nav (injected by components.js) -->
     <div id="site-nav"></div>
 
@@ -204,15 +201,21 @@
         Featured in Global Tattoo Mag · Ink Legends Magazine · Big London Tattoo Show 2025
     </section>
 
-    <!-- ═══ 3D INDUCTION TATTOO MACHINE — Scroll Assembly ═══ -->
-    <section id="machine-section" aria-label="3D Tattoo Machine Animation" style="position:relative;height:150vh;background:transparent;overflow:hidden">
-      <div id="machine-canvas-wrap" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;pointer-events:none">
+    <!-- ═══ COIL TATTOO MACHINE — scroll-scrubbed film ═══ -->
+    <!-- No overflow on this element: an overflow container around a position:sticky child stops it pinning. -->
+    <section id="machine-section" aria-label="Coil tattoo machine, scroll-controlled film" style="position:relative;height:220vh;background:#000">
+      <div id="machine-stage" style="position:sticky;top:0;width:100%;height:100vh;overflow:hidden;background:#000;pointer-events:none">
+        <!-- Video (or poster fallback) is mounted here by the script below, only when the section is approached. -->
+        <div id="machine-media" style="position:absolute;inset:0;opacity:0;transition:opacity .8s ease"></div>
+        <!-- Decorative blend: fades the footage into the black page above and below and darkens the edges. -->
+        <div aria-hidden="true" style="position:absolute;inset:0;z-index:5;pointer-events:none;background:linear-gradient(to bottom,rgba(0,0,0,0.95) 0%,rgba(0,0,0,0.15) 24%,rgba(0,0,0,0.15) 70%,rgba(0,0,0,0.95) 100%)"></div>
+        <div aria-hidden="true" style="position:absolute;inset:0;z-index:5;pointer-events:none;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 40%,rgba(0,0,0,0.55) 100%)"></div>
         <div id="machine-progress" style="position:absolute;left:24px;top:50%;transform:translateY(-50%);width:2px;height:120px;background:rgba(255,255,255,0.06);border-radius:1px;z-index:10">
           <div id="machine-progress-fill" style="width:100%;height:0%;background:rgba(255,255,255,0.3);border-radius:1px;transition:height 0.1s linear"></div>
         </div>
         <div id="machine-label-top" style="position:absolute;z-index:10;pointer-events:none;text-align:center;top:max(80px,10vh);left:50%;transform:translateX(-50%);transition:opacity 0.6s ease">
           <h2 style="font-family:'Playfair Display',serif;font-size:clamp(1.2rem,3vw,2rem);font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:-0.02em;margin:0">The Instrument.</h2>
-          <p style="font-size:clamp(0.65rem,1.2vw,0.8rem);color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.25em;margin:6px 0 0">Scroll to assemble</p>
+          <p id="machine-label-hint" style="font-size:clamp(0.65rem,1.2vw,0.8rem);color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.25em;margin:6px 0 0">Scroll to play</p>
         </div>
         <div style="position:absolute;z-index:10;pointer-events:none;text-align:center;bottom:max(40px,6vh);left:50%;transform:translateX(-50%)">
           <p id="machine-part-label" style="font-size:clamp(0.65rem,1.2vw,0.8rem);color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.25em;margin:0">&nbsp;</p>
@@ -221,362 +224,253 @@
     </section>
 
     <script>
+    /* Scroll-scrubbed machine film.
+       The clip is encoded all-intra (every frame a keyframe), so setting currentTime
+       on scroll is a cheap seek instead of a decode from the previous keyframe.
+       Nothing is downloaded until the section is approached and the page has finished
+       loading; a static poster is used under reduced motion, Save-Data, weak
+       connections and on any media error. */
     (function(){
       'use strict';
       var section=document.getElementById('machine-section');
-      var wrap=document.getElementById('machine-canvas-wrap');
-      var librariesPromise=null;
-      var initStarted=false;
+      var stage=document.getElementById('machine-stage');
+      var media=document.getElementById('machine-media');
+      if(!section||!stage||!media)return;
+
+      /* Landscape stages get the wide master (or its small-screen encode); portrait
+         stages get a square centre crop of the same clip, which fills far more of a
+         phone screen than a letterboxed 1.37:1 frame. */
+      var WIDE={video:'/assets/machine/machine-scrub.mp4',poster:'/assets/machine/machine-poster.jpg',posterWebp:'/assets/machine/machine-poster.webp',width:988,height:720};
+      var WIDE_SMALL={video:'/assets/machine/machine-scrub-mobile.mp4',poster:WIDE.poster,posterWebp:WIDE.posterWebp,width:988,height:720};
+      var PORTRAIT={video:'/assets/machine/machine-scrub-portrait.mp4',poster:'/assets/machine/machine-poster-portrait.jpg',posterWebp:'/assets/machine/machine-poster-portrait.webp',width:640,height:640};
+
       var prefersRM=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+      var initStarted=false;
+      var video=null;
+      var duration=0;
+      var currentTime=0;
+      var rafId=null;
+      var inRange=false;
+      var activeSet=null;
+      var posterOnly=false;
+      var captions=[[0.02,'Coil machine'],[0.34,'Frame & springs'],[0.68,'Copper coils']];
 
-      function setMachineFallback(message){
-        if(!wrap)return;
-        wrap.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:60vh;text-align:center;padding:2rem"><p style="color:rgba(255,255,255,0.3);font-size:0.9rem">'+message+'</p></div>';
-        if(section)section.style.height='auto';
-        wrap.style.position='relative';
-        wrap.style.height='60vh';
-      }
-
-      function hasWebGL(){try{var c=document.createElement('canvas');return!!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')))}catch(e){return false}}
-
-      function shouldSkipMachine3DForWeakConditions(){
+      function shouldUsePosterOnly(){
+        if(prefersRM)return true;
         var connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
         if(connection){
           if(connection.saveData===true)return true;
           if(connection.effectiveType==='slow-2g'||connection.effectiveType==='2g')return true;
         }
-        var isMobileViewport=window.matchMedia&&window.matchMedia('(max-width: 767px)').matches;
-        if(!isMobileViewport)return false;
-        if(typeof navigator.hardwareConcurrency==='number'&&navigator.hardwareConcurrency<=2)return true;
-        if(typeof navigator.deviceMemory==='number'&&navigator.deviceMemory<=2)return true;
         return false;
       }
 
-      function loadScript(src){
-        return new Promise(function(resolve,reject){
-          var script=document.createElement('script');
-          script.src=src;
-          script.async=false;
-          script.onload=resolve;
-          script.onerror=function(){reject(new Error('Unable to load '+src))};
-          document.head.appendChild(script);
+      function isLandscapeStage(){
+        var w=stage.clientWidth||window.innerWidth;
+        var h=stage.clientHeight||window.innerHeight;
+        return h>0&&w/h>=1.15;
+      }
+
+      function sourceSet(){
+        if(!isLandscapeStage())return PORTRAIT;
+        return (window.matchMedia&&window.matchMedia('(max-width: 767px)').matches)?WIDE_SMALL:WIDE;
+      }
+
+      function fitFor(){
+        /* Cover on landscape stages; contain on portrait ones, where the square crop is
+           shown whole and the letterbox is black, like the page. */
+        return isLandscapeStage()?'cover':'contain';
+      }
+
+      function showMedia(){media.style.opacity='1'}
+
+      function teardownVideo(){
+        if(!video)return;
+        video.removeEventListener('error',usePoster);
+        video.removeAttribute('src');
+        try{video.load()}catch(error){}
+        video=null;
+        duration=0;
+      }
+
+      function usePoster(){
+        teardownVideo();
+        posterOnly=true;
+        media.innerHTML='';
+        var chosen=sourceSet();
+        activeSet=chosen;
+        var picture=document.createElement('picture');
+        var source=document.createElement('source');
+        source.type='image/webp';
+        source.srcset=chosen.posterWebp;
+        var image=document.createElement('img');
+        image.src=chosen.poster;
+        image.alt='';
+        image.width=chosen.width;
+        image.height=chosen.height;
+        image.decoding='async';
+        image.setAttribute('aria-hidden','true');
+        image.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:'+fitFor()+';object-position:50% 50%';
+        picture.appendChild(source);
+        picture.appendChild(image);
+        media.appendChild(picture);
+        section.style.height='100vh';
+        var bar=document.getElementById('machine-progress');
+        if(bar)bar.style.display='none';
+        var hint=document.getElementById('machine-label-hint');
+        if(hint)hint.textContent='Coil machine';
+        var label=document.getElementById('machine-part-label');
+        if(label)label.innerHTML='&nbsp;';
+        stopLoop();
+        showMedia();
+      }
+
+      function scrollProgress(){
+        var viewportHeight=window.innerHeight||document.documentElement.clientHeight;
+        var travel=section.offsetHeight-viewportHeight;
+        if(travel<=0)return 0;
+        var top=section.getBoundingClientRect().top;
+        var p=-top/travel;
+        return p<0?0:(p>1?1:p);
+      }
+
+      function updateChrome(p){
+        var fill=document.getElementById('machine-progress-fill');
+        if(fill)fill.style.height=(p*100)+'%';
+        var label=document.getElementById('machine-part-label');
+        if(label){
+          var text=' ';
+          for(var i=0;i<captions.length;i++){if(p>=captions[i][0])text=captions[i][1]}
+          if(label.textContent!==text)label.textContent=text;
+        }
+        var top=document.getElementById('machine-label-top');
+        if(top)top.style.opacity=p<0.15?1:Math.max(0,1-(p-0.15)*5);
+      }
+
+      function tick(){
+        rafId=null;
+        var p=scrollProgress();
+        updateChrome(p);
+        if(!video||!duration)return;
+        var target=p*duration;
+        currentTime+=(target-currentTime)*0.2;
+        var settled=Math.abs(target-currentTime)<0.01;
+        if(settled)currentTime=target;
+        if(video.readyState>=1&&Math.abs(video.currentTime-currentTime)>0.02){
+          try{video.currentTime=currentTime}catch(error){}
+        }
+        if(!settled)requestTick();
+      }
+
+      function requestTick(){
+        if(rafId===null&&!document.hidden)rafId=requestAnimationFrame(tick);
+      }
+
+      function stopLoop(){
+        if(rafId!==null){cancelAnimationFrame(rafId);rafId=null}
+      }
+
+      function onScroll(){if(inRange)requestTick()}
+
+      function mountVideo(){
+        var chosen=sourceSet();
+        activeSet=chosen;
+        media.innerHTML='';
+        video=document.createElement('video');
+        video.muted=true;
+        video.defaultMuted=true;
+        video.loop=false;
+        video.controls=false;
+        video.playsInline=true;
+        video.preload='auto';
+        video.poster=chosen.poster;
+        video.setAttribute('playsinline','');
+        video.setAttribute('webkit-playsinline','');
+        video.setAttribute('muted','');
+        video.setAttribute('disablepictureinpicture','');
+        video.setAttribute('disableremoteplayback','');
+        video.setAttribute('aria-hidden','true');
+        video.setAttribute('tabindex','-1');
+        video.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:'+fitFor()+';object-position:50% 50%';
+        video.addEventListener('error',usePoster);
+        video.addEventListener('loadedmetadata',function(){
+          duration=video.duration||0;
+          /* iOS/Safari will not honour currentTime on a video that has never played,
+             so the clip is started muted and immediately paused to unlock seeking. */
+          var played=video.play();
+          if(played&&played.then){played.then(function(){video.pause()}).catch(function(){})}
+          else{try{video.pause()}catch(error){}}
+          currentTime=scrollProgress()*duration;
+          try{video.currentTime=currentTime}catch(error){}
+          showMedia();
+          requestTick();
         });
+        video.addEventListener('loadeddata',showMedia);
+        video.src=chosen.video;
+        media.appendChild(video);
+        video.load();
       }
 
-      function loadMachineLibraries(){
-        if(librariesPromise)return librariesPromise;
-        librariesPromise=loadScript('/assets/vendor/three/0.128.0/three.min.js')
-          .then(function(){return loadScript('/assets/vendor/gsap/3.12.5/gsap.min.js')})
-          .then(function(){return loadScript('/assets/vendor/gsap/3.12.5/ScrollTrigger.min.js')})
-          .catch(function(error){console.warn(error);setMachineFallback('3D preview could not be loaded.');throw error});
-        return librariesPromise;
+      function whenIdle(callback){
+        /* The section sits just below the hero, so its observer fires during initial
+           load. Holding the clip until the page has loaded and the main thread is idle
+           keeps a multi-megabyte media fetch away from hero rendering. */
+        var run=function(){
+          if(window.requestIdleCallback)window.requestIdleCallback(callback,{timeout:2000});
+          else setTimeout(callback,200);
+        };
+        if(document.readyState==='complete')run();
+        else window.addEventListener('load',run,{once:true});
       }
 
-      function initMachineWhenReady(){
+      function init(){
         if(initStarted)return;
         initStarted=true;
-        if(shouldSkipMachine3DForWeakConditions()){
-          setMachineFallback('3D preview disabled on this device to preserve performance.');
-          return;
-        }
-        /* WebGL probe deferred to this point so no GPU context is created during initial page load. */
-        if(!hasWebGL()){setMachineFallback('3D preview requires WebGL.');return}
-        loadMachineLibraries().then(function(){
-          if(!window.THREE||!window.gsap||!window.ScrollTrigger){setMachineFallback('3D preview could not be loaded.');return}
-          try{initMachine3D()}catch(error){console.warn(error);setMachineFallback('3D preview could not be loaded.')}
-        }).catch(function(){});
+        if(shouldUsePosterOnly()){usePoster();return}
+        whenIdle(mountVideo);
       }
+
+      var resizeTimer=null,lastWidth=window.innerWidth,lastHeight=window.innerHeight;
+      window.addEventListener('resize',function(){
+        if(resizeTimer)clearTimeout(resizeTimer);
+        resizeTimer=setTimeout(function(){
+          resizeTimer=null;
+          if(window.innerWidth===lastWidth&&window.innerHeight===lastHeight)return;
+          lastWidth=window.innerWidth;lastHeight=window.innerHeight;
+          if(initStarted&&activeSet&&sourceSet()!==activeSet){
+            /* Orientation changed between the wide and square crops: re-mount with the
+               matching encode rather than cropping the wrong one. */
+            if(posterOnly)usePoster();
+            else{teardownVideo();mountVideo()}
+            return;
+          }
+          var target=video||media.querySelector('img');
+          if(target)target.style.objectFit=fitFor();
+          requestTick();
+        },150);
+      });
+
+      window.addEventListener('scroll',onScroll,{passive:true});
+      document.addEventListener('visibilitychange',function(){
+        if(document.hidden)stopLoop();else if(inRange)requestTick();
+      });
 
       if('IntersectionObserver'in window){
-        var loadObserver=new IntersectionObserver(function(entries){
-          entries.forEach(function(entry){if(entry.isIntersecting){loadObserver.disconnect();initMachineWhenReady()}});
-        },{rootMargin:'0px 0px -20% 0px',threshold:0});
-        loadObserver.observe(section);
+        var rangeObserver=new IntersectionObserver(function(entries){
+          entries.forEach(function(entry){
+            inRange=entry.isIntersecting;
+            if(inRange){init();requestTick()}else{stopLoop()}
+          });
+        },{rootMargin:'200px 0px 200px 0px',threshold:0});
+        rangeObserver.observe(section);
       }else{
-        var fallbackMargin=300;
-        var fallbackQueued=false;
-        var removeFallbackListeners=function(){
-          window.removeEventListener('scroll',queueFallbackCheck);
-          window.removeEventListener('resize',queueFallbackCheck);
-          window.removeEventListener('orientationchange',queueFallbackCheck);
-        };
-        var checkFallbackProximity=function(){
-          fallbackQueued=false;
-          if(initStarted||!section)return;
-          var rect=section.getBoundingClientRect();
-          var viewportHeight=window.innerHeight||document.documentElement.clientHeight;
-          if(rect.top<=viewportHeight+fallbackMargin&&rect.bottom>=-fallbackMargin){
-            removeFallbackListeners();
-            initMachineWhenReady();
-          }
-        };
-        var queueFallbackCheck=function(){
-          if(fallbackQueued)return;
-          fallbackQueued=true;
-          setTimeout(checkFallbackProximity,100);
-        };
-        window.addEventListener('scroll',queueFallbackCheck,{passive:true});
-        window.addEventListener('resize',queueFallbackCheck);
-        window.addEventListener('orientationchange',queueFallbackCheck);
-        if(window.location.hash==='#machine-section')queueFallbackCheck();
+        inRange=true;
+        init();
+        requestTick();
       }
 
-      function initMachine3D(){
-      var container=document.getElementById('machine-canvas-wrap');
-      var scene=new THREE.Scene();
-      scene.fog=new THREE.FogExp2(0x000000,0.08);
-      var camera=new THREE.PerspectiveCamera(40,container.clientWidth/container.clientHeight,0.1,100);
-      camera.position.set(4,2.5,6);camera.lookAt(0,0.5,0);
-      var bgWrap=document.getElementById('machine-bg');
-      var isMobile=window.matchMedia('(max-width: 767px)').matches;
-      var isTablet=window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches;
-      var renderer=new THREE.WebGLRenderer({antialias:!isMobile,alpha:true,powerPreference:'high-performance'});
-      renderer.setSize(window.innerWidth,window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));
-      renderer.toneMapping=THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure=1.1;
-      renderer.outputEncoding=THREE.sRGBEncoding;
-      renderer.shadowMap.enabled=!isMobile;
-      renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-      renderer.setClearColor(0x000000,0);
-      bgWrap.appendChild(renderer.domElement);
-
-      /* Lighting */
-      var kl=new THREE.DirectionalLight(0xffeedd,1.4);kl.position.set(5,8,4);kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.bias=-0.001;scene.add(kl);
-      var fl=new THREE.DirectionalLight(0x8899bb,0.4);fl.position.set(-4,3,-2);scene.add(fl);
-      var rl=new THREE.DirectionalLight(0xffffff,0.8);rl.position.set(-2,5,-5);scene.add(rl);
-      scene.add(new THREE.AmbientLight(0x111122,0.3));
-      var gl=new THREE.PointLight(0x334466,0.3,10);gl.position.set(0,-2,0);scene.add(gl);
-
-      var gp=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.ShadowMaterial({opacity:0.3}));
-      gp.rotation.x=-Math.PI/2;gp.position.y=-1.8;gp.receiveShadow=true;scene.add(gp);
-
-      /* Materials */
-      var blackSteel=new THREE.MeshStandardMaterial({color:0x1a1a1e,metalness:0.85,roughness:0.35});
-      var darkSteel=new THREE.MeshStandardMaterial({color:0x2a2a2e,metalness:0.9,roughness:0.3});
-      var brass=new THREE.MeshStandardMaterial({color:0x8b7533,metalness:0.95,roughness:0.25});
-      var copper=new THREE.MeshStandardMaterial({color:0x7f4422,metalness:0.9,roughness:0.3});
-      var chrome=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.98,roughness:0.1});
-      var darkCopper=new THREE.MeshStandardMaterial({color:0x5a3018,metalness:0.85,roughness:0.4});
-      var rubber=new THREE.MeshStandardMaterial({color:0x111111,metalness:0.0,roughness:0.9});
-
-      function mk(geo,mat){var m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;return m}
-
-      var parts={};
-      var mg=new THREE.Group();scene.add(mg);
-
-      /* 1. FRAME */
-      (function(){var g=new THREE.Group();
-      g.add(mk(new THREE.BoxGeometry(0.18,2.6,0.22),blackSteel));
-      var tb=mk(new THREE.BoxGeometry(1.4,0.16,0.2),blackSteel);tb.position.set(0.6,1.2,0);g.add(tb);
-      var fp=mk(new THREE.BoxGeometry(0.16,1.3,0.2),blackSteel);fp.position.set(1.2,0.15,0);fp.rotation.z=0.12;g.add(fp);
-      var yk=mk(new THREE.BoxGeometry(1.0,0.16,0.22),blackSteel);yk.position.set(0.4,-1.15,0);g.add(yk);
-      var br=mk(new THREE.BoxGeometry(0.1,1.1,0.12),darkSteel);br.position.set(0.7,0.05,0);br.rotation.z=-0.5;g.add(br);
-      var cn=mk(new THREE.CylinderGeometry(0.1,0.1,0.22,12),blackSteel);cn.rotation.x=Math.PI/2;cn.position.set(1.3,1.2,0);g.add(cn);
-      parts.frame=g;mg.add(g)})();
-
-      /* 2. COILS */
-      function buildCoil(px){var g=new THREE.Group();
-      g.add(mk(new THREE.CylinderGeometry(0.12,0.12,0.7,16),darkSteel));
-      for(var i=0;i<8;i++){var w=mk(new THREE.TorusGeometry(0.26,0.04,6,24),copper);w.position.y=-0.28+i*0.08;g.add(w)}
-      var c1=mk(new THREE.CylinderGeometry(0.28,0.28,0.06,16),darkSteel);c1.position.y=0.38;g.add(c1);
-      var c2=mk(new THREE.CylinderGeometry(0.28,0.28,0.06,16),darkSteel);c2.position.y=-0.38;g.add(c2);
-      g.position.set(px,-0.35,0);return g}
-      parts.coilFront=buildCoil(0.65);mg.add(parts.coilFront);
-      parts.coilRear=buildCoil(0.2);mg.add(parts.coilRear);
-
-      /* 3. ARMATURE */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(1.1,0.06,0.16),darkSteel));
-      var t=mk(new THREE.CylinderGeometry(0.04,0.04,0.2,8),chrome);t.rotation.z=Math.PI/2;t.position.set(0.55,0,0);g.add(t);
-      g.position.set(0.4,0.35,0);parts.armature=g;mg.add(g)})();
-
-      /* 4. FRONT SPRING */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.8,0.015,0.08),chrome));
-      var t=mk(new THREE.BoxGeometry(0.25,0.012,0.06),chrome);t.position.set(0.5,0.02,0);t.rotation.z=-0.08;g.add(t);
-      g.position.set(0.5,1.38,0);parts.frontSpring=g;mg.add(g)})();
-
-      /* 5. BACK SPRING */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.6,0.02,0.1),chrome));
-      g.position.set(0.4,1.32,0);parts.backSpring=g;mg.add(g)})();
-
-      /* 6. CONTACT SCREW */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.03,0.03,0.5,8),brass));
-      var k=mk(new THREE.CylinderGeometry(0.08,0.08,0.12,12),brass);k.position.y=0.3;g.add(k);
-      var kn=mk(new THREE.CylinderGeometry(0.09,0.09,0.06,6),brass);kn.position.y=0.25;g.add(kn);
-      g.position.set(1.0,1.55,0);parts.contactScrew=g;mg.add(g)})();
-
-      /* 7. CAPACITOR */
-      (function(){var g=new THREE.Group();var b=mk(new THREE.CylinderGeometry(0.12,0.12,0.45,16),darkCopper);b.rotation.z=Math.PI/2;g.add(b);
-      var w1=mk(new THREE.CylinderGeometry(0.015,0.015,0.2,6),copper);w1.position.set(0.3,0,0);w1.rotation.z=Math.PI/2;g.add(w1);
-      var w2=mk(new THREE.CylinderGeometry(0.015,0.015,0.2,6),copper);w2.position.set(-0.3,0,0);w2.rotation.z=Math.PI/2;g.add(w2);
-      g.position.set(0.4,-0.9,-0.2);parts.capacitor=g;mg.add(g)})();
-
-      /* 8. TUBE VISE */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.BoxGeometry(0.35,0.4,0.35),blackSteel));
-      var s=mk(new THREE.CylinderGeometry(0.05,0.05,0.4,8),brass);s.rotation.z=Math.PI/2;s.position.set(0.25,0,0);g.add(s);
-      var h=mk(new THREE.CylinderGeometry(0.09,0.09,0.08,6),brass);h.rotation.z=Math.PI/2;h.position.set(0.46,0,0);g.add(h);
-      g.position.set(0.7,-1.35,0);parts.tubeVise=g;mg.add(g)})();
-
-      /* 9. GRIP (knurled cylindrical holder - thick) */
-      (function(){var g=new THREE.Group();
-      /* Main stainless tube */
-      g.add(mk(new THREE.CylinderGeometry(0.22,0.22,2.4,32),darkSteel));
-      /* Top collet/chuck section */
-      var collet=mk(new THREE.CylinderGeometry(0.32,0.26,0.5,32),chrome);collet.position.y=0.95;g.add(collet);
-      /* Collet ridges */
-      for(var j=0;j<3;j++){var cr=mk(new THREE.TorusGeometry(0.33,0.01,6,32),darkSteel);cr.position.y=0.78+j*0.15;g.add(cr)}
-      /* Knurled grip body - THICK */
-      var knurlBody=mk(new THREE.CylinderGeometry(0.38,0.38,1.4,32),darkSteel);knurlBody.position.y=-0.15;g.add(knurlBody);
-      /* Knurling rings (dense for textured look) */
-      for(var i=0;i<18;i++){var r=mk(new THREE.TorusGeometry(0.39,0.014,8,32),chrome);r.position.y=-0.75+i*0.09;g.add(r)}
-      /* Bottom taper */
-      var btm=mk(new THREE.CylinderGeometry(0.3,0.18,0.5,32),darkSteel);btm.position.y=-1.1;g.add(btm);
-      /* Backstem */
-      var stem=mk(new THREE.CylinderGeometry(0.07,0.07,0.6,12),chrome);stem.position.y=1.45;g.add(stem);
-      g.position.set(0.7,-2.5,0);parts.grip=g;mg.add(g)})();
-
-      /* 10. TIP (tube tip) */
-      (function(){var g=new THREE.Group();
-      var tip=mk(new THREE.CylinderGeometry(0.07,0.03,0.7,12),chrome);g.add(tip);
-      var opening=mk(new THREE.CylinderGeometry(0.04,0.02,0.2,8),darkSteel);opening.position.y=-0.4;g.add(opening);
-      g.position.set(0.7,-3.6,0);parts.tip=g;mg.add(g)})();
-
-      /* 11. NEEDLE BAR */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.015,0.015,3.8,8),chrome));
-      var nt=mk(new THREE.ConeGeometry(0.02,0.15,6),chrome);nt.position.y=-1.95;g.add(nt);
-      var lp=mk(new THREE.TorusGeometry(0.04,0.012,6,12),chrome);lp.position.y=1.9;lp.rotation.x=Math.PI/2;g.add(lp);
-      g.position.set(0.7,-1.5,0);parts.needleBar=g;mg.add(g)})();
-
-      /* 12. BINDING POSTS */
-      function buildBP(x,z){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.04,0.04,0.35,8),brass));
-      var n=mk(new THREE.CylinderGeometry(0.065,0.065,0.08,6),brass);n.position.y=0.2;g.add(n);
-      var ws=mk(new THREE.CylinderGeometry(0.07,0.07,0.02,12),darkSteel);ws.position.y=0.1;g.add(ws);
-      g.position.set(x,0.9,z);return g}
-      parts.bindingPostL=buildBP(-0.12,-0.18);mg.add(parts.bindingPostL);
-      parts.bindingPostR=buildBP(-0.12,0.18);mg.add(parts.bindingPostR);
-
-      /* 13. CLIP CORD */
-      (function(){var g=new THREE.Group();g.add(mk(new THREE.CylinderGeometry(0.06,0.06,0.25,12),rubber));
-      var p=mk(new THREE.CylinderGeometry(0.025,0.025,0.12,8),chrome);p.position.y=-0.18;g.add(p);
-      var sr=mk(new THREE.CylinderGeometry(0.05,0.07,0.12,10),rubber);sr.position.y=0.18;g.add(sr);
-      g.position.set(-0.12,0.5,-0.25);parts.clipCord=g;mg.add(g)})();
-
-      mg.position.set(-0.4,1.2,0);mg.scale.setScalar(isMobile?0.5:(isTablet?0.6:0.7));
-
-      /* Assembled/Exploded states */
-      var assembled={},exploded={};
-      var keys=Object.keys(parts);
-      keys.forEach(function(k){var p=parts[k];assembled[k]={x:p.position.x,y:p.position.y,z:p.position.z,rx:p.rotation.x,ry:p.rotation.y,rz:p.rotation.z}});
-
-      var offsets={
-        frame:{x:0,y:0,z:0,rx:0,ry:0,rz:0},
-        coilFront:{x:0.9,y:-0.7,z:0.6,rx:0,ry:0.3,rz:0},
-        coilRear:{x:-0.5,y:-0.6,z:0.7,rx:0,ry:-0.3,rz:0},
-        armature:{x:0.3,y:1.2,z:0.5,rx:0,ry:0,rz:0.2},
-        frontSpring:{x:0.7,y:1.5,z:0.3,rx:0,ry:0,rz:-0.15},
-        backSpring:{x:-0.3,y:1.3,z:0.4,rx:0,ry:0,rz:0.1},
-        contactScrew:{x:1.0,y:1.6,z:0.2,rx:0,ry:0,rz:0},
-        capacitor:{x:-0.9,y:-0.3,z:0.9,rx:0,ry:0.5,rz:0},
-        tubeVise:{x:0.6,y:-1.2,z:-0.5,rx:0,ry:-0.3,rz:0},
-        grip:{x:0.2,y:-2.0,z:-0.7,rx:0,ry:0,rz:0.1},
-        tip:{x:0.3,y:-3.0,z:-0.6,rx:0,ry:0,rz:0},
-        needleBar:{x:1.0,y:-1.2,z:-0.9,rx:0.1,ry:0,rz:0.15},
-        bindingPostL:{x:-1.0,y:0.9,z:-0.6,rx:0,ry:0,rz:0},
-        bindingPostR:{x:-0.9,y:1.1,z:0.7,rx:0,ry:0,rz:0},
-        clipCord:{x:-1.3,y:0.3,z:-1.0,rx:0.2,ry:0.4,rz:0}
-      };
-
-      keys.forEach(function(k){var a=assembled[k];var o=offsets[k]||{x:0,y:0,z:0,rx:0,ry:0,rz:0};
-      exploded[k]={x:a.x+o.x,y:a.y+o.y,z:a.z+o.z,rx:a.rx+o.rx,ry:a.ry+o.ry,rz:a.rz+o.rz}});
-
-      /* Start exploded */
-      if(!prefersRM){keys.forEach(function(k){var p=parts[k];var e=exploded[k];p.position.set(e.x,e.y,e.z);p.rotation.set(e.rx,e.ry,e.rz)})}
-
-      var partNames=['Frame','Rear Coil','Front Coil','Binding Posts','Clip Cord','Capacitor','Back Spring','Front Spring','Contact Screw','Armature Bar','Tube Vise','Grip','Needle Bar','Tip'];
-
-      /* Render loop: run only while the 3D background is in range. Under reduced motion the
-         machine stays assembled and static, so a single frame is rendered instead of a loop.
-         Declared before the ScrollTriggers below because their callbacks can fire on creation. */
-      var animId=null;
-      function renderFrame(){renderer.render(scene,camera)}
-      function animate(){animId=requestAnimationFrame(animate);mg.rotation.y+=0.0008;renderFrame()}
-      function startRendering(){if(document.hidden)return;if(prefersRM){renderFrame();return}if(animId===null)animate()}
-      function stopRendering(){if(animId!==null){cancelAnimationFrame(animId);animId=null;renderFrame()}}
-
-      var bgVisible=false,fadeTimer=null;
-      function showBg(){if(bgVisible)return;bgVisible=true;if(fadeTimer){clearTimeout(fadeTimer);fadeTimer=null}bgWrap.style.opacity='1';startRendering()}
-      function hideBg(){if(!bgVisible)return;bgVisible=false;bgWrap.style.opacity='0';if(fadeTimer)clearTimeout(fadeTimer);fadeTimer=setTimeout(function(){if(!bgVisible)stopRendering()},700)}
-
-      document.addEventListener('visibilitychange',function(){if(document.hidden){stopRendering()}else if(bgVisible){startRendering()}});
-
-      /* GSAP ScrollTrigger */
-      gsap.registerPlugin(ScrollTrigger);
-
-      if(!prefersRM){
-        gsap.to({v:0},{v:1,ease:'none',scrollTrigger:{trigger:'#machine-section',start:'top 40px',end:'bottom bottom',scrub:0.8,onUpdate:function(self){updateAsm(self.progress);if(animId===null)renderFrame()}}});
-      }
-      var rangeST=ScrollTrigger.create({trigger:'#machine-section',start:'top 40px',endTrigger:'#ai-assistant',end:'bottom top',onEnter:showBg,onEnterBack:showBg,onLeave:hideBg,onLeaveBack:hideBg,onToggle:function(self){self.isActive?showBg():hideBg()}});
-      if(rangeST&&rangeST.isActive)showBg();
-
-      function updateAsm(t){
-        var n=keys.length;
-        keys.forEach(function(k,i){
-          var ss=i/n*0.35,se=ss+0.65;
-          var lt=Math.max(0,Math.min(1,(t-ss)/(se-ss)));
-          var e2=lt<0.5?4*lt*lt*lt:1-Math.pow(-2*lt+2,3)/2;
-          var p=parts[k],a=assembled[k],ex=exploded[k];
-          p.position.x=ex.x+(a.x-ex.x)*e2;
-          p.position.y=ex.y+(a.y-ex.y)*e2;
-          p.position.z=ex.z+(a.z-ex.z)*e2;
-          p.rotation.x=ex.rx+(a.rx-ex.rx)*e2;
-          p.rotation.y=ex.ry+(a.ry-ex.ry)*e2;
-          p.rotation.z=ex.rz+(a.rz-ex.rz)*e2;
-        });
-
-        var pf=document.getElementById('machine-progress-fill');
-        if(pf)pf.style.height=(t*100)+'%';
-        var li=Math.min(Math.floor(t*partNames.length),partNames.length-1);
-        var le=document.getElementById('machine-part-label');
-        if(le){le.textContent=t>0.02&&t<0.98?partNames[li]:(t<0.02?' ':'Assembled')}
-        var tl=document.getElementById('machine-label-top');
-        if(tl)tl.style.opacity=t<0.15?1:Math.max(0,1-(t-0.15)*5);
-
-        var ang=-0.3+t*0.6;
-        camera.position.x=4*Math.cos(ang)+2*Math.sin(ang);
-        camera.position.z=6*Math.cos(ang*0.5);
-        camera.position.y=2.5-t*0.8;
-        camera.lookAt(0,0.3,0);
-
-        if(t>0.95){var int=(t-0.95)*20;var now=performance.now()*0.001;
-        parts.armature.position.y=assembled.armature.y+Math.sin(now*60)*0.008*int;
-        parts.needleBar.position.y=assembled.needleBar.y+Math.sin(now*60)*0.006*int;
-        parts.frontSpring.position.y=assembled.frontSpring.y+Math.sin(now*60+0.5)*0.003*int}
-      }
-
-      renderFrame();
-
-      /* Debounced: mobile URL-bar show/hide fires resize repeatedly, and setSize reallocates the drawing buffer. */
-      var resizeTimer=null,lastW=window.innerWidth,lastH=window.innerHeight;
-      function applyResize(){
-        resizeTimer=null;
-        if(window.innerWidth===lastW&&window.innerHeight===lastH)return;
-        lastW=window.innerWidth;lastH=window.innerHeight;
-        isMobile=window.matchMedia('(max-width: 767px)').matches;
-        isTablet=window.matchMedia('(min-width: 768px) and (max-width: 1279px)').matches;
-        camera.aspect=window.innerWidth/window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth,window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.25:1.75));
-        renderer.shadowMap.enabled=!isMobile;
-        mg.scale.setScalar(isMobile?0.5:(isTablet?0.6:0.7));
-        renderFrame();
-      }
-      window.addEventListener('resize',function(){if(resizeTimer)clearTimeout(resizeTimer);resizeTimer=setTimeout(applyResize,150)});
-
-      /* Mobile: hide progress bar */
-      if(window.innerWidth<640){var pb=document.getElementById('machine-progress');if(pb)pb.style.display='none'}
-
-      }
+      /* Mobile: hide the progress rail */
+      if(window.innerWidth<640){var bar=document.getElementById('machine-progress');if(bar)bar.style.display='none'}
     })();
     </script>
 
