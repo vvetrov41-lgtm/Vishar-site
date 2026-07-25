@@ -1,0 +1,392 @@
+{
+  "run_id": "serp_xmlriver_8b17b75d3da0",
+  "provider": "xmlriver",
+  "topic": "Realism tattoo artist in Manchester and Salford",
+  "semantic_cluster_queries": [
+    "realism tattoo artist Manchester",
+    "black and grey realism tattoo Manchester",
+    "colour realism tattoo Manchester",
+    "tattoo cover up Manchester",
+    "custom tattoo artist Manchester",
+    "realism tattoo artist Salford",
+    "tattoo artist Salford",
+    "tattoo consultation Manchester",
+    "portrait tattoo artist Manchester",
+    "Vladimir Vishar tattoo artist"
+  ],
+  "cluster_query_count": 10,
+  "semantic_cluster_topic": "Realism tattoo artist in Manchester and Salford",
+  "semantic_cluster_status": "confirmed",
+  "semantic_cluster_source": "explicit_user_confirmation",
+  "semantic_cluster_confirmed": true,
+  "semantic_cluster_confirmation_required": false,
+  "max_queries_applied": "all_cluster_queries",
+  "depth": 20,
+  "requested_top_urls": 20,
+  "depth_semantics": "--depth is the requested organic URL count/top-N, not a pagination page count",
+  "planned_query_engine_pairs": 10,
+  "planned_paid_requests": 20,
+  "paid_request_count": 20,
+  "xmlriver_results_per_page": 10,
+  "xmlriver_serp_pages_per_query_engine": 2,
+  "xmlriver_paid_requests": [
+    {
+      "paid_request_id": "xmlriver_paid_0001",
+      "query_engine_pair_id": 1,
+      "query": "realism tattoo artist Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 1
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0002",
+      "query_engine_pair_id": 1,
+      "query": "realism tattoo artist Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 2
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0003",
+      "query_engine_pair_id": 2,
+      "query": "black and grey realism tattoo Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 3
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0004",
+      "query_engine_pair_id": 2,
+      "query": "black and grey realism tattoo Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 4
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0005",
+      "query_engine_pair_id": 3,
+      "query": "colour realism tattoo Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 5
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0006",
+      "query_engine_pair_id": 3,
+      "query": "colour realism tattoo Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 6
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0007",
+      "query_engine_pair_id": 4,
+      "query": "tattoo cover up Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 7
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0008",
+      "query_engine_pair_id": 4,
+      "query": "tattoo cover up Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 8
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0009",
+      "query_engine_pair_id": 5,
+      "query": "custom tattoo artist Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 9
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0010",
+      "query_engine_pair_id": 5,
+      "query": "custom tattoo artist Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 10
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0011",
+      "query_engine_pair_id": 6,
+      "query": "realism tattoo artist Salford",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 1
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0012",
+      "query_engine_pair_id": 6,
+      "query": "realism tattoo artist Salford",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 2
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0013",
+      "query_engine_pair_id": 7,
+      "query": "tattoo artist Salford",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 3
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0014",
+      "query_engine_pair_id": 7,
+      "query": "tattoo artist Salford",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 4
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0015",
+      "query_engine_pair_id": 8,
+      "query": "tattoo consultation Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 5
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0016",
+      "query_engine_pair_id": 8,
+      "query": "tattoo consultation Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 6
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0017",
+      "query_engine_pair_id": 9,
+      "query": "portrait tattoo artist Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 7
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0018",
+      "query_engine_pair_id": 9,
+      "query": "portrait tattoo artist Manchester",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 8
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0019",
+      "query_engine_pair_id": 10,
+      "query": "Vladimir Vishar tattoo artist",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 1,
+      "page_param": 1,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 9
+    },
+    {
+      "paid_request_id": "xmlriver_paid_0020",
+      "query_engine_pair_id": 10,
+      "query": "Vladimir Vishar tattoo artist",
+      "engine": "google",
+      "requested_top_urls": 20,
+      "xmlriver_results_per_page": 10,
+      "serp_page_index": 2,
+      "page_param": 2,
+      "page_param_note": "Google first page is 1; Yandex first page is 0",
+      "xmlriver_max_threads": 10,
+      "planned_thread_slot": 10
+    }
+  ],
+  "xmlriver_max_threads": 10,
+  "xmlriver_thread_slots_planned": 10,
+  "xmlriver_thread_policy": "Use the maximum 10 XMLRiver live collection threads for the paid page-request queue; if fewer than 10 requests are pending, unused slots stay idle.",
+  "include_ai": true,
+  "ai_request_scope": "XMLRiver ai=1 is sent only on the first SERP page for each query-engine pair",
+  "load_async_ai_overview": false,
+  "region": "gb",
+  "language": "en",
+  "xmlriver_reference_files": {
+    "geo": "https://xmlriver.com/files/geo.csv",
+    "countries": "https://xmlriver.com/files/countries.xlsx",
+    "languages": "https://xmlriver.com/files/langs.xlsx",
+    "domains": "https://xmlriver.com/files/domains.xlsx"
+  },
+  "queries": [
+    {
+      "query": "realism tattoo artist Manchester",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "black and grey realism tattoo Manchester",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "colour realism tattoo Manchester",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "tattoo cover up Manchester",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "custom tattoo artist Manchester",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "realism tattoo artist Salford",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "tattoo artist Salford",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "tattoo consultation Manchester",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "portrait tattoo artist Manchester",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    },
+    {
+      "query": "Vladimir Vishar tattoo artist",
+      "engine": "google",
+      "source": "semantic_cluster_query",
+      "topic": "Realism tattoo artist in Manchester and Salford"
+    }
+  ],
+  "depth_errors": [],
+  "region_errors": [],
+  "request_validation_errors": [],
+  "workflow_mode": "full",
+  "approval": {
+    "approved_by": "",
+    "network_approved": false,
+    "paid_approved": false,
+    "scope": {
+      "provider": "xmlriver",
+      "query_engine_pairs": 10,
+      "planned_paid_requests": 20,
+      "requested_top_urls": 20,
+      "engines": [
+        "google"
+      ],
+      "region": "gb",
+      "language": "en",
+      "include_ai": true
+    }
+  },
+  "max_async_ai_overview_extra_cost_usd": 0
+}

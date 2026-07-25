@@ -1,0 +1,100 @@
+{
+  "topic": "Realism tattoo artist in Manchester and Salford",
+  "status": "block",
+  "warnings": 4,
+  "blocks": 8,
+  "final_claim_guard": "fail",
+  "rows": [
+    {
+      "requirement": "ADAPTATION_REPORT.md",
+      "status": "pass",
+      "evidence": "/home/user/Vishar-site/geo_agent/reports/ADAPTATION_REPORT.md"
+    },
+    {
+      "requirement": "PROJECT_CONTEXT.md",
+      "status": "pass",
+      "evidence": "/home/user/Vishar-site/geo_agent/reports/PROJECT_CONTEXT.md"
+    },
+    {
+      "requirement": "ACCESSIBILITY_AUDIT.md",
+      "status": "pass",
+      "evidence": "/home/user/Vishar-site/geo_agent/reports/ACCESSIBILITY_AUDIT.md"
+    },
+    {
+      "requirement": "SERP_AI_ANALYSIS.md",
+      "status": "block",
+      "evidence": "missing"
+    },
+    {
+      "requirement": "QFO_QUERY_ANALYSIS.md",
+      "status": "block",
+      "evidence": "missing"
+    },
+    {
+      "requirement": "PAGE_TZ.md",
+      "status": "block",
+      "evidence": "missing"
+    },
+    {
+      "requirement": "MONITORING_PLAN.md",
+      "status": "pass",
+      "evidence": "/home/user/Vishar-site/geo_agent/reports/MONITORING_PLAN.md"
+    },
+    {
+      "requirement": "CITATION_VISIBILITY.md",
+      "status": "block",
+      "evidence": "missing"
+    },
+    {
+      "requirement": "deep_project_context_quality_gate",
+      "status": "pass",
+      "evidence": "{\"accepted_not_applicable_decisions\": [], \"accepted_not_applicable_fields\": [], \"brand_variants_confirmed\": true, \"brand_variants_status\": \"confirmed\", \"brand_variants_waivable\": false, \"material_open_questions\": [], \"missing_context_fields\": [], \"rejected_not_applicable_decisions\": [], \"site_context_status\": \"success\", \"status\": \"pass\"}"
+    },
+    {
+      "requirement": "qfo_agent_clustered_user_approved_content_plan",
+      "status": "block",
+      "evidence": "{\"content_plan_approval\": {}, \"path\": \"geo_agent/data/processed/realism-tattoo-artist-in-manchester-and-salford_qfo_analysis.json\", \"status\": null}"
+    },
+    {
+      "requirement": "page_tz_quality_gate",
+      "status": "block",
+      "evidence": "{\"path\": \"geo_agent/data/quality-gates/realism-tattoo-artist-in-manchester-and-salford_page_tz_quality.json\"}"
+    },
+    {
+      "requirement": "citation_visibility_measured_log",
+      "status": "block",
+      "evidence": "{\"measured_checks\": 0, \"path\": \"geo_agent/data/processed/realism-tattoo-artist-in-manchester-and-salford_citation_visibility_latest.json\", \"provider_error_checks\": 0}"
+    },
+    {
+      "requirement": "manual_or_live_serp_evidence",
+      "status": "block",
+      "evidence": "serp_rows=0, live_serp_rows=0"
+    },
+    {
+      "requirement": "manual_or_live_ai_answer_evidence",
+      "status": "warn",
+      "evidence": "ai_rows=0, live_ai_rows=0"
+    },
+    {
+      "requirement": "sqlite_storage",
+      "status": "warn",
+      "evidence": "missing"
+    },
+    {
+      "requirement": "xmlriver_provider_audit",
+      "status": "pass",
+      "evidence": "/home/user/Vishar-site/geo_agent/data/processed/provider_audit.json"
+    },
+    {
+      "requirement": "url_enrichment",
+      "status": "warn",
+      "evidence": "{\"csv\": \"missing\", \"raw_files\": 0, \"raw_ref_errors\": [], \"report\": \"missing\", \"successful_rows\": 0, \"summary\": \"missing\", \"summary_errors\": [\"missing or empty URL enrichment summary\"]}"
+    },
+    {
+      "requirement": "placement_strategy_optional",
+      "status": "warn",
+      "evidence": "/home/user/Vishar-site/geo_agent/reports/PLACEMENT_STRATEGY.md"
+    }
+  ],
+  "generated_at": "2026-07-25T18:21:16+00:00"
+}
