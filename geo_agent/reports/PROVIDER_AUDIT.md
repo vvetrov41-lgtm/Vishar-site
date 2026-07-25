@@ -1,13 +1,13 @@
 # PROVIDER_AUDIT
 
-Generated: 2026-07-14T16:46:50+00:00
+Generated: 2026-07-25T17:54:01+00:00
 
 ## XMLRiver
 
-- configured: False
-- account count: 0
+- configured: True
+- account count: 1
 - supported engines: google, yandex
-- credential keys present: none
+- credential keys present: XMLRIVER_USER, XMLRIVER_KEY
 - network test: not_run
 
 ## DataForSEO

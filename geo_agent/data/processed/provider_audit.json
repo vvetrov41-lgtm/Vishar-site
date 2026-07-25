@@ -1,14 +1,17 @@
 {
-  "generated_at": "2026-07-14T16:46:50+00:00",
+  "generated_at": "2026-07-25T17:54:01+00:00",
   "provider_scope": "all",
   "xmlriver": {
-    "configured": false,
-    "account_count": 0,
+    "configured": true,
+    "account_count": 1,
     "supported_engines": [
       "google",
       "yandex"
     ],
-    "credential_keys": [],
+    "credential_keys": [
+      "XMLRIVER_USER",
+      "XMLRIVER_KEY"
+    ],
     "network_test": "not_run"
   },
   "dataforseo": {
