@@ -1,0 +1,33 @@
+{
+  "topic": "Realism tattoo artist in Manchester and Salford",
+  "topic_slug": "realism-tattoo-artist-in-manchester-and-salford",
+  "product": "Custom black-and-grey and colour realism tattoos, cover-ups by assessment, realism portraits and multi-session projects by Vladimir Vishar, working from No Regrets Studios in Salford; appointment only, free consultation",
+  "target_action": "request a qualified project consultation",
+  "geo": "Manchester, Salford, Greater Manchester, United Kingdom",
+  "language": "en-GB",
+  "cluster_query_count": 10,
+  "qfo_query_count": 10,
+  "qfo_evidence_policy": "explicit_user_input_or_approved_content_plan_only",
+  "serp_url_count": 144,
+  "ai_url_count": 24,
+  "allowed_platform_count": 0,
+  "ideas": 30,
+  "enter_existing": 30,
+  "create_owned": 0,
+  "blocked_or_downgraded": 0,
+  "score_formula": {
+    "product_fit": 40,
+    "qfo_ai_serp_strength": 30,
+    "platform_domain_value": 20,
+    "feasibility": 10
+  },
+  "quality_gate": [
+    "natural product fit",
+    "not only domain popularity",
+    "language/GEO fit",
+    "plausible AI signal",
+    "no invented published URL",
+    "no duplicate angle"
+  ],
+  "generated_at": "2026-07-25T18:54:57+00:00"
+}

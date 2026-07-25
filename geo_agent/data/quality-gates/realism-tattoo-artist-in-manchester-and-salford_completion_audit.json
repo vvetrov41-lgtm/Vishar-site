@@ -1,8 +1,8 @@
 {
   "topic": "Realism tattoo artist in Manchester and Salford",
   "status": "block",
-  "warnings": 4,
-  "blocks": 8,
+  "warnings": 3,
+  "blocks": 7,
   "final_claim_guard": "fail",
   "rows": [
     {
@@ -27,8 +27,8 @@
     },
     {
       "requirement": "QFO_QUERY_ANALYSIS.md",
-      "status": "block",
-      "evidence": "missing"
+      "status": "pass",
+      "evidence": "/home/user/Vishar-site/geo_agent/reports/QFO_QUERY_ANALYSIS.md"
     },
     {
       "requirement": "PAGE_TZ.md",
@@ -53,7 +53,7 @@
     {
       "requirement": "qfo_agent_clustered_user_approved_content_plan",
       "status": "block",
-      "evidence": "{\"content_plan_approval\": {}, \"path\": \"geo_agent/data/processed/realism-tattoo-artist-in-manchester-and-salford_qfo_analysis.json\", \"status\": null}"
+      "evidence": "{\"content_plan_approval\": {\"approval_ref\": \"\", \"source\": \"\", \"status\": \"pending_agent_and_user_approval\"}, \"path\": \"geo_agent/data/processed/realism-tattoo-artist-in-manchester-and-salford_qfo_analysis.json\", \"status\": \"quality_fail\"}"
     },
     {
       "requirement": "page_tz_quality_gate",
@@ -92,9 +92,9 @@
     },
     {
       "requirement": "placement_strategy_optional",
-      "status": "warn",
+      "status": "pass",
       "evidence": "/home/user/Vishar-site/geo_agent/reports/PLACEMENT_STRATEGY.md"
     }
   ],
-  "generated_at": "2026-07-25T18:21:16+00:00"
+  "generated_at": "2026-07-25T18:56:53+00:00"
 }

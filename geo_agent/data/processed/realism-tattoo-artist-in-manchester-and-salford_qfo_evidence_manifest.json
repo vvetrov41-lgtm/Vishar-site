@@ -2,8 +2,8 @@
   "manifest_version": 1,
   "manifest_type": "qfo_xmlriver_same_run_evidence",
   "status": "incomplete",
-  "run_id": "qfo_xmlriver_7e9e53f718a3",
-  "raw_dir": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3",
+  "run_id": "qfo_xmlriver_9ba96e37e60d",
+  "raw_dir": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d",
   "reviewed_plan_hash": "cdb1a32324472fbcf3aff2191c259ec4f875c9c131d5d685a313890f61eaf5d0",
   "scope_binding": {
     "provider": "xmlriver",
@@ -303,230 +303,275 @@
   "processed_artifacts": {
     "serp": {
       "path": "geo_agent/data/processed/realism-tattoo-artist-in-manchester-and-salford_qfo_xmlriver_serp_rows.csv",
-      "sha256": "c4c89a0a37e5c2b3af61a3a688ad92a8c69e5a173a05f815d383a48924bcc2aa",
-      "semantic_sha256": "90fa772e49ff632dfd77df43b220fc49ed71a54cdb26338cb2db543681e1aa5a",
-      "rows": 82
+      "sha256": "ea3de90229bb7f50a18717d6c19b38ac60060fb70ad040f6b875603b50563712",
+      "semantic_sha256": "c2e1d111cafcefd09b8db85ddb6ecb01d9c40591fdb79b0cf497b511be962169",
+      "rows": 103
     },
     "ai": {
       "path": "geo_agent/data/processed/realism-tattoo-artist-in-manchester-and-salford_qfo_xmlriver_ai_answers.csv",
-      "sha256": "f1945cd6c19e56b3c1c78943ef5ec18116907a4ca1efc40a57d48ab1db7adfc5",
-      "semantic_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "rows": 0
+      "sha256": "1aa4c39ffd68b4206f4cb2ba9e96f21a39f76b4cd2c9635a9a37672798a7fbe4",
+      "semantic_sha256": "7626778d31e07b8a3cec4e2bbb80998149030ff4551de704a9c94a8375a4ee8e",
+      "rows": 20
     }
   },
   "raw_artifacts": [
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/qfo_collection_summary.json",
-      "sha256": "d03addfd9ae434a047939cfc04033d5394fc1ed3cb07dca4af409939d150f707",
-      "bytes": 19283
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/027b9d033853.response",
+      "sha256": "ac5459ace66b3918f6f8a910e33d5cbefc32d37bf8ff5b328073d7ee6016409b",
+      "bytes": 602206
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.request.json",
-      "sha256": "e81dcc005402802ddafcd371914e59d2a3bc89b17907387534c16b9b29017dc7",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/1936174c6b08.response",
+      "sha256": "8ec3d0b9d8c81787c70b889078d72b4ba444717e0826200fbec02fa3061c432c",
+      "bytes": 145667
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/1feab94079cd.response",
+      "sha256": "f62883fb38bbcd04b4f1e75447d2a4e391676cb29cd47b978e9c92c819960e8f",
+      "bytes": 8424
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/632e29bc28a1.response",
+      "sha256": "83c64f2d3c24710c41149dcd0211dbd2a01051eb99faa4eef0c0e68981888c93",
+      "bytes": 634508
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/67dcbdaaa7ff.response",
+      "sha256": "69b230123969424ba0883a03747b95312d81793a347539fb09cc805b2df54374",
+      "bytes": 250996
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/ac6bb669e40e.response",
+      "sha256": "9cde33c98520c2b96cc98a4fd2103b19bdc15aea85904af2ae96594ffe0c21f6",
+      "bytes": 192830
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/c5c9ba64ea1e.response",
+      "sha256": "83485875c3c6149fb29e8c58836938dc293f36744e06999a6efdfc96242dbf9b",
+      "bytes": 16979
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/ecb09709d92e.response",
+      "sha256": "338be8bb4cdfd4f21cd3453dd61cb299fb363bdf4857788caabdafc13b2e215e",
+      "bytes": 77911
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/citation-title-pages/febb3291d60d.response",
+      "sha256": "5fd7a204ab3c80d6972d128f15eb741b97044dc9c8ee0dd5e86e4fb304fc88da",
+      "bytes": 103170
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/qfo_collection_summary.json",
+      "sha256": "5cd209e6d127dc075fcbe5061f4e4450dddeb24eb39eb22db217d4de71d686a9",
+      "bytes": 18291
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.request.json",
+      "sha256": "d3e9eb931a26570d017144e9e45d369da7da1d9ed35c080ef45184443ba63088",
       "bytes": 1480
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.xml",
-      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.xml",
+      "sha256": "3fd21618b1edbe66eb8e4654363345a451d65b0a03affedc47b68a5f1f19af63",
       "bytes": 269
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.request.json",
-      "sha256": "d5195c5faf0420fa6d90a5bbbab2541c9a5ac618a492e438e748745fbe4eea74",
-      "bytes": 1468
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.request.json",
+      "sha256": "a7c8e0bc45a1b49c95c8c04a4a808fded16c44d785ed525e901447a77915c976",
+      "bytes": 1414
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.xml",
-      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
-      "bytes": 269
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.xml",
+      "sha256": "3bc2c1b329289708f13ec3384a76d39c21f9cd5a6167fb9d4d5afcac424d6fda",
+      "bytes": 5275
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.request.json",
-      "sha256": "9d687eb6e2fef79085ea3161e0507f0f0ec21d16680acfd6fa6b08350059ce2e",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.request.json",
+      "sha256": "7077f6a00ab7044154e3f1df99a68fc57ea24cde67e24d596d18e45e668fc52b",
       "bytes": 1441
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.xml",
-      "sha256": "c64bdc9e93f6e4ca2de07dfeb98bf5cb4a19bcac7021c62d1620ce5dcf73795d",
-      "bytes": 4422
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.xml",
+      "sha256": "662ef862309a7da3d6a8c3256eeb5b53e2c74b79bdb0f51f6091e2a63501367c",
+      "bytes": 5070
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.request.json",
-      "sha256": "98600ddc48914c9ff5d71635bd3c1a530c19b0722f3696118bbb757a03df9251",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.request.json",
+      "sha256": "ebf28379d11a36c9be171e074105cbdd6cc5e89c1924f70ddeff862cb968a10e",
       "bytes": 1484
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.xml",
-      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.xml",
+      "sha256": "3fd21618b1edbe66eb8e4654363345a451d65b0a03affedc47b68a5f1f19af63",
       "bytes": 269
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.request.json",
-      "sha256": "c8a84b37b9ad3427c73a4f359dd0668f3dfed2fb2e647596fe7d186079721ba4",
-      "bytes": 1480
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.request.json",
+      "sha256": "ccfadb606e439bbe18f1236424694b8751aff050c9c3b1bfa60d700a40657dc8",
+      "bytes": 1425
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.xml",
-      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
-      "bytes": 269
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.xml",
+      "sha256": "348706552190493e0fe5bfc99ee1abff46184ad5ad881730d01b15d2f73bb72e",
+      "bytes": 4376
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.request.json",
-      "sha256": "09017c249a0dc2a096c55ba19106d65c6175ca5a148057e18ce6c2a164cea1d2",
-      "bytes": 1468
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.xml",
-      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
-      "bytes": 269
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.request.json",
-      "sha256": "11f29bfdaea284b663ab26aa26a304056d6fc5fce7a6d675bc04d356d0fe1db5",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.request.json",
+      "sha256": "fed57c95594b730a1981bfb93190aab9288b67ade221fdfa6b4af8fb89ffeb7a",
       "bytes": 1413
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.xml",
-      "sha256": "5f0a1379b1c41bcf942ca63b601159db13034069d2e188e12b4106de01d425b7",
-      "bytes": 4693
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.xml",
+      "sha256": "190e27e9443a31ccbda338cd28687813106a1680a73f22e583952867cbd6e8e0",
+      "bytes": 2137
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.request.json",
-      "sha256": "b10131d94afb22e31d737b78794f1b4690a97c58e9ba0428b0aab58b5fefd200",
-      "bytes": 1456
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.request.json",
+      "sha256": "524f9639a69e8f2d9998953b0edf271e9ecb42864eb37cb2d7b4c16c2f7f8504",
+      "bytes": 1416
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.xml",
-      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
-      "bytes": 269
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.xml",
+      "sha256": "099d81e0a7036b7a02a100002534e7dd1a5ab847533e77827828a4ed814cab2b",
+      "bytes": 702814
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.request.json",
-      "sha256": "1197e8ad7512ff55ee4827f4a3ed8acdb0923697029324bcd8df686faeb1fc05",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.request.json",
+      "sha256": "3dc894f160d612b4f5a03709a43414f8c6e018243e8df4c3de284afec8002ce4",
+      "bytes": 1401
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.xml",
+      "sha256": "8f49125450fcdda5646c3d354faab9cd011c482b624c123a36325c3359aeff88",
+      "bytes": 5005
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.request.json",
+      "sha256": "4537c1c05f67e37c28992cd32c81fa4a0c41b9cc25318c47008c03ebd1512e91",
       "bytes": 1478
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.xml",
-      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.xml",
+      "sha256": "3fd21618b1edbe66eb8e4654363345a451d65b0a03affedc47b68a5f1f19af63",
       "bytes": 269
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.request.json",
-      "sha256": "520bf8e3bd7a29b2f9dd7e02bc30c537f5e12a9a9234e370d53c7f930ff043ec",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.request.json",
+      "sha256": "ef1f73b6114d462c704c1ec30aa0f6daaeea998f419a7a3f2f209793cbd4486b",
       "bytes": 1467
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.xml",
-      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.xml",
+      "sha256": "3fd21618b1edbe66eb8e4654363345a451d65b0a03affedc47b68a5f1f19af63",
       "bytes": 269
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.request.json",
-      "sha256": "0b773a02076cc40037e1b5d7216c259e2a0d90addc8d7471d1fdbe0a01747e80",
-      "bytes": 1419
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.request.json",
+      "sha256": "62d689f81c3bfbbbf51b580fb8e8d90d3fa1f9d7cdf9fa2297bb61c2ec0b1fd9",
+      "bytes": 1474
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.xml",
-      "sha256": "65322f4adf26fb48655deddc9fe52e3d29aea997e4d0363e08d798d2faff5bc2",
-      "bytes": 4811
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.xml",
+      "sha256": "1f56fb44e9312f5c00122a7eb8b1b2fdc1cb20ee9ae949bff8ef77f9052fa86c",
+      "bytes": 269
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.request.json",
-      "sha256": "af779ae5c85d06e6dc4fe4b7bd0defba7972986fd4b5ae044fa454523ab4b6ee",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.request.json",
+      "sha256": "7be8353adccdd1a0bcbd494b2baddaf03309fe1e527f23249705fa32c6adac6c",
       "bytes": 1462
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.xml",
-      "sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.xml",
+      "sha256": "1f56fb44e9312f5c00122a7eb8b1b2fdc1cb20ee9ae949bff8ef77f9052fa86c",
       "bytes": 269
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.request.json",
-      "sha256": "8027a365fc491ceaa90a26df8404df2ddec7645d0d449227b2cdab38dfad6e92",
-      "bytes": 1458
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.request.json",
+      "sha256": "21951ef0731b3341b65c6c597439877e0f8d6e941502c7ee2b5496e2079d11c4",
+      "bytes": 1403
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.xml",
-      "sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
-      "bytes": 269
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.xml",
+      "sha256": "8640255e020ff00f8df8e56b285c69d23021d72c735a41b5a752f73311a6b41c",
+      "bytes": 4827
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.request.json",
-      "sha256": "88cde54abb78477051e042f0ff0458a52b6a23cf382c8fd6ec6bb8e2d8effd91",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.request.json",
+      "sha256": "c2882bbe275163e00f622d265a2f3f2d0f8b3fd145f3cb6406257566fac07223",
       "bytes": 1392
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.xml",
-      "sha256": "698dfa5bfdadd88b9f7b5456bf8847acf769cc7387f5dfd107a4aeabe60a8843",
-      "bytes": 5247
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.xml",
+      "sha256": "37cb5804a4841428cfc9a96cbdb037d2d4baecdbc831222f760ca05c7137782b",
+      "bytes": 5304
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.request.json",
-      "sha256": "35ae16c49a7b479975d552062476908ced154222a58008f478979dbea87c0ed3",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.request.json",
+      "sha256": "4d0de959d23b8516edff8cd8aecc03a3ec637c7e7008c405fd0475f1f6690590",
       "bytes": 1421
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.xml",
-      "sha256": "373577cf84bc5f770e4a7e76dc1c22778db504c8678a14ba64bd59bc58a7c328",
-      "bytes": 4858
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.xml",
+      "sha256": "7a48ea617eddd20d503883b36111b250b2ea52e53531fdf684187397d311ff7a",
+      "bytes": 4285
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.request.json",
-      "sha256": "f994022e02dc90b3eca9e79971d6bf3a88f7bf79c748655596803dbd09c455c8",
-      "bytes": 1409
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.xml",
-      "sha256": "0afcce8b07447620909a0d2a11feabd0917398fb1b86ac3c35c5b9ca5f45794f",
-      "bytes": 5026
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.request.json",
-      "sha256": "eb91dde56e2a571c0d3a432ace250fce8c4d52294f8ec909a0c731db3c79c8ed",
-      "bytes": 1482
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.xml",
-      "sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
-      "bytes": 269
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.request.json",
-      "sha256": "dc9efdf330b9809cd331f00ae99756e9be59d7a27145da20eab9cc8bedfe1b38",
-      "bytes": 1415
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.xml",
-      "sha256": "671d5ade5e6559efb3b1508ca631a74aaf4f71e280adf83cbcada79db3ea0e16",
-      "bytes": 4664
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.request.json",
-      "sha256": "e919b33572a1c962ade45a9bac3058168099ea0aef28cf814d39c0619ab24e2f",
-      "bytes": 1421
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.xml",
-      "sha256": "718fa33c8e8dd70fc58501800bcf40bba36721409690b781288390d54060e124",
-      "bytes": 5306
-    },
-    {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.request.json",
-      "sha256": "fc33da92292c4ca4533fbc56b404675cc15fa915951d1ae2f9e40664c7ccaa74",
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.request.json",
+      "sha256": "a5dfd320de74a3839a238d9664a5ae8dae4fd453e250bee168796f7b8e5a1432",
       "bytes": 1410
     },
     {
-      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.xml",
-      "sha256": "320ae2c3f8643d7b3de58b53e3bd094d2ff87e5f45333060031682e54581d49a",
-      "bytes": 5555
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.xml",
+      "sha256": "f6a564d402ed1080967a4ba7023f512a79c215db4a0357e77252e75605401663",
+      "bytes": 5457
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.request.json",
+      "sha256": "d4eebe54fa88630a3938d25aae5f4ea7ce0b05a8e5ff2604d4dacadd09f3d6ee",
+      "bytes": 1427
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.xml",
+      "sha256": "86184c31fceb2fea8e38ff8727764771e3123fec305d33ca38b7182d3dab16b0",
+      "bytes": 4465
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.request.json",
+      "sha256": "8f909fba25a4ea68dcfbdb9e5ba9e989bb29dc5f4da3138dd459dc937fa36d3c",
+      "bytes": 1415
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.xml",
+      "sha256": "13052f62a7c29a337595abd067a4d182cc71e39f157ab75675f74920dad4ed99",
+      "bytes": 4892
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.request.json",
+      "sha256": "fec914d1dd547cb00819e8fbdfc73a08e7bf9b36190ea18b05e1fdd7c4678fef",
+      "bytes": 1475
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.xml",
+      "sha256": "a5abcf0657b757c780dcfce914bea0d33ef1503342427e7dbdc1c6cbdcdb9dcf",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.request.json",
+      "sha256": "9ccb5980b4453f7542abf4ec66b72e20c6203962dbd18fc102d5b90cd97315a7",
+      "bytes": 1464
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.xml",
+      "sha256": "fb2a2db86e2e2cf58b66c9d708518012ff0ea4a7a57561157586d497b9fd2c7b",
+      "bytes": 269
     }
   ],
   "request_reconciliation": {
     "status": "incomplete",
     "planned_paid_requests": 20,
-    "paid_requests_succeeded": 9,
-    "paid_requests_failed": 11,
-    "provider_error_count": 11,
+    "paid_requests_succeeded": 12,
+    "paid_requests_failed": 8,
+    "provider_error_count": 8,
     "request_metadata_ledgers_found": 20,
     "request_rows": [
       {
@@ -537,10 +582,10 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.request.json",
-        "request_meta_sha256": "e81dcc005402802ddafcd371914e59d2a3bc89b17907387534c16b9b29017dc7",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.xml",
-        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.request.json",
+        "request_meta_sha256": "d3e9eb931a26570d017144e9e45d369da7da1d9ed35c080ef45184443ba63088",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.xml",
+        "raw_response_sha256": "3fd21618b1edbe66eb8e4654363345a451d65b0a03affedc47b68a5f1f19af63",
         "status": "failed",
         "errors": [
           "request metadata status is not success: error"
@@ -554,14 +599,12 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.request.json",
-        "request_meta_sha256": "d5195c5faf0420fa6d90a5bbbab2541c9a5ac618a492e438e748745fbe4eea74",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.xml",
-        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
-        "status": "failed",
-        "errors": [
-          "request metadata status is not success: error"
-        ]
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.request.json",
+        "request_meta_sha256": "a7c8e0bc45a1b49c95c8c04a4a808fded16c44d785ed525e901447a77915c976",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.xml",
+        "raw_response_sha256": "3bc2c1b329289708f13ec3384a76d39c21f9cd5a6167fb9d4d5afcac424d6fda",
+        "status": "success",
+        "errors": []
       },
       {
         "paid_request_id": "xmlriver_paid_0003",
@@ -571,10 +614,10 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.request.json",
-        "request_meta_sha256": "9d687eb6e2fef79085ea3161e0507f0f0ec21d16680acfd6fa6b08350059ce2e",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.xml",
-        "raw_response_sha256": "c64bdc9e93f6e4ca2de07dfeb98bf5cb4a19bcac7021c62d1620ce5dcf73795d",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.request.json",
+        "request_meta_sha256": "7077f6a00ab7044154e3f1df99a68fc57ea24cde67e24d596d18e45e668fc52b",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.xml",
+        "raw_response_sha256": "662ef862309a7da3d6a8c3256eeb5b53e2c74b79bdb0f51f6091e2a63501367c",
         "status": "success",
         "errors": []
       },
@@ -586,10 +629,10 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.request.json",
-        "request_meta_sha256": "98600ddc48914c9ff5d71635bd3c1a530c19b0722f3696118bbb757a03df9251",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.xml",
-        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.request.json",
+        "request_meta_sha256": "ebf28379d11a36c9be171e074105cbdd6cc5e89c1924f70ddeff862cb968a10e",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.xml",
+        "raw_response_sha256": "3fd21618b1edbe66eb8e4654363345a451d65b0a03affedc47b68a5f1f19af63",
         "status": "failed",
         "errors": [
           "request metadata status is not success: error"
@@ -603,14 +646,12 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.request.json",
-        "request_meta_sha256": "c8a84b37b9ad3427c73a4f359dd0668f3dfed2fb2e647596fe7d186079721ba4",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.xml",
-        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
-        "status": "failed",
-        "errors": [
-          "request metadata status is not success: error"
-        ]
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.request.json",
+        "request_meta_sha256": "ccfadb606e439bbe18f1236424694b8751aff050c9c3b1bfa60d700a40657dc8",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.xml",
+        "raw_response_sha256": "348706552190493e0fe5bfc99ee1abff46184ad5ad881730d01b15d2f73bb72e",
+        "status": "success",
+        "errors": []
       },
       {
         "paid_request_id": "xmlriver_paid_0006",
@@ -620,14 +661,12 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.request.json",
-        "request_meta_sha256": "09017c249a0dc2a096c55ba19106d65c6175ca5a148057e18ce6c2a164cea1d2",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.xml",
-        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
-        "status": "failed",
-        "errors": [
-          "request metadata status is not success: error"
-        ]
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.request.json",
+        "request_meta_sha256": "fed57c95594b730a1981bfb93190aab9288b67ade221fdfa6b4af8fb89ffeb7a",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.xml",
+        "raw_response_sha256": "190e27e9443a31ccbda338cd28687813106a1680a73f22e583952867cbd6e8e0",
+        "status": "success",
+        "errors": []
       },
       {
         "paid_request_id": "xmlriver_paid_0007",
@@ -637,10 +676,10 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.request.json",
-        "request_meta_sha256": "11f29bfdaea284b663ab26aa26a304056d6fc5fce7a6d675bc04d356d0fe1db5",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.xml",
-        "raw_response_sha256": "5f0a1379b1c41bcf942ca63b601159db13034069d2e188e12b4106de01d425b7",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.request.json",
+        "request_meta_sha256": "524f9639a69e8f2d9998953b0edf271e9ecb42864eb37cb2d7b4c16c2f7f8504",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.xml",
+        "raw_response_sha256": "099d81e0a7036b7a02a100002534e7dd1a5ab847533e77827828a4ed814cab2b",
         "status": "success",
         "errors": []
       },
@@ -652,14 +691,12 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.request.json",
-        "request_meta_sha256": "b10131d94afb22e31d737b78794f1b4690a97c58e9ba0428b0aab58b5fefd200",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.xml",
-        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
-        "status": "failed",
-        "errors": [
-          "request metadata status is not success: error"
-        ]
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.request.json",
+        "request_meta_sha256": "3dc894f160d612b4f5a03709a43414f8c6e018243e8df4c3de284afec8002ce4",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.xml",
+        "raw_response_sha256": "8f49125450fcdda5646c3d354faab9cd011c482b624c123a36325c3359aeff88",
+        "status": "success",
+        "errors": []
       },
       {
         "paid_request_id": "xmlriver_paid_0009",
@@ -669,10 +706,10 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.request.json",
-        "request_meta_sha256": "1197e8ad7512ff55ee4827f4a3ed8acdb0923697029324bcd8df686faeb1fc05",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.xml",
-        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.request.json",
+        "request_meta_sha256": "4537c1c05f67e37c28992cd32c81fa4a0c41b9cc25318c47008c03ebd1512e91",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.xml",
+        "raw_response_sha256": "3fd21618b1edbe66eb8e4654363345a451d65b0a03affedc47b68a5f1f19af63",
         "status": "failed",
         "errors": [
           "request metadata status is not success: error"
@@ -686,10 +723,10 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.request.json",
-        "request_meta_sha256": "520bf8e3bd7a29b2f9dd7e02bc30c537f5e12a9a9234e370d53c7f930ff043ec",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.xml",
-        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.request.json",
+        "request_meta_sha256": "ef1f73b6114d462c704c1ec30aa0f6daaeea998f419a7a3f2f209793cbd4486b",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.xml",
+        "raw_response_sha256": "3fd21618b1edbe66eb8e4654363345a451d65b0a03affedc47b68a5f1f19af63",
         "status": "failed",
         "errors": [
           "request metadata status is not success: error"
@@ -703,12 +740,14 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.request.json",
-        "request_meta_sha256": "0b773a02076cc40037e1b5d7216c259e2a0d90addc8d7471d1fdbe0a01747e80",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.xml",
-        "raw_response_sha256": "65322f4adf26fb48655deddc9fe52e3d29aea997e4d0363e08d798d2faff5bc2",
-        "status": "success",
-        "errors": []
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.request.json",
+        "request_meta_sha256": "62d689f81c3bfbbbf51b580fb8e8d90d3fa1f9d7cdf9fa2297bb61c2ec0b1fd9",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.xml",
+        "raw_response_sha256": "1f56fb44e9312f5c00122a7eb8b1b2fdc1cb20ee9ae949bff8ef77f9052fa86c",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
       },
       {
         "paid_request_id": "xmlriver_paid_0012",
@@ -718,10 +757,10 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.request.json",
-        "request_meta_sha256": "af779ae5c85d06e6dc4fe4b7bd0defba7972986fd4b5ae044fa454523ab4b6ee",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.xml",
-        "raw_response_sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.request.json",
+        "request_meta_sha256": "7be8353adccdd1a0bcbd494b2baddaf03309fe1e527f23249705fa32c6adac6c",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.xml",
+        "raw_response_sha256": "1f56fb44e9312f5c00122a7eb8b1b2fdc1cb20ee9ae949bff8ef77f9052fa86c",
         "status": "failed",
         "errors": [
           "request metadata status is not success: error"
@@ -735,14 +774,12 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.request.json",
-        "request_meta_sha256": "8027a365fc491ceaa90a26df8404df2ddec7645d0d449227b2cdab38dfad6e92",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.xml",
-        "raw_response_sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
-        "status": "failed",
-        "errors": [
-          "request metadata status is not success: error"
-        ]
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.request.json",
+        "request_meta_sha256": "21951ef0731b3341b65c6c597439877e0f8d6e941502c7ee2b5496e2079d11c4",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.xml",
+        "raw_response_sha256": "8640255e020ff00f8df8e56b285c69d23021d72c735a41b5a752f73311a6b41c",
+        "status": "success",
+        "errors": []
       },
       {
         "paid_request_id": "xmlriver_paid_0014",
@@ -752,10 +789,10 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.request.json",
-        "request_meta_sha256": "88cde54abb78477051e042f0ff0458a52b6a23cf382c8fd6ec6bb8e2d8effd91",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.xml",
-        "raw_response_sha256": "698dfa5bfdadd88b9f7b5456bf8847acf769cc7387f5dfd107a4aeabe60a8843",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.request.json",
+        "request_meta_sha256": "c2882bbe275163e00f622d265a2f3f2d0f8b3fd145f3cb6406257566fac07223",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.xml",
+        "raw_response_sha256": "37cb5804a4841428cfc9a96cbdb037d2d4baecdbc831222f760ca05c7137782b",
         "status": "success",
         "errors": []
       },
@@ -767,10 +804,10 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.request.json",
-        "request_meta_sha256": "35ae16c49a7b479975d552062476908ced154222a58008f478979dbea87c0ed3",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.xml",
-        "raw_response_sha256": "373577cf84bc5f770e4a7e76dc1c22778db504c8678a14ba64bd59bc58a7c328",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.request.json",
+        "request_meta_sha256": "4d0de959d23b8516edff8cd8aecc03a3ec637c7e7008c405fd0475f1f6690590",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.xml",
+        "raw_response_sha256": "7a48ea617eddd20d503883b36111b250b2ea52e53531fdf684187397d311ff7a",
         "status": "success",
         "errors": []
       },
@@ -782,10 +819,10 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.request.json",
-        "request_meta_sha256": "f994022e02dc90b3eca9e79971d6bf3a88f7bf79c748655596803dbd09c455c8",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.xml",
-        "raw_response_sha256": "0afcce8b07447620909a0d2a11feabd0917398fb1b86ac3c35c5b9ca5f45794f",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.request.json",
+        "request_meta_sha256": "a5dfd320de74a3839a238d9664a5ae8dae4fd453e250bee168796f7b8e5a1432",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.xml",
+        "raw_response_sha256": "f6a564d402ed1080967a4ba7023f512a79c215db4a0357e77252e75605401663",
         "status": "success",
         "errors": []
       },
@@ -797,14 +834,12 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.request.json",
-        "request_meta_sha256": "eb91dde56e2a571c0d3a432ace250fce8c4d52294f8ec909a0c731db3c79c8ed",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.xml",
-        "raw_response_sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
-        "status": "failed",
-        "errors": [
-          "request metadata status is not success: error"
-        ]
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.request.json",
+        "request_meta_sha256": "d4eebe54fa88630a3938d25aae5f4ea7ce0b05a8e5ff2604d4dacadd09f3d6ee",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.xml",
+        "raw_response_sha256": "86184c31fceb2fea8e38ff8727764771e3123fec305d33ca38b7182d3dab16b0",
+        "status": "success",
+        "errors": []
       },
       {
         "paid_request_id": "xmlriver_paid_0018",
@@ -814,10 +849,10 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.request.json",
-        "request_meta_sha256": "dc9efdf330b9809cd331f00ae99756e9be59d7a27145da20eab9cc8bedfe1b38",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.xml",
-        "raw_response_sha256": "671d5ade5e6559efb3b1508ca631a74aaf4f71e280adf83cbcada79db3ea0e16",
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.request.json",
+        "request_meta_sha256": "8f909fba25a4ea68dcfbdb9e5ba9e989bb29dc5f4da3138dd459dc937fa36d3c",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.xml",
+        "raw_response_sha256": "13052f62a7c29a337595abd067a4d182cc71e39f157ab75675f74920dad4ed99",
         "status": "success",
         "errors": []
       },
@@ -829,12 +864,14 @@
         "page_param": 1,
         "requested_top_urls": 20,
         "include_ai": true,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.request.json",
-        "request_meta_sha256": "e919b33572a1c962ade45a9bac3058168099ea0aef28cf814d39c0619ab24e2f",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.xml",
-        "raw_response_sha256": "718fa33c8e8dd70fc58501800bcf40bba36721409690b781288390d54060e124",
-        "status": "success",
-        "errors": []
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.request.json",
+        "request_meta_sha256": "fec914d1dd547cb00819e8fbdfc73a08e7bf9b36190ea18b05e1fdd7c4678fef",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.xml",
+        "raw_response_sha256": "a5abcf0657b757c780dcfce914bea0d33ef1503342427e7dbdc1c6cbdcdb9dcf",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
       },
       {
         "paid_request_id": "xmlriver_paid_0020",
@@ -844,42 +881,38 @@
         "page_param": 2,
         "requested_top_urls": 20,
         "include_ai": false,
-        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.request.json",
-        "request_meta_sha256": "fc33da92292c4ca4533fbc56b404675cc15fa915951d1ae2f9e40664c7ccaa74",
-        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.xml",
-        "raw_response_sha256": "320ae2c3f8643d7b3de58b53e3bd094d2ff87e5f45333060031682e54581d49a",
-        "status": "success",
-        "errors": []
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.request.json",
+        "request_meta_sha256": "9ccb5980b4453f7542abf4ec66b72e20c6203962dbd18fc102d5b90cd97315a7",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_9ba96e37e60d/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.xml",
+        "raw_response_sha256": "fb2a2db86e2e2cf58b66c9d708518012ff0ea4a7a57561157586d497b9fd2c7b",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
       }
     ],
-    "reconciliation_sha256": "f4515c61bdaba57e7f244639a0c81d4130d2b7c42f0d15c1950f8570c5612665"
+    "reconciliation_sha256": "14399f173c945719a521cba0054fe87aa53a23d4592a2a7dde1df31e92ae220e"
   },
   "reconciliation_errors": [
     "xmlriver_paid_0001: request metadata status is not success: error",
-    "xmlriver_paid_0002: request metadata status is not success: error",
     "xmlriver_paid_0004: request metadata status is not success: error",
-    "xmlriver_paid_0005: request metadata status is not success: error",
-    "xmlriver_paid_0006: request metadata status is not success: error",
-    "xmlriver_paid_0008: request metadata status is not success: error",
     "xmlriver_paid_0009: request metadata status is not success: error",
     "xmlriver_paid_0010: request metadata status is not success: error",
+    "xmlriver_paid_0011: request metadata status is not success: error",
     "xmlriver_paid_0012: request metadata status is not success: error",
-    "xmlriver_paid_0013: request metadata status is not success: error",
-    "xmlriver_paid_0017: request metadata status is not success: error"
+    "xmlriver_paid_0019: request metadata status is not success: error",
+    "xmlriver_paid_0020: request metadata status is not success: error"
   ],
-  "provider_error_payloads_excluded": 11,
+  "provider_error_payloads_excluded": 8,
   "provider_error_exclusion_notes": [
-    "google / custom tattoo artist Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
     "google / custom tattoo artist Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
-    "google / colour realism tattoo Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
-    "google / black and grey realism tattoo Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
-    "google / colour realism tattoo Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
-    "google / tattoo cover up Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
-    "google / realism tattoo artist Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / custom tattoo artist Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
     "google / realism tattoo artist Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / realism tattoo artist Salford / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
     "google / realism tattoo artist Salford / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
-    "google / portrait tattoo artist Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
-    "google / tattoo artist Salford / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен."
+    "google / Vladimir Vishar tattoo artist / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / Vladimir Vishar tattoo artist / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / black and grey realism tattoo Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен."
   ],
-  "generated_at": "2026-07-25T18:33:20+00:00"
+  "generated_at": "2026-07-25T18:52:58+00:00"
 }

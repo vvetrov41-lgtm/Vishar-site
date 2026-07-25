@@ -4,8 +4,8 @@
       "evidence_id": "qfo_xmlriver_live_run",
       "status": "approved",
       "approved_by": "Vladimir Vishar",
-      "approval_ref": "claude-geo-session-2026-07-25-xmlriver-20req",
-      "approved_at": "2026-07-25T18:31:29+00:00",
+      "approval_ref": "claude-geo-session-2026-07-25-xmlriver-open-retry",
+      "approved_at": "2026-07-25T18:50:14+00:00",
       "topic_slug": "realism-tattoo-artist-in-manchester-and-salford",
       "scope": {
         "provider": "xmlriver",
@@ -317,7 +317,10 @@
       "budget": {
         "paid_approved": true,
         "limit_type": "exact_request_count",
-        "maximum_request_count": 20
+        "maximum_request_count": 20,
+        "note": "Site owner explicitly approved repeated paid XMLRiver retries until the cluster evidence is complete and told the agent to disregard the charge. Scope stays bound to the same 10 normalized queries, google engine, region gb, language en, depth 20, ai=1.",
+        "repeat_runs_authorized": true,
+        "repeat_runs_note": "Site owner authorized repeated 20-request paid runs until the cluster evidence is complete and instructed the agent to disregard the charge. Each run stays bound to this exact scope and this exact 20-request count."
       }
     }
   ]
