@@ -1,0 +1,11 @@
+﻿query_id,source_order,query,source_ref,status
+qfo_seed_0001,1,realism tattoo artist Manchester,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0002,2,black and grey realism tattoo Manchester,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0003,3,colour realism tattoo Manchester,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0004,4,tattoo cover up Manchester,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0005,5,custom tattoo artist Manchester,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0006,6,realism tattoo artist Salford,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0007,7,tattoo artist Salford,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0008,8,tattoo consultation Manchester,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0009,9,portrait tattoo artist Manchester,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver
+qfo_seed_0010,10,Vladimir Vishar tattoo artist,.geo-agent-local/claude/cluster.txt,pending_live_xmlriver

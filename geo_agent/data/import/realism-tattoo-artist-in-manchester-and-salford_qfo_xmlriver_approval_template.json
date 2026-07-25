@@ -1,0 +1,316 @@
+{
+  "approvals": [
+    {
+      "evidence_id": "qfo_xmlriver_live_run",
+      "status": "pending_user_approval",
+      "approved_by": "",
+      "approval_ref": "",
+      "approved_at": "",
+      "topic_slug": "realism-tattoo-artist-in-manchester-and-salford",
+      "scope": {
+        "provider": "xmlriver",
+        "reviewed_plan_hash": "cdb1a32324472fbcf3aff2191c259ec4f875c9c131d5d685a313890f61eaf5d0",
+        "qfo_plan_binding": {
+          "provider": "xmlriver",
+          "normalized_queries": [
+            "realism tattoo artist Manchester",
+            "black and grey realism tattoo Manchester",
+            "colour realism tattoo Manchester",
+            "tattoo cover up Manchester",
+            "custom tattoo artist Manchester",
+            "realism tattoo artist Salford",
+            "tattoo artist Salford",
+            "tattoo consultation Manchester",
+            "portrait tattoo artist Manchester",
+            "Vladimir Vishar tattoo artist"
+          ],
+          "normalized_queries_sha256": "adab74a6d3acc5faae194ce2d358d99ec12efebe083cde243d1ccb08b3406a35",
+          "engines": [
+            "google"
+          ],
+          "provider_region_params": {
+            "google": {
+              "loc": "2826",
+              "lr": "en"
+            }
+          },
+          "region": "gb",
+          "language": "en",
+          "requested_top_urls": 20,
+          "depth_semantics": "top-N organic URL count, not pagination page count",
+          "serp_pages_per_query_engine": 2,
+          "page_plan": [
+            {
+              "paid_request_id": "xmlriver_paid_0001",
+              "query_engine_pair_id": 1,
+              "query": "realism tattoo artist Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0002",
+              "query_engine_pair_id": 1,
+              "query": "realism tattoo artist Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0003",
+              "query_engine_pair_id": 2,
+              "query": "black and grey realism tattoo Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0004",
+              "query_engine_pair_id": 2,
+              "query": "black and grey realism tattoo Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0005",
+              "query_engine_pair_id": 3,
+              "query": "colour realism tattoo Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0006",
+              "query_engine_pair_id": 3,
+              "query": "colour realism tattoo Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0007",
+              "query_engine_pair_id": 4,
+              "query": "tattoo cover up Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0008",
+              "query_engine_pair_id": 4,
+              "query": "tattoo cover up Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0009",
+              "query_engine_pair_id": 5,
+              "query": "custom tattoo artist Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0010",
+              "query_engine_pair_id": 5,
+              "query": "custom tattoo artist Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0011",
+              "query_engine_pair_id": 6,
+              "query": "realism tattoo artist Salford",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0012",
+              "query_engine_pair_id": 6,
+              "query": "realism tattoo artist Salford",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0013",
+              "query_engine_pair_id": 7,
+              "query": "tattoo artist Salford",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0014",
+              "query_engine_pair_id": 7,
+              "query": "tattoo artist Salford",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0015",
+              "query_engine_pair_id": 8,
+              "query": "tattoo consultation Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0016",
+              "query_engine_pair_id": 8,
+              "query": "tattoo consultation Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0017",
+              "query_engine_pair_id": 9,
+              "query": "portrait tattoo artist Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0018",
+              "query_engine_pair_id": 9,
+              "query": "portrait tattoo artist Manchester",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0019",
+              "query_engine_pair_id": 10,
+              "query": "Vladimir Vishar tattoo artist",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 1,
+              "include_ai": true
+            },
+            {
+              "paid_request_id": "xmlriver_paid_0020",
+              "query_engine_pair_id": 10,
+              "query": "Vladimir Vishar tattoo artist",
+              "engine": "google",
+              "provider_params": {
+                "loc": "2826",
+                "lr": "en"
+              },
+              "requested_top_urls": 20,
+              "page_param": 2,
+              "include_ai": false
+            }
+          ],
+          "planned_paid_requests": 20,
+          "include_ai": true,
+          "xmlriver_max_threads": 10
+        }
+      },
+      "budget": {
+        "paid_approved": false,
+        "limit_type": "exact_request_count",
+        "maximum_request_count": 20
+      }
+    }
+  ]
+}

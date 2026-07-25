@@ -1,0 +1,885 @@
+{
+  "manifest_version": 1,
+  "manifest_type": "qfo_xmlriver_same_run_evidence",
+  "status": "incomplete",
+  "run_id": "qfo_xmlriver_7e9e53f718a3",
+  "raw_dir": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3",
+  "reviewed_plan_hash": "cdb1a32324472fbcf3aff2191c259ec4f875c9c131d5d685a313890f61eaf5d0",
+  "scope_binding": {
+    "provider": "xmlriver",
+    "normalized_queries": [
+      "realism tattoo artist Manchester",
+      "black and grey realism tattoo Manchester",
+      "colour realism tattoo Manchester",
+      "tattoo cover up Manchester",
+      "custom tattoo artist Manchester",
+      "realism tattoo artist Salford",
+      "tattoo artist Salford",
+      "tattoo consultation Manchester",
+      "portrait tattoo artist Manchester",
+      "Vladimir Vishar tattoo artist"
+    ],
+    "normalized_queries_sha256": "adab74a6d3acc5faae194ce2d358d99ec12efebe083cde243d1ccb08b3406a35",
+    "engines": [
+      "google"
+    ],
+    "provider_region_params": {
+      "google": {
+        "loc": "2826",
+        "lr": "en"
+      }
+    },
+    "region": "gb",
+    "language": "en",
+    "requested_top_urls": 20,
+    "depth_semantics": "top-N organic URL count, not pagination page count",
+    "serp_pages_per_query_engine": 2,
+    "page_plan": [
+      {
+        "paid_request_id": "xmlriver_paid_0001",
+        "query_engine_pair_id": 1,
+        "query": "realism tattoo artist Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0002",
+        "query_engine_pair_id": 1,
+        "query": "realism tattoo artist Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0003",
+        "query_engine_pair_id": 2,
+        "query": "black and grey realism tattoo Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0004",
+        "query_engine_pair_id": 2,
+        "query": "black and grey realism tattoo Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0005",
+        "query_engine_pair_id": 3,
+        "query": "colour realism tattoo Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0006",
+        "query_engine_pair_id": 3,
+        "query": "colour realism tattoo Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0007",
+        "query_engine_pair_id": 4,
+        "query": "tattoo cover up Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0008",
+        "query_engine_pair_id": 4,
+        "query": "tattoo cover up Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0009",
+        "query_engine_pair_id": 5,
+        "query": "custom tattoo artist Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0010",
+        "query_engine_pair_id": 5,
+        "query": "custom tattoo artist Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0011",
+        "query_engine_pair_id": 6,
+        "query": "realism tattoo artist Salford",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0012",
+        "query_engine_pair_id": 6,
+        "query": "realism tattoo artist Salford",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0013",
+        "query_engine_pair_id": 7,
+        "query": "tattoo artist Salford",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0014",
+        "query_engine_pair_id": 7,
+        "query": "tattoo artist Salford",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0015",
+        "query_engine_pair_id": 8,
+        "query": "tattoo consultation Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0016",
+        "query_engine_pair_id": 8,
+        "query": "tattoo consultation Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0017",
+        "query_engine_pair_id": 9,
+        "query": "portrait tattoo artist Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0018",
+        "query_engine_pair_id": 9,
+        "query": "portrait tattoo artist Manchester",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0019",
+        "query_engine_pair_id": 10,
+        "query": "Vladimir Vishar tattoo artist",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 1,
+        "include_ai": true
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0020",
+        "query_engine_pair_id": 10,
+        "query": "Vladimir Vishar tattoo artist",
+        "engine": "google",
+        "provider_params": {
+          "loc": "2826",
+          "lr": "en"
+        },
+        "requested_top_urls": 20,
+        "page_param": 2,
+        "include_ai": false
+      }
+    ],
+    "planned_paid_requests": 20,
+    "include_ai": true,
+    "xmlriver_max_threads": 10
+  },
+  "processed_artifacts": {
+    "serp": {
+      "path": "geo_agent/data/processed/realism-tattoo-artist-in-manchester-and-salford_qfo_xmlriver_serp_rows.csv",
+      "sha256": "c4c89a0a37e5c2b3af61a3a688ad92a8c69e5a173a05f815d383a48924bcc2aa",
+      "semantic_sha256": "90fa772e49ff632dfd77df43b220fc49ed71a54cdb26338cb2db543681e1aa5a",
+      "rows": 82
+    },
+    "ai": {
+      "path": "geo_agent/data/processed/realism-tattoo-artist-in-manchester-and-salford_qfo_xmlriver_ai_answers.csv",
+      "sha256": "f1945cd6c19e56b3c1c78943ef5ec18116907a4ca1efc40a57d48ab1db7adfc5",
+      "semantic_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rows": 0
+    }
+  },
+  "raw_artifacts": [
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/qfo_collection_summary.json",
+      "sha256": "d03addfd9ae434a047939cfc04033d5394fc1ed3cb07dca4af409939d150f707",
+      "bytes": 19283
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.request.json",
+      "sha256": "e81dcc005402802ddafcd371914e59d2a3bc89b17907387534c16b9b29017dc7",
+      "bytes": 1480
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.xml",
+      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.request.json",
+      "sha256": "d5195c5faf0420fa6d90a5bbbab2541c9a5ac618a492e438e748745fbe4eea74",
+      "bytes": 1468
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.xml",
+      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.request.json",
+      "sha256": "9d687eb6e2fef79085ea3161e0507f0f0ec21d16680acfd6fa6b08350059ce2e",
+      "bytes": 1441
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.xml",
+      "sha256": "c64bdc9e93f6e4ca2de07dfeb98bf5cb4a19bcac7021c62d1620ce5dcf73795d",
+      "bytes": 4422
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.request.json",
+      "sha256": "98600ddc48914c9ff5d71635bd3c1a530c19b0722f3696118bbb757a03df9251",
+      "bytes": 1484
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.xml",
+      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.request.json",
+      "sha256": "c8a84b37b9ad3427c73a4f359dd0668f3dfed2fb2e647596fe7d186079721ba4",
+      "bytes": 1480
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.xml",
+      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.request.json",
+      "sha256": "09017c249a0dc2a096c55ba19106d65c6175ca5a148057e18ce6c2a164cea1d2",
+      "bytes": 1468
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.xml",
+      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.request.json",
+      "sha256": "11f29bfdaea284b663ab26aa26a304056d6fc5fce7a6d675bc04d356d0fe1db5",
+      "bytes": 1413
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.xml",
+      "sha256": "5f0a1379b1c41bcf942ca63b601159db13034069d2e188e12b4106de01d425b7",
+      "bytes": 4693
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.request.json",
+      "sha256": "b10131d94afb22e31d737b78794f1b4690a97c58e9ba0428b0aab58b5fefd200",
+      "bytes": 1456
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.xml",
+      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.request.json",
+      "sha256": "1197e8ad7512ff55ee4827f4a3ed8acdb0923697029324bcd8df686faeb1fc05",
+      "bytes": 1478
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.xml",
+      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.request.json",
+      "sha256": "520bf8e3bd7a29b2f9dd7e02bc30c537f5e12a9a9234e370d53c7f930ff043ec",
+      "bytes": 1467
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.xml",
+      "sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.request.json",
+      "sha256": "0b773a02076cc40037e1b5d7216c259e2a0d90addc8d7471d1fdbe0a01747e80",
+      "bytes": 1419
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.xml",
+      "sha256": "65322f4adf26fb48655deddc9fe52e3d29aea997e4d0363e08d798d2faff5bc2",
+      "bytes": 4811
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.request.json",
+      "sha256": "af779ae5c85d06e6dc4fe4b7bd0defba7972986fd4b5ae044fa454523ab4b6ee",
+      "bytes": 1462
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.xml",
+      "sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.request.json",
+      "sha256": "8027a365fc491ceaa90a26df8404df2ddec7645d0d449227b2cdab38dfad6e92",
+      "bytes": 1458
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.xml",
+      "sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.request.json",
+      "sha256": "88cde54abb78477051e042f0ff0458a52b6a23cf382c8fd6ec6bb8e2d8effd91",
+      "bytes": 1392
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.xml",
+      "sha256": "698dfa5bfdadd88b9f7b5456bf8847acf769cc7387f5dfd107a4aeabe60a8843",
+      "bytes": 5247
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.request.json",
+      "sha256": "35ae16c49a7b479975d552062476908ced154222a58008f478979dbea87c0ed3",
+      "bytes": 1421
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.xml",
+      "sha256": "373577cf84bc5f770e4a7e76dc1c22778db504c8678a14ba64bd59bc58a7c328",
+      "bytes": 4858
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.request.json",
+      "sha256": "f994022e02dc90b3eca9e79971d6bf3a88f7bf79c748655596803dbd09c455c8",
+      "bytes": 1409
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.xml",
+      "sha256": "0afcce8b07447620909a0d2a11feabd0917398fb1b86ac3c35c5b9ca5f45794f",
+      "bytes": 5026
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.request.json",
+      "sha256": "eb91dde56e2a571c0d3a432ace250fce8c4d52294f8ec909a0c731db3c79c8ed",
+      "bytes": 1482
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.xml",
+      "sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
+      "bytes": 269
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.request.json",
+      "sha256": "dc9efdf330b9809cd331f00ae99756e9be59d7a27145da20eab9cc8bedfe1b38",
+      "bytes": 1415
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.xml",
+      "sha256": "671d5ade5e6559efb3b1508ca631a74aaf4f71e280adf83cbcada79db3ea0e16",
+      "bytes": 4664
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.request.json",
+      "sha256": "e919b33572a1c962ade45a9bac3058168099ea0aef28cf814d39c0619ab24e2f",
+      "bytes": 1421
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.xml",
+      "sha256": "718fa33c8e8dd70fc58501800bcf40bba36721409690b781288390d54060e124",
+      "bytes": 5306
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.request.json",
+      "sha256": "fc33da92292c4ca4533fbc56b404675cc15fa915951d1ae2f9e40664c7ccaa74",
+      "bytes": 1410
+    },
+    {
+      "path": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.xml",
+      "sha256": "320ae2c3f8643d7b3de58b53e3bd094d2ff87e5f45333060031682e54581d49a",
+      "bytes": 5555
+    }
+  ],
+  "request_reconciliation": {
+    "status": "incomplete",
+    "planned_paid_requests": 20,
+    "paid_requests_succeeded": 9,
+    "paid_requests_failed": 11,
+    "provider_error_count": 11,
+    "request_metadata_ledgers_found": 20,
+    "request_rows": [
+      {
+        "paid_request_id": "xmlriver_paid_0001",
+        "query_engine_pair_id": 1,
+        "query": "realism tattoo artist Manchester",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.request.json",
+        "request_meta_sha256": "e81dcc005402802ddafcd371914e59d2a3bc89b17907387534c16b9b29017dc7",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0001_google-realism-tattoo-artist-manchester_page-1.xml",
+        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0002",
+        "query_engine_pair_id": 1,
+        "query": "realism tattoo artist Manchester",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.request.json",
+        "request_meta_sha256": "d5195c5faf0420fa6d90a5bbbab2541c9a5ac618a492e438e748745fbe4eea74",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0002_google-realism-tattoo-artist-manchester_page-2.xml",
+        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0003",
+        "query_engine_pair_id": 2,
+        "query": "black and grey realism tattoo Manchester",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.request.json",
+        "request_meta_sha256": "9d687eb6e2fef79085ea3161e0507f0f0ec21d16680acfd6fa6b08350059ce2e",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0003_google-black-and-grey-realism-tattoo-manchester_page-1.xml",
+        "raw_response_sha256": "c64bdc9e93f6e4ca2de07dfeb98bf5cb4a19bcac7021c62d1620ce5dcf73795d",
+        "status": "success",
+        "errors": []
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0004",
+        "query_engine_pair_id": 2,
+        "query": "black and grey realism tattoo Manchester",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.request.json",
+        "request_meta_sha256": "98600ddc48914c9ff5d71635bd3c1a530c19b0722f3696118bbb757a03df9251",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0004_google-black-and-grey-realism-tattoo-manchester_page-2.xml",
+        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0005",
+        "query_engine_pair_id": 3,
+        "query": "colour realism tattoo Manchester",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.request.json",
+        "request_meta_sha256": "c8a84b37b9ad3427c73a4f359dd0668f3dfed2fb2e647596fe7d186079721ba4",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0005_google-colour-realism-tattoo-manchester_page-1.xml",
+        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0006",
+        "query_engine_pair_id": 3,
+        "query": "colour realism tattoo Manchester",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.request.json",
+        "request_meta_sha256": "09017c249a0dc2a096c55ba19106d65c6175ca5a148057e18ce6c2a164cea1d2",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0006_google-colour-realism-tattoo-manchester_page-2.xml",
+        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0007",
+        "query_engine_pair_id": 4,
+        "query": "tattoo cover up Manchester",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.request.json",
+        "request_meta_sha256": "11f29bfdaea284b663ab26aa26a304056d6fc5fce7a6d675bc04d356d0fe1db5",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0007_google-tattoo-cover-up-manchester_page-1.xml",
+        "raw_response_sha256": "5f0a1379b1c41bcf942ca63b601159db13034069d2e188e12b4106de01d425b7",
+        "status": "success",
+        "errors": []
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0008",
+        "query_engine_pair_id": 4,
+        "query": "tattoo cover up Manchester",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.request.json",
+        "request_meta_sha256": "b10131d94afb22e31d737b78794f1b4690a97c58e9ba0428b0aab58b5fefd200",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0008_google-tattoo-cover-up-manchester_page-2.xml",
+        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0009",
+        "query_engine_pair_id": 5,
+        "query": "custom tattoo artist Manchester",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.request.json",
+        "request_meta_sha256": "1197e8ad7512ff55ee4827f4a3ed8acdb0923697029324bcd8df686faeb1fc05",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0009_google-custom-tattoo-artist-manchester_page-1.xml",
+        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0010",
+        "query_engine_pair_id": 5,
+        "query": "custom tattoo artist Manchester",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.request.json",
+        "request_meta_sha256": "520bf8e3bd7a29b2f9dd7e02bc30c537f5e12a9a9234e370d53c7f930ff043ec",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0010_google-custom-tattoo-artist-manchester_page-2.xml",
+        "raw_response_sha256": "441770701b56bbedc49d915645ca625dcb453b7dbed7d1c180632148a2115ba1",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0011",
+        "query_engine_pair_id": 6,
+        "query": "realism tattoo artist Salford",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.request.json",
+        "request_meta_sha256": "0b773a02076cc40037e1b5d7216c259e2a0d90addc8d7471d1fdbe0a01747e80",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0011_google-realism-tattoo-artist-salford_page-1.xml",
+        "raw_response_sha256": "65322f4adf26fb48655deddc9fe52e3d29aea997e4d0363e08d798d2faff5bc2",
+        "status": "success",
+        "errors": []
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0012",
+        "query_engine_pair_id": 6,
+        "query": "realism tattoo artist Salford",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.request.json",
+        "request_meta_sha256": "af779ae5c85d06e6dc4fe4b7bd0defba7972986fd4b5ae044fa454523ab4b6ee",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0012_google-realism-tattoo-artist-salford_page-2.xml",
+        "raw_response_sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0013",
+        "query_engine_pair_id": 7,
+        "query": "tattoo artist Salford",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.request.json",
+        "request_meta_sha256": "8027a365fc491ceaa90a26df8404df2ddec7645d0d449227b2cdab38dfad6e92",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0013_google-tattoo-artist-salford_page-1.xml",
+        "raw_response_sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0014",
+        "query_engine_pair_id": 7,
+        "query": "tattoo artist Salford",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.request.json",
+        "request_meta_sha256": "88cde54abb78477051e042f0ff0458a52b6a23cf382c8fd6ec6bb8e2d8effd91",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0014_google-tattoo-artist-salford_page-2.xml",
+        "raw_response_sha256": "698dfa5bfdadd88b9f7b5456bf8847acf769cc7387f5dfd107a4aeabe60a8843",
+        "status": "success",
+        "errors": []
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0015",
+        "query_engine_pair_id": 8,
+        "query": "tattoo consultation Manchester",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.request.json",
+        "request_meta_sha256": "35ae16c49a7b479975d552062476908ced154222a58008f478979dbea87c0ed3",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0015_google-tattoo-consultation-manchester_page-1.xml",
+        "raw_response_sha256": "373577cf84bc5f770e4a7e76dc1c22778db504c8678a14ba64bd59bc58a7c328",
+        "status": "success",
+        "errors": []
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0016",
+        "query_engine_pair_id": 8,
+        "query": "tattoo consultation Manchester",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.request.json",
+        "request_meta_sha256": "f994022e02dc90b3eca9e79971d6bf3a88f7bf79c748655596803dbd09c455c8",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0016_google-tattoo-consultation-manchester_page-2.xml",
+        "raw_response_sha256": "0afcce8b07447620909a0d2a11feabd0917398fb1b86ac3c35c5b9ca5f45794f",
+        "status": "success",
+        "errors": []
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0017",
+        "query_engine_pair_id": 9,
+        "query": "portrait tattoo artist Manchester",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.request.json",
+        "request_meta_sha256": "eb91dde56e2a571c0d3a432ace250fce8c4d52294f8ec909a0c731db3c79c8ed",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0017_google-portrait-tattoo-artist-manchester_page-1.xml",
+        "raw_response_sha256": "d4daf5634796b93978404e6e3d11a4f3ee8512267332f16d35a8a1558652b53c",
+        "status": "failed",
+        "errors": [
+          "request metadata status is not success: error"
+        ]
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0018",
+        "query_engine_pair_id": 9,
+        "query": "portrait tattoo artist Manchester",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.request.json",
+        "request_meta_sha256": "dc9efdf330b9809cd331f00ae99756e9be59d7a27145da20eab9cc8bedfe1b38",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0018_google-portrait-tattoo-artist-manchester_page-2.xml",
+        "raw_response_sha256": "671d5ade5e6559efb3b1508ca631a74aaf4f71e280adf83cbcada79db3ea0e16",
+        "status": "success",
+        "errors": []
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0019",
+        "query_engine_pair_id": 10,
+        "query": "Vladimir Vishar tattoo artist",
+        "engine": "google",
+        "page_param": 1,
+        "requested_top_urls": 20,
+        "include_ai": true,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.request.json",
+        "request_meta_sha256": "e919b33572a1c962ade45a9bac3058168099ea0aef28cf814d39c0619ab24e2f",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0019_google-vladimir-vishar-tattoo-artist_page-1.xml",
+        "raw_response_sha256": "718fa33c8e8dd70fc58501800bcf40bba36721409690b781288390d54060e124",
+        "status": "success",
+        "errors": []
+      },
+      {
+        "paid_request_id": "xmlriver_paid_0020",
+        "query_engine_pair_id": 10,
+        "query": "Vladimir Vishar tattoo artist",
+        "engine": "google",
+        "page_param": 2,
+        "requested_top_urls": 20,
+        "include_ai": false,
+        "request_meta_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.request.json",
+        "request_meta_sha256": "fc33da92292c4ca4533fbc56b404675cc15fa915951d1ae2f9e40664c7ccaa74",
+        "raw_response_ref": "geo_agent/data/raw/serp/qfo_xmlriver_7e9e53f718a3/xmlriver_paid_0020_google-vladimir-vishar-tattoo-artist_page-2.xml",
+        "raw_response_sha256": "320ae2c3f8643d7b3de58b53e3bd094d2ff87e5f45333060031682e54581d49a",
+        "status": "success",
+        "errors": []
+      }
+    ],
+    "reconciliation_sha256": "f4515c61bdaba57e7f244639a0c81d4130d2b7c42f0d15c1950f8570c5612665"
+  },
+  "reconciliation_errors": [
+    "xmlriver_paid_0001: request metadata status is not success: error",
+    "xmlriver_paid_0002: request metadata status is not success: error",
+    "xmlriver_paid_0004: request metadata status is not success: error",
+    "xmlriver_paid_0005: request metadata status is not success: error",
+    "xmlriver_paid_0006: request metadata status is not success: error",
+    "xmlriver_paid_0008: request metadata status is not success: error",
+    "xmlriver_paid_0009: request metadata status is not success: error",
+    "xmlriver_paid_0010: request metadata status is not success: error",
+    "xmlriver_paid_0012: request metadata status is not success: error",
+    "xmlriver_paid_0013: request metadata status is not success: error",
+    "xmlriver_paid_0017: request metadata status is not success: error"
+  ],
+  "provider_error_payloads_excluded": 11,
+  "provider_error_exclusion_notes": [
+    "google / custom tattoo artist Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / custom tattoo artist Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / colour realism tattoo Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / black and grey realism tattoo Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / colour realism tattoo Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / tattoo cover up Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / realism tattoo artist Manchester / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / realism tattoo artist Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / realism tattoo artist Salford / page=2: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / portrait tattoo artist Manchester / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен.",
+    "google / tattoo artist Salford / page=1: RuntimeError: XMLRiver error 500: Выполните перезапрос. Ответ от поисковой системы не получен."
+  ],
+  "generated_at": "2026-07-25T18:33:20+00:00"
+}
