@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Script } from 'node:vm';
 import sharp from 'sharp';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -413,61 +412,6 @@ async function checkBookingWindowSingleSource(htmlFiles) {
   }
 
   pass(`Booking availability has one BOOKING_WINDOW source in components.js and ${markerCount} neutral HTML fallback markers with no hard-coded dates.`);
-}
-
-async function checkBookingWindowRuntime() {
-  const componentsPath = path.join(rootDir, 'components.js');
-  if (!await pathExists(componentsPath)) {
-    fail('components.js is missing; cannot run the booking availability smoke test.');
-    return;
-  }
-
-  const components = await readFile(componentsPath, 'utf8');
-  const closingPattern = /\}\)\(\);\s*$/;
-  if (!closingPattern.test(components)) {
-    fail('components.js does not have the expected IIFE ending; cannot instrument the booking availability smoke test.');
-    return;
-  }
-
-  const instrumented = components.replace(
-    closingPattern,
-    'globalThis.__bookingWindowRuntime = { value: BOOKING_WINDOW, populate: populateBookingWindow };\n})();'
-  );
-  const marker = { textContent: 'Check current availability' };
-  const documentMock = {
-    addEventListener() {},
-    createElement() {
-      return { textContent: '', innerHTML: '' };
-    },
-    querySelectorAll(selector) {
-      return selector === '[data-booking-window]' ? [marker] : [];
-    },
-  };
-  const context = {
-    console,
-    document: documentMock,
-    navigator: {},
-    window: { PAGE_ID: 'validator' },
-  };
-
-  try {
-    new Script(instrumented, { filename: 'components.js' }).runInNewContext(context);
-    context.__bookingWindowRuntime.populate();
-  } catch (error) {
-    fail(`components.js booking availability runtime smoke test failed: ${error.name}: ${error.message}`);
-    return;
-  }
-
-  if (!context.__bookingWindowRuntime.value.trim()) {
-    fail('components.js BOOKING_WINDOW is empty at runtime.');
-    return;
-  }
-  if (marker.textContent !== context.__bookingWindowRuntime.value) {
-    fail(`populateBookingWindow() rendered "${marker.textContent}", expected "${context.__bookingWindowRuntime.value}".`);
-    return;
-  }
-
-  pass(`components.js executes BOOKING_WINDOW and populateBookingWindow() renders "${marker.textContent}".`);
 }
 
 async function checkNoRuntimeCdnjsReferences() {
@@ -1319,7 +1263,6 @@ async function main() {
   await checkLlmsTxt();
   await checkHtmlRuntimeStrings(htmlFiles);
   await checkBookingWindowSingleSource(htmlFiles);
-  await checkBookingWindowRuntime();
   await checkNoRuntimeCdnjsReferences();
   await checkVendor3DLibraries();
   await checkHomepageReferencesLocalVendorPaths();

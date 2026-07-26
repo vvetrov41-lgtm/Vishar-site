@@ -1,19 +1,18 @@
 # Vladimir Vishar
 
-> Official personal portfolio of Vladimir Vishar, a realism tattoo artist accepting enquiries for future London appointments.
+> Official personal portfolio of Vladimir Vishar, a realism tattoo artist based in Manchester / Salford, UK, working by appointment at No Regrets Studios Manchester.
 
 ## About
 
 - Specialities: colour realism, black-and-grey realism, custom large-scale tattoos, and cover-ups by assessment.
 - Current hourly rate: £140/hr.
 - Main call to action: "Send your concept."
-- Enquiries are sent directly to Vladimir for review, and a consultation may take place before any booking is confirmed.
+- Enquiries are handled through the studio, and a consultation takes place before any booking is confirmed.
 
 ## Pages
 
-- [Homepage](https://vishartattoo.com/): Overview of Vladimir Vishar's realism tattoo work, specialities, and London booking status.
-- [Tattoo Enquiry](https://vishartattoo.com/booking/): Personal London booking form for tattoo concepts, placement, size and reference images.
-- [About](https://vishartattoo.com/about/): Background on the artist, process, pricing and London appointments.
+- [Homepage](https://vishartattoo.com/): Overview of Vladimir Vishar's realism tattoo work, specialities, and studio location.
+- [About](https://vishartattoo.com/about/): Background on the artist and No Regrets Studios Manchester.
 - [Colour Realism](https://vishartattoo.com/colour-realism-tattoo-manchester/): Colour realism tattoo work — portraits, wildlife, and floral pieces.
 - [Black & Grey Realism](https://vishartattoo.com/black-and-grey-realism-manchester/): Black-and-grey realism tattoo work with dramatic contrast and shading.
 - [Cover-Ups](https://vishartattoo.com/cover-up-tattoo-manchester/): Cover-up tattoos, assessed individually before booking.

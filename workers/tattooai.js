@@ -8,161 +8,7 @@ export default {
     if (request.method !== "POST") {
       return new Response("Use POST request", { status: 405 });
     }
-    const body = await request.clone().json().catch(() => null);
-    if (!body || typeof body !== "object") {
-      return Response.json(
-        { ok: false, error: "A valid JSON request is required." },
-        { status: 400, headers: cors }
-      );
-    }
-    // Personal London booking form — forwarded to Telegram only, nothing is stored.
-    if (body.type === "tattoo-enquiry") {
-      if (cleanText(body.website, 200)) {
-        return Response.json({ ok: true }, { status: 200, headers: cors });
-      }
-
-      const startedAt = Number(body.startedAt);
-      if (!Number.isFinite(startedAt) || Date.now() - startedAt < 1500) {
-        return Response.json(
-          { ok: false, error: "Please review the form and try again." },
-          { status: 400, headers: cors }
-        );
-      }
-
-      const enquiry = {
-        name: cleanText(body.name, 120),
-        email: cleanText(body.email, 320),
-        phone: cleanText(body.phone, 80),
-        instagram: cleanText(body.instagram, 80),
-        preferredReply: cleanText(body.preferredReply, 40),
-        travellingFrom: cleanText(body.travellingFrom, 120),
-        projectType: cleanText(body.projectType, 100),
-        placement: cleanText(body.placement, 160),
-        size: cleanText(body.size, 120),
-        coverUp: cleanText(body.coverUp, 40),
-        timing: cleanText(body.timing, 160),
-        idea: cleanText(body.idea, 3500),
-        source: cleanText(body.source, 100) || "/booking/"
-      };
-      if (!enquiry.name || !enquiry.email || !enquiry.preferredReply || !enquiry.projectType || !enquiry.placement || !enquiry.size || !enquiry.coverUp || !enquiry.idea) {
-        return Response.json(
-          { ok: false, error: "Please complete all required fields." },
-          { status: 400, headers: cors }
-        );
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(enquiry.email)) {
-        return Response.json(
-          { ok: false, error: "A valid email is required." },
-          { status: 400, headers: cors }
-        );
-      }
-      const allowedReplyMethods = new Set(["Email", "WhatsApp", "Instagram"]);
-      if (!allowedReplyMethods.has(enquiry.preferredReply)) {
-        return Response.json(
-          { ok: false, error: "Please choose Email, WhatsApp or Instagram as the preferred reply." },
-          { status: 400, headers: cors }
-        );
-      }
-      if (enquiry.preferredReply === "WhatsApp" && !enquiry.phone) {
-        return Response.json(
-          { ok: false, error: "A WhatsApp number is required when WhatsApp is selected." },
-          { status: 400, headers: cors }
-        );
-      }
-      if (enquiry.preferredReply === "Instagram" && !enquiry.instagram) {
-        return Response.json(
-          { ok: false, error: "An Instagram username is required when Instagram is selected." },
-          { status: 400, headers: cors }
-        );
-      }
-      if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
-        return Response.json(
-          { ok: false, error: "Telegram is not configured." },
-          { status: 500, headers: cors }
-        );
-      }
-
-      const images = Array.isArray(body.images) ? body.images : [];
-      if (images.length < 1 || images.length > 3) {
-        return Response.json(
-          { ok: false, error: "Please attach 1–3 reference images." },
-          { status: 400, headers: cors }
-        );
-      }
-      const validImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-      for (const image of images) {
-        if (!image || !validImageTypes.has(image.type) || typeof image.data !== "string" || image.data.length > 5_600_000) {
-          return Response.json(
-            { ok: false, error: "One of the reference images is invalid or too large." },
-            { status: 400, headers: cors }
-          );
-        }
-      }
-
-      const enquiryText = [
-        "NEW LONDON TATTOO ENQUIRY",
-        "",
-        "Name: " + enquiry.name,
-        "Email: " + enquiry.email,
-        "Phone / WhatsApp: " + (enquiry.phone || "—"),
-        "Instagram: " + (enquiry.instagram || "—"),
-        "Preferred reply: " + enquiry.preferredReply,
-        "Travelling from: " + (enquiry.travellingFrom || "—"),
-        "",
-        "Project: " + enquiry.projectType,
-        "Placement: " + enquiry.placement,
-        "Size: " + enquiry.size,
-        "Cover-up: " + enquiry.coverUp,
-        "Preferred timing: " + (enquiry.timing || "—"),
-        "",
-        "Idea:",
-        enquiry.idea,
-        "",
-        "Reference images: " + images.length,
-        "Source: " + enquiry.source
-      ].join("\n").slice(0, 4090);
-
-      const messageResponse = await fetch(
-        "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text: enquiryText, disable_web_page_preview: true })
-        }
-      );
-      if (!messageResponse.ok) {
-        console.error("Telegram sendMessage failed for tattoo-enquiry:", messageResponse.status);
-        return Response.json(
-          { ok: false, error: "Telegram request failed." },
-          { status: 502, headers: cors }
-        );
-      }
-
-      let failedImageCount = 0;
-      for (let index = 0; index < images.length; index += 1) {
-        try {
-          const image = images[index];
-          const bytes = Uint8Array.from(atob(image.data), (character) => character.charCodeAt(0));
-          const upload = new FormData();
-          upload.append("chat_id", env.TELEGRAM_CHAT_ID);
-          upload.append("caption", "Reference " + (index + 1) + " of " + images.length + " — " + enquiry.name);
-          upload.append("document", new Blob([bytes], { type: image.type }), safeFilename(image.name, index, image.type));
-          const imageResponse = await fetch(
-            "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendDocument",
-            { method: "POST", body: upload }
-          );
-          if (!imageResponse.ok) failedImageCount += 1;
-        } catch (error) {
-          failedImageCount += 1;
-          console.error("Reference upload failed for tattoo-enquiry:", String(error));
-        }
-      }
-
-      return Response.json(
-        { ok: true, imageWarning: failedImageCount > 0, failedImageCount },
-        { status: 200, headers: cors }
-      );
-    }
+    const body = await request.clone().json();
     // Lead / sendIdea — handled before any AI logic
     if (body.type === "lead" || body.type === "sendIdea") {
       if (!body.contact) {
@@ -279,7 +125,7 @@ export default {
     }
     // Existing AI logic — unchanged
     const { type, message } = body;
-    const ideaPrompt = "You are the AI Concept Consultant for Vladimir Vishar, a London tattoo artist who works exclusively in realism. Your job is to guide every tattoo idea into Vladimir's realism specialisation.\n\nAllowed new tattoo directions only:\n- colour realism\n- black and grey realism\n- portrait realism\n- wildlife realism\n- dark realism\n- surreal realism\n- cover-up realism\n\nImportant distinction:\nIf the client mentions another style as the desired style for the new tattoo, translate it into the closest allowed realism direction.\nIf the client mentions another style only to describe an existing tattoo, old tattoo, reference, or cover-up target, understand it as context but do not recommend that style for the new tattoo.\n\nExamples:\n- I want an anime portrait → portrait realism with cinematic lighting\n- I want a geometric wolf → wildlife realism with strong black and grey contrast\n- I want a watercolor flower → colour realism with soft natural lighting\n- I want to cover an old tribal band → cover-up realism for an old band tattoo\n- I want to cover an old geometric tattoo → cover-up realism for an existing pattern tattoo\n- I have an old linework snake → cover-up realism or black and grey realism, depending on density\n\nDo not recommend these as new tattoo styles:\nwatercolor, geometric, tribal, neo-traditional, minimalist, linework, illustrative, anime, cartoon, ornamental, dotwork, abstract\n\nAvoid repeating these words in the final answer unless necessary for clarity. Prefer neutral wording:\nexisting tattoo, old tattoo, old band tattoo, previous dark tattoo, existing pattern tattoo, old fine-line tattoo, current design\n\nResponse rules:\n- 120-160 words maximum\n- plain text only\n- no markdown\n- no asterisks\n- no bullet points\n- no numbered lists\n- no emoji\n- calm professional British English\n- never invent prices\n- never invent session times\n- never claim to book the appointment\n\nUse exactly this structure:\n\nConcept:\n\nRealism direction:\n\nPlacement / size:\n\nWhat to send Vladimir:\n\nIn What to send Vladimir, ask for practical references in one sentence: clear photos, placement photo, size idea, lighting mood, and relevant realism references.";
+    const ideaPrompt = "You are the AI Concept Consultant for Vladimir Vishar, a Manchester/Salford-based tattoo artist who works exclusively in realism. Your job is to guide every tattoo idea into Vladimir's realism specialisation.\n\nAllowed new tattoo directions only:\n- colour realism\n- black and grey realism\n- portrait realism\n- wildlife realism\n- dark realism\n- surreal realism\n- cover-up realism\n\nImportant distinction:\nIf the client mentions another style as the desired style for the new tattoo, translate it into the closest allowed realism direction.\nIf the client mentions another style only to describe an existing tattoo, old tattoo, reference, or cover-up target, understand it as context but do not recommend that style for the new tattoo.\n\nExamples:\n- I want an anime portrait → portrait realism with cinematic lighting\n- I want a geometric wolf → wildlife realism with strong black and grey contrast\n- I want a watercolor flower → colour realism with soft natural lighting\n- I want to cover an old tribal band → cover-up realism for an old band tattoo\n- I want to cover an old geometric tattoo → cover-up realism for an existing pattern tattoo\n- I have an old linework snake → cover-up realism or black and grey realism, depending on density\n\nDo not recommend these as new tattoo styles:\nwatercolor, geometric, tribal, neo-traditional, minimalist, linework, illustrative, anime, cartoon, ornamental, dotwork, abstract\n\nAvoid repeating these words in the final answer unless necessary for clarity. Prefer neutral wording:\nexisting tattoo, old tattoo, old band tattoo, previous dark tattoo, existing pattern tattoo, old fine-line tattoo, current design\n\nResponse rules:\n- 120-160 words maximum\n- plain text only\n- no markdown\n- no asterisks\n- no bullet points\n- no numbered lists\n- no emoji\n- calm professional British English\n- never invent prices\n- never invent session times\n- never claim to book the appointment\n\nUse exactly this structure:\n\nConcept:\n\nRealism direction:\n\nPlacement / size:\n\nWhat to send Vladimir:\n\nIn What to send Vladimir, ask for practical references in one sentence: clear photos, placement photo, size idea, lighting mood, and relevant realism references.";
     const aftercarePrompt = `You are Vladimir Vishar's tattoo aftercare assistant.
 
 Use Vladimir Vishar's aftercare rules as the source of truth. Do not give generic tattoo advice if it conflicts with these rules.
@@ -386,16 +232,4 @@ function getCorsHeaders(origin) {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type"
   };
-}
-
-function cleanText(value, maxLength) {
-  if (typeof value !== "string") return "";
-  return value.trim().replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").slice(0, maxLength);
-}
-
-function safeFilename(value, index, mimeType) {
-  const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-  const fallback = "reference-" + (index + 1) + "." + (extensions[mimeType] || "jpg");
-  const cleaned = cleanText(value, 120).replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
-  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : fallback;
 }
