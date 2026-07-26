@@ -1,0 +1,17 @@
+{
+  "topic": "Cover-up tattoo Manchester",
+  "topic_slug": "cover-up-tattoo-manchester",
+  "status": "success",
+  "competitors": 5,
+  "qfo_or_cluster_queries": 4,
+  "parsed_pass_or_warn": 3,
+  "blocked": 2,
+  "ngrams": 150,
+  "ngram_distribution": {
+    "1": 40,
+    "2": 70,
+    "3": 40
+  },
+  "chunks": 5,
+  "generated_at": "2026-07-26T05:06:45+00:00"
+}

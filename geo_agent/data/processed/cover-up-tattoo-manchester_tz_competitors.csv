@@ -1,0 +1,6 @@
+﻿competitor_id,url,domain,title,ai_citation_count,topic_overlap,selection_source,source_prompts,source_files
+cmp_001,https://www.tattoodo.com/tattoo-artists/manchester/artists/cover-up-32,tattoodo.com,,0,3,explicit_user_or_command_url,,
+cmp_002,https://www.lbltattoo.co.uk/tattoo-cover-up,lbltattoo.co.uk,,0,2,explicit_user_or_command_url,,
+cmp_003,https://noregrets.tattoo/uk/tattoo-cover-ups-transforming-regret-into-redemption/,noregrets.tattoo,,0,2,explicit_user_or_command_url,,
+cmp_004,https://lastsuppertattoos.co.uk/cover-ups/,lastsuppertattoos.co.uk,,0,1,explicit_user_or_command_url,,
+cmp_005,https://fleshtattoo.co.uk/tattoos/,fleshtattoo.co.uk,,0,0,explicit_user_or_command_url,,

@@ -21,6 +21,7 @@ geo_agent/reports/LLM_ACCESSIBILITY_AUDIT.md
 # Runtime-local GEO Topic Agent state for Codex/Claude isolation
 .geo-agent-local/
 geo_agent/data/raw/serp/
+geo_agent/data/raw/pages/
 geo_agent/data/raw/qfo/
 geo_agent/data/raw/xmlriver/
 geo_agent/data/raw/provider-responses/
