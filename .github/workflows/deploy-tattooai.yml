@@ -15,16 +15,16 @@ permissions:
   contents: read
 
 jobs:
-  inspect-pages:
+  verify-production:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Inspect vishar-site deployments
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "4"
-          command: pages deployment list --project-name=vishar-site
+      - name: Verify public site
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache_buster="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          curl -fsSL --retry 5 --retry-delay 2 -H "Cache-Control: no-cache" "https://vishartattoo.com/?verify=${cache_buster}" -o /tmp/home.html
+          curl -fsSL --retry 5 --retry-delay 2 -H "Cache-Control: no-cache" "https://vishartattoo.com/booking/?verify=${cache_buster}" -o /tmp/booking.html
+          grep -F "London enquiries are now open" /tmp/home.html
+          grep -F 'id="tattoo-enquiry-form"' /tmp/booking.html
+          grep -F "imageWarning" /tmp/booking.html
