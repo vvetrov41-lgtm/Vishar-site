@@ -2,9 +2,11 @@ name: Deploy tattooai Worker
 
 on:
   workflow_dispatch:
-  push:
+  pull_request:
     branches:
-      - agent/london-booking-transition
+      - main
+    types:
+      - synchronize
     paths:
       - workers/tattooai.js
       - wrangler.toml
