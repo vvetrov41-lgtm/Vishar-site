@@ -15,7 +15,8 @@
 - [Tattoo Enquiry](https://vishartattoo.com/booking/): Personal London booking form for tattoo concepts, placement, size and reference images.
 - [About](https://vishartattoo.com/about/): Background on the artist, process, pricing and London appointments.
 - [Colour Realism](https://vishartattoo.com/colour-realism-tattoo-manchester/): Colour realism tattoo work — portraits, wildlife, and floral pieces.
-- [Black & Grey Realism](https://vishartattoo.com/black-and-grey-realism-manchester/): Black-and-grey realism tattoo work with dramatic contrast and shading.
+- [Black & Grey Realism](https://vishartattoo.com/black-and-grey-realism-tattoo-manchester/): Black-and-grey realism tattoo work with dramatic contrast and shading.
 - [Cover-Ups](https://vishartattoo.com/cover-up-tattoo-manchester/): Cover-up tattoos, assessed individually before booking.
 - [FAQ](https://vishartattoo.com/faq/): Common questions about sessions, preparation, pain, healing, and cover-ups.
 - [Aftercare](https://vishartattoo.com/aftercare/): Step-by-step tattoo aftercare and healing guidance.
+
