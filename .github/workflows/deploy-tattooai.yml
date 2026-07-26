@@ -2,29 +2,31 @@ name: Deploy tattooai Worker
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-    types:
-      - reopened
-      - synchronize
-    paths:
-      - .github/workflows/deploy-tattooai.yml
-
-permissions:
-  contents: read
 
 jobs:
-  verify-production:
+  deploy:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Verify public site
-        shell: bash
-        run: |
-          set -euo pipefail
-          cache_buster="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          curl -fsSL --retry 5 --retry-delay 2 -H "Cache-Control: no-cache" "https://vishartattoo.com/?verify=${cache_buster}" -o /tmp/home.html
-          curl -fsSL --retry 5 --retry-delay 2 -H "Cache-Control: no-cache" "https://vishartattoo.com/booking/?verify=${cache_buster}" -o /tmp/booking.html
-          grep -F "London enquiries are now open" /tmp/home.html
-          grep -F 'id="tattoo-enquiry-form"' /tmp/booking.html
-          grep -F "imageWarning" /tmp/booking.html
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Preflight syntax check
+        run: node --check workers/tattooai.js
+
+      # WARNING: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must already be configured
+      # as Cloudflare Worker secrets/runtime settings. Do not commit secrets to this repo.
+      - name: Deploy tattooai Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: deploy
