@@ -17,9 +17,11 @@ page and do not change the URL.
 - URL: `/cover-up-tattoo-manchester/` (existing page, keep the URL)
 - Keep the existing H1 and Title unless the client asks otherwise. The current
   title already carries the service and the city.
-- Current length: about 1,010 visible words. Target: 1,400-1,800 words. The two
-  cover-up pages that Google's AI answer actually cites for this query run to
-  1,212 and 2,430 words, so the current page is the shortest of the three.
+- Current length: about 1,010 visible words, extracting to 6,333 characters of
+  clean LLM-readable content - the highest of any page measured on this site.
+  There is no word-count target. The two cited competitor pages run to 1,212
+  and 2,430 words, but length is not the deficiency here; coverage is already
+  comparable. Any growth must come from the two gaps below, not from padding.
 
 ## Confirmed Semantics
 
@@ -38,25 +40,34 @@ the before-and-after section, the key-things-to-know block and the cover-up FAQ.
 
 ## Coverage Gaps To Close
 
-These modules exist on both cited competitor pages and are missing or thin on
-the current page. They are the substance of this brief.
+Corrected after reading the live page body rather than only its headings. The
+first version of this brief overstated the gaps: three of the four modules it
+listed are already present in the page text, just not signposted in headings.
+Verified state as of 2026-07-25:
 
-1. **What makes a cover-up succeed or fail.** Explicit criteria: size of the
-   existing piece relative to the new one, age and fading, ink density and
-   saturation, black versus coloured ink, placement and skin condition. Write
-   this as criteria the reader can apply to their own tattoo before enquiring.
+- **Success and failure criteria: already covered.** "Key things to know about
+  cover-ups" states darker-covers-darker, size requirements, laser as optional
+  and both styles working. The FAQ adds ink colour, density, darkness, size,
+  placement, scarring, skin condition and available space.
+- **Laser: already covered in three places.** Process step 2, the "Laser is
+  optional" point, and a dedicated FAQ entry. No gap.
+- **Design constraints: already covered.** "Strategic Design", "Custom Design",
+  "Darker covers darker" and "Size matters" carry this.
 
-2. **When a cover-up is not the right answer.** Both cited competitors address
-   laser removal. State plainly when partial laser fading first, or declining
-   the job, is the honest recommendation. This is a trust module and it is the
-   single clearest gap against the cited pages.
+Two genuine gaps remain, and neither requires the page to get longer.
 
-3. **What the new design has to do.** Explain why cover-ups constrain subject,
-   contrast and size, and why a realism cover-up is usually larger and darker
-   than the original. Connect this to the artist's realism specialism.
+1. **No extractable answer block.** Nothing on the page states, in one
+   self-contained passage, what this service is, where it happens, who performs
+   it and what the first step is. The opening text is atmosphere
+   ("A Second Chance for Your Skin"). An AI answer engine extracting this page
+   has no single quotable paragraph. This is the one gap tied directly to
+   citation behaviour, and it can be closed by rewriting existing opening
+   sentences rather than adding new ones.
 
-4. **Session and healing reality.** How multi-session cover-up work differs
-   from a fresh piece, and why healing between sessions matters.
+2. **Multi-session structure is implicit.** The page says cover-ups "take
+   longer" and mentions layering, but never states how the work is split across
+   sessions or why healing time between them matters. Two or three sentences
+   inside the existing process step 4 close this.
 
 ## Facts And Limits
 
