@@ -56,6 +56,25 @@ export default {
           { status: 400, headers: cors }
         );
       }
+      const allowedReplyMethods = new Set(["Email", "WhatsApp", "Instagram"]);
+      if (!allowedReplyMethods.has(enquiry.preferredReply)) {
+        return Response.json(
+          { ok: false, error: "Please choose Email, WhatsApp or Instagram as the preferred reply." },
+          { status: 400, headers: cors }
+        );
+      }
+      if (enquiry.preferredReply === "WhatsApp" && !enquiry.phone) {
+        return Response.json(
+          { ok: false, error: "A WhatsApp number is required when WhatsApp is selected." },
+          { status: 400, headers: cors }
+        );
+      }
+      if (enquiry.preferredReply === "Instagram" && !enquiry.instagram) {
+        return Response.json(
+          { ok: false, error: "An Instagram username is required when Instagram is selected." },
+          { status: 400, headers: cors }
+        );
+      }
       if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
         return Response.json(
           { ok: false, error: "Telegram is not configured." },
@@ -119,7 +138,7 @@ export default {
         );
       }
 
-      let imageWarning = false;
+      let failedImageCount = 0;
       for (let index = 0; index < images.length; index += 1) {
         try {
           const image = images[index];
@@ -132,15 +151,15 @@ export default {
             "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendDocument",
             { method: "POST", body: upload }
           );
-          if (!imageResponse.ok) imageWarning = true;
+          if (!imageResponse.ok) failedImageCount += 1;
         } catch (error) {
-          imageWarning = true;
+          failedImageCount += 1;
           console.error("Reference upload failed for tattoo-enquiry:", String(error));
         }
       }
 
       return Response.json(
-        { ok: true, imageWarning },
+        { ok: true, imageWarning: failedImageCount > 0, failedImageCount },
         { status: 200, headers: cors }
       );
     }
