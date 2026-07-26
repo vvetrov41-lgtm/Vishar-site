@@ -2,6 +2,13 @@ name: Deploy tattooai Worker
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+    paths:
+      - .github/workflows/deploy-tattooai.yml
 
 jobs:
   deploy:
@@ -10,20 +17,15 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Checkout
+      - name: Checkout production rollback state
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          ref: 1454355d3efb308e5f19c14c873f1760e93d4b3d
 
       - name: Preflight syntax check
         run: node --check workers/tattooai.js
 
-      # WARNING: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must already be configured
-      # as Cloudflare Worker secrets/runtime settings. Do not commit secrets to this repo.
-      - name: Deploy tattooai Worker
+      - name: Deploy pre-London Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
