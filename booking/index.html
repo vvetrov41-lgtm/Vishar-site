@@ -94,9 +94,9 @@
           <div class="grid md:grid-cols-2 gap-5">
             <label><span class="field-label">Full name <span class="required">*</span></span><input class="form-field" type="text" name="name" autocomplete="name" maxlength="120" required></label>
             <label><span class="field-label">Email <span class="required">*</span></span><input class="form-field" type="email" name="email" autocomplete="email" maxlength="320" required></label>
-            <label><span class="field-label">Phone / WhatsApp</span><input class="form-field" type="tel" name="phone" autocomplete="tel" maxlength="80" placeholder="Include country code"></label>
-            <label><span class="field-label">Instagram</span><input class="form-field" type="text" name="instagram" maxlength="80" placeholder="@username"></label>
-            <label><span class="field-label">Preferred reply <span class="required">*</span></span><select class="form-field" name="preferredReply" required><option value="">Choose one</option><option>Email</option><option>WhatsApp</option><option>Instagram</option></select></label>
+            <label><span class="field-label">Phone / WhatsApp <span id="phone-required-mark" class="required hidden">*</span></span><input id="phone-input" class="form-field" type="tel" name="phone" autocomplete="tel" maxlength="80" placeholder="Include country code"><span id="phone-required-note" class="mt-2 hidden text-xs leading-relaxed text-white/35">Required when WhatsApp is selected.</span></label>
+            <label><span class="field-label">Instagram <span id="instagram-required-mark" class="required hidden">*</span></span><input id="instagram-input" class="form-field" type="text" name="instagram" maxlength="80" placeholder="@username"><span id="instagram-required-note" class="mt-2 hidden text-xs leading-relaxed text-white/35">Required when Instagram is selected.</span></label>
+            <label><span class="field-label">Preferred reply <span class="required">*</span></span><select id="preferred-reply" class="form-field" name="preferredReply" required><option value="">Choose one</option><option>Email</option><option>WhatsApp</option><option>Instagram</option></select></label>
             <label><span class="field-label">Where are you travelling from?</span><input class="form-field" type="text" name="travellingFrom" maxlength="120" placeholder="City or country"></label>
             <label><span class="field-label">Project type <span class="required">*</span></span><select class="form-field" name="projectType" required><option value="">Choose one</option><option>Colour realism</option><option>Black and grey realism</option><option>Portrait</option><option>Cover-up</option><option>Large-scale project / sleeve</option><option>Not sure yet</option></select></label>
             <label><span class="field-label">Placement <span class="required">*</span></span><input class="form-field" type="text" name="placement" maxlength="160" placeholder="For example: outer forearm" required></label>
@@ -125,7 +125,44 @@
     const filesInput = document.getElementById('reference-files');
     const button = document.getElementById('enquiry-submit');
     const status = document.getElementById('enquiry-status');
+    const phoneInput = document.getElementById('phone-input');
+    const instagramInput = document.getElementById('instagram-input');
+    const preferredReply = document.getElementById('preferred-reply');
+    const phoneRequiredMark = document.getElementById('phone-required-mark');
+    const instagramRequiredMark = document.getElementById('instagram-required-mark');
+    const phoneRequiredNote = document.getElementById('phone-required-note');
+    const instagramRequiredNote = document.getElementById('instagram-required-note');
     const startedAt = Date.now();
+
+    function syncPreferredContactRequirement() {
+      const needsWhatsApp = preferredReply.value === 'WhatsApp';
+      const needsInstagram = preferredReply.value === 'Instagram';
+      phoneInput.required = needsWhatsApp;
+      instagramInput.required = needsInstagram;
+      phoneRequiredMark.classList.toggle('hidden', !needsWhatsApp);
+      phoneRequiredNote.classList.toggle('hidden', !needsWhatsApp);
+      instagramRequiredMark.classList.toggle('hidden', !needsInstagram);
+      instagramRequiredNote.classList.toggle('hidden', !needsInstagram);
+      if (!needsWhatsApp) phoneInput.setCustomValidity('');
+      if (!needsInstagram) instagramInput.setCustomValidity('');
+    }
+
+    function validatePreferredContact() {
+      syncPreferredContactRequirement();
+      const missingWhatsApp = preferredReply.value === 'WhatsApp' && !phoneInput.value.trim();
+      const missingInstagram = preferredReply.value === 'Instagram' && !instagramInput.value.trim();
+      phoneInput.setCustomValidity(missingWhatsApp ? 'Please add your WhatsApp number, including country code.' : '');
+      instagramInput.setCustomValidity(missingInstagram ? 'Please add your Instagram username.' : '');
+    }
+
+    preferredReply.addEventListener('change', syncPreferredContactRequirement);
+    phoneInput.addEventListener('input', function () {
+      if (phoneInput.value.trim()) phoneInput.setCustomValidity('');
+    });
+    instagramInput.addEventListener('input', function () {
+      if (instagramInput.value.trim()) instagramInput.setCustomValidity('');
+    });
+    syncPreferredContactRequirement();
 
     function fileToPayload(file) {
       return new Promise(function (resolve, reject) {
@@ -139,6 +176,7 @@
     form.addEventListener('submit', async function (event) {
       event.preventDefault();
       status.className = 'status-box mt-4 text-sm text-white/50';
+      validatePreferredContact();
       if (!form.reportValidity()) return;
 
       const files = Array.from(filesInput.files || []);
@@ -168,6 +206,19 @@
         const result = await response.json().catch(function () { return {}; });
         if (!response.ok || !result.ok) throw new Error(result.error || 'Request failed');
         form.reset();
+        syncPreferredContactRequirement();
+        if (result.imageWarning) {
+          const failedImageCount = Number(result.failedImageCount);
+          const missingImages = Number.isInteger(failedImageCount) && failedImageCount > 0
+            ? (failedImageCount === 1 ? 'one reference image was' : failedImageCount + ' reference images were')
+            : 'some reference images were';
+          const pronoun = failedImageCount === 1 ? 'it' : 'them';
+          status.textContent = 'Your enquiry was sent, but ' + missingImages + ' not delivered. Please email ' + pronoun + ' to info@vishartattoo.com.';
+          status.classList.remove('text-white/50');
+          status.classList.add('text-yellow-300');
+          button.textContent = 'Enquiry sent';
+          return;
+        }
         status.textContent = 'Thank you. Your enquiry has been sent directly to Vladimir.';
         status.classList.remove('text-white/50');
         status.classList.add('text-green-400');
