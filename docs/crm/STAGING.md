@@ -7,11 +7,19 @@ Last updated: 29 July 2026
 This runbook defines the temporary hosted staging validation for the CRM and
 durable booking infrastructure in draft PR #176.
 
-Approved source state:
+Verified repository state:
 
 - PR #174 base SHA: `2c393269e725f678e10f84886a210da11f012dcc`;
-- PR #176 implementation SHA: `f383f3c9ab6d39710e80b769ff4c9b1446b622b8`;
+- application and green-CI baseline SHA:
+  `f383f3c9ab6d39710e80b769ff4c9b1446b622b8`;
 - PR #176 remains draft, open and unmerged.
+
+The eventual deployment SHA is deliberately not hard-coded here. Before hosted
+resources are created, the owner must record an exact
+`<APPROVED_STAGING_SHA>`. It must be a reviewed descendant of the green
+application baseline and include only the approved documentation and
+staging-only configuration changes. A moving branch name is not sufficient
+evidence.
 
 This document does not authorise production work. It does not authorise:
 
@@ -23,8 +31,8 @@ This document does not authorise production work. It does not authorise:
 - using real client data;
 - sending test data to the production Telegram destination.
 
-Every hosted-resource creation step below is marked as an owner action and must
-not be executed until separately authorised.
+Every hosted-resource creation step below is an owner action and must not be
+executed until separately authorised.
 
 ## 2. Verified repository baseline
 
@@ -48,6 +56,9 @@ The fifth GitHub Actions run against
 This baseline proves the repository against a clean temporary Supabase stack in
 CI. It does not replace hosted staging validation with real Supabase Auth,
 PostgREST, Storage APIs, signed URLs and Cloudflare routing.
+
+Any later staging-only configuration commit must pass the same required GitHub
+checks before its SHA can be authorised for hosted staging.
 
 ## 3. Approved staging decisions
 
@@ -107,7 +118,7 @@ Rules:
 - production apex and `www` origins are not in the preview allow-list;
 - no credential is reused between staging and production;
 - CORS and `Origin` checks are not authentication and can be spoofed by a
-  non-browser client; staging remains safe only because it is temporary,
+  non-browser client; staging remains acceptable only because it is temporary,
   rate-limited, isolated and contains synthetic data.
 
 ## 5. Resource inventory and evidence identifiers
@@ -118,7 +129,8 @@ Complete this table during authorised setup. Do not record secrets.
 |---|---|
 | Creation time UTC | |
 | Operator | |
-| Approved source SHA | `f383f3c9ab6d39710e80b769ff4c9b1446b622b8` |
+| Approved staging SHA | |
+| Green application baseline | `f383f3c9ab6d39710e80b769ff4c9b1446b622b8` |
 | Supabase project ref suffix | |
 | Supabase region | `eu-west-2` |
 | Worker deployment/version | |
@@ -141,12 +153,22 @@ git status --short
 git diff --check
 ```
 
-The first command must return the approved SHA. The checkout must be clean.
-Build from that exact source state without merging.
+The first command must return the separately authorised staging SHA. The
+checkout must be clean. Build from that exact commit without merging.
+
+Confirm ancestry before continuing:
+
+```bash
+git merge-base --is-ancestor \
+  f383f3c9ab6d39710e80b769ff4c9b1446b622b8 \
+  <APPROVED_STAGING_SHA>
+```
+
+The command must exit successfully.
 
 Required tools:
 
-- Supabase CLI version pinned by the repository CI, currently `2.110.0`;
+- Supabase CLI version pinned by repository CI, currently `2.110.0`;
 - Node version supported by the lockfiles;
 - Wrangler from the repository dependency set;
 - access to the selected Supabase organisation and Cloudflare account;
@@ -155,7 +177,7 @@ Required tools:
 Secret-handling rules:
 
 - enter secrets only through dashboard fields or interactive secret prompts;
-- do not place secrets on command lines that are retained in shell history;
+- do not place secrets on command lines retained in shell history;
 - never commit `.env`, Supabase credentials, JWTs or Telegram values;
 - do not take screenshots that display keys;
 - do not store signed URLs in evidence;
@@ -208,9 +230,12 @@ from storage.buckets
 where id = 'crm-files';
 
 select retention_enabled,
+       retention_dry_run_only,
        enquiry_retention_days,
-       project_retention_days,
-       activity_retention_days
+       client_retention_days,
+       file_retention_days,
+       activity_retention_days,
+       default_currency
 from public.system_settings;
 ```
 
@@ -220,7 +245,10 @@ Expected:
 - the four CRM tables above are empty;
 - no `.test` email or development fixture UUID exists;
 - `crm-files` exists with `public = false`;
-- retention is disabled and all retention durations are `null`.
+- retention is disabled;
+- `retention_dry_run_only = true`;
+- all four retention durations are `null`;
+- `default_currency = 'GBP'`.
 
 ## 9. Hosted database test gate
 
@@ -300,7 +328,8 @@ only:
 4. Leave the unauthorised user without a profile.
 5. Sign in as owner and deactivate the disabled profile through the normal owner
    RPC so the audited production path is exercised.
-6. Verify effective role access through `crm_private.profile_access`.
+6. Verify the trigger-maintained role mirror in
+   `crm_private.profile_access` through the SQL Editor.
 
 The one-time SQL must not be committed, added to a migration or added to the
 seed. This is not an approved production provisioning workflow.
@@ -343,22 +372,23 @@ the endpoint.
 
 ### 14.1 workers.dev bypass prevention
 
-The current repository configuration still has:
+The repository currently has:
 
 ```toml
 [env.preview]
 workers_dev = true
 ```
 
-Before any hosted test traffic, a separate reviewed configuration change must
-set preview only to:
+Before any hosted test traffic, a separate reviewed staging-only configuration
+commit must set:
 
 ```toml
 [env.preview]
 workers_dev = false
 ```
 
-The top-level production setting must not change.
+The top-level production setting must not change. The configuration commit must
+pass the normal required CI before its SHA is authorised for staging.
 
 After deployment, verify:
 
@@ -438,7 +468,7 @@ chat before the first request.
 
 ## 16. Booking preview
 
-1. Build from the approved SHA.
+1. Build from the authorised staging SHA.
 2. Copy the booking artifact into a temporary directory.
 3. Set the `vishar-booking-endpoint` meta value in the temporary artifact to the
    exact staging Worker URL and path.
