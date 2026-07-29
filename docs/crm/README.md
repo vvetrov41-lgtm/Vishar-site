@@ -11,7 +11,8 @@ deployed, and no live infrastructure exists as a result of these files.
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Approved architecture, findings, schema plan, RLS matrix, phased plan. Source of truth for design decisions. |
 | [`README.md`](./README.md) | This file: component boundaries, data ownership, repository layout, how the pieces fit together. |
 | [`SECURITY.md`](./SECURITY.md) | Authentication, RLS, private file access, secret handling, threat boundaries, logging rules. |
-| [`OWNER_SETUP.md`](./OWNER_SETUP.md) | Manual owner actions: Supabase project, owner bootstrap, secrets, decisions that must not be invented. |
+| [`OWNER_SETUP.md`](./OWNER_SETUP.md) | Manual owner actions, approved staging choices and production decisions that must not be invented. |
+| [`STAGING.md`](./STAGING.md) | Exact isolated hosted-staging runbook, E2E matrix, evidence rules, rollback and teardown. |
 | [`DEPLOYMENT.md`](./DEPLOYMENT.md) | Local/staging/production separation, migration order, deployment gates, what is intentionally not deployed. |
 | [`INTEGRATIONS.md`](./INTEGRATIONS.md) | Email, Calendar and AI boundaries. None is connected; this records the rules the interfaces enforce. |
 
@@ -124,6 +125,7 @@ transition-check ordering.
 
 ```text
 docs/crm/                    this documentation set
+  STAGING.md                 isolated hosted-staging runbook and E2E matrix
 supabase/
   config.toml                local development configuration only, no secrets
   seed.sql                   local-only fixtures, clearly fake
@@ -196,35 +198,51 @@ migration.
 
 Full detail: [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
-## 6. What requires a manual owner action
+## 6. Approved staging shape
 
-The repository cannot complete these, and none of them were performed:
+The approved, but not yet created, staging topology is defined in
+[`STAGING.md`](./STAGING.md):
 
-- creating a Supabase organisation, project or region;
+- Supabase project `vishar-crm-staging` in London (`eu-west-2`);
+- booking Pages project `vishar-booking-staging`;
+- CRM Pages project `vishar-crm-staging`;
+- preview Worker `tattooai-preview` through the temporary Custom Domain
+  `intake-staging.vishartattoo.com`;
+- preview `workers.dev` and other bypass URLs disabled before test traffic;
+- owner-only Cloudflare Access on the two Pages projects, not on the Worker;
+- separate staging Telegram bot/chat and synthetic data only.
+
+These are documented owner decisions, not evidence that any hosted resource
+exists.
+
+## 7. What requires a manual owner action
+
+The repository cannot complete these automatically, and none were performed:
+
+- creating the staging Supabase project in the approved organisation and region;
 - applying any migration to a hosted database;
 - creating the owner's Supabase Auth user and running the bootstrap promotion;
 - setting any Cloudflare Worker secret;
+- creating the temporary Worker Custom Domain and WAF/rate-limit rules;
 - deploying the Worker, Pages site or CRM application;
-- creating `admin.vishartattoo.com` or any DNS record;
+- creating any production Supabase project or production CRM hostname;
 - connecting Gmail or Google Calendar OAuth;
-- choosing a data-retention duration;
-- confirming the operating currency for money columns (`GBP` is the schema
-  default; the explicit owner confirmation is still outstanding).
+- choosing a production data-retention duration and backup tier.
 
-Full detail: [`OWNER_SETUP.md`](./OWNER_SETUP.md).
+Full detail: [`OWNER_SETUP.md`](./OWNER_SETUP.md) and
+[`STAGING.md`](./STAGING.md).
 
-## 7. What is intentionally not deployed
+## 8. What is intentionally not deployed
 
 Nothing in this repository work deploys, merges, migrates or connects
 anything. Specifically not done, by design:
 
 - no Cloudflare Pages or Worker deployment;
-- no live Supabase project and no production migration;
+- no hosted Supabase project and no production migration;
 - no production secret configuration;
-- no DNS change and no `admin.vishartattoo.com`;
+- no DNS or Worker Custom Domain change;
 - no Gmail or Google Calendar OAuth connection;
 - no real email sent and no real calendar event created;
 - no test payload sent to the production Telegram chat.
 
-The architecture document states the same limit: it does not authorise a merge
-or a deployment.
+The architecture and staging documents do not authorise a merge or deployment.
