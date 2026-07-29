@@ -105,8 +105,32 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">What I collect, and why</h2>
             <p>When you use an enquiry form on this site, you may be asked for your name, email, phone or WhatsApp number, Instagram username, preferred reply method, location, tattoo idea, placement, size, preferred timing, cover-up details and reference images. The book waitlist asks only for a name and email address.</p>
-            <p class="mt-4">That information is sent to a private backend I run on Cloudflare, which forwards it to me so I can reply. It's used to respond to you and handle the tattoo request. It is not sold or used for unrelated marketing. It may be processed by the site's technical providers where needed to deliver the message, and if you proceed with booking, may be used where needed to handle the enquiry or booking.</p>
-            <p class="mt-4">Tattoo enquiries and reference images are sent directly to me through a private Cloudflare Worker and my private Telegram chat. Sending a form does not reserve an appointment. If the project proceeds, I will explain the deposit, confirmed studio, dates and booking terms before payment.</p>
+            <p class="mt-4">Alongside what you type, a tattoo enquiry also records the page you sent it from, the page that referred you, and any campaign tags in the link you followed. That is used to understand which pages bring genuine enquiries, and to recognise a repeated submission so the same enquiry isn't created twice.</p>
+            <p class="mt-4">This information is used to respond to you and to handle the tattoo request. It is not sold and is not used for unrelated marketing. Sending a form does not reserve an appointment. If the project proceeds, I will explain the deposit, confirmed studio, dates and booking terms before any payment.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">How a tattoo enquiry is handled</h2>
+            <p>A tattoo enquiry is stored, not just forwarded. Here is the whole path it takes:</p>
+            <ul class="mt-4 space-y-3 list-disc pl-5">
+                <li><strong class="text-white/80 font-medium">Cloudflare</strong> hosts this site and runs the private backend that receives the form. It checks the submission and passes it on. It does not keep a copy of your enquiry.</li>
+                <li><strong class="text-white/80 font-medium">Supabase</strong> holds the record of the enquiry in a database: your contact details, the project details you described, and the status of the enquiry as I work through it. This is the authoritative record.</li>
+                <li><strong class="text-white/80 font-medium">Supabase Storage</strong> holds your reference images in a private area. The images are never publicly accessible and have no public link. They are opened through short-lived, individually issued links that expire within a minute.</li>
+                <li><strong class="text-white/80 font-medium">Telegram</strong> receives a short notification telling me a new enquiry has arrived. That notification contains only a reference number and how many images you attached — not your name, contact details or idea.</li>
+            </ul>
+            <p class="mt-4">Every change to an enquiry is written to an internal activity record so there is an accurate history of how a request was handled. That record deliberately holds references and timestamps rather than a second copy of your personal details.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">Who can see your enquiry</h2>
+            <p>Access is limited to me and to anyone I explicitly authorise to help with bookings. Each person has a defined level of access, enforced by the database rather than by the interface: someone helping with bookings can read and progress enquiries but cannot see financial figures, manage accounts or change settings, and a read-only account cannot change anything at all. Removing someone's access takes effect immediately.</p>
+            <p class="mt-4">Nobody can browse your reference images without an account that is permitted to view them, and no member of staff can delete the history of what was done with your enquiry.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">Email and calendar</h2>
+            <p>Gmail and Google Calendar are <strong class="text-white/80 font-medium">not connected</strong>. No enquiry data is sent to either, and no calendar entry is created from this site. If that changes, this notice will be updated before it happens.</p>
+            <p class="mt-4">When email is enabled in future, only a small set of clearly defined confirmation messages would ever be sent automatically. Anything personal — an estimate, a quote, offered dates, a decline, or a cover-up discussion — would be written or reviewed by a person before it was sent.</p>
         </div>
 
         <div>
@@ -119,21 +143,25 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">Third parties</h2>
-            <p>This site is hosted on Cloudflare, which provides security and delivery for every visit. Site fonts are self-hosted. Telegram processes enquiry messages and reference images so they can reach me. If you accept analytics cookies, Google Analytics is used to see aggregate page-visit patterns — no analytics runs before that consent.</p>
+            <p>This site is hosted on Cloudflare, which provides security and delivery for every visit and runs the private backend that receives enquiries. Supabase provides the database and the private file storage that hold tattoo enquiries and reference images. Telegram delivers the short arrival notification described above. Site fonts are self-hosted. If you accept analytics cookies, Google Analytics is used to see aggregate page-visit patterns — no analytics runs before that consent.</p>
+            <p class="mt-4">Each of these providers processes data on my instructions, for the purpose of running the enquiry and booking process. None of them is given your data for their own marketing.</p>
         </div>
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">How long I keep things</h2>
-            <p>Enquiry messages are kept only for as long as needed to reply and, if you go ahead, arrange the work. If you'd like your enquiry data deleted sooner, email me and I'll remove it.</p>
+            <p>Enquiries and reference images are kept for as long as needed to reply and, if you go ahead, to arrange and complete the work — and afterwards where I need the record, for example to discuss a touch-up or to meet a legal obligation.</p>
+            <p class="mt-4">I have not yet set a fixed retention period, and nothing is deleted automatically. Rather than publish a number I am not actually applying, I will state the period here once it is decided and in force.</p>
+            <p class="mt-4">If you'd like your enquiry data removed sooner, email me and I'll remove it.</p>
         </div>
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">Your rights</h2>
-            <p>Under UK GDPR you can ask to access, correct, or delete the personal data I hold about you. To do so, email <a href="mailto:info@vishartattoo.com" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">info@vishartattoo.com</a>. If you're not satisfied with how a request is handled, you can complain to the UK's Information Commissioner's Office at <a href="https://ico.org.uk" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">ico.org.uk</a>.</p>
+            <p>Under UK GDPR you can ask to access, correct, or delete the personal data I hold about you, and to receive a copy of what you gave me. To do so, email <a href="mailto:info@vishartattoo.com" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">info@vishartattoo.com</a>. Please include the enquiry reference number shown when you sent the form if you have it — it makes finding your record quick and avoids me asking you for more details to identify you.</p>
+            <p class="mt-4">A deletion request covers the enquiry record and the reference images together. If you're not satisfied with how a request is handled, you can complain to the UK's Information Commissioner's Office at <a href="https://ico.org.uk" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">ico.org.uk</a>.</p>
         </div>
 
         <div>
-            <p class="text-sm text-white/30">Last updated: 22 July 2026.</p>
+            <p class="text-sm text-white/30">Last updated: 29 July 2026.</p>
         </div>
 
     </div>
