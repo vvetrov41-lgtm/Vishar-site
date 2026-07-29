@@ -372,23 +372,16 @@ the endpoint.
 
 ### 14.1 workers.dev bypass prevention
 
-The repository currently has:
-
-```toml
-[env.preview]
-workers_dev = true
-```
-
-Before any hosted test traffic, a separate reviewed staging-only configuration
-commit must set:
+The repository now contains the reviewed preview-only setting:
 
 ```toml
 [env.preview]
 workers_dev = false
 ```
 
-The top-level production setting must not change. The configuration commit must
-pass the normal required CI before its SHA is authorised for staging.
+The top-level production setting remains `workers_dev = true` and was not
+changed. The commit containing the preview-only setting must pass the normal
+required CI before its exact SHA can be authorised for hosted staging.
 
 After deployment, verify:
 
