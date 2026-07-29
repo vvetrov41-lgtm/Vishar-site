@@ -133,6 +133,49 @@
     const phoneRequiredNote = document.getElementById('phone-required-note');
     const instagramRequiredNote = document.getElementById('instagram-required-note');
     const startedAt = Date.now();
+    const IDEMPOTENCY_STORAGE_KEY = 'vishar.enquiry.idempotencyKey';
+
+    // One key per attempt, kept in sessionStorage until the enquiry is
+    // confirmed saved. A retry after a dropped connection therefore reuses the
+    // same key, and the server returns the original enquiry instead of
+    // creating a second one. It is cleared only on confirmed success.
+    function idempotencyKey() {
+      var existing = '';
+      try { existing = sessionStorage.getItem(IDEMPOTENCY_STORAGE_KEY) || ''; } catch (error) { existing = ''; }
+      if (existing) return existing;
+      var created = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (character) {
+            var random = (window.crypto && window.crypto.getRandomValues)
+              ? window.crypto.getRandomValues(new Uint8Array(1))[0] % 16
+              : Math.floor(Math.random() * 16);
+            var value = character === 'x' ? random : (random & 0x3) | 0x8;
+            return value.toString(16);
+          });
+      try { sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, created); } catch (error) { /* private mode */ }
+      return created;
+    }
+
+    function clearIdempotencyKey() {
+      try { sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY); } catch (error) { /* private mode */ }
+    }
+
+    // Attribution is read at submit time rather than kept in hidden inputs, so
+    // there is nothing on the page for a visitor to edit and nothing extra to
+    // maintain in the markup.
+    function attribution() {
+      var params;
+      try { params = new URLSearchParams(window.location.search); } catch (error) { params = new URLSearchParams(''); }
+      return {
+        landingPage: String(window.location.href).slice(0, 500),
+        referrer: String(document.referrer || '').slice(0, 500),
+        utmSource: (params.get('utm_source') || '').slice(0, 120),
+        utmMedium: (params.get('utm_medium') || '').slice(0, 120),
+        utmCampaign: (params.get('utm_campaign') || '').slice(0, 160),
+        utmContent: (params.get('utm_content') || '').slice(0, 160),
+        utmTerm: (params.get('utm_term') || '').slice(0, 160)
+      };
+    }
 
     function syncPreferredContactRequirement() {
       const needsWhatsApp = preferredReply.value === 'WhatsApp';
@@ -164,15 +207,6 @@
     });
     syncPreferredContactRequirement();
 
-    function fileToPayload(file) {
-      return new Promise(function (resolve, reject) {
-        const reader = new FileReader();
-        reader.onload = function () { resolve({ name: file.name, type: file.type, data: String(reader.result).split(',')[1] || '' }); };
-        reader.onerror = function () { reject(new Error('Could not read ' + file.name)); };
-        reader.readAsDataURL(file);
-      });
-    }
-
     form.addEventListener('submit', async function (event) {
       event.preventDefault();
       status.className = 'status-box mt-4 text-sm text-white/50';
@@ -190,42 +224,52 @@
       button.textContent = 'Sending…';
       status.textContent = 'Uploading your enquiry securely…';
       try {
+        // multipart/form-data: the images travel as bytes rather than base64,
+        // which removes roughly a third of the upload size and the second copy
+        // the browser had to hold in memory.
         const data = new FormData(form);
-        const images = await Promise.all(files.map(fileToPayload));
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'tattoo-enquiry',
-            name: data.get('name'), email: data.get('email'), phone: data.get('phone'), instagram: data.get('instagram'),
-            preferredReply: data.get('preferredReply'), travellingFrom: data.get('travellingFrom'), projectType: data.get('projectType'),
-            placement: data.get('placement'), size: data.get('size'), coverUp: data.get('coverUp'), timing: data.get('timing'),
-            idea: data.get('idea'), website: data.get('website'), startedAt: startedAt, images: images, source: '/booking/'
-          })
-        });
+        const payload = new FormData();
+        const textFields = ['name', 'email', 'phone', 'instagram', 'preferredReply', 'travellingFrom',
+                            'projectType', 'placement', 'size', 'coverUp', 'timing', 'idea', 'website'];
+        textFields.forEach(function (field) { payload.append(field, data.get(field) || ''); });
+
+        const context = attribution();
+        payload.append('idempotencyKey', idempotencyKey());
+        payload.append('source', '/booking/');
+        payload.append('landingPage', context.landingPage);
+        payload.append('referrer', context.referrer);
+        payload.append('utmSource', context.utmSource);
+        payload.append('utmMedium', context.utmMedium);
+        payload.append('utmCampaign', context.utmCampaign);
+        payload.append('utmContent', context.utmContent);
+        payload.append('utmTerm', context.utmTerm);
+        payload.append('elapsedMs', String(Date.now() - startedAt));
+        files.forEach(function (file) { payload.append('references', file, file.name); });
+
+        const response = await fetch(endpoint, { method: 'POST', body: payload });
         const result = await response.json().catch(function () { return {}; });
         if (!response.ok || !result.ok) throw new Error(result.error || 'Request failed');
+
+        // Only now is the enquiry known to be saved with its images, so only
+        // now is it safe to forget the key.
+        clearIdempotencyKey();
         form.reset();
         syncPreferredContactRequirement();
-        if (result.imageWarning) {
-          const failedImageCount = Number(result.failedImageCount);
-          const missingImages = Number.isInteger(failedImageCount) && failedImageCount > 0
-            ? (failedImageCount === 1 ? 'one reference image was' : failedImageCount + ' reference images were')
-            : 'some reference images were';
-          const pronoun = failedImageCount === 1 ? 'it' : 'them';
-          status.textContent = 'Your enquiry was sent, but ' + missingImages + ' not delivered. Please email ' + pronoun + ' to info@vishartattoo.com.';
-          status.classList.remove('text-white/50');
-          status.classList.add('text-yellow-300');
-          button.textContent = 'Enquiry sent';
-          return;
-        }
-        status.textContent = 'Thank you. Your enquiry has been sent directly to Vladimir.';
+        status.textContent = result.reference
+          ? 'Thank you. Your enquiry is saved as ' + result.reference + '. Vladimir will review it personally.'
+          : 'Thank you. Your enquiry has been sent directly to Vladimir.';
         status.classList.remove('text-white/50');
         status.classList.add('text-green-400');
         button.textContent = 'Enquiry sent';
       } catch (error) {
         console.error('Tattoo enquiry failed', error);
-        status.textContent = 'The form could not be sent. Please email info@vishartattoo.com instead.';
+        // The key is deliberately kept: pressing Try again reuses it, so a
+        // retry after a dropped connection resumes the same enquiry rather
+        // than creating a duplicate.
+        status.textContent = (error && error.message)
+          ? error.message
+          : 'The form could not be sent. Please email info@vishartattoo.com instead.';
+        status.classList.remove('text-white/50', 'text-green-400');
         status.classList.add('text-red-400');
         button.disabled = false;
         button.textContent = 'Try again';

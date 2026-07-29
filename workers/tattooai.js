@@ -1,5 +1,27 @@
+// Cloudflare Worker entry point and thin router.
+//
+// This file stays the compatibility entry point named in wrangler.toml. It
+// routes; the work lives in ./routes and ./lib.
+//
+// Route behaviour:
+//
+//   multipart/form-data  -> durable tattoo-enquiry intake (Supabase + private
+//                           Storage). Origin is enforced, not merely reported.
+//   type=lead|sendIdea   -> unchanged Telegram forwarding
+//   type=book-waitlist   -> unchanged Telegram forwarding
+//   anything else        -> unchanged Workers AI behaviour
+//
+// The tattoo-enquiry path used to accept a JSON body with base64 images. It now
+// requires multipart, because the enquiry is persisted and the files are
+// validated by content. A stale cached page posting the old shape gets an
+// explicit 415 telling the visitor to refresh, rather than a silent failure.
+
+import { getCorsHeaders, isMultipartRequest } from './lib/http.js';
+import { createLogger, newRequestId } from './lib/logging.js';
+import { handleEnquiryIntake } from './routes/enquiries.js';
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin") || "";
     const cors = getCorsHeaders(origin);
     if (request.method === "OPTIONS") {
@@ -8,6 +30,13 @@ export default {
     if (request.method !== "POST") {
       return new Response("Use POST request", { status: 405 });
     }
+
+    // The durable booking route is the only multipart consumer.
+    if (isMultipartRequest(request)) {
+      const logger = createLogger(newRequestId());
+      return handleEnquiryIntake(request, env, { cors, logger, fetchImpl: fetch });
+    }
+
     const body = await request.clone().json().catch(() => null);
     if (!body || typeof body !== "object") {
       return Response.json(
@@ -15,154 +44,18 @@ export default {
         { status: 400, headers: cors }
       );
     }
-    // Personal London booking form — forwarded to Telegram only, nothing is stored.
+
     if (body.type === "tattoo-enquiry") {
-      if (cleanText(body.website, 200)) {
-        return Response.json({ ok: true }, { status: 200, headers: cors });
-      }
-
-      const startedAt = Number(body.startedAt);
-      if (!Number.isFinite(startedAt) || Date.now() - startedAt < 1500) {
-        return Response.json(
-          { ok: false, error: "Please review the form and try again." },
-          { status: 400, headers: cors }
-        );
-      }
-
-      const enquiry = {
-        name: cleanText(body.name, 120),
-        email: cleanText(body.email, 320),
-        phone: cleanText(body.phone, 80),
-        instagram: cleanText(body.instagram, 80),
-        preferredReply: cleanText(body.preferredReply, 40),
-        travellingFrom: cleanText(body.travellingFrom, 120),
-        projectType: cleanText(body.projectType, 100),
-        placement: cleanText(body.placement, 160),
-        size: cleanText(body.size, 120),
-        coverUp: cleanText(body.coverUp, 40),
-        timing: cleanText(body.timing, 160),
-        idea: cleanText(body.idea, 3500),
-        source: cleanText(body.source, 100) || "/booking/"
-      };
-      if (!enquiry.name || !enquiry.email || !enquiry.preferredReply || !enquiry.projectType || !enquiry.placement || !enquiry.size || !enquiry.coverUp || !enquiry.idea) {
-        return Response.json(
-          { ok: false, error: "Please complete all required fields." },
-          { status: 400, headers: cors }
-        );
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(enquiry.email)) {
-        return Response.json(
-          { ok: false, error: "A valid email is required." },
-          { status: 400, headers: cors }
-        );
-      }
-      const allowedReplyMethods = new Set(["Email", "WhatsApp", "Instagram"]);
-      if (!allowedReplyMethods.has(enquiry.preferredReply)) {
-        return Response.json(
-          { ok: false, error: "Please choose Email, WhatsApp or Instagram as the preferred reply." },
-          { status: 400, headers: cors }
-        );
-      }
-      if (enquiry.preferredReply === "WhatsApp" && !enquiry.phone) {
-        return Response.json(
-          { ok: false, error: "A WhatsApp number is required when WhatsApp is selected." },
-          { status: 400, headers: cors }
-        );
-      }
-      if (enquiry.preferredReply === "Instagram" && !enquiry.instagram) {
-        return Response.json(
-          { ok: false, error: "An Instagram username is required when Instagram is selected." },
-          { status: 400, headers: cors }
-        );
-      }
-      if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
-        return Response.json(
-          { ok: false, error: "Telegram is not configured." },
-          { status: 500, headers: cors }
-        );
-      }
-
-      const images = Array.isArray(body.images) ? body.images : [];
-      if (images.length < 1 || images.length > 3) {
-        return Response.json(
-          { ok: false, error: "Please attach 1–3 reference images." },
-          { status: 400, headers: cors }
-        );
-      }
-      const validImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-      for (const image of images) {
-        if (!image || !validImageTypes.has(image.type) || typeof image.data !== "string" || image.data.length > 5_600_000) {
-          return Response.json(
-            { ok: false, error: "One of the reference images is invalid or too large." },
-            { status: 400, headers: cors }
-          );
-        }
-      }
-
-      const enquiryText = [
-        "NEW LONDON TATTOO ENQUIRY",
-        "",
-        "Name: " + enquiry.name,
-        "Email: " + enquiry.email,
-        "Phone / WhatsApp: " + (enquiry.phone || "—"),
-        "Instagram: " + (enquiry.instagram || "—"),
-        "Preferred reply: " + enquiry.preferredReply,
-        "Travelling from: " + (enquiry.travellingFrom || "—"),
-        "",
-        "Project: " + enquiry.projectType,
-        "Placement: " + enquiry.placement,
-        "Size: " + enquiry.size,
-        "Cover-up: " + enquiry.coverUp,
-        "Preferred timing: " + (enquiry.timing || "—"),
-        "",
-        "Idea:",
-        enquiry.idea,
-        "",
-        "Reference images: " + images.length,
-        "Source: " + enquiry.source
-      ].join("\n").slice(0, 4090);
-
-      const messageResponse = await fetch(
-        "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text: enquiryText, disable_web_page_preview: true })
-        }
-      );
-      if (!messageResponse.ok) {
-        console.error("Telegram sendMessage failed for tattoo-enquiry:", messageResponse.status);
-        return Response.json(
-          { ok: false, error: "Telegram request failed." },
-          { status: 502, headers: cors }
-        );
-      }
-
-      let failedImageCount = 0;
-      for (let index = 0; index < images.length; index += 1) {
-        try {
-          const image = images[index];
-          const bytes = Uint8Array.from(atob(image.data), (character) => character.charCodeAt(0));
-          const upload = new FormData();
-          upload.append("chat_id", env.TELEGRAM_CHAT_ID);
-          upload.append("caption", "Reference " + (index + 1) + " of " + images.length + " — " + enquiry.name);
-          upload.append("document", new Blob([bytes], { type: image.type }), safeFilename(image.name, index, image.type));
-          const imageResponse = await fetch(
-            "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendDocument",
-            { method: "POST", body: upload }
-          );
-          if (!imageResponse.ok) failedImageCount += 1;
-        } catch (error) {
-          failedImageCount += 1;
-          console.error("Reference upload failed for tattoo-enquiry:", String(error));
-        }
-      }
-
       return Response.json(
-        { ok: true, imageWarning: failedImageCount > 0, failedImageCount },
-        { status: 200, headers: cors }
+        {
+          ok: false,
+          error: "Please refresh the booking page and send the form again.",
+          code: "multipart_required"
+        },
+        { status: 415, headers: cors }
       );
     }
+
     // Lead / sendIdea — handled before any AI logic
     if (body.type === "lead" || body.type === "sendIdea") {
       if (!body.contact) {
@@ -367,35 +260,3 @@ Wait until fully healed before judging the result. Send a clear healed photo aft
     });
   }
 };
-function isAllowedOrigin(origin) {
-  if (
-    origin === "https://vishartattoo.com" ||
-    origin === "https://www.vishartattoo.com"
-  ) {
-    return true;
-  }
-  if (origin.endsWith(".vishar-site.pages.dev")) {
-    return true;
-  }
-  return false;
-}
-function getCorsHeaders(origin) {
-  const allowOrigin = isAllowedOrigin(origin) ? origin : "https://vishartattoo.com";
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
-  };
-}
-
-function cleanText(value, maxLength) {
-  if (typeof value !== "string") return "";
-  return value.trim().replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").slice(0, maxLength);
-}
-
-function safeFilename(value, index, mimeType) {
-  const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-  const fallback = "reference-" + (index + 1) + "." + (extensions[mimeType] || "jpg");
-  const cleaned = cleanText(value, 120).replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
-  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : fallback;
-}
