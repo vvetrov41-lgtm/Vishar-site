@@ -2,309 +2,413 @@
 
 Last updated: 29 July 2026
 
-Everything in this document is a **manual owner action**. None of it has been
+Everything in this document is a manual owner action. None of it has been
 performed. The repository contains code, migrations, tests and runbooks only.
 
 Read [`SECURITY.md`](./SECURITY.md) before running any step that handles a key.
+For the exact temporary hosted-staging procedure, use
+[`STAGING.md`](./STAGING.md).
 
-## 0. Decisions required before anything is created
+## 0. Approved staging decisions
 
-These cannot be inferred from the repository and must not be invented by an
-agent. Record each answer, with a date, before proceeding.
+The following staging choices have been approved as documentation. They do not
+prove that any resource exists and do not authorise creation without a separate
+owner instruction.
 
-| # | Decision | Why it blocks | Status |
-|---|---|---|---|
-| 1 | Supabase organisation, project name and **region** | Region affects UK GDPR posture and latency; irreversible without a migration | ❌ outstanding |
-| 2 | Owner's Supabase Auth email address | Bootstrap needs a real identity; the schema deliberately hard-codes none | ❌ outstanding |
-| 3 | Operating **currency** | Money columns default to `GBP` but currency is stored explicitly per row | ⚠️ default `GBP`, owner confirmation outstanding |
-| 4 | **Retention policy** duration(s) | `system_settings` ships with retention disabled and null durations; no duration has been invented | ❌ outstanding |
-| 5 | Whether `booking_manager` may read `activity_log`, and how much | Default is a limited read of their own entity scope | ⚠️ default set, owner confirmation outstanding |
-| 6 | Whether `read_only` may open signed file URLs | Default is no | ⚠️ default set, owner confirmation outstanding |
-| 7 | Transactional email sender address and provider | Needed before any email leaves the outbox | ❌ outstanding |
-| 8 | Which session status counts as "confirmed" for Calendar | Schema uses `confirmed`; confirm this matches the working process | ⚠️ default `confirmed`, owner confirmation outstanding |
-| 9 | Staging and production hostnames, including whether `admin.vishartattoo.com` is the CRM host | DNS is an owner action | ❌ outstanding |
-| 10 | Backup retention / PITR tier on the Supabase project | Paid setting | ❌ outstanding |
-| 11 | GitHub `production` environment reviewer and least-privilege Cloudflare deploy token owner | The workflow names an environment but repository code cannot create its approval rules | ❌ outstanding |
+| Item | Approved staging value |
+|---|---|
+| Supabase organisation | Existing organisation intended for the future Vishar CRM |
+| Project name | `vishar-crm-staging` |
+| Region | West Europe (London), `eu-west-2` |
+| Booking Pages project | `vishar-booking-staging` |
+| CRM Pages project | `vishar-crm-staging` |
+| Worker | `tattooai-preview` |
+| Worker Custom Domain | `intake-staging.vishartattoo.com` |
+| Access | Owner-only on booking and CRM Pages, not directly on Worker |
+| Currency | `GBP` |
+| Manager activity log | Current limited access |
+| Read-only files | No file opening or signed URL minting |
+| Retention | Disabled, durations remain `null` |
+| Gmail / Calendar / AI | Disconnected |
+| Telegram | Separate staging bot and private staging chat |
+| Test data | Synthetic only |
+| End of staging | Full teardown after separate destructive confirmation, unless temporary retention is explicitly approved |
 
-## 1. Create the Supabase projects
+The following are supplied only during authorised setup and must never be
+committed: user emails, passwords, project refs, keys, tokens, chat IDs and
+signed URLs.
 
-Create **two separate projects**: staging and production. Do not share one
-project between environments.
+## 1. Production decisions still outstanding
 
-1. Create the staging project. Note its project ref, URL, publishable key and
-   secret key.
-2. Create the production project separately.
-3. Enable point-in-time recovery or scheduled backups per decision 10.
-4. In **Auth → Providers**, enable email/password. Disable sign-ups if the
-   provider supports it; staff accounts are provisioned by the owner, not
-   self-service.
-5. Do **not** create any table by hand. The schema comes from migrations only.
+Staging must not invent or prematurely lock production choices.
 
-Never paste a secret key (or a legacy service-role key) into a chat, an issue,
-a commit, a log, or an agent prompt. It is a full-database credential that
-bypasses RLS.
+| # | Production decision | Status |
+|---|---|---|
+| 1 | Production Supabase project name and region | Outstanding |
+| 2 | Production owner Auth email | Outstanding |
+| 3 | Retention policy durations and legal/operational holds | Outstanding; retention disabled |
+| 4 | Transactional email provider and sender | Outstanding; disconnected |
+| 5 | Production CRM hostname | Outstanding |
+| 6 | Backup retention / PITR tier | Outstanding |
+| 7 | GitHub `production` reviewer and least-privilege Cloudflare token owner | Outstanding |
+| 8 | Privacy notice wording and provider/data-transfer review | Outstanding |
+| 9 | Calendar confirmation semantics and OAuth | Outstanding; disconnected |
 
-## 2. Apply migrations
+A production Supabase project is not created during the staging phase.
 
-Order matters and is strictly by filename. See [`DEPLOYMENT.md`](./DEPLOYMENT.md)
-for the gate sequence (staging first, tests, then production with approval).
+## 2. Create only the staging Supabase project
+
+**DO NOT RUN UNTIL SEPARATELY AUTHORISED.**
+
+1. Create `vishar-crm-staging` in the approved Supabase organisation.
+2. Select West Europe (London), `eu-west-2`.
+3. Record the project ref, URL, publishable key, secret key and database
+   password in the password manager.
+4. Enable email/password Auth.
+5. Disable public sign-up; staff accounts are owner-provisioned.
+6. Do not create any application table, function, policy or bucket by hand.
+7. Do not create a production project.
+
+Never paste a secret key or legacy service-role key into a chat, issue, commit,
+log or agent prompt. It bypasses RLS and is a full backend credential.
+
+## 3. Apply migrations without development seed
+
+From a clean checkout at the approved PR #176 SHA:
 
 ```bash
-# from the repository root, with the Supabase CLI installed and logged in
 supabase link --project-ref <STAGING_PROJECT_REF>
-supabase db push          # applies supabase/migrations/*.sql in order
-supabase test db --linked # runs supabase/tests/*.sql against staging (pgTAP)
-supabase db lint --linked --schema public,crm_private --level error --fail-on error
+supabase db push --dry-run
+supabase db push
 ```
+
+Do not use `--include-seed`. Do not run `supabase db reset --linked`. Do not run
+`supabase/seed.sql` manually.
+
+Before owner bootstrap or staff creation, run:
+
+```bash
+supabase test db --linked
+supabase db lint --linked \
+  --schema public,crm_private \
+  --level error \
+  --fail-on error
+```
+
+Verify:
+
+- migrations `0001` through `0012` are recorded;
+- `profiles`, `clients`, `enquiries` and `activity_log` are empty;
+- no development `.test` email or fixture UUID exists;
+- `crm-files` exists and is private;
+- retention is disabled with null durations;
+- the linked tests leave no persistent rows or objects.
 
 Migrations are forward-only. Never edit an applied migration; add a new,
-higher-numbered one.
+higher-numbered corrective migration.
 
-## 3. Create the owner account and bootstrap the owner role
+## 4. Create the owner account and bootstrap owner
 
-The schema contains **no owner email, no owner UUID and no password**. The
-first owner is promoted by an explicit, idempotent call that you supply the
-identity to.
+The schema contains no owner email, UUID or password. The first owner is
+promoted by an explicit manual operation.
 
-### 3a. Create the auth user
+### 4.1 Create the Auth user
 
-In the Supabase dashboard: **Authentication → Users → Add user**. Use the email
-from decision 2 and a password from your password manager. Confirm the email.
+In Supabase: **Authentication → Users → Add user**. Use the staging owner email
+selected during setup and a password generated by the password manager.
 
-### 3b. Promote to owner
+### 4.2 Promote to owner
 
-Run **once**, in the Supabase SQL editor, substituting the real email:
-
-```sql
--- Promotes an existing auth user to the CRM owner role.
--- Idempotent: running it again with the same email is a no-op that still
--- returns the profile id. Writes an `owner.bootstrapped` activity event the
--- first time it changes anything.
-SELECT public.bootstrap_owner_by_email('OWNER-EMAIL-HERE', 'Vladimir Vishar');
-```
-
-If you prefer to pass the UUID instead of the email:
+Run once in the SQL Editor:
 
 ```sql
-SELECT public.bootstrap_owner('00000000-0000-0000-0000-000000000000'::uuid, 'Vladimir Vishar');
+select public.bootstrap_owner_by_email(
+  'OWNER-EMAIL-HERE',
+  'Vladimir Vishar'
+);
 ```
 
-Both functions:
+The function:
 
-- fail loudly if no matching `auth.users` row exists — they never create one;
-- are idempotent;
-- record an `owner.bootstrapped` row in `activity_log` on first promotion.
+- fails if no matching Auth user exists;
+- is idempotent;
+- creates no password or Auth identity;
+- writes one `owner.bootstrapped` activity event when it first promotes.
 
-### 3c. Verify the bootstrap is locked down
+Repeat the exact call and confirm no duplicate owner or duplicate bootstrap
+event is created.
 
-Migration `0009` revokes the bootstrap entry points from every application
-role, including the Worker backend. They are intended only for an explicit
-manual SQL Editor operation by the database owner. Verify the deployed ACL:
+### 4.3 Verify bootstrap is locked down
 
 ```sql
-SELECT
-  has_function_privilege('anon', 'public.bootstrap_owner(uuid,text)', 'EXECUTE') AS anon_can_run,
-  has_function_privilege('authenticated', 'public.bootstrap_owner(uuid,text)', 'EXECUTE') AS authenticated_can_run,
-  has_function_privilege('service_role', 'public.bootstrap_owner(uuid,text)', 'EXECUTE') AS backend_can_run;
+select
+  has_function_privilege('anon',
+    'public.bootstrap_owner(uuid,text)', 'execute') as anon_can_run,
+  has_function_privilege('authenticated',
+    'public.bootstrap_owner(uuid,text)', 'execute') as authenticated_can_run,
+  has_function_privilege('service_role',
+    'public.bootstrap_owner(uuid,text)', 'execute') as backend_can_run;
 ```
 
-All three values must be `false`. Do not grant either bootstrap function to an
-API role. The exact first-owner call remains idempotent when repeated from the
-SQL Editor; subsequent staff and role changes use the controlled owner RPCs.
+All three values must be `false`. Never grant bootstrap to an application role.
 
-### 3d. Add staff
+## 5. Staging-only test staff provisioning
 
-The current CRM **Users** screen manages profiles that already exist; it does
-not create an Auth account or provision a new profile. For this draft, adding a
-person is a two-step owner operation: create the Auth user in the Supabase
-dashboard, then provision the matching `profiles` row through an audited
-staging procedure before production. That narrow provisioning RPC/UI is not
-implemented in this PR, so direct ad-hoc profile inserts must not be presented
-as a finished production workflow. Staff are never given the owner role
-"temporarily".
+The current CRM Users screen manages profiles that already exist. It does not
+create Auth accounts or provision new profiles. Production staff provisioning is
+not complete in this PR.
 
-## 4. Verify the private bucket
+For staging only:
 
-Migration `0008` creates the `crm-files` bucket as private. After applying it,
-confirm in **Storage → Buckets** that:
+1. Create synthetic Auth users for manager, reader, disabled and unauthorised.
+2. Through SQL Editor, resolve the Auth UUIDs and insert profiles only for:
+   `booking_manager`, `read_only` and the initially active disabled test user.
+3. Do not create a profile for the unauthorised user.
+4. Do not hard-code the UUIDs/emails in any repository file.
+5. Do not save the provisioning SQL in a migration, seed, evidence file or chat.
+6. Deactivate the disabled account through the normal owner RPC so the audited
+   production path is tested.
+7. Verify the effective access view after provisioning and deactivation.
+
+This one-time method is a staging fixture operation, not a production workflow.
+
+## 6. Verify the private bucket
+
+Migration `0008` creates `crm-files` as private. Confirm:
 
 - `crm-files` exists;
-- **Public** is **off**;
-- there is no other bucket holding client files;
-- policies are present on `storage.objects` for the bucket.
+- Public is off;
+- there is no second client-file bucket;
+- Storage policies exist;
+- public object URLs do not work;
+- anonymous listing exposes nothing;
+- manager cannot delete;
+- read-only cannot see file metadata or mint signed URLs;
+- owner/backend deletion is tested through Storage APIs, never direct SQL
+  deletion from `storage.objects`.
 
-A quick negative check — this must fail or return the object as inaccessible:
+A quick negative check must fail or return inaccessible:
 
 ```bash
 curl -I "https://<PROJECT_REF>.supabase.co/storage/v1/object/public/crm-files/anything"
 ```
 
-## 5. Configure Cloudflare Worker secrets
+## 7. Configure the staging Worker
 
-Set per environment. Never commit these, and never place them in
-`wrangler.toml`.
+The preview Worker uses only staging values.
 
-```bash
-# staging / preview environment
-wrangler secret put SUPABASE_SECRET_KEY       --env preview
-wrangler secret put TELEGRAM_BOT_TOKEN        --env preview
-wrangler secret put TELEGRAM_CHAT_ID          --env preview
-
-# existing production Worker (`tattooai`, no Wrangler environment suffix)
-wrangler secret put SUPABASE_SECRET_KEY
-wrangler secret put TELEGRAM_BOT_TOKEN
-wrangler secret put TELEGRAM_CHAT_ID
-```
-
-Use the project's current `sb_secret_...` key. The Worker sends it only as the
-Supabase `apikey` header, rejects it if placed under the legacy variable name,
-and refuses to start when both key formats are configured. A legacy
-service-role JWT is supported only as a temporary migration fallback through
-`SUPABASE_SERVICE_ROLE_KEY`.
-
-`SUPABASE_URL` is environment-specific but not secret. Set it as a dashboard
-variable on `tattooai-preview` for staging and on the existing top-level
-`tattooai` Worker for production. The production workflow uses `--keep-vars`
-so a deploy cannot erase that dashboard-managed value. Confirm each Worker
-shows a different project ref before sending test traffic; a preview Worker
-must never point at the production database.
-
-Set `ALLOWED_ORIGINS` as a dashboard variable too: a comma-separated list of
-exact HTTPS site origins, with no paths. It replaces the defaults rather than
-extending them, so the staging value must contain only the staging booking
-origin(s) and the production value must contain only
-`https://vishartattoo.com,https://www.vishartattoo.com`. If it is absent, the
-top-level production Worker falls back to those two origins; the preview
-Worker is identified by its checked-in `VISHAR_ENVIRONMENT=preview` binding
-and fails closed when its list is absent. If a configured list is invalid,
-intake also fails closed.
-
-The checked-in `/booking/` page does not send from an arbitrary preview host:
-its `vishar-booking-endpoint` meta value is empty and the production fallback
-activates only on the two production hostnames. When building the staging
-artifact, set that meta value to the `tattooai-preview` URL and verify the
-resulting artifact before publishing it. Keep this as a staging artifact
-substitution; do not commit a preview endpoint into the production page.
-
-Use a **separate, non-production Telegram chat** for staging. Do not send test
-enquiries to the production chat.
-
-Before enabling `.github/workflows/deploy-tattooai.yml`, create the GitHub
-`production` environment, require the reviewer chosen in decision 11, restrict
-deployments to `main`, and put a least-privilege `CLOUDFLARE_API_TOKEN` plus
-`CLOUDFLARE_ACCOUNT_ID` in that environment. The YAML names the environment;
-it cannot create or verify those protection settings.
-
-## 6. Configure Cloudflare rate limiting
-
-Not repository code. In the Cloudflare dashboard, add a rate-limit or WAF rule
-on the Worker route covering the intake path. Suggested starting shape, to be
-tuned against real traffic:
-
-- key: client IP;
-- threshold: a small number of intake POSTs per minute per IP;
-- action: managed challenge, then block on repeat.
-
-## 7. Build and host the CRM application
-
-The CRM is a separate build in `admin/`. It needs exactly two public values:
+Preview secrets:
 
 ```bash
-# admin/.env.local — never committed
-VITE_SUPABASE_URL=https://<PROJECT_REF>.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_... key>
+wrangler secret put SUPABASE_SECRET_KEY --env preview
+wrangler secret put TELEGRAM_BOT_TOKEN --env preview
+wrangler secret put TELEGRAM_CHAT_ID --env preview
 ```
 
-The publishable key is a public identifier, not authority — RLS decides
-everything. A secret/service-role key must never appear in this file or in any
-build output.
+Dashboard-managed preview variables:
+
+```text
+VISHAR_ENVIRONMENT=preview
+SUPABASE_URL=https://<STAGING_PROJECT_REF>.supabase.co
+ALLOWED_ORIGINS=https://<EXACT_BOOKING_STAGING_ORIGIN>
+```
+
+Rules:
+
+- `SUPABASE_SECRET_KEY` is preferred;
+- never put a secret key in `wrangler.toml`;
+- preview and production use different Supabase and Telegram credentials;
+- `ALLOWED_ORIGINS` contains exactly the booking staging origin;
+- it does not contain the CRM origin, production domains or wildcard hosts;
+- a missing/invalid preview allow-list must fail closed;
+- the booking staging artifact points to the preview endpoint without modifying
+  the tracked production booking source.
+
+## 8. Custom Domain, workers.dev and Cloudflare controls
+
+The approved temporary endpoint is:
+
+```text
+intake-staging.vishartattoo.com
+```
+
+Attach it as a Worker Custom Domain under the existing Cloudflare zone. This
+allows zone WAF and rate limiting to protect the endpoint.
+
+Before any test traffic, a separate reviewed repository change must set:
+
+```toml
+[env.preview]
+workers_dev = false
+```
+
+Only the preview setting changes. The top-level production setting remains
+unchanged.
+
+After deployment verify the Worker is reachable through the Custom Domain and
+unreachable through:
+
+- `tattooai-preview.<account>.workers.dev`;
+- any explicitly enabled Worker Preview URL;
+- any unintended alternate hostname.
+
+If an alternate URL remains reachable, stop. It would bypass the zone controls.
+Disabling `workers.dev` only in the dashboard is not durable if the checked-in
+configuration still enables it.
+
+Cloudflare Access:
+
+- owner-only on `vishar-booking-staging`;
+- owner-only on `vishar-crm-staging`;
+- not directly in front of the Worker because the cross-origin booking flow has
+  no Access service-token implementation.
+
+CORS is not authentication. The temporary public Worker is acceptable only with
+staging-only credentials, synthetic data, exact origins, existing body/file
+validation, WAF/rate limiting, no bypass URL and complete teardown.
+
+Inspect the zone plan before creating rate-limit rules. If the rule supports
+hostname matching, scope it to the exact staging host, `POST` and the exact
+intake path. Otherwise use a unique staging-only path and a WAF custom rule on
+the host that blocks all other paths and methods except `POST`/`OPTIONS`. The
+path is not a password.
+
+No Worker Rate Limiting API binding or code change is approved for staging.
+
+## 9. Build and host the booking preview
+
+1. Build from the approved SHA.
+2. Copy the booking artifact into a temporary directory.
+3. Set the preview endpoint only in that temporary artifact.
+4. Remove the production fallback from the temporary artifact.
+5. Upload to the Direct Upload Pages project `vishar-booking-staging`.
+6. Record the exact HTTPS origin.
+7. Set that origin as the sole preview `ALLOWED_ORIGINS` value.
+8. Protect the Pages project with owner-only Access.
+9. Ensure the preview is not publicly indexable.
+10. Delete the temporary artifact during teardown.
+
+Do not commit the preview endpoint into `booking/index.html`.
+
+## 10. Build and host the CRM preview
+
+Use only these public build values in an ephemeral file outside Git:
+
+```text
+VITE_SUPABASE_URL=https://<STAGING_PROJECT_REF>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<STAGING_PUBLISHABLE_KEY>
+```
+
+A secret/service-role key, database password or Telegram token must never enter
+the CRM environment or build output.
 
 ```bash
 cd admin
-npm install
-npm run build      # emits admin/dist
+npm ci
+npm test
+npm run typecheck
+npm run build
 ```
 
-Host `admin/dist` separately from the public site. If `admin.vishartattoo.com`
-is used, creating that DNS record and its hosting target is an owner action.
-Cloudflare Access in front of the CRM is recommended as defence in depth — it
-is not the authorisation system, RLS is.
+Scan `admin/dist` for secrets, upload it to `vishar-crm-staging`, and protect the
+Pages project with owner-only Cloudflare Access.
 
-## 8. Gmail and Google Calendar
+## 11. Staging Telegram
 
-**Not connected. Do not mark this complete from repository work.**
+Use a separate staging bot and separate private staging chat. Do not reuse the
+production destination. Record only a neutral label in evidence, never the token
+or chat ID.
 
-When the owner is ready:
+A Telegram failure after durable finalisation must not make the client-facing
+submission fail. Verify the outbox records the notification failure safely.
 
-1. Create a Google Cloud project and OAuth client.
-2. Grant only the minimum scopes: draft/send for Gmail, single-calendar
-   read/write for Calendar.
-3. Complete the consent flow as the owner account.
-4. Store the client secret and refresh token in an encrypted server-side secret
-   store reachable only by the Worker. They must not be placed in any Supabase
-   table readable by any CRM role, and must never be sent to a browser.
-5. Only then enable the corresponding outbox kinds.
+## 12. Gmail, Calendar and AI
 
-Until step 5, `workers/lib/email.js` and `workers/lib/calendar.js` are
-interfaces with no provider bound. The CRM shows a Calendar status placeholder
-and never claims a connection.
+They remain disconnected throughout staging. Do not create OAuth credentials,
+store refresh tokens, send email, create calendar events or connect an AI
+gateway. Provider-neutral interfaces and UI placeholders do not count as a
+connection.
 
-## 9. Privacy and transfer deployment gate
+## 13. Retention
 
-**Do not publish the durable booking form until this gate is complete.**
-
-1. Record the selected Supabase region and confirm the Cloudflare, Supabase and
-   Telegram processing/support locations that apply to the production accounts.
-2. Review and accept the providers' current data-processing terms.
-3. Document any restricted transfer, the applicable UK adequacy regulation or
-   safeguard, and any transfer risk assessment required for the actual route.
-4. Update `/privacy/` with the arrangement actually in force. Do not leave
-   future-tense placeholder wording in a live notice.
-5. Record the owner approval and the notice version deployed with the form.
-
-This is an owner/legal deployment decision, not something repository code can
-complete or infer.
-
-## 10. Retention
-
-`system_settings` ships with:
+Staging and production settings remain:
 
 - `retention_enabled = false`;
-- every retention duration `null`;
+- all retention durations `null`;
 - no scheduled deletion job.
 
-Nothing deletes client data automatically. When the owner records a policy
-(decision 4), the retention job must support a dry run, audit events, legal and
-operational holds, and separate database and Storage cleanup passes. Do not
-enable retention before those exist.
+Nothing deletes client records automatically. Retention requires a separate
+owner/legal decision and an implementation supporting dry run, audit events,
+holds and database/Storage cleanup.
 
-## 11. Post-deployment verification
+## 14. Privacy and production release gate
 
-Only after an owner-approved deployment, and using clearly marked test data:
+Do not publish the durable production booking form until the owner has:
 
-1. Submit a test enquiry from the staging booking page.
-2. Confirm the `enquiries` row exists with a `ENQ-YYYY-NNNN` reference.
-3. Confirm `enquiry_files` rows are `ready` and objects exist at canonical
-   paths.
-4. Confirm the staging Telegram chat received the notification.
-5. Confirm the CRM shows the enquiry, and that a signed file URL opens and then
-   expires.
-6. Re-submit with the same idempotency key and confirm the same reference is
-   returned and no second row is created.
-7. Sign in as a `read_only` account and confirm finance fields are absent.
-8. Deactivate a test profile and confirm its session can no longer read data.
-9. Delete the test data.
+1. confirmed actual provider processing/support locations;
+2. reviewed current data-processing terms;
+3. documented any required UK transfer safeguard/risk assessment;
+4. updated the live privacy notice to match the deployed arrangement;
+5. recorded approval and privacy-notice version.
 
-## 11. Outstanding owner actions — summary
+This does not block synthetic owner-only staging, but it blocks production.
 
-- [ ] Decisions 1–11 above recorded.
-- [ ] Staging and production Supabase projects created.
-- [ ] Migrations applied to staging, `supabase test db` green.
-- [ ] Owner auth user created and promoted; bootstrap revoked.
-- [ ] `crm-files` bucket confirmed private.
-- [ ] Worker secrets set per environment; staging Telegram chat separate.
-- [ ] Cloudflare rate limiting configured.
-- [ ] CRM built and hosted; DNS created if applicable.
-- [ ] Migrations applied to production under approval.
-- [ ] Gmail / Calendar OAuth — deliberately deferred.
-- [ ] Retention policy — deliberately deferred.
+## 15. Staging verification and evidence
+
+Run the complete matrix in [`STAGING.md`](./STAGING.md). At minimum verify:
+
+- enquiries with 1, 2 and 3 images;
+- exact and changed-payload retries;
+- partial and ambiguous upload outcomes;
+- reconciliation;
+- owner, manager, read-only, disabled, no-profile and anonymous access;
+- direct PostgREST attempts;
+- private Storage and signed URL expiry;
+- exact origin isolation;
+- Telegram failure after durable persistence;
+- Gmail, Calendar and AI remain disconnected.
+
+Evidence must be synthetic and sanitised. Never store JWTs, passwords, keys,
+signed URLs, real emails or client PII.
+
+## 16. Complete teardown
+
+Teardown requires separate destructive confirmation. Then:
+
+1. delete both staging Pages projects;
+2. remove the Worker Custom Domain;
+3. delete `tattooai-preview`, its variables, secrets and preview URLs;
+4. delete the entire staging Supabase project;
+5. revoke temporary tokens;
+6. delete the staging Telegram bot/chat;
+7. delete temporary harnesses, artifacts, `.env` files and link metadata;
+8. remove residual staging DNS/certificates if required;
+9. verify production remained unchanged.
+
+Deleting individual rows is not complete cleanup because `activity_log` is
+append-only. Full cleanup requires deletion of the staging Supabase project.
+
+## 17. Outstanding owner actions — summary
+
+### Staging
+
+- [ ] Separate permission to create hosted staging resources.
+- [ ] Staging owner and test-user emails selected privately.
+- [ ] `vishar-crm-staging` created in `eu-west-2`.
+- [ ] Migrations pushed without seed; hosted pgTAP/lint green.
+- [ ] Owner bootstrapped and role fixtures provisioned.
+- [ ] Private Storage validated.
+- [ ] Preview-only `workers_dev = false` change reviewed and deployed.
+- [ ] Custom Domain, WAF/rate limiting and Access configured.
+- [ ] Booking/CRM staging artifacts deployed.
+- [ ] Full E2E matrix completed with sanitised evidence.
+- [ ] Owner chooses full teardown or temporary retention.
+
+### Production, deliberately deferred
+
+- [ ] Production Supabase project and backup/PITR decision.
+- [ ] Production privacy/provider review.
+- [ ] Protected GitHub production environment and deploy credentials.
+- [ ] Production migration/deployment approval.
+- [ ] Gmail / Calendar / AI integration decisions.
+- [ ] Retention policy and scheduled cleanup implementation.
