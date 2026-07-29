@@ -16,7 +16,6 @@ import type { CrmRole, EnquiryStatus, StatusTransition } from './types';
 
 export type Capability =
   | 'viewClients'
-  | 'editClientContact'
   | 'viewEnquiries'
   | 'transitionEnquiry'
   | 'assignEnquiry'
@@ -40,7 +39,7 @@ export type Capability =
   | 'manageSettings';
 
 const OWNER: Capability[] = [
-  'viewClients', 'editClientContact',
+  'viewClients',
   'viewEnquiries', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
   'viewProjects', 'manageProjects',
   'viewSessions', 'manageSessions',
@@ -53,7 +52,7 @@ const OWNER: Capability[] = [
 ];
 
 const BOOKING_MANAGER: Capability[] = [
-  'viewClients', 'editClientContact',
+  'viewClients',
   'viewEnquiries', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
   'viewProjects', 'manageProjects',
   'viewSessions', 'manageSessions',

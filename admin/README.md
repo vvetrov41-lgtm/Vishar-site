@@ -24,17 +24,23 @@ npm run dev
 
 ```
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
-VITE_SUPABASE_ANON_KEY=<anon / publishable key>
+VITE_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_... key>
 ```
 
-The anon key is a public identifier. It grants nothing on its own — every read
-and write is decided by row level security and by the role checks inside the
-workflow RPCs.
+For `npm run dev` against `supabase start`, the standard loopback API URL
+`http://127.0.0.1:54321` is also accepted. Loopback HTTP is disabled in a
+production build; every staging or production build must use the HTTPS root of
+a hosted `*.supabase.co` project.
 
-**`SUPABASE_SERVICE_ROLE_KEY` must never appear here.** It is a full-database
-credential that bypasses RLS and belongs only in a Cloudflare Worker secret.
-`src/lib/supabase.ts` refuses to start if it finds one in the environment,
-rather than quietly building a bundle that leaks it.
+The publishable key is a public identifier. It grants nothing on its own —
+every read and write is decided by row level security and by the role checks
+inside the workflow RPCs. A legacy anon key is accepted only as a migration
+fallback; do not configure both.
+
+**A Supabase secret key or legacy service-role key must never appear here.**
+Either is a privileged backend credential that bypasses RLS and belongs only in
+a Cloudflare Worker secret. `src/lib/supabase.ts` refuses to start when it finds
+one — including a service-role JWT hidden under the publishable variable name.
 
 ## Commands
 
@@ -90,12 +96,12 @@ src/
     permissions.ts       role capability matrix (UX only; see above)
     router.tsx           minimal hash router (nine routes do not justify a dependency)
     session.tsx          auth session + active CRM profile
-    supabase.ts          client factory; refuses a service-role key
+    supabase.ts          client factory; refuses privileged backend keys
     types.ts             domain types — finance columns deliberately absent
     format.ts            dates and money, formatted from the row's own currency
   components/            shell, route guard, loading/empty/error states, signed image
   pages/                 dashboard, enquiries, clients, projects, sessions, users, activity
-  test/                  fixtures + 54 tests
+  test/                  fixtures + 67 tests
 ```
 
 ## Private files

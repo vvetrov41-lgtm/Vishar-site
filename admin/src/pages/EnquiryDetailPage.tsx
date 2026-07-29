@@ -21,6 +21,22 @@ interface DetailData {
   colleagues: Pick<Profile, 'id' | 'display_name' | 'role'>[];
 }
 
+function contactValue(value: string | null | undefined) {
+  return (value ?? '').trim().toLocaleLowerCase('en-GB');
+}
+
+function submittedContactDiffers(enquiry: Enquiry, client: Client | null) {
+  if (!client || !enquiry.submitted_email) return false;
+  return [
+    [enquiry.submitted_full_name, client.full_name],
+    [enquiry.submitted_email, client.email],
+    [enquiry.submitted_phone, client.phone],
+    [enquiry.submitted_instagram, client.instagram],
+    [enquiry.submitted_preferred_contact, client.preferred_contact],
+    [enquiry.submitted_travelling_from, client.travelling_from],
+  ].some(([submitted, current]) => contactValue(submitted) !== contactValue(current));
+}
+
 export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   const api = useApi();
   const { profile } = useSession();
@@ -71,6 +87,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
 
   const { enquiry, client, files, notes, followUps, activity, transitions, colleagues } = data;
   const transitionOptions = availableTransitions(transitions, enquiry.status, role);
+  const contactDiffers = submittedContactDiffers(enquiry, client);
 
   return (
     <>
@@ -89,7 +106,36 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
 
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 
-      <Section title="Client">
+      {enquiry.client_identifier_conflict ? (
+        <div className="notice warn" role="alert">
+          The submitted email and phone matched different client cards. The
+          enquiry was attached by email; review both identifiers before replying.
+        </div>
+      ) : contactDiffers ? (
+        <div className="notice warn" role="status">
+          The contact details submitted with this enquiry differ from the
+          current client card. Neither record was overwritten automatically.
+        </div>
+      ) : null}
+
+      <Section title="Contact submitted with this enquiry">
+        <dl className="definition">
+          <dt>Name</dt><dd>{enquiry.submitted_full_name ?? client?.full_name ?? '—'}</dd>
+          <dt>Email</dt><dd>{enquiry.submitted_email ?? client?.email ?? '—'}</dd>
+          <dt>Phone</dt><dd>{enquiry.submitted_phone ?? '—'}</dd>
+          <dt>Instagram</dt><dd>{enquiry.submitted_instagram ?? '—'}</dd>
+          <dt>Prefers</dt><dd>{enquiry.submitted_preferred_contact ?? '—'}</dd>
+          <dt>Travelling from</dt><dd>{enquiry.submitted_travelling_from ?? '—'}</dd>
+        </dl>
+        {client ? (
+          <div className="actions">
+            <Link to={`/clients/${client.id}`} className="badge">Open current client card</Link>
+          </div>
+        ) : null}
+      </Section>
+
+      {client && contactDiffers ? (
+      <Section title="Current client card">
         {client ? (
           <>
             <dl className="definition">
@@ -108,6 +154,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <EmptyState title="Client record unavailable" />
         )}
       </Section>
+      ) : null}
 
       <Section title="The project">
         <dl className="definition">
@@ -174,7 +221,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </Section>
       ) : null}
 
-      {can(role, 'convertEnquiry') && enquiry.status !== 'converted' ? (
+      {can(role, 'convertEnquiry') && ['accepted', 'deposit_paid'].includes(enquiry.status) ? (
         <Section title="Convert to a project">
           <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: 0 }}>
             One enquiry becomes at most one project. This cannot be undone.
@@ -188,7 +235,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
                 void run(async () => {
                   const result = await api.convertEnquiry(
                     enquiry.id,
-                    `${enquiry.project_type ?? 'Tattoo'} — ${client?.full_name ?? enquiry.reference_number}`
+                    `${enquiry.project_type ?? 'Tattoo'} — ${enquiry.submitted_full_name ?? client?.full_name ?? enquiry.reference_number}`
                   );
                   const projectId = (result as { project_id?: string })?.project_id;
                   if (projectId) navigate(`/projects/${projectId}`);

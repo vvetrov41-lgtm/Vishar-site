@@ -24,6 +24,9 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const role = profile?.role;
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [sessionStart, setSessionStart] = useState('');
+  const [sessionEnd, setSessionEnd] = useState('');
+  const [depositAmount, setDepositAmount] = useState('');
 
   const { data, loading, error, reload } = useAsync<ProjectData>(async () => {
     const project = await api.getProject(projectId);
@@ -36,7 +39,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       api.listSessions(projectId),
       can(role, 'viewFinance') ? api.listSessionFinance(projectId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ projectId }) : Promise.resolve([]),
-      can(role, 'viewActivity') ? api.listActivity({}) : Promise.resolve([]),
+      can(role, 'viewActivity') ? api.listActivity({ projectId }) : Promise.resolve([]),
     ]);
 
     return { project, finance, sessions, sessionFinance, notes, activity };
@@ -62,6 +65,11 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const { project, finance, sessions, sessionFinance, notes, activity } = data;
   const priceFor = (sessionId: string) =>
     sessionFinance.find((entry) => entry.session_id === sessionId)?.price ?? null;
+  const parsedDepositAmount = Number(depositAmount);
+  const hasValidDepositAmount =
+    depositAmount.trim() !== ''
+    && Number.isFinite(parsedDepositAmount)
+    && parsedDepositAmount > 0;
 
   return (
     <>
@@ -122,9 +130,9 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     Calendar: {session.calendar_event_id ? 'linked' : 'not connected'}
                   </span>
                 </div>
-                {can(role, 'manageSessions') && session.status !== 'cancelled' ? (
+                {can(role, 'manageSessions') ? (
                   <div className="actions">
-                    {session.status !== 'confirmed' ? (
+                    {['draft', 'proposed'].includes(session.status) ? (
                       <button
                         type="button" disabled={busy}
                         onClick={() => { void run(() => api.setSessionStatus(session.id, 'confirmed')); }}
@@ -132,12 +140,30 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                         Confirm
                       </button>
                     ) : null}
-                    <button
-                      type="button" className="danger" disabled={busy}
-                      onClick={() => { void run(() => api.setSessionStatus(session.id, 'cancelled')); }}
-                    >
-                      Cancel
-                    </button>
+                    {session.status === 'confirmed' ? (
+                      <>
+                        <button
+                          type="button" disabled={busy}
+                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'completed')); }}
+                        >
+                          Mark completed
+                        </button>
+                        <button
+                          type="button" disabled={busy}
+                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'no_show')); }}
+                        >
+                          Mark no-show
+                        </button>
+                      </>
+                    ) : null}
+                    {['draft', 'proposed', 'confirmed'].includes(session.status) ? (
+                      <button
+                        type="button" className="danger" disabled={busy}
+                        onClick={() => { void run(() => api.setSessionStatus(session.id, 'cancelled')); }}
+                      >
+                        Cancel
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -146,19 +172,60 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         )}
 
         {can(role, 'manageSessions') ? (
-          <div className="actions">
-            <button
-              type="button" disabled={busy}
-              onClick={() => {
-                const start = new Date(Date.now() + 14 * 86400000);
-                start.setHours(11, 0, 0, 0);
-                const end = new Date(start.getTime() + 6 * 3600000);
-                void run(() => api.scheduleSession(projectId, start.toISOString(), end.toISOString(), 'proposed'));
-              }}
-            >
-              Propose a session in two weeks
-            </button>
-          </div>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(async () => {
+                const start = new Date(sessionStart);
+                const end = new Date(sessionEnd);
+                if (
+                  !sessionStart
+                  || !sessionEnd
+                  || Number.isNaN(start.getTime())
+                  || Number.isNaN(end.getTime())
+                  || end <= start
+                ) {
+                  throw new Error('Choose a valid start and a later end time.');
+                }
+                await api.scheduleSession(
+                  projectId,
+                  start.toISOString(),
+                  end.toISOString(),
+                  'proposed'
+                );
+                setSessionStart('');
+                setSessionEnd('');
+              });
+            }}
+          >
+            <div className="field-row" style={{ marginTop: 12 }}>
+              <div>
+                <label htmlFor="session-start">Proposed start</label>
+                <input
+                  id="session-start"
+                  type="datetime-local"
+                  value={sessionStart}
+                  onChange={(event) => setSessionStart(event.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="session-end">Proposed end</label>
+                <input
+                  id="session-end"
+                  type="datetime-local"
+                  value={sessionEnd}
+                  onChange={(event) => setSessionEnd(event.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div className="actions">
+              <button type="submit" disabled={busy || !sessionStart || !sessionEnd}>
+                Propose session
+              </button>
+            </div>
+          </form>
         ) : null}
 
         <p className="notice" style={{ marginTop: 12 }}>
@@ -169,16 +236,31 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
       {can(role, 'manageFinance') ? (
         <Section title="Deposit">
+          <label htmlFor="deposit-amount">Deposit amount ({project.currency})</label>
+          <input
+            id="deposit-amount"
+            type="number"
+            inputMode="decimal"
+            min="0.01"
+            step="0.01"
+            value={depositAmount}
+            placeholder={finance?.deposit_amount?.toString() ?? 'Enter amount'}
+            onChange={(event) => setDepositAmount(event.target.value)}
+          />
           <div className="actions">
             <button
-              type="button" disabled={busy}
-              onClick={() => { void run(() => api.updateDeposit(projectId, finance?.deposit_amount ?? 0, 'requested')); }}
+              type="button" disabled={busy || !hasValidDepositAmount}
+              onClick={() => {
+                void run(() => api.updateDeposit(projectId, parsedDepositAmount, 'requested'));
+              }}
             >
               Mark requested
             </button>
             <button
-              type="button" disabled={busy}
-              onClick={() => { void run(() => api.updateDeposit(projectId, finance?.deposit_amount ?? 0, 'paid')); }}
+              type="button" disabled={busy || !hasValidDepositAmount}
+              onClick={() => {
+                void run(() => api.updateDeposit(projectId, parsedDepositAmount, 'paid'));
+              }}
             >
               Mark paid
             </button>

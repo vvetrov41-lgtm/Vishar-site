@@ -23,14 +23,14 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
     if (!client) return { client: null, enquiries: [], projects: [], notes: [] };
 
     const [enquiries, projects, notes] = await Promise.all([
-      api.listEnquiries(),
+      api.listEnquiries({ clientId }),
       api.listProjects(clientId),
       can(role, 'viewNotes') ? api.listNotes({ clientId }) : Promise.resolve([]),
     ]);
 
     return {
       client,
-      enquiries: enquiries.filter((enquiry) => enquiry.client_id === clientId),
+      enquiries,
       projects,
       notes,
     };

@@ -29,7 +29,7 @@ export function App() {
       <div className="container">
         <EmptyState
           title="The CRM is not configured"
-          hint="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then reload. See admin/README.md."
+          hint="Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then reload. See admin/README.md."
         />
       </div>
     );

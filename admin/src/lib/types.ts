@@ -62,7 +62,15 @@ export interface Enquiry {
   status: EnquiryStatus;
   intake_state: EnquiryIntakeState;
   intake_error_code: string | null;
+  client_identifier_conflict: boolean;
   assigned_to: string | null;
+  /** Present on detail reads; list reads deliberately omit contact PII. */
+  submitted_full_name?: string;
+  submitted_email?: string;
+  submitted_phone?: string | null;
+  submitted_instagram?: string | null;
+  submitted_preferred_contact?: string | null;
+  submitted_travelling_from?: string | null;
   project_type: string | null;
   placement: string | null;
   approximate_size: string | null;
@@ -79,6 +87,7 @@ export interface Enquiry {
 export interface EnquiryFile {
   id: string;
   enquiry_id: string;
+  ordinal: number;
   storage_path: string;
   original_filename: string | null;
   mime_type: string;

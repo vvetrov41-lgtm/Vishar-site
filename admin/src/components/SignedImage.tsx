@@ -15,12 +15,16 @@ export function SignedImage({ file }: { file: EnquiryFile }) {
 
   useEffect(() => {
     let cancelled = false;
+    setUrl(null);
     setFailed(false);
+    if (file.upload_state !== 'ready') {
+      return () => { cancelled = true; };
+    }
     api.signedFileUrl(file.storage_path)
       .then((signed) => { if (!cancelled) { if (signed) setUrl(signed); else setFailed(true); } })
       .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
-  }, [api, file.storage_path]);
+  }, [api, file.storage_path, file.upload_state]);
 
   if (file.upload_state !== 'ready') {
     return <div className="notice warn">This image did not finish uploading.</div>;

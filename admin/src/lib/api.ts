@@ -109,19 +109,26 @@ export function createApi(client: CrmClient) {
     },
 
     // ---- enquiries --------------------------------------------------------
-    async listEnquiries(filters: { status?: EnquiryStatus; assignedTo?: string; search?: string } = {}): Promise<Enquiry[]> {
+    async listEnquiries(filters: {
+      status?: EnquiryStatus;
+      assignedTo?: string;
+      clientId?: string;
+      search?: string;
+    } = {}): Promise<Enquiry[]> {
       let query = client
         .from('enquiries')
-        .select('id, client_id, reference_number, status, intake_state, intake_error_code, assigned_to, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, utm_source, created_at, last_action_at, archived_at')
+        .select('id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, utm_source, created_at, last_action_at, archived_at')
         .is('archived_at', null)
-        // Only completed intakes belong in the working queue. An enquiry whose
-        // images never finished uploading is not a real enquiry yet.
+        // Only completed intakes belong in the working queue. The database
+        // keeps incomplete rows for reconciliation, but staff must not start
+        // working them as if every promised file had arrived.
         .eq('intake_state', 'complete')
         .order('last_action_at', { ascending: false })
         .limit(200);
 
       if (filters.status) query = query.eq('status', filters.status);
       if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo);
+      if (filters.clientId) query = query.eq('client_id', filters.clientId);
       if (filters.search) query = query.ilike('reference_number', `%${filters.search}%`);
 
       return unwrap<Enquiry[]>(await query, 'load enquiries');
@@ -130,7 +137,7 @@ export function createApi(client: CrmClient) {
     async getEnquiry(id: string): Promise<Enquiry | null> {
       const result = await client
         .from('enquiries')
-        .select('id, client_id, reference_number, status, intake_state, intake_error_code, assigned_to, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, utm_source, created_at, last_action_at, archived_at')
+        .select('id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, submitted_full_name, submitted_email, submitted_phone, submitted_instagram, submitted_preferred_contact, submitted_travelling_from, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, utm_source, created_at, last_action_at, archived_at')
         .eq('id', id)
         .maybeSingle();
       if (result.error) throw new ApiError(friendlyMessage(result.error, 'load that enquiry'), result.error);
@@ -141,9 +148,9 @@ export function createApi(client: CrmClient) {
       return unwrap<EnquiryFile[]>(
         await client
           .from('enquiry_files')
-          .select('id, enquiry_id, storage_path, original_filename, mime_type, byte_size, upload_state, created_at')
+          .select('id, enquiry_id, ordinal, storage_path, original_filename, mime_type, byte_size, upload_state, created_at')
           .eq('enquiry_id', enquiryId)
-          .order('created_at', { ascending: true }),
+          .order('ordinal', { ascending: true }),
         'load reference images'
       );
     },
@@ -231,7 +238,9 @@ export function createApi(client: CrmClient) {
         .select('project_id, client_id, currency, hourly_rate, estimate_total, deposit_amount, deposit_status')
         .eq('project_id', projectId)
         .maybeSingle();
-      if (result.error) return null;
+      if (result.error) {
+        throw new ApiError(friendlyMessage(result.error, 'load project finance'), result.error);
+      }
       return (result.data as ProjectFinance) ?? null;
     },
 
@@ -246,12 +255,13 @@ export function createApi(client: CrmClient) {
     },
 
     async listSessionFinance(projectId: string): Promise<SessionFinance[]> {
-      const result = await client
-        .from('sessions_finance')
-        .select('session_id, project_id, currency, price, payment_status')
-        .eq('project_id', projectId);
-      if (result.error) return [];
-      return (result.data as SessionFinance[]) ?? [];
+      return unwrap<SessionFinance[]>(
+        await client
+          .from('sessions_finance')
+          .select('session_id, project_id, currency, price, payment_status')
+          .eq('project_id', projectId),
+        'load session finance'
+      );
     },
 
     async scheduleSession(projectId: string, startAt: string, endAt: string, status: CrmSession['status']) {
@@ -350,7 +360,13 @@ export function createApi(client: CrmClient) {
     },
 
     // ---- activity and integration jobs ------------------------------------
-    async listActivity(filter: { enquiryId?: string; clientId?: string; eventType?: string } = {}): Promise<ActivityEntry[]> {
+    async listActivity(filter: {
+      enquiryId?: string;
+      clientId?: string;
+      projectId?: string;
+      sessionId?: string;
+      eventType?: string;
+    } = {}): Promise<ActivityEntry[]> {
       let query = client
         .from('activity_log')
         .select('id, occurred_at, event_type, actor_kind, actor_profile_id, client_id, enquiry_id, project_id, session_id, metadata')
@@ -358,19 +374,22 @@ export function createApi(client: CrmClient) {
         .limit(200);
       if (filter.enquiryId) query = query.eq('enquiry_id', filter.enquiryId);
       if (filter.clientId) query = query.eq('client_id', filter.clientId);
+      if (filter.projectId) query = query.eq('project_id', filter.projectId);
+      if (filter.sessionId) query = query.eq('session_id', filter.sessionId);
       if (filter.eventType) query = query.eq('event_type', filter.eventType);
       return unwrap<ActivityEntry[]>(await query, 'load the activity log');
     },
 
     async listFailedJobs(): Promise<OutboxJob[]> {
-      const result = await client
-        .from('integration_outbox')
-        .select('id, kind, status, attempt_count, max_attempts, next_attempt_at, last_error_code, updated_at')
-        .in('status', ['failed', 'dead'])
-        .order('updated_at', { ascending: false })
-        .limit(50);
-      if (result.error) return [];
-      return (result.data as OutboxJob[]) ?? [];
+      return unwrap<OutboxJob[]>(
+        await client
+          .from('integration_outbox')
+          .select('id, kind, status, attempt_count, max_attempts, next_attempt_at, last_error_code, updated_at')
+          .in('status', ['failed', 'dead'])
+          .order('updated_at', { ascending: false })
+          .limit(50),
+        'load failed integration jobs'
+      );
     },
 
     // ---- files -------------------------------------------------------------

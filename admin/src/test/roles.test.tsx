@@ -128,6 +128,16 @@ describe('enquiry detail by role', () => {
     expect(await screen.findByText('ENQ-2026-0001')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Reviewing' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Declined' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Convert to project/i })).not.toBeInTheDocument();
+  });
+
+  it('offers conversion only after the enquiry is accepted', async () => {
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/enquiries/${ENQUIRY_ID}`,
+      enquiryStatus: 'accepted',
+    });
+    expect(await screen.findByRole('button', { name: /Convert to project/i })).toBeInTheDocument();
   });
 
   it('offers read_only no status control, no notes and no images', async () => {

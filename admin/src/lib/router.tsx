@@ -34,7 +34,11 @@ export function matchRoute(pattern: string, path: string): Record<string, string
     const expected = patternParts[index];
     const actual = pathParts[index];
     if (expected.startsWith(':')) {
-      params[expected.slice(1)] = decodeURIComponent(actual);
+      try {
+        params[expected.slice(1)] = decodeURIComponent(actual);
+      } catch {
+        return null;
+      }
       continue;
     }
     if (expected !== actual) return null;

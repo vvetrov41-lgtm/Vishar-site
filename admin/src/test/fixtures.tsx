@@ -11,7 +11,7 @@ import type { ReactElement } from 'react';
 import type { CrmClient } from '../lib/api';
 import { RouterProvider } from '../lib/router';
 import { SessionProvider } from '../lib/session';
-import type { CrmRole } from '../lib/types';
+import type { CrmRole, EnquiryStatus } from '../lib/types';
 
 export const OWNER_ID = '11111111-1111-4111-8111-111111111111';
 export const MANAGER_ID = '22222222-2222-4222-8222-222222222222';
@@ -51,7 +51,14 @@ export const ENQUIRY = {
   status: 'new' as const,
   intake_state: 'complete' as const,
   intake_error_code: null,
+  client_identifier_conflict: true,
   assigned_to: null,
+  submitted_full_name: 'Fixture Client',
+  submitted_email: 'fixture@example.test',
+  submitted_phone: '+447700900099',
+  submitted_instagram: '@fixture',
+  submitted_preferred_contact: 'Email',
+  submitted_travelling_from: 'Manchester',
   project_type: 'Colour realism',
   placement: 'Outer forearm',
   approximate_size: '20 cm',
@@ -110,6 +117,7 @@ export const SESSION = {
 export const ENQUIRY_FILE = {
   id: FILE_ID,
   enquiry_id: ENQUIRY_ID,
+  ordinal: 0,
   storage_path: `clients/${CLIENT_ID}/enquiries/${ENQUIRY_ID}/references/${FILE_ID}.jpg`,
   original_filename: 'reference-1.jpg',
   mime_type: 'image/jpeg',
@@ -136,8 +144,12 @@ export interface FakeClientOptions {
   role: CrmRole | 'deactivated' | 'signed_out' | 'no_profile';
   /** Records every RPC the interface attempts, so tests can assert on writes. */
   rpcCalls?: { name: string; args: Record<string, unknown> | undefined }[];
+  /** Records PostgREST filters so detail pages can prove server-side scoping. */
+  queryCalls?: { table: string; method: string; args: unknown[] }[];
   /** Force an error from one table, to exercise the error state. */
   failTable?: string;
+  /** Override the enquiry lifecycle state for workflow-specific screens. */
+  enquiryStatus?: EnquiryStatus;
 }
 
 const DENIED = { code: '42501', message: 'permission denied' };
@@ -146,7 +158,12 @@ const DENIED = { code: '42501', message: 'permission denied' };
  * A query builder that behaves like PostgREST's chainable API and resolves to
  * the rows the corresponding role would actually be able to read.
  */
-function tableResult(table: string, role: CrmRole | null, failTable?: string) {
+function tableResult(
+  table: string,
+  role: CrmRole | null,
+  failTable?: string,
+  enquiryStatus?: EnquiryStatus
+) {
   if (failTable === table) return { data: null, error: { code: 'PGRST000', message: 'boom' } };
 
   const canManage = role === 'owner' || role === 'booking_manager';
@@ -160,7 +177,7 @@ function tableResult(table: string, role: CrmRole | null, failTable?: string) {
     case 'clients':
       return { data: [CLIENT], error: null };
     case 'enquiries':
-      return { data: [ENQUIRY], error: null };
+      return { data: [{ ...ENQUIRY, status: enquiryStatus ?? ENQUIRY.status }], error: null };
     case 'enquiry_files':
       // read_only has no file policy, so the database returns nothing.
       return { data: canManage ? [ENQUIRY_FILE] : [], error: null };
@@ -201,15 +218,28 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
 
   const effectiveRole: CrmRole | null = profile?.is_active ? profile.role : null;
   const rpcCalls = options.rpcCalls ?? [];
+  const queryCalls = options.queryCalls ?? [];
 
   function builder(table: string): any {
-    const result = tableResult(table, effectiveRole, options.failTable);
+    const result = tableResult(table, effectiveRole, options.failTable, options.enquiryStatus);
     const chain: any = {
       select: () => chain,
-      eq: () => chain,
-      is: () => chain,
-      in: () => chain,
-      ilike: () => chain,
+      eq: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'eq', args });
+        return chain;
+      },
+      is: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'is', args });
+        return chain;
+      },
+      in: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'in', args });
+        return chain;
+      },
+      ilike: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'ilike', args });
+        return chain;
+      },
       order: () => chain,
       limit: () => chain,
       maybeSingle: () =>

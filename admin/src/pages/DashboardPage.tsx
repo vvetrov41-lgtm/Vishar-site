@@ -101,7 +101,10 @@ export function DashboardPage() {
       {can(role, 'viewIntegrationJobs') ? (
         <Section title="Failed integration jobs">
           {data.failedJobs.length === 0 ? (
-            <EmptyState title="Nothing has failed" hint="Telegram, email and calendar jobs retry automatically; anything that gives up appears here." />
+            <EmptyState
+              title="Nothing has failed"
+              hint="The durable queue records failures. An automatic retry processor is not connected yet."
+            />
           ) : (
             <div className="list">
               {data.failedJobs.map((job) => (

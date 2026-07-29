@@ -49,7 +49,7 @@ describe('capabilities', () => {
 
   it('gives read_only no write capability at all', () => {
     const writes: Capability[] = [
-      'editClientContact', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry',
+      'transitionEnquiry', 'assignEnquiry', 'convertEnquiry',
       'manageProjects', 'manageSessions', 'manageFinance', 'createNotes',
       'manageFollowUps', 'createEmailDraft', 'approveEmail', 'manageUsers', 'manageSettings',
     ];

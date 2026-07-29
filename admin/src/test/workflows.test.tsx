@@ -8,9 +8,27 @@ import { describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import { createApi } from '../lib/api';
-import { createFakeClient, renderWithSession, ENQUIRY_ID, PROJECT_ID, MANAGER_ID } from './fixtures';
+import {
+  createFakeClient,
+  renderWithSession,
+  CLIENT_ID,
+  ENQUIRY_ID,
+  PROJECT_ID,
+  MANAGER_ID,
+} from './fixtures';
 
 describe('enquiry workflow', () => {
+  it('shows the immutable submitted contact and a client-match conflict warning', async () => {
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/enquiries/${ENQUIRY_ID}`,
+    });
+
+    expect(await screen.findByText('+447700900099')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/matched different client cards/i);
+    expect(screen.getByText('+447700900000')).toBeInTheDocument();
+  });
+
   it('changes status through transition_enquiry_status', async () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}`, rpcCalls });
@@ -40,7 +58,12 @@ describe('enquiry workflow', () => {
 
   it('converts through convert_enquiry_to_project', async () => {
     const rpcCalls: { name: string; args: any }[] = [];
-    renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}`, rpcCalls });
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/enquiries/${ENQUIRY_ID}`,
+      enquiryStatus: 'accepted',
+      rpcCalls,
+    });
 
     fireEvent.click(await screen.findByRole('button', { name: /convert to project/i }));
 
@@ -77,7 +100,13 @@ describe('session workflow', () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'booking_manager', path: `/projects/${PROJECT_ID}`, rpcCalls });
 
-    fireEvent.click(await screen.findByRole('button', { name: /propose a session/i }));
+    fireEvent.change(await screen.findByLabelText('Proposed start'), {
+      target: { value: '2026-09-10T11:00' },
+    });
+    fireEvent.change(screen.getByLabelText('Proposed end'), {
+      target: { value: '2026-09-10T17:00' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /propose session/i }));
 
     await waitFor(() => {
       const call = rpcCalls.find((entry) => entry.name === 'schedule_session');
@@ -86,6 +115,24 @@ describe('session workflow', () => {
       // what queues a calendar entry.
       expect(call!.args.p_status).toBe('proposed');
       expect(call!.args.p_project_id).toBe(PROJECT_ID);
+    });
+  });
+
+  it('requires an explicit positive deposit amount', async () => {
+    const rpcCalls: { name: string; args: any }[] = [];
+    renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}`, rpcCalls });
+
+    const amount = await screen.findByLabelText(/Deposit amount/);
+    const paid = screen.getByRole('button', { name: /mark paid/i });
+    expect(paid).toBeDisabled();
+
+    fireEvent.change(amount, { target: { value: '175.50' } });
+    fireEvent.click(paid);
+
+    await waitFor(() => {
+      const call = rpcCalls.find((entry) => entry.name === 'update_project_deposit');
+      expect(call?.args.p_deposit_amount).toBe(175.5);
+      expect(call?.args.p_deposit_status).toBe('paid');
     });
   });
 
@@ -105,6 +152,44 @@ describe('session workflow', () => {
   it('says plainly that no calendar is connected', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: `/projects/${PROJECT_ID}` });
     expect(await screen.findByText(/no calendar provider is connected/i)).toBeInTheDocument();
+  });
+});
+
+describe('detail query scope', () => {
+  it('loads a client enquiry history with a database client_id filter', async () => {
+    const queryCalls: { table: string; method: string; args: unknown[] }[] = [];
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/clients/${CLIENT_ID}`,
+      queryCalls,
+    });
+
+    await screen.findByText('Fixture Client');
+    await waitFor(() => {
+      expect(queryCalls).toContainEqual({
+        table: 'enquiries',
+        method: 'eq',
+        args: ['client_id', CLIENT_ID],
+      });
+    });
+  });
+
+  it('loads project activity with a database project_id filter', async () => {
+    const queryCalls: { table: string; method: string; args: unknown[] }[] = [];
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/projects/${PROJECT_ID}`,
+      queryCalls,
+    });
+
+    await screen.findByText('Raven sleeve');
+    await waitFor(() => {
+      expect(queryCalls).toContainEqual({
+        table: 'activity_log',
+        method: 'eq',
+        args: ['project_id', PROJECT_ID],
+      });
+    });
   });
 });
 
@@ -160,6 +245,17 @@ describe('refusals reach the person', () => {
   it('reports a failed load instead of returning silently empty', async () => {
     const api = createApi(createFakeClient({ role: 'owner', failTable: 'clients' }));
     await expect(api.listClients()).rejects.toThrow(/could not load clients/i);
+  });
+
+  it('does not disguise owner-only data failures as empty finance or jobs', async () => {
+    const financeApi = createApi(createFakeClient({ role: 'owner', failTable: 'projects_finance' }));
+    await expect(financeApi.getProjectFinance(PROJECT_ID)).rejects.toThrow(/could not load project finance/i);
+
+    const sessionsApi = createApi(createFakeClient({ role: 'owner', failTable: 'sessions_finance' }));
+    await expect(sessionsApi.listSessionFinance(PROJECT_ID)).rejects.toThrow(/could not load session finance/i);
+
+    const jobsApi = createApi(createFakeClient({ role: 'owner', failTable: 'integration_outbox' }));
+    await expect(jobsApi.listFailedJobs()).rejects.toThrow(/could not load failed integration jobs/i);
   });
 
   it('shows the error state on screen when a load fails', async () => {
