@@ -41,10 +41,7 @@ export function isCanonicalPath(path) {
 
 export function createStorageClient(supabase, fetchImpl = fetch) {
   const base = `${supabase.url}/storage/v1`;
-  const authHeaders = {
-    apikey: supabase.serviceKey,
-    Authorization: `Bearer ${supabase.serviceKey}`,
-  };
+  const authHeaders = { ...supabase.authHeaders };
 
   async function upload(path, bytes, contentType) {
     if (!isCanonicalPath(path)) {
@@ -70,7 +67,9 @@ export function createStorageClient(supabase, fetchImpl = fetch) {
   /**
    * Compensating delete. Returns a boolean rather than throwing: this runs on
    * the failure path, and a failed cleanup must not mask the original error.
-   * Anything left behind is picked up by reconciliation.
+   * A failed delete remains an orphan until the planned object-sweep job is
+   * implemented; the current intake reconciliation only inspects database
+   * manifests and never claims to clean untracked Storage objects.
    */
   async function remove(path) {
     try {

@@ -2,8 +2,8 @@
 //
 // The outbox is the reason a Telegram or email failure cannot damage a booking:
 // side effects are recorded as durable jobs inside the same transaction that
-// commits the enquiry, then attempted afterwards. An attempt that fails leaves
-// the job for the next drain.
+// commits the enquiry, then attempted afterwards. An attempt that fails remains
+// durable for the planned drain; this module does not schedule or run a drain.
 //
 // Dedupe keys are built in one place so a retry collides with the original job
 // instead of producing a second notification or a duplicate calendar event.

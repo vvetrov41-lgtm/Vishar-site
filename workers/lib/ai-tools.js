@@ -14,8 +14,9 @@
 //   * every read declares exactly which fields it may return, so a tool cannot
 //     quietly widen into a client-data export;
 //   * every read is paginated with a hard row cap;
-//   * every write goes through the same SECURITY DEFINER RPC a person uses, so
-//     it is validated and audited in the same transaction;
+//   * every write would go through a named SECURITY DEFINER RPC. The future
+//     gateway must add attributable AI/on-behalf-of audit semantics before any
+//     execution route is connected;
 //   * `create_email_draft` can only draft. There is no send tool.
 
 /** Hard limits. A tool may ask for fewer rows, never more. */
@@ -179,14 +180,5 @@ export function projectRows(name, rows) {
   return (Array.isArray(rows) ? rows : []).map((row) => projectFields(name, row));
 }
 
-/**
- * The audit entry a write tool must produce, in the same transaction as the
- * write itself. An AI action that is not attributable is not permitted.
- */
-export function auditMetadataFor(name, callerProfileId) {
-  return {
-    tool: name,
-    actor_kind: 'ai',
-    on_behalf_of: callerProfileId,
-  };
-}
+/** No executable gateway, credential, or route is present in this repository. */
+export const AI_GATEWAY_CONNECTED = false;

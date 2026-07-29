@@ -5,3 +5,18 @@ workers_dev = true
 
 [ai]
 binding = "AI"
+
+[vars]
+VISHAR_ENVIRONMENT = "production"
+
+# A preview deploy is a separate Worker (`tattooai-preview`). Bindings are not
+# inherited by Wrangler environments, so the existing AI routes are declared
+# again rather than disappearing from a staging build.
+[env.preview]
+workers_dev = true
+
+[env.preview.ai]
+binding = "AI"
+
+[env.preview.vars]
+VISHAR_ENVIRONMENT = "preview"

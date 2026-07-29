@@ -32,12 +32,10 @@ export function safeMetadata(fields = {}) {
   return safe;
 }
 
-export function intakeMetadata({ referenceNumber, fileCount, source, utmSource }) {
+export function intakeMetadata({ referenceNumber, fileCount }) {
   return safeMetadata({
     reference_number: referenceNumber,
     file_count: fileCount,
-    source,
-    utm_source: utmSource,
   });
 }
 

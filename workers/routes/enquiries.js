@@ -13,20 +13,19 @@
 //   5. finalise;
 //   6. only then, notify.
 //
-// A failure at step 3 or 4 deletes what this attempt uploaded, records a safe
-// failure code, and returns a retryable error. The same idempotency key resumes
-// the original enquiry rather than creating a second one, and an unfinished
-// intake stays out of the normal new-enquiry queue until it completes.
+// A failure at step 3 or 4 deletes only an upload that was not yet committed to
+// a ready manifest, records a safe failure code, and returns a retryable error.
+// Ready object/manifest pairs stay intact for the retry.
 
 import {
   RequestError,
   ConfigurationError,
-  assertRequestSize,
+  parseBoundedMultipartFormData,
   isAllowedOriginFor,
   jsonResponse,
 } from '../lib/http.js';
 import { parseEnquiryFields, parseEnquiryFiles } from '../lib/validation.js';
-import { createSupabaseClient, toRequestError } from '../lib/supabase.js';
+import { createSupabaseClient, SupabaseError, toRequestError } from '../lib/supabase.js';
 import { createStorageClient } from '../lib/storage.js';
 import { buildEnquiryNotification, sendNotification } from '../lib/telegram.js';
 
@@ -43,12 +42,11 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       throw new RequestError('origin_not_allowed', 'This request could not be accepted.', 403);
     }
 
-    assertRequestSize(request);
-
     let form;
     try {
-      form = await request.formData();
-    } catch {
+      form = await parseBoundedMultipartFormData(request);
+    } catch (error) {
+      if (error instanceof RequestError) throw error;
       throw new RequestError('malformed_multipart', 'That submission could not be read. Please try again.');
     }
 
@@ -97,6 +95,8 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
         utm_campaign: enquiry.utmCampaign || null,
         utm_content: enquiry.utmContent || null,
         utm_term: enquiry.utmTerm || null,
+        privacy_acknowledged: enquiry.privacyAcknowledged,
+        privacy_notice_version: enquiry.privacyNoticeVersion,
       },
       p_files: files.map((file) => ({
         mime_type: file.mime_type,
@@ -113,6 +113,19 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
 
     if (!enquiryId || !referenceNumber) {
       throw new RequestError('intake_incomplete', 'We could not save your enquiry. Please try again.', 503);
+    }
+
+    if (
+      manifests.length !== files.length ||
+      manifests.some((manifest, index) => (
+        Number(manifest?.ordinal) !== index ||
+        manifest?.mime_type !== files[index]?.mime_type ||
+        manifest?.safe_extension !== files[index]?.safe_extension ||
+        Number(manifest?.byte_size) !== files[index]?.byte_size ||
+        manifest?.checksum !== files[index]?.checksum
+      ))
+    ) {
+      throw new RequestError('manifest_mismatch', 'We could not save your images. Please try again.', 503);
     }
 
     logger.info('enquiry.persisted', {
@@ -140,7 +153,8 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
     }
 
     // ---- Upload the objects -------------------------------------------------
-    const uploadedPaths = [];
+    const cleanupPaths = new Set();
+    let finalization;
 
     try {
       for (let index = 0; index < manifests.length; index += 1) {
@@ -158,12 +172,28 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
         }
 
         await storage.upload(manifest.storage_path, file.bytes, file.mime_type);
-        uploadedPaths.push(manifest.storage_path);
 
-        await supabase.rpc('mark_enquiry_file_uploaded', {
-          p_file_id: manifest.file_id,
-          p_checksum: file.checksum,
-        });
+        try {
+          await supabase.rpc('mark_enquiry_file_uploaded', {
+            p_file_id: manifest.file_id,
+            p_checksum: file.checksum,
+          });
+        } catch (markError) {
+          // A 4xx is a definitive database rejection: the manifest transaction
+          // did not commit, so this object is safe to compensate. A 5xx or
+          // network loss is ambiguous — Postgres may already have marked it
+          // ready. Retain the object in that case; an exact retry either skips
+          // the ready pair or safely upserts the same checked bytes.
+          if (
+            markError instanceof SupabaseError
+            && markError.status >= 400
+            && markError.status < 500
+            && markError.status !== 429
+          ) {
+            cleanupPaths.add(manifest.storage_path);
+          }
+          throw markError;
+        }
 
         logger.info('enquiry.file_stored', {
           route: 'enquiries',
@@ -175,13 +205,13 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
         });
       }
 
-      await supabase.rpc('finalize_enquiry_intake', { p_enquiry_id: enquiryId });
+      finalization = await supabase.rpc('finalize_enquiry_intake', { p_enquiry_id: enquiryId });
     } catch (uploadError) {
       // Compensating cleanup, then a safe operational failure. The enquiry row
       // survives so the same idempotency key can resume it, and reconciliation
       // can find it, but it does not appear in the normal new-enquiry queue.
       let cleanedUp = 0;
-      for (const path of uploadedPaths) {
+      for (const path of cleanupPaths) {
         if (await storage.remove(path)) cleanedUp += 1;
       }
 
@@ -205,7 +235,7 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
         enquiryId,
         referenceNumber,
         errorCode,
-        uploadedCount: uploadedPaths.length,
+        uncommittedUploadCount: cleanupPaths.size,
         cleanedUpCount: cleanedUp,
         durationMs: Date.now() - startedAt,
       });
@@ -219,8 +249,9 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
 
     // ---- Notify, after the point of no return -------------------------------
     // Everything below this line is best-effort. The enquiry is already durable
-    // and the outbox row created during intake is the retry path, so nothing
-    // here can turn a saved enquiry into a failed submission.
+    // and the outbox row created during finalisation preserves the provider
+    // outcome for the future drain, so nothing here can turn a saved enquiry
+    // into a failed submission.
     const notification = await sendNotification(
       env,
       buildEnquiryNotification({
@@ -230,6 +261,27 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       }),
       fetchImpl
     );
+
+    const outboxId = finalization?.outbox_id;
+    if (outboxId) {
+      try {
+        await supabase.rpc('record_outbox_attempt', {
+          p_outbox_id: outboxId,
+          p_succeeded: notification.delivered,
+          p_error_code: notification.delivered ? null : notification.errorCode,
+        });
+      } catch {
+        // The durable job remains pending/failed for the planned drain. A provider
+        // may have accepted the message before this acknowledgement failed, so
+        // delivery is explicitly at-least-once.
+        logger.warn('enquiry.notification_outcome_unrecorded', {
+          route: 'enquiries',
+          enquiryId,
+          referenceNumber,
+          outboxId,
+        });
+      }
+    }
 
     if (!notification.delivered) {
       logger.warn('enquiry.notification_failed', {

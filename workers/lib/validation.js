@@ -9,6 +9,7 @@ import { RequestError } from './http.js';
 export const MAX_FILES = 3;
 export const MIN_FILES = 1;
 export const MAX_FILE_BYTES = 4 * 1024 * 1024;
+export const PRIVACY_NOTICE_VERSION = '2026-07-29';
 
 export const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
@@ -17,6 +18,12 @@ const EXTENSION_FOR_MIME = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
+};
+
+const EXTENSIONS_FOR_MIME = {
+  'image/jpeg': new Set(['jpg', 'jpeg']),
+  'image/png': new Set(['png']),
+  'image/webp': new Set(['webp']),
 };
 
 const ALLOWED_REPLY_METHODS = new Set(['Email', 'WhatsApp', 'Instagram']);
@@ -46,6 +53,7 @@ export const FIELD_LIMITS = {
   utmCampaign: 160,
   utmContent: 160,
   utmTerm: 160,
+  privacyNoticeVersion: 40,
 };
 
 export function cleanText(value, maxLength) {
@@ -103,7 +111,13 @@ export function parseEnquiryFields(form) {
     utmCampaign: cleanText(field(form, 'utmCampaign'), FIELD_LIMITS.utmCampaign),
     utmContent: cleanText(field(form, 'utmContent'), FIELD_LIMITS.utmContent),
     utmTerm: cleanText(field(form, 'utmTerm'), FIELD_LIMITS.utmTerm),
+    privacyNoticeVersion: cleanText(
+      field(form, 'privacyNoticeVersion'),
+      FIELD_LIMITS.privacyNoticeVersion
+    ),
   };
+
+  const privacyAcknowledged = field(form, 'privacyAcknowledged') === 'true';
 
   const required = ['name', 'email', 'preferredReply', 'projectType', 'placement', 'size', 'coverUp', 'idea'];
   if (required.some((key) => !enquiry[key])) {
@@ -121,6 +135,13 @@ export function parseEnquiryFields(form) {
     );
   }
 
+  if (!privacyAcknowledged || enquiry.privacyNoticeVersion !== PRIVACY_NOTICE_VERSION) {
+    throw new RequestError(
+      'privacy_notice_not_acknowledged',
+      'Please read and acknowledge the current privacy notice.'
+    );
+  }
+
   if (enquiry.preferredReply === 'WhatsApp' && !enquiry.phone) {
     throw new RequestError(
       'missing_whatsapp_number',
@@ -135,7 +156,11 @@ export function parseEnquiryFields(form) {
     );
   }
 
-  return { honeypot: false, idempotencyKey, enquiry };
+  return {
+    honeypot: false,
+    idempotencyKey,
+    enquiry: { ...enquiry, privacyAcknowledged },
+  };
 }
 
 export function extensionFromFilename(filename) {
@@ -203,7 +228,7 @@ export async function parseEnquiryFiles(form) {
     }
 
     const declaredExtension = extensionFromFilename(entry.name);
-    if (declaredExtension && !ALLOWED_EXTENSIONS.has(declaredExtension)) {
+    if (!declaredExtension || !ALLOWED_EXTENSIONS.has(declaredExtension)) {
       throw new RequestError('invalid_file_extension', 'Reference images must be JPG, PNG or WebP.');
     }
 
@@ -224,6 +249,12 @@ export async function parseEnquiryFiles(form) {
     }
     if (sniffed !== declaredType) {
       throw new RequestError('file_content_mismatch', 'One of the reference images did not match its file type.');
+    }
+    if (!EXTENSIONS_FOR_MIME[sniffed]?.has(declaredExtension)) {
+      throw new RequestError(
+        'file_extension_mismatch',
+        'One of the reference images did not match its filename extension.'
+      );
     }
 
     descriptors.push({

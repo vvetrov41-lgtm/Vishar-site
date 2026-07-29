@@ -23,7 +23,7 @@ import { handleEnquiryIntake } from './routes/enquiries.js';
 export default {
   async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin") || "";
-    const cors = getCorsHeaders(origin);
+    const cors = getCorsHeaders(origin, env);
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }

@@ -3,7 +3,8 @@
 // Telegram is a NOTIFICATION, not the record. Every function here is
 // best-effort: it reports what happened and never throws into the intake path.
 // Losing every Telegram message loses no business data — the enquiry is already
-// committed in Postgres, and the outbox row keeps the retry.
+// committed in Postgres. The outbox row records the failed side effect for the
+// future drain; no automatic retry runs until that drain is deployed.
 //
 // The notification carries the reference number and a count, never the client's
 // details. Whoever receives it opens the CRM to see the enquiry; the messaging

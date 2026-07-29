@@ -49,7 +49,9 @@ export function dedupeKeyFor(action, session) {
  * - `none`   nothing to do: not confirmed and never was.
  * - `create` confirmed, no event yet.
  * - `update` confirmed, event exists.
- * - `cancel` no longer confirmed, but an event exists that must be withdrawn.
+ * - `cancel` explicitly cancelled, and an event exists that must be withdrawn.
+ *
+ * Completed and no-show sessions keep their historical provider event.
  */
 export function planCalendarAction(session) {
   const hasEvent = Boolean(session?.calendar_event_id);
@@ -58,7 +60,7 @@ export function planCalendarAction(session) {
     return { action: hasEvent ? 'update' : 'create', dedupeKey: dedupeKeyFor(hasEvent ? 'update' : 'create', session) };
   }
 
-  if (hasEvent) {
+  if (session?.status === 'cancelled' && hasEvent) {
     return { action: 'cancel', dedupeKey: dedupeKeyFor('cancel', session) };
   }
 
@@ -96,6 +98,9 @@ export function createCalendarService(provider = null) {
     },
 
     async cancelConfirmedEvent(session) {
+      if (session?.status !== 'cancelled') {
+        throw new Error('only a cancelled session may withdraw a calendar event');
+      }
       if (!provider) throw new CalendarNotConnectedError('cancel');
       if (!session.calendar_event_id) return { cancelled: false, reason: 'no_event' };
       await provider.cancelEvent(session.calendar_event_id);

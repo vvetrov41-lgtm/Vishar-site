@@ -9,11 +9,13 @@
 // No network call leaves this process: global fetch is replaced for every case.
 
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const worker = (await import(pathToFileURL(path.join(rootDir, 'workers/tattooai.js')).href)).default;
+const bookingHtml = await readFile(path.join(rootDir, 'booking/index.html'), 'utf8');
 
 const ORIGIN = 'https://vishartattoo.com';
 const ENDPOINT = 'https://tattooai.vvetrov41.workers.dev/';
@@ -53,6 +55,17 @@ async function test(name, fn) {
     for (const line of captured) realConsole.error(`     | ${line}`);
   }
 }
+
+await test('the browser keeps the idempotency key for ambiguous server failures', async () => {
+  assert.match(
+    bookingHtml,
+    /if\s*\(response\.status\s*>=\s*400\s*&&\s*response\.status\s*<\s*500\)\s*clearIdempotencyKey\(\)/
+  );
+  assert.doesNotMatch(
+    bookingHtml,
+    /if\s*\(response\.status\s*>=\s*500[^}]*clearIdempotencyKey\(\)/
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -100,6 +113,8 @@ function enquiryForm(overrides = {}) {
     referrer: 'https://www.google.com/',
     utmSource: 'google',
     utmMedium: 'organic',
+    privacyAcknowledged: 'true',
+    privacyNoticeVersion: '2026-07-29',
     ...overrides.fields,
   };
 
@@ -155,11 +170,24 @@ function stubBackend(overrides = {}) {
           client_conflict: state.clientConflict,
           files: args.p_files.map((file, index) => ({
             file_id: state.fileIds[index],
+            ordinal: index,
             storage_path: `clients/${state.clientId}/enquiries/${state.enquiryId}/references/${state.fileIds[index]}.${file.safe_extension}`,
             upload_state: state.replayed && state.intakeState === 'complete' ? 'ready' : 'pending',
             mime_type: file.mime_type,
             safe_extension: file.safe_extension,
+            byte_size: file.byte_size,
+            checksum: file.checksum,
           })).slice(0, fileCount),
+        });
+      }
+
+      if (name === 'finalize_enquiry_intake') {
+        return Response.json({
+          enquiry_id: state.enquiryId,
+          intake_state: 'complete',
+          reference_number: state.reference,
+          outbox_id: '0b0b0b0b-0000-4000-8000-000000000001',
+          changed: true,
         });
       }
 
@@ -225,6 +253,8 @@ for (const count of [1, 2, 3]) {
     assert.equal(calls.rpc.filter((c) => c.name === 'mark_enquiry_file_uploaded').length, count);
     assert.equal(calls.rpc.filter((c) => c.name === 'finalize_enquiry_intake').length, 1);
     assert.equal(calls.telegram, 1, 'the notification is sent after persistence');
+    const notificationAttempt = calls.rpc.find((c) => c.name === 'record_outbox_attempt');
+    assert.equal(notificationAttempt?.args.p_succeeded, true);
   });
 }
 
@@ -246,6 +276,8 @@ await test('attribution and idempotency reach the database', async () => {
   assert.equal(intake.args.p_enquiry.utm_medium, 'organic');
   assert.equal(intake.args.p_enquiry.referrer, 'https://www.google.com/');
   assert.equal(intake.args.p_enquiry.landing_page, 'https://vishartattoo.com/booking/?utm_source=google');
+  assert.equal(intake.args.p_enquiry.privacy_acknowledged, true);
+  assert.equal(intake.args.p_enquiry.privacy_notice_version, '2026-07-29');
 });
 
 await test('the storage path is server-derived, never client-supplied', async () => {
@@ -289,6 +321,34 @@ await test('a replay of an unfinished enquiry resumes the upload', async () => {
   assert.equal(calls.rpc.filter((c) => c.name === 'finalize_enquiry_intake').length, 1);
 });
 
+await test('a manifest whose order or descriptor changed is never uploaded', async () => {
+  const calls = stubBackend({
+    rpc: {
+      create_enquiry_intake: async (args) => Response.json({
+        enquiry_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        client_id: 'cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        reference_number: 'ENQ-2026-0001',
+        intake_state: 'files_pending',
+        replayed: true,
+        files: [{
+          file_id: 'f1111111-1111-4111-8111-111111111111',
+          ordinal: 1,
+          storage_path: 'clients/cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee/enquiries/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/references/f1111111-1111-4111-8111-111111111111.jpg',
+          upload_state: 'pending',
+          mime_type: args.p_files[0].mime_type,
+          safe_extension: args.p_files[0].safe_extension,
+          byte_size: args.p_files[0].byte_size,
+          checksum: args.p_files[0].checksum,
+        }],
+      }),
+    },
+  });
+  const { response, payload } = await send(enquiryForm());
+  assert.equal(response.status, 503);
+  assert.equal(payload.code, 'manifest_mismatch');
+  assert.equal(calls.uploads.length, 0);
+});
+
 // ---------------------------------------------------------------------------
 // Durable intake — rejections
 // ---------------------------------------------------------------------------
@@ -310,9 +370,27 @@ await test('a disallowed Origin is rejected, not merely un-readable', async () =
   assert.equal(calls.rpc.length, 0);
 });
 
-await test('an approved preview origin is accepted', async () => {
+await test('a preview origin is rejected unless that environment names it exactly', async () => {
+  const calls = stubBackend();
+  const { response } = await send(enquiryForm(), {
+    origin: 'https://abc123.vishar-site.pages.dev',
+    env: { ...env, VISHAR_ENVIRONMENT: 'preview' },
+  });
+  assert.equal(response.status, 403);
+  assert.equal(calls.rpc.length, 0);
+});
+
+await test('an exact preview allow-list accepts its own origin', async () => {
   stubBackend();
-  const { response } = await send(enquiryForm(), { origin: 'https://abc123.vishar-site.pages.dev' });
+  const previewOrigin = 'https://abc123.vishar-site.pages.dev';
+  const { response } = await send(enquiryForm(), {
+    origin: previewOrigin,
+    env: {
+      ...env,
+      VISHAR_ENVIRONMENT: 'preview',
+      ALLOWED_ORIGINS: previewOrigin,
+    },
+  });
   assert.equal(response.status, 200);
 });
 
@@ -321,6 +399,24 @@ await test('an over-large declared body is rejected before parsing', async () =>
   const { response, payload } = await send(enquiryForm(), {
     headers: { 'Content-Length': String(20 * 1024 * 1024) },
   });
+  assert.equal(response.status, 413);
+  assert.equal(payload.code, 'request_too_large');
+  assert.equal(calls.rpc.length, 0);
+});
+
+await test('a chunked body is bounded even without Content-Length', async () => {
+  const calls = stubBackend();
+  const request = new Request(ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Origin: ORIGIN,
+      'Content-Type': 'multipart/form-data; boundary=bounded',
+    },
+    body: new Uint8Array(13 * 1024 * 1024 + 1),
+  });
+  assert.equal(request.headers.get('Content-Length'), null);
+  const response = await worker.fetch(request, env);
+  const payload = await response.json();
   assert.equal(response.status, 413);
   assert.equal(payload.code, 'request_too_large');
   assert.equal(calls.rpc.length, 0);
@@ -352,6 +448,16 @@ await test('a missing required field is rejected', async () => {
   const { response, payload } = await send(enquiryForm({ fields: { placement: '' } }));
   assert.equal(response.status, 400);
   assert.equal(payload.code, 'missing_required_field');
+  assert.equal(calls.rpc.length, 0);
+});
+
+await test('the current privacy notice must be acknowledged', async () => {
+  const calls = stubBackend();
+  const { response, payload } = await send(enquiryForm({
+    fields: { privacyAcknowledged: 'false' },
+  }));
+  assert.equal(response.status, 400);
+  assert.equal(payload.code, 'privacy_notice_not_acknowledged');
   assert.equal(calls.rpc.length, 0);
 });
 
@@ -439,6 +545,24 @@ await test('a disallowed file extension is rejected', async () => {
   assert.equal(payload.code, 'invalid_file_extension');
 });
 
+await test('a missing file extension is rejected', async () => {
+  stubBackend();
+  const { response, payload } = await send(enquiryForm({
+    files: [imageFile(JPEG, 'image/jpeg', 'reference')],
+  }));
+  assert.equal(response.status, 400);
+  assert.equal(payload.code, 'invalid_file_extension');
+});
+
+await test('the filename extension must agree with the image type', async () => {
+  stubBackend();
+  const { response, payload } = await send(enquiryForm({
+    files: [imageFile(PNG, 'image/png', 'reference.jpg')],
+  }));
+  assert.equal(response.status, 400);
+  assert.equal(payload.code, 'file_extension_mismatch');
+});
+
 await test('the honeypot answers as success and stores nothing', async () => {
   const calls = stubBackend();
   const { response, payload } = await send(enquiryForm({ fields: { website: 'https://spam.example' } }));
@@ -486,7 +610,7 @@ await test('a total Storage failure cleans up and records a safe failure code', 
   assert.equal(calls.telegram, 0);
 });
 
-await test('a partial Storage failure deletes what this attempt uploaded', async () => {
+await test('a later Storage failure keeps earlier ready object-manifest pairs', async () => {
   const calls = stubBackend({ uploadFailsAt: 2 });
   const files = [
     imageFile(JPEG, 'image/jpeg', 'a.jpg'),
@@ -497,9 +621,68 @@ await test('a partial Storage failure deletes what this attempt uploaded', async
 
   assert.equal(response.status, 503);
   assert.equal(payload.code, 'storage_upload_failed');
-  assert.equal(calls.deletes.length, 1, 'the one successful upload is compensated');
-  assert.ok(calls.deletes[0].includes('/crm-files/'), 'the deletion targets the private bucket');
+  assert.equal(calls.deletes.length, 0, 'an upload already marked ready is retained for retry');
   assert.equal(calls.rpc.filter((c) => c.name === 'finalize_enquiry_intake').length, 0);
+});
+
+await test('an upload is compensated after a definitive 4xx manifest rejection', async () => {
+  const calls = stubBackend({
+    rpc: {
+      mark_enquiry_file_uploaded: async (_args, allCalls) => {
+        const attempts = allCalls.rpc.filter((call) => call.name === 'mark_enquiry_file_uploaded').length;
+        return attempts === 2
+          ? new Response('{}', { status: 400 })
+          : Response.json({ ok: true });
+      },
+    },
+  });
+  const files = [
+    imageFile(JPEG, 'image/jpeg', 'a.jpg'),
+    imageFile(JPEG, 'image/jpeg', 'b.jpg'),
+  ];
+  const { response, payload } = await send(enquiryForm({ files }));
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.code, 'intake_finalisation_failed');
+  assert.equal(calls.deletes.length, 1, 'only the uncommitted second upload is removed');
+  assert.ok(calls.deletes[0].includes('f2222222-2222-4222-8222-222222222222'));
+});
+
+await test('an ambiguous 5xx manifest response never deletes a possibly committed object', async () => {
+  const calls = stubBackend({
+    rpc: {
+      mark_enquiry_file_uploaded: async (_args, allCalls) => {
+        const attempts = allCalls.rpc.filter((call) => call.name === 'mark_enquiry_file_uploaded').length;
+        return attempts === 2
+          ? new Response('{}', { status: 500 })
+          : Response.json({ ok: true });
+      },
+    },
+  });
+  const files = [
+    imageFile(JPEG, 'image/jpeg', 'a.jpg'),
+    imageFile(JPEG, 'image/jpeg', 'b.jpg'),
+  ];
+  const { response, payload } = await send(enquiryForm({ files }));
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.code, 'intake_finalisation_failed');
+  assert.equal(calls.deletes.length, 0, 'a 5xx may follow a committed mark, so the object is retained');
+});
+
+await test('a lost manifest acknowledgement never deletes a possibly committed object', async () => {
+  const calls = stubBackend({
+    rpc: {
+      mark_enquiry_file_uploaded: async () => {
+        throw new TypeError('connection reset after commit');
+      },
+    },
+  });
+  const { response, payload } = await send(enquiryForm());
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.code, 'intake_finalisation_failed');
+  assert.equal(calls.deletes.length, 0, 'an unknown commit outcome must preserve the uploaded bytes');
 });
 
 await test('the enquiry survives a Storage failure so the same key can resume it', async () => {
@@ -517,6 +700,9 @@ await test('a Telegram failure after a durable save still reports success', asyn
   assert.equal(payload.ok, true);
   assert.equal(payload.reference, 'ENQ-2026-0001');
   assert.equal(calls.rpc.filter((c) => c.name === 'finalize_enquiry_intake').length, 1);
+  const attempt = calls.rpc.find((c) => c.name === 'record_outbox_attempt');
+  assert.equal(attempt?.args.p_succeeded, false);
+  assert.equal(attempt?.args.p_error_code, 'telegram_rejected');
 });
 
 await test('an unreachable Telegram still reports success', async () => {
@@ -601,6 +787,8 @@ await test('the service-role key is only ever sent to Supabase', async () => {
     const serialised = JSON.stringify(headers) + String(init.body ?? '');
     seen.push({ url: String(url), leaks: serialised.includes('test-service-role-key') });
     if (String(url).includes('/rest/v1/rpc/create_enquiry_intake')) {
+      const args = JSON.parse(init.body);
+      const file = args.p_files[0];
       return Response.json({
         enquiry_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
         client_id: 'cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -609,8 +797,13 @@ await test('the service-role key is only ever sent to Supabase', async () => {
         replayed: false,
         files: [{
           file_id: 'f1111111-1111-4111-8111-111111111111',
+          ordinal: 0,
           storage_path: 'clients/cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee/enquiries/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/references/f1111111-1111-4111-8111-111111111111.jpg',
           upload_state: 'pending',
+          mime_type: file.mime_type,
+          safe_extension: file.safe_extension,
+          byte_size: file.byte_size,
+          checksum: file.checksum,
         }],
       });
     }

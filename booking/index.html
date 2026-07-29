@@ -31,6 +31,9 @@
   <meta name="twitter:title" content="London Tattoo Booking | Vladimir Vishar">
   <meta name="twitter:description" content="London enquiries are now open. Send your tattoo idea directly to Vladimir.">
   <meta name="twitter:image" content="https://vishartattoo.com/assets/og/og-2.jpg">
+  <!-- Staging must set its own preview Worker URL. Empty means production
+       hosts use the production Worker and every other host fails closed. -->
+  <meta name="vishar-booking-endpoint" content="">
   <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/tailwind.css">
   <style>
@@ -108,7 +111,7 @@
           </div>
 
           <div class="mt-6 hidden" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
-          <label class="mt-6 flex items-start gap-3 text-sm leading-relaxed text-white/50"><input class="consent-box mt-1 h-4 w-4" type="checkbox" name="consent" required><span>I agree that my details and images may be used to review and reply to this tattoo enquiry. See the <a href="/privacy/" class="text-white underline underline-offset-4 decoration-white/20">privacy notice</a>. <span class="required">*</span></span></label>
+          <label class="mt-6 flex items-start gap-3 text-sm leading-relaxed text-white/50"><input class="consent-box mt-1 h-4 w-4" type="checkbox" name="privacyAcknowledged" required><span>I have read the <a href="/privacy/" class="text-white underline underline-offset-4 decoration-white/20">privacy notice</a> and understand how my details and images will be used to review and reply to this enquiry. <span class="required">*</span></span></label>
 
           <button id="enquiry-submit" type="submit" class="mt-7 w-full rounded-full bg-white px-6 py-4 font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Send enquiry to Vladimir</button>
           <p id="enquiry-status" class="status-box mt-4 text-sm text-white/50" role="status" aria-live="polite"></p>
@@ -120,7 +123,11 @@
   <script src="/components.js" defer></script>
   <script>
   (function () {
-    const endpoint = 'https://tattooai.vvetrov41.workers.dev/';
+    const productionEndpoint = 'https://tattooai.vvetrov41.workers.dev/';
+    const configuredEndpoint = (document.querySelector('meta[name="vishar-booking-endpoint"]') || {}).content || '';
+    const productionHost = window.location.hostname === 'vishartattoo.com'
+      || window.location.hostname === 'www.vishartattoo.com';
+    const endpoint = configuredEndpoint.trim() || (productionHost ? productionEndpoint : '');
     const form = document.getElementById('tattoo-enquiry-form');
     const filesInput = document.getElementById('reference-files');
     const button = document.getElementById('enquiry-submit');
@@ -134,24 +141,29 @@
     const instagramRequiredNote = document.getElementById('instagram-required-note');
     const startedAt = Date.now();
     const IDEMPOTENCY_STORAGE_KEY = 'vishar.enquiry.idempotencyKey';
+    const PRIVACY_NOTICE_VERSION = '2026-07-29';
 
     // One key per attempt, kept in sessionStorage until the enquiry is
     // confirmed saved. A retry after a dropped connection therefore reuses the
     // same key, and the server returns the original enquiry instead of
-    // creating a second one. It is cleared only on confirmed success.
+    // creating a second one. It is cleared on confirmed success or a
+    // definitive 4xx rejection; ambiguous network/5xx failures retain it.
     function idempotencyKey() {
       var existing = '';
       try { existing = sessionStorage.getItem(IDEMPOTENCY_STORAGE_KEY) || ''; } catch (error) { existing = ''; }
       if (existing) return existing;
-      var created = (window.crypto && window.crypto.randomUUID)
-        ? window.crypto.randomUUID()
-        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (character) {
-            var random = (window.crypto && window.crypto.getRandomValues)
-              ? window.crypto.getRandomValues(new Uint8Array(1))[0] % 16
-              : Math.floor(Math.random() * 16);
-            var value = character === 'x' ? random : (random & 0x3) | 0x8;
-            return value.toString(16);
-          });
+      var created;
+      if (window.crypto && window.crypto.randomUUID) {
+        created = window.crypto.randomUUID();
+      } else if (window.crypto && window.crypto.getRandomValues) {
+        created = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (character) {
+          var random = window.crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+          var value = character === 'x' ? random : (random & 0x3) | 0x8;
+          return value.toString(16);
+        });
+      } else {
+        throw new Error('This browser cannot create a secure booking reference. Please update it and try again.');
+      }
       try { sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, created); } catch (error) { /* private mode */ }
       return created;
     }
@@ -234,7 +246,12 @@
         textFields.forEach(function (field) { payload.append(field, data.get(field) || ''); });
 
         const context = attribution();
+        if (!endpoint) {
+          throw new Error('Booking is not configured on this preview. Please use the live booking page.');
+        }
         payload.append('idempotencyKey', idempotencyKey());
+        payload.append('privacyAcknowledged', data.get('privacyAcknowledged') ? 'true' : 'false');
+        payload.append('privacyNoticeVersion', PRIVACY_NOTICE_VERSION);
         payload.append('source', '/booking/');
         payload.append('landingPage', context.landingPage);
         payload.append('referrer', context.referrer);
@@ -248,7 +265,14 @@
 
         const response = await fetch(endpoint, { method: 'POST', body: payload });
         const result = await response.json().catch(function () { return {}; });
-        if (!response.ok || !result.ok) throw new Error(result.error || 'Request failed');
+        if (!response.ok || !result.ok) {
+          // A 4xx is a definitive rejection before this payload became a
+          // successful intake. Forget the key so corrected details can start a
+          // new attempt. For a 5xx or lost connection, keep it: the server may
+          // already have committed the enquiry and an exact retry must replay.
+          if (response.status >= 400 && response.status < 500) clearIdempotencyKey();
+          throw new Error(result.error || 'Request failed');
+        }
 
         // Only now is the enquiry known to be saved with its images, so only
         // now is it safe to forget the key.
@@ -263,9 +287,9 @@
         button.textContent = 'Enquiry sent';
       } catch (error) {
         console.error('Tattoo enquiry failed', error);
-        // The key is deliberately kept: pressing Try again reuses it, so a
-        // retry after a dropped connection resumes the same enquiry rather
-        // than creating a duplicate.
+        // Ambiguous failures deliberately keep the key, so pressing Try again
+        // after a dropped connection resumes the same enquiry rather than
+        // creating a duplicate. A definitive 4xx rejection cleared it above.
         status.textContent = (error && error.message)
           ? error.message
           : 'The form could not be sent. Please email info@vishartattoo.com instead.';

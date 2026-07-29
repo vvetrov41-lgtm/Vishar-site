@@ -2,7 +2,7 @@
 //
 // This client can call exactly the RPCs listed in ALLOWED_RPCS. It has no
 // generic table endpoint, no query builder and no way to send arbitrary SQL —
-// the service-role key it carries is powerful, so the call surface is kept
+// the backend key it carries is powerful, so the call surface is kept
 // deliberately small.
 //
 // The key is never logged, never echoed in an error, and never returned to a
@@ -21,6 +21,7 @@ export const ALLOWED_RPCS = new Set([
   'mark_enquiry_file_uploaded',
   'finalize_enquiry_intake',
   'fail_enquiry_intake',
+  'record_outbox_attempt',
   'list_incomplete_intakes',
 ]);
 
@@ -36,21 +37,85 @@ export class SupabaseError extends Error {
 }
 
 export function readSupabaseConfig(env) {
-  const url = typeof env?.SUPABASE_URL === 'string' ? env.SUPABASE_URL.replace(/\/+$/, '') : '';
-  const serviceKey = typeof env?.SUPABASE_SERVICE_ROLE_KEY === 'string' ? env.SUPABASE_SERVICE_ROLE_KEY : '';
+  const rawUrl = typeof env?.SUPABASE_URL === 'string' ? env.SUPABASE_URL.trim() : '';
+  const secretKey = typeof env?.SUPABASE_SECRET_KEY === 'string' ? env.SUPABASE_SECRET_KEY.trim() : '';
+  const legacyServiceRoleKey = typeof env?.SUPABASE_SERVICE_ROLE_KEY === 'string'
+    ? env.SUPABASE_SERVICE_ROLE_KEY.trim()
+    : '';
 
-  if (!url || !serviceKey) {
+  if (secretKey && legacyServiceRoleKey) {
+    throw new ConfigurationError(
+      'supabase_key_conflict',
+      'Configure one Supabase backend key, not both the secret and legacy service-role key.'
+    );
+  }
+
+  if (secretKey && !secretKey.startsWith('sb_secret_')) {
+    throw new ConfigurationError(
+      'invalid_supabase_secret_key',
+      'The Supabase secret key is not in the expected format.'
+    );
+  }
+
+  if (legacyServiceRoleKey.startsWith('sb_secret_')) {
+    throw new ConfigurationError(
+      'supabase_secret_key_misnamed',
+      'Configure a Supabase secret key through SUPABASE_SECRET_KEY.'
+    );
+  }
+
+  if (!rawUrl || (!secretKey && !legacyServiceRoleKey)) {
     // Refusing here is the point. Falling back to notification-only behaviour
     // would silently turn a durable booking system back into a Telegram relay,
     // and the visitor would be told their enquiry was saved when it was not.
     throw new ConfigurationError('supabase_not_configured', 'The booking system is not configured.');
   }
 
-  return { url, serviceKey };
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawUrl);
+  } catch {
+    throw new ConfigurationError(
+      'invalid_supabase_url',
+      'The booking database URL is not valid.'
+    );
+  }
+
+  if (
+    parsedUrl.protocol !== 'https:'
+    || !/^[a-z0-9-]+\.supabase\.co$/i.test(parsedUrl.hostname)
+    || parsedUrl.port
+    || parsedUrl.username
+    || parsedUrl.password
+    || parsedUrl.pathname !== '/'
+    || parsedUrl.search
+    || parsedUrl.hash
+  ) {
+    // The backend key is sent to this origin. A typo or an arbitrary custom
+    // host must fail closed instead of receiving a privileged credential.
+    throw new ConfigurationError(
+      'invalid_supabase_url',
+      'Configure the HTTPS project root URL from Supabase.'
+    );
+  }
+
+  const url = parsedUrl.origin;
+  const authHeaders = secretKey
+    ? { apikey: secretKey }
+    : {
+        apikey: legacyServiceRoleKey,
+        Authorization: `Bearer ${legacyServiceRoleKey}`,
+      };
+
+  return {
+    url,
+    authHeaders,
+    keyKind: secretKey ? 'secret' : 'legacy_service_role',
+  };
 }
 
 export function createSupabaseClient(env, fetchImpl = fetch) {
-  const { url, serviceKey } = readSupabaseConfig(env);
+  const { url, authHeaders, keyKind } = readSupabaseConfig(env);
 
   async function rpc(name, args) {
     if (!ALLOWED_RPCS.has(name)) {
@@ -60,8 +125,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
     const response = await fetchImpl(`${url}/rest/v1/rpc/${name}`, {
       method: 'POST',
       headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
+        ...authHeaders,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -75,7 +139,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
     return response.json();
   }
 
-  return { url, rpc, serviceKey };
+  return { url, rpc, authHeaders, keyKind };
 }
 
 /**
