@@ -1,0 +1,69 @@
+# Local Supabase development configuration for the Vishar Tattoo CRM.
+#
+# This file configures a LOCAL development stack only. It deliberately
+# contains no project reference, no hosted URL, no email address, no
+# password, no API key and no token. Hosted staging and production projects
+# are created manually by the owner (docs/crm/OWNER_SETUP.md) and are linked
+# with `supabase link`, which stores the project ref outside this file.
+
+project_id = "vishar-crm-local"
+
+[api]
+enabled = true
+port = 54321
+# Only `public` is exposed through PostgREST. Internal helpers live in
+# `crm_private` and are never reachable over the API.
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 200
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = true
+port = 54323
+
+# Local mail catcher. No mail leaves the machine.
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+# Matches the per-file limit enforced by the Worker and by the
+# `crm-files` bucket created in migration 0008.
+file_size_limit = "4MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+# Staff accounts are provisioned by the owner, never self-service.
+enable_signup = false
+
+[auth.email]
+enable_signup = false
+double_confirm_changes = true
+enable_confirmations = false
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+# No external OAuth provider is configured. Gmail and Google Calendar are
+# deliberately not connected; see docs/crm/OWNER_SETUP.md section 8.
+
+[analytics]
+enabled = false

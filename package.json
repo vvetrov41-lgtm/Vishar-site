@@ -9,6 +9,7 @@
     "build:tailwind": "tailwindcss -i ./assets/css/input.css -o ./assets/css/tailwind.css --minify",
     "validate:site": "node scripts/validate-site.mjs",
     "test:booking": "node scripts/test-booking-flow.mjs",
+    "test:db": "bash scripts/run-crm-db-tests.sh",
     "vendor:3d-libs": "node scripts/vendor-3d-libs.mjs",
     "vendor:3d-libs:check": "node scripts/vendor-3d-libs.mjs --check",
     "vendor:fonts": "node scripts/vendor-fonts.mjs",
