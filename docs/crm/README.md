@@ -127,7 +127,7 @@ docs/crm/                    this documentation set
 supabase/
   config.toml                local development configuration only, no secrets
   seed.sql                   local-only fixtures, clearly fake
-  migrations/                ordered, forward-only SQL migrations 0001–0011
+  migrations/                ordered, forward-only SQL migrations 0001–0012
   tests/                     canonical pgTAP tests only
 workers/
   tattooai.js                compatibility entry point and thin router
@@ -189,6 +189,7 @@ Migrations are forward-only and must be applied in filename order:
 | `0009_bootstrap_owner.sql` | idempotent owner promotion, no hard-coded identity |
 | `0010_retention_settings.sql` | `system_settings`, retention disabled with null durations |
 | `0011_conversion_idempotency.sql` | exact conversion retry returns the existing project without a duplicate |
+| `0012_default_function_acl.sql` | closes existing and future function execution unless explicitly granted |
 
 Never edit an applied migration. Correct it with a new, higher-numbered
 migration.

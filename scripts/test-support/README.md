@@ -33,7 +33,7 @@ hosted-Supabase pass.
 
 | Difference | Direction | Effect on the tests |
 |---|---|---|
-| The migration owner is `NOSUPERUSER NOBYPASSRLS`; hosted `postgres` has `BYPASSRLS` | **stricter here** | `FORCE ROW LEVEL SECURITY` really does apply to SECURITY DEFINER functions, so the policies must be genuinely correct. A pass here implies a pass on Supabase. |
+| The migration owner is named `postgres` like Supabase, but is `NOSUPERUSER NOBYPASSRLS`; hosted `postgres` has `BYPASSRLS` | **stricter here** | Owner-scoped default ACL migrations target the same role name, while `FORCE ROW LEVEL SECURITY` still applies to SECURITY DEFINER functions. |
 | `service_role` has no `BYPASSRLS`; on Supabase it does | **stricter here** | The Worker's intake path must satisfy real policies rather than bypassing them. |
 | `storage.objects` has only the columns policy code touches | narrower | Nothing in migration 0008 references the omitted columns. |
 | No PostgREST, no GoTrue, no Storage API | narrower | Tests set `request.jwt.claims` directly instead of presenting a JWT. Anything that depends on the HTTP layer — signed-URL minting, JWT expiry, the `authenticator` → `SET ROLE` hop — is **not** covered here. |

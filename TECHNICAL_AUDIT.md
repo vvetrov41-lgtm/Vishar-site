@@ -118,6 +118,75 @@ PostgreSQL server binaries are not installed. Docker and Supabase CLI are also
 unavailable locally. Canonical pgTAP and `supabase db lint` therefore remain
 pending until the next GitHub CI run; no local pgTAP pass is claimed.
 
+### Third GitHub CI follow-up
+
+The third GitHub Actions run against
+`088e7e6be22f33bd22a58becfdd6af709bc2eaa5` passed Static Validation,
+Public site and Worker, Private CRM, clean Supabase startup and migrations, and
+the clean database reset without the optional development seed. Six of seven
+canonical pgTAP files passed. The run executed 469 assertions; only assertions
+98–100 in `050_rls_roles.sql` failed, and `supabase db lint` was consequently
+skipped.
+
+Those three post-migration probes created a new function in `public` and proved
+that `anon`, `authenticated` and `service_role` could still execute it through
+PostgreSQL's implicit `PUBLIC` privilege. This was a genuine database boundary
+defect: the Supabase CLI's default-privilege setup removes direct function
+grants to those three API roles, but does not remove the built-in function
+`EXECUTE` grant to `PUBLIC`, of which every role is a member.
+
+Inspection of the pinned Supabase CLI `2.110.0` path used by CI confirmed that
+local migrations and `supabase test db` connect as the `postgres` role. The
+earlier statement was owner-relative but schema-specific. PostgreSQL's
+built-in function `EXECUTE` for `PUBLIC` is a global default; a schema-specific
+`REVOKE` cannot subtract a global default privilege. Forward-only migration
+`0012_default_function_acl.sql` now:
+
+- removes inherited `PUBLIC` execution from existing functions in `public` and
+  `crm_private`, without removing deliberate role-specific grants;
+- globally revokes future function execution from `PUBLIC`, `anon`,
+  `authenticated` and `service_role` for the `postgres` owner;
+- separately removes any schema-specific direct API-role function defaults in
+  `public` and `crm_private`; and
+- grants nothing back.
+
+The pgTAP probe remains in place and now checks the effective owner and the
+global plus relevant schema-specific `pg_default_acl` rows. A second probe
+proves future `crm_private` functions are also closed. An exact
+effective-privilege allow-list verifies every intentionally callable
+Worker/CRM RPC and the small set of policy helpers, while rejecting any
+unexpected callable function in either schema. The plain-PostgreSQL fallback
+runner now names its constrained migration role `postgres` too, so
+owner-scoped default ACL assertions target the same role name without
+weakening its stricter `NOSUPERUSER NOBYPASSRLS` behaviour.
+
+Local validation for this follow-up:
+
+| Check | Result |
+| --- | --- |
+| Public static site validation | **29 passed**, 0 warnings, 0 failures |
+| Booking flow tests | **61 passed** |
+| Worker module tests | **77 passed** |
+| CRM Vitest suite | **67 passed** across 4 files |
+| CRM TypeScript check and production build | Passed; 91 modules transformed |
+| Full Python suite | **16 passed** with both repository root and `.geo-topic-agent-runtime` on `PYTHONPATH` |
+| Repository secret scan | 294 text files, 13 credential patterns, no value found |
+| Root and CRM dependency audits | 0 vulnerabilities |
+| PostgreSQL syntax parse | 21 SQL files / 1,100 statements accepted |
+| GitHub Actions YAML parse | 7 workflow files accepted |
+| Worker production dry-run bundle | Compiled; no deploy |
+| Vendored 3D libraries and fonts | Every pinned SHA-256 matched |
+| Shell syntax, JavaScript syntax and Git whitespace | Passed |
+
+The Wrangler dry-run emitted a successful bundle result, but its local wrapper
+again remained open afterward and was stopped manually; no deployment was
+attempted. `npm run test:db` stopped before database startup because PostgreSQL
+server binaries are not installed.
+
+Canonical pgTAP and `supabase db lint` remain pending until the next GitHub CI
+run. They are not reported as locally passed because Docker, Supabase CLI and
+PostgreSQL server binaries remain unavailable in the audit environment.
+
 ### Audit scope and verdict
 
 This review covers the six implementation commits in draft stacked PR #176,

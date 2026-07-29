@@ -19,7 +19,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PG_BIN="${PG_BIN:-/usr/lib/postgresql/16/bin}"
 DB_NAME="crm_test"
 BOOTSTRAP="crm_bootstrap"
-MIGRATOR="crm_migrator"
+# Match the owner used by the real Supabase CLI while still removing its
+# SUPERUSER/BYPASSRLS attributes before migrations and tests run.
+MIGRATOR="postgres"
 
 if [ ! -x "$PG_BIN/initdb" ]; then
   echo "FAIL: PostgreSQL server binaries not found at $PG_BIN" >&2

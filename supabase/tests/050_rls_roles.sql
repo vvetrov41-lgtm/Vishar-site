@@ -401,6 +401,50 @@ select is(
 -- defaults. A probe created after all migrations must stay closed.
 create table public.default_acl_probe (id integer);
 create function public.default_acl_probe() returns integer language sql as $$select 1$$;
+create function crm_private.default_acl_probe() returns integer language sql as $$select 1$$;
+
+select is(current_user, 'postgres'::name,
+          'canonical migrations and pgTAP use the postgres owner context');
+select is(
+  (select r.rolname
+   from pg_proc p
+   join pg_roles r on r.oid = p.proowner
+   where p.oid = 'public.convert_enquiry_to_project(uuid,text,text)'::regprocedure),
+  'postgres'::name,
+  'CRM migration functions are owned by postgres'
+);
+
+select is(
+  (select count(*)::int
+   from pg_default_acl d
+   join pg_roles r on r.oid = d.defaclrole
+   where r.rolname = 'postgres'
+     and d.defaclnamespace = 0::oid
+     and d.defaclobjtype = 'f'),
+  1,
+  'postgres has a global function default-ACL row'
+);
+select is(
+  (select count(*)::int
+   from pg_default_acl d
+   join pg_roles r on r.oid = d.defaclrole
+   cross join lateral aclexplode(d.defaclacl) a
+   left join pg_namespace n on n.oid = d.defaclnamespace
+   where r.rolname = 'postgres'
+     and d.defaclobjtype = 'f'
+     and (d.defaclnamespace = 0::oid or n.nspname in ('public', 'crm_private'))
+     and a.privilege_type = 'EXECUTE'
+     and (
+       a.grantee = 0
+       or a.grantee in (
+         select oid from pg_roles
+         where rolname in ('anon', 'authenticated', 'service_role')
+       )
+     )),
+  0,
+  'global/public/crm_private defaults grant no function EXECUTE to PUBLIC or API roles'
+);
+
 select ok(not has_table_privilege('anon', 'public.default_acl_probe', 'SELECT'),
           'new public tables are closed to anon by default');
 select ok(not has_table_privilege('authenticated', 'public.default_acl_probe', 'SELECT'),
@@ -413,6 +457,96 @@ select ok(not has_function_privilege('authenticated', 'public.default_acl_probe(
           'new public functions are closed to authenticated by default');
 select ok(not has_function_privilege('service_role', 'public.default_acl_probe()', 'EXECUTE'),
           'new public functions are closed to service_role by default');
+select ok(not has_function_privilege('anon', 'crm_private.default_acl_probe()', 'EXECUTE'),
+          'new crm_private functions are closed to anon by default');
+select ok(not has_function_privilege('authenticated', 'crm_private.default_acl_probe()', 'EXECUTE'),
+          'new crm_private functions are closed to authenticated by default');
+select ok(not has_function_privilege('service_role', 'crm_private.default_acl_probe()', 'EXECUTE'),
+          'new crm_private functions are closed to service_role by default');
+
+-- Every callable CRM function belongs to an explicit allow-list. This checks
+-- effective privileges, so an accidental PUBLIC grant would expose unexpected
+-- functions and fail the inventory even if direct role ACLs looked correct.
+create temporary table expected_function_acl (
+  signature             text primary key,
+  anon_allowed          boolean not null,
+  authenticated_allowed boolean not null,
+  service_role_allowed  boolean not null
+);
+
+insert into expected_function_acl values
+  -- Identity/policy helpers used by authenticated CRM requests and the backend.
+  ('public.is_active_user()', false, true, true),
+  ('public.current_crm_role()', false, true, true),
+  ('public.is_owner()', false, true, true),
+  ('public.can_manage_crm()', false, true, true),
+  ('public.crm_storage_object_is_known(text)', false, true, true),
+  ('public.crm_storage_object_readable(text)', false, true, true),
+  ('public.crm_storage_object_writable(text)', false, true, true),
+
+  -- Worker-only durable intake and reconciliation RPCs.
+  ('public.create_enquiry_intake(uuid,jsonb,jsonb,jsonb)', false, false, true),
+  ('public.mark_enquiry_file_uploaded(uuid,text)', false, false, true),
+  ('public.finalize_enquiry_intake(uuid)', false, false, true),
+  ('public.fail_enquiry_intake(uuid,text)', false, false, true),
+  ('public.record_outbox_attempt(uuid,boolean,text)', false, false, true),
+  ('public.list_incomplete_intakes(integer,integer)', false, false, true),
+
+  -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
+  ('public.record_activity(text,uuid,uuid,uuid,uuid,jsonb)', false, true, false),
+  ('public.transition_enquiry_status(uuid,public.enquiry_status)', false, true, false),
+  ('public.assign_enquiry(uuid,uuid)', false, true, false),
+  ('public.convert_enquiry_to_project(uuid,text,text)', false, true, false),
+  ('public.schedule_session(uuid,timestamptz,timestamptz,public.session_status,text)', false, true, false),
+  ('public.set_session_status(uuid,public.session_status)', false, true, false),
+  ('public.update_project_deposit(uuid,numeric,public.deposit_status,text)', false, true, false),
+  ('public.update_project_estimate(uuid,numeric,numeric,integer,numeric,text)', false, true, false),
+  ('public.create_internal_note(text,uuid,uuid,uuid,uuid)', false, true, false),
+  ('public.create_follow_up(text,timestamptz,uuid,uuid,uuid,uuid,text)', false, true, false),
+  ('public.complete_follow_up(uuid)', false, true, false),
+  ('public.create_email_draft(text,text,text,uuid,uuid,uuid,text)', false, true, false),
+  ('public.approve_email_draft(uuid)', false, true, false),
+  ('public.set_profile_active(uuid,boolean)', false, true, false),
+  ('public.set_profile_role(uuid,public.crm_role)', false, true, false),
+  ('public.list_profiles()', false, true, false),
+  ('public.list_assignable_profiles()', false, true, false),
+  ('public.update_retention_policy(boolean,integer,integer,integer,integer,boolean)', false, true, false),
+
+  -- Private helpers required by RLS; crm_private is not a PostgREST schema.
+  ('crm_private.jwt_role()', false, true, true),
+  ('crm_private.is_service_backend()', false, true, true),
+  ('crm_private.no_active_owner()', false, true, true);
+
+select is(
+  (select count(*)::int
+   from expected_function_acl e
+   where has_function_privilege('anon', e.signature, 'EXECUTE') = e.anon_allowed
+     and has_function_privilege('authenticated', e.signature, 'EXECUTE') = e.authenticated_allowed
+     and has_function_privilege('service_role', e.signature, 'EXECUTE') = e.service_role_allowed),
+  (select count(*)::int from expected_function_acl),
+  'every intentionally callable function has exactly its documented API-role grants'
+);
+
+select is(
+  (select count(*)::int
+   from pg_proc p
+   join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname in ('public', 'crm_private')
+     and (
+       has_function_privilege('anon', p.oid, 'EXECUTE')
+       or has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       or has_function_privilege('service_role', p.oid, 'EXECUTE')
+     )
+     and not exists (
+       select 1
+       from expected_function_acl e
+       where to_regprocedure(e.signature) = p.oid
+     )),
+  0,
+  'no public or crm_private function outside the explicit allow-list is callable by an API role'
+);
+
+drop function crm_private.default_acl_probe();
 drop function public.default_acl_probe();
 drop table public.default_acl_probe;
 

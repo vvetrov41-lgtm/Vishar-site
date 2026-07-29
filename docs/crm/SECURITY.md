@@ -240,7 +240,7 @@ a request cannot silently start logging PII.
 | Path traversal / cross-client file access | Server-generated UUID paths + Storage policy ownership re-derivation |
 | Cross-site browser submission | Exact Origin rejection plus body-size cap and honeypot |
 | Non-browser abuse (Origin can be spoofed) | Cloudflare rate limiting / optional Turnstile remain owner actions and staging gates |
-| Supabase default API grants reopening an object | Migration 0001 closes table, sequence and function default privileges; later migrations explicitly grant the narrow surface and pgTAP creates post-migration ACL probes |
+| Supabase default API grants reopening an object | Migration 0001 closes table and sequence defaults; migration 0012 globally closes implicit function `PUBLIC` execution for the `postgres` migration owner and removes schema-specific API-role defaults in both exposed and private schemas; later migrations must grant the narrow surface explicitly and pgTAP creates post-migration ACL probes |
 | Ex-staff member with a live JWT | `is_active = false` denies at the database |
 | Manager reading rates and totals | Finance column grants withheld + owner-gated finance views |
 | Someone editing history to hide an action | `activity_log` append-only, no UPDATE/DELETE policy, FORCE RLS |

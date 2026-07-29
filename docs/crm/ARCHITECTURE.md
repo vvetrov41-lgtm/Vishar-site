@@ -371,7 +371,9 @@ This architecture document does not authorise a merge or deployment. Production 
 
 ### Phase 2 — Supabase foundation
 
-- Add migrations `0001`–`0011`, local config, private bucket policies, bootstrap instructions, deterministic conversion retry semantics, and test-only fixtures.
+- Add migrations `0001`–`0012`, local config, private bucket policies,
+  bootstrap instructions, deterministic conversion retry semantics,
+  closed-by-default function ACLs, and test-only fixtures.
 - Add pgTAP tests for constraints, normalisation, duplicate/conflict handling, idempotency, transitions, disabled users, every RLS role, finance column isolation, Storage path ownership, append-only activity, and calendar dedupe.
 - Commit separately from Worker/form changes.
 

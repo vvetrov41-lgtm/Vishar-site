@@ -52,6 +52,7 @@ Forward-only, applied strictly in filename order:
 0009_bootstrap_owner.sql         idempotent owner promotion (no identity baked in)
 0010_retention_settings.sql      system_settings, retention disabled, null durations
 0011_conversion_idempotency.sql  deterministic enquiry-conversion retry contract
+0012_default_function_acl.sql    closed-by-default function execution for postgres-owned code
 ```
 
 Rules:
