@@ -13,6 +13,7 @@ deployed, and no live infrastructure exists as a result of these files.
 | [`SECURITY.md`](./SECURITY.md) | Authentication, RLS, private file access, secret handling, threat boundaries, logging rules. |
 | [`OWNER_SETUP.md`](./OWNER_SETUP.md) | Manual owner actions: Supabase project, owner bootstrap, secrets, decisions that must not be invented. |
 | [`DEPLOYMENT.md`](./DEPLOYMENT.md) | Local/staging/production separation, migration order, deployment gates, what is intentionally not deployed. |
+| [`INTEGRATIONS.md`](./INTEGRATIONS.md) | Email, Calendar and AI boundaries. None is connected; this records the rules the interfaces enforce. |
 
 This documentation set covers only the CRM and booking data path. Website
 performance, Core Web Vitals, SEO and accessibility findings live in
@@ -125,9 +126,9 @@ workers/
   lib/telegram.js            best-effort notification provider
   lib/outbox.js              durable job helpers and dedupe keys
   lib/logging.js             redacted structured logging
-  lib/email.js               provider-neutral email interface (no provider)
-  lib/calendar.js            provider-neutral calendar interface (no provider)
-  lib/ai-tools.js            named AI tool definitions (no execution backend)
+  lib/email.js               provider-neutral email interface (no provider bound)
+  lib/calendar.js            provider-neutral calendar interface (no provider bound)
+  lib/ai-tools.js            the ten named AI tools and their constraints (no gateway)
   lib/reconciliation.js      incomplete-intake recovery
   routes/enquiries.js        durable intake orchestration
 admin/                       private mobile-first CRM SPA (separate build)
