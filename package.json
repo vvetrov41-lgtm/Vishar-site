@@ -11,6 +11,7 @@
     "test:booking": "node scripts/test-booking-flow.mjs",
     "test:db": "bash scripts/run-crm-db-tests.sh",
     "test:worker": "node scripts/test-worker-modules.mjs",
+    "check:worker-bundle": "XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --env=\"\" --dry-run --outdir .wrangler/dry-run",
     "scan:secrets": "node scripts/scan-secrets.mjs",
     "vendor:3d-libs": "node scripts/vendor-3d-libs.mjs",
     "vendor:3d-libs:check": "node scripts/vendor-3d-libs.mjs --check",
@@ -23,8 +24,12 @@
     "@fontsource/inter": "5.2.8",
     "@fontsource/playfair-display": "5.2.8",
     "gsap": "3.12.5",
-    "sharp": "^0.33.5",
+    "sharp": "^0.35.3",
     "tailwindcss": "^3.4.17",
-    "three": "0.128.0"
+    "three": "0.128.0",
+    "wrangler": "4.115.0"
+  },
+  "overrides": {
+    "postcss": "8.5.25"
   }
 }

@@ -32,6 +32,7 @@ const SKIP_PATH_PREFIXES = ['assets/vendor/', 'assets/portfolio/', 'assets/galle
 const PATTERNS = [
   { name: 'JSON Web Token (Supabase anon/service key)', pattern: /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ },
   { name: 'Supabase access token', pattern: /\bsbp_[A-Za-z0-9]{20,}/ },
+  { name: 'Supabase secret key', pattern: /\bsb_secret_[A-Za-z0-9_-]{16,}/ },
   { name: 'GitHub token', pattern: /\bgh[pousr]_[A-Za-z0-9]{30,}/ },
   { name: 'Telegram bot token', pattern: /\b\d{8,10}:AA[A-Za-z0-9_-]{30,}/ },
   { name: 'Google OAuth client secret', pattern: /\bGOCSPX-[A-Za-z0-9_-]{20,}/ },
