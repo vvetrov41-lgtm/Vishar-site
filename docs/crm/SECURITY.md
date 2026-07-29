@@ -13,14 +13,14 @@ Nothing in this document has been applied to live infrastructure.
 | Zone | Trust | Holds |
 |---|---|---|
 | Public browser (`/booking/`) | Untrusted | Nothing secret |
-| Cloudflare Worker | Trusted backend | `SUPABASE_SERVICE_ROLE_KEY`, `TELEGRAM_BOT_TOKEN`, log salt |
+| Cloudflare Worker | Trusted backend | `SUPABASE_SECRET_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | Supabase Postgres | Authority | All durable state; enforces RLS |
 | Supabase Storage | Authority for bytes | Private bucket only |
-| CRM browser (`admin/`) | Semi-trusted, authenticated | Supabase URL + anon key + user session |
+| CRM browser (`admin/`) | Semi-trusted, authenticated | Supabase URL + publishable key + user session |
 | Telegram / Gmail / Calendar | External, non-authoritative | Notifications and projections |
 
 The single most important rule: **the browser is never given authority, only
-identity.** The Supabase anon key is a public identifier. It confers no
+identity.** The Supabase publishable key is a public identifier. It confers no
 permission on its own; everything it can do is decided by RLS.
 
 ## 2. Credentials that must never reach a browser
@@ -28,7 +28,7 @@ permission on its own; everything it can do is decided by RLS.
 The following must never appear in any HTML page, any client bundle, any
 `admin/` build output, any log line, any API response, or any committed file:
 
-- `SUPABASE_SERVICE_ROLE_KEY`;
+- `SUPABASE_SECRET_KEY` or a legacy `SUPABASE_SERVICE_ROLE_KEY`;
 - Supabase database connection strings or database passwords;
 - Storage service credentials or S3-style access keys;
 - `TELEGRAM_BOT_TOKEN`;
@@ -45,11 +45,10 @@ bypasses RLS.
 
 | Secret | Location | Set by |
 |---|---|---|
-| `SUPABASE_SERVICE_ROLE_KEY` | Cloudflare Worker secret | Owner, manually |
+| `SUPABASE_SECRET_KEY` | Cloudflare Worker secret | Owner, manually |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Cloudflare Worker secret | Owner, manually |
-| `LOG_HASH_SALT` | Cloudflare Worker secret | Owner, manually |
 | `SUPABASE_URL` | Worker variable (not secret, but environment-specific) | Owner, manually |
-| Supabase anon/publishable key | CRM build-time variable | Owner, manually |
+| Supabase publishable key | CRM build-time variable | Owner, manually |
 | Gmail / Calendar OAuth (later) | Encrypted server-side secret store, never an application table readable by any CRM role | Owner, manually |
 
 No secret value is committed. `supabase/config.toml` contains local development
@@ -115,16 +114,19 @@ Three roles: `owner`, `booking_manager`, `read_only`.
 | Capability | owner | booking_manager | read_only |
 |---|---|---|---|
 | Read clients / enquiries / projects / sessions | ✅ | ✅ | ✅ |
-| Update client contact data | ✅ | ✅ | ❌ |
+| Update client contact data | not implemented in this draft | not implemented in this draft | ❌ |
 | Enquiry status transitions | ✅ | ✅ (allowed transitions only) | ❌ |
 | Assign enquiries | ✅ | ✅ | ❌ |
 | Convert enquiry → project | ✅ | ✅ | ❌ |
 | Manage operational project/session data | ✅ | ✅ | ❌ |
-| Internal notes, follow-ups | ✅ | ✅ | read only |
+| Read internal notes | ✅ | ✅ | ❌ |
+| Read follow-ups | ✅ | ✅ | ✅ |
+| Create / complete notes and follow-ups | ✅ | ✅ | ❌ |
 | Create email drafts | ✅ | ✅ | ❌ |
-| Approve / send email | ✅ | ❌ | ❌ |
+| Approve an email draft | ✅ | ❌ | ❌ |
+| Send email | provider not connected | provider not connected | ❌ |
 | Finance columns (rates, totals, deposits, prices) | ✅ | ❌ | ❌ |
-| Bulk export | ✅ (audited) | ❌ | ❌ |
+| Bulk export | not implemented in this draft | ❌ | ❌ |
 | Role management, activation/deactivation | ✅ | ❌ | ❌ |
 | System settings / retention | ✅ | ❌ | ❌ |
 | Read `activity_log` | ✅ | limited | ❌ by default |
@@ -132,20 +134,24 @@ Three roles: `owner`, `booking_manager`, `read_only`.
 | Hard-delete business data | ❌ (archive instead) | ❌ | ❌ |
 | Direct table access from the public browser | ❌ | ❌ | ❌ |
 
-`activity_log` is append-only for **everyone**, including the owner. There is
-no `UPDATE` or `DELETE` policy on it, and the table is `FORCE ROW LEVEL
-SECURITY`, so even the table owner role is subject to policy.
+`activity_log` is append-only for **everyone**, including the CRM owner. There
+is no `UPDATE` or `DELETE` policy and the table is `FORCE ROW LEVEL SECURITY`.
+Because PostgreSQL superusers and roles with `BYPASSRLS` can bypass row
+policies, a separate trigger rejects `UPDATE`, `DELETE` and `TRUNCATE` even on
+that path.
 
 ### Column-level isolation
 
 Row-level security cannot hide individual columns from a role that may select
-the row. Finance data is therefore protected two ways:
+the row. Finance data is therefore protected in three layers:
 
 1. direct `SELECT` grants on finance columns of `projects` and `sessions` are
-   withheld from `booking_manager` and `read_only`;
-2. those roles read through `security_invoker` views
-   (`projects_operational`, `sessions_operational`) that project only the
-   non-finance columns.
+   withheld from the shared `authenticated` database role;
+2. operational pages read only the explicitly granted non-finance base-table
+   columns;
+3. owner-only `security_barrier` views (`projects_finance`,
+   `sessions_finance`) expose finance columns only when `public.is_owner()` is
+   true, and the views themselves are explicitly `SELECT`-only.
 
 Any future sensitive column must follow the same pattern. **Hiding a button in
 the CRM is never a security control.** The `admin/` application hides controls
@@ -177,8 +183,9 @@ Storage rules:
 - no unrestricted bucket listing (listing is scoped to a permitted prefix);
 - reads happen through short-lived signed URLs, minted per request;
 - signed URLs are never logged and never persisted;
-- deletion is limited to the owner role and to backend-controlled compensating
-  cleanup and reconciliation.
+- deletion is limited to the owner role and backend-controlled definitive
+  compensation. The current reconciliation helper does not delete Storage
+  objects; a separately audited object sweep is still required.
 
 ## 6. Security-definer function rules
 
@@ -186,8 +193,8 @@ Every `SECURITY DEFINER` function in the schema must:
 
 - set a fixed `search_path` (`pg_catalog, public` — or an explicitly listed
   private schema), so a caller cannot shadow a referenced object;
-- have `EXECUTE` revoked from `PUBLIC`, then granted only to the roles that
-  need it;
+- have `EXECUTE` revoked from `PUBLIC`, `anon`, `authenticated` and
+  `service_role`, then granted back only to the exact roles that need it;
 - validate both the caller's role and the input arguments;
 - expose one narrow operation, never a general-purpose escape hatch;
 - write an `activity_log` row in the same transaction for any state change.
@@ -210,8 +217,10 @@ Logs must never contain:
 - tokens, keys or authorisation headers;
 - raw provider response bodies, which may echo submitted PII.
 
-IP addresses are used only as a salted hash for abuse control and are never
-stored long-term in plaintext.
+The application Worker does not read or store the visitor's IP address. Edge
+abuse controls and their retention are an owner-managed Cloudflare
+configuration. A future application-level limiter would require a separate
+privacy review before adding even a salted IP-derived key.
 
 `workers/lib/logging.js` implements a redaction allow-list: the logger accepts
 only known-safe field names and drops everything else, so adding a new field to
@@ -222,17 +231,21 @@ a request cannot silently start logging PII.
 | Threat | Control |
 |---|---|
 | Duplicate enquiry from a retry or refresh | UUID idempotency key + unique constraint + replay-returns-existing RPC |
+| New contact details lost during client matching | Immutable per-enquiry contact snapshot; master client card is never silently overwritten |
 | Enquiry lost because Telegram was down | Postgres commit is the success point; Telegram is an outbox job |
 | Enquiry recorded with missing images | `intake_state` gate; incomplete intakes are kept out of the new-enquiry queue |
-| Orphan objects after a partial upload | Compensating deletion + reconciliation module |
+| Storage/manifest acknowledgement lost | Definite 4xx mark failures are compensated; ambiguous 5xx/network outcomes retain the object so a committed `ready` manifest can never point at bytes the Worker deleted |
+| Orphan objects after a partial upload | Reconciliation identifies stale intake rows; a scheduled object sweep remains to be built and is not falsely claimed as active |
 | Malicious file disguised as an image | Declared MIME + extension + magic-byte agreement |
 | Path traversal / cross-client file access | Server-generated UUID paths + Storage policy ownership re-derivation |
-| Script or bot calling the endpoint directly | Exact origin rejection, body-size cap, honeypot, Cloudflare rate limiting (owner action) |
+| Cross-site browser submission | Exact Origin rejection plus body-size cap and honeypot |
+| Non-browser abuse (Origin can be spoofed) | Cloudflare rate limiting / optional Turnstile remain owner actions and staging gates |
+| Supabase default API grants reopening an object | Migration 0001 closes table, sequence and function default privileges; later migrations explicitly grant the narrow surface and pgTAP creates post-migration ACL probes |
 | Ex-staff member with a live JWT | `is_active = false` denies at the database |
-| Manager reading rates and totals | Column grants withheld + operational views |
+| Manager reading rates and totals | Finance column grants withheld + owner-gated finance views |
 | Someone editing history to hide an action | `activity_log` append-only, no UPDATE/DELETE policy, FORCE RLS |
-| AI assistant exfiltrating the client list | Named tools only, row limits, field projection, role checks, audited writes, no SQL |
-| Service-role key leaking into the CRM bundle | Key exists only as a Worker secret; a repository secret scan runs in validation |
+| AI assistant exfiltrating the client list | No gateway is connected; the future manifest is named tools only, with row limits, field projection, role checks and no SQL |
+| Backend key leaking into the CRM bundle | Key exists only as a Worker secret; runtime guards and a repository secret scan run in validation |
 
 ## 9. Threats explicitly *not* addressed here
 

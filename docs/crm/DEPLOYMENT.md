@@ -16,7 +16,7 @@ notification channel is shared between them.
 |---|---|---|---|
 | Postgres | local Supabase (Docker) or a local Postgres cluster with the test shim | dedicated staging Supabase project | dedicated production Supabase project |
 | Storage | local `crm-files` | staging `crm-files` | production `crm-files` |
-| Worker | `wrangler dev` with mocked providers | `--env preview` | `--env production` |
+| Worker | `wrangler dev` with mocked providers | `wrangler deploy --env preview` | top-level `tattooai` (`wrangler deploy --env=""`) |
 | Telegram | mocked, no network call | separate non-production chat | owner's real chat |
 | Email | interface only, no provider | test sender, if configured | owner's sender |
 | Calendar | interface only | not connected | not connected |
@@ -28,7 +28,7 @@ Rules:
 - `SUPABASE_URL` is an environment **variable**, not a secret, and is pinned per
   environment. This is what stops a preview Worker from writing to the
   production database.
-- `SUPABASE_SERVICE_ROLE_KEY` is an environment **secret** and differs per
+- `SUPABASE_SECRET_KEY` is an environment **secret** and differs per
   project.
 - `supabase/seed.sql` is local-only. It is never applied to staging or
   production, and it contains only obviously fabricated identities.
@@ -96,11 +96,14 @@ Gate 2  Database tests
         ↓
 Gate 3  Staging migration
         supabase db push  against the STAGING project
-        supabase test db  against the STAGING project
+        supabase test db --linked  against the STAGING project
+        supabase db lint --linked --schema public,crm_private --level error --fail-on error
         ↓
 Gate 4  Staging deployment
         wrangler deploy --env preview
         CRM preview build
+        booking preview artifact with `vishar-booking-endpoint` set to the
+        preview Worker URL (never commit that URL into the production source)
         synthetic intake with marked test data → verify row, file, notification,
         idempotent replay, RLS role behaviour, then delete the test data
         ↓
@@ -111,41 +114,74 @@ Gate 6  Production migration
         supabase db push  against the PRODUCTION project
         ↓
 Gate 7  Production deployment
-        wrangler deploy --env production   (manual workflow dispatch)
+        wrangler deploy --env="" --strict --keep-vars   (manual workflow dispatch)
         CRM production build and host
         ↓
 Gate 8  Post-deploy verification
-        see OWNER_SETUP.md §10
+        see OWNER_SETUP.md §11
 ```
 
 Gates 5 to 8 are owner actions. An agent may prepare them and may not perform
 them.
 
+Before placing Cloudflare credentials in GitHub, create a `production`
+environment with a required human reviewer and restrict its deployment branch
+to `main`. The workflow's `environment: production` declaration selects that
+environment but does not create its protection rules. Store the least-privilege
+Cloudflare token and account ID as environment secrets so only the final deploy
+step receives them; repository-wide secrets are not an equivalent approval
+gate.
+
 ## 4. Worker environment configuration
 
-`wrangler.toml` currently defines a single environment. Before staging exists it
-needs a `preview`/`production` split so that URLs and secrets cannot cross over.
-Intended shape — **not applied**, since it changes deployment behaviour and
-belongs with the owner's staging setup:
+`wrangler.toml` preserves the existing top-level `tattooai` Worker as
+production because that is the endpoint already used by the site. The empty
+`--env=""` selects this top-level environment explicitly. It also
+declares a separate Wrangler `preview` environment (`tattooai-preview`) and
+repeats the non-inherited AI binding there. A non-secret
+`VISHAR_ENVIRONMENT` binding identifies the two deployments so preview fails
+closed when its required allow-list is missing. Runtime URLs and allow-lists
+remain external owner configuration:
 
 ```toml
-[env.preview.vars]
-SUPABASE_URL = "https://<STAGING_REF>.supabase.co"
-ALLOWED_ORIGINS = "https://staging.vishar-site.pages.dev"
+[env.preview]
+workers_dev = true
 
-[env.production.vars]
-SUPABASE_URL = "https://<PRODUCTION_REF>.supabase.co"
-ALLOWED_ORIGINS = "https://vishartattoo.com,https://www.vishartattoo.com"
+[env.preview.ai]
+binding = "AI"
+
+[env.preview.vars]
+VISHAR_ENVIRONMENT = "preview"
 ```
 
-Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
-`LOG_HASH_SALT`) are set with `wrangler secret put --env <env>` and never
-appear in this file. See `OWNER_SETUP.md` §5.
+Do not commit either project URL until the owner has selected the real project
+refs. Set `SUPABASE_URL` and `ALLOWED_ORIGINS` as dashboard-managed variables
+on `tattooai-preview` and on the existing top-level production Worker
+`tattooai`. `ALLOWED_ORIGINS` is an exact, comma-separated replacement list,
+not an additive wildcard: staging must contain only staging origins and
+production only production origins. The production workflow deploys that
+top-level Worker with `--keep-vars`.
 
-The Worker treats a missing `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` as a
-configuration error and refuses the durable intake route rather than silently
-falling back to notification-only behaviour. Losing the database must not
-silently become "Telegram only" again.
+The checked-in booking page deliberately leaves the
+`vishar-booking-endpoint` meta value empty outside the two production
+hostnames. A staging site therefore fails closed until its deployment artifact
+sets that meta value to the `tattooai-preview` URL. Add the staging site's
+exact origin (scheme and host, with no path) to the preview Worker's
+`ALLOWED_ORIGINS`; verify both values before the synthetic intake. Do not
+replace the production fallback endpoint while preparing a preview artifact.
+
+Preview secrets (`SUPABASE_SECRET_KEY`, `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_CHAT_ID`) use `wrangler secret put --env preview`.
+Production secrets use `wrangler secret put` with no environment suffix,
+because the live endpoint is the existing `tattooai` Worker rather than a new
+`tattooai-production` Worker. Secrets never appear in this file. See
+`OWNER_SETUP.md` §5.
+
+The Worker treats a missing `SUPABASE_URL` or backend key as a configuration
+error and refuses the durable intake route rather than silently falling back
+to notification-only behaviour. `SUPABASE_SECRET_KEY` is preferred; a legacy
+JWT may temporarily use `SUPABASE_SERVICE_ROLE_KEY`, but the two are mutually
+exclusive. Losing the database must not silently become "Telegram only" again.
 
 ## 5. Running the database tests locally
 

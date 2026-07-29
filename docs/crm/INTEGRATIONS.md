@@ -26,7 +26,7 @@ Everything personalised is a draft until a person approves it.
 
 | Message | Path |
 |---|---|
-| Enquiry received acknowledgement | automatic (`enquiry_received`) |
+| Enquiry received acknowledgement | only template eligible for a future automatic path (`enquiry_received`); not currently enqueued or sent |
 | Estimate | draft → human approval |
 | Quote | draft → human approval |
 | Offered dates | draft → human approval |
@@ -65,10 +65,15 @@ createEmailService(supabase, provider)  // provider is null today
   .createDraft({ toEmail, subject, body, ..., origin })  // always a draft
   .approveDraft(emailMessageId)                          // owner only, enqueues
   .queueApproved(emailMessageId)                         // refuses: not connected
-  .sendTransactional({ templateKey, ... })               // automatic list only
+  .sendTransactional({ templateKey, toEmail, data })     // fixed renderer; no subject/body input
   .getStatus(providerMessageId)                          // refuses: not connected
   .isConnected()                                         // false
 ```
+
+`enquiry_received` accepts only a validated enquiry reference. Its versioned
+subject and body are rendered inside `email.js`; a caller cannot substitute
+personalised copy. A future provider adapter must be invoked by an outbox drain
+that records attempts before and after delivery.
 
 ### Owner actions still required
 
@@ -119,7 +124,8 @@ provider at all:
 |---|---|
 | Confirmed, no event | `create` |
 | Confirmed, event exists | `update` |
-| Not confirmed, event exists | `cancel` |
+| Cancelled, event exists | `cancel` |
+| Completed or no-show, event exists | `none` (keep history) |
 | Not confirmed, no event | `none` |
 
 A provider event id is stored only after a successful provider response.
@@ -162,9 +168,11 @@ Ten named tools. There is no eleventh, and no generic one.
   need contact details, and returning them would make every conversation a
   potential contact-list export.
 - **Row limits.** Every read is paginated and clamped to 25 rows per call.
-- **Audited writes.** Every write goes through the same SECURITY DEFINER RPC a
-  person uses, so it is validated and audited in the same transaction, with
-  `actor_kind = 'ai'` and the human it acted on behalf of.
+- **No executable write path yet.** The manifest names the SECURITY DEFINER RPC
+  each future write tool would call. Before a gateway is connected, dedicated
+  on-behalf-of semantics must record both `actor_kind = 'ai'` and the
+  authenticated human identity in the same transaction. The current staff RPCs
+  do not provide that attribution and therefore are not an AI gateway.
 - **No send.** `create_email_draft` can only draft. There is no send tool, and
   the database refuses an AI-originated message in any state but `draft`.
 - **`read_only` gets nothing.** No tool lists it.

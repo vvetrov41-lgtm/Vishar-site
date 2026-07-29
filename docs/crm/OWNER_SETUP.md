@@ -24,14 +24,15 @@ agent. Record each answer, with a date, before proceeding.
 | 8 | Which session status counts as "confirmed" for Calendar | Schema uses `confirmed`; confirm this matches the working process | ⚠️ default `confirmed`, owner confirmation outstanding |
 | 9 | Staging and production hostnames, including whether `admin.vishartattoo.com` is the CRM host | DNS is an owner action | ❌ outstanding |
 | 10 | Backup retention / PITR tier on the Supabase project | Paid setting | ❌ outstanding |
+| 11 | GitHub `production` environment reviewer and least-privilege Cloudflare deploy token owner | The workflow names an environment but repository code cannot create its approval rules | ❌ outstanding |
 
 ## 1. Create the Supabase projects
 
 Create **two separate projects**: staging and production. Do not share one
 project between environments.
 
-1. Create the staging project. Note its project ref, URL, anon key and
-   service-role key.
+1. Create the staging project. Note its project ref, URL, publishable key and
+   secret key.
 2. Create the production project separately.
 3. Enable point-in-time recovery or scheduled backups per decision 10.
 4. In **Auth → Providers**, enable email/password. Disable sign-ups if the
@@ -39,8 +40,9 @@ project between environments.
    self-service.
 5. Do **not** create any table by hand. The schema comes from migrations only.
 
-Never paste a service-role key into a chat, an issue, a commit, a log, or an
-agent prompt. It is a full-database credential that bypasses RLS.
+Never paste a secret key (or a legacy service-role key) into a chat, an issue,
+a commit, a log, or an agent prompt. It is a full-database credential that
+bypasses RLS.
 
 ## 2. Apply migrations
 
@@ -51,7 +53,8 @@ for the gate sequence (staging first, tests, then production with approval).
 # from the repository root, with the Supabase CLI installed and logged in
 supabase link --project-ref <STAGING_PROJECT_REF>
 supabase db push          # applies supabase/migrations/*.sql in order
-supabase test db          # runs supabase/tests/*.sql (pgTAP)
+supabase test db --linked # runs supabase/tests/*.sql against staging (pgTAP)
+supabase db lint --linked --schema public,crm_private --level error --fail-on error
 ```
 
 Migrations are forward-only. Never edit an applied migration; add a new,
@@ -92,26 +95,33 @@ Both functions:
 - are idempotent;
 - record an `owner.bootstrapped` row in `activity_log` on first promotion.
 
-### 3c. Lock the bootstrap down
+### 3c. Verify the bootstrap is locked down
 
-After the owner exists, revoke the bootstrap entry points so they cannot be
-used to escalate later:
+Migration `0009` revokes the bootstrap entry points from every application
+role, including the Worker backend. They are intended only for an explicit
+manual SQL Editor operation by the database owner. Verify the deployed ACL:
 
 ```sql
-REVOKE EXECUTE ON FUNCTION public.bootstrap_owner(uuid, text) FROM PUBLIC, authenticated, anon, service_role;
-REVOKE EXECUTE ON FUNCTION public.bootstrap_owner_by_email(text, text) FROM PUBLIC, authenticated, anon, service_role;
+SELECT
+  has_function_privilege('anon', 'public.bootstrap_owner(uuid,text)', 'EXECUTE') AS anon_can_run,
+  has_function_privilege('authenticated', 'public.bootstrap_owner(uuid,text)', 'EXECUTE') AS authenticated_can_run,
+  has_function_privilege('service_role', 'public.bootstrap_owner(uuid,text)', 'EXECUTE') AS backend_can_run;
 ```
 
-Both functions already have `PUBLIC` execution revoked by migration `0009`;
-this step additionally removes the service-role path once it is no longer
-needed. Re-grant temporarily if a second owner ever has to be promoted, then
-revoke again.
+All three values must be `false`. Do not grant either bootstrap function to an
+API role. The exact first-owner call remains idempotent when repeated from the
+SQL Editor; subsequent staff and role changes use the controlled owner RPCs.
 
 ### 3d. Add staff
 
-Owners add staff from the CRM's **Users** screen after the auth user exists, or
-by inserting a `profiles` row with the appropriate role. Staff are never given
-the owner role "temporarily".
+The current CRM **Users** screen manages profiles that already exist; it does
+not create an Auth account or provision a new profile. For this draft, adding a
+person is a two-step owner operation: create the Auth user in the Supabase
+dashboard, then provision the matching `profiles` row through an audited
+staging procedure before production. That narrow provisioning RPC/UI is not
+implemented in this PR, so direct ad-hoc profile inserts must not be presented
+as a finished production workflow. Staff are never given the owner role
+"temporarily".
 
 ## 4. Verify the private bucket
 
@@ -136,24 +146,54 @@ Set per environment. Never commit these, and never place them in
 
 ```bash
 # staging / preview environment
-wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env preview
+wrangler secret put SUPABASE_SECRET_KEY       --env preview
 wrangler secret put TELEGRAM_BOT_TOKEN        --env preview
 wrangler secret put TELEGRAM_CHAT_ID          --env preview
-wrangler secret put LOG_HASH_SALT             --env preview
 
-# production environment
-wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production
-wrangler secret put TELEGRAM_BOT_TOKEN        --env production
-wrangler secret put TELEGRAM_CHAT_ID          --env production
-wrangler secret put LOG_HASH_SALT             --env production
+# existing production Worker (`tattooai`, no Wrangler environment suffix)
+wrangler secret put SUPABASE_SECRET_KEY
+wrangler secret put TELEGRAM_BOT_TOKEN
+wrangler secret put TELEGRAM_CHAT_ID
 ```
 
-`SUPABASE_URL` is environment-specific but not secret; set it as a plain
-variable per environment so a preview Worker can never point at the production
-database by accident.
+Use the project's current `sb_secret_...` key. The Worker sends it only as the
+Supabase `apikey` header, rejects it if placed under the legacy variable name,
+and refuses to start when both key formats are configured. A legacy
+service-role JWT is supported only as a temporary migration fallback through
+`SUPABASE_SERVICE_ROLE_KEY`.
+
+`SUPABASE_URL` is environment-specific but not secret. Set it as a dashboard
+variable on `tattooai-preview` for staging and on the existing top-level
+`tattooai` Worker for production. The production workflow uses `--keep-vars`
+so a deploy cannot erase that dashboard-managed value. Confirm each Worker
+shows a different project ref before sending test traffic; a preview Worker
+must never point at the production database.
+
+Set `ALLOWED_ORIGINS` as a dashboard variable too: a comma-separated list of
+exact HTTPS site origins, with no paths. It replaces the defaults rather than
+extending them, so the staging value must contain only the staging booking
+origin(s) and the production value must contain only
+`https://vishartattoo.com,https://www.vishartattoo.com`. If it is absent, the
+top-level production Worker falls back to those two origins; the preview
+Worker is identified by its checked-in `VISHAR_ENVIRONMENT=preview` binding
+and fails closed when its list is absent. If a configured list is invalid,
+intake also fails closed.
+
+The checked-in `/booking/` page does not send from an arbitrary preview host:
+its `vishar-booking-endpoint` meta value is empty and the production fallback
+activates only on the two production hostnames. When building the staging
+artifact, set that meta value to the `tattooai-preview` URL and verify the
+resulting artifact before publishing it. Keep this as a staging artifact
+substitution; do not commit a preview endpoint into the production page.
 
 Use a **separate, non-production Telegram chat** for staging. Do not send test
 enquiries to the production chat.
+
+Before enabling `.github/workflows/deploy-tattooai.yml`, create the GitHub
+`production` environment, require the reviewer chosen in decision 11, restrict
+deployments to `main`, and put a least-privilege `CLOUDFLARE_API_TOKEN` plus
+`CLOUDFLARE_ACCOUNT_ID` in that environment. The YAML names the environment;
+it cannot create or verify those protection settings.
 
 ## 6. Configure Cloudflare rate limiting
 
@@ -172,11 +212,12 @@ The CRM is a separate build in `admin/`. It needs exactly two public values:
 ```bash
 # admin/.env.local — never committed
 VITE_SUPABASE_URL=https://<PROJECT_REF>.supabase.co
-VITE_SUPABASE_ANON_KEY=<anon/publishable key>
+VITE_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_... key>
 ```
 
-The anon key is a public identifier, not authority — RLS decides everything.
-The service-role key must never appear in this file or in any build output.
+The publishable key is a public identifier, not authority — RLS decides
+everything. A secret/service-role key must never appear in this file or in any
+build output.
 
 ```bash
 cd admin
@@ -208,7 +249,23 @@ Until step 5, `workers/lib/email.js` and `workers/lib/calendar.js` are
 interfaces with no provider bound. The CRM shows a Calendar status placeholder
 and never claims a connection.
 
-## 9. Retention
+## 9. Privacy and transfer deployment gate
+
+**Do not publish the durable booking form until this gate is complete.**
+
+1. Record the selected Supabase region and confirm the Cloudflare, Supabase and
+   Telegram processing/support locations that apply to the production accounts.
+2. Review and accept the providers' current data-processing terms.
+3. Document any restricted transfer, the applicable UK adequacy regulation or
+   safeguard, and any transfer risk assessment required for the actual route.
+4. Update `/privacy/` with the arrangement actually in force. Do not leave
+   future-tense placeholder wording in a live notice.
+5. Record the owner approval and the notice version deployed with the form.
+
+This is an owner/legal deployment decision, not something repository code can
+complete or infer.
+
+## 10. Retention
 
 `system_settings` ships with:
 
@@ -221,7 +278,7 @@ Nothing deletes client data automatically. When the owner records a policy
 operational holds, and separate database and Storage cleanup passes. Do not
 enable retention before those exist.
 
-## 10. Post-deployment verification
+## 11. Post-deployment verification
 
 Only after an owner-approved deployment, and using clearly marked test data:
 
@@ -240,7 +297,7 @@ Only after an owner-approved deployment, and using clearly marked test data:
 
 ## 11. Outstanding owner actions — summary
 
-- [ ] Decisions 1–10 above recorded.
+- [ ] Decisions 1–11 above recorded.
 - [ ] Staging and production Supabase projects created.
 - [ ] Migrations applied to staging, `supabase test db` green.
 - [ ] Owner auth user created and promoted; bootstrap revoked.

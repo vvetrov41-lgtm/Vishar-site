@@ -16,7 +16,9 @@ const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
 
 // Replace with the real GA4 measurement ID when analytics goes live — until then this is a harmless placeholder.
 const GA_MEASUREMENT_ID = 'G-XXXXXXXXXX';
-const CONSENT_KEY = 'vishar-cookie-consent';
+// Versioned so any choice collected while analytics was only a placeholder is
+// never treated as consent for a later, materially configured integration.
+const CONSENT_KEY = 'vishar-cookie-consent-v2';
 
 const NAV_LINKS = [
 { id: 'home',           label: 'Home',           href: '/' },
@@ -437,8 +439,12 @@ window.addEventListener('scroll', function () {
 }
 
 /* ── Analytics (GA4, consent-gated) ── */
+function analyticsConfigured() {
+return GA_MEASUREMENT_ID.indexOf('G-XXXX') !== 0;
+}
+
 function loadAnalytics() {
-if (GA_MEASUREMENT_ID.indexOf('G-XXXX') === 0) return; // placeholder — no-op until a real ID is set
+if (!analyticsConfigured()) return; // placeholder — no-op until a real ID is set
 if (document.getElementById('ga4-script')) return; // already loaded
 
 window.dataLayer = window.dataLayer || [];
@@ -463,6 +469,9 @@ try { localStorage.setItem(CONSENT_KEY, value); } catch (e) { /* private browsin
 
 /* ── Cookie consent banner ── */
 function buildConsentBanner() {
+// Do not ask for a choice when there is no analytics processing to consent to.
+// Enabling a real measurement ID requires updating the privacy notice first.
+if (!analyticsConfigured()) return;
 const stored = getConsent();
 if (stored === 'granted') { loadAnalytics(); return; }
 if (stored === 'denied') return;
@@ -494,6 +503,7 @@ banner.querySelector('#cookie-decline').addEventListener('click', function () {
 
 /* Re-open the banner from the privacy page ("Manage cookie preferences"). */
 window.visharManageCookies = function () {
+if (!analyticsConfigured()) return;
 try { localStorage.removeItem(CONSENT_KEY); } catch (e) {}
 const existing = document.getElementById('cookie-consent');
 if (existing) existing.remove();

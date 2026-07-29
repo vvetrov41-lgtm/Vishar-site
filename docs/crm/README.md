@@ -31,7 +31,7 @@ repeated here.
             ▼
 ┌────────────────────────┐
 │ Cloudflare Worker       │  THE ONLY trusted backend for public intake.
-│ (trusted)               │  Holds SUPABASE_SERVICE_ROLE_KEY as a Worker
+│ (trusted)               │  Holds SUPABASE_SECRET_KEY as a Worker
 │ workers/tattooai.js     │  secret. Validates origin, body size, fields,
 │ workers/routes/*        │  MIME, extension and magic bytes.
 │ workers/lib/*           │
@@ -55,7 +55,7 @@ repeated here.
     ▼
 ┌────────────────────────┐
 │ Private CRM app         │  admin/ — Vite + React + TypeScript SPA.
-│ (semi-trusted browser)  │  Supabase Auth session + anon key only.
+│ (semi-trusted browser)  │  Supabase Auth session + publishable key only.
 │ admin/                  │  Every read/write is constrained by RLS.
 └────────────────────────┘
 
@@ -70,7 +70,7 @@ Later, and not connected:
 | Boundary | Allowed | Never |
 |---|---|---|
 | Public browser | Submit a validated enquiry; receive a reference number | Reach Postgres or Storage directly; see any credential |
-| Cloudflare Worker | Call narrow Postgres RPCs with `service_role`; write to the private bucket at server-derived paths | Accept a client-controlled storage path; echo secrets; log PII |
+| Cloudflare Worker | Call narrow Postgres RPCs with a backend secret; write to the private bucket at server-derived paths | Accept a client-controlled storage path; echo secrets; log PII |
 | Supabase Postgres | Own all durable state; enforce RLS; append activity | Trust the caller's claimed role over `auth.uid()` |
 | Supabase Storage | Store private client files | Serve public URLs; allow unrestricted bucket listing |
 | CRM browser | Authenticated, RLS-constrained reads and narrow RPC writes | Hold `service_role`; run arbitrary SQL |
@@ -84,7 +84,9 @@ a transport, or a view.
 - An enquiry exists when the `enquiries` row is committed. Nothing else — not a
   Telegram message, not an email — makes an enquiry real.
 - Files are owned by `enquiry_files` / project file rows. Objects in Storage
-  without a matching database row are orphans and are removed by reconciliation.
+  without a matching database row are orphans. The current reconciliation
+  helper does not sweep them; an audited scheduler/object-cleanup job remains a
+  staging prerequisite.
 - Telegram messages are notifications. Losing every Telegram message loses no
   business data.
 - Google Calendar events (later) are projections of `sessions`. The `sessions`
@@ -103,9 +105,13 @@ The public form reports success **only** when all four are true:
 4. intake is finalised (`intake_state = 'complete'`).
 
 A Telegram failure after step 4 does not turn a successful enquiry into a
-failure. A Storage failure before step 4 triggers compensating deletion,
-records a safe operational failure, keeps the idempotency key usable for a
-retry, and keeps the incomplete enquiry out of the normal new-enquiry queue.
+failure. A Storage/manifest failure before step 4 records a safe operational
+failure, keeps the idempotency key usable for a retry, and keeps the incomplete
+enquiry out of the normal new-enquiry queue. Failed rows remain visible through
+the trusted reconciliation RPC even if the visitor stops retrying.
+Compensation runs only after a definitive rejection; ambiguous commit outcomes
+retain the bytes so a `ready` manifest can never be made to point at an object
+the Worker deleted.
 
 ## 3. Repository layout
 
@@ -129,7 +135,7 @@ workers/
   lib/email.js               provider-neutral email interface (no provider bound)
   lib/calendar.js            provider-neutral calendar interface (no provider bound)
   lib/ai-tools.js            the ten named AI tools and their constraints (no gateway)
-  lib/reconciliation.js      incomplete-intake recovery
+  lib/reconciliation.js      stale-intake planner/marker; no scheduler or object sweep
   routes/enquiries.js        durable intake orchestration
 admin/                       private mobile-first CRM SPA (separate build)
 booking/index.html           public form (multipart + idempotency key)
@@ -148,8 +154,8 @@ because it is a private application and not an indexable public page.
 | Actor | Mechanism | Credential in browser |
 |---|---|---|
 | Public visitor | None | None |
-| CRM staff | Supabase Auth (email + password) | Supabase URL + anon key only |
-| Cloudflare Worker | `SUPABASE_SERVICE_ROLE_KEY` Worker secret | Never |
+| CRM staff | Supabase Auth (email + password) | Supabase URL + publishable key only |
+| Cloudflare Worker | `SUPABASE_SECRET_KEY` Worker secret | Never |
 | AI gateway (later) | Per-caller token mapped to a CRM profile | Never |
 
 Every authenticated database operation additionally requires a `profiles` row
@@ -166,7 +172,7 @@ Migrations are forward-only and must be applied in filename order:
 |---|---|
 | `0001_extensions_types.sql` | extensions, enums, allowed status transitions |
 | `0002_profiles_clients.sql` | `profiles`, `clients`, normalisation functions |
-| `0003_enquiries_files.sql` | `enquiries`, `enquiry_files`, reference generator |
+| `0003_enquiries_files.sql` | `enquiries`, immutable submitted-contact snapshots, `enquiry_files`, reference generator |
 | `0004_projects_sessions.sql` | `projects`, `sessions`, money and calendar constraints |
 | `0005_activity_outbox_notes.sql` | `activity_log`, `internal_notes`, `email_messages`, `follow_ups`, `integration_outbox` |
 | `0006_functions_triggers.sql` | secure functions, triggers, atomic intake RPC |

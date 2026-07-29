@@ -76,7 +76,7 @@ Implementation must be incremental. First add an atomic Postgres intake RPC, sch
 - **Files:** `workers/tattooai.js:102-164`
 - **Evidence:** current ordering is Telegram text followed by independent file uploads; partial failure is reported only as a warning and there is no retry queue or durable state.
 - **Impact:** the future database and Storage operations could diverge unless states and cleanup are explicit.
-- **Fix:** create the enquiry and expected file manifests atomically in Postgres; upload each object; mark each manifest uploaded. On upload failure, delete already uploaded objects, mark the enquiry `intake_failed`/record an operational failure without exposing it to the normal new queue, and return a retryable error. A scheduled reconciliation job cleans stale manifests and orphan objects. Telegram and email are outbox jobs after persistence.
+- **Fix:** create the enquiry and expected file manifests atomically in Postgres; upload each object; mark each manifest uploaded. Compensate only when the database has definitively rejected the mark; retain an object after a 5xx or lost response because the mark may already have committed. Mark the enquiry `intake_failed`/record an operational failure without exposing it to the normal new queue, and return a retryable error. A future scheduled object sweep must clean proven orphans; it is not implemented in this PR. Telegram and email are outbox jobs after persistence.
 - **Effort:** Large
 
 ### High issue F — anti-spam and rate limiting are insufficient
@@ -116,7 +116,11 @@ Implementation must be incremental. First add an atomic Postgres intake RPC, sch
 - **Files:** `.github/workflows/deploy-tattooai.yml:1-32`, `wrangler.toml:1-7`, `docs/tattooai-deploy.md:1-32`
 - **Evidence:** deployment is manual, which is appropriate for this draft, but the single Wrangler environment has no staging/production split, database migration check, booking-flow tests, or explicit secret presence check beyond runtime failures.
 - **Impact:** schema/code drift and accidental connection to the wrong Supabase project.
-- **Fix:** add separate `preview` and `production` environments, pin project URLs per environment as non-secret variables, keep all keys as Worker secrets, run unit/static/database tests before a manual deploy, require an environment approval, and publish only on a separate owner-approved action.
+- **Fix:** add a separate `preview` environment while preserving the existing
+  top-level `tattooai` Worker as production, pin project URLs per deployment as
+  non-secret variables, keep all keys as Worker secrets, run
+  unit/static/database tests before a manual deploy, require an environment
+  approval, and publish only on a separate owner-approved action.
 - **Effort:** Medium
 
 ### Medium constraints
@@ -135,14 +139,14 @@ Public browser (/booking/)
   -> HTTPS multipart POST + idempotency key
 Cloudflare Worker (public intake route)
   -> validation / anti-spam / rate limiting
-  -> narrow Postgres intake RPC (service_role only in Worker secret)
+  -> narrow Postgres intake RPC (backend secret only in Worker)
   -> private Supabase Storage upload
   -> durable outbox jobs
       -> Telegram notifier
       -> confirmation-email provider
 
 CRM browser (admin.vishartattoo.com)
-  -> Supabase Auth session (anon key is public, never service_role)
+  -> Supabase Auth session (publishable key is public, never a backend secret)
   -> PostgREST/RPC guarded by RLS and active-profile checks
   -> Worker API for signed file URLs, privileged workflows, Gmail/Calendar
 
@@ -283,18 +287,22 @@ Use `uuid` primary keys (`gen_random_uuid()`), `timestamptz`, `citext` or explic
 | AI tool reads | scoped/field-minimised | scoped/field-minimised | scoped read | — | gateway executes caller role |
 | AI tool writes | allowed named tools | allowed named tools | — | — | gateway validates + audits |
 
-RLS is necessary but not sufficient for column-level finance/PII minimisation. Use views with `security_invoker=true` where supported and narrow RPCs; revoke direct base-table grants when a role should not see a column. Never rely on hidden buttons.
+RLS is necessary but not sufficient for column-level finance/PII minimisation. Withhold finance-column grants on the base tables, expose owner-filtered `security_barrier` views with explicit `SELECT`-only ACLs, and use narrow audited RPCs for writes. Never rely on hidden buttons.
 
 ## 6. Intake, idempotency, and failure flow
 
 1. Browser creates a UUID and stores it in `sessionStorage`; it collects UTM parameters, `location.href` as `landing_page`, and `document.referrer` without visible fields.
 2. Browser posts multipart form data to the Worker. The Worker rejects unknown origins, excessive `Content-Length`, invalid fields, more than three files, files over 4 MB, MIME/extension/signature mismatch, and anti-spam failures.
-3. Worker hashes/redacts request correlation data for logs and calls `create_enquiry_intake` with metadata and expected file descriptors. The database transaction finds/creates the client, creates the enquiry and pending file rows, writes `enquiry.created`, and creates outbox jobs. A repeated key returns the same record.
+3. Worker creates a random request correlation ID, emits allow-listed redacted log fields, and calls `create_enquiry_intake` with metadata and expected file descriptors. The database transaction finds/creates the client, creates the enquiry and pending file rows, and writes `enquiry.created`. A repeated key with identical canonical content returns the same record; reusing a key with different content is rejected.
 4. Only after the main record exists does the Worker upload objects to canonical private paths and mark file rows ready.
-5. If any Storage upload fails, the Worker attempts deletion of objects uploaded in this attempt and records a safe failure. The same idempotency key can resume/reconcile rather than create another enquiry. The browser sees a retryable non-success response; the record is not displayed as a complete `new` enquiry until files are ready.
+5. If an object upload or manifest mark fails, the Worker records a safe failure. It deletes an object only after a definitive 4xx manifest rejection; a 5xx or lost acknowledgement is retained because Postgres may already have committed `ready`. The same idempotency key can safely retry/upsert rather than create another enquiry. The browser sees a retryable non-success response; the record is not displayed as a complete `new` enquiry until files are ready.
 6. Once all required files are ready, the Worker finalises intake and responds with `reference_number`. At this point the CRM shows the enquiry.
-7. Telegram and confirmation email are delivered from the outbox after persistence. Their failure records an integration-failed activity/outbox state and is retried; it never changes the successful form response.
-8. A scheduled reconciliation finds stale pending uploads, retries safe operations, removes true orphans, and alerts after max attempts.
+7. Finalisation enqueues Telegram only after persistence and ready file
+   manifests. The current Worker attempts Telegram once and records the outcome
+   in the outbox; its failure never changes the successful form response.
+8. Reconciliation helpers can identify and mark abandoned pending intakes.
+   No scheduler, automatic outbox retry drain, orphan-object sweep, or
+   confirmation-email provider is connected yet.
 
 Structured logs contain event name, request/correlation ID, enquiry UUID/reference, stage, duration, HTTP/provider status class, and safe error code. They must not contain idea text, names, emails, phone numbers, Instagram handles, image names/content, signed URLs, tokens, or provider response bodies that may echo PII.
 
@@ -302,7 +310,8 @@ Structured logs contain event name, request/correlation ID, enquiry UUID/referen
 
 ### Email
 
-- Provider-neutral interface: `createDraft`, `sendApproved`, `sendTransactional`, `getStatus`.
+- Provider-neutral interface: `createDraft`, `approveDraft`,
+  `queueApproved`, fixed-copy `sendTransactional`, and `getStatus`.
 - Automatically send only the owner-approved transactional templates in the specification. Store template/version and consent/legal basis as applicable.
 - Estimate, extra-photo request, dates, quote, decline, and cover-up discussion are drafts requiring an authenticated human approval action.
 - Gmail OAuth tokens are encrypted server-side secrets, never database/browser-readable. OAuth connection requires owner action and cannot be claimed complete during repository work.
@@ -317,15 +326,17 @@ Structured logs contain event name, request/correlation ID, enquiry UUID/referen
 
 - Expose only the named tools in the specification with JSON schemas, row limits, pagination, role checks, field projection, and per-tool rate limits.
 - Authenticate the human/integration identity; propagate a caller identity into audit events. A gateway-held service credential may execute only narrow RPCs after its own authorisation; it is never disclosed.
-- Write tools validate transitions/assignment targets and always create activity events in the same database transaction.
+- Before a gateway is connected, write tools require dedicated on-behalf-of
+  audit semantics. The current staff RPCs do not yet attribute an action to
+  both the AI and its authenticated human caller.
 - `create_email_draft` can only create a draft. No arbitrary SQL, generic table endpoint, service key, bulk PII export, or unrestricted file URL tool is allowed.
 
 ## 8. Secrets and deployment strategy
 
 ### Required secrets (never commit)
 
-- Worker: `SUPABASE_URL` (may be non-secret config), `SUPABASE_SERVICE_ROLE_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, log/IP hashing salt, optional `TURNSTILE_SECRET_KEY`.
-- CRM browser: Supabase URL and anon/publishable key only; these are identifiers, not authority, and remain constrained by RLS.
+- Worker: `SUPABASE_URL` (may be non-secret config), `SUPABASE_SECRET_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`; a future application-level IP limiter or Turnstile integration would add separately reviewed secrets.
+- CRM browser: Supabase URL and publishable key only; these are identifiers, not authority, and remain constrained by RLS.
 - Later Worker integrations: Gmail OAuth client secret + encrypted refresh token, Calendar OAuth client secret + encrypted refresh token, email signing/provider values if a separate transactional provider is selected, AI gateway token/OAuth signing keys.
 - CI/deploy: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`; Supabase access token/project/database credentials only in protected environment jobs if migrations are automated.
 
