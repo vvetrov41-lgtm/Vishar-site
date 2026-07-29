@@ -90,8 +90,8 @@ alter table public.system_settings force row level security;
 alter table public.retention_holds enable row level security;
 alter table public.retention_holds force row level security;
 
-revoke all on public.system_settings from anon, authenticated;
-revoke all on public.retention_holds from anon, authenticated;
+revoke all on public.system_settings from anon, authenticated, service_role;
+revoke all on public.retention_holds from anon, authenticated, service_role;
 grant select on public.system_settings to authenticated;
 grant select on public.retention_holds to authenticated;
 
@@ -170,7 +170,8 @@ begin
 end;
 $$;
 
-revoke all on function public.update_retention_policy(boolean, integer, integer, integer, integer, boolean) from public;
+revoke all on function public.update_retention_policy(boolean, integer, integer, integer, integer, boolean)
+  from public, anon, authenticated, service_role;
 grant execute on function public.update_retention_policy(boolean, integer, integer, integer, integer, boolean) to authenticated;
 
 -- No scheduled deletion job is created by this migration, and none may be

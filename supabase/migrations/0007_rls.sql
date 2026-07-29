@@ -6,9 +6,9 @@
 --
 --   1. PRIVILEGES. `anon` holds nothing at all. `authenticated` holds SELECT
 --      only, and on `projects` / `sessions` only on the non-finance columns.
---      No role except the migration owner and `service_role` holds INSERT,
---      UPDATE or DELETE on any CRM table: every write goes through a narrow
---      SECURITY DEFINER RPC from migration 0006.
+--      No API role, including `service_role`, holds INSERT, UPDATE or DELETE
+--      on a CRM table: every write goes through a narrow SECURITY DEFINER RPC
+--      from migration 0006.
 --
 --   2. ROW LEVEL SECURITY, enabled and FORCED on every CRM table, so that even
 --      the table owner is subject to policy.
@@ -61,10 +61,8 @@ create policy profiles_select_self on public.profiles
   for select
   using (
     (id = auth.uid() and is_active)
-    -- Owner and booking manager need to see who a piece of work can be assigned
-    -- to. This exposes an active colleague's name and role, never a credential,
-    -- and never an inactive or read_only account.
-    or (public.can_manage_crm() and is_active and role in ('owner', 'booking_manager'))
+    -- Owners use the full staff directory RPC. Managers use the deliberately
+    -- minimised assignment RPC; neither needs broad access to the base table.
     or public.is_owner()
     or crm_private.is_service_backend()
   );
@@ -129,8 +127,10 @@ begin
 end;
 $$;
 
-revoke all on function public.list_profiles() from public;
-revoke all on function public.list_assignable_profiles() from public;
+revoke all on function public.list_profiles()
+  from public, anon, authenticated, service_role;
+revoke all on function public.list_assignable_profiles()
+  from public, anon, authenticated, service_role;
 grant execute on function public.list_profiles() to authenticated;
 grant execute on function public.list_assignable_profiles() to authenticated;
 
@@ -279,7 +279,8 @@ create policy sessions_update on public.sessions
 
 -- Owner-only finance projections. A non-owner selecting these views receives
 -- zero rows rather than an error, and still cannot reach the columns directly.
-create or replace view public.projects_finance as
+create or replace view public.projects_finance
+with (security_barrier = true) as
   select p.id as project_id,
          p.client_id,
          p.currency,
@@ -290,7 +291,8 @@ create or replace view public.projects_finance as
   from public.projects p
   where public.is_owner();
 
-create or replace view public.sessions_finance as
+create or replace view public.sessions_finance
+with (security_barrier = true) as
   select s.id as session_id,
          s.project_id,
          s.currency,
@@ -299,6 +301,8 @@ create or replace view public.sessions_finance as
   from public.sessions s
   where public.is_owner();
 
+revoke all on public.projects_finance from anon, authenticated, service_role;
+revoke all on public.sessions_finance from anon, authenticated, service_role;
 grant select on public.projects_finance to authenticated;
 grant select on public.sessions_finance to authenticated;
 
@@ -308,12 +312,14 @@ comment on view public.projects_finance is
 -- ---------------------------------------------------------------------------
 -- activity_log
 --
--- Append-only for every role. There is deliberately no UPDATE and no DELETE
--- policy on this table, and migration 0005 adds a trigger that also refuses a
--- BYPASSRLS role.
+-- Append-only and written exclusively through narrow SECURITY DEFINER RPCs.
+-- Direct INSERT would let a CRM account forge the actor, event type and entity
+-- references, so authenticated receives SELECT only. Migration 0005 also
+-- refuses UPDATE, DELETE and TRUNCATE even for a BYPASSRLS role.
 -- ---------------------------------------------------------------------------
 
-grant select, insert on public.activity_log to authenticated;
+grant select on public.activity_log to authenticated;
+revoke insert on public.activity_log from authenticated;
 
 drop policy if exists activity_log_select on public.activity_log;
 create policy activity_log_select on public.activity_log
@@ -458,7 +464,6 @@ create policy enquiry_status_transitions_select on public.enquiry_status_transit
 -- ---------------------------------------------------------------------------
 
 revoke all on all tables in schema public from service_role;
-grant select, insert, update on public.integration_outbox to service_role;
 
 comment on schema public is
   'CRM application schema. All writes go through SECURITY DEFINER RPCs; anon holds no privileges.';

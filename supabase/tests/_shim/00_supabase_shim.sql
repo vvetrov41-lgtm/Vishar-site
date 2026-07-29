@@ -43,6 +43,16 @@ grant usage on schema extensions to anon, authenticated, service_role;
 grant usage on schema auth to anon, authenticated, service_role;
 grant usage on schema storage to anon, authenticated, service_role;
 
+-- Hosted Supabase exposes newly created `public` objects to its API roles by
+-- default. Model that here so migration 0001's closed-by-default privilege
+-- reset is exercised rather than silently relying on plain PostgreSQL defaults.
+alter default privileges in schema public
+  grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public
+  grant execute on functions to anon, authenticated, service_role;
+
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists citext with schema extensions;
 create extension if not exists pgtap;

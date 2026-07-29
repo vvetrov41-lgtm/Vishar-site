@@ -45,9 +45,9 @@ create table if not exists public.projects (
     check (estimate_total is null or estimate_total >= 0),
   constraint projects_deposit_amount_non_negative
     check (deposit_amount is null or deposit_amount >= 0),
-  -- A deposit cannot be requested or paid without an amount.
+  -- A requested or paid deposit must carry a real positive amount.
   constraint projects_deposit_amount_required_when_active
-    check (deposit_status in ('not_required', 'refunded', 'forfeited') or deposit_amount is not null)
+    check (deposit_status not in ('requested', 'paid') or deposit_amount > 0)
 );
 
 -- One enquiry converts to at most one project. Conversion is not repeatable.
@@ -98,7 +98,7 @@ create table if not exists public.sessions (
   -- confirmed state. Draft and proposed sessions never have one, which is the
   -- schema-level half of "draft or proposed sessions never create events".
   constraint sessions_event_requires_confirmed_lifecycle
-    check (calendar_event_id is null or status in ('confirmed', 'completed', 'cancelled')),
+    check (calendar_event_id is null or status in ('confirmed', 'completed', 'cancelled', 'no_show')),
   -- A provider is only named once an event actually exists.
   constraint sessions_provider_requires_event
     check (calendar_provider = 'none' or calendar_event_id is not null),
@@ -182,10 +182,18 @@ create table if not exists public.project_files (
   constraint project_files_storage_path_key unique (storage_path),
   constraint project_files_category_allowed check (category in ('design', 'session', 'healed')),
   constraint project_files_byte_size_positive check (byte_size > 0),
+  constraint project_files_byte_size_max check (byte_size <= 4 * 1024 * 1024),
   constraint project_files_mime_allowed
     check (mime_type in ('image/jpeg', 'image/png', 'image/webp')),
   constraint project_files_extension_allowed
     check (safe_extension in ('jpg', 'jpeg', 'png', 'webp')),
+  constraint project_files_mime_matches_extension check (
+    (mime_type = 'image/jpeg' and safe_extension in ('jpg', 'jpeg'))
+    or (mime_type = 'image/png' and safe_extension = 'png')
+    or (mime_type = 'image/webp' and safe_extension = 'webp')
+  ),
+  constraint project_files_session_required_for_session_category
+    check ((category = 'session') = (session_id is not null)),
   constraint project_files_path_is_not_url check (storage_path !~* '^[a-z]+://'),
   constraint project_files_path_shape check (
     storage_path ~ ('^clients/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
@@ -234,6 +242,7 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   v_client_id uuid;
+  v_session_project_id uuid;
   v_expected  text;
 begin
   select p.client_id into v_client_id
@@ -242,6 +251,19 @@ begin
 
   if v_client_id is null then
     raise exception 'project % does not exist', new.project_id using errcode = '23503';
+  end if;
+
+  if new.session_id is not null then
+    select s.project_id into v_session_project_id
+    from public.sessions s
+    where s.id = new.session_id;
+
+    if v_session_project_id is null then
+      raise exception 'session % does not exist', new.session_id using errcode = '23503';
+    elsif v_session_project_id <> new.project_id then
+      raise exception 'project file session must belong to the same project'
+        using errcode = '23514';
+    end if;
   end if;
 
   v_expected := public.project_file_storage_path(
@@ -259,7 +281,8 @@ $$;
 
 drop trigger if exists project_files_validate_path on public.project_files;
 create trigger project_files_validate_path
-  before insert or update of storage_path, project_id, category, safe_extension on public.project_files
+  before insert or update of storage_path, project_id, session_id, category, safe_extension
+  on public.project_files
   for each row execute function crm_private.validate_project_file_path();
 
 create index if not exists project_files_project_idx on public.project_files (project_id, created_at desc);

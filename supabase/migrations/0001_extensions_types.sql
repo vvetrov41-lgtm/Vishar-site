@@ -32,6 +32,24 @@ create schema if not exists crm_private;
 revoke all on schema crm_private from public;
 
 -- ---------------------------------------------------------------------------
+-- Closed-by-default Data API privileges
+--
+-- Hosted Supabase projects grant new `public` tables, sequences and functions
+-- to API roles by default. RLS does not replace object privileges, and
+-- `REVOKE ... FROM PUBLIC` does not remove a separate grant made directly to
+-- `authenticated` or `service_role`. Close the defaults before creating any
+-- application object; later migrations grant back only the exact reads and
+-- RPCs each role needs.
+-- ---------------------------------------------------------------------------
+
+alter default privileges in schema public
+  revoke all on tables from anon, authenticated, service_role;
+alter default privileges in schema public
+  revoke all on sequences from anon, authenticated, service_role;
+alter default privileges in schema public
+  revoke execute on functions from public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------------
 

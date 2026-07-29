@@ -130,12 +130,22 @@ values ('c0000000-0000-4000-8000-000000000001', 'Constraint Fixture', 'fixture@e
 
 -- Explicit ids: `created_at` defaults to now(), which is transaction start, so
 -- two rows inserted in the same transaction tie and cannot be ordered by it.
-insert into public.enquiries (id, client_id, reference_number, idempotency_key, intake_state)
+insert into public.enquiries (
+  id, client_id, reference_number, idempotency_key, intake_fingerprint,
+  intake_state, submitted_full_name, submitted_email,
+  privacy_notice_version, privacy_acknowledged_at
+)
 values ('e0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001',
-        'IGNORED', gen_random_uuid(), 'complete');
-insert into public.enquiries (id, client_id, reference_number, idempotency_key, intake_state)
+        'IGNORED', gen_random_uuid(), repeat('a', 64), 'complete',
+        'Constraint Fixture', 'fixture@example.test', '2026-07-29', now());
+insert into public.enquiries (
+  id, client_id, reference_number, idempotency_key, intake_fingerprint,
+  intake_state, submitted_full_name, submitted_email,
+  privacy_notice_version, privacy_acknowledged_at
+)
 values ('e0000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000001',
-        'IGNORED-TOO', gen_random_uuid(), 'complete');
+        'IGNORED-TOO', gen_random_uuid(), repeat('b', 64), 'complete',
+        'Constraint Fixture', 'fixture@example.test', '2026-07-29', now());
 
 select is((select count(distinct reference_number)::int from public.enquiries), 2,
           'each enquiry receives a distinct reference number');
@@ -156,8 +166,21 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$insert into public.enquiries (client_id, reference_number, idempotency_key)
-    select client_id, 'X', idempotency_key from public.enquiries
+  $$update public.enquiries set submitted_email = 'changed@example.test'
+    where id = 'e0000000-0000-4000-8000-000000000001'$$,
+  '23514', null,
+  'the contact details submitted with an enquiry are immutable'
+);
+
+select throws_ok(
+  $$insert into public.enquiries (
+      client_id, reference_number, idempotency_key, intake_fingerprint,
+      submitted_full_name, submitted_email,
+      privacy_notice_version, privacy_acknowledged_at
+    )
+    select client_id, 'X', idempotency_key, repeat('c', 64),
+           submitted_full_name, submitted_email, '2026-07-29', now()
+    from public.enquiries
     where id = 'e0000000-0000-4000-8000-000000000001'$$,
   '23505', null,
   'a duplicate idempotency key is rejected by the unique constraint'
@@ -200,17 +223,17 @@ select ok(
 -- ---------------------------------------------------------------------------
 
 select throws_ok(
-  $$insert into public.enquiry_files (enquiry_id, storage_path, safe_extension, mime_type, byte_size)
-    select id, 'clients/x/enquiries/y/references/z.jpg', 'jpg', 'image/jpeg', 10
+  $$insert into public.enquiry_files (enquiry_id, ordinal, storage_path, safe_extension, mime_type, byte_size)
+    select id, 0, 'clients/x/enquiries/y/references/z.jpg', 'jpg', 'image/jpeg', 10
     from public.enquiries where id = 'e0000000-0000-4000-8000-000000000001'$$,
   '23514', null,
   'a non-canonical storage path is rejected'
 );
 
 select throws_ok(
-  $$insert into public.enquiry_files (id, enquiry_id, storage_path, safe_extension, mime_type, byte_size)
+  $$insert into public.enquiry_files (id, enquiry_id, ordinal, storage_path, safe_extension, mime_type, byte_size)
     select 'f0000000-0000-4000-8000-000000000001',
-           e.id,
+           e.id, 0,
            public.enquiry_file_storage_path(e.client_id, e.id, 'f0000000-0000-4000-8000-000000000001', 'jpg'),
            'jpg', 'image/jpeg', 0
     from public.enquiries e where e.id = 'e0000000-0000-4000-8000-000000000001'$$,
@@ -219,9 +242,9 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$insert into public.enquiry_files (id, enquiry_id, storage_path, safe_extension, mime_type, byte_size)
+  $$insert into public.enquiry_files (id, enquiry_id, ordinal, storage_path, safe_extension, mime_type, byte_size)
     select 'f0000000-0000-4000-8000-000000000002',
-           e.id,
+           e.id, 0,
            public.enquiry_file_storage_path(e.client_id, e.id, 'f0000000-0000-4000-8000-000000000002', 'gif'),
            'gif', 'image/gif', 100
     from public.enquiries e where e.id = 'e0000000-0000-4000-8000-000000000001'$$,
@@ -230,9 +253,9 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$insert into public.enquiry_files (id, enquiry_id, storage_path, safe_extension, mime_type, byte_size)
+  $$insert into public.enquiry_files (id, enquiry_id, ordinal, storage_path, safe_extension, mime_type, byte_size)
     select 'f0000000-0000-4000-8000-000000000003',
-           e.id,
+           e.id, 0,
            public.enquiry_file_storage_path(e.client_id, e.id, 'f0000000-0000-4000-8000-000000000003', 'png'),
            'png', 'image/jpeg', 100
     from public.enquiries e where e.id = 'e0000000-0000-4000-8000-000000000001'$$,
@@ -241,9 +264,9 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$insert into public.enquiry_files (id, enquiry_id, storage_path, safe_extension, mime_type, byte_size)
+  $$insert into public.enquiry_files (id, enquiry_id, ordinal, storage_path, safe_extension, mime_type, byte_size)
     select 'f0000000-0000-4000-8000-000000000004',
-           e.id,
+           e.id, 0,
            public.enquiry_file_storage_path(e.client_id, e.id, 'f0000000-0000-4000-8000-000000000004', 'jpg'),
            'jpg', 'image/jpeg', 5 * 1024 * 1024
     from public.enquiries e where e.id = 'e0000000-0000-4000-8000-000000000001'$$,
@@ -252,9 +275,9 @@ select throws_ok(
 );
 
 select lives_ok(
-  $$insert into public.enquiry_files (id, enquiry_id, storage_path, safe_extension, mime_type, byte_size)
+  $$insert into public.enquiry_files (id, enquiry_id, ordinal, storage_path, safe_extension, mime_type, byte_size)
     select 'f0000000-0000-4000-8000-000000000005',
-           e.id,
+           e.id, 0,
            public.enquiry_file_storage_path(e.client_id, e.id, 'f0000000-0000-4000-8000-000000000005', 'jpg'),
            'jpg', 'image/jpeg', 1024
     from public.enquiries e where e.id = 'e0000000-0000-4000-8000-000000000001'$$,
@@ -299,6 +322,82 @@ select ok(not public.session_is_calendar_eligible('draft'), 'draft sessions are 
 select ok(not public.session_is_calendar_eligible('proposed'), 'proposed sessions are not calendar eligible');
 select ok(public.session_is_calendar_eligible('confirmed'), 'confirmed sessions are calendar eligible');
 
+select lives_ok(
+  $$update public.sessions
+       set status = 'confirmed',
+           calendar_event_id = 'evt_no_show',
+           calendar_provider = 'google'
+     where id = '50000000-0000-4000-8000-000000000001'$$,
+  'a confirmed session may record its provider event'
+);
+
+select lives_ok(
+  $$update public.sessions
+       set status = 'no_show'
+     where id = '50000000-0000-4000-8000-000000000001'$$,
+  'a confirmed session with a provider event can be marked no-show without losing history'
+);
+
+select throws_ok(
+  $$insert into public.project_files (
+      id, project_id, category, storage_path, safe_extension, mime_type, byte_size
+    ) values (
+      '60000000-0000-4000-8000-000000000001',
+      '90000000-0000-4000-8000-000000000001',
+      'design',
+      public.project_file_storage_path(
+        'c0000000-0000-4000-8000-000000000001',
+        '90000000-0000-4000-8000-000000000001',
+        'design',
+        '60000000-0000-4000-8000-000000000001',
+        'jpg'
+      ),
+      'jpg', 'image/jpeg', 5 * 1024 * 1024
+    )$$,
+  '23514', null,
+  'a project file larger than 4 MB is rejected'
+);
+
+select throws_ok(
+  $$insert into public.project_files (
+      id, project_id, category, storage_path, safe_extension, mime_type, byte_size
+    ) values (
+      '60000000-0000-4000-8000-000000000002',
+      '90000000-0000-4000-8000-000000000001',
+      'design',
+      public.project_file_storage_path(
+        'c0000000-0000-4000-8000-000000000001',
+        '90000000-0000-4000-8000-000000000001',
+        'design',
+        '60000000-0000-4000-8000-000000000002',
+        'png'
+      ),
+      'png', 'image/jpeg', 1024
+    )$$,
+  '23514', null,
+  'a project file MIME type must agree with its extension'
+);
+
+select throws_ok(
+  $$insert into public.project_files (
+      id, project_id, category, storage_path, safe_extension, mime_type, byte_size
+    ) values (
+      '60000000-0000-4000-8000-000000000003',
+      '90000000-0000-4000-8000-000000000001',
+      'session',
+      public.project_file_storage_path(
+        'c0000000-0000-4000-8000-000000000001',
+        '90000000-0000-4000-8000-000000000001',
+        'session',
+        '60000000-0000-4000-8000-000000000003',
+        'jpg'
+      ),
+      'jpg', 'image/jpeg', 1024
+    )$$,
+  '23514', null,
+  'a session file must reference its session'
+);
+
 -- ---------------------------------------------------------------------------
 -- Project constraints
 -- ---------------------------------------------------------------------------
@@ -315,6 +414,13 @@ select throws_ok(
     values ('c0000000-0000-4000-8000-000000000001', 'Bad currency', 'pounds')$$,
   '23514', null,
   'currency must be a three-letter ISO code'
+);
+
+select throws_ok(
+  $$insert into public.projects (client_id, title, deposit_amount, deposit_status)
+    values ('c0000000-0000-4000-8000-000000000001', 'Zero deposit', 0, 'requested')$$,
+  '23514', null,
+  'a requested deposit must be positive'
 );
 
 select * from finish(true);

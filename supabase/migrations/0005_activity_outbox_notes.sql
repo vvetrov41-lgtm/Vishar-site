@@ -59,12 +59,49 @@ create index if not exists activity_log_profile_idx on public.activity_log (prof
 create index if not exists activity_log_actor_idx on public.activity_log (actor_profile_id, occurred_at desc) where actor_profile_id is not null;
 create index if not exists activity_log_event_type_idx on public.activity_log (event_type, occurred_at desc);
 
--- Metadata guard.
+-- Recursive metadata guard.
 --
 -- The audit trail records that something happened and to which entity; it is
 -- not a second copy of the client's personal data. Keys that would duplicate
 -- PII or leak a credential are refused outright, so a careless caller cannot
--- quietly turn the log into a PII store.
+-- quietly turn the log into a PII store, including below nested objects.
+create or replace function crm_private.find_forbidden_json_key(
+  p_value jsonb,
+  p_forbidden text[]
+)
+returns text
+language plpgsql
+immutable
+set search_path = pg_catalog, crm_private
+as $$
+declare
+  v_key text;
+  v_child jsonb;
+  v_nested text;
+begin
+  if jsonb_typeof(p_value) = 'object' then
+    for v_key, v_child in select key, value from jsonb_each(p_value) loop
+      if lower(v_key) = any (p_forbidden) then
+        return v_key;
+      end if;
+      v_nested := crm_private.find_forbidden_json_key(v_child, p_forbidden);
+      if v_nested is not null then
+        return v_nested;
+      end if;
+    end loop;
+  elsif jsonb_typeof(p_value) = 'array' then
+    for v_child in select value from jsonb_array_elements(p_value) loop
+      v_nested := crm_private.find_forbidden_json_key(v_child, p_forbidden);
+      if v_nested is not null then
+        return v_nested;
+      end if;
+    end loop;
+  end if;
+
+  return null;
+end;
+$$;
+
 create or replace function crm_private.guard_activity_metadata()
 returns trigger
 language plpgsql
@@ -80,10 +117,7 @@ declare
   ];
   offending text;
 begin
-  select k into offending
-  from jsonb_object_keys(new.metadata) as k
-  where lower(k) = any (forbidden)
-  limit 1;
+  offending := crm_private.find_forbidden_json_key(new.metadata, forbidden);
 
   if offending is not null then
     raise exception 'activity_log.metadata may not contain the key %', offending
@@ -304,8 +338,20 @@ create table if not exists public.integration_outbox (
   constraint integration_outbox_payload_size check (pg_column_size(payload) <= 8192),
   constraint integration_outbox_error_code_shape
     check (last_error_code is null or last_error_code ~ '^[a-z][a-z0-9_]{2,63}$'),
-  constraint integration_outbox_lease_consistent
-    check ((status = 'leased') = (leased_by is not null and lease_expires_at is not null))
+  constraint integration_outbox_lease_consistent check (
+    (
+      status = 'leased'
+      and leased_by is not null
+      and leased_at is not null
+      and lease_expires_at is not null
+    )
+    or (
+      status <> 'leased'
+      and leased_by is null
+      and leased_at is null
+      and lease_expires_at is null
+    )
+  )
 );
 
 comment on table public.integration_outbox is
@@ -330,16 +376,15 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   forbidden text[] := array[
-    'email', 'phone', 'whatsapp', 'instagram', 'full_name', 'idea',
-    'signed_url', 'token', 'access_token', 'refresh_token', 'api_key',
-    'secret', 'password', 'file_content'
+    'email', 'email_address', 'phone', 'phone_number', 'whatsapp', 'instagram',
+    'full_name', 'name', 'idea', 'message', 'body', 'notes', 'note',
+    'original_filename', 'filename', 'file_content', 'content', 'data',
+    'signed_url', 'url', 'token', 'access_token', 'refresh_token',
+    'authorization', 'api_key', 'key', 'secret', 'password', 'ip', 'ip_address'
   ];
   offending text;
 begin
-  select k into offending
-  from jsonb_object_keys(new.payload) as k
-  where lower(k) = any (forbidden)
-  limit 1;
+  offending := crm_private.find_forbidden_json_key(new.payload, forbidden);
 
   if offending is not null then
     raise exception 'integration_outbox.payload may not contain the key %', offending

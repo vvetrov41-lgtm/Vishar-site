@@ -51,7 +51,11 @@ create temporary table t_enq as
 select public.create_enquiry_intake(
   'aaaaaaaa-0000-4000-8000-000000000001',
   jsonb_build_object('full_name', 'Storage Client', 'email', 'storage@example.test'),
-  jsonb_build_object('idea', 'A raven'),
+  jsonb_build_object(
+    'idea', 'A raven',
+    'privacy_acknowledged', true,
+    'privacy_notice_version', '2026-07-29'
+  ),
   jsonb_build_array(jsonb_build_object('mime_type', 'image/jpeg', 'safe_extension', 'jpg', 'byte_size', 2048))
 ) as r;
 
@@ -110,6 +114,10 @@ select ok(not public.crm_storage_object_is_known('clients/'),
           'a bare prefix is not recognised, so the bucket cannot be listed wholesale');
 select ok(not public.crm_storage_object_is_known(''),
           'an empty key is not recognised');
+
+select pg_temp.claims('{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}');
+select ok(not public.crm_storage_object_is_known((select known_path from paths)),
+          'read_only cannot use the helper as a file-manifest existence oracle');
 
 -- ---------------------------------------------------------------------------
 -- Anonymous access
@@ -184,6 +192,36 @@ select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"aut
 delete from storage.objects where bucket_id = 'crm-files';
 select is((select count(*)::int from storage.objects), 0,
           'the owner can delete a client file');
+reset role;
+
+-- Once the manifest is ready, a booking manager may read it but cannot
+-- recreate or replace its object. An owner retains an explicit repair path.
+set local role service_role;
+select pg_temp.claims('{"role":"service_role"}');
+select public.mark_enquiry_file_uploaded(
+  (select f.id from public.enquiry_files f limit 1),
+  null
+);
+reset role;
+
+set local role authenticated;
+select pg_temp.claims('{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}');
+select throws_ok(
+  format($$insert into storage.objects (bucket_id, name) values ('crm-files', %L)$$,
+         (select known_path from paths)),
+  '42501', null,
+  'a booking manager cannot replace an object after its manifest is ready'
+);
+reset role;
+
+set local role authenticated;
+select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}');
+select lives_ok(
+  format($$insert into storage.objects (bucket_id, name) values ('crm-files', %L)$$,
+         (select known_path from paths)),
+  'the owner can repair a missing object whose manifest is already ready'
+);
+delete from storage.objects where bucket_id = 'crm-files';
 reset role;
 
 -- The backend can clean up after a partial upload, which is what makes the

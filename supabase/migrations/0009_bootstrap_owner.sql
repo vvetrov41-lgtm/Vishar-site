@@ -27,6 +27,32 @@ begin
     raise exception 'an explicit auth user id is required' using errcode = '22023';
   end if;
 
+  -- Serialise the first-owner decision with owner demotion/deactivation. Two
+  -- concurrent bootstrap calls must never both observe "no active owner".
+  perform pg_advisory_xact_lock(hashtextextended('crm:active-owner-invariant', 0));
+
+  select u.email::text into v_email from auth.users u where u.id = p_user_id;
+  if v_email is null then
+    raise exception 'no auth user exists with id %', p_user_id
+      using errcode = '23503',
+            hint = 'Create the account in Supabase Auth first; bootstrap never creates one.';
+  end if;
+
+  select * into v_existing from public.profiles p where p.id = p_user_id;
+
+  -- The manual SQL Editor has no end-user JWT. Let it repeat the exact,
+  -- already-satisfied promotion as a no-op without granting it authority to
+  -- change any profile. This is the idempotency promised by the owner runbook.
+  if v_existing.id is not null
+     and v_existing.role = 'owner'
+     and v_existing.is_active then
+    return jsonb_build_object(
+      'profile_id', p_user_id,
+      'role', 'owner',
+      'changed', false
+    );
+  end if;
+
   -- Promotion is authorised by one of three things: the CRM has no owner yet
   -- (first-run bootstrap), an existing owner is doing it, or the trusted
   -- backend is. Checking here rather than leaving it to RLS matters: without
@@ -41,15 +67,9 @@ begin
       using errcode = '42501';
   end if;
 
-  select u.email::text into v_email from auth.users u where u.id = p_user_id;
-  if v_email is null then
-    raise exception 'no auth user exists with id %', p_user_id
-      using errcode = '23503',
-            hint = 'Create the account in Supabase Auth first; bootstrap never creates one.';
-  end if;
-
-  select * into v_existing from public.profiles p where p.id = p_user_id;
-  v_changed := not found or v_existing.role <> 'owner' or not v_existing.is_active;
+  v_changed := v_existing.id is null
+    or v_existing.role <> 'owner'
+    or not v_existing.is_active;
 
   -- The audit row is written BEFORE the promotion, deliberately. Both happen in
   -- one transaction, so the ordering changes nothing about the outcome — but it
@@ -121,8 +141,8 @@ $$;
 -- from a browser session or from the Worker's normal call surface.
 revoke all on function public.bootstrap_owner(uuid, text) from public;
 revoke all on function public.bootstrap_owner_by_email(text, text) from public;
-revoke all on function public.bootstrap_owner(uuid, text) from anon, authenticated;
-revoke all on function public.bootstrap_owner_by_email(text, text) from anon, authenticated;
+revoke all on function public.bootstrap_owner(uuid, text) from anon, authenticated, service_role;
+revoke all on function public.bootstrap_owner_by_email(text, text) from anon, authenticated, service_role;
 
 comment on function public.bootstrap_owner(uuid, text) is
   'Idempotently promotes an EXISTING auth user to the CRM owner role. Contains no baked-in identity. See docs/crm/OWNER_SETUP.md.';

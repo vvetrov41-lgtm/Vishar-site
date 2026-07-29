@@ -42,10 +42,22 @@ create table if not exists public.enquiries (
   client_id        uuid not null references public.clients(id) on delete restrict,
   reference_number text not null,
   idempotency_key  uuid not null,
+  intake_fingerprint text not null,
   status           public.enquiry_status not null default 'new',
   intake_state     public.enquiry_intake_state not null default 'pending',
   intake_error_code text,
+  client_identifier_conflict boolean not null default false,
   assigned_to      uuid references public.profiles(id) on delete set null,
+
+  -- Immutable snapshot of what this form actually submitted. Client matching
+  -- must never discard a new contact detail merely because the master client
+  -- card already carries a different value.
+  submitted_full_name         text not null,
+  submitted_email             text not null,
+  submitted_phone             text,
+  submitted_instagram         text,
+  submitted_preferred_contact text,
+  submitted_travelling_from   text,
 
   project_type     text,
   placement        text,
@@ -62,6 +74,8 @@ create table if not exists public.enquiries (
   utm_campaign     text,
   utm_content      text,
   utm_term         text,
+  privacy_notice_version text not null,
+  privacy_acknowledged_at timestamptz not null,
 
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now(),
@@ -71,6 +85,9 @@ create table if not exists public.enquiries (
   constraint enquiries_reference_number_key unique (reference_number),
   constraint enquiries_idempotency_key_key unique (idempotency_key),
   constraint enquiries_reference_format check (reference_number ~ '^ENQ-[0-9]{4}-[0-9]{4,}$'),
+  constraint enquiries_intake_fingerprint_shape check (intake_fingerprint ~ '^[a-f0-9]{64}$'),
+  constraint enquiries_privacy_notice_version_shape
+    check (privacy_notice_version ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
 
   -- `intake_error_code` is a short machine code only. Raw payloads, provider
   -- bodies and client text must never be stored here.
@@ -79,6 +96,22 @@ create table if not exists public.enquiries (
   constraint enquiries_intake_error_requires_failed_state
     check (intake_error_code is null or intake_state = 'failed'),
 
+  constraint enquiries_submitted_full_name_not_blank check (btrim(submitted_full_name) <> ''),
+  constraint enquiries_submitted_full_name_length check (char_length(submitted_full_name) <= 160),
+  constraint enquiries_submitted_email_shape
+    check (submitted_email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'),
+  constraint enquiries_submitted_email_length check (char_length(submitted_email) <= 320),
+  constraint enquiries_submitted_phone_length
+    check (submitted_phone is null or char_length(submitted_phone) <= 80),
+  constraint enquiries_submitted_instagram_length
+    check (submitted_instagram is null or char_length(submitted_instagram) <= 80),
+  constraint enquiries_submitted_preferred_contact_allowed
+    check (
+      submitted_preferred_contact is null
+      or submitted_preferred_contact in ('Email', 'WhatsApp', 'Instagram')
+    ),
+  constraint enquiries_submitted_travelling_from_length
+    check (submitted_travelling_from is null or char_length(submitted_travelling_from) <= 160),
   constraint enquiries_project_type_length check (project_type is null or char_length(project_type) <= 100),
   constraint enquiries_placement_length check (placement is null or char_length(placement) <= 160),
   constraint enquiries_approximate_size_length check (approximate_size is null or char_length(approximate_size) <= 120),
@@ -99,8 +132,14 @@ comment on table public.enquiries is
   'System of record for a tattoo enquiry. An enquiry exists when this row is committed; a Telegram message is not an enquiry.';
 comment on column public.enquiries.idempotency_key is
   'Browser-generated UUID. The unique constraint plus create_enquiry_intake() make a retry return the original enquiry.';
+comment on column public.enquiries.intake_fingerprint is
+  'SHA-256 of the canonical intake payload. A reused idempotency key must carry the same payload.';
 comment on column public.enquiries.intake_state is
   'pending -> files_pending -> complete. Only `complete` enquiries appear in the normal new-enquiry queue.';
+comment on column public.enquiries.privacy_acknowledged_at is
+  'When the visitor confirmed they had read the versioned privacy notice; this is an acknowledgement, not consent as the lawful basis.';
+comment on column public.enquiries.submitted_email is
+  'Immutable contact snapshot from this enquiry. It is not overwritten by later client matching or profile edits.';
 
 -- Reference numbers are assigned by the database, never by the caller, and can
 -- never be changed afterwards.
@@ -127,6 +166,24 @@ begin
   end if;
   if new.idempotency_key is distinct from old.idempotency_key then
     raise exception 'enquiries.idempotency_key is immutable'
+      using errcode = '23514';
+  end if;
+  if new.intake_fingerprint is distinct from old.intake_fingerprint then
+    raise exception 'enquiries.intake_fingerprint is immutable'
+      using errcode = '23514';
+  end if;
+  if new.privacy_notice_version is distinct from old.privacy_notice_version
+     or new.privacy_acknowledged_at is distinct from old.privacy_acknowledged_at then
+    raise exception 'enquiry privacy acknowledgement is immutable'
+      using errcode = '23514';
+  end if;
+  if new.submitted_full_name is distinct from old.submitted_full_name
+     or new.submitted_email is distinct from old.submitted_email
+     or new.submitted_phone is distinct from old.submitted_phone
+     or new.submitted_instagram is distinct from old.submitted_instagram
+     or new.submitted_preferred_contact is distinct from old.submitted_preferred_contact
+     or new.submitted_travelling_from is distinct from old.submitted_travelling_from then
+    raise exception 'enquiry submitted contact snapshot is immutable'
       using errcode = '23514';
   end if;
   return new;
@@ -184,6 +241,7 @@ create index if not exists enquiries_incomplete_intake_idx
 create table if not exists public.enquiry_files (
   id                uuid primary key default gen_random_uuid(),
   enquiry_id        uuid not null references public.enquiries(id) on delete restrict,
+  ordinal           smallint not null,
   category          public.enquiry_file_category not null default 'reference',
   storage_path      text not null,
   original_filename text,
@@ -196,6 +254,8 @@ create table if not exists public.enquiry_files (
   uploaded_at       timestamptz,
 
   constraint enquiry_files_storage_path_key unique (storage_path),
+  constraint enquiry_files_enquiry_ordinal_key unique (enquiry_id, ordinal),
+  constraint enquiry_files_ordinal_range check (ordinal between 0 and 2),
   constraint enquiry_files_category_is_reference check (category = 'reference'),
   constraint enquiry_files_byte_size_positive check (byte_size > 0),
   constraint enquiry_files_byte_size_max check (byte_size <= 4 * 1024 * 1024),
@@ -267,7 +327,7 @@ create trigger enquiry_files_validate_path
   before insert or update of storage_path, enquiry_id, safe_extension on public.enquiry_files
   for each row execute function crm_private.validate_enquiry_file_path();
 
-create index if not exists enquiry_files_enquiry_idx on public.enquiry_files (enquiry_id, created_at);
+create index if not exists enquiry_files_enquiry_idx on public.enquiry_files (enquiry_id, ordinal);
 create index if not exists enquiry_files_pending_idx
   on public.enquiry_files (upload_state, created_at)
   where upload_state <> 'ready';

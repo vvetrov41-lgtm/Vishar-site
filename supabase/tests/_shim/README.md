@@ -19,6 +19,7 @@ npm run test:db          # scripts/run-crm-db-tests.sh
 | Object | Why the migrations need it |
 |---|---|
 | roles `anon`, `authenticated`, `service_role` | grant/revoke targets in migration 0007 |
+| Supabase `public` default privileges | new tables, sequences and functions initially granted to API roles, so migration 0001 must close them |
 | schema `extensions` | `pgcrypto`, `citext` live there on Supabase |
 | `auth.users` | `profiles.id` references it; bootstrap reads it |
 | `auth.uid()`, `auth.role()` | every RLS policy and helper |

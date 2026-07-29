@@ -35,7 +35,12 @@ create temporary table t_enq as
 select public.create_enquiry_intake(
   'aaaaaaaa-0000-4000-8000-000000000001',
   jsonb_build_object('full_name', 'Workflow Client', 'email', 'workflow@example.test'),
-  jsonb_build_object('idea', 'A raven', 'source', '/booking/'),
+  jsonb_build_object(
+    'idea', 'A raven',
+    'source', '/booking/',
+    'privacy_acknowledged', true,
+    'privacy_notice_version', '2026-07-29'
+  ),
   jsonb_build_array(jsonb_build_object('mime_type', 'image/png', 'safe_extension', 'png', 'byte_size', 4096))
 ) as r;
 
@@ -129,6 +134,11 @@ select throws_ok(
 -- ---------------------------------------------------------------------------
 
 select pg_temp.act_as('11111111-1111-4111-8111-111111111111');
+select throws_ok(
+  format($$select public.convert_enquiry_to_project(%L, 'Too early')$$, (select enquiry_id from ids)),
+  '42501', null,
+  'an enquiry cannot bypass the status allow-list during conversion'
+);
 select public.transition_enquiry_status((select enquiry_id from ids), 'accepted');
 
 create temporary table proj as
@@ -219,10 +229,22 @@ select throws_ok(
 -- Promoting a draft to confirmed enqueues a create; cancelling without an event
 -- id enqueues nothing, because there is nothing to cancel at the provider.
 select pg_temp.act_as('22222222-2222-4222-8222-222222222222');
-select public.set_session_status((select id from s_draft), 'confirmed');
+create temporary table confirmed_result as
+select public.set_session_status((select id from s_draft), 'confirmed') as result;
+select ok((select (result ->> 'changed')::boolean from confirmed_result),
+          'a real session transition reports that it changed state');
+select throws_ok(
+  format($$select public.set_session_status(%L, 'proposed')$$, (select id from s_draft)),
+  '42501', null,
+  'a confirmed session cannot be moved backwards to proposed'
+);
+create temporary table unchanged_result as
+select public.set_session_status((select id from s_draft), 'confirmed') as result;
+select ok((select not (result ->> 'changed')::boolean from unchanged_result),
+          'repeating the current session status is an idempotent no-op');
 select pg_temp.act_as('11111111-1111-4111-8111-111111111111');
 select is((select count(*)::int from public.integration_outbox where kind = 'calendar_create'), 2,
-          'confirming a draft session enqueues its calendar create');
+          'confirming a draft session enqueues exactly one calendar create');
 
 select pg_temp.act_as('22222222-2222-4222-8222-222222222222');
 select public.set_session_status((select id from s_prop), 'cancelled');
@@ -272,6 +294,11 @@ select throws_ok(
 );
 
 select pg_temp.act_as('11111111-1111-4111-8111-111111111111');
+select throws_ok(
+  format($$select public.update_project_deposit(%L, 0, 'requested')$$, (select project_id from proj)),
+  '22023', null,
+  'a requested deposit cannot silently use a zero amount'
+);
 select lives_ok(
   format($$select public.approve_email_draft(%L)$$, (select id from draft)),
   'the owner can approve a draft'
@@ -357,6 +384,21 @@ select lives_ok(
 );
 select is((select status::text from public.follow_ups where id = (select id from fu)), 'done',
           'the completed follow-up is done');
+select is(
+  (select count(*)::int from public.activity_log
+   where event_type in ('note.created', 'follow_up.created', 'follow_up.completed')),
+  3,
+  'notes and follow-up state changes are represented in the activity trail'
+);
+select throws_ok(
+  format(
+    $$select public.create_follow_up('Wrong assignee', now() + interval '2 days', %L, null, null, %L)$$,
+    (select client_id from ids),
+    '33333333-3333-4333-8333-333333333333'
+  ),
+  '22023', null,
+  'a follow-up cannot be assigned to a read_only profile'
+);
 select throws_ok(
   format($$select public.complete_follow_up(%L)$$, (select id from fu)),
   '22023', null,
@@ -370,6 +412,26 @@ select throws_ok(
 select lives_ok(
   format($$select public.record_activity('client.contacted', %L)$$, (select client_id from ids)),
   'an allow-listed manual activity type is accepted'
+);
+select throws_ok(
+  format(
+    $$select public.record_activity('client.contacted', %L, null, null, null,
+                                    '{"detail":"client@example.test"}'::jsonb)$$,
+    (select client_id from ids)
+  ),
+  '22023', null,
+  'manual activity cannot hide personal data under an arbitrary metadata key'
+);
+insert into public.clients (id, full_name, email)
+values ('cccccccc-0000-4000-8000-000000000099', 'Other Client', 'other-workflow@example.test');
+select throws_ok(
+  format(
+    $$select public.record_activity('client.contacted', %L, %L)$$,
+    'cccccccc-0000-4000-8000-000000000099',
+    (select enquiry_id from ids)
+  ),
+  '23514', null,
+  'manual activity cannot forge inconsistent client and enquiry links'
 );
 select throws_ok(
   format($$select public.record_activity('enquiry.created', %L)$$, (select client_id from ids)),

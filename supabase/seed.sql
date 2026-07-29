@@ -48,10 +48,10 @@ begin
   raise notice 'Local CRM fixtures created. Set passwords in Supabase Studio before signing in.';
 end $$;
 
--- A single fabricated enquiry, created through the real intake RPC so the local
--- CRM has something to render. The file manifests are left `pending` on
--- purpose: no object is uploaded by a seed, and an incomplete intake is
--- exactly what the reconciliation view is for.
+-- A single fabricated enquiry, created through the real intake RPC so local
+-- development exercises the schema and reconciliation path. The file manifest
+-- is left `pending` on purpose: no object is uploaded by a seed, so this row is
+-- intentionally absent from the CRM working queue.
 do $$
 declare
   v_result jsonb;
@@ -79,7 +79,9 @@ begin
       'preferred_timing', 'Flexible',
       'idea', 'Fabricated seed enquiry used for local development only.',
       'source', '/booking/',
-      'landing_page', 'http://localhost:5173/booking/'
+      'landing_page', 'http://localhost:5173/booking/',
+      'privacy_acknowledged', true,
+      'privacy_notice_version', '2026-07-29'
     ),
     jsonb_build_array(
       jsonb_build_object('mime_type', 'image/jpeg', 'safe_extension', 'jpg', 'byte_size', 12345)

@@ -16,6 +16,14 @@ $$;
 
 select is((select count(*)::int from public.profiles), 0, 'the CRM starts with no profiles');
 select ok(crm_private.no_active_owner(), 'no active owner exists before bootstrap');
+select ok(not has_function_privilege('anon', 'public.bootstrap_owner(uuid,text)', 'EXECUTE'),
+          'anonymous callers cannot execute owner bootstrap');
+select ok(not has_function_privilege('authenticated', 'public.bootstrap_owner(uuid,text)', 'EXECUTE'),
+          'authenticated callers cannot execute owner bootstrap as an RPC');
+select ok(not has_function_privilege('service_role', 'public.bootstrap_owner(uuid,text)', 'EXECUTE'),
+          'the Worker backend cannot execute owner bootstrap');
+select ok(not has_function_privilege('service_role', 'public.bootstrap_owner_by_email(text,text)', 'EXECUTE'),
+          'the email bootstrap wrapper is also absent from the Worker surface');
 
 select throws_ok(
   $$select public.bootstrap_owner('00000000-0000-4000-8000-0000000000ff')$$,
@@ -65,6 +73,9 @@ select is((select count(*)::int from public.activity_log where event_type = 'own
 -- Idempotency
 -- ---------------------------------------------------------------------------
 
+-- Model a manual SQL Editor repeat: it has no end-user JWT. The exact
+-- already-satisfied promotion must be a harmless no-op.
+select pg_temp.claims('{}');
 create temporary table second_run as
 select public.bootstrap_owner('11111111-1111-4111-8111-111111111111', 'Vladimir') as r;
 
@@ -92,6 +103,7 @@ select ok(not (select (r ->> 'changed')::boolean from third_run),
 
 -- A second owner can only be promoted by an existing owner or the Worker.
 insert into auth.users (id, email) values ('33333333-3333-4333-8333-333333333333', 'second@example.test');
+select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}');
 select ok((select (public.bootstrap_owner('33333333-3333-4333-8333-333333333333') ->> 'changed')::boolean),
           'an acting owner can promote a second owner');
 
@@ -151,6 +163,19 @@ select is((select retention_decided_by from public.system_settings), null,
           'no retention decision has been recorded');
 select is((select default_currency from public.system_settings), 'GBP',
           'the default currency is GBP and is stored explicitly');
+
+set local role service_role;
+select throws_ok(
+  $$select count(*) from public.system_settings$$,
+  '42501', null,
+  'service_role cannot bypass the Worker RPC allow-list through system settings'
+);
+select throws_ok(
+  $$insert into public.retention_holds (reason_code) values ('forged_hold')$$,
+  '42501', null,
+  'service_role has no direct retention-hold write privilege'
+);
+reset role;
 
 -- The schema refuses to be switched on without a policy.
 select throws_ok(

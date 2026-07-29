@@ -39,7 +39,11 @@ create temporary table t_enq as
 select public.create_enquiry_intake(
   'aaaaaaaa-0000-4000-8000-000000000001',
   jsonb_build_object('full_name', 'RLS Client', 'email', 'rls@example.test'),
-  jsonb_build_object('idea', 'A raven'),
+  jsonb_build_object(
+    'idea', 'A raven',
+    'privacy_acknowledged', true,
+    'privacy_notice_version', '2026-07-29'
+  ),
   jsonb_build_array(jsonb_build_object('mime_type', 'image/jpeg', 'safe_extension', 'jpg', 'byte_size', 1024))
 ) as r;
 
@@ -88,6 +92,11 @@ select throws_ok($$select count(*) from storage.objects$$, '42501', null,
   'anon cannot enumerate storage objects');
 select throws_ok($$select public.create_enquiry_intake(gen_random_uuid(), '{}'::jsonb, '{}'::jsonb, '[]'::jsonb)$$,
   '42501', null, 'anon cannot call the intake RPC directly');
+select ok(
+  not has_function_privilege('authenticated',
+    'public.create_enquiry_intake(uuid,jsonb,jsonb,jsonb)', 'EXECUTE'),
+  'authenticated has no intake RPC privilege even though Supabase normally grants new functions'
+);
 reset role;
 
 -- ---------------------------------------------------------------------------
@@ -175,6 +184,14 @@ select pg_temp.claims('{"sub":"22222222-2222-4222-8222-222222222222","role":"aut
 select is((select current_crm_role()::text), 'booking_manager', 'the manager role is reported correctly');
 select is((select count(*)::int from public.enquiry_files), 1, 'a manager can read file metadata');
 select ok((select count(*) from public.activity_log) > 0, 'a manager sees operational activity');
+select is((select count(*)::int from public.profiles), 1,
+          'a manager sees only their own base profile row');
+select throws_ok(
+  $$insert into public.activity_log (event_type, actor_kind, metadata)
+    values ('enquiry.reviewed', 'owner', '{}'::jsonb)$$,
+  '42501', null,
+  'a manager cannot forge an audit row through direct table access'
+);
 
 -- but not the user-management or settings trail
 select is((select count(*)::int from public.activity_log where event_type like 'profile.%'), 0,
@@ -194,6 +211,8 @@ select is((select count(*)::int from public.projects_finance), 0,
           'a manager reads no rows from the project finance view');
 select is((select count(*)::int from public.sessions_finance), 0,
           'a manager reads no rows from the session finance view');
+select ok(not has_table_privilege('authenticated', 'public.projects_finance', 'UPDATE'),
+          'authenticated has SELECT-only access to the finance view');
 
 -- Operational project columns are still readable, so the CRM stays usable.
 select is((select count(*)::int from public.projects), 1, 'a manager can read operational project data');
@@ -237,6 +256,11 @@ select is((select count(*)::int from public.sessions_finance), 1, 'the owner rea
 -- Even the owner reads finance through the view, never off the base table.
 select throws_ok($$select hourly_rate from public.projects$$, '42501', null,
   'finance columns are not granted on the base table to any CRM role, including the owner');
+select throws_ok(
+  $$update public.projects_finance set deposit_amount = 1$$,
+  '42501', null,
+  'the owner cannot bypass the audited finance RPC by updating the view'
+);
 
 select is((select count(*)::int from public.list_profiles()), 4, 'the owner lists every staff profile');
 select ok((select count(*) from public.integration_outbox) > 0, 'the owner sees integration jobs');
@@ -304,6 +328,10 @@ select throws_ok(
   $$insert into public.activity_log (event_type, metadata)
     values ('enquiry.created', '{"signed_url":"https://example.test/x"}'::jsonb)$$,
   '23514', null, 'an activity row carrying a signed URL is rejected');
+select throws_ok(
+  $$insert into public.activity_log (event_type, metadata)
+    values ('enquiry.created', '{"context":{"email":"nested@example.test"}}'::jsonb)$$,
+  '23514', null, 'nested personal data is also rejected from activity metadata');
 
 -- ---------------------------------------------------------------------------
 -- The trusted Worker has no arbitrary table access
@@ -316,14 +344,24 @@ select throws_ok($$select count(*) from public.clients$$, '42501', null,
   'service_role holds no direct select privilege on clients');
 select throws_ok($$update public.enquiries set idea = 'x'$$, '42501', null,
   'service_role holds no direct update privilege on enquiries');
+select throws_ok($$select count(*) from public.integration_outbox$$, '42501', null,
+  'service_role reaches the outbox only through narrow RPCs, not the table endpoint');
 select throws_ok($$delete from public.activity_log$$, '42501', null,
   'service_role cannot delete audit history');
 select lives_ok($$select public.create_enquiry_intake(
     'bbbbbbbb-0000-4000-8000-000000000001',
     jsonb_build_object('full_name', 'Worker Client', 'email', 'worker@example.test'),
-    '{}'::jsonb,
+    jsonb_build_object(
+      'privacy_acknowledged', true,
+      'privacy_notice_version', '2026-07-29'
+    ),
     jsonb_build_array(jsonb_build_object('mime_type','image/png','safe_extension','png','byte_size',512)))$$,
   'service_role can still perform the narrow intake it is granted');
+select ok(
+  has_function_privilege('service_role',
+    'public.create_enquiry_intake(uuid,jsonb,jsonb,jsonb)', 'EXECUTE'),
+  'service_role has the intake RPC privilege explicitly'
+);
 reset role;
 
 -- ---------------------------------------------------------------------------
@@ -350,6 +388,25 @@ select is(
   (select count(*)::int from public.profiles),
   'the access mirror matches every profile row'
 );
+
+-- Supabase grants new public objects to API roles unless migrations change the
+-- defaults. A probe created after all migrations must stay closed.
+create table public.default_acl_probe (id integer);
+create function public.default_acl_probe() returns integer language sql as $$select 1$$;
+select ok(not has_table_privilege('anon', 'public.default_acl_probe', 'SELECT'),
+          'new public tables are closed to anon by default');
+select ok(not has_table_privilege('authenticated', 'public.default_acl_probe', 'SELECT'),
+          'new public tables are closed to authenticated by default');
+select ok(not has_table_privilege('service_role', 'public.default_acl_probe', 'SELECT'),
+          'new public tables are closed to service_role by default');
+select ok(not has_function_privilege('anon', 'public.default_acl_probe()', 'EXECUTE'),
+          'new public functions are closed to anon by default');
+select ok(not has_function_privilege('authenticated', 'public.default_acl_probe()', 'EXECUTE'),
+          'new public functions are closed to authenticated by default');
+select ok(not has_function_privilege('service_role', 'public.default_acl_probe()', 'EXECUTE'),
+          'new public functions are closed to service_role by default');
+drop function public.default_acl_probe();
+drop table public.default_acl_probe;
 
 -- ---------------------------------------------------------------------------
 -- RLS is enabled AND forced everywhere

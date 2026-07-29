@@ -38,7 +38,9 @@ returns jsonb language sql immutable as $$
     'landing_page', 'https://vishartattoo.com/booking/',
     'referrer', 'https://www.google.com/',
     'utm_source', 'google',
-    'utm_medium', 'organic'
+    'utm_medium', 'organic',
+    'privacy_acknowledged', true,
+    'privacy_notice_version', '2026-07-29'
   );
 $$;
 
@@ -72,11 +74,20 @@ select ok((select not (r ->> 'client_conflict')::boolean from t_first),
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111"}', true);
 
 select is((select count(*)::int from public.enquiries), 1, 'exactly one enquiry row exists');
+select is((select submitted_email from public.enquiries), 'Ada@Example.TEST',
+          'the enquiry preserves the email exactly as submitted after trimming');
+select is((select submitted_phone from public.enquiries), '+44 7700 900001',
+          'the enquiry preserves the submitted contact snapshot');
 select is((select count(*)::int from public.enquiry_files), 2, 'two file manifests exist');
 select is((select count(distinct upload_state)::int from public.enquiry_files), 1,
           'every manifest starts in the same state');
 select is((select upload_state::text from public.enquiry_files limit 1), 'pending',
           'manifests are created pending, before any upload is attempted');
+select is(
+  (select array_agg(ordinal order by ordinal)::text from public.enquiry_files),
+  '{0,1}',
+  'file manifests have a stable explicit order'
+);
 
 select ok(
   (select bool_and(f.storage_path = 'clients/' || e.client_id || '/enquiries/' || e.id
@@ -87,19 +98,22 @@ select ok(
 
 select is((select count(*)::int from public.activity_log where event_type = 'enquiry.created'), 1,
           'intake writes exactly one enquiry.created activity row');
+select is(
+  (
+    select array_agg(key order by key)
+    from public.activity_log a,
+         lateral jsonb_object_keys(a.metadata) as keys(key)
+    where a.event_type = 'enquiry.created'
+  ),
+  array['client_match_method', 'file_count', 'reference_number']::text[],
+  'enquiry activity contains only bounded operational metadata, not visitor-controlled source text'
+);
 select is((select count(*)::int from public.activity_log where event_type = 'client.created'), 1,
           'intake writes a client.created activity row for a new client');
 
 select is((select count(*)::int from public.integration_outbox
-           where kind = 'telegram_notification'), 1,
-          'intake enqueues one Telegram notification');
-select ok(
-  (select dedupe_key = 'telegram:enquiry_created:' || (select id from public.enquiries)
-   from public.integration_outbox where kind = 'telegram_notification'),
-  'the Telegram job uses a deterministic dedupe key'
-);
-select is((select status::text from public.integration_outbox limit 1), 'pending',
-          'the notification is queued, not delivered inside the transaction');
+           where kind = 'telegram_notification'), 0,
+          'an incomplete intake does not enqueue a Telegram notification');
 
 -- The outbox payload must not become a second copy of the client's data.
 select throws_ok(
@@ -107,6 +121,13 @@ select throws_ok(
     values ('telegram_notification', 'telegram:leak:1', '{"email":"leak@example.test"}'::jsonb)$$,
   '23514', null,
   'an outbox payload carrying an email address is rejected'
+);
+select throws_ok(
+  $$insert into public.integration_outbox (kind, dedupe_key, payload)
+    values ('telegram_notification', 'telegram:leak:2',
+            '{"context":{"body":"free-form client text"}}'::jsonb)$$,
+  '23514', null,
+  'nested free-form content is rejected from outbox payloads'
 );
 
 -- ---------------------------------------------------------------------------
@@ -118,7 +139,9 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 create temporary table t_replay as
 select public.create_enquiry_intake(
   'aaaaaaaa-0000-4000-8000-000000000001',
-  jsonb_build_object('full_name', 'Ada Client', 'email', 'Ada@Example.TEST'),
+  jsonb_build_object('full_name', 'Ada Client', 'email', 'Ada@Example.TEST',
+                     'phone', '+44 7700 900001', 'preferred_contact', 'Email',
+                     'travelling_from', 'Manchester'),
   pg_temp.enquiry_meta(),
   pg_temp.files(2)
 ) as r;
@@ -132,8 +155,19 @@ select is((select count(*)::int from public.enquiries), 1, 'a replay creates no 
 select is((select count(*)::int from public.enquiry_files), 2, 'a replay creates no extra manifests');
 select is((select count(*)::int from public.activity_log where event_type = 'enquiry.created'), 1,
           'a replay writes no second creation activity');
-select is((select count(*)::int from public.integration_outbox), 1,
+select is((select count(*)::int from public.integration_outbox), 0,
           'a replay enqueues no second notification');
+
+select throws_ok(
+  $$select public.create_enquiry_intake(
+      'aaaaaaaa-0000-4000-8000-000000000001',
+      jsonb_build_object('full_name', 'Ada Client', 'email', 'Ada@Example.TEST'),
+      pg_temp.enquiry_meta(),
+      pg_temp.files(2)
+    )$$,
+  '22023', null,
+  'the same idempotency key cannot be reused with a changed payload'
+);
 
 -- ---------------------------------------------------------------------------
 -- Client matching
@@ -167,6 +201,20 @@ select public.create_enquiry_intake(
 
 select is((select r ->> 'client_match_method' from t_phone), 'phone',
           'a matching international phone number matches the client when the email is new');
+select is(
+  (select e.submitted_email
+   from public.enquiries e
+   where e.id = (select (r ->> 'enquiry_id')::uuid from t_phone)),
+  'ada.other@example.test',
+  'phone matching does not discard the new email submitted with this enquiry'
+);
+select is(
+  (select c.email
+   from public.clients c
+   where c.id = (select (r ->> 'client_id')::uuid from t_phone)),
+  'Ada@Example.TEST',
+  'phone matching also does not silently overwrite the master client email'
+);
 
 -- A name match must never be enough.
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
@@ -205,7 +253,7 @@ select public.create_enquiry_intake(
   'aaaaaaaa-0000-4000-8000-000000000006',
   -- email belongs to the "different@example.test" client, phone to the first one
   jsonb_build_object('full_name', 'Conflicted', 'email', 'different@example.test',
-                     'phone', '+447700900001'),
+                     'phone', '+447700900001', 'preferred_contact', 'WhatsApp'),
   pg_temp.enquiry_meta(), pg_temp.files(1)
 ) as r;
 
@@ -215,6 +263,34 @@ select is((select r ->> 'client_match_method' from t_conflict), 'email_with_phon
           'the conflict is resolved deterministically in favour of the email match');
 select is((select n.r ->> 'client_id' from t_name n), (select r ->> 'client_id' from t_conflict),
           'the enquiry attaches to the email-matched client');
+select is(
+  (select c.phone
+   from public.clients c
+   where c.id = (select (r ->> 'client_id')::uuid from t_conflict)),
+  null,
+  'a conflicting phone is not copied onto the email-matched master client'
+);
+select is(
+  (select c.preferred_contact
+   from public.clients c
+   where c.id = (select (r ->> 'client_id')::uuid from t_conflict)),
+  null,
+  'a conflicting submission does not mutate other master contact preferences'
+);
+select is(
+  (select e.submitted_phone
+   from public.enquiries e
+   where e.id = (select (r ->> 'enquiry_id')::uuid from t_conflict)),
+  '+447700900001',
+  'the conflicting phone remains available in the immutable enquiry snapshot'
+);
+select is(
+  (select e.submitted_preferred_contact
+   from public.enquiries e
+   where e.id = (select (r ->> 'enquiry_id')::uuid from t_conflict)),
+  'WhatsApp',
+  'the conflict snapshot preserves the submitted reply preference for review'
+);
 
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111"}', true);
 select is((select count(*)::int from public.activity_log where event_type = 'client.identifier_conflict'), 1,
@@ -274,6 +350,17 @@ select throws_ok(
   'intake without an idempotency key is refused'
 );
 
+select throws_ok(
+  $$select public.create_enquiry_intake(
+      gen_random_uuid(),
+      jsonb_build_object('full_name', 'No Notice', 'email', 'notice@example.test'),
+      pg_temp.enquiry_meta() - 'privacy_acknowledged',
+      pg_temp.files(1)
+    )$$,
+  '22023', null,
+  'the Worker cannot create an intake without a current privacy acknowledgement'
+);
+
 -- ---------------------------------------------------------------------------
 -- Completion and failure
 -- ---------------------------------------------------------------------------
@@ -288,16 +375,53 @@ select throws_ok(
 
 select public.mark_enquiry_file_uploaded(f.id) from public.enquiry_files f;
 
-select lives_ok(
-  format($$select public.finalize_enquiry_intake(%L)$$, (select r ->> 'enquiry_id' from t_first)),
-  'an intake finalises once every manifest is ready'
-);
+create temporary table finalised as
+select public.finalize_enquiry_intake((select r ->> 'enquiry_id' from t_first)::uuid) as result;
+
+select ok((select (result ->> 'changed')::boolean from finalised),
+          'an intake finalises once every manifest is ready');
 
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111"}', true);
 select is((select intake_state::text from public.enquiries where id = (select r ->> 'enquiry_id' from t_first)::uuid),
           'complete', 'the finalised enquiry is complete');
 select is((select count(*)::int from public.activity_log where event_type = 'enquiry.intake_completed'), 1,
           'completion is recorded in the activity log');
+select is((select count(*)::int from public.integration_outbox
+           where kind = 'telegram_notification'), 1,
+          'finalisation enqueues one Telegram notification');
+select ok(
+  (select dedupe_key = 'telegram:enquiry_created:' || (select id from public.enquiries where intake_state = 'complete')
+   from public.integration_outbox where kind = 'telegram_notification'),
+  'the Telegram job uses a deterministic dedupe key'
+);
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is(
+  (public.record_outbox_attempt(
+    (select (result ->> 'outbox_id')::uuid from finalised),
+    false,
+    'telegram_unreachable'
+  ) ->> 'status'),
+  'failed',
+  'a failed direct notification remains retryable in the outbox'
+);
+select is(
+  (public.record_outbox_attempt(
+    (select (result ->> 'outbox_id')::uuid from finalised),
+    true,
+    null
+  ) ->> 'status'),
+  'succeeded',
+  'a later successful notification completes the durable job'
+);
+select throws_ok(
+  format(
+    $$select public.record_outbox_attempt(%L, null, null)$$,
+    (select result ->> 'outbox_id' from finalised)
+  ),
+  '22023', null,
+  'an outbox attempt cannot record an unknown outcome'
+);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select public.fail_enquiry_intake((select r ->> 'enquiry_id' from t_name)::uuid, 'storage_upload_failed');
@@ -320,6 +444,13 @@ select throws_ok(
 select ok(
   (select count(*) from public.list_incomplete_intakes(0, 50)) >= 1,
   'incomplete intakes are listed for reconciliation'
+);
+select is(
+  (select count(*)::int
+   from public.list_incomplete_intakes(0, 50)
+   where enquiry_id = (select r ->> 'enquiry_id' from t_name)::uuid),
+  1,
+  'a failed intake remains visible to reconciliation until it is resolved'
 );
 
 select * from finish(true);

@@ -130,10 +130,10 @@ $$;
 comment on function public.can_manage_crm() is
   'Owner or booking_manager. read_only never returns true.';
 
-revoke all on function public.is_active_user() from public;
-revoke all on function public.current_crm_role() from public;
-revoke all on function public.is_owner() from public;
-revoke all on function public.can_manage_crm() from public;
+revoke all on function public.is_active_user() from public, anon, authenticated, service_role;
+revoke all on function public.current_crm_role() from public, anon, authenticated, service_role;
+revoke all on function public.is_owner() from public, anon, authenticated, service_role;
+revoke all on function public.can_manage_crm() from public, anon, authenticated, service_role;
 grant execute on function public.is_active_user() to authenticated, service_role;
 grant execute on function public.current_crm_role() to authenticated, service_role;
 grant execute on function public.is_owner() to authenticated, service_role;
@@ -368,6 +368,18 @@ begin
     raise exception 'an activity entry must reference at least one entity' using errcode = '22023';
   end if;
 
+  perform crm_private.assert_consistent_entity_links(
+    p_client_id, p_enquiry_id, p_project_id, p_session_id
+  );
+
+  -- Free-form context belongs in a note, not in an append-only audit event.
+  -- Keeping this compatibility argument but accepting only an empty object
+  -- prevents a staff caller from hiding PII under an innocuous key.
+  if coalesce(p_metadata, '{}'::jsonb) <> '{}'::jsonb then
+    raise exception 'manual activity metadata must be empty; use an internal note for context'
+      using errcode = '22023';
+  end if;
+
   return crm_private.log_activity(
     p_event_type,
     case when v_role = 'owner' then 'owner' else 'staff' end,
@@ -379,7 +391,8 @@ begin
 end;
 $$;
 
-revoke all on function public.record_activity(text, uuid, uuid, uuid, uuid, jsonb) from public;
+revoke all on function public.record_activity(text, uuid, uuid, uuid, uuid, jsonb)
+  from public, anon, authenticated, service_role;
 grant execute on function public.record_activity(text, uuid, uuid, uuid, uuid, jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -433,8 +446,9 @@ revoke all on function crm_private.enqueue_outbox(
 --
 -- Called by the Cloudflare Worker with `service_role`. One transaction:
 -- claim the idempotency key, find or create the client, create the enquiry,
--- create pending file manifests, write the creation activity, enqueue the
--- Telegram notification. A replay returns the original record untouched.
+-- create ordered pending file manifests and write the creation activity. The
+-- Telegram job is deliberately deferred until finalisation, after every file
+-- is ready. A replay returns the original record only when its payload matches.
 -- ---------------------------------------------------------------------------
 
 create or replace function public.create_enquiry_intake(
@@ -461,10 +475,12 @@ declare
   v_reference     text;
   v_file          jsonb;
   v_file_id       uuid;
+  v_file_ordinal  integer := 0;
   v_file_count    integer;
   v_files_out     jsonb := '[]'::jsonb;
   v_existing      public.enquiries%rowtype;
-  v_outbox_id     uuid;
+  v_fingerprint   text;
+  v_privacy_version text;
 begin
   if p_idempotency_key is null then
     raise exception 'idempotency key is required' using errcode = '22023';
@@ -473,17 +489,40 @@ begin
   -- Serialise concurrent retries of the same submission for this transaction.
   perform pg_advisory_xact_lock(hashtextextended(p_idempotency_key::text, 0));
 
+  v_fingerprint := encode(
+    extensions.digest(
+      convert_to(
+        jsonb_build_object(
+          'client', coalesce(p_client, 'null'::jsonb),
+          'enquiry', coalesce(p_enquiry, 'null'::jsonb),
+          'files', coalesce(p_files, 'null'::jsonb)
+        )::text,
+        'UTF8'
+      ),
+      'sha256'
+    ),
+    'hex'
+  );
+
   -- ---- Replay -------------------------------------------------------------
   select * into v_existing from public.enquiries e where e.idempotency_key = p_idempotency_key;
   if found then
+    if v_existing.intake_fingerprint <> v_fingerprint then
+      raise exception 'idempotency key was reused with a different intake payload'
+        using errcode = '22023';
+    end if;
+
     select coalesce(
       jsonb_agg(jsonb_build_object(
         'file_id', f.id,
+        'ordinal', f.ordinal,
         'storage_path', f.storage_path,
         'upload_state', f.upload_state,
         'mime_type', f.mime_type,
-        'safe_extension', f.safe_extension
-      ) order by f.created_at),
+        'safe_extension', f.safe_extension,
+        'byte_size', f.byte_size,
+        'checksum', f.checksum
+      ) order by f.ordinal),
       '[]'::jsonb
     ) into v_files_out
     from public.enquiry_files f where f.enquiry_id = v_existing.id;
@@ -494,7 +533,7 @@ begin
       'reference_number', v_existing.reference_number,
       'intake_state', v_existing.intake_state,
       'replayed', true,
-      'client_conflict', false,
+      'client_conflict', v_existing.client_identifier_conflict,
       'client_match_method', 'replay',
       'files', v_files_out
     );
@@ -512,6 +551,25 @@ begin
   end if;
 
   v_phone_norm := public.normalize_phone(p_client ->> 'phone');
+  v_privacy_version := btrim(coalesce(p_enquiry ->> 'privacy_notice_version', ''));
+
+  if coalesce(p_enquiry ->> 'privacy_acknowledged', '') <> 'true'
+     or v_privacy_version <> '2026-07-29' then
+    raise exception 'the current privacy notice must be acknowledged'
+      using errcode = '22023';
+  end if;
+
+  -- Serialise matching for identifiers shared by different submissions. The
+  -- idempotency lock above only covers a retry of the same submission; without
+  -- these deterministic locks two distinct keys could create duplicate client
+  -- rows for the same normalised email or phone.
+  perform pg_advisory_xact_lock(hashtextextended(identifier, 0))
+  from unnest(array[
+    'email:' || v_email_norm,
+    case when v_phone_norm is not null then 'phone:' || v_phone_norm end
+  ]) as identifiers(identifier)
+  where identifier is not null
+  order by identifier;
 
   if p_files is null or jsonb_typeof(p_files) <> 'array' then
     raise exception 'file descriptors must be an array' using errcode = '22023';
@@ -531,14 +589,16 @@ begin
   from public.clients c
   where c.email_normalized = v_email_norm and c.archived_at is null
   order by c.created_at
-  limit 1;
+  limit 1
+  for update;
 
   if v_phone_norm is not null then
     select c.id into v_phone_client
     from public.clients c
     where c.phone_normalized = v_phone_norm and c.archived_at is null
     order by c.created_at
-    limit 1;
+    limit 1
+    for update;
   end if;
 
   if v_email_client is not null and v_phone_client is not null
@@ -573,25 +633,39 @@ begin
       'client.created', 'worker', null, v_client_id, null, null, null, null,
       null, null, null, jsonb_build_object('match_method', v_match_method)
     );
-  else
+  elsif not v_conflict then
     -- Fill gaps only. An existing non-null contact value is never overwritten
-    -- by a new form submission.
+    -- by a new form submission. When email and phone point to different
+    -- clients, do not mutate either master record: the immutable enquiry
+    -- snapshot preserves every submitted value for human review.
     update public.clients c set
+      email = coalesce(c.email, nullif(btrim(coalesce(p_client ->> 'email', '')), '')),
       phone = coalesce(c.phone, nullif(btrim(coalesce(p_client ->> 'phone', '')), '')),
       instagram = coalesce(c.instagram, nullif(btrim(coalesce(p_client ->> 'instagram', '')), '')),
       travelling_from = coalesce(c.travelling_from, nullif(btrim(coalesce(p_client ->> 'travelling_from', '')), '')),
-      preferred_contact = coalesce(nullif(btrim(coalesce(p_client ->> 'preferred_contact', '')), ''), c.preferred_contact)
+      preferred_contact = coalesce(c.preferred_contact, nullif(btrim(coalesce(p_client ->> 'preferred_contact', '')), ''))
     where c.id = v_client_id;
   end if;
 
   -- ---- Enquiry ------------------------------------------------------------
   insert into public.enquiries (
-    client_id, reference_number, idempotency_key, status, intake_state,
+    client_id, reference_number, idempotency_key, intake_fingerprint,
+    status, intake_state, client_identifier_conflict,
+    submitted_full_name, submitted_email, submitted_phone,
+    submitted_instagram, submitted_preferred_contact, submitted_travelling_from,
     project_type, placement, approximate_size, cover_up, preferred_timing, idea,
     source, landing_page, referrer,
-    utm_source, utm_medium, utm_campaign, utm_content, utm_term
+    utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+    privacy_notice_version, privacy_acknowledged_at
   ) values (
-    v_client_id, 'PENDING', p_idempotency_key, 'new', 'files_pending',
+    v_client_id, 'PENDING', p_idempotency_key, v_fingerprint,
+    'new', 'files_pending', v_conflict,
+    left(v_full_name, 160),
+    left(btrim(p_client ->> 'email'), 320),
+    left(nullif(btrim(coalesce(p_client ->> 'phone', '')), ''), 80),
+    left(nullif(btrim(coalesce(p_client ->> 'instagram', '')), ''), 80),
+    nullif(btrim(coalesce(p_client ->> 'preferred_contact', '')), ''),
+    left(nullif(btrim(coalesce(p_client ->> 'travelling_from', '')), ''), 160),
     left(nullif(btrim(coalesce(p_enquiry ->> 'project_type', '')), ''), 100),
     left(nullif(btrim(coalesce(p_enquiry ->> 'placement', '')), ''), 160),
     left(nullif(btrim(coalesce(p_enquiry ->> 'approximate_size', '')), ''), 120),
@@ -605,7 +679,9 @@ begin
     left(nullif(btrim(coalesce(p_enquiry ->> 'utm_medium', '')), ''), 120),
     left(nullif(btrim(coalesce(p_enquiry ->> 'utm_campaign', '')), ''), 160),
     left(nullif(btrim(coalesce(p_enquiry ->> 'utm_content', '')), ''), 160),
-    left(nullif(btrim(coalesce(p_enquiry ->> 'utm_term', '')), ''), 160)
+    left(nullif(btrim(coalesce(p_enquiry ->> 'utm_term', '')), ''), 160),
+    v_privacy_version,
+    now()
   )
   returning id, reference_number into v_enquiry_id, v_reference;
 
@@ -614,11 +690,12 @@ begin
     v_file_id := gen_random_uuid();
 
     insert into public.enquiry_files (
-      id, enquiry_id, category, storage_path, original_filename,
+      id, enquiry_id, ordinal, category, storage_path, original_filename,
       safe_extension, mime_type, byte_size, checksum, upload_state
     ) values (
       v_file_id,
       v_enquiry_id,
+      v_file_ordinal,
       'reference',
       public.enquiry_file_storage_path(v_client_id, v_enquiry_id, v_file_id, v_file ->> 'safe_extension'),
       left(nullif(btrim(coalesce(v_file ->> 'original_filename', '')), ''), 255),
@@ -631,11 +708,16 @@ begin
 
     v_files_out := v_files_out || jsonb_build_object(
       'file_id', v_file_id,
+      'ordinal', v_file_ordinal,
       'storage_path', public.enquiry_file_storage_path(v_client_id, v_enquiry_id, v_file_id, v_file ->> 'safe_extension'),
       'upload_state', 'pending',
       'mime_type', v_file ->> 'mime_type',
-      'safe_extension', v_file ->> 'safe_extension'
+      'safe_extension', v_file ->> 'safe_extension',
+      'byte_size', (v_file ->> 'byte_size')::bigint,
+      'checksum', nullif(btrim(coalesce(v_file ->> 'checksum', '')), '')
     );
+
+    v_file_ordinal := v_file_ordinal + 1;
   end loop;
 
   -- ---- Activity -----------------------------------------------------------
@@ -645,9 +727,7 @@ begin
     jsonb_build_object(
       'reference_number', v_reference,
       'file_count', v_file_count,
-      'client_match_method', v_match_method,
-      'source', nullif(btrim(coalesce(p_enquiry ->> 'source', '')), ''),
-      'utm_source', nullif(btrim(coalesce(p_enquiry ->> 'utm_source', '')), '')
+      'client_match_method', v_match_method
     )
   );
 
@@ -663,17 +743,6 @@ begin
     );
   end if;
 
-  -- ---- Outbox -------------------------------------------------------------
-  -- Enqueued now, delivered after commit. Telegram is a notification, so a
-  -- failure here can never invalidate the enquiry that was just committed.
-  v_outbox_id := crm_private.enqueue_outbox(
-    'telegram_notification',
-    'telegram:enquiry_created:' || v_enquiry_id,
-    jsonb_build_object('reference_number', v_reference, 'file_count', v_file_count),
-    v_client_id,
-    v_enquiry_id
-  );
-
   return jsonb_build_object(
     'enquiry_id', v_enquiry_id,
     'client_id', v_client_id,
@@ -682,13 +751,13 @@ begin
     'replayed', false,
     'client_conflict', v_conflict,
     'client_match_method', v_match_method,
-    'outbox_id', v_outbox_id,
     'files', v_files_out
   );
 end;
 $$;
 
-revoke all on function public.create_enquiry_intake(uuid, jsonb, jsonb, jsonb) from public;
+revoke all on function public.create_enquiry_intake(uuid, jsonb, jsonb, jsonb)
+  from public, anon, authenticated, service_role;
 grant execute on function public.create_enquiry_intake(uuid, jsonb, jsonb, jsonb) to service_role;
 
 comment on function public.create_enquiry_intake(uuid, jsonb, jsonb, jsonb) is
@@ -709,19 +778,49 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   v_enquiry_id uuid;
+  v_upload_state public.enquiry_upload_state;
+  v_expected_checksum text;
+  v_checksum text;
 begin
-  update public.enquiry_files f
-  set upload_state = 'ready',
-      uploaded_at = now(),
-      checksum = coalesce(nullif(btrim(coalesce(p_checksum, '')), ''), f.checksum)
-  where f.id = p_file_id
-  returning f.enquiry_id into v_enquiry_id;
+  v_checksum := nullif(btrim(coalesce(p_checksum, '')), '');
 
-  if v_enquiry_id is null then
+  select f.enquiry_id, f.upload_state, f.checksum
+    into v_enquiry_id, v_upload_state, v_expected_checksum
+  from public.enquiry_files f
+  where f.id = p_file_id
+  for update;
+
+  if not found then
     raise exception 'file manifest % does not exist', p_file_id using errcode = '23503';
   end if;
 
-  return jsonb_build_object('file_id', p_file_id, 'enquiry_id', v_enquiry_id, 'upload_state', 'ready');
+  if v_expected_checksum is not null
+     and v_checksum is distinct from v_expected_checksum then
+    raise exception 'uploaded file checksum does not match its manifest'
+      using errcode = '22023';
+  end if;
+
+  if v_upload_state = 'ready' then
+    return jsonb_build_object(
+      'file_id', p_file_id,
+      'enquiry_id', v_enquiry_id,
+      'upload_state', 'ready',
+      'changed', false
+    );
+  end if;
+
+  update public.enquiry_files f
+  set upload_state = 'ready',
+      uploaded_at = now(),
+      checksum = coalesce(v_checksum, f.checksum)
+  where f.id = p_file_id;
+
+  return jsonb_build_object(
+    'file_id', p_file_id,
+    'enquiry_id', v_enquiry_id,
+    'upload_state', 'ready',
+    'changed', true
+  );
 end;
 $$;
 
@@ -735,31 +834,74 @@ declare
   v_pending integer;
   v_state   public.enquiry_intake_state;
   v_ref     text;
+  v_client_id uuid;
+  v_file_count integer;
+  v_outbox_id uuid;
 begin
-  select count(*) into v_pending
-  from public.enquiry_files f
-  where f.enquiry_id = p_enquiry_id and f.upload_state <> 'ready';
+  select e.intake_state, e.reference_number, e.client_id
+    into v_state, v_ref, v_client_id
+  from public.enquiries e
+  where e.id = p_enquiry_id
+  for update;
 
-  if v_pending > 0 then
+  if not found then
+    raise exception 'enquiry % does not exist', p_enquiry_id using errcode = '23503';
+  end if;
+
+  if v_state = 'complete' then
+    select o.id into v_outbox_id
+    from public.integration_outbox o
+    where o.dedupe_key = 'telegram:enquiry_created:' || p_enquiry_id;
+
+    return jsonb_build_object(
+      'enquiry_id', p_enquiry_id,
+      'intake_state', 'complete',
+      'reference_number', v_ref,
+      'outbox_id', v_outbox_id,
+      'changed', false
+    );
+  end if;
+
+  select count(*), count(*) filter (where f.upload_state <> 'ready')
+    into v_file_count, v_pending
+  from public.enquiry_files f
+  where f.enquiry_id = p_enquiry_id;
+
+  if v_file_count < 1 or v_pending > 0 then
     raise exception '% file manifests are not ready', v_pending using errcode = '22023';
   end if;
 
   update public.enquiries e
   set intake_state = 'complete', intake_error_code = null
-  where e.id = p_enquiry_id
-  returning e.intake_state, e.reference_number into v_state, v_ref;
+  where e.id = p_enquiry_id;
 
-  if v_state is null then
-    raise exception 'enquiry % does not exist', p_enquiry_id using errcode = '23503';
+  v_outbox_id := crm_private.enqueue_outbox(
+    'telegram_notification',
+    'telegram:enquiry_created:' || p_enquiry_id,
+    jsonb_build_object('reference_number', v_ref, 'file_count', v_file_count),
+    v_client_id,
+    p_enquiry_id
+  );
+
+  if v_outbox_id is null then
+    select o.id into v_outbox_id
+    from public.integration_outbox o
+    where o.dedupe_key = 'telegram:enquiry_created:' || p_enquiry_id;
   end if;
 
   perform crm_private.log_activity(
     'enquiry.intake_completed', 'worker', null, null, p_enquiry_id,
-    null, null, null, null, null, null,
+    null, null, null, null, null, v_outbox_id,
     jsonb_build_object('reference_number', v_ref)
   );
 
-  return jsonb_build_object('enquiry_id', p_enquiry_id, 'intake_state', 'complete', 'reference_number', v_ref);
+  return jsonb_build_object(
+    'enquiry_id', p_enquiry_id,
+    'intake_state', 'complete',
+    'reference_number', v_ref,
+    'outbox_id', v_outbox_id,
+    'changed', true
+  );
 end;
 $$;
 
@@ -772,9 +914,30 @@ language plpgsql
 security definer
 set search_path = pg_catalog, public, crm_private
 as $$
+declare
+  v_state public.enquiry_intake_state;
 begin
   if p_error_code !~ '^[a-z][a-z0-9_]{2,63}$' then
     raise exception 'intake error code must be a short machine code' using errcode = '22023';
+  end if;
+
+  select e.intake_state into v_state
+  from public.enquiries e
+  where e.id = p_enquiry_id
+  for update;
+
+  if not found then
+    raise exception 'enquiry % does not exist', p_enquiry_id using errcode = '23503';
+  end if;
+
+  -- A reconciliation sweep may race a successful retry. Completion wins and
+  -- can never be regressed to failed by a stale failure report.
+  if v_state = 'complete' then
+    return jsonb_build_object(
+      'enquiry_id', p_enquiry_id,
+      'intake_state', 'complete',
+      'changed', false
+    );
   end if;
 
   update public.enquiry_files f
@@ -785,17 +948,110 @@ begin
   set intake_state = 'failed', intake_error_code = p_error_code
   where e.id = p_enquiry_id;
 
-  if not found then
-    raise exception 'enquiry % does not exist', p_enquiry_id using errcode = '23503';
-  end if;
-
   perform crm_private.log_activity(
     'enquiry.intake_failed', 'worker', null, null, p_enquiry_id,
     null, null, null, null, null, null,
     jsonb_build_object('error_code', p_error_code)
   );
 
-  return jsonb_build_object('enquiry_id', p_enquiry_id, 'intake_state', 'failed', 'error_code', p_error_code);
+  return jsonb_build_object(
+    'enquiry_id', p_enquiry_id,
+    'intake_state', 'failed',
+    'error_code', p_error_code,
+    'changed', true
+  );
+end;
+$$;
+
+create or replace function public.record_outbox_attempt(
+  p_outbox_id uuid,
+  p_succeeded boolean,
+  p_error_code text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_job public.integration_outbox%rowtype;
+  v_status public.outbox_status;
+  v_attempt_count integer;
+begin
+  if not crm_private.is_service_backend() then
+    raise exception 'only the trusted backend may record an outbox attempt'
+      using errcode = '42501';
+  end if;
+
+  if p_succeeded is null then
+    raise exception 'outbox attempt outcome is required'
+      using errcode = '22023';
+  end if;
+
+  if not p_succeeded
+     and coalesce(p_error_code, '') !~ '^[a-z][a-z0-9_]{2,63}$' then
+    raise exception 'a failed outbox attempt requires a short machine error code'
+      using errcode = '22023';
+  end if;
+
+  select o.* into v_job
+  from public.integration_outbox o
+  where o.id = p_outbox_id
+    and o.kind = 'telegram_notification'
+  for update;
+
+  if not found then
+    raise exception 'Telegram outbox job % does not exist', p_outbox_id
+      using errcode = '23503';
+  end if;
+
+  if v_job.status = 'succeeded' then
+    return jsonb_build_object(
+      'outbox_id', p_outbox_id,
+      'status', 'succeeded',
+      'attempt_count', v_job.attempt_count,
+      'changed', false
+    );
+  end if;
+
+  v_attempt_count := v_job.attempt_count + 1;
+  v_status := case
+    when p_succeeded then 'succeeded'::public.outbox_status
+    when v_attempt_count >= v_job.max_attempts then 'dead'::public.outbox_status
+    else 'failed'::public.outbox_status
+  end;
+
+  update public.integration_outbox o
+  set status = v_status,
+      attempt_count = v_attempt_count,
+      next_attempt_at = case
+        when p_succeeded then o.next_attempt_at
+        else now() + make_interval(
+          secs => least((power(2, least(v_job.attempt_count, 7)) * 30)::integer, 3600)
+        )
+      end,
+      leased_by = null,
+      leased_at = null,
+      lease_expires_at = null,
+      last_error_code = case when p_succeeded then null else p_error_code end
+  where o.id = p_outbox_id;
+
+  perform crm_private.log_activity(
+    case when p_succeeded then 'outbox.succeeded' else 'outbox.failed' end,
+    'worker', null, v_job.client_id, v_job.enquiry_id, v_job.project_id,
+    v_job.session_id, null, null, null, p_outbox_id,
+    jsonb_build_object(
+      'attempt_count', v_attempt_count,
+      'error_code', case when p_succeeded then null else p_error_code end
+    )
+  );
+
+  return jsonb_build_object(
+    'outbox_id', p_outbox_id,
+    'status', v_status,
+    'attempt_count', v_attempt_count,
+    'changed', true
+  );
 end;
 $$;
 
@@ -823,20 +1079,28 @@ as $$
   where e.intake_state in ('pending', 'files_pending', 'failed')
     -- 0 means "every incomplete intake", which an operator needs when
     -- investigating; the default grace period keeps a sweep from racing an
-    -- upload that is still in progress.
+    -- upload that is still in progress. Failed rows remain visible until an
+    -- exact retry completes them or an operator explicitly resolves them.
     and e.created_at <= now() - make_interval(mins => greatest(coalesce(p_older_than_minutes, 15), 0))
   group by e.id
   order by e.created_at
   limit least(greatest(p_limit, 1), 200);
 $$;
 
-revoke all on function public.mark_enquiry_file_uploaded(uuid, text) from public;
-revoke all on function public.finalize_enquiry_intake(uuid) from public;
-revoke all on function public.fail_enquiry_intake(uuid, text) from public;
-revoke all on function public.list_incomplete_intakes(integer, integer) from public;
+revoke all on function public.mark_enquiry_file_uploaded(uuid, text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.finalize_enquiry_intake(uuid)
+  from public, anon, authenticated, service_role;
+revoke all on function public.fail_enquiry_intake(uuid, text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.record_outbox_attempt(uuid, boolean, text)
+  from public, anon, authenticated, service_role;
+revoke all on function public.list_incomplete_intakes(integer, integer)
+  from public, anon, authenticated, service_role;
 grant execute on function public.mark_enquiry_file_uploaded(uuid, text) to service_role;
 grant execute on function public.finalize_enquiry_intake(uuid) to service_role;
 grant execute on function public.fail_enquiry_intake(uuid, text) to service_role;
+grant execute on function public.record_outbox_attempt(uuid, boolean, text) to service_role;
 grant execute on function public.list_incomplete_intakes(integer, integer) to service_role;
 
 -- ---------------------------------------------------------------------------
@@ -859,7 +1123,10 @@ declare
 begin
   v_role := crm_private.require_role('owner', 'booking_manager');
 
-  select e.status into v_from from public.enquiries e where e.id = p_enquiry_id;
+  select e.status into v_from
+  from public.enquiries e
+  where e.id = p_enquiry_id
+  for update;
   if v_from is null then
     raise exception 'enquiry % does not exist', p_enquiry_id using errcode = '23503';
   end if;
@@ -914,9 +1181,20 @@ begin
       using errcode = '22023';
   end if;
 
-  select e.assigned_to into v_previous from public.enquiries e where e.id = p_enquiry_id;
+  select e.assigned_to into v_previous
+  from public.enquiries e
+  where e.id = p_enquiry_id
+  for update;
   if not found then
     raise exception 'enquiry % does not exist', p_enquiry_id using errcode = '23503';
+  end if;
+
+  if v_previous is not distinct from p_profile_id then
+    return jsonb_build_object(
+      'enquiry_id', p_enquiry_id,
+      'assigned_to', p_profile_id,
+      'changed', false
+    );
   end if;
 
   update public.enquiries e set assigned_to = p_profile_id where e.id = p_enquiry_id;
@@ -928,7 +1206,11 @@ begin
     jsonb_build_object('previous_assignee', v_previous)
   );
 
-  return jsonb_build_object('enquiry_id', p_enquiry_id, 'assigned_to', p_profile_id);
+  return jsonb_build_object(
+    'enquiry_id', p_enquiry_id,
+    'assigned_to', p_profile_id,
+    'changed', true
+  );
 end;
 $$;
 
@@ -946,12 +1228,16 @@ declare
   v_role      public.crm_role;
   v_client_id uuid;
   v_state     public.enquiry_intake_state;
+  v_status    public.enquiry_status;
+  v_owner_only boolean;
   v_project_id uuid;
 begin
   v_role := crm_private.require_role('owner', 'booking_manager');
 
-  select e.client_id, e.intake_state into v_client_id, v_state
-  from public.enquiries e where e.id = p_enquiry_id;
+  select e.client_id, e.intake_state, e.status into v_client_id, v_state, v_status
+  from public.enquiries e
+  where e.id = p_enquiry_id
+  for update;
 
   if v_client_id is null then
     raise exception 'enquiry % does not exist', p_enquiry_id using errcode = '23503';
@@ -959,6 +1245,20 @@ begin
 
   if v_state <> 'complete' then
     raise exception 'enquiry % has not completed intake', p_enquiry_id using errcode = '22023';
+  end if;
+
+  select t.owner_only into v_owner_only
+  from public.enquiry_status_transitions t
+  where t.from_status = v_status and t.to_status = 'converted';
+
+  if v_owner_only is null then
+    raise exception 'transition % -> converted is not allowed', v_status
+      using errcode = '42501';
+  end if;
+
+  if v_owner_only and v_role <> 'owner' then
+    raise exception 'transition % -> converted is owner only', v_status
+      using errcode = '42501';
   end if;
 
   if exists (select 1 from public.projects p where p.enquiry_id = p_enquiry_id) then
@@ -1069,10 +1369,29 @@ begin
   select s.status, s.project_id, s.calendar_version, s.calendar_event_id, p.client_id
     into v_previous, v_project, v_version, v_event_id, v_client
   from public.sessions s join public.projects p on p.id = s.project_id
-  where s.id = p_session_id;
+  where s.id = p_session_id
+  for update of s;
 
   if v_previous is null then
     raise exception 'session % does not exist', p_session_id using errcode = '23503';
+  end if;
+
+  if v_previous = p_status then
+    return jsonb_build_object(
+      'session_id', p_session_id,
+      'from_status', v_previous,
+      'to_status', p_status,
+      'changed', false
+    );
+  end if;
+
+  if not (
+    (v_previous = 'draft' and p_status in ('proposed', 'confirmed', 'cancelled'))
+    or (v_previous = 'proposed' and p_status in ('draft', 'confirmed', 'cancelled'))
+    or (v_previous = 'confirmed' and p_status in ('completed', 'cancelled', 'no_show'))
+  ) then
+    raise exception 'session transition % -> % is not allowed', v_previous, p_status
+      using errcode = '42501';
   end if;
 
   update public.sessions s
@@ -1108,7 +1427,12 @@ begin
     );
   end if;
 
-  return jsonb_build_object('session_id', p_session_id, 'from_status', v_previous, 'to_status', p_status);
+  return jsonb_build_object(
+    'session_id', p_session_id,
+    'from_status', v_previous,
+    'to_status', p_status,
+    'changed', true
+  );
 end;
 $$;
 
@@ -1137,12 +1461,20 @@ begin
     raise exception 'deposit amount may not be negative' using errcode = '22023';
   end if;
 
+  if p_deposit_status in ('requested', 'paid')
+     and (p_deposit_amount is null or p_deposit_amount <= 0) then
+    raise exception 'a requested or paid deposit requires a positive amount'
+      using errcode = '22023';
+  end if;
+
   if p_currency is not null and p_currency !~ '^[A-Z]{3}$' then
     raise exception 'currency must be a three-letter ISO code' using errcode = '22023';
   end if;
 
   select p.deposit_status, p.client_id into v_previous, v_client
-  from public.projects p where p.id = p_project_id;
+  from public.projects p
+  where p.id = p_project_id
+  for update;
 
   if v_client is null then
     raise exception 'project % does not exist', p_project_id using errcode = '23503';
@@ -1214,6 +1546,84 @@ $$;
 -- Notes and follow-ups
 -- ---------------------------------------------------------------------------
 
+create or replace function crm_private.assert_consistent_entity_links(
+  p_client_id  uuid default null,
+  p_enquiry_id uuid default null,
+  p_project_id uuid default null,
+  p_session_id uuid default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_enquiry_client uuid;
+  v_project_client uuid;
+  v_project_enquiry uuid;
+  v_session_project uuid;
+  v_session_client uuid;
+  v_session_enquiry uuid;
+begin
+  if p_client_id is not null
+     and not exists (select 1 from public.clients c where c.id = p_client_id) then
+    raise exception 'client % does not exist', p_client_id using errcode = '23503';
+  end if;
+
+  if p_enquiry_id is not null then
+    select e.client_id into v_enquiry_client
+    from public.enquiries e
+    where e.id = p_enquiry_id;
+    if not found then
+      raise exception 'enquiry % does not exist', p_enquiry_id using errcode = '23503';
+    end if;
+  end if;
+
+  if p_project_id is not null then
+    select p.client_id, p.enquiry_id into v_project_client, v_project_enquiry
+    from public.projects p
+    where p.id = p_project_id;
+    if not found then
+      raise exception 'project % does not exist', p_project_id using errcode = '23503';
+    end if;
+  end if;
+
+  if p_session_id is not null then
+    select s.project_id, p.client_id, p.enquiry_id
+      into v_session_project, v_session_client, v_session_enquiry
+    from public.sessions s
+    join public.projects p on p.id = s.project_id
+    where s.id = p_session_id;
+    if not found then
+      raise exception 'session % does not exist', p_session_id using errcode = '23503';
+    end if;
+  end if;
+
+  if p_client_id is not null and (
+    (v_enquiry_client is not null and v_enquiry_client <> p_client_id)
+    or (v_project_client is not null and v_project_client <> p_client_id)
+    or (v_session_client is not null and v_session_client <> p_client_id)
+  ) then
+    raise exception 'entity references do not belong to the same client'
+      using errcode = '23514';
+  end if;
+
+  if p_enquiry_id is not null and (
+    (p_project_id is not null and v_project_enquiry is distinct from p_enquiry_id)
+    or (p_session_id is not null and v_session_enquiry is distinct from p_enquiry_id)
+  ) then
+    raise exception 'entity references do not belong to the same enquiry'
+      using errcode = '23514';
+  end if;
+
+  if p_project_id is not null and p_session_id is not null
+     and v_session_project <> p_project_id then
+    raise exception 'session does not belong to the referenced project'
+      using errcode = '23514';
+  end if;
+end;
+$$;
+
 create or replace function public.create_internal_note(
   p_body       text,
   p_client_id  uuid default null,
@@ -1227,17 +1637,30 @@ security definer
 set search_path = pg_catalog, public, crm_private
 as $$
 declare
+  v_role public.crm_role;
   v_id uuid;
 begin
-  perform crm_private.require_role('owner', 'booking_manager');
+  v_role := crm_private.require_role('owner', 'booking_manager');
 
   if num_nonnulls(p_client_id, p_enquiry_id, p_project_id, p_session_id) = 0 then
     raise exception 'a note must reference at least one entity' using errcode = '22023';
   end if;
 
+  perform crm_private.assert_consistent_entity_links(
+    p_client_id, p_enquiry_id, p_project_id, p_session_id
+  );
+
   insert into public.internal_notes (author_profile_id, client_id, enquiry_id, project_id, session_id, body)
   values (auth.uid(), p_client_id, p_enquiry_id, p_project_id, p_session_id, p_body)
   returning id into v_id;
+
+  perform crm_private.log_activity(
+    'note.created',
+    case when v_role = 'owner' then 'owner' else 'staff' end,
+    auth.uid(), p_client_id, p_enquiry_id, p_project_id, p_session_id,
+    null, null, null, null,
+    jsonb_build_object('note_id', v_id)
+  );
 
   return v_id;
 end;
@@ -1258,17 +1681,41 @@ security definer
 set search_path = pg_catalog, public, crm_private
 as $$
 declare
+  v_role public.crm_role;
   v_id uuid;
 begin
-  perform crm_private.require_role('owner', 'booking_manager');
+  v_role := crm_private.require_role('owner', 'booking_manager');
 
   if num_nonnulls(p_client_id, p_enquiry_id, p_project_id) = 0 then
     raise exception 'a follow-up must reference at least one entity' using errcode = '22023';
   end if;
 
+  if p_assigned_to is not null and not exists (
+    select 1
+    from crm_private.profile_access a
+    where a.profile_id = p_assigned_to
+      and a.is_active
+      and a.role in ('owner', 'booking_manager')
+  ) then
+    raise exception 'a follow-up may only be assigned to an active owner or booking manager'
+      using errcode = '22023';
+  end if;
+
+  perform crm_private.assert_consistent_entity_links(
+    p_client_id, p_enquiry_id, p_project_id, null
+  );
+
   insert into public.follow_ups (subject, due_at, client_id, enquiry_id, project_id, assigned_to, created_by, details)
   values (p_subject, p_due_at, p_client_id, p_enquiry_id, p_project_id, p_assigned_to, auth.uid(), p_details)
   returning id into v_id;
+
+  perform crm_private.log_activity(
+    'follow_up.created',
+    case when v_role = 'owner' then 'owner' else 'staff' end,
+    auth.uid(), p_client_id, p_enquiry_id, p_project_id, null,
+    p_assigned_to, null, null, null,
+    jsonb_build_object('follow_up_id', v_id)
+  );
 
   return v_id;
 end;
@@ -1280,16 +1727,31 @@ language plpgsql
 security definer
 set search_path = pg_catalog, public, crm_private
 as $$
+declare
+  v_role public.crm_role;
+  v_client_id uuid;
+  v_enquiry_id uuid;
+  v_project_id uuid;
 begin
-  perform crm_private.require_role('owner', 'booking_manager');
+  v_role := crm_private.require_role('owner', 'booking_manager');
 
   update public.follow_ups f
   set status = 'done', completed_at = now(), cancelled_at = null
-  where f.id = p_follow_up_id and f.status = 'open';
+  where f.id = p_follow_up_id and f.status = 'open'
+  returning f.client_id, f.enquiry_id, f.project_id
+    into v_client_id, v_enquiry_id, v_project_id;
 
   if not found then
     raise exception 'follow-up % is not open', p_follow_up_id using errcode = '22023';
   end if;
+
+  perform crm_private.log_activity(
+    'follow_up.completed',
+    case when v_role = 'owner' then 'owner' else 'staff' end,
+    auth.uid(), v_client_id, v_enquiry_id, v_project_id, null,
+    null, null, null, null,
+    jsonb_build_object('follow_up_id', p_follow_up_id)
+  );
 
   return jsonb_build_object('follow_up_id', p_follow_up_id, 'status', 'done');
 end;
@@ -1321,6 +1783,12 @@ begin
 
   if p_created_by_kind not in ('human', 'ai') then
     raise exception 'unsupported draft origin' using errcode = '22023';
+  end if;
+
+  if num_nonnulls(p_client_id, p_enquiry_id, p_project_id) > 0 then
+    perform crm_private.assert_consistent_entity_links(
+      p_client_id, p_enquiry_id, p_project_id, null
+    );
   end if;
 
   -- A draft is always created as a draft, whatever the caller asks for. There
@@ -1359,7 +1827,9 @@ begin
   perform crm_private.require_role('owner');
 
   select m.status, m.client_id into v_status, v_client
-  from public.email_messages m where m.id = p_email_message_id;
+  from public.email_messages m
+  where m.id = p_email_message_id
+  for update;
 
   if v_status is null then
     raise exception 'email message % does not exist', p_email_message_id using errcode = '23503';
@@ -1403,6 +1873,7 @@ as $$
 declare
   v_owner_count integer;
 begin
+  perform pg_advisory_xact_lock(hashtextextended('crm:active-owner-invariant', 0));
   perform crm_private.require_role('owner');
 
   if p_profile_id = auth.uid() and not p_is_active then
@@ -1446,9 +1917,13 @@ declare
   v_previous    public.crm_role;
   v_owner_count integer;
 begin
+  perform pg_advisory_xact_lock(hashtextextended('crm:active-owner-invariant', 0));
   perform crm_private.require_role('owner');
 
-  select p.role into v_previous from public.profiles p where p.id = p_profile_id;
+  select p.role into v_previous
+  from public.profiles p
+  where p.id = p_profile_id
+  for update;
   if v_previous is null then
     raise exception 'profile % does not exist', p_profile_id using errcode = '23503';
   end if;
@@ -1497,7 +1972,10 @@ begin
     'public.set_profile_active(uuid, boolean)',
     'public.set_profile_role(uuid, public.crm_role)'
   ] loop
-    execute format('revoke all on function %s from public', fn);
+    execute format(
+      'revoke all on function %s from public, anon, authenticated, service_role',
+      fn
+    );
     execute format('grant execute on function %s to authenticated', fn);
   end loop;
 end $$;
