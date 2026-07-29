@@ -1,0 +1,25 @@
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { App } from './App';
+import { RouterProvider } from './lib/router';
+import { SessionProvider } from './lib/session';
+import { createCrmClient } from './lib/supabase';
+import './styles.css';
+
+// `import.meta.env` is replaced at build time by Vite. Only VITE_-prefixed
+// values are exposed to the bundle, which is one more reason the service-role
+// key can never end up here.
+const client = createCrmClient(import.meta.env as unknown as Record<string, string | undefined>);
+
+const container = document.getElementById('root');
+if (!container) throw new Error('Missing #root');
+
+createRoot(container).render(
+  <StrictMode>
+    <SessionProvider client={client}>
+      <RouterProvider>
+        <App />
+      </RouterProvider>
+    </SessionProvider>
+  </StrictMode>
+);

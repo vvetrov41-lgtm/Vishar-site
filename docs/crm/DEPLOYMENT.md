@@ -88,6 +88,7 @@ Gate 1  Repository checks
         npm run test:worker
         node --check workers/tattooai.js
         secret scan (npm run scan:secrets)
+        cd admin && npm test && npm run build
         ↓
 Gate 2  Database tests
         supabase test db            (Docker-based, canonical)

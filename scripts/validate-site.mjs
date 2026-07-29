@@ -151,11 +151,17 @@ async function pathExists(filePath) {
   }
 }
 
+// Directories that are not part of the public static site. `admin/` is the
+// private CRM application: it has its own build, is hosted separately, is never
+// indexed, and must not be checked as though it were a public page.
+const NON_SITE_DIRECTORIES = new Set(['.git', 'node_modules', 'admin']);
+
 async function listFiles(dir, predicate = () => true) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
 
   for (const entry of entries) {
+    if (dir === rootDir && NON_SITE_DIRECTORIES.has(entry.name)) continue;
     if (entry.name === '.git' || entry.name === 'node_modules') continue;
     const entryPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -366,6 +372,9 @@ function isBrowserRuntimeFile(filePath) {
   const fileRel = rel(filePath);
   if (fileRel.startsWith('scripts/')) return false;
   if (fileRel.startsWith('workers/')) return false;
+  // The private CRM application is a separate build with its own bundler and
+  // its own checks; it is not part of the public site runtime.
+  if (fileRel.startsWith('admin/')) return false;
   if (fileRel.endsWith('.config.js')) return false;
   return true;
 }
