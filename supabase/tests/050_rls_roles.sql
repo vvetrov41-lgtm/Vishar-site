@@ -37,6 +37,8 @@ insert into public.profiles (id, email, display_name, role, is_active) values
 create function pg_temp.claims(p text) returns void language sql as $$
   select set_config('request.jwt.claims', p, true)::void;
 $$;
+grant execute on function pg_temp.claims(text)
+  to anon, authenticated, service_role;
 
 create temporary table t_enq as
 select public.create_enquiry_intake(

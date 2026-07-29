@@ -187,6 +187,72 @@ Canonical pgTAP and `supabase db lint` remain pending until the next GitHub CI
 run. They are not reported as locally passed because Docker, Supabase CLI and
 PostgreSQL server binaries remain unavailable in the audit environment.
 
+### Fourth GitHub CI follow-up
+
+The fourth GitHub Actions run against
+`1a43247d896adf9f75486e89065f962ab3c2ebd7` passed Static Validation,
+Public site and Worker, Private CRM, clean Supabase startup/reset, and every
+migration through `0012_default_function_acl.sql`. This confirms that the
+production default-function ACL migration applies cleanly and closes newly
+created `public` and `crm_private` functions as intended.
+
+The canonical pgTAP run then stopped in the test harness: migration `0012`
+correctly removes the previous implicit `PUBLIC EXECUTE` privilege from future
+functions owned by the migration/test role, including temporary `pg_temp`
+helpers created during the test session. Assertions in `010`, `020` and `030`
+completed, but later files could not invoke helpers after switching to the API
+role they were exercising:
+
+- `040_workflow.sql`: `act_as_worker()` was not executable by `service_role`;
+- `050_rls_roles.sql`: `claims(text)` was not executable by the tested API
+  roles;
+- `060_storage.sql`: `claims(text)` had the same test-harness restriction; and
+- `070_bootstrap_retention.sql`: `claims(text)` was not executable after its
+  role transition.
+
+This follow-up changes only canonical test helpers. It grants:
+
+- `pg_temp.act_as(uuid)` to `authenticated`;
+- `pg_temp.act_as_worker()` to `service_role`;
+- `pg_temp.claims(text)` in `050_rls_roles.sql` and `060_storage.sql` to
+  `anon`, `authenticated` and `service_role`; and
+- `pg_temp.claims(text)` in `070_bootstrap_retention.sql` to `authenticated`
+  and `service_role`.
+
+No helper is granted to `PUBLIC`. The remaining temporary functions,
+`pg_temp.files(integer)` and `pg_temp.enquiry_meta()` in `030_intake.sql`, run
+only as the privileged fixture/test owner and need no API-role grant. The
+production migration, production ACLs, RLS, Storage policies, application code
+and the probes proving future functions closed by default are unchanged.
+
+Local validation for this follow-up:
+
+| Check | Result |
+| --- | --- |
+| Public static site validation | **29 passed**, 0 warnings, 0 failures |
+| Booking flow tests | **61 passed** |
+| Worker module tests | **77 passed** |
+| CRM Vitest suite | **67 passed** across 4 files |
+| CRM TypeScript check and production build | Passed; 91 modules transformed |
+| Full Python suite | **16 passed** with both repository root and `.geo-topic-agent-runtime` on `PYTHONPATH` |
+| Repository secret scan | 300 text files, 13 credential patterns, no value found |
+| Root and CRM dependency audits | 0 vulnerabilities |
+| PostgreSQL syntax parse | 21 SQL files / 1,105 statements accepted |
+| GitHub Actions YAML parse | 7 workflow files accepted |
+| Worker production dry-run bundle | Compiled; no deploy |
+| Vendored 3D libraries and fonts | Every pinned SHA-256 matched |
+| Shell syntax, JavaScript syntax and Git whitespace | Passed |
+
+The Wrangler dry-run emitted a successful bundle result, but its local wrapper
+remained open afterward and was stopped manually; no deployment was attempted.
+`npm run test:db` stopped before database startup because PostgreSQL server
+binaries are not installed.
+
+`supabase db lint` remains pending because the fourth CI workflow correctly
+skipped it after pgTAP stopped. Canonical pgTAP and lint must be rerun in
+GitHub CI; they are not claimed as locally passed while Docker, Supabase CLI
+and PostgreSQL server binaries are unavailable.
+
 ### Audit scope and verdict
 
 This review covers the six implementation commits in draft stacked PR #176,

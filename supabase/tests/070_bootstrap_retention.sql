@@ -9,6 +9,8 @@ select no_plan();
 create function pg_temp.claims(p text) returns void language sql as $$
   select set_config('request.jwt.claims', p, true)::void;
 $$;
+grant execute on function pg_temp.claims(text)
+  to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- Bootstrap never invents an identity

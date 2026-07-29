@@ -36,6 +36,7 @@ begin
   );
 end;
 $$;
+grant execute on function pg_temp.act_as(uuid) to authenticated;
 
 create function pg_temp.act_as_worker() returns void language plpgsql as $$
 begin
@@ -45,6 +46,7 @@ begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
 end;
 $$;
+grant execute on function pg_temp.act_as_worker() to service_role;
 
 set local role service_role;
 select pg_temp.act_as_worker();
