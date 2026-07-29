@@ -4,7 +4,7 @@
 #
 # The canonical runner is `supabase test db`, which needs Docker. This script
 # is the fallback for environments where Docker or the Supabase CLI is not
-# available. It applies supabase/tests/_shim/00_supabase_shim.sql first, then
+# available. It applies scripts/test-support/supabase-shim.sql first, then
 # every migration in order, then every test file.
 #
 # The cluster is created fresh, used, and destroyed. It never touches a hosted
@@ -97,7 +97,7 @@ psql_cmd "$BOOTSTRAP" postgres "create database $DB_NAME owner $MIGRATOR" >/dev/
 # migration role still has that attribute and therefore owns everything it
 # creates.
 echo "==> Applying the local Supabase shim"
-psql_file "$MIGRATOR" "$DB_NAME" "$ROOT_DIR/supabase/tests/_shim/00_supabase_shim.sql" >/dev/null
+psql_file "$MIGRATOR" "$DB_NAME" "$ROOT_DIR/scripts/test-support/supabase-shim.sql" >/dev/null
 
 # The migration owner must then NOT be a superuser and must NOT bypass RLS, so
 # that FORCE ROW LEVEL SECURITY genuinely applies to SECURITY DEFINER

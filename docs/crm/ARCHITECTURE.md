@@ -216,7 +216,11 @@ Use `uuid` primary keys (`gen_random_uuid()`), `timestamptz`, `citext` or explic
 
 ### `0004_projects_sessions.sql`
 
-- `projects`: requested fields; unique `enquiry_id` so conversion cannot create two projects; money checks `>= 0`; `estimated_sessions > 0`; hours `> 0`; explicit `currency` decision/config.
+- `projects`: requested fields; unique `enquiry_id` so conversion cannot create
+  two projects; money checks `>= 0`; `estimated_sessions > 0`; hours `> 0`;
+  explicit `currency` decision/config. Conversion serialises on the enquiry:
+  an exact title/description retry returns the existing project id without a
+  second activity row, while changed retry details fail with SQLSTATE `22023`.
 - `sessions`: requested fields; `end_at > start_at`; non-negative price/hours; unique partial index on `(calendar_provider, calendar_event_id)` when event ID is non-null.
 - Calendar eligibility function: only the explicitly defined confirmed session status may enqueue create/update. Draft/proposed sessions never create events. Cancellation enqueues cancellation only when an event ID exists.
 
@@ -233,7 +237,11 @@ Use `uuid` primary keys (`gen_random_uuid()`), `timestamptz`, `citext` or explic
 - `is_active_user()`, `current_crm_role()`, and role predicates reading `profiles` by `auth.uid()`.
 - `set_updated_at()` and touch `last_action_at` functions.
 - Append-only audit triggers for enquiry status/assignment, contact changes, projects, sessions, deposit changes, user deactivation, and file metadata changes.
-- Security-definer functions must set `search_path`, revoke public execute, validate role and input, and expose only narrow operations: intake, status transition, assignment, conversion, session scheduling, draft creation, and user deactivation.
+- Security-definer functions must set `search_path`, revoke public execute,
+  validate role and input, and expose only narrow operations: intake, status
+  transition, assignment, conversion, session scheduling, draft creation, and
+  user deactivation. Conversion returns `replayed=false` on creation and
+  `replayed=true` only for the exact already-satisfied request.
 - `create_enquiry_intake(...)` performs client lookup/create, enquiry insert, expected file manifests, creation activity, and outbox inserts in one database transaction. It returns only IDs/reference and whether the request was replayed.
 
 ### `0007_rls.sql`
@@ -363,7 +371,7 @@ This architecture document does not authorise a merge or deployment. Production 
 
 ### Phase 2 — Supabase foundation
 
-- Add migrations `0001`–`0010`, local config, private bucket policies, bootstrap instructions, and test-only fixtures.
+- Add migrations `0001`–`0011`, local config, private bucket policies, bootstrap instructions, deterministic conversion retry semantics, and test-only fixtures.
 - Add pgTAP tests for constraints, normalisation, duplicate/conflict handling, idempotency, transitions, disabled users, every RLS role, finance column isolation, Storage path ownership, append-only activity, and calendar dedupe.
 - Commit separately from Worker/form changes.
 

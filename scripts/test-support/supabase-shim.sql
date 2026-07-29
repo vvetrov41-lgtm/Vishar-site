@@ -6,7 +6,7 @@
 -- this. It exists so the pgTAP suite can run on a plain PostgreSQL 16 cluster
 -- when Docker and the Supabase CLI are unavailable.
 --
--- Differences from real Supabase are recorded in supabase/tests/_shim/README.md.
+-- Differences from real Supabase are recorded in scripts/test-support/README.md.
 --
 -- Deliberate strictness: the migration owner created by the runner is
 -- NOSUPERUSER NOBYPASSRLS, so FORCE ROW LEVEL SECURITY genuinely applies to
@@ -121,7 +121,14 @@ create table if not exists storage.objects (
 );
 
 grant select on storage.buckets to anon, authenticated, service_role;
+grant select on storage.objects to anon;
 grant select, insert, update, delete on storage.objects to authenticated, service_role;
+
+-- Supabase owns these managed tables and enables RLS before project migrations
+-- run. The plain-PostgreSQL harness must model that platform invariant itself;
+-- production migration roles must not ALTER the managed Storage tables.
+alter table storage.buckets enable row level security;
+alter table storage.objects enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- Role switching for the test suite

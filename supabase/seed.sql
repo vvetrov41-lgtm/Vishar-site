@@ -2,9 +2,10 @@
 --
 -- LOCAL DEVELOPMENT FIXTURES ONLY.
 --
--- `supabase db reset` applies this after the migrations. It must never be run
--- against a staging or production project, and the deployment gates in
--- docs/crm/DEPLOYMENT.md do not include it.
+-- `supabase start` and a normal `supabase db reset --local` apply this after
+-- the migrations. Canonical pgTAP instead resets with `--no-seed`; see
+-- docs/crm/DEPLOYMENT.md. This file must never be run against staging or
+-- production.
 --
 -- Everything here is obviously fabricated:
 --   * every address is on the reserved `.test` TLD (RFC 6761), which can never

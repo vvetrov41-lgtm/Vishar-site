@@ -12,9 +12,12 @@ begin;
 select no_plan();
 
 -- ---------------------------------------------------------------------------
--- Fixtures, seeded through the Worker identity
+-- Fixtures created by the privileged test/migration owner
 -- ---------------------------------------------------------------------------
 
+-- The claims let the stricter plain-PostgreSQL harness satisfy FORCE RLS.
+-- These direct inserts are fixture setup and do not represent Worker table
+-- access; the service_role section below exercises its controlled RPC surface.
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 insert into auth.users (id, email) values
@@ -88,8 +91,8 @@ select throws_ok($$select count(*) from public.projects$$, '42501', null,
   'anon cannot select projects');
 select throws_ok($$insert into public.clients (full_name) values ('anon')$$, '42501', null,
   'anon cannot insert a client');
-select throws_ok($$select count(*) from storage.objects$$, '42501', null,
-  'anon cannot enumerate storage objects');
+select is((select count(*)::int from storage.objects), 0,
+  'anon reads zero Storage objects through the managed-table RLS boundary');
 select throws_ok($$select public.create_enquiry_intake(gen_random_uuid(), '{}'::jsonb, '{}'::jsonb, '[]'::jsonb)$$,
   '42501', null, 'anon cannot call the intake RPC directly');
 select ok(
@@ -281,21 +284,25 @@ reset role;
 -- The activity log is append-only for everyone
 -- ---------------------------------------------------------------------------
 
+set local role authenticated;
 select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}');
 
--- Layer 1: RLS. No UPDATE or DELETE policy exists, so no row is ever reachable
--- for mutation and the attempt silently affects nothing.
+-- Layer 1: the authenticated ACL/RLS boundary. No application role has a
+-- mutation grant or an UPDATE/DELETE policy.
 create temporary table log_before as select count(*) as n from public.activity_log;
-update public.activity_log set event_type = 'client.contacted';
-delete from public.activity_log;
+select throws_ok($$update public.activity_log set event_type = 'client.contacted'$$,
+  '42501', null, 'an authenticated owner cannot update activity_log directly');
+select throws_ok($$delete from public.activity_log$$,
+  '42501', null, 'an authenticated owner cannot delete from activity_log directly');
 select is((select count(*)::int from public.activity_log), (select n::int from log_before),
-          'an update and a delete against activity_log change nothing under RLS');
+          'authenticated mutation attempts leave activity_log unchanged');
 
 -- Layer 2: the trigger, which is what protects the audit trail from a role that
 -- bypasses RLS entirely — hosted Supabase gives `postgres` and `service_role`
 -- exactly that. FORCE is lifted here only to reach that code path.
 -- activity_log's entity references are DEFERRABLE INITIALLY DEFERRED, and
 -- ALTER TABLE refuses to run while their triggers are still pending.
+reset role;
 set constraints all immediate;
 alter table public.activity_log no force row level security;
 
@@ -315,6 +322,7 @@ select is((select count(*)::int from pg_policy
           'no UPDATE or DELETE policy exists on activity_log');
 
 -- Metadata may not become a second copy of the client's personal data.
+-- These are privileged constraint probes, not service_role table inserts.
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select throws_ok(
   $$insert into public.activity_log (event_type, metadata)

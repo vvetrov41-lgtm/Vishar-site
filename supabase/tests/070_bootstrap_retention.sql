@@ -61,6 +61,8 @@ select public.bootstrap_owner('11111111-1111-4111-8111-111111111111', 'Vladimir'
 select ok((select (r ->> 'changed')::boolean from first_run), 'the first promotion changes something');
 select is((select r ->> 'role' from first_run), 'owner', 'the promoted role is owner');
 
+grant select on first_run to authenticated;
+set local role authenticated;
 select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}');
 select is((select count(*)::int from public.profiles where role = 'owner' and is_active), 1,
           'exactly one active owner now exists');
@@ -68,6 +70,7 @@ select ok(not crm_private.no_active_owner(),
           'the first-owner path closes itself once an owner exists');
 select is((select count(*)::int from public.activity_log where event_type = 'owner.bootstrapped'), 1,
           'the promotion is recorded in the audit trail');
+reset role;
 
 -- ---------------------------------------------------------------------------
 -- Idempotency
@@ -103,15 +106,22 @@ select ok(not (select (r ->> 'changed')::boolean from third_run),
 
 -- A second owner can only be promoted by an existing owner or the Worker.
 insert into auth.users (id, email) values ('33333333-3333-4333-8333-333333333333', 'second@example.test');
+-- bootstrap_owner is deliberately absent from the browser and Worker ACLs.
+-- This privileged call models a trusted SQL Editor operation and supplies the
+-- acting owner claim only to exercise the function's defence-in-depth check.
 select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}');
 select ok((select (public.bootstrap_owner('33333333-3333-4333-8333-333333333333') ->> 'changed')::boolean),
           'an acting owner can promote a second owner');
 
 -- Demote the first owner; the second one remains.
+set local role authenticated;
 select public.set_profile_role('11111111-1111-4111-8111-111111111111', 'read_only');
+reset role;
 
 -- A demoted account cannot promote itself back. The refusal is explicit rather
--- than a silent no-op that reports success.
+-- than a silent no-op that reports success. This remains a privileged manual
+-- bootstrap call so the assertion tests the function guard, not its RPC ACL.
+select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}');
 select throws_ok(
   $$select public.bootstrap_owner('11111111-1111-4111-8111-111111111111')$$,
   '42501', null,
@@ -143,7 +153,7 @@ select is(
 -- Retention ships disabled, with no invented duration
 -- ---------------------------------------------------------------------------
 
-select pg_temp.claims('{"role":"service_role"}');
+select pg_temp.claims('{}');
 
 select is((select count(*)::int from public.system_settings), 1,
           'system_settings is a single row');
@@ -165,6 +175,7 @@ select is((select default_currency from public.system_settings), 'GBP',
           'the default currency is GBP and is stored explicitly');
 
 set local role service_role;
+select pg_temp.claims('{"role":"service_role"}');
 select throws_ok(
   $$select count(*) from public.system_settings$$,
   '42501', null,
@@ -184,6 +195,7 @@ select throws_ok(
   'retention cannot be enabled without a duration and a recorded decision'
 );
 
+set local role authenticated;
 select pg_temp.claims('{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}');
 
 select throws_ok(
@@ -203,6 +215,7 @@ select ok((select retention_decided_by is not null and retention_decided_at is n
           'enabling retention records who decided it and when');
 select is((select count(*)::int from public.activity_log where event_type = 'settings.retention_updated'), 1,
           'the retention decision is audited');
+reset role;
 
 -- Holds exist so a future deletion job can be told to skip an entity.
 select has_table('public', 'retention_holds', 'a legal/operational hold table exists');

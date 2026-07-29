@@ -72,6 +72,8 @@ select is(public.normalize_email(' A@B.test'), public.normalize_email('a@b.TEST'
 -- Generated columns
 -- ---------------------------------------------------------------------------
 
+-- Direct fixture writes run as the privileged test owner. They test generated
+-- columns and constraints, not an application-role table-access path.
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 insert into auth.users (id, email) values ('11111111-1111-4111-8111-111111111111', 'owner@example.test');

@@ -3,11 +3,10 @@
 -- Enums, table shape, constraints, timestamp triggers and reference-number
 -- generation.
 --
--- Fixture note: every CRM table has FORCE ROW LEVEL SECURITY, so even the
--- table owner cannot read a row without satisfying a policy. Tests therefore
--- act as a real profile by setting `request.jwt.claims`, exactly as PostgREST
--- does, and use the backend marker for the seeding writes the Worker would
--- normally perform.
+-- Fixture note: direct fixture writes run as the privileged test/migration
+-- owner. Claims satisfy FORCE RLS in the stricter plain-PostgreSQL harness, but
+-- those writes do not represent Worker table access. Worker ACLs are exercised
+-- separately with SET LOCAL ROLE service_role in 050_rls_roles.sql.
 
 begin;
 select no_plan();

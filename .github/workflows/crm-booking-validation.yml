@@ -99,8 +99,11 @@ jobs:
         with:
           version: 2.110.0
 
-      - name: Start clean local Supabase stack
+      - name: Start local Supabase stack
         run: supabase start
+
+      - name: Reset canonical test database without development seed
+        run: supabase db reset --local --no-seed
 
       - name: Run pgTAP suite
         run: supabase test db

@@ -31,6 +31,93 @@ the canonical `geo_topic_agent` runtime package. Docker, Supabase CLI and
 PostgreSQL server binaries remain unavailable locally, so `npm run test:db`
 stopped before database startup and pgTAP was not run locally.
 
+### Second GitHub CI follow-up
+
+The second GitHub Actions run against
+`9e4a3e0b11b1c81bb96748340938990c60cca0e8` passed Static Validation,
+Private CRM, and Public site and Worker. The pinned Supabase CLI `2.110.0`
+started the clean local stack successfully and applied migrations `0001`
+through `0010`. The remaining database job failure was the real
+`supabase test db` run; `supabase db lint` was skipped after that failure.
+
+The pgTAP log exposed these harness and behaviour mismatches:
+
+- `010_schema_constraints.sql` and `030_intake.sql` saw the fabricated local
+  seed's client, enquiry and file manifest in addition to their own fixtures.
+- `040_workflow.sql` expected a duplicate-key error for a conversion retry, but
+  the function returned the earlier workflow error `42501`; the manager outbox
+  assertion also ran as the privileged `postgres` role because its helper
+  changed JWT claims only.
+- `050_rls_roles.sql` saw seed profiles/records in its exact-count assertions,
+  expected anonymous Storage SELECT to lack an ACL even though the managed
+  table grants it, and reached the append-only trigger while the intended first
+  layer was supposed to test the authenticated ACL/RLS boundary.
+- `060_storage.sql` likewise expected an anonymous ACL error and attempted
+  direct SQL deletion from `storage.objects`, which correctly triggered
+  Supabase Storage's `storage.protect_delete()` protection.
+- `070_bootstrap_retention.sql` began with the three seeded profiles, so it
+  could not prove a genuine zero-profile first-owner bootstrap.
+- `supabase test db` recursively discovered
+  `supabase/tests/_shim/00_supabase_shim.sql` and tried to install the
+  plain-PostgreSQL compatibility schema on real Supabase.
+
+The focused correction keeps the fabricated seed available for deliberate
+local UI development while making the canonical CI path:
+
+```text
+supabase start
+supabase db reset --local --no-seed
+supabase test db
+```
+
+The plain-PostgreSQL shim now lives at
+`scripts/test-support/supabase-shim.sql`, outside canonical test discovery.
+The fallback runner and documentation point to that location. ACL/RLS pgTAP
+assertions pair the appropriate `anon`, `authenticated`, or `service_role`
+database role with matching JWT claims. The activity-log ACL/RLS layer and
+privileged append-only-trigger layer are separate again.
+
+Storage assertions now test effective row visibility, including zero rows for
+anonymous callers and no visibility for forged keys, without assuming the
+absence of a managed-table SELECT grant. They inspect the delete policy and its
+owner/backend predicates without issuing direct SQL `DELETE`; real owner and
+backend deletion remains an explicit staging test through the Storage API, and
+`storage.protect_delete()` is not disabled or bypassed.
+
+Migration `0011_conversion_idempotency.sql` gives conversion retries a stable
+contract: an exact retry returns the existing project id with
+`replayed = true` and creates no project or activity duplicate; a retry with
+changed title or description fails with SQLSTATE `22023`. The CRM already
+consumes the returned `project_id`, so the additional replay field is backward
+compatible.
+
+Local validation for this follow-up:
+
+| Check | Result |
+| --- | --- |
+| Public static site validation | **29 passed**, 0 warnings, 0 failures |
+| Booking flow tests | **61 passed** |
+| Worker module tests | **77 passed** |
+| CRM Vitest suite | **67 passed** across 4 files |
+| CRM TypeScript check and production build | Passed; 91 modules transformed |
+| Full Python suite from a clean exported checkout | **16 passed** with both repository root and `.geo-topic-agent-runtime` on `PYTHONPATH` |
+| Repository secret scan | 293 text files, 13 credential patterns, no value found |
+| Root and CRM dependency audits | 0 vulnerabilities |
+| PostgreSQL syntax parse | 20 SQL files / 1,082 statements accepted |
+| GitHub Actions YAML parse | 7 workflow files accepted |
+| Worker production dry-run bundle | Compiled; no deploy |
+| Vendored 3D libraries and fonts | Every pinned SHA-256 matched |
+| Shell syntax and Git whitespace | Passed |
+
+The preview Worker bundle also compiled and emitted Wrangler's `--dry-run`
+result, but the local wrapper process remained open after that output and was
+stopped manually; nothing was deployed.
+
+`npm run test:db` was attempted and stopped before database startup because
+PostgreSQL server binaries are not installed. Docker and Supabase CLI are also
+unavailable locally. Canonical pgTAP and `supabase db lint` therefore remain
+pending until the next GitHub CI run; no local pgTAP pass is claimed.
+
 ### Audit scope and verdict
 
 This review covers the six implementation commits in draft stacked PR #176,

@@ -6,6 +6,9 @@
 begin;
 select no_plan();
 
+-- This file isolates intake data semantics. Fixture reads and constraint
+-- probes run as the privileged test owner; the real service_role EXECUTE grant
+-- and denial of direct table access are exercised in 050_rls_roles.sql.
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 insert into auth.users (id, email) values ('11111111-1111-4111-8111-111111111111', 'owner@example.test');

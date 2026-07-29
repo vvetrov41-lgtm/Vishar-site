@@ -113,6 +113,13 @@ Compensation runs only after a definitive rejection; ambiguous commit outcomes
 retain the bytes so a `ready` manifest can never be made to point at an object
 the Worker deleted.
 
+Enquiry conversion is also deterministic. The first successful conversion
+returns `replayed=false`. Repeating the same enquiry, normalised title and exact
+description returns the existing `project_id` with `replayed=true`, without a
+second project or activity row. Reusing the enquiry with different project
+details fails with SQLSTATE `22023` instead of depending on constraint or
+transition-check ordering.
+
 ## 3. Repository layout
 
 ```text
@@ -120,8 +127,8 @@ docs/crm/                    this documentation set
 supabase/
   config.toml                local development configuration only, no secrets
   seed.sql                   local-only fixtures, clearly fake
-  migrations/                ordered, forward-only SQL migrations 0001–0010
-  tests/                     pgTAP tests + local runner shim
+  migrations/                ordered, forward-only SQL migrations 0001–0011
+  tests/                     canonical pgTAP tests only
 workers/
   tattooai.js                compatibility entry point and thin router
   lib/http.js                CORS, origin allow-list, body limits, responses
@@ -142,6 +149,7 @@ booking/index.html           public form (multipart + idempotency key)
 scripts/test-booking-flow.mjs   Worker contract and failure tests
 scripts/test-worker-modules.mjs Worker module unit tests
 scripts/run-crm-db-tests.sh     local pgTAP runner (no Docker required)
+scripts/test-support/           plain-PostgreSQL-only Supabase shim
 ```
 
 The private CRM application in `admin/` has its own `package.json` and build.
@@ -180,6 +188,7 @@ Migrations are forward-only and must be applied in filename order:
 | `0008_storage.sql` | private `crm-files` bucket and Storage policies |
 | `0009_bootstrap_owner.sql` | idempotent owner promotion, no hard-coded identity |
 | `0010_retention_settings.sql` | `system_settings`, retention disabled with null durations |
+| `0011_conversion_idempotency.sql` | exact conversion retry returns the existing project without a duplicate |
 
 Never edit an applied migration. Correct it with a new, higher-numbered
 migration.

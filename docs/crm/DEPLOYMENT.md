@@ -51,6 +51,7 @@ Forward-only, applied strictly in filename order:
 0008_storage.sql                 private crm-files bucket + Storage policies
 0009_bootstrap_owner.sql         idempotent owner promotion (no identity baked in)
 0010_retention_settings.sql      system_settings, retention disabled, null durations
+0011_conversion_idempotency.sql  deterministic enquiry-conversion retry contract
 ```
 
 Rules:
@@ -91,7 +92,9 @@ Gate 1  Repository checks
         cd admin && npm test && npm run build
         ↓
 Gate 2  Database tests
-        supabase test db            (Docker-based, canonical)
+        supabase start
+        supabase db reset --local --no-seed
+        supabase test db            (Docker-based, canonical and seed-free)
         or scripts/run-crm-db-tests.sh   (local cluster + shim, no Docker)
         ↓
 Gate 3  Staging migration
@@ -105,7 +108,10 @@ Gate 4  Staging deployment
         booking preview artifact with `vishar-booking-endpoint` set to the
         preview Worker URL (never commit that URL into the production source)
         synthetic intake with marked test data → verify row, file, notification,
-        idempotent replay, RLS role behaviour, then delete the test data
+        idempotent replay and RLS role behaviour
+        Storage API gate → manager deletion denied; owner deletion and backend
+        compensating deletion remove both object and managed metadata
+        then delete the remaining test data through supported APIs
         ↓
 Gate 5  Owner approval  ← MANUAL. Not automatable. Not an agent action.
         ↓
@@ -189,14 +195,25 @@ The canonical runner is the Supabase CLI, which requires Docker:
 
 ```bash
 supabase start
+supabase db reset --local --no-seed
 supabase test db
+```
+
+`supabase start` loads `supabase/seed.sql` for local UI development. The
+explicit reset above is the supported CLI 2.110.0 clean-test path: it reapplies
+all migrations and skips the fabricated seed before pgTAP starts. Bootstrap
+tests therefore begin with zero profiles. To deliberately restore the local UI
+fixtures, omit `--no-seed`:
+
+```bash
+supabase db reset --local
 ```
 
 When Docker or the Supabase CLI is unavailable, `scripts/run-crm-db-tests.sh`
 runs the same pgTAP files against a throwaway local PostgreSQL 16 cluster,
-using `supabase/tests/_shim/` to emulate the parts of a Supabase database that
-migrations depend on (`auth` schema, `storage` schema, `anon` / `authenticated`
-/ `service_role` roles, `auth.uid()`). Requirements:
+using `scripts/test-support/supabase-shim.sql` to emulate the parts of a
+Supabase database that migrations depend on (`auth` schema, `storage` schema,
+`anon` / `authenticated` / `service_role` roles, `auth.uid()`). Requirements:
 
 - PostgreSQL 16 server binaries (`initdb`, `pg_ctl`, `psql`);
 - the `pgtap` extension available to that server;
@@ -208,7 +225,7 @@ npm run test:db
 
 The shim is a **test harness**, not a production artifact. It is never applied
 to a hosted database. Where the shim differs from real Supabase, the difference
-is recorded in `supabase/tests/_shim/README.md` so a shim-only pass is never
+is recorded in `scripts/test-support/README.md` so a shim-only pass is never
 mistaken for a hosted-Supabase pass.
 
 ## 6. What is intentionally not deployed

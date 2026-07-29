@@ -10,6 +10,8 @@ select no_plan();
 -- Fixtures
 -- ---------------------------------------------------------------------------
 
+-- Auth/profile fixture rows are inserted by the privileged test owner. They do
+-- not model direct Worker table access.
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 insert into auth.users (id, email) values
@@ -22,14 +24,30 @@ insert into public.profiles (id, email, display_name, role, is_active) values
   ('22222222-2222-4222-8222-222222222222', 'manager@example.test', 'Manager', 'booking_manager', true),
   ('33333333-3333-4333-8333-333333333333', 'readonly@example.test', 'Reader', 'read_only', true);
 
-create function pg_temp.act_as(p uuid) returns void language sql as $$
-  select set_config('request.jwt.claims',
-                    json_build_object('sub', p, 'role', 'authenticated')::text, true)::void;
+create function pg_temp.act_as(p uuid) returns void language plpgsql as $$
+begin
+  if current_user <> 'authenticated' then
+    raise exception 'act_as requires SET LOCAL ROLE authenticated';
+  end if;
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', p, 'role', 'authenticated')::text,
+    true
+  );
+end;
 $$;
 
-create function pg_temp.act_as_worker() returns void language sql as $$
-  select set_config('request.jwt.claims', '{"role":"service_role"}', true)::void;
+create function pg_temp.act_as_worker() returns void language plpgsql as $$
+begin
+  if current_user <> 'service_role' then
+    raise exception 'act_as_worker requires SET LOCAL ROLE service_role';
+  end if;
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+end;
 $$;
+
+set local role service_role;
+select pg_temp.act_as_worker();
 
 create temporary table t_enq as
 select public.create_enquiry_intake(
@@ -44,11 +62,22 @@ select public.create_enquiry_intake(
   jsonb_build_array(jsonb_build_object('mime_type', 'image/png', 'safe_extension', 'png', 'byte_size', 4096))
 ) as r;
 
-select public.mark_enquiry_file_uploaded(f.id) from public.enquiry_files f;
+grant select on t_enq to authenticated, service_role;
+
+select public.mark_enquiry_file_uploaded(
+  (select (file_manifest ->> 'file_id')::uuid
+   from t_enq,
+        lateral jsonb_array_elements(r -> 'files') as manifests(file_manifest)
+   limit 1)
+);
 select public.finalize_enquiry_intake((select r ->> 'enquiry_id' from t_enq)::uuid);
 
 create temporary table ids as
 select (r ->> 'enquiry_id')::uuid as enquiry_id, (r ->> 'client_id')::uuid as client_id from t_enq;
+grant select on ids to authenticated, service_role;
+
+reset role;
+set local role authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Status transitions
@@ -141,21 +170,54 @@ select throws_ok(
 );
 select public.transition_enquiry_status((select enquiry_id from ids), 'accepted');
 
+create temporary table conversion_first as
+select public.convert_enquiry_to_project(
+  (select enquiry_id from ids),
+  'Raven sleeve'
+) as result;
+
 create temporary table proj as
-select (public.convert_enquiry_to_project((select enquiry_id from ids), 'Raven sleeve') ->> 'project_id')::uuid as project_id;
+select (result ->> 'project_id')::uuid as project_id
+from conversion_first;
+grant select on proj to authenticated, service_role;
 
 select is((select count(*)::int from public.projects), 1, 'conversion creates exactly one project');
+select ok(not (select (result ->> 'replayed')::boolean from conversion_first),
+          'the first conversion is reported as a new project');
 select is(
   (select status::text from public.enquiries where id = (select enquiry_id from ids)),
   'converted', 'the enquiry is marked converted'
 );
 
-select throws_ok(
-  format($$select public.convert_enquiry_to_project(%L, 'Second attempt')$$, (select enquiry_id from ids)),
-  '23505', null,
-  'the same enquiry cannot be converted twice'
+create temporary table conversion_replay as
+select public.convert_enquiry_to_project((select enquiry_id from ids), 'Raven sleeve') as result;
+
+select is(
+  (select (result ->> 'project_id')::uuid from conversion_replay),
+  (select project_id from proj),
+  'an exact conversion retry returns the existing project id'
+);
+select ok(
+  (select (result ->> 'replayed')::boolean from conversion_replay),
+  'an exact conversion retry is reported as a replay'
+);
+select is((select count(*)::int from public.projects), 1,
+          'an exact conversion retry creates no duplicate project');
+select is(
+  (select count(*)::int from public.activity_log
+   where event_type = 'enquiry.converted' and enquiry_id = (select enquiry_id from ids)),
+  1,
+  'an exact conversion retry creates no duplicate activity'
 );
 
+select throws_ok(
+  format($$select public.convert_enquiry_to_project(%L, 'Changed retry')$$, (select enquiry_id from ids)),
+  '22023', null,
+  'a conversion retry with changed project details is rejected explicitly'
+);
+
+-- This is a privileged fixture-level constraint probe, not a browser insert.
+reset role;
 select throws_ok(
   format($$insert into public.projects (client_id, enquiry_id, title)
            values (%L, %L, 'Direct duplicate')$$,
@@ -163,6 +225,8 @@ select throws_ok(
   '23505', null,
   'a second project for the same enquiry is refused by the unique index too'
 );
+set local role authenticated;
+select pg_temp.act_as('11111111-1111-4111-8111-111111111111');
 
 -- ---------------------------------------------------------------------------
 -- Sessions and calendar dedupe
@@ -192,6 +256,7 @@ select pg_temp.act_as('22222222-2222-4222-8222-222222222222');
 create temporary table s_conf as
 select (public.schedule_session((select project_id from proj),
         now() + interval '30 days', now() + interval '30 days 6 hours', 'confirmed') ->> 'session_id')::uuid as id;
+grant select on s_conf to authenticated, service_role;
 
 -- A booking manager can cause an outbox job but cannot read the queue.
 select is((select count(*)::int from public.integration_outbox), 0,
@@ -208,6 +273,9 @@ select is(
 );
 
 -- Re-enqueueing the identical logical job must collide, not duplicate.
+-- These direct inserts are privileged constraint probes; application roles
+-- reach the outbox only through controlled RPCs.
+reset role;
 select lives_ok(
   format($$insert into public.integration_outbox (kind, dedupe_key, payload, session_id)
            values ('calendar_create', %L, '{}'::jsonb, %L)
@@ -225,6 +293,8 @@ select throws_ok(
   '23505', null,
   'without ON CONFLICT the duplicate dedupe key is rejected outright'
 );
+set local role authenticated;
+select pg_temp.act_as('22222222-2222-4222-8222-222222222222');
 
 -- Promoting a draft to confirmed enqueues a create; cancelling without an event
 -- id enqueues nothing, because there is nothing to cancel at the provider.
@@ -275,6 +345,8 @@ select is((select status::text from public.email_messages where id = (select id 
 select is((select created_by_kind from public.email_messages where id = (select id from ai_draft)), 'ai',
           'the AI origin is recorded');
 
+reset role;
+set local role service_role;
 select pg_temp.act_as_worker();
 select throws_ok(
   $$insert into public.email_messages (status, to_email, subject, body, created_by_kind,
@@ -286,6 +358,8 @@ select throws_ok(
 );
 
 -- Approval is owner-only.
+reset role;
+set local role authenticated;
 select pg_temp.act_as('22222222-2222-4222-8222-222222222222');
 select throws_ok(
   format($$select public.approve_email_draft(%L)$$, (select id from draft)),
@@ -422,8 +496,12 @@ select throws_ok(
   '22023', null,
   'manual activity cannot hide personal data under an arbitrary metadata key'
 );
+-- Privileged fixture row used only to probe cross-entity validation.
+reset role;
 insert into public.clients (id, full_name, email)
 values ('cccccccc-0000-4000-8000-000000000099', 'Other Client', 'other-workflow@example.test');
+set local role authenticated;
+select pg_temp.act_as('22222222-2222-4222-8222-222222222222');
 select throws_ok(
   format(
     $$select public.record_activity('client.contacted', %L, %L)$$,
