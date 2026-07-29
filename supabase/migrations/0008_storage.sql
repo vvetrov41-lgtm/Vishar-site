@@ -128,9 +128,6 @@ grant execute on function public.crm_storage_object_writable(text) to authentica
 -- Policies
 -- ---------------------------------------------------------------------------
 
-alter table storage.objects enable row level security;
-alter table storage.buckets enable row level security;
-
 -- Bucket metadata is visible to active CRM staff only, so the bucket is not
 -- enumerable by an anonymous caller.
 drop policy if exists crm_files_bucket_visible on storage.buckets;

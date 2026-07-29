@@ -41,4 +41,6 @@ jobs:
         run: python -m compileall .geo-topic-agent-runtime scripts
 
       - name: Test GEO runtime
-        run: pytest tests -q
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.geo-topic-agent-runtime
+        run: python -m pytest tests -q

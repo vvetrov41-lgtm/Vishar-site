@@ -32,8 +32,8 @@ enabled = false
 enabled = true
 port = 54323
 
-# Local mail catcher. No mail leaves the machine.
-[inbucket]
+# Local Mailpit catcher. No mail leaves the machine.
+[local_smtp]
 enabled = true
 port = 54324
 

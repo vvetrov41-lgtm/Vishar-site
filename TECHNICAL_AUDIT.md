@@ -1,5 +1,36 @@
 ## 2026-07-29 — PR #176 CRM and durable booking infrastructure
 
+### First GitHub CI follow-up
+
+The first GitHub Actions run against
+`bf9da3215031d3f8800dfc41701dcaabd16e7c66` found two CI-only failures:
+
+- Static Validation completed the site checks but pytest collection could not
+  import `geo_agent`. The checkout root (for the project GSC tools) and the
+  canonical `.geo-topic-agent-runtime` directory (for `geo_topic_agent`) are
+  now both set explicitly on `PYTHONPATH`, and the workflow invokes pytest
+  through the selected Python interpreter with `python -m pytest`.
+- A clean Supabase stack applied migrations `0001` through `0007`, then the
+  normal migration role was not permitted to run
+  `ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY` in
+  `0008_storage.sql`. The redundant RLS-enable statements for the
+  Supabase-managed `storage.objects` and `storage.buckets` tables were removed;
+  the private `crm-files` bucket and every CRM Storage policy remain unchanged.
+
+The deprecated `[inbucket]` local mail-catcher section was also renamed to the
+current `[local_smtp]` section without changing its enabled state or port.
+Clean Supabase runtime validation, including pgTAP, remains pending until the
+next GitHub CI run.
+
+Local follow-up validation passed for the static site (29 checks), booking flow
+(61 tests), Worker modules (77 tests), CRM (67 tests), CRM typecheck/build,
+the full Python suite from a clean exported checkout (16 tests), secret scan,
+Git whitespace, seven workflow YAML files and all 19 SQL files (1,028
+statements). The clean checkout imported both the project `geo_agent` tools and
+the canonical `geo_topic_agent` runtime package. Docker, Supabase CLI and
+PostgreSQL server binaries remain unavailable locally, so `npm run test:db`
+stopped before database startup and pgTAP was not run locally.
+
 ### Audit scope and verdict
 
 This review covers the six implementation commits in draft stacked PR #176,
@@ -81,7 +112,7 @@ controls, not merely as application conventions:
 | Root dependency audit | 0 vulnerabilities |
 | CRM dependency audit | 0 vulnerabilities |
 | Repository secret scan | 292 text files, 13 credential patterns, no value found |
-| PostgreSQL syntax parse | 19 SQL files / 1,030 statements accepted by the PostgreSQL parser |
+| PostgreSQL syntax parse | 19 SQL files / 1,028 statements accepted by the PostgreSQL parser |
 | Wrangler production bundle | Compiled in `--dry-run`; no deploy |
 | Wrangler preview bundle | Compiled in `--dry-run`; no deploy |
 | GitHub Actions YAML parse | 7 workflow files accepted |
