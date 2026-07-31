@@ -33,9 +33,9 @@ returns table (
   project_id     uuid,
   client_id      uuid,
   currency       text,
-  hourly_rate    numeric(12,2),
-  estimate_total numeric(12,2),
-  deposit_amount numeric(12,2),
+  hourly_rate    numeric,
+  estimate_total numeric,
+  deposit_amount numeric,
   deposit_status public.deposit_status
 )
 language sql
@@ -59,7 +59,7 @@ returns table (
   session_id     uuid,
   project_id     uuid,
   currency       text,
-  price          numeric(12,2),
+  price          numeric,
   payment_status public.payment_status
 )
 language sql
@@ -88,11 +88,23 @@ grant execute on function crm_private.owner_session_finance_rows() to authentica
 
 create or replace view public.projects_finance
 with (security_barrier = true, security_invoker = true) as
-  select * from crm_private.owner_project_finance_rows();
+  select f.project_id,
+         f.client_id,
+         f.currency,
+         f.hourly_rate::numeric(12,2) as hourly_rate,
+         f.estimate_total::numeric(12,2) as estimate_total,
+         f.deposit_amount::numeric(12,2) as deposit_amount,
+         f.deposit_status
+  from crm_private.owner_project_finance_rows() f;
 
 create or replace view public.sessions_finance
 with (security_barrier = true, security_invoker = true) as
-  select * from crm_private.owner_session_finance_rows();
+  select f.session_id,
+         f.project_id,
+         f.currency,
+         f.price::numeric(12,2) as price,
+         f.payment_status
+  from crm_private.owner_session_finance_rows() f;
 
 revoke all on public.projects_finance from public, anon, authenticated, service_role;
 revoke all on public.sessions_finance from public, anon, authenticated, service_role;
