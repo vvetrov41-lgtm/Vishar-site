@@ -33,9 +33,9 @@ returns table (
   project_id     uuid,
   client_id      uuid,
   currency       text,
-  hourly_rate    numeric,
-  estimate_total numeric,
-  deposit_amount numeric,
+  hourly_rate    numeric(12,2),
+  estimate_total numeric(12,2),
+  deposit_amount numeric(12,2),
   deposit_status public.deposit_status
 )
 language sql
@@ -59,7 +59,7 @@ returns table (
   session_id     uuid,
   project_id     uuid,
   currency       text,
-  price          numeric,
+  price          numeric(12,2),
   payment_status public.payment_status
 )
 language sql
