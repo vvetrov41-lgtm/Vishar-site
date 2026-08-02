@@ -1,5 +1,4 @@
 name: Deploy staging CRM preview
-# Triggered after correcting the browser artifact safety checks.
 
 on:
   push:
@@ -21,10 +20,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out approved application commit
+      - name: Check out approved localised CRM commit
         uses: actions/checkout@v4
         with:
-          ref: 2961452472d099aab75ca3522a7a2f8c3615e360
+          ref: faf163678f2e7eeb253035681693ccc5a4d5a24f
 
       - name: Verify staging-only configuration exists
         id: config
@@ -88,15 +87,17 @@ jobs:
         working-directory: admin
         run: npm ci
 
-      - name: Build isolated CRM artifact
+      - name: Test and build isolated CRM artifact
         id: build
         working-directory: admin
         env:
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
-        run: npm run build
+        run: |
+          npm test
+          npm run build
 
-      - name: Verify private staging artifact
+      - name: Verify private localised staging artifact
         id: artifact
         shell: bash
         env:
@@ -109,6 +110,9 @@ jobs:
           grep -Fq 'noindex' admin/dist/index.html
           grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
           grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq 'vishar-crm-language' admin/dist
+          grep -R -Fq 'Заявки' admin/dist
+          grep -R -Fq 'Создать проект' admin/dist
 
           # The application deliberately contains the literal strings
           # "sb_secret_" and "service_role" in its fail-closed config checks.
@@ -149,7 +153,7 @@ jobs:
           DEPLOY_STATUS: ${{ steps.deploy.outcome }}
         run: |
           gh pr comment 176 --repo "$GH_REPO" --body "<!-- staging-crm-deploy-result -->
-          ### Staging CRM deployment
+          ### Localised staging CRM deployment
 
           - Job: **${JOB_STATUS}**
           - Staging configuration check: \`${CONFIG_STATUS}\`
@@ -157,9 +161,9 @@ jobs:
           - Supabase URL shape: \`${URL_SHAPE:-unknown}\`
           - Publishable key present: \`${KEY_PRESENT:-unknown}\`
           - Key classification: \`${KEY_KIND:-unknown}\`
-          - CRM build: \`${BUILD_STATUS}\`
-          - Browser artifact safety check: \`${ARTIFACT_STATUS}\`
+          - CRM tests and build: \`${BUILD_STATUS}\`
+          - Browser artifact and Russian-language check: \`${ARTIFACT_STATUS}\`
           - Cloudflare Pages deployment: \`${DEPLOY_STATUS}\`
-          - Approved application SHA: \`2961452472d099aab75ca3522a7a2f8c3615e360\`
+          - Approved localised CRM SHA: \`faf163678f2e7eeb253035681693ccc5a4d5a24f\`
 
           No secret value is included in this diagnostic. The workflow targets only \`vishar-crm-staging\`."
