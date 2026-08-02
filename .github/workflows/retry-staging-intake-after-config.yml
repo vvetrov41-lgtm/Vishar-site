@@ -1,4 +1,5 @@
 name: Retry staging intake after config fix
+# Triggered after SUPABASE_URL correction.
 
 on:
   push:
