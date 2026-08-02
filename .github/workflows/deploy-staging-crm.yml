@@ -27,6 +27,7 @@ jobs:
           ref: 2961452472d099aab75ca3522a7a2f8c3615e360
 
       - name: Verify staging-only configuration exists
+        id: config
         shell: bash
         env:
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -56,6 +57,7 @@ jobs:
         run: npm ci
 
       - name: Build isolated CRM artifact
+        id: build
         working-directory: admin
         env:
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -63,6 +65,7 @@ jobs:
         run: npm run build
 
       - name: Verify private staging artifact
+        id: artifact
         shell: bash
         run: |
           set -euo pipefail
@@ -79,6 +82,7 @@ jobs:
           fi
 
       - name: Deploy CRM artifact to staging Pages
+        id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -88,11 +92,25 @@ jobs:
           --branch main
           --commit-dirty=true
 
-      - name: Record staging deployment on PR #176
+      - name: Record staging deployment result on PR #176
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          JOB_STATUS: ${{ job.status }}
+          CONFIG_STATUS: ${{ steps.config.outcome }}
+          BUILD_STATUS: ${{ steps.build.outcome }}
+          ARTIFACT_STATUS: ${{ steps.artifact.outcome }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome }}
         run: |
-          gh pr comment 176 --body "<!-- staging-crm-deploy -->
-          The actual private CRM staging artifact was deployed successfully to \`vishar-crm-staging\` from approved application SHA \`2961452472d099aab75ca3522a7a2f8c3615e360\`.
+          gh pr comment 176 --repo "$GH_REPO" --body "<!-- staging-crm-deploy-result -->
+          ### Staging CRM deployment
 
-          The browser build used only the staging Supabase project URL and publishable key. No production deployment or privileged Supabase key was used."
+          - Job: **${JOB_STATUS}**
+          - Staging configuration check: \`${CONFIG_STATUS}\`
+          - CRM build: \`${BUILD_STATUS}\`
+          - Browser artifact safety check: \`${ARTIFACT_STATUS}\`
+          - Cloudflare Pages deployment: \`${DEPLOY_STATUS}\`
+          - Approved application SHA: \`2961452472d099aab75ca3522a7a2f8c3615e360\`
+
+          This workflow targets only \`vishar-crm-staging\` and uses only the staging Supabase project URL and publishable key."
