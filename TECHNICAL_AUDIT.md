@@ -1638,3 +1638,333 @@ These are optional follow-ups, not urgent blockers:
 ### Recommendation
 
 No further urgent homepage performance changes are needed right now. The recommended next step is to keep the current implementation, monitor production/PageSpeed over several runs, and only plan small non-urgent refinements if repeated PageSpeed diagnostics or field data show a persistent issue.
+
+---
+
+## 2026-08-02 — Production connectivity diagnosis: `ERR_SSL_PROTOCOL_ERROR` on mobile 5G
+
+**Mode: diagnosis only.** No code, DNS, Cloudflare, certificate, Worker, route, or redirect
+configuration was changed. The only file modified is this report.
+
+**Reported symptom.** On one iPhone, `https://vishartattoo.com` and `https://www.vishartattoo.com`
+both fail in an incognito browser with `ERR_SSL_PROTOCOL_ERROR` when on mobile 5G, but load
+normally on Wi-Fi. `https://vishar-site.pages.dev` loads normally on both, including the same 5G
+connection.
+
+### Conclusion up front
+
+The evidence points to **name-based (SNI/hostname) filtering on the mobile carrier's network** —
+almost certainly a UK mobile "Content Lock" / 18+ age-verification filter that has classified the
+`vishartattoo.com` domain as adult content. **Confidence: high (~85%).**
+
+Nothing on the Cloudflare, DNS, certificate, Pages, or repository side is misconfigured in a way
+that could produce this symptom. **The recommended next action is not a Cloudflare change and not a
+Cloudflare support ticket** — it is a two-minute on-device confirmation test followed, if confirmed,
+by a reclassification request to the mobile network.
+
+### The decisive piece of evidence
+
+`vishartattoo.com` and `vishar-site.pages.dev` resolve to **byte-identical IP addresses**, on both
+IPv4 and IPv6, from every resolver tested:
+
+```
+vishartattoo.com       A     172.66.47.133, 172.66.44.123
+vishar-site.pages.dev  A     172.66.47.133, 172.66.44.123
+vishartattoo.com       AAAA  2606:4700:310c::ac42:2f85, 2606:4700:310c::ac42:2c7b
+vishar-site.pages.dev  AAAA  2606:4700:310c::ac42:2f85, 2606:4700:310c::ac42:2c7b
+```
+
+On the same 5G connection, one of these hostnames works and the other does not — while both target
+the same IP addresses, the same TCP port, the same Cloudflare anycast edge, and the same colo. The
+routing, the IP version, the edge selection, and the network path are therefore all provably
+identical between the working case and the failing case. **The only variable that differs is the
+hostname the client puts in the TLS ClientHello (SNI).** A failure that tracks the hostname rather
+than the network path is, by construction, name-based filtering.
+
+Both hostnames also serve byte-identical content (`etag: "631e2abf6142fda0f5b4f366d9c5e4ed"` on
+both), confirming no Worker, redirect, or origin override sits in front of the apex.
+
+A live, unrelated demonstration of the same mechanism appeared during testing: `vishar-site.pages.dev`
+times out from Iranian and Russian probe nodes while `vishartattoo.com` succeeds from those same
+nodes — the same Cloudflare IPs, filtered by name, in the opposite direction.
+
+### Live diagnostics performed
+
+All commands run 2026-08-02 from the diagnostic container unless noted. `dig` is unavailable in this
+environment, so DNS queries used a purpose-built UDP/53 client
+(`scratchpad/dnsq.py`, not committed) issuing real DNS queries.
+
+**1. Authoritative nameservers** — `python3 dnsq.py <name> <type> 108.162.192.163` (`hope.ns.cloudflare.com`):
+
+| Name | Type | Result |
+|---|---|---|
+| `vishartattoo.com` | A | `172.66.44.123`, `172.66.47.133` |
+| `vishartattoo.com` | AAAA | `2606:4700:310c::ac42:2f85`, `::ac42:2c7b` |
+| `vishartattoo.com` | CNAME | NODATA (flattened at apex) |
+| `www.vishartattoo.com` | A | `172.67.222.72`, `104.21.25.31` |
+| `www.vishartattoo.com` | AAAA | `2606:4700:3031::ac43:de48`, `2606:4700:3034::6815:191f` |
+| `vishartattoo.com` | NS | `hope.ns.cloudflare.com`, `jay.ns.cloudflare.com` |
+| `vishartattoo.com` | CAA | NODATA (no CAA restriction — not blocking issuance) |
+
+**2. Public resolver consistency** — seven independent resolvers (`8.8.8.8`, `1.1.1.1`, `9.9.9.9`,
+`208.67.222.222` OpenDNS, `94.140.14.14` AdGuard, `76.76.2.0` ControlD, `64.6.64.6` Verisign) plus
+two UK ISP resolvers (`212.159.13.49` Plusnet, `194.168.4.100` Virgin Media) and Cloudflare DoH with
+UK `edns_client_subnet` values (`81.2.69.0/24`, `5.148.0.0/24`).
+
+**Every resolver returned the same records.** There is no split-horizon, no stale answer, and no
+propagation inconsistency anywhere that could be tested.
+
+**3. Certificate and TLS, independently verified.** The diagnostic container's egress is
+TLS-intercepted by a sandbox gateway, so certificates observed locally are re-signed and cannot be
+trusted for chain analysis. Independent confirmation came from Qualys SSL Labs
+(`https://api.ssllabs.com/api/v3/analyze?host=vishartattoo.com&all=done`), which scans from its own
+network:
+
+```
+vishartattoo.com — status READY
+  172.66.47.133                    grade A+
+  172.66.44.123                    grade A+
+  2606:4700:310c::ac42:2f85        grade A+
+  2606:4700:310c::ac42:2c7b        grade A+
+
+  protocols     : TLS 1.2, TLS 1.3
+  alpn          : h2, http/1.1
+  chain issues  : 0  (complete chain, both RSA and ECDSA)
+  leaf subject  : CN=vishartattoo.com          SANs: vishartattoo.com
+  leaf issuer   : CN=WR1 / CN=WE1, O=Google Trust Services, C=US
+  validity      : 2026-06-17 -> 2026-09-15
+```
+
+**A+ on all four endpoints, including both IPv6 addresses, with no chain issues.** An incomplete
+chain — the classic cause of "works on one network, fails on another" — is ruled out.
+
+The equivalent scan for `www.vishartattoo.com` also completed:
+
+```
+www.vishartattoo.com — status READY
+  104.21.25.31                     grade A
+  172.67.222.72                    grade A
+  2606:4700:3034::6815:191f        grade A
+  2606:4700:3031::ac43:de48        grade A
+
+  protocols     : TLS 1.2, TLS 1.3
+  alpn          : h2, http/1.1
+  chain issues  : 0
+  leaf subject  : CN=www.vishartattoo.com     SANs: www.vishartattoo.com
+  leaf issuer   : CN=WR1, O=Google Trust Services, C=US
+  validity      : 2026-08-01 -> 2026-10-30
+```
+
+Both hostnames are therefore independently confirmed healthy on all four endpoints each — eight
+endpoints in total across IPv4 and IPv6 — with complete chains and correct SANs. `www` grades A
+rather than A+ purely because its `301` response carries no HSTS header (see secondary observation 3).
+
+Note that both hostnames are served **dedicated single-SAN certificates**, not the zone's Universal
+wildcard: `CN=vishartattoo.com` and `CN=www.vishartattoo.com`. This is the Cloudflare-for-SaaS /
+Pages custom-hostname certificate path. Direct handshakes from the diagnostic container reported
+`CN=*.vishartattoo.com` for `www`, but that observation came through the sandbox's TLS-intercepting
+egress gateway and is unreliable for certificate identity; the SSL Labs result above is authoritative
+and supersedes it. The `www` certificate was issued 2026-08-01, one day before this diagnosis — worth
+noting only as a timeline fact, since a valid, correctly-chained certificate cannot fail on one
+network and succeed on another.
+
+**4. TLS version comparison** — `curl --tlsv1.2 --tls-max 1.2` and `--tlsv1.3 --tls-max 1.3`:
+
+```
+vishartattoo.com        TLS1.2 -> HTTP 200   TLS1.3 -> HTTP 200
+www.vishartattoo.com    TLS1.2 -> HTTP 301   TLS1.3 -> HTTP 301
+vishar-site.pages.dev   TLS1.2 -> HTTP 200   TLS1.3 -> HTTP 200
+```
+
+Both TLS versions work for all three hostnames. A TLS-version or cipher negotiation failure is ruled out.
+
+**5. Cross-IP SNI tests** — `curl --resolve <host>:443:<ip>`:
+
+```
+104.21.25.31   (zone IP)  + SNI vishartattoo.com       -> HTTP 200, valid cert
+104.21.25.31   (zone IP)  + SNI vishar-site.pages.dev  -> HTTP 200, valid cert
+172.66.44.123  (Pages IP) + SNI www.vishartattoo.com   -> HTTP 200, valid cert
+```
+
+Every Cloudflare anycast IP serves every one of these hostnames with a valid certificate, including
+IPs that do not appear in that hostname's own DNS answer. **This means even a stale or wrong cached
+DNS answer would still have produced a working TLS handshake**, which independently rules out stale
+DNS as a cause.
+
+**6. Multi-vantage reachability** — check-host.net, 25 probe nodes across 20+ countries, plus a
+targeted London (`uk1`) run:
+
+```
+https://vishartattoo.com        25/25 nodes  HTTP 200      (London: 200)
+https://www.vishartattoo.com    25/25 nodes  HTTP 301      (London: 301)
+https://vishar-site.pages.dev   20/25 nodes  HTTP 200      (London: 200)
+                                 5 failed: ir2, ir3, ir5, ru1, ru2 — connection timed out
+http://vishartattoo.com         12/12 nodes  HTTP 301 -> https
+http://www.vishartattoo.com     12/12 nodes  HTTP 301 -> https
+```
+
+Notably `ir3` **succeeds** for `vishartattoo.com` and **fails** for `vishar-site.pages.dev` — same
+node, same Cloudflare IPs, opposite outcome, decided purely by hostname.
+
+A `503 DNS resolution failure` seen locally for `http://www.vishartattoo.com` was traced to the
+diagnostic sandbox's own egress proxy and is **not** production behaviour; external nodes return a
+clean `301`. It is recorded here only so it is not mistaken for a finding later.
+
+**7. Edge/product identification** — `curl https://<host>/cdn-cgi/trace`:
+
+```
+vishartattoo.com        colo=IAD  sliver=none        http=http/2  tls=TLSv1.3  sni=plaintext
+www.vishartattoo.com    colo=IAD  sliver=none        http=http/2  tls=TLSv1.3  sni=plaintext
+vishar-site.pages.dev   colo=IAD  sliver=010-tier1   http=http/2  tls=TLSv1.3  sni=plaintext
+```
+
+**8. HTTPS/SVCB (type 65) records** — relevant to Encrypted Client Hello:
+
+```
+vishartattoo.com       -> NODATA (no HTTPS record, therefore no ECH advertised)
+www.vishartattoo.com   -> 1 . alpn="h3,h2" ech=<71 bytes> ipv4hint=... ipv6hint=...
+vishar-site.pages.dev  -> 1 . alpn="h3,h2" ech=<71 bytes> ipv4hint=... ipv6hint=...
+```
+
+This is a useful discriminator: the apex advertises **no ECH at all**, yet it still fails on 5G.
+ECH cannot be the cause of a failure that affects a hostname which does not use it.
+
+### Repository and deployment inspection
+
+Checked for any mechanism that could intercept the public domain. **Nothing found.**
+
+- `wrangler.toml` — declares only the `tattooai` Worker with `workers_dev = true`. There is **no**
+  `route`, `routes`, `zone_id`, `zone_name`, or `custom_domain` key anywhere in the repository
+  (`grep -rniE "\[\[routes\]\]|route *=|custom_domain|zone_name|zone_id" --include="*.toml" --include="*.json" --include="*.yml"`
+  returns nothing). The Worker is workers.dev-only.
+- `.github/workflows/deploy-tattooai.yml` — `workflow_dispatch` only, runs `wrangler deploy` against
+  the same routeless config. It cannot bind a public hostname.
+- No `functions/` directory, no `_redirects`, no `_routes.json` anywhere in the tree.
+- `_headers` sets security headers only; nothing host- or origin-conditional.
+- `workers/tattooai.js` references `vishartattoo.com` solely in a CORS allow-list
+  (`isAllowedOrigin`, lines 216–226). That is response-header logic on a workers.dev endpoint and
+  cannot affect TLS to the public domain.
+- Cloudflare account Workers (`workers_list`, account `787a19ac…`): `vishar-gsc-mcp`, `hikerapi-mcp`,
+  `vishar-monzo-bridge`, `tattooai`, `kisa`. None is implicated: the apex returns Pages content with
+  an ETag identical to `vishar-site.pages.dev`, so no Worker is in the request path.
+
+**Limitation to note:** the available Cloudflare MCP tooling does not expose zone-level Worker
+*routes*, Redirect Rules, or Page Rules, and the `cloudflare-api` connector is unauthenticated in
+this session. Dashboard confirmation is still worth doing (see below), but the identical-ETag
+evidence already rules out Worker interception empirically, and a route/rule would in any case
+affect every network, not only 5G.
+
+### What is ruled out, and why
+
+| Hypothesis | Status | Evidence |
+|---|---|---|
+| Stale or inconsistent DNS | **Ruled out** | 9 resolvers + authoritative + UK ECS all agree; and cross-IP tests show any Cloudflare IP serves these hostnames anyway |
+| IPv6 / specific edge routing | **Ruled out** | Apex and `pages.dev` share identical A *and* AAAA records; SSL Labs grades both IPv6 endpoints A+ |
+| Certificate expiry, chain, or SAN mismatch | **Ruled out** | SSL Labs A+, chain issues `0`, valid 2026-06-17 → 2026-09-15, correct SANs; and the same phone works on Wi-Fi with the same trust store |
+| TLS version / cipher / ALPN | **Ruled out** | TLS 1.2 and 1.3 both succeed; ALPN `h2` + `http/1.1` on all endpoints |
+| ECH (Encrypted Client Hello) | **Ruled out as sole cause** | The apex publishes no HTTPS record and therefore no ECH, yet still fails |
+| Worker route / custom hostname / rule | **Ruled out** | No route config in repo; apex ETag identical to Pages; any such rule would affect all networks |
+| Pages deployment or Pages custom domain | **Ruled out** | 200 with correct content from 25 global nodes including London |
+| Cloudflare proxy-layer misconfiguration | **Ruled out as cause** | Works from every testable network on earth; see secondary observations below for real but unrelated config notes |
+| Carrier-side name-based filtering | **Most likely** | See below |
+
+### Why a UK mobile content filter fits
+
+UK mobile networks block sites classified 18+ by default under Ofcom rules. O2's own support
+documentation states that for a blocked **secure (HTTPS)** site the user gets *"a 'Timed out' or 'No
+response' message"* rather than an age-verification page — because the filter cannot inject a block
+page into a TLS session, so it reads the plaintext SNI and kills the connection instead. A
+connection reset during the TLS handshake is exactly what Chromium surfaces as
+`ERR_SSL_PROTOCOL_ERROR`.
+
+Tattoo studio sites being misclassified as 18+ is a known, recurring problem across UK carriers —
+there is a long-standing EE community thread titled "EE keeps blocking tattoo sites". Every observed
+detail matches:
+
+- Fails on mobile data, works on Wi-Fi — the filter exists only on the carrier network.
+- Both `vishartattoo.com` and `www.vishartattoo.com` fail — filtering is by registrable domain.
+- `vishar-site.pages.dev` works on the same 5G — a different hostname, not on the block list.
+- Incognito does not help — this is network-level, below the browser.
+- The failure occurs before any HTTP response, consistent with a handshake-time reset.
+
+The site's own `Strict-Transport-Security: max-age=31536000; includeSubDomains` header (set in
+`_headers`) compounds the symptom: once the phone has loaded the site over Wi-Fi, the browser is
+pinned to HTTPS for a year and cannot fall back to plaintext, so the carrier's interception can only
+ever present as a hard TLS error.
+
+**What could not be tested:** no third-party probe network runs on a UK mobile carrier, so the block
+could not be reproduced remotely. This is why the confidence is high rather than certain, and why
+the recommended first step is an on-device test rather than any configuration change.
+
+### Recommended next action
+
+**Do not change anything in Cloudflare, and do not open a Cloudflare support ticket.** Cloudflare is
+serving this domain correctly from every vantage point that could be tested. Changing SSL mode,
+Universal SSL, proxy state, or the Pages domain bindings would introduce risk without addressing the
+cause.
+
+**Step 1 — confirm on the affected iPhone (2 minutes, free, fully reversible).** On 5G with Wi-Fi
+off:
+
+1. Load `https://vishartattoo.com` — expect the failure.
+2. Turn on any VPN, or enable **iCloud Private Relay** (Settings → Apple Account → iCloud → Private
+   Relay). This hides the SNI and DNS from the carrier.
+3. Reload `https://vishartattoo.com`.
+
+If it now loads, the carrier is filtering the domain and the diagnosis is confirmed. Turn Private
+Relay back off afterwards.
+
+A second confirming check: on 5G, load `https://vishar-site.pages.dev` (works) and
+`https://vishartattoo.com` (fails) back to back. Same IPs, different result, no VPN needed.
+
+**Step 2 — if confirmed, resolve with the carrier.** Two independent paths:
+
+- *Immediate, for this handset:* remove the 18+ restriction on the account via the carrier's age
+  verification (O2: `ageverification.o2.co.uk`; EE: Content Lock in My EE; Three and Vodafone have
+  equivalents). This fixes the owner's own phone but not visitors'.
+- *The real fix, for all visitors:* request reclassification. Report the misclassification to
+  `safeguard@ee.co.uk` (EE), `content@three.co.uk` (Three), `Contentclassification@vodafone.com`
+  (Vodafone), `ShieldAV@o2.com` (O2). Include the domain, state it is a professional tattoo studio's
+  business site with no adult content, and note it is wrongly caught by the 18+ filter. Worth
+  sending to all four regardless of the owner's own network, since customers are on all of them.
+
+**Step 3 — only if Step 1 disproves the diagnosis** (the site still fails on 5G with a VPN active),
+reopen the investigation. In that case capture, from the failing device, the exact Chrome error page
+text and the output of `https://1.1.1.1/cdn-cgi/trace` on the same connection, and treat a Cloudflare
+support ticket as the next step — quoting the SSL Labs A+ result and the identical-IP comparison
+above.
+
+### Secondary observations (not the cause — no action taken, none urgent)
+
+These surfaced during diagnosis. None can produce a network-specific TLS failure, and none should be
+changed as part of resolving this issue.
+
+1. **The apex and `www` sit on different Cloudflare paths.** Both are served Pages custom-hostname
+   certificates, but their DNS differs in two ways. `www.vishartattoo.com` returns the zone's own
+   anycast IP pair (`104.21.25.31` / `172.67.222.72`) and publishes a Cloudflare-generated HTTPS/SVCB
+   record — both hallmarks of a **proxied** record. The apex returns `vishar-site.pages.dev`'s *own*
+   IPs verbatim and publishes **no** HTTPS/SVCB record, which is what a **DNS-only (grey cloud)**
+   record flattened to its CNAME target looks like. This works correctly today and is not the cause
+   of anything reported here, but it is worth confirming in the dashboard that the apex is a **CNAME
+   to `vishar-site.pages.dev`** and not hard-coded `A`/`AAAA` records copied from it — hard-coded
+   Pages anycast IPs would break silently if Cloudflare ever reassigns them. This is an observation
+   to verify, not a change to make.
+
+2. **A `www` → apex redirect already exists.** `https://www.vishartattoo.com/` returns
+   `301 -> https://vishartattoo.com/` from all 28 nodes tested. The response carries no Pages headers
+   and no `cf-cache-status`, so it is a zone-level Redirect Rule or Page Rule, not Pages. Worth
+   knowing, since the task brief assumed no such redirect was in place yet. It is functioning
+   correctly and should be left alone.
+
+3. **That 301 response omits HSTS.** The redirect from `www` does not carry the
+   `Strict-Transport-Security` header that `_headers` applies to Pages-served responses, because it
+   is generated at the zone edge before the request ever reaches Pages. This is independently
+   corroborated by SSL Labs grading `www` **A** while the apex grades **A+** — the missing HSTS header
+   is exactly the difference between those two grades. Minor hardening gap only.
+
+4. **`preload` is declared in HSTS but the domain is not on the preload list.**
+   `https://hstspreload.org/api/v2/status?domain=vishartattoo.com` returns `"status": "unknown"`.
+   The `preload` directive in `_headers` therefore has no effect. Either submit the domain or drop
+   the token — but not while the mobile access issue is open, since preloading would make the
+   symptom permanently unrecoverable on any filtered network.
+
