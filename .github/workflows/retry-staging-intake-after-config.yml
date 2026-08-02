@@ -1,5 +1,5 @@
 name: Invoke authorised staging asset cleanup
-# Retry with upstream HTTP status passthrough.
+# Retry using the Edge Functions secret-key environment.
 
 on:
   push:
