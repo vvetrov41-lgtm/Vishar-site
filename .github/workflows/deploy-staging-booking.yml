@@ -1,5 +1,4 @@
-name: Deploy staging booking preview
-# Rerun after correcting the staging Supabase project URL.
+name: Final staging network controls
 
 on:
   push:
@@ -7,272 +6,141 @@ on:
       - claude/vishar-crm-booking-infra-c188bx
     paths:
       - .github/workflows/deploy-staging-booking.yml
-  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: write
 
 concurrency:
-  group: deploy-staging-booking
+  group: final-staging-network-controls
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  network-controls:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out approved PR #176 commit
-        uses: actions/checkout@v4
-        with:
-          ref: 2961452472d099aab75ca3522a7a2f8c3615e360
-
-      - name: Prepare isolated booking artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p _booking_staging
-          git archive HEAD | tar -x -C _booking_staging
-
-          rm -rf \
-            _booking_staging/.github \
-            _booking_staging/admin \
-            _booking_staging/docs \
-            _booking_staging/scripts \
-            _booking_staging/supabase \
-            _booking_staging/tests \
-            _booking_staging/workers
-          rm -f \
-            _booking_staging/package.json \
-            _booking_staging/package-lock.json \
-            _booking_staging/wrangler.toml \
-            _booking_staging/TECHNICAL_AUDIT.md
-
-          node <<'NODE'
-          const fs = require('fs');
-          const path = '_booking_staging/booking/index.html';
-          let html = fs.readFileSync(path, 'utf8');
-
-          const replacements = [
-            [
-              '<meta name="robots" content="index, follow">',
-              '<meta name="robots" content="noindex, nofollow, noarchive">'
-            ],
-            [
-              '<meta name="vishar-booking-endpoint" content="">',
-              '<meta name="vishar-booking-endpoint" content="https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026">'
-            ],
-            [
-              "const productionEndpoint = 'https://tattooai.vvetrov41.workers.dev/';",
-              "const productionEndpoint = '';"
-            ]
-          ];
-
-          for (const [from, to] of replacements) {
-            const count = html.split(from).length - 1;
-            if (count !== 1) {
-              throw new Error(`Expected exactly one staging substitution for: ${from}; found ${count}`);
-            }
-            html = html.replace(from, to);
-          }
-
-          fs.writeFileSync(path, html);
-
-          fs.writeFileSync(
-            '_booking_staging/index.html',
-            '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><meta http-equiv="refresh" content="0;url=/booking/"><link rel="canonical" href="https://vishar-booking-staging.pages.dev/booking/"><title>Vishar booking staging</title></head><body><a href="/booking/">Open booking preview</a></body></html>\n'
-          );
-          NODE
-
-          grep -Fq 'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026' _booking_staging/booking/index.html
-          grep -Fq 'noindex, nofollow, noarchive' _booking_staging/booking/index.html
-          if grep -Fq 'https://tattooai.vvetrov41.workers.dev/' _booking_staging/booking/index.html; then
-            echo 'Production Worker fallback remains in staging artifact' >&2
-            exit 1
-          fi
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install pinned dependencies
-        run: npm ci
-
-      - name: Deploy booking artifact to staging Pages
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: >-
-          npx wrangler pages deploy _booking_staging
-          --project-name vishar-booking-staging
-          --branch main
-          --commit-dirty=true
-
-      - name: Send one allowed-origin OPTIONS diagnostic
+      - name: Test invalid Origin rejection
+        id: invalid
         shell: bash
         run: |
           set -u
           headers="$(mktemp)"
           body="$(mktemp)"
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+            --output "$body" \
+            --dump-header "$headers" \
+            --request OPTIONS \
+            --header 'Origin: https://invalid-origin.example' \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type' \
+            --write-out '%{http_code}' \
+            'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026')"
 
-          status="$({
-            curl \
-              --silent \
-              --show-error \
-              --connect-timeout 10 \
-              --max-time 20 \
-              --output "$body" \
-              --dump-header "$headers" \
-              --request OPTIONS \
-              --header 'Origin: https://vishar-booking-staging.pages.dev' \
-              --header 'Access-Control-Request-Method: POST' \
-              --header 'Access-Control-Request-Headers: content-type' \
-              --write-out '%{http_code}' \
-              'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026'
-          } 2>options-curl-error.txt)"
-          curl_exit=$?
-
-          tr -d '\r' < "$headers" > options-headers-clean.txt
-          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' options-headers-clean.txt)"
-          allow_methods="$(awk -F': ' 'tolower($1)=="access-control-allow-methods" {print $2; exit}' options-headers-clean.txt)"
-          allow_headers="$(awk -F': ' 'tolower($1)=="access-control-allow-headers" {print $2; exit}' options-headers-clean.txt)"
-          server="$(awk -F': ' 'tolower($1)=="server" {print $2; exit}' options-headers-clean.txt)"
-          ray="$(awk -F': ' 'tolower($1)=="cf-ray" {print $2; exit}' options-headers-clean.txt)"
+          tr -d '\r' < "$headers" > invalid-headers.txt
+          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' invalid-headers.txt)"
+          server="$(awk -F': ' 'tolower($1)=="server" {print $2; exit}' invalid-headers.txt)"
+          ray="$(awk -F': ' 'tolower($1)=="cf-ray" {print $2; exit}' invalid-headers.txt)"
+          safe_code="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("code", ""))' "$body" 2>/dev/null || true)"
 
           result=FAIL
-          if [ "$curl_exit" -eq 0 ] \
-            && [ "$status" -ge 200 ] 2>/dev/null \
-            && [ "$status" -lt 300 ] 2>/dev/null \
-            && [ "$allow_origin" = 'https://vishar-booking-staging.pages.dev' ] \
-            && printf '%s' "$allow_methods" | grep -qi 'POST' \
-            && printf '%s' "$allow_methods" | grep -qi 'OPTIONS' \
-            && printf '%s' "$allow_headers" | grep -qi 'Content-Type'; then
+          if [ "$status" = '403' ] && [ -z "$allow_origin" ]; then
             result=PASS
           fi
 
           {
-            echo '<!-- staging-intake-options-diagnostic -->'
-            echo '### Staging intake OPTIONS diagnostic'
+            echo '<!-- staging-invalid-origin-test -->'
+            echo '### Staging invalid-Origin OPTIONS'
             echo
             echo "- Result: **${result}**"
-            echo "- curl exit: \`${curl_exit}\`"
-            echo "- HTTP status: \`${status:-none}\`"
+            echo "- HTTP status: \`${status}\`"
             echo "- Server: \`${server:-missing}\`"
             echo "- CF-Ray: \`${ray:-missing}\`"
             echo "- Access-Control-Allow-Origin: \`${allow_origin:-missing}\`"
-            echo "- Access-Control-Allow-Methods: \`${allow_methods:-missing}\`"
-            echo "- Access-Control-Allow-Headers: \`${allow_headers:-missing}\`"
-            if [ -s options-curl-error.txt ]; then
-              echo "- curl error: \`$(tr '\n' ' ' < options-curl-error.txt | sed 's/`//g' | cut -c1-300)\`"
-            fi
-          } > options-result.md
+            echo "- Safe error code: \`${safe_code:-none}\`"
+          } > invalid-result.md
 
-          cat options-result.md >> "$GITHUB_STEP_SUMMARY"
+          cat invalid-result.md >> "$GITHUB_STEP_SUMMARY"
+          echo "result=$result" >> "$GITHUB_OUTPUT"
 
-      - name: Send one valid synthetic multipart POST
+      - name: Clear rate window before burst
+        run: sleep 12
+
+      - name: Test rate limiting and recovery
+        id: rate
         shell: bash
         run: |
           set -u
+          endpoint='https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026'
+          origin='https://vishar-booking-staging.pages.dev'
+          statuses=()
 
-          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl4bZ8AAAAASUVORK5CYII=' \
-            | base64 --decode > synthetic-reference.png
-
-          headers="$(mktemp)"
-          body="post-body.json"
-
-          status="$({
-            curl \
-              --silent \
-              --show-error \
-              --connect-timeout 10 \
-              --max-time 45 \
-              --output "$body" \
-              --dump-header "$headers" \
-              --request POST \
-              --header 'Origin: https://vishar-booking-staging.pages.dev' \
-              --form-string 'name=Synthetic E2E 2026-08-02' \
-              --form-string 'email=vishar-staging-e2e-20260802@example.com' \
-              --form-string 'phone=' \
-              --form-string 'instagram=' \
-              --form-string 'preferredReply=Email' \
-              --form-string 'travellingFrom=Manchester' \
-              --form-string 'projectType=Black and grey realism' \
-              --form-string 'placement=Outer forearm' \
-              --form-string 'size=20 cm' \
-              --form-string 'coverUp=No' \
-              --form-string 'timing=Synthetic staging test only' \
-              --form-string 'idea=Synthetic authorised staging E2E test. This is not a real booking.' \
-              --form-string 'website=' \
-              --form-string 'idempotencyKey=11111111-2222-4333-8444-555555555555' \
-              --form-string 'privacyAcknowledged=true' \
-              --form-string 'privacyNoticeVersion=2026-07-29' \
-              --form-string 'source=/booking/' \
-              --form-string 'landingPage=https://vishar-booking-staging.pages.dev/booking/' \
-              --form-string 'referrer=' \
-              --form-string 'utmSource=hosted-e2e' \
-              --form-string 'utmMedium=github-actions' \
-              --form-string 'utmCampaign=pr-176-staging' \
-              --form-string 'utmContent=' \
-              --form-string 'utmTerm=' \
-              --form-string 'elapsedMs=60000' \
-              --form 'references=@synthetic-reference.png;type=image/png;filename=synthetic-reference.png' \
+          for i in 1 2 3 4 5 6 7; do
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+              --output /dev/null \
+              --request OPTIONS \
+              --header "Origin: ${origin}" \
+              --header 'Access-Control-Request-Method: POST' \
+              --header 'Access-Control-Request-Headers: content-type' \
               --write-out '%{http_code}' \
-              'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026'
-          } 2>post-curl-error.txt)"
-          curl_exit=$?
+              "$endpoint")"
+            statuses+=("$status")
+          done
 
-          tr -d '\r' < "$headers" > post-headers-clean.txt
-          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' post-headers-clean.txt)"
-          server="$(awk -F': ' 'tolower($1)=="server" {print $2; exit}' post-headers-clean.txt)"
-          ray="$(awk -F': ' 'tolower($1)=="cf-ray" {print $2; exit}' post-headers-clean.txt)"
+          joined="$(IFS=,; echo "${statuses[*]}")"
+          served=0
+          blocked=0
+          for status in "${statuses[@]}"; do
+            if [ "$status" = '204' ]; then
+              served=$((served + 1))
+            elif [ "$status" = '429' ] || [ "$status" = '403' ]; then
+              blocked=$((blocked + 1))
+            fi
+          done
 
-          post_ok="$(python3 -c 'import json; d=json.load(open("post-body.json")); print(str(d.get("ok", "")).lower())' 2>/dev/null || true)"
-          reference="$(python3 -c 'import json; d=json.load(open("post-body.json")); print(d.get("reference", ""))' 2>/dev/null || true)"
-          replayed="$(python3 -c 'import json; d=json.load(open("post-body.json")); print(str(d.get("replayed", False)).lower())' 2>/dev/null || true)"
-          error_code="$(python3 -c 'import json; d=json.load(open("post-body.json")); print(d.get("code", ""))' 2>/dev/null || true)"
+          sleep 12
+          recovery="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+            --output /dev/null \
+            --request OPTIONS \
+            --header "Origin: ${origin}" \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type' \
+            --write-out '%{http_code}' \
+            "$endpoint")"
 
           result=FAIL
-          if [ "$curl_exit" -eq 0 ] \
-            && [ "$status" = '200' ] \
-            && [ "$allow_origin" = 'https://vishar-booking-staging.pages.dev' ] \
-            && [ "$post_ok" = 'true' ] \
-            && [ -n "$reference" ]; then
+          if [ "${statuses[0]}" = '204' ] \
+            && [ "$served" -ge 1 ] \
+            && [ "$blocked" -ge 1 ] \
+            && [ "$recovery" = '204' ]; then
             result=PASS
           fi
 
           {
-            echo '<!-- staging-intake-post-diagnostic -->'
-            echo '### Staging intake valid multipart POST'
+            echo '<!-- staging-rate-limit-test -->'
+            echo '### Staging rate-limit validation'
             echo
             echo "- Result: **${result}**"
-            echo "- curl exit: \`${curl_exit}\`"
-            echo "- HTTP status: \`${status:-none}\`"
-            echo "- Server: \`${server:-missing}\`"
-            echo "- CF-Ray: \`${ray:-missing}\`"
-            echo "- Access-Control-Allow-Origin: \`${allow_origin:-missing}\`"
-            echo "- Response ok: \`${post_ok:-missing}\`"
-            echo "- Reference: \`${reference:-missing}\`"
-            echo "- Replayed: \`${replayed:-missing}\`"
-            echo "- Safe error code: \`${error_code:-none}\`"
-            if [ -s post-curl-error.txt ]; then
-              echo "- curl error: \`$(tr '\n' ' ' < post-curl-error.txt | sed 's/`//g' | cut -c1-300)\`"
-            fi
-          } > post-result.md
+            echo "- Burst statuses: \`${joined}\`"
+            echo "- Served during burst: \`${served}\`"
+            echo "- Blocked during burst: \`${blocked}\`"
+            echo "- Status after 12-second recovery: \`${recovery}\`"
+            echo '- Requests used OPTIONS only; no enquiry or file was created.'
+          } > rate-result.md
 
-          cat post-result.md >> "$GITHUB_STEP_SUMMARY"
+          cat rate-result.md >> "$GITHUB_STEP_SUMMARY"
+          echo "result=$result" >> "$GITHUB_OUTPUT"
 
-      - name: Record staging results on PR #176
+      - name: Post results to PR #176
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr comment 176 --body "<!-- staging-booking-deploy -->
-          Staging booking preview deployed successfully from approved application SHA \`2961452472d099aab75ca3522a7a2f8c3615e360\`.
+          gh pr comment 176 --body-file invalid-result.md
+          gh pr comment 176 --body-file rate-result.md
 
-          Endpoint embedded only in the temporary Pages artifact:
-          \`https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026\`
-
-          Production files and production Worker configuration were not changed."
-
-          gh pr comment 176 --body-file options-result.md
-          gh pr comment 176 --body-file post-result.md
+      - name: Enforce checks
+        if: always()
+        shell: bash
+        run: |
+          test '${{ steps.invalid.outputs.result }}' = 'PASS'
+          test '${{ steps.rate.outputs.result }}' = 'PASS'
