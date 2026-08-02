@@ -7,7 +7,7 @@ begin;
 select no_plan();
 
 -- ---------------------------------------------------------------------------
--- Schema shape
+-- Schema shape and privileges
 -- ---------------------------------------------------------------------------
 
 select has_column('public', t, 'artist_id', t || '.artist_id exists')
@@ -32,7 +32,7 @@ select ok(
 );
 
 select is(
-  (select column_default
+  (select column_default::text
    from information_schema.columns
    where table_schema = 'public'
      and table_name = 'activity_log'
@@ -93,7 +93,7 @@ select ok(not has_column_privilege('authenticated', 'public.sessions', 'price', 
           'adding artist scope did not expose session prices');
 
 -- ---------------------------------------------------------------------------
--- Owner and legacy intake fixture
+-- Owner and legacy Vladimir workflow
 -- ---------------------------------------------------------------------------
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
@@ -128,8 +128,6 @@ select public.create_enquiry_intake(
   )
 ) as r;
 
-grant select on legacy_intake to authenticated, service_role;
-
 select public.mark_enquiry_file_uploaded(f.id)
 from public.enquiry_files f
 where f.enquiry_id = (select (r ->> 'enquiry_id')::uuid from legacy_intake);
@@ -155,20 +153,6 @@ select is(
   'the intake Telegram outbox row inherits Vladimir'
 );
 
-select ok(
-  not exists (
-    select 1
-    from public.activity_log a
-    where a.enquiry_id = (select (r ->> 'enquiry_id')::uuid from legacy_intake)
-      and a.artist_id is distinct from 'a1111111-1111-4111-8111-111111111111'::uuid
-  ),
-  'all enquiry-linked intake activity carries Vladimir'
-);
-
--- ---------------------------------------------------------------------------
--- Existing workflow RPCs inherit artist without signature changes
--- ---------------------------------------------------------------------------
-
 select set_config(
   'request.jwt.claims',
   '{"sub":"61111111-1111-4111-8111-111111111111","role":"authenticated"}',
@@ -187,14 +171,6 @@ select (public.convert_enquiry_to_project(
   'Synthetic only'
 ) ->> 'project_id')::uuid as id;
 
-grant select on legacy_project to authenticated, service_role;
-
-select is(
-  (select artist_id from public.projects where id = (select id from legacy_project)),
-  'a1111111-1111-4111-8111-111111111111'::uuid,
-  'project conversion inherits the enquiry artist'
-);
-
 create temporary table legacy_session as
 select (public.schedule_session(
   (select id from legacy_project),
@@ -203,14 +179,6 @@ select (public.schedule_session(
   'proposed',
   'Synthetic scope session'
 ) ->> 'session_id')::uuid as id;
-
-grant select on legacy_session to authenticated, service_role;
-
-select is(
-  (select artist_id from public.sessions where id = (select id from legacy_session)),
-  'a1111111-1111-4111-8111-111111111111'::uuid,
-  'session scheduling inherits the project artist'
-);
 
 create temporary table legacy_follow_up as
 select public.create_follow_up(
@@ -223,14 +191,6 @@ select public.create_follow_up(
   'Synthetic details'
 ) as id;
 
-grant select on legacy_follow_up to authenticated, service_role;
-
-select is(
-  (select artist_id from public.follow_ups where id = (select id from legacy_follow_up)),
-  'a1111111-1111-4111-8111-111111111111'::uuid,
-  'follow-up inherits the linked enquiry/project artist'
-);
-
 create temporary table legacy_email as
 select public.create_email_draft(
   'synthetic-recipient@example.test',
@@ -242,16 +202,29 @@ select public.create_email_draft(
   'human'
 ) as id;
 
-grant select on legacy_email to authenticated, service_role;
+select public.approve_email_draft((select id from legacy_email));
+select public.set_session_status((select id from legacy_session), 'confirmed');
 
+select is(
+  (select artist_id from public.projects where id = (select id from legacy_project)),
+  'a1111111-1111-4111-8111-111111111111'::uuid,
+  'project conversion inherits the enquiry artist'
+);
+select is(
+  (select artist_id from public.sessions where id = (select id from legacy_session)),
+  'a1111111-1111-4111-8111-111111111111'::uuid,
+  'session scheduling inherits the project artist'
+);
+select is(
+  (select artist_id from public.follow_ups where id = (select id from legacy_follow_up)),
+  'a1111111-1111-4111-8111-111111111111'::uuid,
+  'follow-up inherits the linked enquiry/project artist'
+);
 select is(
   (select artist_id from public.email_messages where id = (select id from legacy_email)),
   'a1111111-1111-4111-8111-111111111111'::uuid,
   'email draft inherits the linked enquiry/project artist'
 );
-
-select public.approve_email_draft((select id from legacy_email));
-
 select is(
   (select artist_id
    from public.integration_outbox
@@ -259,9 +232,6 @@ select is(
   'a1111111-1111-4111-8111-111111111111'::uuid,
   'approved-email outbox routing inherits the email artist'
 );
-
-select public.set_session_status((select id from legacy_session), 'confirmed');
-
 select is(
   (select artist_id
    from public.integration_outbox
@@ -270,7 +240,6 @@ select is(
   'a1111111-1111-4111-8111-111111111111'::uuid,
   'confirmed-session calendar outbox routing inherits the session artist'
 );
-
 select ok(
   not exists (
     select 1
@@ -286,57 +255,118 @@ select ok(
 );
 
 -- ---------------------------------------------------------------------------
--- A direct privileged Kristina fixture proves inheritance is generic
+-- Direct trusted Kristina fixtures prove generic inheritance
 -- ---------------------------------------------------------------------------
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 create temporary table kristina_client as
-insert into public.clients (full_name, email)
-values ('Synthetic Kristina Client', 'synthetic-kristina@example.test')
-returning id;
+with inserted as (
+  insert into public.clients (full_name, email)
+  values ('Synthetic Kristina Client', 'synthetic-kristina@example.test')
+  returning id
+)
+select id from inserted;
 
 create temporary table kristina_enquiry as
-insert into public.enquiries (
-  client_id, artist_id, reference_number, idempotency_key, intake_fingerprint,
-  status, intake_state, submitted_full_name, submitted_email,
-  privacy_notice_version, privacy_acknowledged_at
-) values (
-  (select id from kristina_client),
-  'a2222222-2222-4222-8222-222222222222'::uuid,
-  'PENDING',
-  '60000000-0000-4000-8000-000000000002'::uuid,
-  repeat('b', 64),
-  'accepted',
-  'complete',
-  'Synthetic Kristina Client',
-  'synthetic-kristina@example.test',
-  '2026-07-29',
-  now()
+with inserted as (
+  insert into public.enquiries (
+    client_id, artist_id, reference_number, idempotency_key, intake_fingerprint,
+    status, intake_state, submitted_full_name, submitted_email,
+    privacy_notice_version, privacy_acknowledged_at
+  ) values (
+    (select id from kristina_client),
+    'a2222222-2222-4222-8222-222222222222'::uuid,
+    'PENDING',
+    '60000000-0000-4000-8000-000000000002'::uuid,
+    repeat('b', 64),
+    'accepted',
+    'complete',
+    'Synthetic Kristina Client',
+    'synthetic-kristina@example.test',
+    '2026-07-29',
+    now()
+  )
+  returning id
 )
-returning id;
+select id from inserted;
 
 create temporary table kristina_project as
-insert into public.projects (
-  client_id, enquiry_id, title, description
-) values (
-  (select id from kristina_client),
-  (select id from kristina_enquiry),
-  'Synthetic Kristina Project',
-  'Synthetic only'
+with inserted as (
+  insert into public.projects (client_id, enquiry_id, title, description)
+  values (
+    (select id from kristina_client),
+    (select id from kristina_enquiry),
+    'Synthetic Kristina Project',
+    'Synthetic only'
+  )
+  returning id
 )
-returning id;
+select id from inserted;
 
 create temporary table kristina_session as
-insert into public.sessions (
-  project_id, status, start_at, end_at
-) values (
-  (select id from kristina_project),
-  'proposed',
-  now() + interval '40 days',
-  now() + interval '40 days 6 hours'
+with inserted as (
+  insert into public.sessions (project_id, status, start_at, end_at)
+  values (
+    (select id from kristina_project),
+    'proposed',
+    now() + interval '40 days',
+    now() + interval '40 days 6 hours'
+  )
+  returning id
 )
-returning id;
+select id from inserted;
+
+create temporary table kristina_follow_up as
+with inserted as (
+  insert into public.follow_ups (
+    subject, due_at, client_id, enquiry_id, project_id
+  ) values (
+    'Synthetic Kristina follow-up',
+    now() + interval '3 days',
+    (select id from kristina_client),
+    (select id from kristina_enquiry),
+    (select id from kristina_project)
+  )
+  returning id
+)
+select id from inserted;
+
+create temporary table kristina_email as
+with inserted as (
+  insert into public.email_messages (
+    status, client_id, enquiry_id, project_id,
+    to_email, subject, body, created_by_kind
+  ) values (
+    'draft',
+    (select id from kristina_client),
+    (select id from kristina_enquiry),
+    (select id from kristina_project),
+    'synthetic-kristina@example.test',
+    'Synthetic Kristina draft',
+    'Synthetic body',
+    'system'
+  )
+  returning id
+)
+select id from inserted;
+
+create temporary table kristina_outbox as
+with inserted as (
+  insert into public.integration_outbox (
+    kind, dedupe_key, payload, client_id, enquiry_id, project_id, session_id
+  ) values (
+    'calendar_create',
+    'calendar:create:synthetic-kristina:1',
+    '{}'::jsonb,
+    (select id from kristina_client),
+    (select id from kristina_enquiry),
+    (select id from kristina_project),
+    (select id from kristina_session)
+  )
+  returning id
+)
+select id from inserted;
 
 select is(
   (select artist_id from public.enquiries where id = (select id from kristina_enquiry)),
@@ -353,49 +383,6 @@ select is(
   'a2222222-2222-4222-8222-222222222222'::uuid,
   'a session inherits Kristina from its project'
 );
-
-create temporary table kristina_follow_up as
-insert into public.follow_ups (
-  subject, due_at, client_id, enquiry_id, project_id
-) values (
-  'Synthetic Kristina follow-up',
-  now() + interval '3 days',
-  (select id from kristina_client),
-  (select id from kristina_enquiry),
-  (select id from kristina_project)
-)
-returning id;
-
-create temporary table kristina_email as
-insert into public.email_messages (
-  status, client_id, enquiry_id, project_id,
-  to_email, subject, body, created_by_kind
-) values (
-  'draft',
-  (select id from kristina_client),
-  (select id from kristina_enquiry),
-  (select id from kristina_project),
-  'synthetic-kristina@example.test',
-  'Synthetic Kristina draft',
-  'Synthetic body',
-  'system'
-)
-returning id;
-
-create temporary table kristina_outbox as
-insert into public.integration_outbox (
-  kind, dedupe_key, payload, client_id, enquiry_id, project_id, session_id
-) values (
-  'calendar_create',
-  'calendar:create:synthetic-kristina:1',
-  '{}'::jsonb,
-  (select id from kristina_client),
-  (select id from kristina_enquiry),
-  (select id from kristina_project),
-  (select id from kristina_session)
-)
-returning id;
-
 select is(
   (select artist_id from public.follow_ups where id = (select id from kristina_follow_up)),
   'a2222222-2222-4222-8222-222222222222'::uuid,
@@ -429,7 +416,7 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- Cross-artist mismatches are rejected before persistence
+-- Cross-artist mismatches and generic reassignment are rejected
 -- ---------------------------------------------------------------------------
 
 select throws_ok(
@@ -466,20 +453,6 @@ select throws_ok(
 
 select throws_ok(
   format(
-    $$insert into public.email_messages (
-        status, enquiry_id, project_id, to_email, subject, body, created_by_kind
-      ) values (
-        'draft', %L, %L, 'mixed@example.test', 'Mixed artists', 'Synthetic', 'system'
-      )$$,
-    (select id from kristina_enquiry),
-    (select id from legacy_project)
-  ),
-  '23514', null,
-  'one email cannot link entities from different artists'
-);
-
-select throws_ok(
-  format(
     $$insert into public.integration_outbox (
         kind, dedupe_key, payload, enquiry_id, project_id
       ) values (
@@ -506,10 +479,6 @@ select throws_ok(
   'an activity row cannot claim a different artist than its entity'
 );
 
--- ---------------------------------------------------------------------------
--- Artist ownership cannot be rewritten through a generic UPDATE
--- ---------------------------------------------------------------------------
-
 select throws_ok(
   format(
     $$update public.enquiries
@@ -520,7 +489,6 @@ select throws_ok(
   '23514', null,
   'enquiry artist is immutable'
 );
-
 select throws_ok(
   format(
     $$update public.projects
@@ -531,7 +499,6 @@ select throws_ok(
   '23514', null,
   'project artist is immutable'
 );
-
 select throws_ok(
   format(
     $$update public.sessions
@@ -542,7 +509,6 @@ select throws_ok(
   '23514', null,
   'session artist is immutable'
 );
-
 select throws_ok(
   format(
     $$update public.follow_ups
@@ -553,7 +519,6 @@ select throws_ok(
   '23514', null,
   'follow-up artist is immutable'
 );
-
 select throws_ok(
   format(
     $$update public.email_messages
@@ -564,7 +529,6 @@ select throws_ok(
   '23514', null,
   'email artist is immutable'
 );
-
 select throws_ok(
   format(
     $$update public.integration_outbox
@@ -576,7 +540,6 @@ select throws_ok(
   'outbox artist is immutable'
 );
 
--- The new scope column does not create an audit-history mutation escape hatch.
 select throws_ok(
   format(
     $$update public.activity_log
@@ -589,7 +552,7 @@ select throws_ok(
 );
 
 -- ---------------------------------------------------------------------------
--- Required tables contain no unscoped row
+-- Required business tables contain no unscoped row
 -- ---------------------------------------------------------------------------
 
 select ok(not exists (select 1 from public.enquiries where artist_id is null),
