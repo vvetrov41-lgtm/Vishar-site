@@ -1,5 +1,4 @@
-name: Invoke authorised staging asset cleanup
-# Retry exact Storage API deletion without a Data API lookup.
+name: Verify staging invalid Origin
 
 on:
   push:
@@ -13,40 +12,51 @@ permissions:
   pull-requests: write
 
 jobs:
-  cleanup:
+  invalid-origin:
     runs-on: ubuntu-latest
     steps:
-      - name: Remove exact ENQ-2026-0003 storage object
+      - name: Send one invalid-origin OPTIONS request
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
+          headers="$(mktemp)"
           body="$(mktemp)"
-          status="$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
             --output "$body" \
+            --dump-header "$headers" \
+            --request OPTIONS \
+            --header 'Origin: https://invalid-origin.example' \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type' \
             --write-out '%{http_code}' \
-            'https://gwaliusblwrzisrwnsvs.supabase.co/functions/v1/cleanup-enq-0003-20260802')"
+            'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026')"
 
-          ok="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get("ok", False)).lower())' "$body" 2>/dev/null || true)"
-          removed="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get("removed", False)).lower())' "$body" 2>/dev/null || true)"
-          code="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("code", ""))' "$body" 2>/dev/null || true)"
+          tr -d '\r' < "$headers" > headers-clean.txt
+          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' headers-clean.txt)"
+          allow_methods="$(awk -F': ' 'tolower($1)=="access-control-allow-methods" {print $2; exit}' headers-clean.txt)"
+          server="$(awk -F': ' 'tolower($1)=="server" {print $2; exit}' headers-clean.txt)"
+          ray="$(awk -F': ' 'tolower($1)=="cf-ray" {print $2; exit}' headers-clean.txt)"
+          safe_code="$(python3 -c 'import json; d=json.load(open("'"$body"'")); print(d.get("code", ""))' 2>/dev/null || true)"
 
           result=FAIL
-          if [ "$status" = '200' ] && [ "$ok" = 'true' ]; then
+          if [ "$status" = '403' ] && [ -z "$allow_origin" ]; then
             result=PASS
           fi
 
           {
-            echo '<!-- staging-enq-0003-cleanup -->'
-            echo '### Staging ENQ-2026-0003 asset cleanup'
+            echo '<!-- staging-invalid-origin-test -->'
+            echo '### Staging invalid-Origin OPTIONS'
             echo
             echo "- Result: **${result}**"
             echo "- HTTP status: \`${status}\`"
-            echo "- Storage object removed: \`${removed}\`"
-            echo "- Safe code: \`${code:-none}\`"
+            echo "- Server: \`${server:-missing}\`"
+            echo "- CF-Ray: \`${ray:-missing}\`"
+            echo "- Access-Control-Allow-Origin: \`${allow_origin:-missing}\`"
+            echo "- Access-Control-Allow-Methods: \`${allow_methods:-missing}\`"
+            echo "- Safe error code: \`${safe_code:-none}\`"
           } > result.md
 
           cat result.md >> "$GITHUB_STEP_SUMMARY"
-          [ "$result" = PASS ]
 
       - name: Post result to PR #176
         if: always()
