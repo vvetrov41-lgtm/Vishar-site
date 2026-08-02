@@ -7,18 +7,20 @@
 // nothing anyway.
 
 import type { ReactNode } from 'react';
+import { useLanguage } from '../lib/i18n';
 import { can, type Capability } from '../lib/permissions';
 import { useSession } from '../lib/session';
 import { EmptyState } from './StateViews';
 
 export function RequireCapability({ capability, children }: { capability: Capability; children: ReactNode }) {
   const { profile } = useSession();
+  const { t } = useLanguage();
 
   if (!can(profile?.role, capability)) {
     return (
       <EmptyState
-        title="Not available for your role"
-        hint="If you need this, ask the owner to change your access."
+        title={t('access.notAvailableTitle')}
+        hint={t('access.notAvailableHint')}
       />
     );
   }
