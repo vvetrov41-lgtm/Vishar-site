@@ -2,8 +2,9 @@ import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { Link } from '../lib/router';
-import { can, ENQUIRY_STATUS_LABELS } from '../lib/permissions';
+import { can } from '../lib/permissions';
 import { formatDate, formatDateTime } from '../lib/format';
+import { useLanguage } from '../lib/i18n';
 import type { Client, Enquiry, InternalNote, Project } from '../lib/types';
 
 interface ClientData {
@@ -16,6 +17,7 @@ interface ClientData {
 export function ClientDetailPage({ clientId }: { clientId: string }) {
   const api = useApi();
   const { profile } = useSession();
+  const { t, label, language } = useLanguage();
   const role = profile?.role;
 
   const { data, loading, error, reload } = useAsync<ClientData>(async () => {
@@ -36,9 +38,9 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
     };
   }, [api, clientId, role]);
 
-  if (loading) return <LoadingState label="Loading client…" />;
+  if (loading) return <LoadingState label={t('client.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
-  if (!data?.client) return <EmptyState title="Client not found" />;
+  if (!data?.client) return <EmptyState title={t('client.notFound')} />;
 
   const { client, enquiries, projects, notes } = data;
 
@@ -47,30 +49,27 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
       <div className="card">
         <h2 style={{ fontSize: '1.2rem' }}>{client.full_name}</h2>
         <dl className="definition">
-          <dt>Email</dt><dd>{client.email ?? '—'}</dd>
-          <dt>Phone</dt><dd>{client.phone ?? '—'}</dd>
-          <dt>Instagram</dt><dd>{client.instagram ?? '—'}</dd>
-          <dt>Prefers</dt><dd>{client.preferred_contact ?? '—'}</dd>
-          <dt>Travelling from</dt><dd>{client.travelling_from ?? '—'}</dd>
-          <dt>First seen</dt><dd>{formatDate(client.created_at)}</dd>
+          <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
+          <dt>{t('enquiry.phone')}</dt><dd>{client.phone ?? '—'}</dd>
+          <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
+          <dt>{t('enquiry.prefers')}</dt><dd>{client.preferred_contact ?? '—'}</dd>
+          <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
+          <dt>{t('client.firstSeen')}</dt><dd>{formatDate(client.created_at, language)}</dd>
         </dl>
-        <p className="notice" style={{ marginTop: 12 }}>
-          Client records are never merged automatically. If two records look like the
-          same person, the owner reviews it — a wrong merge cannot be undone.
-        </p>
+        <p className="notice" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>
       </div>
 
-      <Section title="Enquiries">
+      <Section title={t('client.enquiries')}>
         {enquiries.length === 0 ? (
-          <EmptyState title="No enquiries for this client" />
+          <EmptyState title={t('client.noEnquiries')} />
         ) : (
           <div className="list">
             {enquiries.map((enquiry) => (
               <Link key={enquiry.id} to={`/enquiries/${enquiry.id}`} className="row">
                 <div className="title">{enquiry.reference_number}</div>
                 <div className="meta">
-                  <span className="badge">{ENQUIRY_STATUS_LABELS[enquiry.status]}</span>{' '}
-                  {formatDateTime(enquiry.created_at)}
+                  <span className="badge">{label('enquiryStatus', enquiry.status)}</span>{' '}
+                  {formatDateTime(enquiry.created_at, language)}
                 </div>
               </Link>
             ))}
@@ -78,17 +77,19 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
         )}
       </Section>
 
-      <Section title="Projects">
+      <Section title={t('client.projects')}>
         {projects.length === 0 ? (
-          <EmptyState title="No projects yet" hint="A project is created by converting an enquiry." />
+          <EmptyState title={t('client.noProjects')} hint={t('client.noProjectsHint')} />
         ) : (
           <div className="list">
             {projects.map((project) => (
               <Link key={project.id} to={`/projects/${project.id}`} className="row">
                 <div className="title">{project.title}</div>
                 <div className="meta">
-                  <span className="badge">{project.status}</span>{' '}
-                  <span className="badge">Deposit: {project.deposit_status.replace(/_/g, ' ')}</span>
+                  <span className="badge">{label('projectStatus', project.status)}</span>{' '}
+                  <span className="badge">
+                    {t('common.deposit')}: {label('depositStatus', project.deposit_status)}
+                  </span>
                 </div>
               </Link>
             ))}
@@ -97,13 +98,13 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
       </Section>
 
       {can(role, 'viewNotes') ? (
-        <Section title="Notes">
-          {notes.length === 0 ? <EmptyState title="No notes" /> : (
+        <Section title={t('client.notes')}>
+          {notes.length === 0 ? <EmptyState title={t('client.noNotes')} /> : (
             <ul className="timeline">
               {notes.map((note) => (
                 <li key={note.id}>
                   <div style={{ whiteSpace: 'pre-wrap' }}>{note.body}</div>
-                  <div className="when">{formatDateTime(note.created_at)}</div>
+                  <div className="when">{formatDateTime(note.created_at, language)}</div>
                 </li>
               ))}
             </ul>
