@@ -1,5 +1,5 @@
 name: Invoke authorised staging asset cleanup
-# Retry using the Edge Functions secret-key environment.
+# Retry exact Storage API deletion without a Data API lookup.
 
 on:
   push:
