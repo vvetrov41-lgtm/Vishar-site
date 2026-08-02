@@ -234,8 +234,8 @@ select throws_ok($$select public.set_profile_role('33333333-3333-4333-8333-33333
   '42501', null, 'a manager cannot change a role');
 select throws_ok($$select public.set_profile_active('33333333-3333-4333-8333-333333333333', false)$$,
   '42501', null, 'a manager cannot deactivate a profile');
-select throws_ok($$select public.update_retention_policy(true, 365)$$, '42501', null,
-  'a manager cannot change the retention policy');
+select throws_ok($$select public.update_retention_policy(true, 365)$$,
+  '42501', null, 'a manager cannot change the retention policy');
 
 select lives_ok($$select * from public.list_assignable_profiles()$$,
   'a manager can list assignable colleagues');
@@ -485,6 +485,12 @@ insert into expected_function_acl values
   ('public.crm_storage_object_is_known(text)', false, true, true),
   ('public.crm_storage_object_readable(text)', false, true, true),
   ('public.crm_storage_object_writable(text)', false, true, true),
+  ('public.can_access_artist(uuid)', false, true, true),
+  ('public.can_manage_artist(uuid)', false, true, true),
+  ('public.can_view_artist_finance(uuid)', false, true, true),
+  ('public.can_manage_artist_finance(uuid)', false, true, true),
+  ('public.can_manage_artist_sessions(uuid)', false, true, true),
+  ('public.can_manage_artist_integrations(uuid)', false, true, true),
 
   -- Worker-only durable intake and reconciliation RPCs.
   ('public.create_enquiry_intake(uuid,jsonb,jsonb,jsonb)', false, false, true),
@@ -513,6 +519,7 @@ insert into expected_function_acl values
   ('public.list_profiles()', false, true, false),
   ('public.list_assignable_profiles()', false, true, false),
   ('public.update_retention_policy(boolean,integer,integer,integer,integer,boolean)', false, true, false),
+  ('public.list_accessible_artists()', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
