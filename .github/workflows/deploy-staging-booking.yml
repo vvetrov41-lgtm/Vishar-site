@@ -108,6 +108,67 @@ jobs:
           --branch main
           --commit-dirty=true
 
+      - name: Send one allowed-origin OPTIONS diagnostic
+        shell: bash
+        run: |
+          set -u
+          headers="$(mktemp)"
+          body="$(mktemp)"
+
+          status="$({
+            curl \
+              --silent \
+              --show-error \
+              --connect-timeout 10 \
+              --max-time 20 \
+              --output "$body" \
+              --dump-header "$headers" \
+              --request OPTIONS \
+              --header 'Origin: https://vishar-booking-staging.pages.dev' \
+              --header 'Access-Control-Request-Method: POST' \
+              --header 'Access-Control-Request-Headers: content-type' \
+              --write-out '%{http_code}' \
+              'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026'
+          } 2>curl-error.txt)"
+          curl_exit=$?
+
+          tr -d '\r' < "$headers" > headers-clean.txt
+          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' headers-clean.txt)"
+          allow_methods="$(awk -F': ' 'tolower($1)=="access-control-allow-methods" {print $2; exit}' headers-clean.txt)"
+          allow_headers="$(awk -F': ' 'tolower($1)=="access-control-allow-headers" {print $2; exit}' headers-clean.txt)"
+          server="$(awk -F': ' 'tolower($1)=="server" {print $2; exit}' headers-clean.txt)"
+          ray="$(awk -F': ' 'tolower($1)=="cf-ray" {print $2; exit}' headers-clean.txt)"
+
+          result=FAIL
+          if [ "$curl_exit" -eq 0 ] \
+            && [ "$status" -ge 200 ] 2>/dev/null \
+            && [ "$status" -lt 300 ] 2>/dev/null \
+            && [ "$allow_origin" = 'https://vishar-booking-staging.pages.dev' ] \
+            && printf '%s' "$allow_methods" | grep -qi 'POST' \
+            && printf '%s' "$allow_methods" | grep -qi 'OPTIONS' \
+            && printf '%s' "$allow_headers" | grep -qi 'Content-Type'; then
+            result=PASS
+          fi
+
+          {
+            echo '<!-- staging-intake-options-diagnostic -->'
+            echo '### Staging intake OPTIONS diagnostic'
+            echo
+            echo "- Result: **${result}**"
+            echo "- curl exit: \`${curl_exit}\`"
+            echo "- HTTP status: \`${status:-none}\`"
+            echo "- Server: \`${server:-missing}\`"
+            echo "- CF-Ray: \`${ray:-missing}\`"
+            echo "- Access-Control-Allow-Origin: \`${allow_origin:-missing}\`"
+            echo "- Access-Control-Allow-Methods: \`${allow_methods:-missing}\`"
+            echo "- Access-Control-Allow-Headers: \`${allow_headers:-missing}\`"
+            if [ -s curl-error.txt ]; then
+              echo "- curl error: \`$(tr '\n' ' ' < curl-error.txt | sed 's/`//g' | cut -c1-300)\`"
+            fi
+          } > options-result.md
+
+          cat options-result.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record successful deployment on PR #176
         env:
           GH_TOKEN: ${{ github.token }}
@@ -119,3 +180,5 @@ jobs:
           \`https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026\`
 
           Production files and production Worker configuration were not changed."
+
+          gh pr comment 176 --body-file options-result.md
