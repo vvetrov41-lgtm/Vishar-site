@@ -23,7 +23,7 @@ jobs:
       - name: Check out approved localised CRM commit
         uses: actions/checkout@v4
         with:
-          ref: faf163678f2e7eeb253035681693ccc5a4d5a24f
+          ref: adfe49398263bb58261f0dc75398c77815380828
 
       - name: Verify staging-only configuration exists
         id: config
@@ -113,6 +113,8 @@ jobs:
           grep -R -Fq 'vishar-crm-language' admin/dist
           grep -R -Fq 'Заявки' admin/dist
           grep -R -Fq 'Создать проект' admin/dist
+          grep -R -Fq 'Клиент создан' admin/dist
+          grep -R -Fq "'система'" admin/dist || grep -R -Fq 'система' admin/dist
 
           # The application deliberately contains the literal strings
           # "sb_secret_" and "service_role" in its fail-closed config checks.
@@ -164,6 +166,6 @@ jobs:
           - CRM tests and build: \`${BUILD_STATUS}\`
           - Browser artifact and Russian-language check: \`${ARTIFACT_STATUS}\`
           - Cloudflare Pages deployment: \`${DEPLOY_STATUS}\`
-          - Approved localised CRM SHA: \`faf163678f2e7eeb253035681693ccc5a4d5a24f\`
+          - Approved localised CRM SHA: \`adfe49398263bb58261f0dc75398c77815380828\`
 
           No secret value is included in this diagnostic. The workflow targets only \`vishar-crm-staging\`."
