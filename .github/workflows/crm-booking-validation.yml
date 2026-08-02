@@ -114,3 +114,92 @@ jobs:
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop --no-backup
+
+  staging-network-controls:
+    name: Hosted staging network controls
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 176
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Reject invalid Origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+            --output "$body" \
+            --dump-header "$headers" \
+            --request OPTIONS \
+            --header 'Origin: https://invalid-origin.example' \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type' \
+            --write-out '%{http_code}' \
+            'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026')"
+
+          tr -d '\r' < "$headers" > headers-clean.txt
+          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' headers-clean.txt)"
+          safe_code="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("code", ""))' "$body" 2>/dev/null || true)"
+
+          echo "invalid_origin_status=${status}"
+          echo "invalid_origin_allow_origin=${allow_origin:-missing}"
+          echo "invalid_origin_safe_code=${safe_code:-none}"
+
+          test "$status" = '403'
+          test -z "$allow_origin"
+
+      - name: Clear rate window
+        run: sleep 12
+
+      - name: Enforce rate limit and recover
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint='https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026'
+          origin='https://vishar-booking-staging.pages.dev'
+          statuses=()
+
+          for i in 1 2 3 4 5 6 7; do
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+              --output /dev/null \
+              --request OPTIONS \
+              --header "Origin: ${origin}" \
+              --header 'Access-Control-Request-Method: POST' \
+              --header 'Access-Control-Request-Headers: content-type' \
+              --write-out '%{http_code}' \
+              "$endpoint")"
+            statuses+=("$status")
+          done
+
+          joined="$(IFS=,; echo "${statuses[*]}")"
+          served=0
+          blocked=0
+          for status in "${statuses[@]}"; do
+            if [ "$status" = '204' ]; then
+              served=$((served + 1))
+            elif [ "$status" = '429' ] || [ "$status" = '403' ]; then
+              blocked=$((blocked + 1))
+            fi
+          done
+
+          echo "rate_burst_statuses=${joined}"
+          echo "rate_served=${served}"
+          echo "rate_blocked=${blocked}"
+
+          test "${statuses[0]}" = '204'
+          test "$served" -ge 1
+          test "$blocked" -ge 1
+
+          sleep 12
+          recovery="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+            --output /dev/null \
+            --request OPTIONS \
+            --header "Origin: ${origin}" \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type' \
+            --write-out '%{http_code}' \
+            "$endpoint")"
+
+          echo "rate_recovery_status=${recovery}"
+          test "$recovery" = '204'
