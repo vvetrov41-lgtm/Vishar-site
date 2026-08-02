@@ -1,8 +1,11 @@
 import { useState, type FormEvent } from 'react';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { useLanguage } from '../lib/i18n';
 import { useSession } from '../lib/session';
 
 export function LoginPage() {
   const { signIn, error } = useSession();
+  const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -20,12 +23,15 @@ export function LoginPage() {
   }
 
   return (
-    <div className="container" style={{ maxWidth: 420, paddingTop: 48 }}>
+    <div className="container" style={{ maxWidth: 420, paddingTop: 24 }}>
+      <div className="login-language">
+        <LanguageSwitcher />
+      </div>
       <h1 style={{ fontSize: '1.4rem', marginBottom: 4 }}>Vishar CRM</h1>
-      <p style={{ color: 'var(--muted)', marginTop: 0 }}>Staff sign in.</p>
+      <p style={{ color: 'var(--muted)', marginTop: 0 }}>{t('login.staffSignIn')}</p>
 
       <form className="card" onSubmit={onSubmit} noValidate>
-        <label htmlFor="email">Email</label>
+        <label htmlFor="email">{t('login.email')}</label>
         <input
           id="email" name="email" type="email" autoComplete="username"
           value={email} onChange={(event) => setEmail(event.target.value)} required
@@ -33,7 +39,7 @@ export function LoginPage() {
 
         <div style={{ height: 12 }} />
 
-        <label htmlFor="password">Password</label>
+        <label htmlFor="password">{t('login.password')}</label>
         <input
           id="password" name="password" type="password" autoComplete="current-password"
           value={password} onChange={(event) => setPassword(event.target.value)} required
@@ -43,15 +49,12 @@ export function LoginPage() {
 
         <div className="actions">
           <button className="primary" type="submit" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
+            {busy ? t('login.signingIn') : t('login.signIn')}
           </button>
         </div>
       </form>
 
-      <p className="notice">
-        Accounts are created by the owner. Password resets are handled in Supabase,
-        not here.
-      </p>
+      <p className="notice">{t('login.notice')}</p>
     </div>
   );
 }
