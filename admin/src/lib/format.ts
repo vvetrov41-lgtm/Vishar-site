@@ -70,6 +70,50 @@ export function relativeDue(
   return { label: `Due in ${diffDays}d`, overdue: false };
 }
 
+export function localiseKnownValue(
+  value: string | null | undefined,
+  language: Language = 'en'
+): string {
+  if (!value) return '—';
+  const normalised = value.trim().toLocaleLowerCase(language === 'ru' ? 'ru-RU' : 'en-GB');
+  const values: Record<Language, Record<string, string>> = {
+    en: {
+      email: 'Email',
+      'электронная почта': 'Email',
+      phone: 'Phone',
+      telephone: 'Phone',
+      телефон: 'Phone',
+      yes: 'Yes',
+      да: 'Yes',
+      true: 'Yes',
+      no: 'No',
+      нет: 'No',
+      false: 'No',
+    },
+    ru: {
+      email: 'Электронная почта',
+      'электронная почта': 'Электронная почта',
+      phone: 'Телефон',
+      telephone: 'Телефон',
+      телефон: 'Телефон',
+      yes: 'Да',
+      да: 'Да',
+      true: 'Да',
+      no: 'Нет',
+      нет: 'Нет',
+      false: 'Нет',
+    },
+  };
+  return values[language][normalised] ?? value;
+}
+
+export function localiseSystemSubject(value: string, language: Language = 'en'): string {
+  if (value === 'Chase this enquiry' || value === 'Связаться по этой заявке') {
+    return language === 'ru' ? 'Связаться по этой заявке' : 'Chase this enquiry';
+  }
+  return value;
+}
+
 export function initials(name: string | null | undefined): string {
   if (!name) return '?';
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || '?';

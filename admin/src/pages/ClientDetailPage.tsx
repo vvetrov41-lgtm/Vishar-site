@@ -3,7 +3,7 @@ import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { Link } from '../lib/router';
 import { can } from '../lib/permissions';
-import { formatDate, formatDateTime } from '../lib/format';
+import { formatDate, formatDateTime, localiseKnownValue } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type { Client, Enquiry, InternalNote, Project } from '../lib/types';
 
@@ -52,7 +52,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
           <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
           <dt>{t('enquiry.phone')}</dt><dd>{client.phone ?? '—'}</dd>
           <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
-          <dt>{t('enquiry.prefers')}</dt><dd>{client.preferred_contact ?? '—'}</dd>
+          <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
           <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
           <dt>{t('client.firstSeen')}</dt><dd>{formatDate(client.created_at, language)}</dd>
         </dl>

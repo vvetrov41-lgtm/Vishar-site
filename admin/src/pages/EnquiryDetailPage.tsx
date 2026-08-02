@@ -5,7 +5,7 @@ import { EmptyState, ErrorState, LoadingState, Section } from '../components/Sta
 import { SignedImage } from '../components/SignedImage';
 import { Link, useRouter } from '../lib/router';
 import { availableTransitions, can } from '../lib/permissions';
-import { formatDateTime, relativeDue } from '../lib/format';
+import { formatDateTime, localiseKnownValue, localiseSystemSubject, relativeDue } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type {
   ActivityEntry, Client, Enquiry, EnquiryFile, FollowUp, InternalNote, Profile, StatusTransition,
@@ -125,7 +125,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <dt>{t('enquiry.email')}</dt><dd>{enquiry.submitted_email ?? client?.email ?? '—'}</dd>
           <dt>{t('enquiry.phone')}</dt><dd>{enquiry.submitted_phone ?? '—'}</dd>
           <dt>{t('enquiry.instagram')}</dt><dd>{enquiry.submitted_instagram ?? '—'}</dd>
-          <dt>{t('enquiry.prefers')}</dt><dd>{enquiry.submitted_preferred_contact ?? '—'}</dd>
+          <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(enquiry.submitted_preferred_contact, language)}</dd>
           <dt>{t('enquiry.travellingFrom')}</dt><dd>{enquiry.submitted_travelling_from ?? '—'}</dd>
         </dl>
         {client ? (
@@ -142,7 +142,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
             <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
             <dt>{t('enquiry.phone')}</dt><dd>{client.phone ?? '—'}</dd>
             <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
-            <dt>{t('enquiry.prefers')}</dt><dd>{client.preferred_contact ?? '—'}</dd>
+            <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
             <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
           </dl>
           <div className="actions">
@@ -156,7 +156,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <dt>{t('enquiry.type')}</dt><dd>{enquiry.project_type ?? '—'}</dd>
           <dt>{t('enquiry.placement')}</dt><dd>{enquiry.placement ?? '—'}</dd>
           <dt>{t('enquiry.size')}</dt><dd>{enquiry.approximate_size ?? '—'}</dd>
-          <dt>{t('enquiry.coverUp')}</dt><dd>{enquiry.cover_up ?? '—'}</dd>
+          <dt>{t('enquiry.coverUp')}</dt><dd>{localiseKnownValue(enquiry.cover_up, language)}</dd>
           <dt>{t('enquiry.timing')}</dt><dd>{enquiry.preferred_timing ?? '—'}</dd>
         </dl>
         <p style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{enquiry.idea ?? '—'}</p>
@@ -251,7 +251,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
                 const due = relativeDue(followUp.due_at, new Date(), language);
                 return (
                   <div key={followUp.id} className="row">
-                    <div className="title">{followUp.subject}</div>
+                    <div className="title">{localiseSystemSubject(followUp.subject, language)}</div>
                     <div className="meta">
                       <span className={due.overdue ? 'badge danger' : 'badge'}>{due.label}</span>{' '}
                       <span className="badge">{label('followUpStatus', followUp.status)}</span>
