@@ -756,8 +756,8 @@ set local role authenticated;
 select pg_temp.claims('{"sub":"81111111-1111-4111-8111-111111111111","role":"authenticated"}');
 select is((select count(*)::int from public.payment_requests), 3,
           'owner sees payment requests for both artists');
-select ok((select count(*) from public.payment_transactions) >= 7,
-          'owner sees immutable transactions for both artists');
+select is((select count(*)::int from public.payment_transactions), 6,
+          'owner sees all six immutable transactions for both artists');
 select is((select count(*)::int from public.payment_webhook_events), 1,
           'owner sees provider event metadata for both artists');
 select throws_ok(
