@@ -1,4 +1,5 @@
 name: Test staging invalid Origin
+# Re-run after successful browser and CRM staging validation.
 
 on:
   push:
