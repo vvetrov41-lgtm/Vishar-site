@@ -74,7 +74,8 @@ describe('route protection', () => {
     expect(await screen.findByText('Manager')).toBeInTheDocument();
     expect(screen.getByText('Reader')).toBeInTheDocument();
     // One role selector per staff member, and a deactivate control for each.
-    expect(screen.getAllByRole('combobox').length).toBe(4);
+    // The separate language selector is intentionally excluded.
+    expect(screen.getAllByRole('combobox', { name: /Role for/i }).length).toBe(4);
     expect(screen.getAllByRole('button', { name: /deactivate|reactivate/i }).length).toBe(4);
   });
 
