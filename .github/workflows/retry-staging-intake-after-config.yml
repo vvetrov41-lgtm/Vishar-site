@@ -1,5 +1,5 @@
 name: Invoke authorised staging asset cleanup
-# Retry with stage-specific HTTP status diagnostics.
+# Retry with upstream HTTP status passthrough.
 
 on:
   push:
