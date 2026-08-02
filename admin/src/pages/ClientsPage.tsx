@@ -4,10 +4,12 @@ import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
 import { Link } from '../lib/router';
 import { formatDate } from '../lib/format';
+import { useLanguage } from '../lib/i18n';
 import type { Client } from '../lib/types';
 
 export function ClientsPage() {
   const api = useApi();
+  const { t, language } = useLanguage();
   const [search, setSearch] = useState('');
   const { data, loading, error, reload } = useAsync<Client[]>(
     () => api.listClients(search || undefined),
@@ -17,18 +19,18 @@ export function ClientsPage() {
   return (
     <>
       <div className="card">
-        <label htmlFor="client-search">Search by name</label>
+        <label htmlFor="client-search">{t('clients.searchByName')}</label>
         <input
           id="client-search" type="search" inputMode="search"
           value={search} onChange={(event) => setSearch(event.target.value)}
-          placeholder="Client name"
+          placeholder={t('clients.namePlaceholder')}
         />
       </div>
 
-      {loading ? <LoadingState label="Loading clients…" /> : null}
+      {loading ? <LoadingState label={t('clients.loading')} /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {!loading && !error && data && data.length === 0 ? (
-        <EmptyState title="No clients match" hint="Clients are created automatically when an enquiry arrives." />
+        <EmptyState title={t('clients.noMatch')} hint={t('clients.noMatchHint')} />
       ) : null}
 
       {!loading && !error && data && data.length > 0 ? (
@@ -37,7 +39,7 @@ export function ClientsPage() {
             <Link key={client.id} to={`/clients/${client.id}`} className="row">
               <div className="title">{client.full_name}</div>
               <div className="meta">
-                {client.email ?? 'No email'} · first seen {formatDate(client.created_at)}
+                {client.email ?? t('clients.noEmail')} · {t('common.firstSeen', { date: formatDate(client.created_at, language) })}
               </div>
             </Link>
           ))}
