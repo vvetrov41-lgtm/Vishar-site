@@ -1,0 +1,55 @@
+name: Cleanup staging ENQ-2026-0003 asset
+
+on:
+  push:
+    branches:
+      - claude/vishar-crm-booking-infra-c188bx
+    paths:
+      - .github/workflows/cleanup-staging-enq-0003.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove exact authorised staging object
+        id: cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
+            --output "$body" \
+            --write-out '%{http_code}' \
+            'https://gwaliusblwrzisrwnsvs.supabase.co/functions/v1/cleanup-enq-0003-20260802')"
+
+          ok="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get("ok", False)).lower())' "$body" 2>/dev/null || true)"
+          removed="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get("removed", False)).lower())' "$body" 2>/dev/null || true)"
+          code="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("code", ""))' "$body" 2>/dev/null || true)"
+
+          result=FAIL
+          if [ "$status" = '200' ] && [ "$ok" = 'true' ]; then
+            result=PASS
+          fi
+
+          {
+            echo '<!-- staging-enq-0003-cleanup -->'
+            echo '### Staging ENQ-2026-0003 asset cleanup'
+            echo
+            echo "- Result: **${result}**"
+            echo "- HTTP status: \`${status}\`"
+            echo "- Storage object removed: \`${removed}\`"
+            echo "- Safe code: \`${code:-none}\`"
+          } > result.md
+
+          cat result.md >> "$GITHUB_STEP_SUMMARY"
+          [ "$result" = PASS ]
+
+      - name: Record result on PR #176
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 176 --body-file result.md
