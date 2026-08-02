@@ -1,0 +1,97 @@
+name: Deploy staging CRM preview
+
+on:
+  push:
+    branches:
+      - claude/vishar-crm-booking-infra-c188bx
+    paths:
+      - .github/workflows/deploy-staging-crm.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: deploy-staging-crm
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out approved application commit
+        uses: actions/checkout@v4
+        with:
+          ref: 2961452472d099aab75ca3522a7a2f8c3615e360
+
+      - name: Verify staging-only configuration exists
+        shell: bash
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$VITE_SUPABASE_URL"
+          test -n "$VITE_SUPABASE_PUBLISHABLE_KEY"
+          case "$VITE_SUPABASE_URL" in
+            https://*.supabase.co) ;;
+            *) echo 'STAGING_SUPABASE_URL must be the hosted staging project root URL' >&2; exit 1 ;;
+          esac
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in
+            sb_secret_*|eyJ*) echo 'A privileged or legacy JWT-like key must not be embedded in the CRM browser build' >&2; exit 1 ;;
+            *) ;;
+          esac
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install pinned CRM dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Build isolated CRM artifact
+        working-directory: admin
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+        run: npm run build
+
+      - name: Verify private staging artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          if grep -R -Fq 'sb_secret_' admin/dist; then
+            echo 'Privileged Supabase key marker found in browser artifact' >&2
+            exit 1
+          fi
+          if grep -R -Fq 'service_role' admin/dist; then
+            echo 'Service-role marker found in browser artifact' >&2
+            exit 1
+          fi
+
+      - name: Deploy CRM artifact to staging Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx wrangler pages deploy admin/dist
+          --project-name vishar-crm-staging
+          --branch main
+          --commit-dirty=true
+
+      - name: Record staging deployment on PR #176
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 176 --body "<!-- staging-crm-deploy -->
+          The actual private CRM staging artifact was deployed successfully to \`vishar-crm-staging\` from approved application SHA \`2961452472d099aab75ca3522a7a2f8c3615e360\`.
+
+          The browser build used only the staging Supabase project URL and publishable key. No production deployment or privileged Supabase key was used."
