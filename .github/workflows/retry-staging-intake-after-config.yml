@@ -1,5 +1,5 @@
 name: Invoke authorised staging asset cleanup
-# Retry against the direct Storage API cleanup function.
+# Retry with stage-specific HTTP status diagnostics.
 
 on:
   push:
