@@ -1,5 +1,5 @@
 name: Deploy staging CRM preview
-# Triggered after correcting the staging Supabase URL.
+# Triggered after correcting the browser artifact safety checks.
 
 on:
   push:
@@ -99,17 +99,26 @@ jobs:
       - name: Verify private staging artifact
         id: artifact
         shell: bash
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
           test -f admin/dist/index.html
           test -f admin/dist/_headers
           grep -Fq 'noindex' admin/dist/index.html
-          if grep -R -Fq 'sb_secret_' admin/dist; then
-            echo 'Privileged Supabase key marker found in browser artifact' >&2
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+
+          # The application deliberately contains the literal strings
+          # "sb_secret_" and "service_role" in its fail-closed config checks.
+          # Detect complete credential-shaped values instead of those harmless markers.
+          if grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{20,}' admin/dist; then
+            echo 'A complete secret-key-shaped value was found in the browser artifact' >&2
             exit 1
           fi
-          if grep -R -Fq 'service_role' admin/dist; then
-            echo 'Service-role marker found in browser artifact' >&2
+          if grep -R -E -q 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}' admin/dist; then
+            echo 'A JWT-shaped value was found in the browser artifact' >&2
             exit 1
           fi
 
