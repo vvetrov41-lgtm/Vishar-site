@@ -1,0 +1,76 @@
+name: Test staging rate limit
+
+on:
+  push:
+    branches:
+      - claude/vishar-crm-booking-infra-c188bx
+    paths:
+      - .github/workflows/test-staging-rate-limit.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  rate-limit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify 5 per 10 seconds and recovery
+        shell: bash
+        run: |
+          set -u
+          endpoint='https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026'
+          origin='https://vishar-booking-staging.pages.dev'
+
+          # Start outside any previous 10-second counting window.
+          sleep 12
+
+          statuses=''
+          for n in 1 2 3 4 5 6; do
+            status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+              --output /dev/null \
+              --request OPTIONS \
+              --header "Origin: ${origin}" \
+              --header 'Access-Control-Request-Method: POST' \
+              --header 'Access-Control-Request-Headers: content-type' \
+              --write-out '%{http_code}' \
+              "$endpoint")"
+            statuses="${statuses}${status}${n:+ }"
+          done
+
+          sleep 12
+          recovery="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
+            --output /dev/null \
+            --request OPTIONS \
+            --header "Origin: ${origin}" \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type' \
+            --write-out '%{http_code}' \
+            "$endpoint")"
+
+          set -- $statuses
+          result=FAIL
+          if [ "$1" = 204 ] && [ "$2" = 204 ] && [ "$3" = 204 ] \
+            && [ "$4" = 204 ] && [ "$5" = 204 ] \
+            && [ "$6" != 204 ] && [ "$recovery" = 204 ]; then
+            result=PASS
+          fi
+
+          {
+            echo '<!-- staging-rate-limit-test -->'
+            echo '### Staging rate-limit test'
+            echo
+            echo "- Result: **${result}**"
+            echo "- Six rapid OPTIONS statuses: \`${statuses% }\`"
+            echo "- Status after 12-second recovery: \`${recovery}\`"
+            echo '- Expected: first five `204`, sixth blocked, recovery `204`.'
+            echo '- No POST request or database write was performed.'
+          } > result.md
+
+          cat result.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post result to PR #176
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 176 --body-file result.md
