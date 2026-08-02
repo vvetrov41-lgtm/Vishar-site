@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, LoadingState, Section } from '../components/Sta
 import { Link } from '../lib/router';
 import { can } from '../lib/permissions';
 import { formatDateTime, formatMoney } from '../lib/format';
+import { useLanguage } from '../lib/i18n';
 import type {
   ActivityEntry, CrmSession, InternalNote, Project, ProjectFinance, SessionFinance,
 } from '../lib/types';
@@ -21,6 +22,7 @@ interface ProjectData {
 export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const api = useApi();
   const { profile } = useSession();
+  const { t, label, language } = useLanguage();
   const role = profile?.role;
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -52,15 +54,15 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       await action();
       reload();
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : 'That did not work.');
+      setActionError(cause instanceof Error ? cause.message : t('project.actionFailed'));
     } finally {
       setBusy(false);
     }
   }
 
-  if (loading) return <LoadingState label="Loading project…" />;
+  if (loading) return <LoadingState label={t('project.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
-  if (!data?.project) return <EmptyState title="Project not found" />;
+  if (!data?.project) return <EmptyState title={t('project.notFound')} />;
 
   const { project, finance, sessions, sessionFinance, notes, activity } = data;
   const priceFor = (sessionId: string) =>
@@ -76,58 +78,62 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       <div className="card">
         <h2 style={{ fontSize: '1.2rem' }}>{project.title}</h2>
         <div>
-          <span className="badge">{project.status}</span>{' '}
-          <span className="badge">Deposit: {project.deposit_status.replace(/_/g, ' ')}</span>
+          <span className="badge">{label('projectStatus', project.status)}</span>{' '}
+          <span className="badge">
+            {t('common.deposit')}: {label('depositStatus', project.deposit_status)}
+          </span>
         </div>
         {project.description ? (
           <p style={{ whiteSpace: 'pre-wrap', color: 'var(--muted)' }}>{project.description}</p>
         ) : null}
         <div className="actions">
-          <Link to={`/clients/${project.client_id}`} className="badge">Open client</Link>
+          <Link to={`/clients/${project.client_id}`} className="badge">{t('project.openClient')}</Link>
           {project.enquiry_id ? (
-            <Link to={`/enquiries/${project.enquiry_id}`} className="badge">Open enquiry</Link>
+            <Link to={`/enquiries/${project.enquiry_id}`} className="badge">{t('project.openEnquiry')}</Link>
           ) : null}
         </div>
       </div>
 
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 
-      <Section title="Estimate">
+      <Section title={t('project.estimate')}>
         <dl className="definition">
-          <dt>Sessions</dt><dd>{project.estimated_sessions ?? '—'}</dd>
-          <dt>Hours</dt><dd>{project.estimated_hours ?? '—'}</dd>
+          <dt>{t('project.sessions')}</dt><dd>{project.estimated_sessions ?? '—'}</dd>
+          <dt>{t('project.hours')}</dt><dd>{project.estimated_hours ?? '—'}</dd>
           {can(role, 'viewFinance') ? (
             <>
-              <dt>Hourly rate</dt><dd>{formatMoney(finance?.hourly_rate ?? null, project.currency)}</dd>
-              <dt>Estimate total</dt><dd>{formatMoney(finance?.estimate_total ?? null, project.currency)}</dd>
-              <dt>Deposit</dt><dd>{formatMoney(finance?.deposit_amount ?? null, project.currency)}</dd>
+              <dt>{t('project.hourlyRate')}</dt>
+              <dd>{formatMoney(finance?.hourly_rate ?? null, project.currency, language)}</dd>
+              <dt>{t('project.estimateTotal')}</dt>
+              <dd>{formatMoney(finance?.estimate_total ?? null, project.currency, language)}</dd>
+              <dt>{t('common.deposit')}</dt>
+              <dd>{formatMoney(finance?.deposit_amount ?? null, project.currency, language)}</dd>
             </>
           ) : null}
         </dl>
         {!can(role, 'viewFinance') ? (
-          <p className="notice" style={{ marginTop: 12 }}>
-            Rates and totals are owner-only. They are withheld by the database, not
-            hidden by this screen.
-          </p>
+          <p className="notice" style={{ marginTop: 12 }}>{t('project.ratesOwnerOnly')}</p>
         ) : null}
       </Section>
 
-      <Section title="Sessions">
+      <Section title={t('project.sessions')}>
         {sessions.length === 0 ? (
-          <EmptyState title="No sessions planned" />
+          <EmptyState title={t('project.noSessions')} />
         ) : (
           <div className="list">
             {sessions.map((session) => (
               <div key={session.id} className="row">
-                <div className="title">{formatDateTime(session.start_at)}</div>
+                <div className="title">{formatDateTime(session.start_at, language)}</div>
                 <div className="meta">
-                  <span className={session.status === 'confirmed' ? 'badge ok' : 'badge'}>{session.status}</span>{' '}
-                  <span className="badge">{session.payment_status.replace(/_/g, ' ')}</span>{' '}
+                  <span className={session.status === 'confirmed' ? 'badge ok' : 'badge'}>
+                    {label('sessionStatus', session.status)}
+                  </span>{' '}
+                  <span className="badge">{label('paymentStatus', session.payment_status)}</span>{' '}
                   {can(role, 'viewFinance') ? (
-                    <span className="badge">{formatMoney(priceFor(session.id), session.currency)}</span>
-                  ) : null}
+                    <span className="badge">{formatMoney(priceFor(session.id), session.currency, language)}</span>
+                  ) : null}{' '}
                   <span className="badge">
-                    Calendar: {session.calendar_event_id ? 'linked' : 'not connected'}
+                    {t('common.calendar')}: {session.calendar_event_id ? t('common.linked') : t('common.notConnected')}
                   </span>
                 </div>
                 {can(role, 'manageSessions') ? (
@@ -137,7 +143,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                         type="button" disabled={busy}
                         onClick={() => { void run(() => api.setSessionStatus(session.id, 'confirmed')); }}
                       >
-                        Confirm
+                        {t('project.confirm')}
                       </button>
                     ) : null}
                     {session.status === 'confirmed' ? (
@@ -146,13 +152,13 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                           type="button" disabled={busy}
                           onClick={() => { void run(() => api.setSessionStatus(session.id, 'completed')); }}
                         >
-                          Mark completed
+                          {t('project.markCompleted')}
                         </button>
                         <button
                           type="button" disabled={busy}
                           onClick={() => { void run(() => api.setSessionStatus(session.id, 'no_show')); }}
                         >
-                          Mark no-show
+                          {t('project.markNoShow')}
                         </button>
                       </>
                     ) : null}
@@ -161,7 +167,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                         type="button" className="danger" disabled={busy}
                         onClick={() => { void run(() => api.setSessionStatus(session.id, 'cancelled')); }}
                       >
-                        Cancel
+                        {t('project.cancel')}
                       </button>
                     ) : null}
                   </div>
@@ -185,7 +191,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                   || Number.isNaN(end.getTime())
                   || end <= start
                 ) {
-                  throw new Error('Choose a valid start and a later end time.');
+                  throw new Error(t('project.invalidSessionTime'));
                 }
                 await api.scheduleSession(
                   projectId,
@@ -200,7 +206,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           >
             <div className="field-row" style={{ marginTop: 12 }}>
               <div>
-                <label htmlFor="session-start">Proposed start</label>
+                <label htmlFor="session-start">{t('project.proposedStart')}</label>
                 <input
                   id="session-start"
                   type="datetime-local"
@@ -210,7 +216,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                 />
               </div>
               <div>
-                <label htmlFor="session-end">Proposed end</label>
+                <label htmlFor="session-end">{t('project.proposedEnd')}</label>
                 <input
                   id="session-end"
                   type="datetime-local"
@@ -222,21 +228,18 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
             </div>
             <div className="actions">
               <button type="submit" disabled={busy || !sessionStart || !sessionEnd}>
-                Propose session
+                {t('project.proposeSession')}
               </button>
             </div>
           </form>
         ) : null}
 
-        <p className="notice" style={{ marginTop: 12 }}>
-          A proposed session never reaches a calendar. Only confirming one queues a
-          calendar entry — and no calendar provider is connected yet.
-        </p>
+        <p className="notice" style={{ marginTop: 12 }}>{t('project.calendarNotice')}</p>
       </Section>
 
       {can(role, 'manageFinance') ? (
-        <Section title="Deposit">
-          <label htmlFor="deposit-amount">Deposit amount ({project.currency})</label>
+        <Section title={t('common.deposit')}>
+          <label htmlFor="deposit-amount">{t('project.depositAmount', { currency: project.currency })}</label>
           <input
             id="deposit-amount"
             type="number"
@@ -244,7 +247,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
             min="0.01"
             step="0.01"
             value={depositAmount}
-            placeholder={finance?.deposit_amount?.toString() ?? 'Enter amount'}
+            placeholder={finance?.deposit_amount?.toString() ?? t('project.enterAmount')}
             onChange={(event) => setDepositAmount(event.target.value)}
           />
           <div className="actions">
@@ -254,7 +257,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                 void run(() => api.updateDeposit(projectId, parsedDepositAmount, 'requested'));
               }}
             >
-              Mark requested
+              {t('project.markRequested')}
             </button>
             <button
               type="button" disabled={busy || !hasValidDepositAmount}
@@ -262,20 +265,20 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                 void run(() => api.updateDeposit(projectId, parsedDepositAmount, 'paid'));
               }}
             >
-              Mark paid
+              {t('project.markPaid')}
             </button>
           </div>
         </Section>
       ) : null}
 
       {can(role, 'viewNotes') ? (
-        <Section title="Notes">
-          {notes.length === 0 ? <EmptyState title="No notes" /> : (
+        <Section title={t('project.notes')}>
+          {notes.length === 0 ? <EmptyState title={t('project.noNotes')} /> : (
             <ul className="timeline">
               {notes.map((note) => (
                 <li key={note.id}>
                   <div style={{ whiteSpace: 'pre-wrap' }}>{note.body}</div>
-                  <div className="when">{formatDateTime(note.created_at)}</div>
+                  <div className="when">{formatDateTime(note.created_at, language)}</div>
                 </li>
               ))}
             </ul>
@@ -284,13 +287,15 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       ) : null}
 
       {can(role, 'viewActivity') ? (
-        <Section title="Activity">
-          {activity.length === 0 ? <EmptyState title="No activity recorded" /> : (
+        <Section title={t('project.activity')}>
+          {activity.length === 0 ? <EmptyState title={t('project.noActivity')} /> : (
             <ul className="timeline">
               {activity.slice(0, 12).map((entry) => (
                 <li key={entry.id}>
-                  <div>{entry.event_type}</div>
-                  <div className="when">{formatDateTime(entry.occurred_at)} · {entry.actor_kind}</div>
+                  <div>{label('event', entry.event_type)}</div>
+                  <div className="when">
+                    {formatDateTime(entry.occurred_at, language)} · {label('actor', entry.actor_kind)}
+                  </div>
                 </li>
               ))}
             </ul>
