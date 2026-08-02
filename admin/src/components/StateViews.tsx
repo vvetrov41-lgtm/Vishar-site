@@ -5,11 +5,13 @@
 // screen reader is told about the change too.
 
 import type { ReactNode } from 'react';
+import { useLanguage } from '../lib/i18n';
 
-export function LoadingState({ label = 'Loading…' }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+  const { t } = useLanguage();
   return (
     <div className="state" role="status" aria-live="polite">
-      {label}
+      {label ?? t('common.loading')}
     </div>
   );
 }
@@ -24,13 +26,14 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const { t } = useLanguage();
   return (
     <div className="state error" role="alert">
-      <h3>Something went wrong</h3>
+      <h3>{t('common.errorTitle')}</h3>
       <p>{message}</p>
       {onRetry ? (
         <div className="actions" style={{ justifyContent: 'center' }}>
-          <button type="button" onClick={onRetry}>Try again</button>
+          <button type="button" onClick={onRetry}>{t('common.tryAgain')}</button>
         </div>
       ) : null}
     </div>
