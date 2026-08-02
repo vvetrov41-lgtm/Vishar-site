@@ -7,6 +7,8 @@ describe('CRM translations', () => {
     expect(translate('ru', 'enquiryStatus.accepted')).toBe('Принята');
     expect(translate('ru', 'project.convertButton')).toBe('project.convertButton');
     expect(translate('ru', 'enquiry.convertButton')).toBe('Создать проект');
+    expect(translate('ru', 'event.client.created')).toBe('Клиент создан');
+    expect(translate('ru', 'actor.worker')).toBe('система');
   });
 
   it('interpolates values without executing or dropping text', () => {
