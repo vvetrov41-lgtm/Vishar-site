@@ -5,11 +5,13 @@
 // copy out of the page, and never logged.
 
 import { useEffect, useState } from 'react';
+import { useLanguage } from '../lib/i18n';
 import { useApi } from '../lib/session';
 import type { EnquiryFile } from '../lib/types';
 
 export function SignedImage({ file }: { file: EnquiryFile }) {
   const api = useApi();
+  const { t } = useLanguage();
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -27,21 +29,21 @@ export function SignedImage({ file }: { file: EnquiryFile }) {
   }, [api, file.storage_path, file.upload_state]);
 
   if (file.upload_state !== 'ready') {
-    return <div className="notice warn">This image did not finish uploading.</div>;
+    return <div className="notice warn">{t('image.uploadFailed')}</div>;
   }
 
   if (failed) {
-    return <div className="notice">This image could not be opened. It may have expired — reload the page.</div>;
+    return <div className="notice">{t('image.openFailed')}</div>;
   }
 
   if (!url) {
-    return <div className="notice" role="status">Opening image…</div>;
+    return <div className="notice" role="status">{t('image.opening')}</div>;
   }
 
   return (
     <img
       src={url}
-      alt={`Reference image submitted with this enquiry${file.original_filename ? `: ${file.original_filename}` : ''}`}
+      alt={t('image.alt', { filename: file.original_filename ? `: ${file.original_filename}` : '' })}
       loading="lazy"
     />
   );
