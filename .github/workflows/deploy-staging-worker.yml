@@ -1,7 +1,9 @@
 name: Deploy staging Worker
 
 on:
-  pull_request:
+  push:
+    branches:
+      - claude/vishar-crm-booking-infra-c188bx
     paths:
       - .github/workflows/deploy-staging-worker.yml
       - workers/preview.js
@@ -16,7 +18,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name != 'pull_request' || github.event.pull_request.number == 176
     runs-on: ubuntu-latest
     steps:
       - name: Check out approved preview-fix commit
