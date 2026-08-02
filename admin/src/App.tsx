@@ -7,6 +7,7 @@
 import { AppShell } from './components/AppShell';
 import { RequireCapability } from './components/RequireCapability';
 import { EmptyState, LoadingState } from './components/StateViews';
+import { useLanguage } from './lib/i18n';
 import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
@@ -23,30 +24,31 @@ import { UsersPage } from './pages/UsersPage';
 
 export function App() {
   const { state, signOut } = useSession();
+  const { t } = useLanguage();
 
   if (state === 'unconfigured') {
     return (
       <div className="container">
         <EmptyState
-          title="The CRM is not configured"
-          hint="Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then reload. See admin/README.md."
+          title={t('app.notConfiguredTitle')}
+          hint={t('app.notConfiguredHint')}
         />
       </div>
     );
   }
 
-  if (state === 'loading') return <LoadingState label="Checking your access…" />;
+  if (state === 'loading') return <LoadingState label={t('app.checkingAccess')} />;
   if (state === 'signed_out') return <LoginPage />;
 
   if (state === 'no_profile' || state === 'deactivated') {
     return (
       <div className="container">
         <EmptyState
-          title={state === 'deactivated' ? 'Your access has been withdrawn' : 'This account has no CRM access'}
-          hint="Ask the owner if you think that is wrong."
+          title={state === 'deactivated' ? t('app.accessWithdrawn') : t('app.noAccess')}
+          hint={t('app.askOwner')}
         />
         <div className="actions" style={{ justifyContent: 'center' }}>
-          <button type="button" onClick={() => { void signOut(); }}>Sign out</button>
+          <button type="button" onClick={() => { void signOut(); }}>{t('common.signOut')}</button>
         </div>
       </div>
     );
@@ -61,6 +63,7 @@ export function App() {
 
 function Routes() {
   const { path } = useRouter();
+  const { t } = useLanguage();
 
   const enquiryDetail = matchRoute('/enquiries/:id', path);
   if (enquiryDetail) {
@@ -105,6 +108,6 @@ function Routes() {
     case '/activity':
       return <RequireCapability capability="viewActivity"><ActivityPage /></RequireCapability>;
     default:
-      return <EmptyState title="Page not found" hint="Use the navigation below." />;
+      return <EmptyState title={t('app.pageNotFound')} hint={t('app.useNavigation')} />;
   }
 }
