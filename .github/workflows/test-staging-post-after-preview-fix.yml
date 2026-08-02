@@ -1,0 +1,77 @@
+name: Test staging POST after preview fix
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/test-staging-post-after-preview-fix.yml
+      - workers/preview.js
+
+permissions:
+  contents: read
+
+jobs:
+  multipart-post:
+    if: github.event.pull_request.number == 176
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Send idempotent synthetic multipart POST
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl4bZ8AAAAASUVORK5CYII=' \
+            | base64 --decode > synthetic-reference.png
+
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          status="$(curl --silent --show-error --connect-timeout 10 --max-time 45 \
+            --output "$body" \
+            --dump-header "$headers" \
+            --request POST \
+            --header 'Origin: https://vishar-booking-staging.pages.dev' \
+            --form-string 'name=Synthetic E2E 2026-08-02' \
+            --form-string 'email=vishar-staging-e2e-20260802@example.com' \
+            --form-string 'phone=' \
+            --form-string 'instagram=' \
+            --form-string 'preferredReply=Email' \
+            --form-string 'travellingFrom=Manchester' \
+            --form-string 'projectType=Black and grey realism' \
+            --form-string 'placement=Outer forearm' \
+            --form-string 'size=20 cm' \
+            --form-string 'coverUp=No' \
+            --form-string 'timing=Synthetic staging test only' \
+            --form-string 'idea=Synthetic authorised staging E2E test. This is not a real booking.' \
+            --form-string 'website=' \
+            --form-string 'idempotencyKey=11111111-2222-4333-8444-555555555555' \
+            --form-string 'privacyAcknowledged=true' \
+            --form-string 'privacyNoticeVersion=2026-07-29' \
+            --form-string 'source=/booking/' \
+            --form-string 'landingPage=https://vishar-booking-staging.pages.dev/booking/' \
+            --form-string 'referrer=' \
+            --form-string 'utmSource=hosted-e2e' \
+            --form-string 'utmMedium=github-actions' \
+            --form-string 'utmCampaign=pr-176-staging' \
+            --form-string 'utmContent=' \
+            --form-string 'utmTerm=' \
+            --form-string 'elapsedMs=60000' \
+            --form 'references=@synthetic-reference.png;type=image/png;filename=synthetic-reference.png' \
+            --write-out '%{http_code}' \
+            'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026')"
+
+          tr -d '\r' < "$headers" > headers-clean.txt
+          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' headers-clean.txt)"
+          ok="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get("ok", False)).lower())' "$body")"
+          reference="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("reference", ""))' "$body")"
+          replayed="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get("replayed", False)).lower())' "$body")"
+
+          echo "post_status=${status}"
+          echo "post_allow_origin=${allow_origin:-missing}"
+          echo "post_ok=${ok}"
+          echo "post_reference=${reference:-missing}"
+          echo "post_replayed=${replayed}"
+
+          test "$status" = '200'
+          test "$allow_origin" = 'https://vishar-booking-staging.pages.dev'
+          test "$ok" = 'true'
+          test "$reference" = 'ENQ-2026-0002'
+          test "$replayed" = 'true'
