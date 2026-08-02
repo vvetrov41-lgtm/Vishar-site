@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: deploy-staging-booking
@@ -106,3 +107,15 @@ jobs:
           --project-name vishar-booking-staging
           --branch main
           --commit-dirty=true
+
+      - name: Record successful deployment on PR #176
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 176 --body "<!-- staging-booking-deploy -->
+          Staging booking preview deployed successfully from approved application SHA \`2961452472d099aab75ca3522a7a2f8c3615e360\`.
+
+          Endpoint embedded only in the temporary Pages artifact:
+          \`https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026\`
+
+          Production files and production Worker configuration were not changed."
