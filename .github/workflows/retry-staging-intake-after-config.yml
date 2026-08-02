@@ -1,5 +1,4 @@
-name: Retry staging intake after config fix
-# Triggered after SUPABASE_URL correction.
+name: Verify staging invalid Origin
 
 on:
   push:
@@ -13,110 +12,54 @@ permissions:
   pull-requests: write
 
 jobs:
-  retry:
+  invalid-origin:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for Worker deployment propagation
-        run: sleep 15
-
-      - name: Verify allowed-origin OPTIONS
+      - name: Send one invalid-origin OPTIONS request
         shell: bash
         run: |
           set -u
           headers="$(mktemp)"
+          body="$(mktemp)"
           status="$(curl --silent --show-error --connect-timeout 10 --max-time 20 \
-            --output /dev/null --dump-header "$headers" --request OPTIONS \
-            --header 'Origin: https://vishar-booking-staging.pages.dev' \
+            --output "$body" \
+            --dump-header "$headers" \
+            --request OPTIONS \
+            --header 'Origin: https://invalid-origin.example' \
             --header 'Access-Control-Request-Method: POST' \
             --header 'Access-Control-Request-Headers: content-type' \
             --write-out '%{http_code}' \
             'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026')"
-          tr -d '\r' < "$headers" > options-headers.txt
-          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' options-headers.txt)"
-          allow_methods="$(awk -F': ' 'tolower($1)=="access-control-allow-methods" {print $2; exit}' options-headers.txt)"
-          allow_headers="$(awk -F': ' 'tolower($1)=="access-control-allow-headers" {print $2; exit}' options-headers.txt)"
+
+          tr -d '\r' < "$headers" > headers-clean.txt
+          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' headers-clean.txt)"
+          allow_methods="$(awk -F': ' 'tolower($1)=="access-control-allow-methods" {print $2; exit}' headers-clean.txt)"
+          server="$(awk -F': ' 'tolower($1)=="server" {print $2; exit}' headers-clean.txt)"
+          ray="$(awk -F': ' 'tolower($1)=="cf-ray" {print $2; exit}' headers-clean.txt)"
+          safe_code="$(python3 -c 'import json; d=json.load(open("'"$body"'")); print(d.get("code", ""))' 2>/dev/null || true)"
+
           result=FAIL
-          if [ "$status" = '204' ] \
-            && [ "$allow_origin" = 'https://vishar-booking-staging.pages.dev' ] \
-            && printf '%s' "$allow_methods" | grep -qi 'POST' \
-            && printf '%s' "$allow_methods" | grep -qi 'OPTIONS' \
-            && printf '%s' "$allow_headers" | grep -qi 'Content-Type'; then
+          if [ "$status" = '403' ] && [ -z "$allow_origin" ]; then
             result=PASS
           fi
+
           {
-            echo '### Staging retry: OPTIONS'
+            echo '<!-- staging-invalid-origin-test -->'
+            echo '### Staging invalid-Origin OPTIONS'
             echo
             echo "- Result: **${result}**"
             echo "- HTTP status: \`${status}\`"
+            echo "- Server: \`${server:-missing}\`"
+            echo "- CF-Ray: \`${ray:-missing}\`"
             echo "- Access-Control-Allow-Origin: \`${allow_origin:-missing}\`"
             echo "- Access-Control-Allow-Methods: \`${allow_methods:-missing}\`"
-            echo "- Access-Control-Allow-Headers: \`${allow_headers:-missing}\`"
-          } > options-result.md
+            echo "- Safe error code: \`${safe_code:-none}\`"
+          } > result.md
 
-      - name: Send valid synthetic multipart POST
-        shell: bash
-        run: |
-          set -u
-          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl4bZ8AAAAASUVORK5CYII=' | base64 --decode > synthetic-reference.png
-          headers="$(mktemp)"
-          body="post-body.json"
-          status="$(curl --silent --show-error --connect-timeout 10 --max-time 45 \
-            --output "$body" --dump-header "$headers" --request POST \
-            --header 'Origin: https://vishar-booking-staging.pages.dev' \
-            --form-string 'name=Synthetic E2E 2026-08-02' \
-            --form-string 'email=vishar-staging-e2e-20260802@example.com' \
-            --form-string 'phone=' \
-            --form-string 'instagram=' \
-            --form-string 'preferredReply=Email' \
-            --form-string 'travellingFrom=Manchester' \
-            --form-string 'projectType=Black and grey realism' \
-            --form-string 'placement=Outer forearm' \
-            --form-string 'size=20 cm' \
-            --form-string 'coverUp=No' \
-            --form-string 'timing=Synthetic staging test only' \
-            --form-string 'idea=Synthetic authorised staging E2E test. This is not a real booking.' \
-            --form-string 'website=' \
-            --form-string 'idempotencyKey=11111111-2222-4333-8444-555555555555' \
-            --form-string 'privacyAcknowledged=true' \
-            --form-string 'privacyNoticeVersion=2026-07-29' \
-            --form-string 'source=/booking/' \
-            --form-string 'landingPage=https://vishar-booking-staging.pages.dev/booking/' \
-            --form-string 'referrer=' \
-            --form-string 'utmSource=hosted-e2e' \
-            --form-string 'utmMedium=github-actions' \
-            --form-string 'utmCampaign=pr-176-staging' \
-            --form-string 'utmContent=' \
-            --form-string 'utmTerm=' \
-            --form-string 'elapsedMs=60000' \
-            --form 'references=@synthetic-reference.png;type=image/png;filename=synthetic-reference.png' \
-            --write-out '%{http_code}' \
-            'https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026')"
-          tr -d '\r' < "$headers" > post-headers.txt
-          allow_origin="$(awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}' post-headers.txt)"
-          ok="$(python3 -c 'import json; d=json.load(open("post-body.json")); print(str(d.get("ok", "")).lower())' 2>/dev/null || true)"
-          reference="$(python3 -c 'import json; d=json.load(open("post-body.json")); print(d.get("reference", ""))' 2>/dev/null || true)"
-          replayed="$(python3 -c 'import json; d=json.load(open("post-body.json")); print(str(d.get("replayed", False)).lower())' 2>/dev/null || true)"
-          error_code="$(python3 -c 'import json; d=json.load(open("post-body.json")); print(d.get("code", ""))' 2>/dev/null || true)"
-          result=FAIL
-          if [ "$status" = '200' ] && [ "$allow_origin" = 'https://vishar-booking-staging.pages.dev' ] && [ "$ok" = 'true' ] && [ -n "$reference" ]; then
-            result=PASS
-          fi
-          {
-            echo '### Staging retry: synthetic multipart POST'
-            echo
-            echo "- Result: **${result}**"
-            echo "- HTTP status: \`${status}\`"
-            echo "- Access-Control-Allow-Origin: \`${allow_origin:-missing}\`"
-            echo "- Response ok: \`${ok:-missing}\`"
-            echo "- Reference: \`${reference:-missing}\`"
-            echo "- Replayed: \`${replayed:-missing}\`"
-            echo "- Safe error code: \`${error_code:-none}\`"
-          } > post-result.md
+          cat result.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Post results to PR #176
+      - name: Post result to PR #176
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          cat options-result.md post-result.md > retry-result.md
-          gh pr comment 176 --body-file retry-result.md
+        run: gh pr comment 176 --body-file result.md
