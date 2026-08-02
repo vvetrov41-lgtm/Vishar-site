@@ -1,6 +1,11 @@
 name: Deploy staging Worker
 
 on:
+  push:
+    branches:
+      - claude/vishar-crm-booking-infra-c188bx
+    paths:
+      - .github/workflows/deploy-staging-worker.yml
   workflow_dispatch:
 
 permissions:
