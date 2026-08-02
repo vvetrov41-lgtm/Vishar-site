@@ -1,0 +1,80 @@
+name: Patch activity localisation
+
+on:
+  push:
+    branches:
+      - claude/vishar-crm-booking-infra-c188bx
+    paths:
+      - .github/workflows/patch-activity-localisation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/vishar-crm-booking-infra-c188bx
+          fetch-depth: 0
+
+      - name: Patch missing Russian activity labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          i18n = Path('admin/src/lib/i18n.tsx')
+          text = i18n.read_text()
+
+          replacements = [
+              (
+                  "  'actor.worker': 'worker',\n  'actor.system': 'system',",
+                  "  'actor.worker': 'worker',\n  'actor.system': 'system',"
+              ),
+              (
+                  "  'event.enquiry.created': 'Enquiry created',",
+                  "  'event.client.created': 'Client created',\n  'event.enquiry.created': 'Enquiry created',"
+              ),
+              (
+                  "  'actor.worker': 'worker',\n  'actor.system': 'система',",
+                  "  'actor.worker': 'система',\n  'actor.system': 'система',"
+              ),
+              (
+                  "  'event.enquiry.created': 'Заявка создана',",
+                  "  'event.client.created': 'Клиент создан',\n  'event.enquiry.created': 'Заявка создана',"
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected one occurrence, found {count}: {old!r}')
+              text = text.replace(old, new)
+
+          i18n.write_text(text)
+
+          test = Path('admin/src/test/i18n.test.ts')
+          test_text = test.read_text()
+          old = "    expect(translate('ru', 'enquiry.convertButton')).toBe('Создать проект');\n"
+          new = old + "    expect(translate('ru', 'event.client.created')).toBe('Клиент создан');\n    expect(translate('ru', 'actor.worker')).toBe('система');\n"
+          if test_text.count(old) != 1:
+              raise SystemExit('Expected one i18n assertion insertion point')
+          test.write_text(test_text.replace(old, new))
+          PY
+
+          grep -Fq "'event.client.created': 'Клиент создан'" admin/src/lib/i18n.tsx
+          grep -Fq "'actor.worker': 'система'" admin/src/lib/i18n.tsx
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin/src/lib/i18n.tsx admin/src/test/i18n.test.ts
+          git commit -m 'fix: localise remaining activity labels'
+          git push origin HEAD:claude/vishar-crm-booking-infra-c188bx
