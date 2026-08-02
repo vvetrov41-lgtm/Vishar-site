@@ -33,17 +33,49 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          set -euo pipefail
-          test -n "$VITE_SUPABASE_URL"
-          test -n "$VITE_SUPABASE_PUBLISHABLE_KEY"
-          case "$VITE_SUPABASE_URL" in
-            https://*.supabase.co) ;;
-            *) echo 'STAGING_SUPABASE_URL must be the hosted staging project root URL' >&2; exit 1 ;;
-          esac
-          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in
-            sb_secret_*|eyJ*) echo 'A privileged or legacy JWT-like key must not be embedded in the CRM browser build' >&2; exit 1 ;;
-            *) ;;
-          esac
+          set -u
+
+          url_present=false
+          url_shape=missing
+          key_present=false
+          key_kind=missing
+
+          if [ -n "$VITE_SUPABASE_URL" ]; then
+            url_present=true
+            case "$VITE_SUPABASE_URL" in
+              https://*.supabase.co) url_shape=hosted_root ;;
+              https://*.supabase.co/) url_shape=hosted_root_with_trailing_slash ;;
+              https://*.supabase.co/*) url_shape=hosted_with_path ;;
+              *) url_shape=invalid ;;
+            esac
+          fi
+
+          if [ -n "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
+            key_present=true
+            case "$VITE_SUPABASE_PUBLISHABLE_KEY" in
+              sb_publishable_*) key_kind=publishable ;;
+              sb_secret_*) key_kind=secret ;;
+              eyJ*) key_kind=jwt_like ;;
+              *) key_kind=other ;;
+            esac
+          fi
+
+          {
+            echo "url_present=$url_present"
+            echo "url_shape=$url_shape"
+            echo "key_present=$key_present"
+            echo "key_kind=$key_kind"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$url_shape" != hosted_root ]; then
+            echo 'STAGING_SUPABASE_URL must be the hosted staging project root URL without a trailing slash or path.' >&2
+            exit 1
+          fi
+
+          if [ "$key_kind" != publishable ]; then
+            echo 'STAGING_SUPABASE_PUBLISHABLE_KEY must be a publishable key and must not be a secret or JWT-like key.' >&2
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -99,6 +131,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           JOB_STATUS: ${{ job.status }}
           CONFIG_STATUS: ${{ steps.config.outcome }}
+          URL_PRESENT: ${{ steps.config.outputs.url_present }}
+          URL_SHAPE: ${{ steps.config.outputs.url_shape }}
+          KEY_PRESENT: ${{ steps.config.outputs.key_present }}
+          KEY_KIND: ${{ steps.config.outputs.key_kind }}
           BUILD_STATUS: ${{ steps.build.outcome }}
           ARTIFACT_STATUS: ${{ steps.artifact.outcome }}
           DEPLOY_STATUS: ${{ steps.deploy.outcome }}
@@ -108,9 +144,13 @@ jobs:
 
           - Job: **${JOB_STATUS}**
           - Staging configuration check: \`${CONFIG_STATUS}\`
+          - Supabase URL present: \`${URL_PRESENT:-unknown}\`
+          - Supabase URL shape: \`${URL_SHAPE:-unknown}\`
+          - Publishable key present: \`${KEY_PRESENT:-unknown}\`
+          - Key classification: \`${KEY_KIND:-unknown}\`
           - CRM build: \`${BUILD_STATUS}\`
           - Browser artifact safety check: \`${ARTIFACT_STATUS}\`
           - Cloudflare Pages deployment: \`${DEPLOY_STATUS}\`
           - Approved application SHA: \`2961452472d099aab75ca3522a7a2f8c3615e360\`
 
-          This workflow targets only \`vishar-crm-staging\` and uses only the staging Supabase project URL and publishable key."
+          No secret value is included in this diagnostic. The workflow targets only \`vishar-crm-staging\`."
