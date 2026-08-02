@@ -1,5 +1,5 @@
 name: Test staging invalid Origin
-# Re-run after successful browser and CRM staging validation.
+# Final hosted invalid-origin check after successful browser CRM validation and data cleanup.
 
 on:
   push:
