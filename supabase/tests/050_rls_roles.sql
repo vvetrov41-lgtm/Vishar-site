@@ -295,7 +295,7 @@ create temporary table log_before as select count(*) as n from public.activity_l
 select throws_ok($$update public.activity_log set event_type = 'client.contacted'$$,
   '42501', null, 'an authenticated owner cannot update activity_log directly');
 select throws_ok($$delete from public.activity_log$$,
-  '42501', null, 'an authenticated owner cannot delete from activity_log directly');
+  '42501', null, 'an authenticated owner cannot delete activity_log directly');
 select is((select count(*)::int from public.activity_log), (select n::int from log_before),
           'authenticated mutation attempts leave activity_log unchanged');
 
@@ -311,7 +311,7 @@ alter table public.activity_log no force row level security;
 select throws_ok($$update public.activity_log set event_type = 'client.contacted'$$,
   '42501', null, 'a role that bypasses RLS still cannot update activity_log');
 select throws_ok($$delete from public.activity_log$$,
-  '42501', null, 'a role that bypasses RLS still cannot delete from activity_log');
+  '42501', null, 'a role that bypasses RLS still cannot delete activity_log');
 select throws_ok($$truncate public.activity_log$$,
   '42501', null, 'activity_log cannot be truncated');
 
@@ -499,6 +499,7 @@ insert into expected_function_acl values
   ('public.fail_enquiry_intake(uuid,text)', false, false, true),
   ('public.record_outbox_attempt(uuid,boolean,text)', false, false, true),
   ('public.list_incomplete_intakes(integer,integer)', false, false, true),
+  ('public.resolve_booking_source(text,text,text)', false, false, true),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
   ('public.record_activity(text,uuid,uuid,uuid,uuid,jsonb)', false, true, false),
