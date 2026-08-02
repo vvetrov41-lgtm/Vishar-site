@@ -1,4 +1,5 @@
 name: Deploy staging booking preview
+# Rerun after correcting the staging Supabase project URL.
 
 on:
   push:
