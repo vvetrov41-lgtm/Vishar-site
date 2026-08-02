@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { LanguageProvider } from './lib/i18n';
 import { RouterProvider } from './lib/router';
 import { SessionProvider } from './lib/session';
 import { createCrmClient } from './lib/supabase';
@@ -21,10 +22,12 @@ if (!container) throw new Error('Missing #root');
 
 createRoot(container).render(
   <StrictMode>
-    <SessionProvider client={client}>
-      <RouterProvider>
-        <App />
-      </RouterProvider>
-    </SessionProvider>
+    <LanguageProvider>
+      <SessionProvider client={client}>
+        <RouterProvider>
+          <App />
+        </RouterProvider>
+      </SessionProvider>
+    </LanguageProvider>
   </StrictMode>
 );
