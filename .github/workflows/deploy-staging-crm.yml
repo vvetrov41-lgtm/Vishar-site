@@ -1,4 +1,5 @@
 name: Deploy staging CRM preview
+# Triggered after staging Supabase browser credentials were provisioned.
 
 on:
   push:
