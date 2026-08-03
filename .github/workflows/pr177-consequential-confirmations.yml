@@ -1,0 +1,375 @@
+name: PR 177 consequential confirmations patch
+
+on:
+  push:
+    branches:
+      - agent/multi-artist-payments-foundation
+    paths:
+      - .github/workflows/pr177-consequential-confirmations.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr177-consequential-confirmations-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact workflow creation commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+
+      - name: Guard branch and expected parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = "agent/multi-artist-payments-foundation" ]
+          [ "$(git rev-parse HEAD^)" = "a54f0e3be3ccfff99655b55600b030d48a68ff6f" ]
+
+      - name: Apply focused confirmation changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected one match in {path}, found {count}: {old[:80]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          Path('admin/src/lib/confirm-action.ts').write_text("""import type { Language } from './i18n';
+
+export type ConsequentialAction =
+  | 'convertEnquiry'
+  | 'cancelSession'
+  | 'markNoShow'
+  | 'deactivateUser';
+
+const COPY: Record<Language, Record<ConsequentialAction, string>> = {
+  en: {
+    convertEnquiry: 'Convert this enquiry to a project? This creates a permanent project link and cannot be undone.',
+    cancelSession: 'Cancel this session? It will be removed from the active schedule.',
+    markNoShow: 'Mark this session as a no-show? This records that the client did not attend.',
+    deactivateUser: 'Deactivate this user? Their CRM access will be withdrawn immediately.',
+  },
+  ru: {
+    convertEnquiry: 'Преобразовать эту заявку в проект? Будет создана постоянная связь с проектом, которую нельзя отменить.',
+    cancelSession: 'Отменить этот сеанс? Он будет удалён из активного расписания.',
+    markNoShow: 'Отметить неявку на этот сеанс? Будет записано, что клиент не пришёл.',
+    deactivateUser: 'Деактивировать пользователя? Его доступ к CRM будет отозван немедленно.',
+  },
+};
+
+export function confirmConsequentialAction(
+  action: ConsequentialAction,
+  language: Language,
+  subject?: string
+): boolean {
+  const message = subject ? `${COPY[language][action]}\n\n${subject}` : COPY[language][action];
+  return window.confirm(message);
+}
+""")
+
+          replace_once(
+              'admin/src/pages/EnquiryDetailPage.tsx',
+              "import { useLanguage } from '../lib/i18n';\n",
+              "import { useLanguage } from '../lib/i18n';\nimport { confirmConsequentialAction } from '../lib/confirm-action';\n",
+          )
+          replace_once(
+              'admin/src/pages/EnquiryDetailPage.tsx',
+              """                onClick={() => {
+                  void run(async () => {
+                    const result = await api.convertEnquiry(
+""",
+              """                onClick={() => {
+                  if (!confirmConsequentialAction('convertEnquiry', language, enquiry.reference_number)) return;
+                  void run(async () => {
+                    const result = await api.convertEnquiry(
+""",
+          )
+
+          replace_once(
+              'admin/src/pages/ProjectDetailPage.tsx',
+              "import { useLanguage } from '../lib/i18n';\n",
+              "import { useLanguage } from '../lib/i18n';\nimport { confirmConsequentialAction } from '../lib/confirm-action';\n",
+          )
+          replace_once(
+              'admin/src/pages/ProjectDetailPage.tsx',
+              """                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'no_show')); }}
+""",
+              """                          onClick={() => {
+                            if (!confirmConsequentialAction(
+                              'markNoShow',
+                              language,
+                              formatDateTime(session.start_at, language)
+                            )) return;
+                            void run(() => api.setSessionStatus(session.id, 'no_show'));
+                          }}
+""",
+          )
+          replace_once(
+              'admin/src/pages/ProjectDetailPage.tsx',
+              """                        onClick={() => { void run(() => api.setSessionStatus(session.id, 'cancelled')); }}
+""",
+              """                        onClick={() => {
+                          if (!confirmConsequentialAction(
+                            'cancelSession',
+                            language,
+                            formatDateTime(session.start_at, language)
+                          )) return;
+                          void run(() => api.setSessionStatus(session.id, 'cancelled'));
+                        }}
+""",
+          )
+
+          replace_once(
+              'admin/src/pages/UsersPage.tsx',
+              "import { useLanguage } from '../lib/i18n';\n",
+              "import { useLanguage } from '../lib/i18n';\nimport { confirmConsequentialAction } from '../lib/confirm-action';\n",
+          )
+          replace_once(
+              'admin/src/pages/UsersPage.tsx',
+              """                  onClick={() => { void run(() => api.setProfileActive(staff.id, !staff.is_active)); }}
+""",
+              """                  onClick={() => {
+                    const nextActive = !staff.is_active;
+                    if (
+                      !nextActive
+                      && !confirmConsequentialAction('deactivateUser', language, staffName)
+                    ) return;
+                    void run(() => api.setProfileActive(staff.id, nextActive));
+                  }}
+""",
+          )
+
+          replace_once(
+              'admin/src/test/fixtures.tsx',
+              "import type { CrmRole, EnquiryStatus } from '../lib/types';\n",
+              "import type { CrmRole, EnquiryStatus, SessionStatus } from '../lib/types';\n",
+          )
+          replace_once(
+              'admin/src/test/fixtures.tsx',
+              """  /** Override the enquiry lifecycle state for workflow-specific screens. */
+  enquiryStatus?: EnquiryStatus;
+""",
+              """  /** Override the enquiry lifecycle state for workflow-specific screens. */
+  enquiryStatus?: EnquiryStatus;
+  /** Override the session lifecycle state for confirmation-specific screens. */
+  sessionStatus?: SessionStatus;
+""",
+          )
+          replace_once(
+              'admin/src/test/fixtures.tsx',
+              """  failTable?: string,
+  enquiryStatus?: EnquiryStatus
+) {
+""",
+              """  failTable?: string,
+  enquiryStatus?: EnquiryStatus,
+  sessionStatus?: SessionStatus
+) {
+""",
+          )
+          replace_once(
+              'admin/src/test/fixtures.tsx',
+              """    case 'sessions':
+      return { data: [SESSION], error: null };
+""",
+              """    case 'sessions':
+      return { data: [{ ...SESSION, status: sessionStatus ?? SESSION.status }], error: null };
+""",
+          )
+          replace_once(
+              'admin/src/test/fixtures.tsx',
+              """    const result = tableResult(table, effectiveRole, options.failTable, options.enquiryStatus);
+""",
+              """    const result = tableResult(
+      table,
+      effectiveRole,
+      options.failTable,
+      options.enquiryStatus,
+      options.sessionStatus
+    );
+""",
+          )
+
+          replace_once(
+              'admin/src/test/workflows.test.tsx',
+              "import { describe, expect, it } from 'vitest';\n",
+              "import { describe, expect, it, vi } from 'vitest';\n",
+          )
+          replace_once(
+              'admin/src/test/workflows.test.tsx',
+              """  it('converts through convert_enquiry_to_project', async () => {
+    const rpcCalls: { name: string; args: any }[] = [];
+""",
+              """  it('converts through convert_enquiry_to_project', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const rpcCalls: { name: string; args: any }[] = [];
+""",
+          )
+
+          Path('admin/src/test/consequential-actions.test.tsx').write_text("""import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { App } from '../App';
+import {
+  ENQUIRY_ID,
+  PROJECT_ID,
+  renderWithSession,
+} from './fixtures';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('consequential action confirmations', () => {
+  it('does not convert an enquiry when confirmation is declined', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const rpcCalls: { name: string; args: any }[] = [];
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/enquiries/${ENQUIRY_ID}`,
+      enquiryStatus: 'accepted',
+      rpcCalls,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /convert to project/i }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/cannot be undone/i));
+    expect(rpcCalls.some((entry) => entry.name === 'convert_enquiry_to_project')).toBe(false);
+  });
+
+  it('does not cancel a session when confirmation is declined', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const rpcCalls: { name: string; args: any }[] = [];
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/projects/${PROJECT_ID}`,
+      rpcCalls,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^cancel$/i }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/active schedule/i));
+    expect(rpcCalls.some((entry) => entry.name === 'set_session_status')).toBe(false);
+  });
+
+  it('marks a confirmed session as no-show only after confirmation', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const rpcCalls: { name: string; args: any }[] = [];
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/projects/${PROJECT_ID}`,
+      sessionStatus: 'confirmed',
+      rpcCalls,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /mark no-show/i }));
+
+    await waitFor(() => {
+      expect(rpcCalls).toContainEqual({
+        name: 'set_session_status',
+        args: { p_session_id: expect.any(String), p_status: 'no_show' },
+      });
+    });
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/did not attend/i));
+  });
+
+  it('keeps ordinary session confirmation free of an extra prompt', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const rpcCalls: { name: string; args: any }[] = [];
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/projects/${PROJECT_ID}`,
+      rpcCalls,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() => {
+      expect(rpcCalls.some((entry) => (
+        entry.name === 'set_session_status' && entry.args.p_status === 'confirmed'
+      ))).toBe(true);
+    });
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('deactivates another user only after confirmation', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const rpcCalls: { name: string; args: any }[] = [];
+    renderWithSession(<App />, { role: 'owner', path: '/users', rpcCalls });
+
+    await screen.findByText('Manager');
+    const managerRow = screen.getByLabelText('Role for Manager').closest('.row') as HTMLElement;
+    const deactivate = within(managerRow).getByRole('button', { name: /deactivate/i });
+
+    fireEvent.click(deactivate);
+    expect(rpcCalls.some((entry) => entry.name === 'set_profile_active')).toBe(false);
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(deactivate);
+
+    await waitFor(() => {
+      expect(rpcCalls.some((entry) => (
+        entry.name === 'set_profile_active' && entry.args.p_is_active === false
+      ))).toBe(true);
+    });
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/withdrawn immediately/i));
+  });
+
+  it('reactivates a user without a confirmation prompt', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const rpcCalls: { name: string; args: any }[] = [];
+    renderWithSession(<App />, { role: 'owner', path: '/users', rpcCalls });
+
+    await screen.findByText('Former');
+    const formerRow = screen.getByLabelText('Role for Former').closest('.row') as HTMLElement;
+    fireEvent.click(within(formerRow).getByRole('button', { name: /reactivate/i }));
+
+    await waitFor(() => {
+      expect(rpcCalls.some((entry) => (
+        entry.name === 'set_profile_active' && entry.args.p_is_active === true
+      ))).toBe(true);
+    });
+    expect(confirm).not.toHaveBeenCalled();
+  });
+});
+""")
+          PY
+
+      - name: Validate private CRM
+        working-directory: admin
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Commit focused changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            admin/src/lib/confirm-action.ts \
+            admin/src/pages/EnquiryDetailPage.tsx \
+            admin/src/pages/ProjectDetailPage.tsx \
+            admin/src/pages/UsersPage.tsx \
+            admin/src/test/fixtures.tsx \
+            admin/src/test/workflows.test.tsx \
+            admin/src/test/consequential-actions.test.tsx
+          git diff --cached --check
+          git commit -m "Add confirmations for consequential CRM actions"
+          git push origin HEAD:agent/multi-artist-payments-foundation
