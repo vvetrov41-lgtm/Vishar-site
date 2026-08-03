@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
+import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { Link } from '../lib/router';
 import { can } from '../lib/permissions';
@@ -75,6 +76,9 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
   return (
     <>
+      <DetailBackLink to="/projects" sectionLabel={t('nav.projects')} />
+      <RecordArtistContext artistId={project.artist_id} />
+
       <div className="card">
         <h2 style={{ fontSize: '1.2rem' }}>{project.title}</h2>
         <div>
