@@ -412,7 +412,7 @@ begin
   where id in ('$VLADIMIR_FIXTURE_ENQUIRY_ID','$KRISTINA_FIXTURE_ENQUIRY_ID');
   if v_count <> 2 then raise exception 'owner combined enquiry view mismatch'; end if;
   select count(*) into v_count from public.projects_finance
-  where id in ('$VLADIMIR_FIXTURE_PROJECT_ID','$KRISTINA_FIXTURE_PROJECT_ID');
+  where project_id in ('$VLADIMIR_FIXTURE_PROJECT_ID','$KRISTINA_FIXTURE_PROJECT_ID');
   if v_count <> 2 then raise exception 'owner separate artist finance view mismatch'; end if;
   select count(*) into v_count from public.clients where id='$SHARED_CLIENT_ID';
   if v_count <> 1 then raise exception 'owner shared client view mismatch'; end if;
@@ -432,10 +432,10 @@ begin
   if not exists(select 1 from public.clients where id='$SHARED_CLIENT_ID') then
     raise exception 'manager cannot see shared client through assigned artist';
   end if;
-  if not exists(select 1 from public.projects_finance where id='$VLADIMIR_FIXTURE_PROJECT_ID') then
+  if not exists(select 1 from public.projects_finance where project_id='$VLADIMIR_FIXTURE_PROJECT_ID') then
     raise exception 'manager Vladimir finance scope missing';
   end if;
-  if exists(select 1 from public.projects_finance where id='$KRISTINA_FIXTURE_PROJECT_ID') then
+  if exists(select 1 from public.projects_finance where project_id='$KRISTINA_FIXTURE_PROJECT_ID') then
     raise exception 'manager crossed into Kristina finance scope';
   end if;
 
@@ -451,7 +451,7 @@ begin
   ) then
     raise exception 'manager artist grant was not reflected by RLS';
   end if;
-  if exists(select 1 from public.projects_finance where id='$KRISTINA_FIXTURE_PROJECT_ID') then
+  if exists(select 1 from public.projects_finance where project_id='$KRISTINA_FIXTURE_PROJECT_ID') then
     raise exception 'manager grant widened finance without finance capability';
   end if;
 
