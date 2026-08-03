@@ -61,6 +61,7 @@ jobs:
 
     steps:
       - name: Fail closed before checkout
+        id: guard
         shell: bash
         run: |
           set -euo pipefail
@@ -93,12 +94,14 @@ jobs:
           esac
 
       - name: Check out the exact approved SHA
+        id: checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ env.APPROVED_SHA }}
           fetch-depth: 0
 
       - name: Verify PR state, ancestry and completed normal CI
+        id: verify
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -125,6 +128,7 @@ jobs:
           done
 
       - name: Verify staging-only encrypted configuration is present
+        id: credentials
         shell: bash
         run: |
           set -euo pipefail
@@ -148,30 +152,38 @@ jobs:
           esac
 
       - name: Set up Node.js
+        id: setup_node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install pinned repository dependencies
+        id: npm_ci
         run: npm ci
 
       - name: Snapshot, dry-run and apply migrations 0015 through 0025
+        id: migrate
         run: bash scripts/pr177-staging-validation.sh migrate
 
       - name: Configure trusted source and metadata-only artist route
+        id: metadata
         run: bash scripts/pr177-staging-validation.sh metadata
 
       - name: Install artist binding, remove legacy bindings and deploy Worker
+        id: worker
         run: bash scripts/pr177-staging-validation.sh worker
 
       - name: Build and deploy exact booking and CRM artifacts
+        id: pages
         run: bash scripts/pr177-staging-validation.sh pages
 
       - name: Run routed, fail-closed, CRM, RLS, Storage, audit and edge E2E
+        id: e2e
         run: bash scripts/pr177-staging-validation.sh e2e
 
       - name: Upload safe retained-staging evidence
+        id: evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -186,6 +198,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
+          GUARD_OUTCOME: ${{ steps.guard.outcome }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          NODE_OUTCOME: ${{ steps.setup_node.outcome }}
+          NPM_OUTCOME: ${{ steps.npm_ci.outcome }}
+          MIGRATE_OUTCOME: ${{ steps.migrate.outcome }}
+          METADATA_OUTCOME: ${{ steps.metadata.outcome }}
+          WORKER_OUTCOME: ${{ steps.worker.outcome }}
+          PAGES_OUTCOME: ${{ steps.pages.outcome }}
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/pr177-staging-evidence"
@@ -195,19 +219,28 @@ jobs:
             positive="$(jq -r '.positive_reference' "$evidence/summary.json")"
             noroute="$(jq -r '.no_route_reference' "$evidence/summary.json")"
           fi
-          gh pr comment 177 --repo "$GITHUB_REPOSITORY" --body "<!-- pr177-retained-staging-deploy-e2e -->
+
+          body="$RUNNER_TEMP/pr177-result.md"
+          cat > "$body" <<EOF
+          <!-- pr177-retained-staging-deploy-e2e -->
           ### PR #177 retained hosted staging mutation
 
-          - Exact reviewed and deployed SHA: `$APPROVED_SHA`
-          - Guarded job: **$JOB_STATUS**
-          - Database target: retained `vishar-crm-staging` only
-          - Forward migrations: `0015–0025`
-          - Hosted pgTAP expectation: `933`
-          - PostgreSQL lint level: `error`
-          - Worker target: `tattooai-preview`
-          - Pages targets: `vishar-booking-staging`, `vishar-crm-staging`
-          - Routed synthetic enquiry: `$positive`
-          - Fail-closed synthetic enquiry: `$noroute`
-          - Staging retained: `true`
+          - Exact reviewed SHA: ${APPROVED_SHA}
+          - GitHub run ID: ${GITHUB_RUN_ID}
+          - GitHub run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Guarded job: ${JOB_STATUS}
+          - Step outcomes: guard=${GUARD_OUTCOME:-unknown}, checkout=${CHECKOUT_OUTCOME:-unknown}, verify=${VERIFY_OUTCOME:-unknown}, credentials=${CREDENTIALS_OUTCOME:-unknown}, node=${NODE_OUTCOME:-unknown}, npm=${NPM_OUTCOME:-unknown}, migrate=${MIGRATE_OUTCOME:-unknown}, metadata=${METADATA_OUTCOME:-unknown}, worker=${WORKER_OUTCOME:-unknown}, pages=${PAGES_OUTCOME:-unknown}, e2e=${E2E_OUTCOME:-unknown}, evidence=${EVIDENCE_OUTCOME:-unknown}
+          - Database target: retained vishar-crm-staging only
+          - Forward migrations: 0015-0025
+          - Hosted pgTAP expectation: 933
+          - PostgreSQL lint level: error
+          - Worker target: tattooai-preview
+          - Pages targets: vishar-booking-staging, vishar-crm-staging
+          - Routed synthetic enquiry: ${positive}
+          - Fail-closed synthetic enquiry: ${noroute}
+          - Staging retained: true
 
-          The attached Actions artifact contains only safe identifiers, counts, binding names and control results. It contains no credential values. Production was not targeted by this workflow."
+          The attached Actions artifact contains only safe identifiers, counts, binding names and control results. It contains no credential values. Production was not targeted by this workflow.
+          EOF
+          sed -i 's/^          //' "$body"
+          gh pr comment 177 --repo "$GITHUB_REPOSITORY" --body-file "$body"
