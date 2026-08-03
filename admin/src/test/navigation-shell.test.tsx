@@ -37,6 +37,37 @@ describe('responsive navigation shell', () => {
     expect(within(tabbar as HTMLElement).getByRole('button', { name: 'More' })).toBeInTheDocument();
   });
 
+  it('groups owner overflow destinations by task area', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/' });
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Sections' });
+    const operations = within(dialog).getByRole('group', { name: 'Operations' });
+    const administration = within(dialog).getByRole('group', { name: 'Administration' });
+
+    expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Projects',
+      'Activity',
+    ]);
+    expect(within(administration).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Users',
+    ]);
+  });
+
+  it('does not render empty overflow groups for restricted roles', async () => {
+    renderWithSession(<App />, { role: 'read_only', path: '/' });
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Sections' });
+    const operations = within(dialog).getByRole('group', { name: 'Operations' });
+
+    expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Projects',
+    ]);
+    expect(within(dialog).queryByRole('group', { name: 'Administration' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('group', { name: 'Finance' })).not.toBeInTheDocument();
+  });
+
   it('shows artist scope only where it affects the page', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/clients' });
     await screen.findByText('Fixture Client');
