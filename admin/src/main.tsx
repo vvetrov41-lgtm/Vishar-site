@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { withConsequentialConfirmations } from './lib/consequential-client';
 import { LanguageProvider } from './lib/i18n';
 import { RouterProvider } from './lib/router';
 import { SessionProvider } from './lib/session';
@@ -12,10 +13,10 @@ import './styles.css';
 // service-role key can never end up here. Loopback HTTP is accepted only while
 // Vite is actually in development mode; a production build remains hosted-
 // Supabase-only.
-const client = createCrmClient(
+const client = withConsequentialConfirmations(createCrmClient(
   import.meta.env as unknown as Record<string, string | undefined>,
   import.meta.env.DEV
-);
+));
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Missing #root');
