@@ -28,6 +28,7 @@ import { parseEnquiryFields, parseEnquiryFiles } from '../lib/validation.js';
 import { createSupabaseClient, SupabaseError, toRequestError } from '../lib/supabase.js';
 import { createStorageClient } from '../lib/storage.js';
 import { buildEnquiryNotification, sendNotification } from '../lib/telegram.js';
+import { readTrustedBookingConfig } from '../lib/provider-routing.js';
 
 export async function handleEnquiryIntake(request, env, { cors, logger, fetchImpl = fetch }) {
   const startedAt = Date.now();
@@ -41,6 +42,8 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       logger.warn('enquiry.origin_rejected', { route: 'enquiries', errorCode: 'origin_not_allowed' });
       throw new RequestError('origin_not_allowed', 'This request could not be accepted.', 403);
     }
+
+    const bookingConfig = readTrustedBookingConfig(env);
 
     let form;
     try {
@@ -70,7 +73,10 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
     });
 
     // ---- Commit the record first -------------------------------------------
-    const intake = await supabase.rpc('create_enquiry_intake', {
+    const intake = await supabase.rpc('create_trusted_enquiry_intake', {
+      p_source_key: bookingConfig.sourceKey,
+      p_origin: origin,
+      p_form_version: bookingConfig.formVersion,
       p_idempotency_key: idempotencyKey,
       p_client: {
         full_name: enquiry.name,
@@ -252,18 +258,23 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
     // and the outbox row created during finalisation preserves the provider
     // outcome for the future drain, so nothing here can turn a saved enquiry
     // into a failed submission.
-    const notification = await sendNotification(
-      env,
-      buildEnquiryNotification({
-        referenceNumber,
-        fileCount: manifests.length,
-        clientConflict: Boolean(intake.client_conflict),
-      }),
-      fetchImpl
-    );
-
     const outboxId = finalization?.outbox_id;
+    let notification = { delivered: false, errorCode: 'outbox_route_missing' };
     if (outboxId) {
+      try {
+        const resolved = await supabase.rpc('resolve_outbox_route', { p_outbox_id: outboxId });
+        const route = Array.isArray(resolved) ? resolved[0] : resolved;
+        notification = route
+          ? await sendNotification(env, route, buildEnquiryNotification({
+              referenceNumber,
+              fileCount: manifests.length,
+              clientConflict: Boolean(intake.client_conflict),
+            }), fetchImpl)
+          : { delivered: false, errorCode: 'provider_route_unavailable' };
+      } catch {
+        notification = { delivered: false, errorCode: 'provider_route_unavailable' };
+      }
+
       try {
         await supabase.rpc('record_outbox_attempt', {
           p_outbox_id: outboxId,

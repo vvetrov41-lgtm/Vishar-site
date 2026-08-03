@@ -17,11 +17,12 @@ import { statusClass } from './logging.js';
  * asks for.
  */
 export const ALLOWED_RPCS = new Set([
-  'create_enquiry_intake',
+  'create_trusted_enquiry_intake',
   'mark_enquiry_file_uploaded',
   'finalize_enquiry_intake',
   'fail_enquiry_intake',
   'record_outbox_attempt',
+  'resolve_outbox_route',
   'list_incomplete_intakes',
 ]);
 

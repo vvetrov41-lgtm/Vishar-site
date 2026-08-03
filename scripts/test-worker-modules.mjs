@@ -21,6 +21,7 @@ const storage = await load('lib/storage.js');
 const outbox = await load('lib/outbox.js');
 const activity = await load('lib/activity.js');
 const telegram = await load('lib/telegram.js');
+const providerRouting = await load('lib/provider-routing.js');
 const supabase = await load('lib/supabase.js');
 const reconciliation = await load('lib/reconciliation.js');
 const email = await load('lib/email.js');
@@ -305,12 +306,13 @@ test('conflicting or misnamed Supabase backend keys fail closed', () => {
 
 test('the RPC allow-list is exactly the intake surface', () => {
   assert.deepEqual([...supabase.ALLOWED_RPCS].sort(), [
-    'create_enquiry_intake',
+    'create_trusted_enquiry_intake',
     'fail_enquiry_intake',
     'finalize_enquiry_intake',
     'list_incomplete_intakes',
     'mark_enquiry_file_uploaded',
     'record_outbox_attempt',
+    'resolve_outbox_route',
   ]);
 });
 
@@ -410,10 +412,37 @@ test('a client conflict is flagged for review in the notification', () => {
   assert.match(text, /two different client records/);
 });
 
-test('Telegram configuration is detected, not assumed', () => {
-  assert.ok(telegram.isTelegramConfigured({ TELEGRAM_BOT_TOKEN: 'a', TELEGRAM_CHAT_ID: 'b' }));
-  assert.ok(!telegram.isTelegramConfigured({ TELEGRAM_BOT_TOKEN: 'a' }));
-  assert.ok(!telegram.isTelegramConfigured({}));
+test('trusted booking configuration fails closed', () => {
+  assert.deepEqual(providerRouting.readTrustedBookingConfig({
+    BOOKING_SOURCE_KEY:'vladimir-website',BOOKING_FORM_VERSION:'booking-v1',
+  }),{sourceKey:'vladimir-website',formVersion:'booking-v1'});
+  assert.throws(() => providerRouting.readTrustedBookingConfig({}),
+    error => error.code === 'trusted_booking_source_not_configured');
+});
+test('binding names distinguish hyphens and underscores', () => {
+  assert.equal(providerRouting.bindingNameFor('telegram','vladimir-telegram'),
+    'ARTIST_TELEGRAM_VLADIMIR_HTELEGRAM');
+  assert.notEqual(providerRouting.bindingNameFor('telegram','artist-key'),
+    providerRouting.bindingNameFor('telegram','artist_key'));
+});
+test('email and calendar use the same future routing boundary', () => {
+  assert.equal(providerRouting.integrationTypeForOutboxKind('transactional_email'),'email');
+  assert.equal(providerRouting.integrationTypeForOutboxKind('approved_email'),'email');
+  assert.equal(providerRouting.integrationTypeForOutboxKind('calendar_create'),'calendar');
+  assert.equal(providerRouting.integrationTypeForOutboxKind('calendar_update'),'calendar');
+  assert.equal(providerRouting.integrationTypeForOutboxKind('calendar_cancel'),'calendar');
+  assert.equal(providerRouting.integrationTypeForOutboxKind('reconciliation'),null);
+});
+test('an artist route never falls back to global Telegram variables', () => {
+  assert.throws(() => providerRouting.resolveProviderBinding({
+    TELEGRAM_BOT_TOKEN:'legacy',TELEGRAM_CHAT_ID:'legacy',
+  },{kind:'telegram_notification',integration_type:'telegram',provider:'telegram',
+     integration_key:'vladimir-telegram'}),error => error.code === 'provider_binding_missing');
+});
+test('a mismatched route type is rejected', () => {
+  assert.throws(() => providerRouting.resolveProviderBinding({},{
+    kind:'calendar_create',integration_type:'email',provider:'google',
+    integration_key:'vladimir-calendar'}),error => error.code === 'provider_route_invalid');
 });
 
 // ---------------------------------------------------------------------------

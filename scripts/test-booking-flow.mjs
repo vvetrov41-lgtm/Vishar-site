@@ -21,10 +21,15 @@ const ORIGIN = 'https://vishartattoo.com';
 const ENDPOINT = 'https://tattooai.vvetrov41.workers.dev/';
 
 const env = {
-  SUPABASE_URL: 'https://project.supabase.co',
-  SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
-  TELEGRAM_BOT_TOKEN: 'test-token',
-  TELEGRAM_CHAT_ID: 'test-chat',
+  SUPABASE_URL:'https://project.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY:'test-service-role-key',
+  BOOKING_SOURCE_KEY:'vladimir-website',
+  BOOKING_FORM_VERSION:'booking-v1',
+  ARTIST_TELEGRAM_VLADIMIR_HTELEGRAM:JSON.stringify({
+    botToken:'artist-test-token',chatId:'artist-test-chat',
+  }),
+  TELEGRAM_BOT_TOKEN:'legacy-test-token',
+  TELEGRAM_CHAT_ID:'legacy-test-chat',
 };
 
 let failures = 0;
@@ -136,7 +141,7 @@ function enquiryRequest(form, { origin = ORIGIN, headers = {} } = {}) {
  * endpoint fail while the rest behave.
  */
 function stubBackend(overrides = {}) {
-  const calls = { rpc: [], uploads: [], deletes: [], telegram: 0 };
+  const calls = { rpc: [], uploads: [], deletes: [], telegram: 0, telegramUrls: [] };
 
   const state = {
     enquiryId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -145,6 +150,8 @@ function stubBackend(overrides = {}) {
     replayed: false,
     intakeState: 'files_pending',
     clientConflict: false,
+    artistId: 'a1111111-1111-4111-8111-111111111111',
+    bookingSourceId: 'b1111111-1111-4111-8111-111111111111',
     fileIds: ['f1111111-1111-4111-8111-111111111111', 'f2222222-2222-4222-8222-222222222222', 'f3333333-3333-4333-8333-333333333333'],
     ...overrides.state,
   };
@@ -159,7 +166,7 @@ function stubBackend(overrides = {}) {
 
       if (overrides.rpc && overrides.rpc[name]) return overrides.rpc[name](args, calls);
 
-      if (name === 'create_enquiry_intake') {
+      if (name === 'create_trusted_enquiry_intake') {
         const fileCount = Array.isArray(args.p_files) ? args.p_files.length : 0;
         return Response.json({
           enquiry_id: state.enquiryId,
@@ -168,6 +175,9 @@ function stubBackend(overrides = {}) {
           intake_state: state.intakeState,
           replayed: state.replayed,
           client_conflict: state.clientConflict,
+          artist_id: state.artistId,
+          booking_source_id: state.bookingSourceId,
+          trusted_source_key: 'vladimir-website',
           files: args.p_files.map((file, index) => ({
             file_id: state.fileIds[index],
             ordinal: index,
@@ -181,6 +191,15 @@ function stubBackend(overrides = {}) {
         });
       }
 
+      if (name === 'resolve_outbox_route') {
+        return Response.json({
+          outbox_id:args.p_outbox_id,artist_id:state.artistId,
+          kind:'telegram_notification',integration_type:'telegram',
+          provider:'telegram',integration_key:'vladimir-telegram',
+          external_account_label:'Synthetic Vladimir notifications',
+          configuration:{locale:'en-GB'},
+        });
+      }
       if (name === 'finalize_enquiry_intake') {
         return Response.json({
           enquiry_id: state.enquiryId,
@@ -208,6 +227,7 @@ function stubBackend(overrides = {}) {
 
     if (href.includes('api.telegram.org')) {
       calls.telegram += 1;
+      calls.telegramUrls.push(href);
       if (overrides.telegramStatus) return new Response('{}', { status: overrides.telegramStatus });
       if (overrides.telegramThrows) throw new Error('network down');
       return new Response('{}', { status: 200 });
@@ -270,7 +290,10 @@ await test('PNG and WebP references are accepted', async () => {
 await test('attribution and idempotency reach the database', async () => {
   const calls = stubBackend();
   await send(enquiryForm());
-  const intake = calls.rpc.find((c) => c.name === 'create_enquiry_intake');
+  const intake = calls.rpc.find((c) => c.name === 'create_trusted_enquiry_intake');
+  assert.equal(intake.args.p_source_key,'vladimir-website');
+  assert.equal(intake.args.p_origin,ORIGIN);
+  assert.equal(intake.args.p_form_version,'booking-v1');
   assert.equal(intake.args.p_idempotency_key, '11111111-2222-4333-8444-555555555555');
   assert.equal(intake.args.p_enquiry.utm_source, 'google');
   assert.equal(intake.args.p_enquiry.utm_medium, 'organic');
@@ -278,6 +301,25 @@ await test('attribution and idempotency reach the database', async () => {
   assert.equal(intake.args.p_enquiry.landing_page, 'https://vishartattoo.com/booking/?utm_source=google');
   assert.equal(intake.args.p_enquiry.privacy_acknowledged, true);
   assert.equal(intake.args.p_enquiry.privacy_notice_version, '2026-07-29');
+});
+
+await test('browser routing fields cannot select an artist or provider', async () => {
+  const calls=stubBackend();
+  await send(enquiryForm({fields:{
+    artist_id:'a2222222-2222-4222-8222-222222222222',
+    sourceKey:'kristina-website',formVersion:'attacker-version',
+    integration_key:'kristina-telegram',provider_account:'shared-account',
+    payment_destination:'shared-account',
+  }}));
+  const intake=calls.rpc.find(c=>c.name==='create_trusted_enquiry_intake');
+  assert.equal(intake.args.p_source_key,'vladimir-website');
+  assert.equal(intake.args.p_form_version,'booking-v1');
+  assert.ok(!('p_artist_id' in intake.args));
+  for(const key of ['artist_id','integration_key','provider_account','payment_destination']){
+    assert.ok(!(key in intake.args.p_enquiry));
+  }
+  assert.match(calls.telegramUrls[0],/artist-test-token/);
+  assert.ok(!calls.telegramUrls[0].includes('legacy-test-token'));
 });
 
 await test('the storage path is server-derived, never client-supplied', async () => {
@@ -291,7 +333,7 @@ await test('the storage path is server-derived, never client-supplied', async ()
 await test('a checksum is computed for every file', async () => {
   const calls = stubBackend();
   await send(enquiryForm());
-  const intake = calls.rpc.find((c) => c.name === 'create_enquiry_intake');
+  const intake = calls.rpc.find((c) => c.name === 'create_trusted_enquiry_intake');
   assert.match(intake.args.p_files[0].checksum, /^[a-f0-9]{64}$/);
 });
 
@@ -433,6 +475,16 @@ await test('malformed multipart is rejected', async () => {
   const payload = await response.json();
   assert.equal(response.status, 400);
   assert.equal(payload.code, 'malformed_multipart');
+});
+
+await test('missing trusted source configuration fails before database writes', async () => {
+  const calls=stubBackend();
+  const {response,payload}=await send(enquiryForm(),{env:{...env,BOOKING_SOURCE_KEY:''}});
+  assert.equal(response.status,500);
+  assert.equal(payload.code,'trusted_booking_source_not_configured');
+  assert.equal(calls.rpc.length,0);
+  assert.equal(calls.uploads.length,0);
+  assert.equal(calls.telegram,0);
 });
 
 await test('a missing idempotency key is rejected', async () => {
@@ -688,7 +740,7 @@ await test('a lost manifest acknowledgement never deletes a possibly committed o
 await test('the enquiry survives a Storage failure so the same key can resume it', async () => {
   const calls = stubBackend({ uploadFailsAt: 1 });
   await send(enquiryForm());
-  const intake = calls.rpc.find((c) => c.name === 'create_enquiry_intake');
+  const intake = calls.rpc.find((c) => c.name === 'create_trusted_enquiry_intake');
   assert.ok(intake, 'the enquiry was still created');
   assert.equal(intake.args.p_idempotency_key, '11111111-2222-4333-8444-555555555555');
 });
@@ -705,6 +757,17 @@ await test('a Telegram failure after a durable save still reports success', asyn
   assert.equal(attempt?.args.p_error_code, 'telegram_rejected');
 });
 
+await test('a missing artist route still reports a saved enquiry as success', async () => {
+  const calls=stubBackend({rpc:{resolve_outbox_route:async()=>new Response('{}',{status:400})}});
+  const {response,payload}=await send(enquiryForm());
+  assert.equal(response.status,200);
+  assert.equal(payload.ok,true);
+  assert.equal(calls.telegram,0);
+  const attempt=calls.rpc.find(c=>c.name==='record_outbox_attempt');
+  assert.equal(attempt?.args.p_succeeded,false);
+  assert.equal(attempt?.args.p_error_code,'provider_route_unavailable');
+});
+
 await test('an unreachable Telegram still reports success', async () => {
   stubBackend({ telegramThrows: true });
   const { response, payload } = await send(enquiryForm());
@@ -715,7 +778,12 @@ await test('an unreachable Telegram still reports success', async () => {
 await test('an unconfigured Telegram does not block a booking', async () => {
   stubBackend();
   const { response, payload } = await send(enquiryForm(), {
-    env: { SUPABASE_URL: env.SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY },
+    env: {
+      SUPABASE_URL:env.SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY:env.SUPABASE_SERVICE_ROLE_KEY,
+      BOOKING_SOURCE_KEY:env.BOOKING_SOURCE_KEY,
+      BOOKING_FORM_VERSION:env.BOOKING_FORM_VERSION,
+    },
   });
   assert.equal(response.status, 200);
   assert.equal(payload.ok, true);
@@ -732,7 +800,11 @@ await test('a client identifier conflict is still a successful booking', async (
 await test('a missing Supabase configuration refuses the route instead of degrading', async () => {
   const calls = stubBackend();
   const { response, payload } = await send(enquiryForm(), {
-    env: { TELEGRAM_BOT_TOKEN: 'x', TELEGRAM_CHAT_ID: 'y' },
+    env: {
+      BOOKING_SOURCE_KEY:env.BOOKING_SOURCE_KEY,
+      BOOKING_FORM_VERSION:env.BOOKING_FORM_VERSION,
+      TELEGRAM_BOT_TOKEN:'x',TELEGRAM_CHAT_ID:'y',
+    },
   });
   assert.equal(response.status, 500);
   assert.equal(payload.code, 'supabase_not_configured');
@@ -754,7 +826,7 @@ await test('no response body contains a secret', async () => {
     stubBackend({ uploadFailsAt: 1 });
     const { payload } = await run();
     const text = JSON.stringify(payload);
-    for (const secret of ['test-service-role-key', 'test-token', 'test-chat']) {
+    for (const secret of ['test-service-role-key', 'artist-test-token', 'artist-test-chat', 'legacy-test-token', 'legacy-test-chat']) {
       assert.ok(!text.includes(secret), `response leaked ${secret}`);
     }
   }
@@ -769,7 +841,7 @@ await test('no log line contains a secret or personal data', async () => {
   const lines = capturedLines();
   assert.ok(lines.length > 0, 'the intake produced structured logs');
   const forbidden = [
-    'test-service-role-key', 'test-token', 'test-chat',
+    'test-service-role-key', 'artist-test-token', 'artist-test-chat', 'legacy-test-token', 'legacy-test-chat',
     'private.person@example.test', 'Test Client', 'realistic raven',
     'reference-1.jpg', 'www.google.com',
   ];
