@@ -58,7 +58,7 @@ export function DashboardPage() {
   return (
     <>
       <Section title={t('dashboard.enquiries')}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <div className="dashboard-metrics">
           <Metric label={t('dashboard.new')} value={newEnquiries.length} />
           <Metric label={t('dashboard.unassigned')} value={unassigned.length} />
           <Metric label={t('dashboard.waiting')} value={waiting.length} />
@@ -68,9 +68,35 @@ export function DashboardPage() {
         </div>
       </Section>
 
+      <Section title={t('dashboard.upcomingSessions')}>
+        {upcoming.length === 0 ? (
+          <EmptyState
+            compact
+            title={t('dashboard.noConfirmedSessions')}
+            hint={t('dashboard.onlyConfirmedSessions')}
+          />
+        ) : (
+          <div className="list">
+            {upcoming.map((session) => (
+              <div key={session.id} className="row">
+                <div className="title">{formatDateTime(session.start_at, language)}</div>
+                <div className="meta">
+                  <span className="badge ok">{label('sessionStatus', 'confirmed')}</span>{' '}
+                  <span className="badge">{session.duration_hours ?? '—'} {t('common.hoursShort')}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
       <Section title={t('dashboard.overdueFollowUps')}>
         {overdue.length === 0 ? (
-          <EmptyState title={t('dashboard.nothingOverdue')} hint={t('dashboard.followUpsAppear')} />
+          <EmptyState
+            compact
+            title={t('dashboard.nothingOverdue')}
+            hint={t('dashboard.followUpsAppear')}
+          />
         ) : (
           <div className="list">
             {overdue.slice(0, 6).map((followUp) => {
@@ -88,28 +114,11 @@ export function DashboardPage() {
         )}
       </Section>
 
-      <Section title={t('dashboard.upcomingSessions')}>
-        {upcoming.length === 0 ? (
-          <EmptyState title={t('dashboard.noConfirmedSessions')} hint={t('dashboard.onlyConfirmedSessions')} />
-        ) : (
-          <div className="list">
-            {upcoming.map((session) => (
-              <div key={session.id} className="row">
-                <div className="title">{formatDateTime(session.start_at, language)}</div>
-                <div className="meta">
-                  <span className="badge ok">{label('sessionStatus', 'confirmed')}</span>{' '}
-                  <span className="badge">{session.duration_hours ?? '—'} {t('common.hoursShort')}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
       {can(role, 'viewIntegrationJobs') ? (
         <Section title={t('dashboard.failedJobs')}>
           {data.failedJobs.length === 0 ? (
             <EmptyState
+              compact
               title={t('dashboard.nothingFailed')}
               hint={t('dashboard.queueFailureHint')}
             />
@@ -136,7 +145,7 @@ export function DashboardPage() {
       {can(role, 'viewActivity') ? (
         <Section title={t('dashboard.recentActivity')}>
           {data.activity.length === 0 ? (
-            <EmptyState title={t('dashboard.noActivity')} />
+            <EmptyState compact title={t('dashboard.noActivity')} />
           ) : (
             <ul className="timeline">
               {data.activity.slice(0, 8).map((entry) => (
@@ -157,7 +166,7 @@ export function DashboardPage() {
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="stat" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+    <div className="stat dashboard-metric">
       <span className="value">{value}</span>
       <span className="label">{label}</span>
     </div>
