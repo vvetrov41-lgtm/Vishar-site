@@ -139,10 +139,19 @@ http_status="$(
 
 rm -f "$request_file" "$sql_file"
 
-if [ "$http_status" != 200 ]; then
-  jq -r '(.message // .error // "hosted metadata SQL failed") | tostring' "$response_file" >&2 || true
-  exit 1
-fi
+case "$http_status" in
+  2??) ;;
+  *)
+    jq -r '
+      if type == "object" then
+        (.message // .error // "hosted metadata SQL failed") | tostring
+      else
+        "hosted metadata SQL failed"
+      end
+    ' "$response_file" >&2 || true
+    exit 1
+    ;;
+esac
 
 jq -e '
   if type == "array" then
