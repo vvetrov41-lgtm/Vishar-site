@@ -9,7 +9,13 @@ export function DetailBackLink({ to, sectionLabel }: { to: string; sectionLabel:
   return (
     <nav aria-label={language === 'ru' ? 'Навигация по записи' : 'Record navigation'}>
       <div className="actions" style={{ marginTop: 0, marginBottom: 12 }}>
-        <Link to={to} className="badge">← {label}</Link>
+        <Link
+          to={to}
+          className="badge"
+          style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', paddingInline: 14 }}
+        >
+          ← {label}
+        </Link>
       </div>
     </nav>
   );
