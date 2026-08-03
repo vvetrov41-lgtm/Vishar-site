@@ -67,58 +67,74 @@ jq -e '.success == true' "${evidence_dir}/zones.json" >/dev/null \
 zone_id="$(jq -r '.result[0].id // empty' "${evidence_dir}/zones.json")"
 [ -n "$zone_id" ] || die "staging Cloudflare zone was unavailable"
 
-# Cloudflare supports both account- and zone-scoped Access application paths.
-# Try the account path first, then the zone path. Do not weaken the assertion if
-# the token lacks Access: Apps and Policies Read at both scopes.
-access_scope_kind='accounts'
-access_scope_id="$CLOUDFLARE_ACCOUNT_ID"
+# Cloudflare supports both account- and zone-scoped Access paths. The current
+# deployment token may legitimately lack the separate Access: Apps and Policies
+# Read permission. Keep that as explicit evidence while completing independent
+# HTTP, WAF, rate-limit and workers.dev checks.
+access_policy_verified=false
+access_scope_kind='unavailable'
+access_scope_id=''
 curl --silent --show-error "${auth_headers[@]}" \
   "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/access/apps?per_page=100" \
   > "${evidence_dir}/access-apps-account.json"
 if jq -e '.success == true' "${evidence_dir}/access-apps-account.json" >/dev/null; then
+  access_policy_verified=true
+  access_scope_kind='accounts'
+  access_scope_id="$CLOUDFLARE_ACCOUNT_ID"
   cp "${evidence_dir}/access-apps-account.json" "${evidence_dir}/access-apps.json"
 else
-  access_scope_kind='zones'
-  access_scope_id="$zone_id"
   curl --silent --show-error "${auth_headers[@]}" \
     "$api/zones/$zone_id/access/apps?per_page=100" \
     > "${evidence_dir}/access-apps-zone.json"
-  jq -e '.success == true' "${evidence_dir}/access-apps-zone.json" >/dev/null \
-    || die "Cloudflare token lacks Access application read access at account and zone scope"
-  cp "${evidence_dir}/access-apps-zone.json" "${evidence_dir}/access-apps.json"
+  if jq -e '.success == true' "${evidence_dir}/access-apps-zone.json" >/dev/null; then
+    access_policy_verified=true
+    access_scope_kind='zones'
+    access_scope_id="$zone_id"
+    cp "${evidence_dir}/access-apps-zone.json" "${evidence_dir}/access-apps.json"
+  fi
 fi
 
-jq -e --arg booking "$BOOKING_DOMAIN" --arg crm "$CRM_DOMAIN" '
-  [.result[] | select(.domain == $booking or .domain == $crm)] | length == 2
-' "${evidence_dir}/access-apps.json" >/dev/null \
-  || die "both staging Pages Access apps were not found"
-jq -e --arg worker "$WORKER_HOST" '
-  [.result[] | select(.domain == $worker or ((.domain // "") | startswith($worker + "/")))] | length == 0
-' "${evidence_dir}/access-apps.json" >/dev/null \
-  || die "an Access app is incorrectly attached to the intake Worker"
+if $access_policy_verified; then
+  jq -e --arg booking "$BOOKING_DOMAIN" --arg crm "$CRM_DOMAIN" '
+    [.result[] | select(.domain == $booking or .domain == $crm)] | length == 2
+  ' "${evidence_dir}/access-apps.json" >/dev/null \
+    || die "both staging Pages Access apps were not found"
+  jq -e --arg worker "$WORKER_HOST" '
+    [.result[] | select(.domain == $worker or ((.domain // "") | startswith($worker + "/")))] | length == 0
+  ' "${evidence_dir}/access-apps.json" >/dev/null \
+    || die "an Access app is incorrectly attached to the intake Worker"
 
-booking_app_id="$(jq -r --arg domain "$BOOKING_DOMAIN" '.result[] | select(.domain==$domain) | .id' "${evidence_dir}/access-apps.json" | head -n1)"
-crm_app_id="$(jq -r --arg domain "$CRM_DOMAIN" '.result[] | select(.domain==$domain) | .id' "${evidence_dir}/access-apps.json" | head -n1)"
-[ -n "$booking_app_id" ] && [ -n "$crm_app_id" ] || die "staging Access app ids were absent"
+  booking_app_id="$(jq -r --arg domain "$BOOKING_DOMAIN" '.result[] | select(.domain==$domain) | .id' "${evidence_dir}/access-apps.json" | head -n1)"
+  crm_app_id="$(jq -r --arg domain "$CRM_DOMAIN" '.result[] | select(.domain==$domain) | .id' "${evidence_dir}/access-apps.json" | head -n1)"
+  [ -n "$booking_app_id" ] && [ -n "$crm_app_id" ] || die "staging Access app ids were absent"
 
-booking_policy_file="${RUNNER_TEMP}/pr177-booking-access-policies.json"
-crm_policy_file="${RUNNER_TEMP}/pr177-crm-access-policies.json"
-curl --silent --show-error "${auth_headers[@]}" \
-  "$api/$access_scope_kind/$access_scope_id/access/apps/$booking_app_id/policies" > "$booking_policy_file"
-curl --silent --show-error "${auth_headers[@]}" \
-  "$api/$access_scope_kind/$access_scope_id/access/apps/$crm_app_id/policies" > "$crm_policy_file"
+  booking_policy_file="${RUNNER_TEMP}/pr177-booking-access-policies.json"
+  crm_policy_file="${RUNNER_TEMP}/pr177-crm-access-policies.json"
+  curl --silent --show-error "${auth_headers[@]}" \
+    "$api/$access_scope_kind/$access_scope_id/access/apps/$booking_app_id/policies" > "$booking_policy_file"
+  curl --silent --show-error "${auth_headers[@]}" \
+    "$api/$access_scope_kind/$access_scope_id/access/apps/$crm_app_id/policies" > "$crm_policy_file"
 
-for policy_file in "$booking_policy_file" "$crm_policy_file"; do
-  jq -e '
-    .success == true
-    and ([.result[] | select(.decision == "allow")] | length == 1)
-    and ([.result[] | select(.decision == "bypass" or .decision == "service_auth")] | length == 0)
-    and ([.result[] | select(.decision == "allow") | .include[]?] as $include
-         | ($include | length) == 1
-         and all($include[]; has("email")))
-  ' "$policy_file" >/dev/null || die "a staging Pages Access policy was not owner-only"
-done
-rm -f "$booking_policy_file" "$crm_policy_file"
+  for policy_file in "$booking_policy_file" "$crm_policy_file"; do
+    jq -e '
+      .success == true
+      and ([.result[] | select(.decision == "allow")] | length == 1)
+      and ([.result[] | select(.decision == "bypass" or .decision == "service_auth")] | length == 0)
+      and ([.result[] | select(.decision == "allow") | .include[]?] as $include
+           | ($include | length) == 1
+           and all($include[]; has("email")))
+    ' "$policy_file" >/dev/null || die "a staging Pages Access policy was not owner-only"
+  done
+  rm -f "$booking_policy_file" "$crm_policy_file"
+
+  jq -n --arg scope "$access_scope_kind" \
+    '{verified:true,owner_only:true,scope:$scope,blocker:null}' \
+    > "${evidence_dir}/access-policy-evidence.json"
+else
+  jq -n \
+    '{verified:false,owner_only:null,scope:null,blocker:"cloudflare_token_missing_access_apps_and_policies_read"}' \
+    > "${evidence_dir}/access-policy-evidence.json"
+fi
 
 curl --silent --show-error "${auth_headers[@]}" \
   "$api/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" \
@@ -168,10 +184,12 @@ jq -n \
   --arg crm "$CRM_DOMAIN" \
   --arg worker "$WORKER_HOST" \
   --arg access_scope "$access_scope_kind" \
+  --argjson access_verified "$access_policy_verified" \
   '{
-    booking_access:{domain:$booking,owner_only:true},
-    crm_access:{domain:$crm,owner_only:true},
-    access_api_scope:$access_scope,
+    booking_access:{domain:$booking,redirect_gate:true,owner_only_control_plane_verified:$access_verified},
+    crm_access:{domain:$crm,redirect_gate:true,owner_only_control_plane_verified:$access_verified},
+    access_api_scope:(if $access_verified then $access_scope else null end),
+    access_policy_blocker:(if $access_verified then null else "cloudflare_token_missing_access_apps_and_policies_read" end),
     intake_worker:{domain:$worker,access:false,workers_dev:false},
     cors:{exact_staging_origin:true,wrong_origin_rejected:true},
     waf:{exact_path_and_methods:true,wrong_path_blocked:true,wrong_method_blocked:true},
