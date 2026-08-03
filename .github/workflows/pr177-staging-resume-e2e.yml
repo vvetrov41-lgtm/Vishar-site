@@ -184,7 +184,7 @@ jobs:
 
       - name: Run routed, fail-closed, CRM, RLS, Storage, audit and edge E2E
         id: e2e
-        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr177-staging-validation.sh e2e
+        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr177-staging-continuation-e2e.sh
 
       - name: Upload safe post-gate evidence
         id: evidence
