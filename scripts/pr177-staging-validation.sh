@@ -79,7 +79,7 @@ migrate_and_test() {
 
   npx supabase@2.111.0 link --project-ref "$PROJECT_REF"
   npx supabase@2.111.0 migration list --linked > "${evidence_dir}/migrations-before.txt"
-  mapfile -t before_versions < <(awk -F'|' '/^[[:space:]]*[0-9][0-9][0-9][0-9][[:space:]]*\|/ {gsub(/[[:space:]]/,"",$2); if ($2 != "") print $2}' "${evidence_dir}/migrations-before.txt")
+  mapfile -t before_versions < <(awk -F'|' '{gsub(/[[:space:]`]/,"",$2); if ($2 ~ /^[0-9][0-9][0-9][0-9]$/) print $2}' "${evidence_dir}/migrations-before.txt")
   [ "${#before_versions[@]}" -eq 14 ] || die "staging must contain exactly migrations 0001 through 0014 before mutation"
   for n in $(seq -w 1 14); do printf '%s\n' "${before_versions[@]}" | grep -Fxq "00$n" || die "remote migration 00$n is absent"; done
 
