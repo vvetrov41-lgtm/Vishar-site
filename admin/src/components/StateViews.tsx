@@ -16,9 +16,17 @@ export function LoadingState({ label }: { label?: string }) {
   );
 }
 
-export function EmptyState({ title, hint }: { title: string; hint?: string }) {
+export function EmptyState({
+  title,
+  hint,
+  compact = false,
+}: {
+  title: string;
+  hint?: string;
+  compact?: boolean;
+}) {
   return (
-    <div className="state" role="status">
+    <div className={compact ? 'state compact' : 'state'} role="status">
       <h3>{title}</h3>
       {hint ? <p>{hint}</p> : null}
     </div>
