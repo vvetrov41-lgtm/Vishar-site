@@ -1,13 +1,15 @@
-// Application chrome: a sticky header and a thumb-reachable bottom tab bar.
+// Responsive application chrome.
 //
-// Navigation is filtered by role. That is a usability decision, not a security
-// one — a hidden tab is not protection, and RequireCapability plus the database
-// are what actually refuse access.
+// Phone navigation is intentionally capped at five thumb-reachable actions.
+// Everything else moves into the overflow sheet instead of extending the tab
+// bar horizontally. Wider screens use a persistent sidebar. This is a usability
+// decision only: RequireCapability and database policies remain the security
+// boundary.
 
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useLanguage } from '../lib/i18n';
 import { Link, useRouter } from '../lib/router';
-import { navItemsFor } from '../lib/permissions';
+import { navItemsFor, type NavItem } from '../lib/permissions';
 import { useSession } from '../lib/session';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useArtistScope } from '../lib/artist-scope';
@@ -22,24 +24,79 @@ const NAV_KEYS: Record<string, string> = {
   '/activity': 'nav.activity',
 };
 
+// Four core destinations plus one overflow action. New CRM sections belong in
+// the overflow sheet automatically unless deliberately promoted here.
+const MOBILE_PRIMARY_PATHS = new Set(['/', '/enquiries', '/sessions', '/clients']);
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { profile, signOut } = useSession();
   const { path } = useRouter();
-  const { t, label } = useLanguage();
+  const { t, label, language } = useLanguage();
   const items = navItemsFor(profile?.role);
   const { artists, selectedArtistId, loading, setSelectedArtistId } = useArtistScope();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const primaryItems = items.filter((item) => MOBILE_PRIMARY_PATHS.has(item.path));
+  const overflowItems = items.filter((item) => !MOBILE_PRIMARY_PATHS.has(item.path));
+  const overflowIsActive = overflowItems.some((item) => isActivePath(item.path, path));
+  const activeItem = items.find((item) => isActivePath(item.path, path));
+  const profileName = profile?.display_name || profile?.email || 'CRM';
+  const moreLabel = language === 'ru' ? 'Ещё' : 'More';
+
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [path]);
+
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [moreOpen]);
 
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="topbar-identity">
-          <h1>Vishar CRM</h1>
-          <div className="who">
-            {profile?.display_name || profile?.email}
-            {profile ? ` · ${label('role', profile.role)}` : ''}
-          </div>
+      <aside className="sidebar" aria-label={t('nav.sections')}>
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-mark" aria-hidden="true">V</span>
+          <span>
+            <strong>Vishar</strong>
+            <small>CRM</small>
+          </span>
         </div>
-        <div className="topbar-actions">
+        <nav className="sidebar-nav">
+          {items.map((item) => (
+            <NavigationLink key={item.path} item={item} path={path} label={t(NAV_KEYS[item.path] ?? item.label)} />
+          ))}
+        </nav>
+        <div className="sidebar-user">
+          <span className="profile-avatar" aria-hidden="true">{initials(profileName)}</span>
+          <span className="sidebar-user-copy">
+            <strong>{profileName}</strong>
+            {profile ? <small>{label('role', profile.role)}</small> : null}
+          </span>
+        </div>
+      </aside>
+
+      <div className="app-workspace">
+        <header className="topbar">
+          <div className="topbar-main">
+            <div className="topbar-identity">
+              <h1>
+                <span className="topbar-brand">Vishar CRM</span>
+                <span className="topbar-page-title">{activeItem ? t(NAV_KEYS[activeItem.path] ?? activeItem.label) : 'Vishar CRM'}</span>
+              </h1>
+            </div>
+            <ProfileMenu
+              profileName={profileName}
+              roleLabel={profile ? label('role', profile.role) : ''}
+              signOutLabel={t('common.signOut')}
+              onSignOut={() => { void signOut(); }}
+            />
+          </div>
+
           <div className="artist-scope-control">
             <label htmlFor="artist-scope">{t('artistScope.label')}</label>
             <select
@@ -55,20 +112,168 @@ export function AppShell({ children }: { children: ReactNode }) {
               ))}
             </select>
           </div>
-          <LanguageSwitcher />
-          <button type="button" onClick={() => { void signOut(); }}>{t('common.signOut')}</button>
-        </div>
-      </header>
+        </header>
 
-      <main className="container" id="main">{children}</main>
+        <main className="container" id="main">{children}</main>
+      </div>
 
       <nav className="tabbar" aria-label={t('nav.sections')}>
-        {items.map((item) => (
-          <Link key={item.path} to={item.path} ariaCurrent={path === item.path ? 'page' : undefined}>
-            {t(NAV_KEYS[item.path] ?? item.label)}
-          </Link>
+        {primaryItems.map((item) => (
+          <NavigationLink
+            key={item.path}
+            item={item}
+            path={path}
+            label={t(NAV_KEYS[item.path] ?? item.label)}
+            mobile
+          />
         ))}
+        {overflowItems.length > 0 ? (
+          <button
+            type="button"
+            className="tabbar-item"
+            aria-expanded={moreOpen}
+            aria-controls="mobile-more-navigation"
+            aria-current={overflowIsActive ? 'page' : undefined}
+            onClick={() => setMoreOpen((open) => !open)}
+          >
+            <NavIcon path="more" />
+            <span>{moreLabel}</span>
+          </button>
+        ) : null}
       </nav>
+
+      {moreOpen && overflowItems.length > 0 ? (
+        <>
+          <button
+            type="button"
+            className="nav-sheet-backdrop"
+            aria-label={t('nav.sections')}
+            onClick={() => setMoreOpen(false)}
+          />
+          <section
+            id="mobile-more-navigation"
+            className="nav-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('nav.sections')}
+          >
+            <div className="nav-sheet-handle" aria-hidden="true" />
+            <h2>{t('nav.sections')}</h2>
+            <nav className="nav-sheet-list">
+              {overflowItems.map((item) => (
+                <NavigationLink
+                  key={item.path}
+                  item={item}
+                  path={path}
+                  label={t(NAV_KEYS[item.path] ?? item.label)}
+                  sheet
+                />
+              ))}
+            </nav>
+          </section>
+        </>
+      ) : null}
     </div>
   );
+}
+
+function ProfileMenu({
+  profileName,
+  roleLabel,
+  signOutLabel,
+  onSignOut,
+}: {
+  profileName: string;
+  roleLabel: string;
+  signOutLabel: string;
+  onSignOut: () => void;
+}) {
+  return (
+    <details className="profile-menu">
+      <summary className="profile-trigger" aria-label={profileName}>
+        <span className="profile-avatar" aria-hidden="true">{initials(profileName)}</span>
+        <span className="profile-trigger-copy">
+          <strong>{profileName}</strong>
+          {roleLabel ? <small>{roleLabel}</small> : null}
+        </span>
+        <span className="profile-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div className="profile-panel">
+        <div className="profile-panel-user">
+          <strong>{profileName}</strong>
+          {roleLabel ? <small>{roleLabel}</small> : null}
+        </div>
+        <LanguageSwitcher />
+        <button type="button" className="profile-signout" onClick={onSignOut}>{signOutLabel}</button>
+      </div>
+    </details>
+  );
+}
+
+function NavigationLink({
+  item,
+  path,
+  label,
+  mobile = false,
+  sheet = false,
+}: {
+  item: NavItem;
+  path: string;
+  label: string;
+  mobile?: boolean;
+  sheet?: boolean;
+}) {
+  const active = isActivePath(item.path, path);
+  const className = sheet ? 'nav-sheet-link' : mobile ? 'tabbar-item' : 'sidebar-link';
+  return (
+    <Link to={item.path} className={className} ariaCurrent={active ? 'page' : undefined}>
+      <NavIcon path={item.path} />
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+function isActivePath(itemPath: string, currentPath: string): boolean {
+  if (itemPath === '/') return currentPath === '/';
+  return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`);
+}
+
+function initials(value: string): string {
+  const parts = value.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'V';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function NavIcon({ path }: { path: string }) {
+  const common = {
+    width: 22,
+    height: 22,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+
+  switch (path) {
+    case '/':
+      return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>;
+    case '/enquiries':
+      return <svg {...common}><path d="M4 5h16v14H4z" /><path d="M4 13h4l2 3h4l2-3h4" /></svg>;
+    case '/clients':
+      return <svg {...common}><circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><circle cx="17" cy="9" r="2.5" /><path d="M15.5 14.5A5 5 0 0 1 21 19" /></svg>;
+    case '/projects':
+      return <svg {...common}><path d="M3 6.5h7l2 2h9v10.5H3z" /><path d="M3 6.5V5h7l2 2" /></svg>;
+    case '/sessions':
+      return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /><path d="M8 14h3M8 17h6" /></svg>;
+    case '/users':
+      return <svg {...common}><circle cx="12" cy="8" r="3" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /><path d="M19 5v4M17 7h4" /></svg>;
+    case '/activity':
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+    default:
+      return <svg {...common}><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></svg>;
+  }
 }
