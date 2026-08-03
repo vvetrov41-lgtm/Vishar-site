@@ -88,6 +88,7 @@ set local session_replication_role = replica;
 delete from crm_private.activity_enquiry_artist_history;
 delete from crm_private.activity_project_artist_history;
 delete from crm_private.activity_session_artist_history;
+delete from crm_private.profile_access;
 delete from storage.objects where bucket_id = 'crm-files';
 
 delete from public.payment_transactions;
