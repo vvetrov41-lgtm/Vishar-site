@@ -176,7 +176,7 @@ jobs:
 
       - name: Install artist binding, remove legacy bindings and deploy Worker
         id: worker
-        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr177-staging-validation.sh worker
+        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr177-staging-post-gate-worker.sh
 
       - name: Build and deploy exact booking and CRM artifacts
         id: pages
