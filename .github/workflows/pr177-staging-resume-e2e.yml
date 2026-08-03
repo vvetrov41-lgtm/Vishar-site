@@ -15,12 +15,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  retained-staging-resume:
-    name: Isolated hosted gates, deploy and E2E
+  retained-staging-post-gate:
+    name: Metadata, staging deploy and hosted E2E
     if: >-
       github.event.action == 'submitted' &&
       github.event.review.state == 'commented' &&
-      github.event.review.body == 'RESUME PR177 RETAINED STAGING AT 0025' &&
+      github.event.review.body == 'CONTINUE PR177 AFTER HOSTED GATE' &&
       github.event.sender.login == 'vvetrov41-lgtm' &&
       github.event.pull_request.number == 177 &&
       github.event.pull_request.state == 'open' &&
@@ -28,7 +28,7 @@ jobs:
       github.event.pull_request.head.ref == 'agent/multi-artist-payments-foundation' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     env:
       APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
       CONFIRMATION: ${{ github.event.review.body }}
@@ -51,12 +51,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ "$CONFIRMATION" = "RESUME PR177 RETAINED STAGING AT 0025" ]
+          [ "$CONFIRMATION" = "CONTINUE PR177 AFTER HOSTED GATE" ]
           [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
           jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
             .action == "submitted"
             and .review.state == "commented"
-            and .review.body == "RESUME PR177 RETAINED STAGING AT 0025"
+            and .review.body == "CONTINUE PR177 AFTER HOSTED GATE"
             and .sender.login == "vvetrov41-lgtm"
             and .pull_request.number == 177
             and .pull_request.state == "open"
@@ -73,7 +73,7 @@ jobs:
           ref: ${{ env.APPROVED_SHA }}
           fetch-depth: 0
 
-      - name: Verify PR state, ancestry and completed normal CI
+      - name: Verify PR state, ancestry and normal CI
         id: verify
         shell: bash
         env:
@@ -81,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
-          git merge-base --is-ancestor cc84f64948a5b26529d2a440cdc0aa85ea99c760 "$APPROVED_SHA"
+          git merge-base --is-ancestor 5a7c455f556c243382cdc751d81dd1dd051d0bb9 "$APPROVED_SHA"
 
           gh api "repos/$GITHUB_REPOSITORY/pulls/177" > "$RUNNER_TEMP/pr.json"
           jq -e --arg sha "$APPROVED_SHA" '
@@ -100,7 +100,7 @@ jobs:
             ' "$RUNNER_TEMP/runs.json" >/dev/null
           done
 
-      - name: Verify encrypted staging configuration is present
+      - name: Verify encrypted staging configuration
         id: credentials
         shell: bash
         run: |
@@ -135,37 +135,68 @@ jobs:
         id: npm
         run: npm ci
 
-      - name: Verify 0025 and run isolated hosted pgTAP and lint
-        id: gate
-        run: bash scripts/pr177-staging-resume-validation.sh
+      - name: Verify successful hosted gate and migration state
+        id: precondition
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/30815404537" > "$RUNNER_TEMP/gate-run.json"
+          jq -e '
+            .event == "pull_request_review"
+            and .status == "completed"
+            and .conclusion == "failure"
+          ' "$RUNNER_TEMP/gate-run.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/30815404537/jobs?per_page=100" > "$RUNNER_TEMP/gate-jobs.json"
+          jq -e '
+            any(.jobs[].steps[]?;
+              .name == "Verify 0025 and run isolated hosted pgTAP and lint"
+              and .status == "completed"
+              and .conclusion == "success"
+            )
+          ' "$RUNNER_TEMP/gate-jobs.json" >/dev/null
+
+          npx supabase@2.111.0 link --project-ref gwaliusblwrzisrwnsvs
+          npx supabase@2.111.0 migration list --linked > "$RUNNER_TEMP/migrations.txt"
+          mapfile -t remote_versions < <(
+            awk -F'|' '{gsub(/[[:space:]`]/,"",$2); if ($2 ~ /^[0-9][0-9][0-9][0-9]$/) print $2}' \
+              "$RUNNER_TEMP/migrations.txt"
+          )
+          [ "${#remote_versions[@]}" -eq 25 ]
+          for n in $(seq -w 1 25); do
+            printf '%s\n' "${remote_versions[@]}" | grep -Fxq "00$n"
+          done
 
       - name: Configure trusted source and metadata-only artist route
         id: metadata
-        run: bash scripts/pr177-staging-validation.sh metadata
+        run: bash scripts/pr177-staging-post-gate-metadata.sh
 
       - name: Install artist binding, remove legacy bindings and deploy Worker
         id: worker
-        run: bash scripts/pr177-staging-validation.sh worker
+        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr177-staging-validation.sh worker
 
       - name: Build and deploy exact booking and CRM artifacts
         id: pages
-        run: bash scripts/pr177-staging-validation.sh pages
+        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr177-staging-validation.sh pages
 
       - name: Run routed, fail-closed, CRM, RLS, Storage, audit and edge E2E
         id: e2e
-        run: bash scripts/pr177-staging-validation.sh e2e
+        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr177-staging-validation.sh e2e
 
-      - name: Upload safe retained-staging resume evidence
+      - name: Upload safe post-gate evidence
         id: evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pr177-retained-staging-resume-evidence-${{ env.APPROVED_SHA }}
+          name: pr177-retained-staging-post-gate-evidence-${{ env.APPROVED_SHA }}
           path: ${{ runner.temp }}/pr177-staging-evidence
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Record safe resume result on PR 177
+      - name: Record safe post-gate result on PR 177
         if: always()
         shell: bash
         env:
@@ -177,7 +208,7 @@ jobs:
           CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
           NODE_OUTCOME: ${{ steps.node.outcome }}
           NPM_OUTCOME: ${{ steps.npm.outcome }}
-          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          PRECONDITION_OUTCOME: ${{ steps.precondition.outcome }}
           METADATA_OUTCOME: ${{ steps.metadata.outcome }}
           WORKER_OUTCOME: ${{ steps.worker.outcome }}
           PAGES_OUTCOME: ${{ steps.pages.outcome }}
@@ -193,20 +224,19 @@ jobs:
             noroute="$(jq -r '.no_route_reference' "$evidence/summary.json")"
           fi
 
-          body="$RUNNER_TEMP/pr177-resume-result.md"
+          body="$RUNNER_TEMP/pr177-post-gate-result.md"
           cat > "$body" <<EOF
-          <!-- pr177-retained-staging-resume-e2e -->
-          ### PR #177 retained hosted staging resume
+          <!-- pr177-retained-staging-post-gate-e2e -->
+          ### PR #177 retained hosted staging post-gate continuation
 
           - Exact reviewed SHA: ${APPROVED_SHA}
           - GitHub run ID: ${GITHUB_RUN_ID}
           - GitHub run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           - Guarded job: ${JOB_STATUS}
-          - Step outcomes: guard=${GUARD_OUTCOME:-unknown}, checkout=${CHECKOUT_OUTCOME:-unknown}, verify=${VERIFY_OUTCOME:-unknown}, credentials=${CREDENTIALS_OUTCOME:-unknown}, node=${NODE_OUTCOME:-unknown}, npm=${NPM_OUTCOME:-unknown}, isolated_gate=${GATE_OUTCOME:-unknown}, metadata=${METADATA_OUTCOME:-unknown}, worker=${WORKER_OUTCOME:-unknown}, pages=${PAGES_OUTCOME:-unknown}, e2e=${E2E_OUTCOME:-unknown}, evidence=${EVIDENCE_OUTCOME:-unknown}
+          - Step outcomes: guard=${GUARD_OUTCOME:-unknown}, checkout=${CHECKOUT_OUTCOME:-unknown}, verify=${VERIFY_OUTCOME:-unknown}, credentials=${CREDENTIALS_OUTCOME:-unknown}, node=${NODE_OUTCOME:-unknown}, npm=${NPM_OUTCOME:-unknown}, hosted_gate_precondition=${PRECONDITION_OUTCOME:-unknown}, metadata=${METADATA_OUTCOME:-unknown}, worker=${WORKER_OUTCOME:-unknown}, pages=${PAGES_OUTCOME:-unknown}, e2e=${E2E_OUTCOME:-unknown}, evidence=${EVIDENCE_OUTCOME:-unknown}
           - Database target: retained vishar-crm-staging only
           - Confirmed migrations: 0001-0025
-          - Hosted pgTAP expectation: 933 in transactionally isolated retained-state view
-          - PostgreSQL lint level: error
+          - Prior hosted gate: 933/933 pgTAP and error-level lint passed
           - Worker target: tattooai-preview
           - Pages targets: vishar-booking-staging, vishar-crm-staging
           - Routed synthetic enquiry: ${positive}
