@@ -34,6 +34,21 @@ insert into public.profiles (id, email, display_name, role, is_active) values
   ('44444444-4444-4444-8444-444444444444', 'disabled@example.test', 'Former', 'booking_manager', false);
 -- 55555555 deliberately has an auth user but NO profile row.
 
+-- Artist access is explicit. The owner trigger grants both artist scopes; these
+-- fixtures model one shared operational manager and one read-only colleague for
+-- Vladimir without introducing any production fallback assignment.
+insert into public.artist_memberships (
+  profile_id, artist_id, access_level,
+  can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active
+) values
+  ('22222222-2222-4222-8222-222222222222', 'a1111111-1111-4111-8111-111111111111',
+   'manager', false, false, true, true, true),
+  ('33333333-3333-4333-8333-333333333333', 'a1111111-1111-4111-8111-111111111111',
+   'read_only', false, false, false, false, true),
+  ('44444444-4444-4444-8444-444444444444', 'a1111111-1111-4111-8111-111111111111',
+   'manager', false, false, true, true, true);
+
 create function pg_temp.claims(p text) returns void language sql as $$
   select set_config('request.jwt.claims', p, true)::void;
 $$;
@@ -482,6 +497,8 @@ insert into expected_function_acl values
   ('public.current_crm_role()', false, true, true),
   ('public.is_owner()', false, true, true),
   ('public.can_manage_crm()', false, true, true),
+  ('public.can_access_client(uuid)', false, true, true),
+  ('public.can_manage_client(uuid)', false, true, true),
   ('public.crm_storage_object_is_known(text)', false, true, true),
   ('public.crm_storage_object_readable(text)', false, true, true),
   ('public.crm_storage_object_writable(text)', false, true, true),
