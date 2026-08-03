@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: pr177-staging-preflight
@@ -33,6 +34,7 @@ jobs:
           echo "PR177_PREFLIGHT_SHA=$GITHUB_SHA"
 
       - name: Verify retained staging credentials are available
+        id: credentials
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -61,6 +63,7 @@ jobs:
         run: npm ci
 
       - name: Snapshot linked migration history
+        id: migrations
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
@@ -86,6 +89,7 @@ jobs:
           PY
 
       - name: Snapshot Worker and Pages deployments
+        id: cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -97,6 +101,7 @@ jobs:
           npx wrangler pages deployment list --project-name vishar-crm-staging --environment production --json
 
       - name: Snapshot Access, WAF, rate limit and Worker subdomain
+        id: edge
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -119,3 +124,26 @@ jobs:
 
           subdomain_json="$(curl --fail-with-body -sS "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/services/tattooai-preview/environments/production/subdomain")"
           jq -c '{workers_dev_enabled:(.result.enabled // null),previews_enabled:(.result.previews_enabled // null)}' <<<"$subdomain_json"
+
+      - name: Record safe preflight result on PR 177
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          JOB_STATUS: ${{ job.status }}
+          CREDENTIAL_STATUS: ${{ steps.credentials.outcome }}
+          MIGRATION_STATUS: ${{ steps.migrations.outcome }}
+          CLOUDFLARE_STATUS: ${{ steps.cloudflare.outcome }}
+          EDGE_STATUS: ${{ steps.edge.outcome }}
+        run: |
+          gh pr comment 177 --repo "$GH_REPO" --body "<!-- pr177-staging-preflight -->
+          ### PR #177 retained staging preflight
+
+          - Exact commit: \`$GITHUB_SHA\`
+          - Job: **$JOB_STATUS**
+          - Required staging credential presence: \`$CREDENTIAL_STATUS\`
+          - Linked migration history snapshot: \`$MIGRATION_STATUS\`
+          - Worker and Pages snapshot: \`$CLOUDFLARE_STATUS\`
+          - Access, WAF, rate-limit and workers.dev snapshot: \`$EDGE_STATUS\`
+
+          No credential or binding value is included."
