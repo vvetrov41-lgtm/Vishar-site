@@ -49,6 +49,18 @@ insert into public.profiles (id, email, role, is_active) values
   ('22222222-2222-4222-8222-222222222222', 'manager@example.test', 'booking_manager', true),
   ('33333333-3333-4333-8333-333333333333', 'readonly@example.test', 'read_only', true);
 
+-- Storage access is derived from the file manifest's artist, not from the
+-- global CRM role. Give these test identities explicit Vladimir memberships.
+insert into public.artist_memberships (
+  profile_id, artist_id, access_level,
+  can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active
+) values
+  ('22222222-2222-4222-8222-222222222222', 'a1111111-1111-4111-8111-111111111111',
+   'manager', false, false, true, false, true),
+  ('33333333-3333-4333-8333-333333333333', 'a1111111-1111-4111-8111-111111111111',
+   'read_only', false, false, false, false, true);
+
 create function pg_temp.claims(p text) returns void language sql as $$
   select set_config('request.jwt.claims', p, true)::void;
 $$;
