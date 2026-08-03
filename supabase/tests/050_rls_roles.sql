@@ -548,6 +548,7 @@ insert into expected_function_acl values
   ('public.record_manual_payment(uuid,uuid,numeric,timestamptz,text)', false, true, false),
   ('public.record_manual_refund(uuid,uuid,numeric,boolean,timestamptz,text)', false, true, false),
   ('public.cancel_payment_request(uuid)', false, true, false),
+  ('public.transfer_work_to_artist(uuid,uuid,uuid,text)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
