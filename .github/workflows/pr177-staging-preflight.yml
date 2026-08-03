@@ -106,12 +106,13 @@ jobs:
           npx wrangler secret list --config wrangler.preview.toml --env preview --json > worker-secrets.json
           npx wrangler pages deployment list --project-name vishar-booking-staging --environment production --json > booking-pages.json
           npx wrangler pages deployment list --project-name vishar-crm-staging --environment production --json > crm-pages.json
-          echo "worker=$(jq -c '.[0] | {id,created_on,source}' worker-deployments.json)" >> "$GITHUB_OUTPUT"
-          echo "bindings=$(jq -c '[.[] | .name] | sort' worker-secrets.json)" >> "$GITHUB_OUTPUT"
-          echo "booking=$(jq -c '.[0] | {id,environment,created_on,project_name}' booking-pages.json)" >> "$GITHUB_OUTPUT"
-          echo "crm=$(jq -c '.[0] | {id,environment,created_on,project_name}' crm-pages.json)" >> "$GITHUB_OUTPUT"
+          echo "worker=$(jq -c '[.. | objects | select(has("id")) | {id,created_on,source}] | .[0] // {}' worker-deployments.json)" >> "$GITHUB_OUTPUT"
+          echo "bindings=$(jq -c '[.. | objects | .name? // empty] | unique | sort' worker-secrets.json)" >> "$GITHUB_OUTPUT"
+          echo "booking=$(jq -c '[.. | objects | select(has("id")) | {id,environment,created_on,project_name}] | .[0] // {}' booking-pages.json)" >> "$GITHUB_OUTPUT"
+          echo "crm=$(jq -c '[.. | objects | select(has("id")) | {id,environment,created_on,project_name}] | .[0] // {}' crm-pages.json)" >> "$GITHUB_OUTPUT"
 
       - name: Snapshot Access, WAF, rate limit and Worker subdomain
+        if: always() && steps.credentials.outcome == 'success'
         id: edge
         shell: bash
         env:
