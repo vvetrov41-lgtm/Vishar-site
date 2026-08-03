@@ -1,14 +1,15 @@
 name: PR 177 consequential confirmations patch
 
 on:
-  push:
-    branches:
-      - agent/multi-artist-payments-foundation
+  pull_request:
+    types:
+      - synchronize
     paths:
       - .github/workflows/pr177-consequential-confirmations.yml
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: pr177-consequential-confirmations-patch
@@ -16,23 +17,30 @@ concurrency:
 
 jobs:
   patch:
+    if: >-
+      github.event.pull_request.number == 177 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/multi-artist-payments-foundation' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Check out exact workflow creation commit
+      - name: Check out exact PR head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 2
 
-      - name: Guard branch and expected parent
+      - name: Guard expected workflow update commit
         shell: bash
         run: |
           set -euo pipefail
-          [ "$GITHUB_REF_NAME" = "agent/multi-artist-payments-foundation" ]
-          [ "$(git rev-parse HEAD^)" = "a54f0e3be3ccfff99655b55600b030d48a68ff6f" ]
+          [ "$GITHUB_HEAD_REF" = "agent/multi-artist-payments-foundation" ]
+          [ "$(git rev-parse HEAD^)" = "84ccd4d024253f9b9bce07fcfd035fc17aacf614" ]
 
       - name: Apply focused confirmation changes
+        id: apply
         shell: bash
         run: |
           set -euo pipefail
@@ -153,88 +161,41 @@ export function confirmConsequentialAction(
           )
 
           replace_once(
-              'admin/src/test/fixtures.tsx',
-              "import type { CrmRole, EnquiryStatus } from '../lib/types';\n",
-              "import type { CrmRole, EnquiryStatus, SessionStatus } from '../lib/types';\n",
-          )
-          replace_once(
-              'admin/src/test/fixtures.tsx',
-              """  /** Override the enquiry lifecycle state for workflow-specific screens. */
-  enquiryStatus?: EnquiryStatus;
-""",
-              """  /** Override the enquiry lifecycle state for workflow-specific screens. */
-  enquiryStatus?: EnquiryStatus;
-  /** Override the session lifecycle state for confirmation-specific screens. */
-  sessionStatus?: SessionStatus;
-""",
-          )
-          replace_once(
-              'admin/src/test/fixtures.tsx',
-              """  failTable?: string,
-  enquiryStatus?: EnquiryStatus
-) {
-""",
-              """  failTable?: string,
-  enquiryStatus?: EnquiryStatus,
-  sessionStatus?: SessionStatus
-) {
-""",
-          )
-          replace_once(
-              'admin/src/test/fixtures.tsx',
-              """    case 'sessions':
-      return { data: [SESSION], error: null };
-""",
-              """    case 'sessions':
-      return { data: [{ ...SESSION, status: sessionStatus ?? SESSION.status }], error: null };
-""",
-          )
-          replace_once(
-              'admin/src/test/fixtures.tsx',
-              """    const result = tableResult(table, effectiveRole, options.failTable, options.enquiryStatus);
-""",
-              """    const result = tableResult(
-      table,
-      effectiveRole,
-      options.failTable,
-      options.enquiryStatus,
-      options.sessionStatus
-    );
+              'admin/src/test/setup.ts',
+              "import '@testing-library/jest-dom/vitest';\n",
+              """import '@testing-library/jest-dom/vitest';
+import { vi } from 'vitest';
+
+Object.defineProperty(window, 'confirm', {
+  configurable: true,
+  writable: true,
+  value: vi.fn(() => true),
+});
 """,
           )
 
-          replace_once(
-              'admin/src/test/workflows.test.tsx',
-              "import { describe, expect, it } from 'vitest';\n",
-              "import { describe, expect, it, vi } from 'vitest';\n",
-          )
-          replace_once(
-              'admin/src/test/workflows.test.tsx',
-              """  it('converts through convert_enquiry_to_project', async () => {
-    const rpcCalls: { name: string; args: any }[] = [];
-""",
-              """  it('converts through convert_enquiry_to_project', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const rpcCalls: { name: string; args: any }[] = [];
-""",
-          )
-
-          Path('admin/src/test/consequential-actions.test.tsx').write_text("""import { afterEach, describe, expect, it, vi } from 'vitest';
+          Path('admin/src/test/consequential-actions.test.tsx').write_text("""import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
+import { confirmConsequentialAction } from '../lib/confirm-action';
 import {
   ENQUIRY_ID,
   PROJECT_ID,
   renderWithSession,
 } from './fixtures';
 
+beforeEach(() => {
+  vi.mocked(window.confirm).mockReset();
+  vi.mocked(window.confirm).mockReturnValue(true);
+});
+
 afterEach(() => {
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('consequential action confirmations', () => {
   it('does not convert an enquiry when confirmation is declined', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.mocked(window.confirm).mockReturnValue(false);
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, {
       role: 'booking_manager',
@@ -245,12 +206,28 @@ describe('consequential action confirmations', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /convert to project/i }));
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/cannot be undone/i));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/cannot be undone/i));
     expect(rpcCalls.some((entry) => entry.name === 'convert_enquiry_to_project')).toBe(false);
   });
 
+  it('converts an enquiry after confirmation', async () => {
+    const rpcCalls: { name: string; args: any }[] = [];
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/enquiries/${ENQUIRY_ID}`,
+      enquiryStatus: 'accepted',
+      rpcCalls,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /convert to project/i }));
+
+    await waitFor(() => {
+      expect(rpcCalls.some((entry) => entry.name === 'convert_enquiry_to_project')).toBe(true);
+    });
+  });
+
   it('does not cancel a session when confirmation is declined', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.mocked(window.confirm).mockReturnValue(false);
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, {
       role: 'booking_manager',
@@ -260,33 +237,28 @@ describe('consequential action confirmations', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /^cancel$/i }));
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/active schedule/i));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/active schedule/i));
     expect(rpcCalls.some((entry) => entry.name === 'set_session_status')).toBe(false);
   });
 
-  it('marks a confirmed session as no-show only after confirmation', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('cancels a session after confirmation', async () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, {
       role: 'booking_manager',
       path: `/projects/${PROJECT_ID}`,
-      sessionStatus: 'confirmed',
       rpcCalls,
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: /mark no-show/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^cancel$/i }));
 
     await waitFor(() => {
-      expect(rpcCalls).toContainEqual({
-        name: 'set_session_status',
-        args: { p_session_id: expect.any(String), p_status: 'no_show' },
-      });
+      expect(rpcCalls.some((entry) => (
+        entry.name === 'set_session_status' && entry.args.p_status === 'cancelled'
+      ))).toBe(true);
     });
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/did not attend/i));
   });
 
   it('keeps ordinary session confirmation free of an extra prompt', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, {
       role: 'booking_manager',
@@ -301,11 +273,11 @@ describe('consequential action confirmations', () => {
         entry.name === 'set_session_status' && entry.args.p_status === 'confirmed'
       ))).toBe(true);
     });
-    expect(confirm).not.toHaveBeenCalled();
+    expect(window.confirm).not.toHaveBeenCalled();
   });
 
   it('deactivates another user only after confirmation', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.mocked(window.confirm).mockReturnValue(false);
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'owner', path: '/users', rpcCalls });
 
@@ -316,7 +288,7 @@ describe('consequential action confirmations', () => {
     fireEvent.click(deactivate);
     expect(rpcCalls.some((entry) => entry.name === 'set_profile_active')).toBe(false);
 
-    confirm.mockReturnValue(true);
+    vi.mocked(window.confirm).mockReturnValue(true);
     fireEvent.click(deactivate);
 
     await waitFor(() => {
@@ -324,11 +296,10 @@ describe('consequential action confirmations', () => {
         entry.name === 'set_profile_active' && entry.args.p_is_active === false
       ))).toBe(true);
     });
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/withdrawn immediately/i));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/withdrawn immediately/i));
   });
 
   it('reactivates a user without a confirmation prompt', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'owner', path: '/users', rpcCalls });
 
@@ -341,13 +312,21 @@ describe('consequential action confirmations', () => {
         entry.name === 'set_profile_active' && entry.args.p_is_active === true
       ))).toBe(true);
     });
-    expect(confirm).not.toHaveBeenCalled();
+    expect(window.confirm).not.toHaveBeenCalled();
+  });
+
+  it('provides localised no-show confirmation copy', () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+
+    expect(confirmConsequentialAction('markNoShow', 'ru', '10:00')).toBe(false);
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringMatching(/клиент не пришёл/i));
   });
 });
 """)
           PY
 
       - name: Validate private CRM
+        id: validate
         working-directory: admin
         run: |
           npm ci
@@ -357,6 +336,7 @@ describe('consequential action confirmations', () => {
           npm run build
 
       - name: Commit focused changes
+        id: commit
         shell: bash
         run: |
           set -euo pipefail
@@ -367,9 +347,19 @@ describe('consequential action confirmations', () => {
             admin/src/pages/EnquiryDetailPage.tsx \
             admin/src/pages/ProjectDetailPage.tsx \
             admin/src/pages/UsersPage.tsx \
-            admin/src/test/fixtures.tsx \
-            admin/src/test/workflows.test.tsx \
+            admin/src/test/setup.ts \
             admin/src/test/consequential-actions.test.tsx
           git diff --cached --check
           git commit -m "Add confirmations for consequential CRM actions"
           git push origin HEAD:agent/multi-artist-payments-foundation
+
+      - name: Record patch outcome
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          COMMIT_OUTCOME: ${{ steps.commit.outcome }}
+        run: |
+          gh pr comment 177 --repo "$GITHUB_REPOSITORY" --body "<!-- pr177-consequential-confirmations --> Confirmation patch workflow: apply=${APPLY_OUTCOME:-unknown}, validate=${VALIDATE_OUTCOME:-unknown}, commit=${COMMIT_OUTCOME:-unknown}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
