@@ -1,340 +1,288 @@
-# CRM click-path audit — 2026-08-03
+# CRM click-path and readiness audit
 
 - **Repository:** `vvetrov41-lgtm/Vishar-site`
 - **Branch:** `agent/multi-artist-payments-foundation`
-- **Starting head:** `c78f03dad0388f5ad5471b141b5cc0b193fcd99b`
+- **Original audit date:** 2026-08-03
+- **Readiness update:** 2026-08-04
+- **Original audited head:** `c78f03dad0388f5ad5471b141b5cc0b193fcd99b`
+- **Implementation head reviewed for this update:** `0fa435a65e6b93dd708b2a5e22be40e77c42bbf2`
+- **Last successfully deployed retained-staging head:** `fee84a811334b46dcb2e8281706e61a0ae1bf889`
 - **Related decision:** `docs/crm/adr/0001-responsive-navigation-and-artist-scope.md`
-- **Audit type:** implementation and route audit against the current CRM source
+- **Audit type:** source, route, automated interaction and deployment-readiness audit
 
-This pass evaluates the current responsive shell, route tree, role-filtered navigation and critical operational journeys. It does not replace an authenticated hosted-device pass through Cloudflare Access.
+This document records the original click-path findings and their implementation status. It does not claim that a real authenticated iPhone or iPad Safari pass has been completed.
 
 ## Scope
 
 ### Roles
 
-- owner
-- booking manager
-- read only
+- owner;
+- booking manager;
+- read only.
 
 ### Responsive surfaces
 
-- narrow mobile: `320–380px`
-- phone and portrait tablet: below `900px`
-- wide tablet and desktop: `900px` and above
+- narrow mobile: `320–380px`;
+- phone and portrait tablet: below `900px`;
+- wide tablet and desktop: `900px` and above.
 
 ### Critical tasks
 
-- change artist context;
-- review and progress a new enquiry;
-- assign an enquiry;
-- convert an accepted enquiry into a project;
-- open a client and move between related records;
+- select artist context;
+- review, assign and progress an enquiry;
+- convert an enquiry into a project;
+- open a shared client and related records;
 - schedule and progress a session;
-- record a deposit status;
-- reach users and activity according to role;
-- return safely from detail routes.
+- reach owner administration according to capability;
+- return safely from detail routes;
+- avoid accidental consequential actions.
 
-## Current route and navigation model
+## Current navigation model
 
-### Primary mobile destinations
+### Mobile primary destinations
 
-The implementation currently derives primary destinations by filtering the general navigation list. The resulting order is:
+The order is explicit and no longer inherited from desktop navigation:
 
 1. Dashboard
 2. Enquiries
-3. Clients
-4. Sessions
+3. Sessions
+4. Clients
 5. More
 
-The architecture target is Dashboard, Enquiries, Sessions, Clients, More. The current use of a `Set` controls membership but not target ordering.
+The bottom navigation remains capped at five actions.
 
-### Overflow destinations
+### Mobile overflow
 
-For an owner, `More` currently contains:
+Visible destinations are grouped after capability filtering:
 
-- Projects
-- Users
-- Activity
+- **Operations:** Projects, Activity where permitted;
+- **Finance:** reserved for future Finance and Payments routes;
+- **Administration:** Users and future Integrations or Settings routes.
 
-Role filtering removes destinations that the profile cannot use. Future finance, integrations and settings will also need an overflow grouping rule before they are exposed.
+Empty groups are not rendered. Finance is not exposed because its route scope and click paths have not yet been approved.
+
+### Page scope
+
+- **Artist-scoped:** Dashboard, Enquiries, Projects, Sessions and Activity.
+- **Shared:** Clients and client details.
+- **Global:** Users and other administration that does not consume artist scope.
+
+Shared and global pages show explicit context instead of a misleading artist selector.
 
 ### Detail routes
 
-- `/enquiries/:id`
-- `/clients/:id`
-- `/projects/:id`
+- `/enquiries/:id`;
+- `/clients/:id`;
+- `/projects/:id`.
 
-Parent destinations remain active because the shell uses prefix matching.
+Enquiry, client and project details include a stable contextual return link. Enquiry and project details are record-authoritative: they show the record artist and explain a mismatch with the selected global filter.
 
-## Journey audit
+## Original P1 findings — completion status
 
-## 1. Switch artist context
+### P1.1 Artist-scope applicability was ambiguous — complete
 
-**Path:** current page → artist selector → choose artist
+- The selector is shown only on artist-scoped pages.
+- Clients show a shared-record notice.
+- Users and global administration show a global-section notice.
+- UI scope remains a convenience filter; RLS remains authoritative.
 
-**Minimum interaction count:** 2 taps
+### P1.2 Detail routes could conflict with selected scope — complete
 
-**What works**
+- Enquiry and project details show the record artist.
+- A selected-scope mismatch is explicit.
+- The user can deliberately switch the global filter to the record artist.
+- An inaccessible artist remains record-authoritative and does not weaken database access control.
 
-- The selector is full-width on mobile.
-- Values come from accessible active artists.
-- Persisted values are revalidated before reuse.
-- Operational list pages refetch when the selected artist changes.
+### P1.3 Critical enquiry actions were buried — complete
 
-**Friction and risk**
+- Status transitions, assignment and conversion are grouped near the top of enquiry detail.
+- Long contact, project and reference-image content remains below the action area.
+- Eligible conversion still depends on role, intake state and enquiry status.
 
-- The selector remains visible on Clients and Users even though those results are not filtered by `selectedArtistId`.
-- A user can switch artist while viewing an enquiry or project detail, but those detail loaders do not depend on the selected scope. The header and record can therefore describe different contexts without explanation.
-- Failure to load accessible artists is stored as `error=true` but is not shown in the shell.
+### P1.4 Detail pages lacked contextual return — complete
 
-**Result:** needs correction before further artist-scoped sections are added.
+- Enquiry, client and project details have stable links back to their parent collections.
+- The links do not depend on browser history.
+- The return control has a minimum `44px` target.
 
-## 2. Review a new enquiry
+### P1.5 Dashboard operational rows were dead ends — complete
 
-**Path:** Dashboard → Open queue → enquiry row → enquiry detail
+- Upcoming confirmed sessions open their project context.
+- Overdue follow-ups open the enquiry, project or client they reference.
+- Unlinked follow-ups remain non-interactive rather than navigating to an invented target.
 
-**Minimum interaction count:** 3 taps
+### P1.6 More lacked a complete modal focus lifecycle — complete
 
-**What works**
+- Focus enters the sheet on open.
+- Tab and Shift+Tab remain within the sheet.
+- Escape and backdrop interaction dismiss it.
+- Background scrolling is locked while open.
+- Explicit dismissal restores focus to the More trigger.
+- Route navigation does not force focus back to the old trigger.
 
-- The dashboard provides a direct queue link.
-- The enquiry list supports status and reference search.
-- Rows expose reference, status, assignment state and project type.
-- Detail access is capability-guarded.
+### P1.7 Artist-scope loading failure was silent — complete
 
-**Friction and risk**
+- Artist-list failure is exposed as a compact alert.
+- The message states that database access controls remain authoritative.
+- No fallback widens visible data.
 
-- The detail page places contact, project information and reference images before transition and assignment controls.
-- On a phone, the most common operational actions can require a long scroll before the user can progress or assign the enquiry.
-- There is no contextual back control or breadcrumb; return relies on browser history or reopening Enquiries from the bottom bar.
+## Original P2 findings — completion status
 
-**Result:** functionally complete, but action placement is inefficient on mobile.
+### P2.1 Explicit mobile primary order — complete
 
-## 3. Assign and progress an enquiry
+The target order is implemented and covered by an automated navigation test.
 
-**Path:** enquiry detail → transition action → assignment selector
+### P2.2 Group overflow destinations — complete
 
-**Minimum interaction count:** 2 interactions after reaching the detail page
+Operations, Finance and Administration groups are defined. Empty groups are omitted for restricted roles.
 
-**What works**
+### P2.3 Debounce enquiry and client search — complete
 
-- Transition options are derived from the allow-list and role.
-- Assignment choices come from assignable profiles.
-- Busy and error states are present.
+- Search inputs remain controlled and responsive.
+- Queries wait `300ms` after typing settles.
+- Pending intermediate requests are cancelled.
+- Search values are trimmed before querying.
+- Status and artist filters continue to apply independently.
 
-**Friction and risk**
+### P2.4 Show artist relationships on shared clients — complete
 
-- Transition and assignment are separate lower-page sections instead of one action area.
-- The user may have to scroll again after a transition reload to continue assignment or conversion.
-- Destructive or consequential transitions have no structured confirmation pattern yet.
+- Client rows show artists linked through accessible enquiries and projects.
+- Client details show a deduplicated relationship summary.
+- Related enquiry and project rows show their record artist.
+- Clients remain shared and are not filtered by the selected artist.
+- Relationships are derived only from rows visible through existing RLS.
 
-**Result:** correct authorization presentation; weak task continuity.
+### P2.5 Add session-duration shortcuts and conflict feedback — complete
 
-## 4. Convert an enquiry into a project
+- Session planning provides `3`, `5` and `7` hour shortcuts.
+- The end time is calculated from the selected local start time.
+- Conflict detection checks accessible sessions for the same artist, including other projects.
+- `draft`, `proposed` and `confirmed` sessions can conflict.
+- `cancelled`, `completed` and `no_show` sessions do not conflict.
+- Conflict feedback is advisory and does not block an intentional overlap.
 
-**Path:** Enquiries → accepted or deposit-paid enquiry → Convert → project detail
+A dedicated session detail route remains deferred. The present project-level session workflow is sufficient for this stage and does not justify a new route without a separate architecture decision.
 
-**Minimum interaction count:** 4 taps plus scrolling
+### P2.6 Confirm consequential actions — complete
 
-**What works**
+Confirmation is required before:
 
-- Conversion is shown only for eligible statuses and roles.
-- Incomplete intake blocks conversion.
-- Success navigates directly to the new project.
+- converting an enquiry into a project;
+- cancelling a session;
+- recording a no-show;
+- deactivating a user.
 
-**Friction and risk**
+Declining confirmation prevents the RPC from being sent. Ordinary workflow actions are not interrupted. Confirmation copy follows the selected English or Russian CRM language.
 
-- Conversion appears after contact, project data, reference images, transitions and assignment.
-- The generated project title is accepted immediately with no review step.
-- There is no compact action summary showing what remains before conversion.
+This confirmation boundary is a user-safety control, not authorization. Database RPC checks and RLS remain authoritative.
 
-**Result:** technically direct after discovery, but the control is buried.
+## Automated evidence at implementation head
 
-## 5. Open a client and related records
+Normal CI completed successfully for `0fa435a65e6b93dd708b2a5e22be40e77c42bbf2`:
 
-**Path:** Clients → client → related enquiry or project
+- Static Validation: passed;
+- CRM and booking validation: passed;
+- Public site and Worker: passed;
+- dependency audits: zero reported vulnerabilities;
+- Private CRM: 13 test files, 108/108 tests passed;
+- TypeScript typecheck: passed;
+- production CRM build: passed;
+- clean Supabase reset with migrations `0001–0025`: passed;
+- pgTAP: 933/933 passed;
+- PostgreSQL error-level lint: passed.
 
-**Minimum interaction count:** 3 taps
+The documentation-only readiness commit must also have both normal workflows green before it can be used as an approved staging SHA.
 
-**What works**
+## Retained staging delta
 
-- Client search is simple and mobile-friendly.
-- Client detail links directly to enquiries and projects.
-- Shared clients can expose records across the accessible artist set according to RLS.
+Retained staging was last successfully deployed from:
 
-**Friction and risk**
+`fee84a811334b46dcb2e8281706e61a0ae1bf889`
 
-- The global artist selector implies filtering even though `ClientsPage` does not consume artist scope.
-- Client rows do not show artist relationships, so an owner cannot see why a shared client appears under the current context.
-- There is no explicit shared-record label.
+The reviewed implementation head is 28 commits ahead. The deployable delta is limited to CRM UI, tests and a narrow dependency override. It includes:
 
-**Result:** navigation is short; scope semantics are unclear.
+- grouped More navigation;
+- debounced list search;
+- shared-client artist context;
+- consequential-action confirmations;
+- session duration shortcuts and conflict feedback;
+- associated tests;
+- `undici` lockfile override used to keep dependency audit green.
 
-## 6. Schedule a session
+There are no new migrations after `0025` and no production configuration changes in this delta.
 
-**Path:** More → Projects → project → Sessions section → enter start/end → Propose session
+## Readiness determination
 
-**Minimum interaction count:** 4 taps plus form entry and scrolling
+### Source readiness
 
-**What works**
+**Ready for another isolated retained-staging deployment.**
 
-- Sessions are managed inside the project context.
-- Start and end values are validated before submission.
-- Session status actions are capability-filtered.
+No P0 or unresolved P1/P2 source blocker remains in the audited click paths. Normal CI is green at the reviewed implementation head.
 
-**Friction and risk**
+### Correct deployment path
 
-- Projects are correctly secondary, but the session creation form can be far below project summary and estimate content.
-- The form has two independent datetime inputs with no duration shortcut, common-time presets or conflict indication.
-- Session rows are not separate routes, so the global Sessions page cannot lead to a focused session detail workflow.
+Hosted staging already contains migrations `0001–0025`. Therefore the initial full migration workflow must not be used as though staging were still at migration `0014`.
 
-**Result:** usable foundation; likely high friction for frequent booking work.
+The correct path is the guarded post-gate continuation workflow:
 
-## 7. Progress a session from the dashboard
+- workflow: `PR 177 retained staging resume and E2E`;
+- exact PR head only;
+- PR must remain open, draft and unmerged;
+- both normal workflows must be completed successfully for that exact SHA;
+- hosted migration precondition must confirm exactly `0001–0025`;
+- owner review confirmation must be exactly `CONTINUE PR177 AFTER HOSTED GATE`.
 
-**Path:** Dashboard → upcoming session
+The workflow may redeploy the preview Worker and both staging Pages artifacts, but it targets retained staging only and does not target production.
 
-**Current result:** no navigation path
+## Remaining evidence gaps
 
-Upcoming session rows are plain `div` elements. They show time, status and duration but do not open the project or a session detail. The user must instead navigate to Sessions or Projects and locate the same record again.
+These are not source blockers for a repeat staging deployment, but they prevent complete final sign-off.
 
-**Result:** action dead end.
+### 1. Latest UI delta is not deployed to retained staging
 
-## 8. Resolve an overdue follow-up from the dashboard
+The current UI improvements exist only on the PR branch and branch preview until the guarded continuation is run against the final green head.
 
-**Path:** Dashboard → overdue follow-up
+### 2. Authenticated iPhone/iPad Safari audit is not complete
 
-**Current result:** no navigation path
+The attempted manual pass stopped at Cloudflare Access because an authorized owner browser session was unavailable. At the user's direction, that stage was deferred.
 
-Overdue follow-ups are displayed as non-interactive rows. The user cannot open the related enquiry, client or project from the dashboard item.
+No real-device defect was found because the CRM itself was not reached. The audit must not be described as passed or failed.
 
-**Result:** action dead end.
+A future device pass should use the canonical CRM staging hostname with Cloudflare Access and CRM owner authentication active. It should not require disabling WAF, RLS, Storage policies, ACLs or CRM authentication.
 
-## 9. Reach owner administration
+### 3. Edge control-plane evidence remains partial
 
-**Path:** More → Users or Activity
+Earlier live staging probes passed for canonical Access redirects, exact-origin CORS, wrong-origin rejection, exact WAF path and method enforcement, rate limiting and recovery, and disabled `workers.dev`.
 
-**Minimum interaction count:** 2 taps
+The deployment token did not independently read Cloudflare Access policy contents or Rulesets configuration. Complete security sign-off therefore still requires either suitable read-only control-plane access or a separate owner-verified configuration review. Live probes do not replace that review.
 
-**What works**
+## Post-deploy acceptance checks
 
-- Administration does not consume permanent mobile-tab space.
-- Role filtering prevents booking managers and read-only users from seeing Users.
-- Activity remains visible only where capability rules allow it.
+After the guarded continuation succeeds, verify:
 
-**Friction and risk**
+1. the deployed evidence names the exact approved PR head;
+2. canonical CRM and booking staging domains resolve to the new Pages deployments;
+3. hosted E2E still passes artist routing, role scope, RLS, Storage, Activity Log and edge probes;
+4. CRM build evidence reports all current tests passing;
+5. one authenticated iPhone portrait pass covers primary navigation, More, artist scope, enquiry detail, shared client context and session planning;
+6. one authenticated iPad landscape pass follows only when there is no iPhone P0 blocker;
+7. Cloudflare Access remains enabled after testing;
+8. production remains unchanged;
+9. PR #174, #176 and #177 remain open, draft and unmerged;
+10. staging remains retained and contains synthetic data only.
 
-- The overflow is currently flat. Adding payments, integrations and settings without grouping will reproduce the original navigation crowding inside the sheet.
-- Artist scope is visible on Users even though it does not scope that page.
+## Deferred product work
 
-**Result:** correct current placement; grouping required before expansion.
+The following is outside this click-path completion pass:
 
-## 10. Open and close the mobile More sheet
-
-**Path:** More → overflow destination or dismiss
-
-**What works**
-
-- The sheet has dialog semantics.
-- Escape and backdrop interaction close it.
-- Navigation closes it after the route changes.
-
-**Friction and risk**
-
-- Focus is not moved into the sheet when it opens.
-- Focus is not trapped inside the modal surface.
-- Focus is not explicitly restored to the More trigger after dismissal.
-- Background scrolling is not locked.
-
-**Result:** visually modal, but the keyboard and screen-reader lifecycle is incomplete.
-
-## Findings by priority
-
-### P0 — blocking
-
-No source-level click-path blocker was found in the audited route tree.
-
-### P1 — resolve before adding finance and more navigation sections
-
-1. **Artist-scope applicability is ambiguous.** Hide or explicitly neutralize it on shared/global pages.
-2. **Detail routes can conflict with selected scope.** Show the record artist and a deliberate scope-mismatch action.
-3. **Critical enquiry actions are buried.** Create an action-first summary near the top of enquiry detail.
-4. **Detail pages lack contextual return.** Add a stable back/breadcrumb pattern that does not depend entirely on browser history.
-5. **Dashboard operational rows are dead ends.** Link upcoming sessions and overdue follow-ups to their working context.
-6. **The More sheet lacks a complete modal focus lifecycle.** Add focus entry, containment, restoration and scroll locking.
-7. **Artist-scope loading failure is silent.** Expose a compact error state without weakening RLS behavior.
-
-### P2 — improve during the next interaction pass
-
-1. Make mobile primary order explicit: Dashboard, Enquiries, Sessions, Clients, More.
-2. Group overflow destinations before adding finance, integrations and settings.
-3. Consider debouncing enquiry and client search to avoid a request on each keystroke.
-4. Add artist relationship context to shared client rows or detail screens.
-5. Add session-duration shortcuts and conflict feedback when scheduling becomes a daily workflow.
-6. Review confirmation requirements for consequential status changes.
-
-## Recommended implementation order
-
-### Phase 1: navigation and context guardrails
-
-- replace Set-based primary membership with an explicit ordered path array;
-- define page scope as `artist`, `shared` or `global`;
-- hide or annotate the selector according to page scope;
-- expose artist-scope load failure;
-- complete More-sheet focus behavior.
-
-### Phase 2: detail-route continuity
-
-- add a contextual page header/back pattern;
-- show record artist on enquiry and project details;
-- handle selected-scope mismatch explicitly;
-- keep parent navigation active for all nested routes.
-
-### Phase 3: action-first operational screens
-
-- move enquiry transition, assignment and conversion summary above long reference content;
-- link dashboard sessions and follow-ups to their source records;
-- preserve secondary content in sections below the action area.
-
-### Phase 4: expansion readiness
-
-- group More destinations;
-- add Finance only after its route scope and primary click paths are recorded;
-- add automated path tests for each role and responsive navigation model.
-
-## Acceptance checks for the next implementation pass
-
-### Owner
-
-- can switch between all assigned artists;
-- sees a clear shared/global state on Clients and Users;
-- reaches Enquiries and Sessions in one bottom-nav tap;
-- reaches Projects, Users and Activity in two taps;
-- opens a dashboard session or follow-up directly;
-- cannot accidentally view a record under a misleading artist context.
-
-### Booking manager
-
-- sees only permitted destinations;
-- can review, assign, progress and convert according to capability rules;
-- never sees finance controls or owner administration;
-- has the same detail-return and scope-mismatch behavior as the owner.
-
-### Read only
-
-- sees only read destinations;
-- cannot see transition, assignment, conversion, note creation or finance actions;
-- can navigate lists and detail routes without dead ends;
-- does not receive empty administrative navigation groups.
-
-### Accessibility
-
-- each navigation landmark has a stable accessible name;
-- tests do not rely on the first matching navigation landmark;
-- the More trigger reports expanded state;
-- focus enters, remains in and returns from the modal sheet;
-- all tap targets remain at least `44px`.
+- Finance or Payments routes before their scope and click paths are documented;
+- real payment provider connection;
+- Google Calendar or Gmail OAuth;
+- automatic client reminders;
+- production Telegram routing for Kristina;
+- production GPT identities or tools;
+- a session detail route without a separate architecture justification.
 
 ## Safety constraints
 
-This audit does not alter production, hosted Supabase, RLS, ACL, Storage policies, WAF, rate limiting or staging data. UI scope remains a convenience layer over the existing authorization boundary.
+This readiness audit changes documentation only. It does not alter production, hosted Supabase, staging data, RLS, ACLs, Storage policies, Cloudflare Access, WAF, rate limiting, DNS, Worker bindings or provider credentials.
