@@ -39,6 +39,9 @@ const FOCUSABLE_SELECTOR = [
 ].join(',');
 
 type PageScope = 'artist' | 'shared' | 'global';
+type OverflowGroupId = 'operations' | 'finance' | 'administration';
+
+const OVERFLOW_GROUP_ORDER: OverflowGroupId[] = ['operations', 'finance', 'administration'];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { profile, signOut } = useSession();
@@ -63,6 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     .filter((item): item is NavItem => Boolean(item));
   const primaryPaths = new Set(primaryItems.map((item) => item.path));
   const overflowItems = items.filter((item) => !primaryPaths.has(item.path));
+  const overflowGroups = groupOverflowItems(overflowItems);
   const overflowIsActive = overflowItems.some((item) => isActivePath(item.path, path));
   const activeItem = items.find((item) => isActivePath(item.path, path));
   const profileName = profile?.display_name || profile?.email || 'CRM';
@@ -231,16 +235,31 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <div className="nav-sheet-handle" aria-hidden="true" />
             <h2>{t('nav.sections')}</h2>
-            <nav className="nav-sheet-list">
-              {overflowItems.map((item) => (
-                <NavigationLink
-                  key={item.path}
-                  item={item}
-                  path={path}
-                  label={t(NAV_KEYS[item.path] ?? item.label)}
-                  sheet
-                />
-              ))}
+            <nav className="nav-sheet-groups" aria-label={t('nav.sections')}>
+              {overflowGroups.map((group) => {
+                const headingId = `mobile-more-${group.id}`;
+                return (
+                  <div
+                    key={group.id}
+                    className="nav-sheet-group"
+                    role="group"
+                    aria-labelledby={headingId}
+                  >
+                    <h3 id={headingId}>{overflowGroupLabel(group.id, language)}</h3>
+                    <div className="nav-sheet-list">
+                      {group.items.map((item) => (
+                        <NavigationLink
+                          key={item.path}
+                          item={item}
+                          path={path}
+                          label={t(NAV_KEYS[item.path] ?? item.label)}
+                          sheet
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </nav>
           </section>
         </>
@@ -367,6 +386,41 @@ function NavigationLink({
       <span>{label}</span>
     </Link>
   );
+}
+
+function groupOverflowItems(items: NavItem[]): { id: OverflowGroupId; items: NavItem[] }[] {
+  const grouped = new Map<OverflowGroupId, NavItem[]>();
+  for (const item of items) {
+    const id = overflowGroupFor(item.path);
+    const group = grouped.get(id) ?? [];
+    group.push(item);
+    grouped.set(id, group);
+  }
+  return OVERFLOW_GROUP_ORDER
+    .map((id) => ({ id, items: grouped.get(id) ?? [] }))
+    .filter((group) => group.items.length > 0);
+}
+
+function overflowGroupFor(path: string): OverflowGroupId {
+  if (path === '/finance' || path === '/payments') return 'finance';
+  if (path === '/users' || path === '/integrations' || path === '/settings') return 'administration';
+  return 'operations';
+}
+
+function overflowGroupLabel(group: OverflowGroupId, language: Language): string {
+  const labels: Record<Language, Record<OverflowGroupId, string>> = {
+    en: {
+      operations: 'Operations',
+      finance: 'Finance',
+      administration: 'Administration',
+    },
+    ru: {
+      operations: 'Работа',
+      finance: 'Финансы',
+      administration: 'Администрирование',
+    },
+  };
+  return labels[language][group];
 }
 
 function pageScopeFor(path: string): PageScope {
