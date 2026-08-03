@@ -650,16 +650,19 @@ as $$
       select 1
       from public.enquiry_files f
       join public.enquiries e on e.id = f.enquiry_id
-      where f.storage_object_path = p_name
-        and f.storage_object_path like 'enquiries/' || f.enquiry_id::text || '/' || f.id::text || '.%'
+      where f.storage_path = p_name
+        and p_name = 'clients/' || e.client_id || '/enquiries/' || e.id
+                     || '/references/' || f.id || '.' || f.safe_extension
         and public.can_manage_artist(e.artist_id)
     )
     or exists (
       select 1
       from public.project_files f
       join public.projects p on p.id = f.project_id
-      where f.storage_object_path = p_name
-        and f.storage_object_path like 'projects/' || f.project_id::text || '/' || f.id::text || '.%'
+      where f.storage_path = p_name
+        and p_name = public.project_file_storage_path(
+          p.client_id, p.id, f.category, f.id, f.safe_extension
+        )
         and public.can_manage_artist(p.artist_id)
     );
 $$;
@@ -687,18 +690,22 @@ as $$
       select 1
       from public.enquiry_files f
       join public.enquiries e on e.id = f.enquiry_id
-      where f.storage_object_path = p_name
-        and f.upload_state <> 'ready'
-        and f.storage_object_path like 'enquiries/' || f.enquiry_id::text || '/' || f.id::text || '.%'
+      where f.storage_path = p_name
+        and p_name = 'clients/' || e.client_id || '/enquiries/' || e.id
+                     || '/references/' || f.id || '.' || f.safe_extension
         and public.can_manage_artist(e.artist_id)
+        and (public.is_owner() or f.upload_state <> 'ready')
     )
     or exists (
       select 1
       from public.project_files f
       join public.projects p on p.id = f.project_id
-      where f.storage_object_path = p_name
-        and f.storage_object_path like 'projects/' || f.project_id::text || '/' || f.id::text || '.%'
+      where f.storage_path = p_name
+        and p_name = public.project_file_storage_path(
+          p.client_id, p.id, f.category, f.id, f.safe_extension
+        )
         and public.can_manage_artist(p.artist_id)
+        and (public.is_owner() or f.upload_state <> 'ready')
     );
 $$;
 
@@ -719,28 +726,29 @@ grant execute on function public.crm_storage_object_writable(text)
 comment on function public.crm_storage_object_is_known(text) is
   'True only for a canonical manifest-backed CRM object inside an artist scope the caller may manage, or for the trusted backend.';
 
--- Existing storage.objects policies already delegate SELECT/INSERT checks to
--- these helpers. Replace UPDATE/DELETE owner-wide predicates with explicit
--- canonical-path checks while keeping destructive operations owner/backend-only.
-drop policy if exists crm_private_images_update on storage.objects;
-create policy crm_private_images_update on storage.objects
+-- Existing storage.objects SELECT/INSERT policies already delegate to these
+-- helpers. Replace UPDATE/DELETE using the actual canonical bucket and names.
+drop policy if exists crm_files_update on storage.objects;
+create policy crm_files_update on storage.objects
   for update
+  to authenticated, service_role
   using (
-    bucket_id = 'crm-private-images'
+    bucket_id = 'crm-files'
     and (public.is_owner() or crm_private.is_service_backend())
     and public.crm_storage_object_is_known(name)
   )
   with check (
-    bucket_id = 'crm-private-images'
+    bucket_id = 'crm-files'
     and (public.is_owner() or crm_private.is_service_backend())
     and public.crm_storage_object_is_known(name)
   );
 
-drop policy if exists crm_private_images_delete on storage.objects;
-create policy crm_private_images_delete on storage.objects
+drop policy if exists crm_files_delete on storage.objects;
+create policy crm_files_delete on storage.objects
   for delete
+  to authenticated, service_role
   using (
-    bucket_id = 'crm-private-images'
+    bucket_id = 'crm-files'
     and (public.is_owner() or crm_private.is_service_backend())
     and public.crm_storage_object_is_known(name)
   );
