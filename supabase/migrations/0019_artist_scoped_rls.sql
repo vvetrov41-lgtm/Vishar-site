@@ -75,6 +75,58 @@ comment on function public.can_manage_client(uuid) is
   'True only when the current active profile may manage at least one artist-scoped enquiry or project linked to the client.';
 
 -- ---------------------------------------------------------------------------
+-- Retire the global permissive policies created by migration 0007
+--
+-- PostgreSQL combines permissive policies with OR. Leaving even one of these
+-- active would make the new artist-scoped policy ineffective for active staff.
+-- ---------------------------------------------------------------------------
+
+drop policy if exists profiles_select_self on public.profiles;
+
+drop policy if exists clients_select on public.clients;
+drop policy if exists clients_insert on public.clients;
+drop policy if exists clients_update on public.clients;
+
+drop policy if exists enquiries_select on public.enquiries;
+drop policy if exists enquiries_insert on public.enquiries;
+drop policy if exists enquiries_update on public.enquiries;
+
+drop policy if exists enquiry_files_select on public.enquiry_files;
+drop policy if exists enquiry_files_insert on public.enquiry_files;
+drop policy if exists enquiry_files_update on public.enquiry_files;
+
+drop policy if exists project_files_select on public.project_files;
+drop policy if exists project_files_insert on public.project_files;
+drop policy if exists project_files_update on public.project_files;
+
+drop policy if exists projects_select on public.projects;
+drop policy if exists projects_insert on public.projects;
+drop policy if exists projects_update on public.projects;
+
+drop policy if exists sessions_select on public.sessions;
+drop policy if exists sessions_insert on public.sessions;
+drop policy if exists sessions_update on public.sessions;
+
+drop policy if exists activity_log_select on public.activity_log;
+drop policy if exists activity_log_insert on public.activity_log;
+
+drop policy if exists internal_notes_select on public.internal_notes;
+drop policy if exists internal_notes_insert on public.internal_notes;
+drop policy if exists internal_notes_update on public.internal_notes;
+
+drop policy if exists email_messages_select on public.email_messages;
+drop policy if exists email_messages_insert on public.email_messages;
+drop policy if exists email_messages_update on public.email_messages;
+
+drop policy if exists follow_ups_select on public.follow_ups;
+drop policy if exists follow_ups_insert on public.follow_ups;
+drop policy if exists follow_ups_update on public.follow_ups;
+
+drop policy if exists integration_outbox_select on public.integration_outbox;
+drop policy if exists integration_outbox_insert on public.integration_outbox;
+drop policy if exists integration_outbox_update on public.integration_outbox;
+
+-- ---------------------------------------------------------------------------
 -- Profiles and shared reference data
 -- ---------------------------------------------------------------------------
 
