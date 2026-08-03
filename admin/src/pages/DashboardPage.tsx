@@ -78,13 +78,13 @@ export function DashboardPage() {
         ) : (
           <div className="list">
             {upcoming.map((session) => (
-              <div key={session.id} className="row">
+              <Link key={session.id} to={`/projects/${session.project_id}`} className="row">
                 <div className="title">{formatDateTime(session.start_at, language)}</div>
                 <div className="meta">
                   <span className="badge ok">{label('sessionStatus', 'confirmed')}</span>{' '}
                   <span className="badge">{session.duration_hours ?? '—'} {t('common.hoursShort')}</span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
@@ -101,13 +101,20 @@ export function DashboardPage() {
           <div className="list">
             {overdue.slice(0, 6).map((followUp) => {
               const due = relativeDue(followUp.due_at, now, language);
-              return (
-                <div key={followUp.id} className="row">
+              const target = followUpTarget(followUp);
+              const content = (
+                <>
                   <div className="title">{followUp.subject}</div>
                   <div className="meta">
                     <span className={due.overdue ? 'badge danger' : 'badge'}>{due.label}</span>
                   </div>
-                </div>
+                </>
+              );
+
+              return target ? (
+                <Link key={followUp.id} to={target} className="row">{content}</Link>
+              ) : (
+                <div key={followUp.id} className="row">{content}</div>
               );
             })}
           </div>
@@ -162,6 +169,13 @@ export function DashboardPage() {
       ) : null}
     </>
   );
+}
+
+function followUpTarget(followUp: FollowUp): string | null {
+  if (followUp.enquiry_id) return `/enquiries/${followUp.enquiry_id}`;
+  if (followUp.project_id) return `/projects/${followUp.project_id}`;
+  if (followUp.client_id) return `/clients/${followUp.client_id}`;
+  return null;
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
