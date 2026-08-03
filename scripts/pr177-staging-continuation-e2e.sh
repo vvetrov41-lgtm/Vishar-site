@@ -371,7 +371,12 @@ end
 \$block\$;
 
 begin;
-set local role authenticated;
+create temporary table pr177_owner_fixture on commit drop as
+select p.id as owner_id
+from public.profiles p
+where p.role='owner' and p.is_active
+order by p.id
+limit 1;
 
 create function pg_temp.readonly_mutation_denied(p_enquiry_id uuid)
 returns boolean
@@ -386,7 +391,10 @@ begin
   end;
 end
 \$fn\$;
+
+grant select on pr177_owner_fixture to authenticated;
 grant execute on function pg_temp.readonly_mutation_denied(uuid) to authenticated;
+set local role authenticated;
 
 do \$block\$
 declare
@@ -394,11 +402,8 @@ declare
   v_count integer;
   v_denied boolean;
 begin
-  select p.id into v_owner
-  from public.profiles p
-  where p.role='owner' and p.is_active
-  order by p.id
-  limit 1;
+  select owner_id into v_owner from pr177_owner_fixture;
+  if v_owner is null then raise exception 'owner fixture lookup failed'; end if;
 
   perform set_config('request.jwt.claims',jsonb_build_object('sub',v_owner,'role','authenticated')::text,true);
   select count(*) into v_count from public.list_accessible_artists();
