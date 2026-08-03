@@ -6,8 +6,8 @@
 // decision only: RequireCapability and database policies remain the security
 // boundary.
 
-import { useEffect, useState, type ReactNode } from 'react';
-import { useLanguage } from '../lib/i18n';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLanguage, type Language } from '../lib/i18n';
 import { Link, useRouter } from '../lib/router';
 import { navItemsFor, type NavItem } from '../lib/permissions';
 import { useSession } from '../lib/session';
@@ -24,24 +24,50 @@ const NAV_KEYS: Record<string, string> = {
   '/activity': 'nav.activity',
 };
 
-// Four core destinations plus one overflow action. New CRM sections belong in
-// the overflow sheet automatically unless deliberately promoted here.
-const MOBILE_PRIMARY_PATHS = new Set(['/', '/enquiries', '/sessions', '/clients']);
+// Order is deliberate. Filtering the general navigation list through a Set
+// preserved membership but inherited the desktop ordering, which put Clients
+// before Sessions. Keep the phone task order explicit as the CRM expands.
+const MOBILE_PRIMARY_PATHS = ['/', '/enquiries', '/sessions', '/clients'] as const;
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+type PageScope = 'artist' | 'shared' | 'global';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { profile, signOut } = useSession();
   const { path } = useRouter();
   const { t, label, language } = useLanguage();
   const items = navItemsFor(profile?.role);
-  const { artists, selectedArtistId, loading, setSelectedArtistId } = useArtistScope();
+  const {
+    artists,
+    selectedArtistId,
+    loading: artistScopeLoading,
+    error: artistScopeError,
+    setSelectedArtistId,
+  } = useArtistScope();
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const moreSheetRef = useRef<HTMLElement | null>(null);
+  const currentPathRef = useRef(path);
+  currentPathRef.current = path;
 
-  const primaryItems = items.filter((item) => MOBILE_PRIMARY_PATHS.has(item.path));
-  const overflowItems = items.filter((item) => !MOBILE_PRIMARY_PATHS.has(item.path));
+  const primaryItems = MOBILE_PRIMARY_PATHS
+    .map((primaryPath) => items.find((item) => item.path === primaryPath))
+    .filter((item): item is NavItem => Boolean(item));
+  const primaryPaths = new Set(primaryItems.map((item) => item.path));
+  const overflowItems = items.filter((item) => !primaryPaths.has(item.path));
   const overflowIsActive = overflowItems.some((item) => isActivePath(item.path, path));
   const activeItem = items.find((item) => isActivePath(item.path, path));
   const profileName = profile?.display_name || profile?.email || 'CRM';
   const moreLabel = language === 'ru' ? 'Ещё' : 'More';
+  const pageScope = pageScopeFor(path);
 
   useEffect(() => {
     setMoreOpen(false);
@@ -49,11 +75,58 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!moreOpen) return undefined;
+
+    const openedPath = path;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const focusTimer = window.setTimeout(() => {
+      const sheet = moreSheetRef.current;
+      const firstFocusable = sheet ? focusableElements(sheet)[0] : null;
+      (firstFocusable ?? sheet)?.focus();
+    }, 0);
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMoreOpen(false);
+      const sheet = moreSheetRef.current;
+      if (!sheet) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMoreOpen(false);
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusable = focusableElements(sheet);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        sheet.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || !sheet.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !sheet.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      // Route navigation should move attention into the destination rather than
+      // pull it back to a control that is no longer relevant. Explicit dismiss
+      // actions restore the trigger because the route has not changed.
+      if (currentPathRef.current === openedPath) moreTriggerRef.current?.focus();
+    };
   }, [moreOpen]);
 
   return (
@@ -97,21 +170,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             />
           </div>
 
-          <div className="artist-scope-control">
-            <label htmlFor="artist-scope">{t('artistScope.label')}</label>
-            <select
-              id="artist-scope"
-              aria-label={t('artistScope.label')}
-              value={selectedArtistId ?? ''}
-              disabled={loading}
-              onChange={(event) => setSelectedArtistId(event.target.value || null)}
-            >
-              <option value="">{t('artistScope.allAssigned')}</option>
-              {artists.map((artist) => (
-                <option key={artist.id} value={artist.id}>{artist.display_name}</option>
-              ))}
-            </select>
-          </div>
+          <ArtistScopeControl
+            scope={pageScope}
+            language={language}
+            artists={artists}
+            selectedArtistId={selectedArtistId}
+            loading={artistScopeLoading}
+            error={artistScopeError}
+            label={t('artistScope.label')}
+            allAssignedLabel={t('artistScope.allAssigned')}
+            onChange={setSelectedArtistId}
+          />
         </header>
 
         <main className="container" id="main">{children}</main>
@@ -129,6 +198,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         ))}
         {overflowItems.length > 0 ? (
           <button
+            ref={moreTriggerRef}
             type="button"
             className="tabbar-item"
             aria-expanded={moreOpen}
@@ -147,15 +217,17 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             className="nav-sheet-backdrop"
-            aria-label={t('nav.sections')}
+            aria-label={language === 'ru' ? 'Закрыть меню' : 'Close menu'}
             onClick={() => setMoreOpen(false)}
           />
           <section
+            ref={moreSheetRef}
             id="mobile-more-navigation"
             className="nav-sheet"
             role="dialog"
             aria-modal="true"
             aria-label={t('nav.sections')}
+            tabIndex={-1}
           >
             <div className="nav-sheet-handle" aria-hidden="true" />
             <h2>{t('nav.sections')}</h2>
@@ -173,6 +245,70 @@ export function AppShell({ children }: { children: ReactNode }) {
           </section>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function ArtistScopeControl({
+  scope,
+  language,
+  artists,
+  selectedArtistId,
+  loading,
+  error,
+  label,
+  allAssignedLabel,
+  onChange,
+}: {
+  scope: PageScope;
+  language: Language;
+  artists: { id: string; display_name: string }[];
+  selectedArtistId: string | null;
+  loading: boolean;
+  error: boolean;
+  label: string;
+  allAssignedLabel: string;
+  onChange: (artistId: string | null) => void;
+}) {
+  if (scope !== 'artist') {
+    const copy = scopeContextCopy(scope, language);
+    return (
+      <div className="artist-scope-control">
+        <div className="notice" role="status">
+          <strong style={{ display: 'block', color: 'var(--text)' }}>{copy.title}</strong>
+          <span>{copy.hint}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    const copy = artistScopeErrorCopy(language);
+    return (
+      <div className="artist-scope-control">
+        <div className="notice warn" role="alert">
+          <strong style={{ display: 'block' }}>{copy.title}</strong>
+          <span>{copy.hint}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="artist-scope-control">
+      <label htmlFor="artist-scope">{label}</label>
+      <select
+        id="artist-scope"
+        aria-label={label}
+        value={selectedArtistId ?? ''}
+        disabled={loading}
+        onChange={(event) => onChange(event.target.value || null)}
+      >
+        <option value="">{allAssignedLabel}</option>
+        {artists.map((artist) => (
+          <option key={artist.id} value={artist.id}>{artist.display_name}</option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -231,6 +367,47 @@ function NavigationLink({
       <span>{label}</span>
     </Link>
   );
+}
+
+function pageScopeFor(path: string): PageScope {
+  if (path === '/clients' || path.startsWith('/clients/')) return 'shared';
+  if (
+    path === '/'
+    || path === '/enquiries'
+    || path.startsWith('/enquiries/')
+    || path === '/projects'
+    || path.startsWith('/projects/')
+    || path === '/sessions'
+    || path === '/activity'
+  ) return 'artist';
+  return 'global';
+}
+
+function scopeContextCopy(scope: Exclude<PageScope, 'artist'>, language: Language) {
+  if (scope === 'shared') {
+    return language === 'ru'
+      ? { title: 'Общие записи', hint: 'Клиенты не фильтруются по выбранному мастеру.' }
+      : { title: 'Shared records', hint: 'Clients are not filtered by the selected artist.' };
+  }
+  return language === 'ru'
+    ? { title: 'Общий раздел', hint: 'Этот раздел не фильтруется по мастеру.' }
+    : { title: 'Global section', hint: 'This section is not filtered by artist.' };
+}
+
+function artistScopeErrorCopy(language: Language) {
+  return language === 'ru'
+    ? {
+        title: 'Не удалось загрузить список мастеров',
+        hint: 'Обновите страницу. Доступ к данным по-прежнему контролируется базой данных.',
+      }
+    : {
+        title: 'Artist list unavailable',
+        hint: 'Reload the page. Database access controls remain authoritative.',
+      };
+}
+
+function focusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
 }
 
 function isActivePath(itemPath: string, currentPath: string): boolean {
