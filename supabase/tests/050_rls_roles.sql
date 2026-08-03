@@ -509,14 +509,17 @@ insert into expected_function_acl values
   ('public.can_manage_artist_sessions(uuid)', false, true, true),
   ('public.can_manage_artist_integrations(uuid)', false, true, true),
 
-  -- Worker-only durable intake and reconciliation RPCs.
+  -- Worker-only durable intake, reconciliation and payment RPCs.
   ('public.create_enquiry_intake(uuid,jsonb,jsonb,jsonb)', false, false, true),
+  ('public.create_trusted_enquiry_intake(text,text,text,uuid,jsonb,jsonb,jsonb)', false, false, true),
   ('public.mark_enquiry_file_uploaded(uuid,text)', false, false, true),
   ('public.finalize_enquiry_intake(uuid)', false, false, true),
   ('public.fail_enquiry_intake(uuid,text)', false, false, true),
   ('public.record_outbox_attempt(uuid,boolean,text)', false, false, true),
   ('public.list_incomplete_intakes(integer,integer)', false, false, true),
   ('public.resolve_booking_source(text,text,text)', false, false, true),
+  ('public.register_payment_webhook_event(text,text,text,text)', false, false, true),
+  ('public.record_provider_payment(uuid,uuid,uuid,text,numeric,boolean,timestamptz)', false, false, true),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
   ('public.record_activity(text,uuid,uuid,uuid,uuid,jsonb)', false, true, false),
@@ -538,6 +541,13 @@ insert into expected_function_acl values
   ('public.list_assignable_profiles()', false, true, false),
   ('public.update_retention_policy(boolean,integer,integer,integer,integer,boolean)', false, true, false),
   ('public.list_accessible_artists()', false, true, false),
+  ('public.upsert_artist_membership(uuid,uuid,public.artist_access_level,boolean,boolean,boolean,boolean,boolean)', false, true, false),
+  ('public.configure_artist_integration(uuid,public.artist_integration_type,text,text,text,jsonb,boolean)', false, true, false),
+  ('public.create_artist_payment_policy(uuid,integer,public.payment_policy_mode,numeric,numeric,integer,boolean,text,timestamptz)', false, true, false),
+  ('public.create_payment_request(uuid,uuid,uuid,public.payment_request_purpose,numeric,uuid,uuid,text,timestamptz)', false, true, false),
+  ('public.record_manual_payment(uuid,uuid,numeric,timestamptz,text)', false, true, false),
+  ('public.record_manual_refund(uuid,uuid,numeric,boolean,timestamptz,text)', false, true, false),
+  ('public.cancel_payment_request(uuid)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
