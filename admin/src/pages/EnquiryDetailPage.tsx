@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
+import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { SignedImage } from '../components/SignedImage';
 import { Link, useRouter } from '../lib/router';
@@ -90,9 +91,15 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   const { enquiry, client, files, notes, followUps, activity, transitions, colleagues } = data;
   const transitionOptions = availableTransitions(transitions, enquiry.status, role);
   const contactDiffers = submittedContactDiffers(enquiry, client);
+  const canAssign = can(role, 'assignEnquiry');
+  const canConvert = can(role, 'convertEnquiry') && ['accepted', 'deposit_paid'].includes(enquiry.status);
+  const hasWorkflowActions = transitionOptions.length > 0 || canAssign || canConvert;
 
   return (
     <>
+      <DetailBackLink to="/enquiries" sectionLabel={t('nav.enquiries')} />
+      <RecordArtistContext artistId={enquiry.artist_id} />
+
       <div className="card">
         <h2 style={{ fontSize: '1.2rem' }}>{enquiry.reference_number}</h2>
         <div>
@@ -117,6 +124,76 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         <div className="notice warn" role="alert">{t('enquiry.identifierConflict')}</div>
       ) : contactDiffers ? (
         <div className="notice warn" role="status">{t('enquiry.contactDiffers')}</div>
+      ) : null}
+
+      {hasWorkflowActions ? (
+        <Section title={language === 'ru' ? 'Действия по заявке' : 'Enquiry actions'}>
+          {transitionOptions.length > 0 ? (
+            <div>
+              <h3 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>{t('enquiry.moveOn')}</h3>
+              <div className="actions" style={{ marginTop: 0 }}>
+                {transitionOptions.map((transition) => (
+                  <button
+                    key={transition.to_status}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => { void run(() => api.transitionEnquiry(enquiry.id, transition.to_status)); }}
+                  >
+                    {label('enquiryStatus', transition.to_status)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {canAssign ? (
+            <div style={{ marginTop: transitionOptions.length > 0 ? 16 : 0 }}>
+              <label htmlFor="assignee">{t('enquiry.assignedTo')}</label>
+              <select
+                id="assignee"
+                value={enquiry.assigned_to ?? ''}
+                disabled={busy}
+                onChange={(event) => {
+                  const value = event.target.value || null;
+                  void run(() => api.assignEnquiry(enquiry.id, value));
+                }}
+              >
+                <option value="">{t('common.unassigned')}</option>
+                {colleagues.map((colleague) => (
+                  <option key={colleague.id} value={colleague.id}>
+                    {colleague.display_name ?? colleague.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          {canConvert ? (
+            <div style={{ marginTop: 16 }}>
+              <h3 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>{t('enquiry.convertTitle')}</h3>
+              <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 10px' }}>
+                {t('enquiry.convertHint')}
+              </p>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || enquiry.intake_state !== 'complete'}
+                onClick={() => {
+                  void run(async () => {
+                    const result = await api.convertEnquiry(
+                      enquiry.id,
+                      `${enquiry.project_type ?? t('enquiry.defaultProjectTitle')} — ${enquiry.submitted_full_name ?? client?.full_name ?? enquiry.reference_number}`
+                    );
+                    const projectId = (result as { project_id?: string })?.project_id;
+                    if (projectId) navigate(`/projects/${projectId}`);
+                  });
+                }}
+              >
+                {t('enquiry.convertButton')}
+              </button>
+            </div>
+          ) : null}
+        </Section>
       ) : null}
 
       <Section title={t('enquiry.contactSubmitted')}>
@@ -172,72 +249,6 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
             </div>
           )}
           <p className="notice" style={{ marginTop: 12 }}>{t('enquiry.imageNotice')}</p>
-        </Section>
-      ) : null}
-
-      {transitionOptions.length > 0 ? (
-        <Section title={t('enquiry.moveOn')}>
-          <div className="actions">
-            {transitionOptions.map((transition) => (
-              <button
-                key={transition.to_status}
-                type="button"
-                disabled={busy}
-                onClick={() => { void run(() => api.transitionEnquiry(enquiry.id, transition.to_status)); }}
-              >
-                {label('enquiryStatus', transition.to_status)}
-              </button>
-            ))}
-          </div>
-        </Section>
-      ) : null}
-
-      {can(role, 'assignEnquiry') ? (
-        <Section title={t('enquiry.assignedTo')}>
-          <label htmlFor="assignee" className="visually-hidden">{t('enquiry.assignee')}</label>
-          <select
-            id="assignee"
-            value={enquiry.assigned_to ?? ''}
-            disabled={busy}
-            onChange={(event) => {
-              const value = event.target.value || null;
-              void run(() => api.assignEnquiry(enquiry.id, value));
-            }}
-          >
-            <option value="">{t('common.unassigned')}</option>
-            {colleagues.map((colleague) => (
-              <option key={colleague.id} value={colleague.id}>
-                {colleague.display_name ?? colleague.id}
-              </option>
-            ))}
-          </select>
-        </Section>
-      ) : null}
-
-      {can(role, 'convertEnquiry') && ['accepted', 'deposit_paid'].includes(enquiry.status) ? (
-        <Section title={t('enquiry.convertTitle')}>
-          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: 0 }}>
-            {t('enquiry.convertHint')}
-          </p>
-          <div className="actions">
-            <button
-              type="button"
-              className="primary"
-              disabled={busy || enquiry.intake_state !== 'complete'}
-              onClick={() => {
-                void run(async () => {
-                  const result = await api.convertEnquiry(
-                    enquiry.id,
-                    `${enquiry.project_type ?? t('enquiry.defaultProjectTitle')} — ${enquiry.submitted_full_name ?? client?.full_name ?? enquiry.reference_number}`
-                  );
-                  const projectId = (result as { project_id?: string })?.project_id;
-                  if (projectId) navigate(`/projects/${projectId}`);
-                });
-              }}
-            >
-              {t('enquiry.convertButton')}
-            </button>
-          </div>
         </Section>
       ) : null}
 
