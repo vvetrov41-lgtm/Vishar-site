@@ -1,6 +1,7 @@
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
+import { DetailBackLink } from '../components/DetailContext';
 import { Link } from '../lib/router';
 import { can } from '../lib/permissions';
 import { formatDate, formatDateTime, localiseKnownValue } from '../lib/format';
@@ -46,6 +47,8 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
   return (
     <>
+      <DetailBackLink to="/clients" sectionLabel={t('nav.clients')} />
+
       <div className="card">
         <h2 style={{ fontSize: '1.2rem' }}>{client.full_name}</h2>
         <dl className="definition">
