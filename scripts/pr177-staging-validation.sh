@@ -84,7 +84,7 @@ migrate_and_test() {
   for n in $(seq -w 1 14); do printf '%s\n' "${before_versions[@]}" | grep -Fxq "00$n" || die "remote migration 00$n is absent"; done
 
   snapshot_database
-  npx supabase@2.111.0 db push --linked --dry-run > "${evidence_dir}/migration-dry-run.txt"
+  npx supabase@2.111.0 db push --linked --dry-run 2>&1 | tee "${evidence_dir}/migration-dry-run.txt"
   for n in $(seq 15 25); do grep -Eq "(^|[^0-9])00${n}([^0-9]|$)" "${evidence_dir}/migration-dry-run.txt" || die "dry-run omitted migration 00${n}"; done
   npx supabase@2.111.0 db push --linked --yes
   npx supabase@2.111.0 migration list --linked > "${evidence_dir}/migrations-after.txt"
