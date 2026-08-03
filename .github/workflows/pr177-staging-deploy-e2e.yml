@@ -11,6 +11,9 @@ on:
         description: Type DEPLOY PR177 TO RETAINED STAGING ONLY
         required: true
         type: string
+  pull_request_review:
+    types:
+      - submitted
 
 permissions:
   actions: read
@@ -24,9 +27,25 @@ concurrency:
 jobs:
   retained-staging:
     name: Guarded migration, deploy and hosted E2E
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'pull_request_review' &&
+        github.event.action == 'submitted' &&
+        github.event.review.state == 'commented' &&
+        github.event.review.body == 'DEPLOY PR177 TO RETAINED STAGING ONLY' &&
+        github.event.sender.login == 'vvetrov41-lgtm' &&
+        github.event.pull_request.number == 177 &&
+        github.event.pull_request.state == 'open' &&
+        github.event.pull_request.draft == true &&
+        github.event.pull_request.head.ref == 'agent/multi-artist-payments-foundation' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
+      APPROVED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.approved_sha || github.event.pull_request.head.sha }}
+      CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirmation || github.event.review.body }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
       SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
@@ -43,27 +62,46 @@ jobs:
     steps:
       - name: Fail closed before checkout
         shell: bash
-        env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
-          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
-          [ "$GITHUB_REF_NAME" = "agent/multi-artist-payments-foundation" ]
           [ "$CONFIRMATION" = "DEPLOY PR177 TO RETAINED STAGING ONLY" ]
           [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [ "$APPROVED_SHA" = "$GITHUB_SHA" ]
+
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch)
+              [ "$GITHUB_REF_NAME" = "agent/multi-artist-payments-foundation" ]
+              [ "$APPROVED_SHA" = "$GITHUB_SHA" ]
+              ;;
+            pull_request_review)
+              jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+                .action == "submitted"
+                and .review.state == "commented"
+                and .review.body == "DEPLOY PR177 TO RETAINED STAGING ONLY"
+                and .sender.login == "vvetrov41-lgtm"
+                and .pull_request.number == 177
+                and .pull_request.state == "open"
+                and .pull_request.draft == true
+                and .pull_request.head.ref == "agent/multi-artist-payments-foundation"
+                and .pull_request.head.sha == $sha
+                and .pull_request.head.repo.full_name == $repo
+              ' "$GITHUB_EVENT_PATH" >/dev/null
+              ;;
+            *)
+              echo "Unsupported event: $GITHUB_EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Check out the exact approved SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.approved_sha }}
+          ref: ${{ env.APPROVED_SHA }}
           fetch-depth: 0
 
       - name: Verify PR state, ancestry and completed normal CI
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          APPROVED_SHA: ${{ inputs.approved_sha }}
         run: |
           set -euo pipefail
           [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
@@ -137,7 +175,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pr177-retained-staging-evidence-${{ github.sha }}
+          name: pr177-retained-staging-evidence-${{ env.APPROVED_SHA }}
           path: ${{ runner.temp }}/pr177-staging-evidence
           if-no-files-found: warn
           retention-days: 30
@@ -160,7 +198,7 @@ jobs:
           gh pr comment 177 --repo "$GITHUB_REPOSITORY" --body "<!-- pr177-retained-staging-deploy-e2e -->
           ### PR #177 retained hosted staging mutation
 
-          - Exact reviewed and deployed SHA: `$GITHUB_SHA`
+          - Exact reviewed and deployed SHA: `$APPROVED_SHA`
           - Guarded job: **$JOB_STATUS**
           - Database target: retained `vishar-crm-staging` only
           - Forward migrations: `0015–0025`
