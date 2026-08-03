@@ -1,0 +1,219 @@
+name: PR 177 retained staging resume and E2E
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr177-retained-staging-mutation
+  cancel-in-progress: false
+
+jobs:
+  retained-staging-resume:
+    name: Isolated hosted gates, deploy and E2E
+    if: >-
+      github.event.action == 'submitted' &&
+      github.event.review.state == 'commented' &&
+      github.event.review.body == 'RESUME PR177 RETAINED STAGING AT 0025' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.number == 177 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/multi-artist-payments-foundation' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      CONFIRMATION: ${{ github.event.review.body }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+
+    steps:
+      - name: Fail closed before checkout
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$CONFIRMATION" = "RESUME PR177 RETAINED STAGING AT 0025" ]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "submitted"
+            and .review.state == "commented"
+            and .review.body == "RESUME PR177 RETAINED STAGING AT 0025"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 177
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.head.ref == "agent/multi-artist-payments-foundation"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Check out exact approved SHA
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify PR state, ancestry and completed normal CI
+        id: verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          git merge-base --is-ancestor cc84f64948a5b26529d2a440cdc0aa85ea99c760 "$APPROVED_SHA"
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/177" > "$RUNNER_TEMP/pr.json"
+          jq -e --arg sha "$APPROVED_SHA" '
+            .state == "open" and .draft == true and .merged == false
+            and .head.ref == "agent/multi-artist-payments-foundation"
+            and .head.sha == $sha
+          ' "$RUNNER_TEMP/pr.json" >/dev/null
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify encrypted staging configuration is present
+        id: credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_DB_PASSWORD STAGING_SUPABASE_URL \
+            STAGING_SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY CLOUDFLARE_API_TOKEN \
+            CLOUDFLARE_ACCOUNT_ID TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+          [ "${#missing[@]}" -eq 0 ] || {
+            printf 'Missing encrypted staging configuration names: %s\n' "$(IFS=,; echo "${missing[*]}")" >&2
+            exit 1
+          }
+          case "$STAGING_SUPABASE_URL" in
+            https://gwaliusblwrzisrwnsvs.supabase.co) ;;
+            *) echo 'STAGING_SUPABASE_URL is not retained staging' >&2; exit 1 ;;
+          esac
+          case "$STAGING_SUPABASE_PUBLISHABLE_KEY" in
+            sb_publishable_*) ;;
+            *) echo 'Staging browser key is not publishable' >&2; exit 1 ;;
+          esac
+
+      - name: Set up Node.js
+        id: node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned repository dependencies
+        id: npm
+        run: npm ci
+
+      - name: Verify 0025 and run isolated hosted pgTAP and lint
+        id: gate
+        run: bash scripts/pr177-staging-resume-validation.sh
+
+      - name: Configure trusted source and metadata-only artist route
+        id: metadata
+        run: bash scripts/pr177-staging-validation.sh metadata
+
+      - name: Install artist binding, remove legacy bindings and deploy Worker
+        id: worker
+        run: bash scripts/pr177-staging-validation.sh worker
+
+      - name: Build and deploy exact booking and CRM artifacts
+        id: pages
+        run: bash scripts/pr177-staging-validation.sh pages
+
+      - name: Run routed, fail-closed, CRM, RLS, Storage, audit and edge E2E
+        id: e2e
+        run: bash scripts/pr177-staging-validation.sh e2e
+
+      - name: Upload safe retained-staging resume evidence
+        id: evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr177-retained-staging-resume-evidence-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr177-staging-evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Record safe resume result on PR 177
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+          GUARD_OUTCOME: ${{ steps.guard.outcome }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          NODE_OUTCOME: ${{ steps.node.outcome }}
+          NPM_OUTCOME: ${{ steps.npm.outcome }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          METADATA_OUTCOME: ${{ steps.metadata.outcome }}
+          WORKER_OUTCOME: ${{ steps.worker.outcome }}
+          PAGES_OUTCOME: ${{ steps.pages.outcome }}
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr177-staging-evidence"
+          positive=unavailable
+          noroute=unavailable
+          if [ -f "$evidence/summary.json" ]; then
+            positive="$(jq -r '.positive_reference' "$evidence/summary.json")"
+            noroute="$(jq -r '.no_route_reference' "$evidence/summary.json")"
+          fi
+
+          body="$RUNNER_TEMP/pr177-resume-result.md"
+          cat > "$body" <<EOF
+          <!-- pr177-retained-staging-resume-e2e -->
+          ### PR #177 retained hosted staging resume
+
+          - Exact reviewed SHA: ${APPROVED_SHA}
+          - GitHub run ID: ${GITHUB_RUN_ID}
+          - GitHub run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Guarded job: ${JOB_STATUS}
+          - Step outcomes: guard=${GUARD_OUTCOME:-unknown}, checkout=${CHECKOUT_OUTCOME:-unknown}, verify=${VERIFY_OUTCOME:-unknown}, credentials=${CREDENTIALS_OUTCOME:-unknown}, node=${NODE_OUTCOME:-unknown}, npm=${NPM_OUTCOME:-unknown}, isolated_gate=${GATE_OUTCOME:-unknown}, metadata=${METADATA_OUTCOME:-unknown}, worker=${WORKER_OUTCOME:-unknown}, pages=${PAGES_OUTCOME:-unknown}, e2e=${E2E_OUTCOME:-unknown}, evidence=${EVIDENCE_OUTCOME:-unknown}
+          - Database target: retained vishar-crm-staging only
+          - Confirmed migrations: 0001-0025
+          - Hosted pgTAP expectation: 933 in transactionally isolated retained-state view
+          - PostgreSQL lint level: error
+          - Worker target: tattooai-preview
+          - Pages targets: vishar-booking-staging, vishar-crm-staging
+          - Routed synthetic enquiry: ${positive}
+          - Fail-closed synthetic enquiry: ${noroute}
+          - Staging retained: true
+
+          The Actions artifact contains only safe identifiers, counts, binding names and control results. It contains no credential values. Production was not targeted by this workflow.
+          EOF
+          sed -i 's/^          //' "$body"
+          gh pr comment 177 --repo "$GITHUB_REPOSITORY" --body-file "$body"
