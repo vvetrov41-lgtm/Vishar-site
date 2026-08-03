@@ -5,7 +5,16 @@
 // is hosted separately from the public site and the hosting choice is still an
 // owner decision.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 
 export interface Route {
   path: string;
@@ -76,11 +85,13 @@ export function Link({
   children,
   className,
   ariaCurrent,
+  style,
 }: {
   to: string;
   children: ReactNode;
   className?: string;
   ariaCurrent?: 'page' | undefined;
+  style?: CSSProperties;
 }) {
   const { navigate } = useRouter();
   return (
@@ -88,6 +99,7 @@ export function Link({
       href={`#${to}`}
       className={className}
       aria-current={ariaCurrent}
+      style={style}
       onClick={(event) => {
         // Let the browser handle modified clicks so "open in new tab" works.
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
