@@ -366,7 +366,7 @@ await test('a replay of an unfinished enquiry resumes the upload', async () => {
 await test('a manifest whose order or descriptor changed is never uploaded', async () => {
   const calls = stubBackend({
     rpc: {
-      create_enquiry_intake: async (args) => Response.json({
+      create_trusted_enquiry_intake: async (args) => Response.json({
         enquiry_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
         client_id: 'cccccccc-bbbb-4ccc-8ddd-eeeeeeeeeeee',
         reference_number: 'ENQ-2026-0001',
@@ -631,7 +631,7 @@ await test('the honeypot answers as success and stores nothing', async () => {
 
 await test('a Supabase RPC failure returns a retryable error and stores nothing', async () => {
   const calls = stubBackend({
-    rpc: { create_enquiry_intake: async () => new Response('{}', { status: 500 }) },
+    rpc: { create_trusted_enquiry_intake: async () => new Response('{}', { status: 500 }) },
   });
   const { response, payload } = await send(enquiryForm());
   assert.equal(response.status, 503);
@@ -642,7 +642,7 @@ await test('a Supabase RPC failure returns a retryable error and stores nothing'
 
 await test('a rejected enquiry (4xx from the database) is not reported as retryable', async () => {
   stubBackend({
-    rpc: { create_enquiry_intake: async () => new Response('{}', { status: 400 }) },
+    rpc: { create_trusted_enquiry_intake: async () => new Response('{}', { status: 400 }) },
   });
   const { response, payload } = await send(enquiryForm());
   assert.equal(response.status, 400);
