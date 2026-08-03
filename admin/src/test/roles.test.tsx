@@ -37,24 +37,21 @@ describe('access gate', () => {
 describe('navigation by role', () => {
   it('shows Users and Activity to the owner', async () => {
     renderWithSession(<App />, { role: 'owner' });
-    const nav = await screen.findByRole('navigation', { name: /sections/i });
-    expect(nav).toHaveTextContent('Users');
-    expect(nav).toHaveTextContent('Activity');
+    expect(await screen.findByRole('link', { name: 'Users' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Activity' })).toBeInTheDocument();
   });
 
   it('hides Users from a booking manager', async () => {
     renderWithSession(<App />, { role: 'booking_manager' });
-    const nav = await screen.findByRole('navigation', { name: /sections/i });
-    expect(nav).not.toHaveTextContent('Users');
-    expect(nav).toHaveTextContent('Enquiries');
+    expect((await screen.findAllByRole('link', { name: 'Enquiries' })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
   });
 
   it('hides Users and Activity from read_only', async () => {
     renderWithSession(<App />, { role: 'read_only' });
-    const nav = await screen.findByRole('navigation', { name: /sections/i });
-    expect(nav).not.toHaveTextContent('Users');
-    expect(nav).not.toHaveTextContent('Activity');
-    expect(nav).toHaveTextContent('Clients');
+    expect((await screen.findAllByRole('link', { name: 'Clients' })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument();
   });
 });
 
@@ -166,13 +163,13 @@ describe('dashboard by role', () => {
 
   it('hides failed integration jobs from a booking manager', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/' });
-    expect(await screen.findByText('Enquiries')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Enquiries' })).toBeInTheDocument();
     expect(screen.queryByText('Failed integration jobs')).not.toBeInTheDocument();
   });
 
   it('hides the activity feed from read_only', async () => {
     renderWithSession(<App />, { role: 'read_only', path: '/' });
-    expect(await screen.findByText('Enquiries')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Enquiries' })).toBeInTheDocument();
     expect(screen.queryByText('Recent activity')).not.toBeInTheDocument();
   });
 });
