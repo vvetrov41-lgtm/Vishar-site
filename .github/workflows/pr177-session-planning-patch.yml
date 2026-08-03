@@ -1,0 +1,232 @@
+name: PR 177 session planning patch
+
+on:
+  push:
+    branches:
+      - agent/multi-artist-payments-foundation
+    paths:
+      - .github/workflows/pr177-session-planning-patch.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr177-session-planning-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/multi-artist-payments-foundation
+          fetch-depth: 0
+
+      - name: Verify exact parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD^)" = "16e44d5f817382db8952a98c98e8083d9ccd57eb" ]
+
+      - name: Apply session planning changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          helper = Path('admin/src/lib/session-planning.ts')
+          helper.write_text("""import type { CrmSession } from './types';
+
+export const SESSION_DURATION_SHORTCUTS = [3, 5, 7] as const;
+
+const CONFLICTING_STATUSES = new Set<CrmSession['status']>([
+  'draft',
+  'proposed',
+  'confirmed',
+]);
+
+function validDate(value: string): Date | null {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+export function addHoursToLocalDateTime(value: string, hours: number): string {
+  const start = validDate(value);
+  if (!start || !Number.isFinite(hours) || hours <= 0) return '';
+
+  const end = new Date(start.getTime() + hours * 60 * 60 * 1000);
+  return [
+    end.getFullYear(),
+    '-',
+    pad(end.getMonth() + 1),
+    '-',
+    pad(end.getDate()),
+    'T',
+    pad(end.getHours()),
+    ':',
+    pad(end.getMinutes()),
+  ].join('');
+}
+
+export function findSessionConflicts(
+  sessions: CrmSession[],
+  startValue: string,
+  endValue: string
+): CrmSession[] {
+  const start = validDate(startValue);
+  const end = validDate(endValue);
+  if (!start || !end || end <= start) return [];
+
+  return sessions.filter((session) => {
+    if (!CONFLICTING_STATUSES.has(session.status)) return false;
+    const existingStart = validDate(session.start_at);
+    const existingEnd = validDate(session.end_at);
+    if (!existingStart || !existingEnd) return false;
+    return existingStart < end && existingEnd > start;
+  });
+}
+""", encoding='utf-8')
+
+          page_path = Path('admin/src/pages/ProjectDetailPage.tsx')
+          page = page_path.read_text(encoding='utf-8')
+
+          replacements = [
+            (
+              "import { formatDateTime, formatMoney } from '../lib/format';\n",
+              "import { formatDateTime, formatMoney } from '../lib/format';\nimport { addHoursToLocalDateTime, findSessionConflicts, SESSION_DURATION_SHORTCUTS } from '../lib/session-planning';\n",
+            ),
+            (
+              "  sessions: CrmSession[];\n  sessionFinance: SessionFinance[];\n",
+              "  sessions: CrmSession[];\n  artistSessions: CrmSession[];\n  sessionFinance: SessionFinance[];\n",
+            ),
+            (
+              "      return { project: null, finance: null, sessions: [], sessionFinance: [], notes: [], activity: [] };\n",
+              "      return { project: null, finance: null, sessions: [], artistSessions: [], sessionFinance: [], notes: [], activity: [] };\n",
+            ),
+            (
+              "    const [finance, sessions, sessionFinance, notes, activity] = await Promise.all([\n      can(role, 'viewFinance') ? api.getProjectFinance(projectId) : Promise.resolve(null),\n      api.listSessions(projectId),\n      can(role, 'viewFinance') ? api.listSessionFinance(projectId) : Promise.resolve([]),\n",
+              "    const [finance, sessions, artistSessions, sessionFinance, notes, activity] = await Promise.all([\n      can(role, 'viewFinance') ? api.getProjectFinance(projectId) : Promise.resolve(null),\n      api.listSessions(projectId),\n      api.listSessions(undefined, project.artist_id),\n      can(role, 'viewFinance') ? api.listSessionFinance(projectId) : Promise.resolve([]),\n",
+            ),
+            (
+              "    return { project, finance, sessions, sessionFinance, notes, activity };\n",
+              "    return { project, finance, sessions, artistSessions, sessionFinance, notes, activity };\n",
+            ),
+            (
+              "  const { project, finance, sessions, sessionFinance, notes, activity } = data;\n",
+              "  const { project, finance, sessions, artistSessions, sessionFinance, notes, activity } = data;\n",
+            ),
+            (
+              "  const hasValidDepositAmount =\n    depositAmount.trim() !== ''\n    && Number.isFinite(parsedDepositAmount)\n    && parsedDepositAmount > 0;\n",
+              "  const hasValidDepositAmount =\n    depositAmount.trim() !== ''\n    && Number.isFinite(parsedDepositAmount)\n    && parsedDepositAmount > 0;\n  const sessionConflicts = findSessionConflicts(artistSessions, sessionStart, sessionEnd);\n",
+            ),
+            (
+              "            </div>\n            <div className=\"actions\">\n              <button type=\"submit\" disabled={busy || !sessionStart || !sessionEnd}>\n",
+              "            </div>\n            <div\n              className=\"actions\"\n              role=\"group\"\n              aria-label={t('project.durationShortcuts')}\n            >\n              {SESSION_DURATION_SHORTCUTS.map((hours) => (\n                <button\n                  key={hours}\n                  type=\"button\"\n                  disabled={busy || !sessionStart}\n                  onClick={() => {\n                    const end = addHoursToLocalDateTime(sessionStart, hours);\n                    if (end) setSessionEnd(end);\n                  }}\n                >\n                  {t('project.durationHours', { hours })}\n                </button>\n              ))}\n            </div>\n            {sessionConflicts.length > 0 ? (\n              <div className=\"notice warn\" role=\"alert\">\n                {t('project.sessionConflict', {\n                  count: sessionConflicts.length,\n                  date: formatDateTime(sessionConflicts[0].start_at, language),\n                })}\n              </div>\n            ) : null}\n            <div className=\"actions\">\n              <button type=\"submit\" disabled={busy || !sessionStart || !sessionEnd}>\n",
+            ),
+          ]
+
+          for old, new in replacements:
+            count = page.count(old)
+            if count != 1:
+              raise SystemExit(f'ProjectDetail replacement expected once, found {count}: {old[:80]!r}')
+            page = page.replace(old, new)
+          page_path.write_text(page, encoding='utf-8')
+
+          i18n_path = Path('admin/src/lib/i18n.tsx')
+          i18n = i18n_path.read_text(encoding='utf-8')
+          i18n_replacements = [
+            (
+              "  'project.proposedEnd': 'Proposed end',\n  'project.proposeSession': 'Propose session',\n",
+              "  'project.proposedEnd': 'Proposed end',\n  'project.durationShortcuts': 'Set duration',\n  'project.durationHours': '{hours} h',\n  'project.sessionConflict': 'Conflicting active sessions: {count}. The first starts {date}. You can still propose this time if the overlap is intentional.',\n  'project.proposeSession': 'Propose session',\n",
+            ),
+            (
+              "  'project.proposedEnd': 'Предлагаемое окончание',\n  'project.proposeSession': 'Предложить сеанс',\n",
+              "  'project.proposedEnd': 'Предлагаемое окончание',\n  'project.durationShortcuts': 'Выбрать длительность',\n  'project.durationHours': '{hours} ч',\n  'project.sessionConflict': 'Пересечений с активными сеансами: {count}. Первый начинается {date}. Это время всё равно можно предложить, если пересечение намеренное.',\n  'project.proposeSession': 'Предложить сеанс',\n",
+            ),
+          ]
+          for old, new in i18n_replacements:
+            count = i18n.count(old)
+            if count != 1:
+              raise SystemExit(f'i18n replacement expected once, found {count}: {old!r}')
+            i18n = i18n.replace(old, new)
+          i18n_path.write_text(i18n, encoding='utf-8')
+
+          test_path = Path('admin/src/test/session-planning.test.tsx')
+          test_path.write_text("""import { describe, expect, it } from 'vitest';
+import { fireEvent, screen } from '@testing-library/react';
+import { App } from '../App';
+import { addHoursToLocalDateTime, findSessionConflicts } from '../lib/session-planning';
+import { PROJECT_ID, SESSION, renderWithSession } from './fixtures';
+
+describe('session planning helpers', () => {
+  it('sets a local end time from a duration shortcut', () => {
+    expect(addHoursToLocalDateTime('2026-09-10T11:30', 7)).toBe('2026-09-10T18:30');
+  });
+
+  it('finds only active overlapping sessions', () => {
+    const cancelled = { ...SESSION, id: 'cancelled', status: 'cancelled' as const };
+    expect(findSessionConflicts(
+      [SESSION, cancelled],
+      '2026-09-01T11:00',
+      '2026-09-01T12:00'
+    )).toEqual([SESSION]);
+    expect(findSessionConflicts(
+      [SESSION],
+      '2026-09-01T16:00',
+      '2026-09-01T17:00'
+    )).toEqual([]);
+  });
+});
+
+describe('project session planner', () => {
+  it('offers 3, 5 and 7 hour shortcuts and warns about an artist overlap', async () => {
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/projects/${PROJECT_ID}`,
+    });
+
+    const start = await screen.findByLabelText('Proposed start');
+    const end = screen.getByLabelText('Proposed end');
+    const fiveHours = screen.getByRole('button', { name: '5 h' });
+
+    expect(fiveHours).toBeDisabled();
+    expect(screen.getByRole('button', { name: '3 h' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '7 h' })).toBeInTheDocument();
+
+    fireEvent.change(start, { target: { value: '2026-09-01T11:00' } });
+    fireEvent.click(fiveHours);
+
+    expect(end).toHaveValue('2026-09-01T16:00');
+    expect(screen.getByRole('alert')).toHaveTextContent('Conflicting active sessions: 1');
+  });
+});
+""", encoding='utf-8')
+          PY
+
+      - name: Validate private CRM
+        working-directory: admin
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Commit guarded patch and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/pr177-session-planning-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add session duration shortcuts and conflict warning"
+          git push origin HEAD:agent/multi-artist-payments-foundation
