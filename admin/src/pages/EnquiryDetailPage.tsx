@@ -151,6 +151,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
               <label htmlFor="assignee">{t('enquiry.assignedTo')}</label>
               <select
                 id="assignee"
+                aria-label={t('enquiry.assignee')}
                 value={enquiry.assigned_to ?? ''}
                 disabled={busy}
                 onChange={(event) => {
