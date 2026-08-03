@@ -75,8 +75,7 @@ SQL
 
 migrate_and_test() {
   require_env SUPABASE_ACCESS_TOKEN
-  require_env STAGING_SUPABASE_DB_PASSWORD
-  export SUPABASE_DB_PASSWORD="$STAGING_SUPABASE_DB_PASSWORD"
+  require_env SUPABASE_DB_PASSWORD
 
   npx supabase@2.111.0 link --project-ref "$PROJECT_REF"
   npx supabase@2.111.0 migration list --linked > "${evidence_dir}/migrations-before.txt"
