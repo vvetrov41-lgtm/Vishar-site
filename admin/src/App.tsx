@@ -5,6 +5,7 @@
 // same thing the database would enforce anyway.
 
 import { AppShell } from './components/AppShell';
+import './components/AppShell.css';
 import { RequireCapability } from './components/RequireCapability';
 import { EmptyState, LoadingState } from './components/StateViews';
 import { useLanguage } from './lib/i18n';
