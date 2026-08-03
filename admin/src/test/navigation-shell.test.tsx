@@ -1,7 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
-import { renderWithSession } from './fixtures';
+import { ARTIST_SCOPE_STORAGE_KEY } from '../lib/artist-scope';
+import {
+  ENQUIRY_ID,
+  KRISTINA_ARTIST_ID,
+  PROJECT_ID,
+  VLADIMIR_ARTIST_ID,
+  renderWithSession,
+} from './fixtures';
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
+afterEach(() => {
+  window.localStorage.clear();
+  document.body.style.overflow = '';
+});
 
 describe('responsive navigation shell', () => {
   it('keeps the mobile task order explicit', async () => {
@@ -68,5 +84,40 @@ describe('responsive navigation shell', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sections' })).not.toBeInTheDocument());
     expect(more).toHaveFocus();
     expect(document.body.style.overflow).toBe('');
+  });
+});
+
+describe('detail-route continuity', () => {
+  it('provides a stable contextual return link', async () => {
+    renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}` });
+    const back = await screen.findByRole('link', { name: /Back to Projects/ });
+    expect(back).toHaveAttribute('href', '#/projects');
+  });
+
+  it('shows a record artist mismatch and deliberately switches the filter', async () => {
+    window.localStorage.setItem(ARTIST_SCOPE_STORAGE_KEY, KRISTINA_ARTIST_ID);
+    renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}` });
+
+    expect(await screen.findByText('Artist: Vladimir Vishar')).toBeInTheDocument();
+    expect(screen.getByText('The CRM filter is currently set to Kristina Vishar.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to Vladimir Vishar' }));
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'Artist' })).toHaveValue(VLADIMIR_ARTIST_ID);
+    });
+  });
+
+  it('places enquiry workflow actions before long record content', async () => {
+    renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}` });
+
+    const actions = await screen.findByRole('heading', { level: 2, name: 'Enquiry actions' });
+    const contact = screen.getByRole('heading', { level: 2, name: 'Contact submitted with this enquiry' });
+    expect(actions.compareDocumentPosition(contact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('links an overdue dashboard follow-up directly to its enquiry', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/' });
+    const followUp = await screen.findByRole('link', { name: /Chase references/ });
+    expect(followUp).toHaveAttribute('href', `#/enquiries/${ENQUIRY_ID}`);
   });
 });
