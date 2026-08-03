@@ -35,8 +35,13 @@ select ok(not has_function_privilege('anon','public.resolve_outbox_route(uuid)',
  'anon cannot resolve routes');
 select ok(not has_function_privilege('authenticated','public.resolve_outbox_route(uuid)','EXECUTE'),
  'CRM sessions cannot resolve routes');
-select index_is_unique('public','artist_integrations_one_enabled_type_idx',
- 'one enabled route per artist and type');
+select ok(
+  (select i.indisunique
+   from pg_index i
+   where i.indexrelid =
+     'public.artist_integrations_one_enabled_type_idx'::regclass),
+  'one enabled route per artist and type'
+);
 
 set local role service_role;
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
