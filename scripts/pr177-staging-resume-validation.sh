@@ -83,28 +83,34 @@ prepare_isolated_tests() {
     injected="$(mktemp "${RUNNER_TEMP}/pr177-injected.XXXXXX")"
     cat > "$injected" <<'SQL'
 set local role postgres;
-truncate table
-  public.activity_log,
-  public.artist_integrations,
-  public.artist_memberships,
-  public.artist_payment_policies,
-  public.clients,
-  public.email_messages,
-  public.enquiries,
-  public.enquiry_files,
-  public.follow_ups,
-  public.integration_outbox,
-  public.internal_notes,
-  public.payment_requests,
-  public.payment_transactions,
-  public.payment_webhook_events,
-  public.profiles,
-  public.project_files,
-  public.projects,
-  public.retention_holds,
-  public.sessions
-restart identity cascade;
+set local session_replication_role = replica;
+
+delete from crm_private.activity_enquiry_artist_history;
+delete from crm_private.activity_project_artist_history;
+delete from crm_private.activity_session_artist_history;
 delete from storage.objects where bucket_id = 'crm-files';
+
+delete from public.payment_transactions;
+delete from public.payment_webhook_events;
+delete from public.payment_requests;
+delete from public.email_messages;
+delete from public.follow_ups;
+delete from public.internal_notes;
+delete from public.project_files;
+delete from public.sessions;
+delete from public.integration_outbox;
+delete from public.enquiry_files;
+delete from public.retention_holds;
+delete from public.projects;
+delete from public.enquiries;
+delete from public.artist_integrations;
+delete from public.artist_payment_policies;
+delete from public.artist_memberships;
+delete from public.activity_log;
+delete from public.clients;
+delete from public.profiles;
+
+set local session_replication_role = origin;
 SQL
 
     awk -v injected="$injected" '
