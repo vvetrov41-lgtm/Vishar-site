@@ -557,9 +557,18 @@ create policy integration_outbox_update_backend on public.integration_outbox
 --
 -- These remain temporary compatibility views. Migration 0022 replaces their
 -- deposit/payment values with ledger-backed projections.
+--
+-- PostgreSQL CREATE OR REPLACE VIEW cannot insert a column into an existing
+-- view signature. Drop the public wrappers before their private dependencies,
+-- then recreate the four compatibility views with artist_id.
 -- ---------------------------------------------------------------------------
 
-create or replace view crm_private.projects_finance_source
+drop view if exists public.projects_finance;
+drop view if exists public.sessions_finance;
+drop view if exists crm_private.projects_finance_source;
+drop view if exists crm_private.sessions_finance_source;
+
+create view crm_private.projects_finance_source
 with (security_barrier = true) as
   select p.id as project_id,
          p.artist_id,
@@ -572,7 +581,7 @@ with (security_barrier = true) as
   from public.projects p
   where public.can_view_artist_finance(p.artist_id);
 
-create or replace view crm_private.sessions_finance_source
+create view crm_private.sessions_finance_source
 with (security_barrier = true) as
   select s.id as session_id,
          s.artist_id,
@@ -590,7 +599,7 @@ revoke all on crm_private.sessions_finance_source
 grant select on crm_private.projects_finance_source to authenticated;
 grant select on crm_private.sessions_finance_source to authenticated;
 
-create or replace view public.projects_finance
+create view public.projects_finance
 with (security_barrier = true, security_invoker = true) as
   select project_id,
          artist_id,
@@ -602,7 +611,7 @@ with (security_barrier = true, security_invoker = true) as
          deposit_status
   from crm_private.projects_finance_source;
 
-create or replace view public.sessions_finance
+create view public.sessions_finance
 with (security_barrier = true, security_invoker = true) as
   select session_id,
          artist_id,
