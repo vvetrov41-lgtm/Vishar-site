@@ -459,8 +459,12 @@ select throws_ok(
 
 select pg_temp.act_as('22222222-2222-4222-8222-222222222222');
 select lives_ok(
-  format($$select public.create_internal_note('Manager note', %L)$$, (select client_id from ids)),
-  'a booking manager can write an internal note'
+  format(
+    $$select public.create_internal_note('Manager note', %L, %L)$$,
+    (select client_id from ids),
+    (select enquiry_id from ids)
+  ),
+  'a booking manager can write an artist-scoped internal note'
 );
 
 create temporary table fu as
