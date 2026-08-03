@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useApi } from '../lib/session';
+import { ArtistRelationship } from '../components/ArtistRelationship';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
-import { Link } from '../lib/router';
+import { collectClientArtistIds } from '../lib/client-artist-relationships';
 import { formatDate } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
+import { Link } from '../lib/router';
+import { useApi } from '../lib/session';
 import type { Client } from '../lib/types';
 import { useDebouncedValue } from '../lib/use-debounced-value';
 
@@ -17,6 +19,17 @@ export function ClientsPage() {
     () => api.listClients(debouncedSearch || undefined),
     [api, debouncedSearch]
   );
+  const {
+    data: clientArtistIds,
+    error: relationshipError,
+    reload: reloadRelationships,
+  } = useAsync<Map<string, string[]>>(async () => {
+    const [enquiries, projects] = await Promise.all([
+      api.listEnquiries(),
+      api.listProjects(),
+    ]);
+    return collectClientArtistIds(enquiries, projects);
+  }, [api]);
 
   return (
     <>
@@ -31,6 +44,9 @@ export function ClientsPage() {
 
       {loading ? <LoadingState label={t('clients.loading')} /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
+      {relationshipError ? (
+        <ErrorState message={relationshipError} onRetry={reloadRelationships} />
+      ) : null}
       {!loading && !error && data && data.length === 0 ? (
         <EmptyState title={t('clients.noMatch')} hint={t('clients.noMatchHint')} />
       ) : null}
@@ -43,6 +59,14 @@ export function ClientsPage() {
               <div className="meta">
                 {client.email ?? t('clients.noEmail')} · {t('common.firstSeen', { date: formatDate(client.created_at, language) })}
               </div>
+              {clientArtistIds ? (
+                <div className="meta">
+                  <ArtistRelationship
+                    artistIds={clientArtistIds.get(client.id) ?? []}
+                    showEmpty
+                  />
+                </div>
+              ) : null}
             </Link>
           ))}
         </div>
