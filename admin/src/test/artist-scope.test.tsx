@@ -23,6 +23,7 @@ describe('artist scope', () => {
       accessibleArtistIds:[VLADIMIR_ARTIST_ID],
     });
     const selector=await screen.findByLabelText('Artist');
+    await screen.findByRole('option',{name:'Vladimir Vishar'});
     expect(selector).toHaveTextContent('All assigned artists');
     expect(selector).toHaveTextContent('Vladimir Vishar');
     expect(selector).not.toHaveTextContent('Kristina Vishar');
@@ -34,6 +35,7 @@ describe('artist scope', () => {
       accessibleArtistIds:[VLADIMIR_ARTIST_ID,KRISTINA_ARTIST_ID],
     });
     const selector=await screen.findByLabelText('Artist');
+    await screen.findByRole('option',{name:'Kristina Vishar'});
     expect(selector).toHaveTextContent('Vladimir Vishar');
     expect(selector).toHaveTextContent('Kristina Vishar');
   });
@@ -64,6 +66,7 @@ describe('artist scope', () => {
       accessibleArtistIds:[VLADIMIR_ARTIST_ID,KRISTINA_ARTIST_ID],
     });
     const selector=await screen.findByLabelText('Artist');
+    await screen.findByRole('option',{name:'Kristina Vishar'});
     fireEvent.change(selector,{target:{value:KRISTINA_ARTIST_ID}});
     await waitFor(()=>expect(queryCalls).toContainEqual({
       table:'enquiries',method:'eq',args:['artist_id',KRISTINA_ARTIST_ID],
