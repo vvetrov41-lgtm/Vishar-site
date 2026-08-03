@@ -48,16 +48,21 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           set -euo pipefail
-          missing=0
+          missing=()
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_SUPABASE_URL STAGING_SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_DB_PASSWORD TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
             if [ -z "${!name:-}" ]; then
               echo "missing staging credential: $name"
-              missing=1
+              missing+=("$name")
             else
               echo "available staging credential: $name"
             fi
           done
-          test "$missing" -eq 0
+          if [ "${#missing[@]}" -gt 0 ]; then
+            joined="$(IFS=,; echo "${missing[*]}")"
+            echo "missing_names=$joined" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "missing_names=none" >> "$GITHUB_OUTPUT"
 
       - name: Install pinned dependencies
         run: npm ci
@@ -132,6 +137,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           JOB_STATUS: ${{ job.status }}
           CREDENTIAL_STATUS: ${{ steps.credentials.outcome }}
+          MISSING_NAMES: ${{ steps.credentials.outputs.missing_names }}
           MIGRATION_STATUS: ${{ steps.migrations.outcome }}
           CLOUDFLARE_STATUS: ${{ steps.cloudflare.outcome }}
           EDGE_STATUS: ${{ steps.edge.outcome }}
@@ -142,6 +148,7 @@ jobs:
           - Exact commit: \`$GITHUB_SHA\`
           - Job: **$JOB_STATUS**
           - Required staging credential presence: \`$CREDENTIAL_STATUS\`
+          - Missing credential names: \`${MISSING_NAMES:-unknown}\`
           - Linked migration history snapshot: \`$MIGRATION_STATUS\`
           - Worker and Pages snapshot: \`$CLOUDFLARE_STATUS\`
           - Access, WAF, rate-limit and workers.dev snapshot: \`$EDGE_STATUS\`
