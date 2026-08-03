@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, LoadingState, Section } from '../components/Sta
 import { Link } from '../lib/router';
 import { can } from '../lib/permissions';
 import { formatDateTime, formatMoney } from '../lib/format';
+import { addHoursToLocalDateTime, findSessionConflicts, SESSION_DURATION_SHORTCUTS } from '../lib/session-planning';
 import { useLanguage } from '../lib/i18n';
 import type {
   ActivityEntry, CrmSession, InternalNote, Project, ProjectFinance, SessionFinance,
@@ -15,6 +16,7 @@ interface ProjectData {
   project: Project | null;
   finance: ProjectFinance | null;
   sessions: CrmSession[];
+  artistSessions: CrmSession[];
   sessionFinance: SessionFinance[];
   notes: InternalNote[];
   activity: ActivityEntry[];
@@ -34,18 +36,27 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const { data, loading, error, reload } = useAsync<ProjectData>(async () => {
     const project = await api.getProject(projectId);
     if (!project) {
-      return { project: null, finance: null, sessions: [], sessionFinance: [], notes: [], activity: [] };
+      return {
+        project: null,
+        finance: null,
+        sessions: [],
+        artistSessions: [],
+        sessionFinance: [],
+        notes: [],
+        activity: [],
+      };
     }
 
-    const [finance, sessions, sessionFinance, notes, activity] = await Promise.all([
+    const [finance, sessions, artistSessions, sessionFinance, notes, activity] = await Promise.all([
       can(role, 'viewFinance') ? api.getProjectFinance(projectId) : Promise.resolve(null),
       api.listSessions(projectId),
+      api.listSessions(undefined, project.artist_id),
       can(role, 'viewFinance') ? api.listSessionFinance(projectId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ projectId }) : Promise.resolve([]),
       can(role, 'viewActivity') ? api.listActivity({ projectId }) : Promise.resolve([]),
     ]);
 
-    return { project, finance, sessions, sessionFinance, notes, activity };
+    return { project, finance, sessions, artistSessions, sessionFinance, notes, activity };
   }, [api, projectId, role]);
 
   async function run(action: () => Promise<unknown>) {
@@ -65,7 +76,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.project) return <EmptyState title={t('project.notFound')} />;
 
-  const { project, finance, sessions, sessionFinance, notes, activity } = data;
+  const { project, finance, sessions, artistSessions, sessionFinance, notes, activity } = data;
   const priceFor = (sessionId: string) =>
     sessionFinance.find((entry) => entry.session_id === sessionId)?.price ?? null;
   const parsedDepositAmount = Number(depositAmount);
@@ -73,6 +84,13 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     depositAmount.trim() !== ''
     && Number.isFinite(parsedDepositAmount)
     && parsedDepositAmount > 0;
+  const sessionConflicts = findSessionConflicts(artistSessions, sessionStart, sessionEnd);
+  const durationLabel = language === 'ru' ? 'Выбрать длительность' : 'Set duration';
+  const conflictMessage = sessionConflicts.length > 0
+    ? language === 'ru'
+      ? `Пересечений с активными сеансами: ${sessionConflicts.length}. Первый начинается ${formatDateTime(sessionConflicts[0].start_at, language)}. Это время всё равно можно предложить, если пересечение намеренное.`
+      : `Conflicting active sessions: ${sessionConflicts.length}. The first starts ${formatDateTime(sessionConflicts[0].start_at, language)}. You can still propose this time if the overlap is intentional.`
+    : null;
 
   return (
     <>
@@ -230,6 +248,24 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                 />
               </div>
             </div>
+            <div className="actions" role="group" aria-label={durationLabel}>
+              {SESSION_DURATION_SHORTCUTS.map((hours) => (
+                <button
+                  key={hours}
+                  type="button"
+                  disabled={busy || !sessionStart}
+                  onClick={() => {
+                    const end = addHoursToLocalDateTime(sessionStart, hours);
+                    if (end) setSessionEnd(end);
+                  }}
+                >
+                  {hours} {t('common.hoursShort')}
+                </button>
+              ))}
+            </div>
+            {conflictMessage ? (
+              <div className="notice warn" role="alert">{conflictMessage}</div>
+            ) : null}
             <div className="actions">
               <button type="submit" disabled={busy || !sessionStart || !sessionEnd}>
                 {t('project.proposeSession')}
