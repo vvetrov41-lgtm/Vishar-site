@@ -858,7 +858,7 @@ await test('the service-role key is only ever sent to Supabase', async () => {
     const headers = init.headers || {};
     const serialised = JSON.stringify(headers) + String(init.body ?? '');
     seen.push({ url: String(url), leaks: serialised.includes('test-service-role-key') });
-    if (String(url).includes('/rest/v1/rpc/create_enquiry_intake')) {
+    if (String(url).includes('/rest/v1/rpc/create_trusted_enquiry_intake')) {
       const args = JSON.parse(init.body);
       const file = args.p_files[0];
       return Response.json({
@@ -877,6 +877,27 @@ await test('the service-role key is only ever sent to Supabase', async () => {
           byte_size: file.byte_size,
           checksum: file.checksum,
         }],
+      });
+    }
+    if (String(url).includes('/rest/v1/rpc/finalize_enquiry_intake')) {
+      return Response.json({
+        enquiry_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        intake_state: 'complete',
+        reference_number: 'ENQ-2026-0001',
+        outbox_id: '0b0b0b0b-0000-4000-8000-000000000001',
+        changed: true,
+      });
+    }
+    if (String(url).includes('/rest/v1/rpc/resolve_outbox_route')) {
+      return Response.json({
+        outbox_id: '0b0b0b0b-0000-4000-8000-000000000001',
+        artist_id: 'a1111111-1111-4111-8111-111111111111',
+        kind: 'telegram_notification',
+        integration_type: 'telegram',
+        provider: 'telegram',
+        integration_key: 'vladimir-telegram',
+        external_account_label: 'Synthetic Vladimir notifications',
+        configuration: { locale: 'en-GB' },
       });
     }
     return new Response('{}', { status: 200 });
