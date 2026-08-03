@@ -24,6 +24,21 @@ insert into public.profiles (id, email, display_name, role, is_active) values
   ('22222222-2222-4222-8222-222222222222', 'manager@example.test', 'Manager', 'booking_manager', true),
   ('33333333-3333-4333-8333-333333333333', 'readonly@example.test', 'Reader', 'read_only', true);
 
+-- Workflow fixtures now use explicit artist memberships. The manager can run
+-- Vladimir's operational workflows and sessions, but cannot read finance or
+-- integration infrastructure. The reader may only read Vladimir's rows.
+insert into public.artist_memberships (
+  profile_id, artist_id, access_level,
+  can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active
+) values
+  ('22222222-2222-4222-8222-222222222222',
+   'a1111111-1111-4111-8111-111111111111',
+   'manager', false, false, true, false, true),
+  ('33333333-3333-4333-8333-333333333333',
+   'a1111111-1111-4111-8111-111111111111',
+   'read_only', false, false, false, false, true);
+
 create function pg_temp.act_as(p uuid) returns void language plpgsql as $$
 begin
   if current_user <> 'authenticated' then
