@@ -6,14 +6,16 @@ import { Link } from '../lib/router';
 import { formatDate } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type { Client } from '../lib/types';
+import { useDebouncedValue } from '../lib/use-debounced-value';
 
 export function ClientsPage() {
   const api = useApi();
   const { t, language } = useLanguage();
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search.trim());
   const { data, loading, error, reload } = useAsync<Client[]>(
-    () => api.listClients(search || undefined),
-    [api, search]
+    () => api.listClients(debouncedSearch || undefined),
+    [api, debouncedSearch]
   );
 
   return (
