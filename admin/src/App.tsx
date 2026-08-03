@@ -8,6 +8,7 @@ import { AppShell } from './components/AppShell';
 import { RequireCapability } from './components/RequireCapability';
 import { EmptyState, LoadingState } from './components/StateViews';
 import { useLanguage } from './lib/i18n';
+import { ArtistScopeProvider } from './lib/artist-scope';
 import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
@@ -55,9 +56,11 @@ export function App() {
   }
 
   return (
-    <AppShell>
-      <Routes />
-    </AppShell>
+    <ArtistScopeProvider>
+      <AppShell>
+        <Routes />
+      </AppShell>
+    </ArtistScopeProvider>
   );
 }
 

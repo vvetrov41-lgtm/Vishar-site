@@ -10,6 +10,7 @@ import { Link, useRouter } from '../lib/router';
 import { navItemsFor } from '../lib/permissions';
 import { useSession } from '../lib/session';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { useArtistScope } from '../lib/artist-scope';
 
 const NAV_KEYS: Record<string, string> = {
   '/': 'nav.dashboard',
@@ -26,6 +27,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { path } = useRouter();
   const { t, label } = useLanguage();
   const items = navItemsFor(profile?.role);
+  const { artists, selectedArtistId, loading, setSelectedArtistId } = useArtistScope();
 
   return (
     <div className="app">
@@ -38,6 +40,21 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <div className="topbar-actions">
+          <div className="artist-scope-control">
+            <label htmlFor="artist-scope">{t('artistScope.label')}</label>
+            <select
+              id="artist-scope"
+              aria-label={t('artistScope.label')}
+              value={selectedArtistId ?? ''}
+              disabled={loading}
+              onChange={(event) => setSelectedArtistId(event.target.value || null)}
+            >
+              <option value="">{t('artistScope.allAssigned')}</option>
+              {artists.map((artist) => (
+                <option key={artist.id} value={artist.id}>{artist.display_name}</option>
+              ))}
+            </select>
+          </div>
           <LanguageSwitcher />
           <button type="button" onClick={() => { void signOut(); }}>{t('common.signOut')}</button>
         </div>

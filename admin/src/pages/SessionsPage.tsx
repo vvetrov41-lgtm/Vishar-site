@@ -4,11 +4,16 @@ import { EmptyState, ErrorState, LoadingState, Section } from '../components/Sta
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type { CrmSession } from '../lib/types';
+import { useArtistScope } from '../lib/artist-scope';
 
 export function SessionsPage() {
   const api = useApi();
   const { t, label, language } = useLanguage();
-  const { data, loading, error, reload } = useAsync<CrmSession[]>(() => api.listSessions(), [api]);
+  const { selectedArtistId } = useArtistScope();
+  const { data, loading, error, reload } = useAsync<CrmSession[]>(
+    () => api.listSessions(undefined, selectedArtistId ?? undefined),
+    [api, selectedArtistId]
+  );
 
   if (loading) return <LoadingState label={t('sessions.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;

@@ -9,6 +9,15 @@
 
 export type CrmRole = 'owner' | 'booking_manager' | 'read_only';
 
+export interface Artist {
+  id: string;
+  slug: string;
+  display_name: string;
+  timezone: string;
+  default_currency: string;
+  is_active: boolean;
+}
+
 export type EnquiryStatus =
   | 'new'
   | 'reviewing'
@@ -57,6 +66,7 @@ export interface Client {
 
 export interface Enquiry {
   id: string;
+  artist_id: string;
   client_id: string;
   reference_number: string;
   status: EnquiryStatus;
@@ -99,6 +109,7 @@ export interface EnquiryFile {
 /** Operational columns only. Finance lives in ProjectFinance. */
 export interface Project {
   id: string;
+  artist_id: string;
   client_id: string;
   enquiry_id: string | null;
   status: ProjectStatus;
@@ -115,6 +126,7 @@ export interface Project {
 
 export interface ProjectFinance {
   project_id: string;
+  artist_id: string;
   client_id: string;
   currency: string;
   hourly_rate: number | null;
@@ -126,6 +138,7 @@ export interface ProjectFinance {
 /** Operational columns only. `price` lives in SessionFinance. */
 export interface CrmSession {
   id: string;
+  artist_id: string;
   project_id: string;
   status: SessionStatus;
   start_at: string;
@@ -142,6 +155,7 @@ export interface CrmSession {
 
 export interface SessionFinance {
   session_id: string;
+  artist_id: string;
   project_id: string;
   currency: string;
   price: number | null;
@@ -157,6 +171,7 @@ export interface InternalNote {
 
 export interface FollowUp {
   id: string;
+  artist_id: string;
   status: FollowUpStatus;
   due_at: string;
   subject: string;
@@ -169,6 +184,7 @@ export interface FollowUp {
 
 export interface ActivityEntry {
   id: string;
+  artist_id: string | null;
   occurred_at: string;
   event_type: string;
   actor_kind: string;
@@ -182,6 +198,7 @@ export interface ActivityEntry {
 
 export interface OutboxJob {
   id: string;
+  artist_id: string;
   kind: string;
   status: OutboxStatus;
   attempt_count: number;
@@ -193,6 +210,7 @@ export interface OutboxJob {
 
 export interface EmailMessage {
   id: string;
+  artist_id: string;
   status: EmailStatus;
   to_email: string;
   subject: string;

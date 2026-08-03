@@ -44,6 +44,9 @@ a { color: inherit; }
 .topbar h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
 .topbar .who { font-size: 0.75rem; color: var(--muted); overflow-wrap: anywhere; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.artist-scope-control { margin: 0; }
+.artist-scope-control label { margin: 0 0 2px; font-size: 0.68rem; }
+.artist-scope-control select { width: auto; max-width: 210px; min-height: var(--tap); }
 
 .language-control { margin: 0; }
 .language-select {

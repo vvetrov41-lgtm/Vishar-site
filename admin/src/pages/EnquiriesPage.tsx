@@ -6,6 +6,7 @@ import { Link } from '../lib/router';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type { Enquiry, EnquiryStatus } from '../lib/types';
+import { useArtistScope } from '../lib/artist-scope';
 
 const FILTERS: ('' | EnquiryStatus)[] = [
   '',
@@ -26,10 +27,11 @@ export function EnquiriesPage() {
   const { t, label, language } = useLanguage();
   const [status, setStatus] = useState<'' | EnquiryStatus>('');
   const [search, setSearch] = useState('');
+  const { selectedArtistId } = useArtistScope();
 
   const { data, loading, error, reload } = useAsync<Enquiry[]>(
-    () => api.listEnquiries({ status: status || undefined, search: search || undefined }),
-    [api, status, search]
+    () => api.listEnquiries({ status: status || undefined, search: search || undefined, artistId: selectedArtistId ?? undefined }),
+    [api, status, search, selectedArtistId]
   );
 
   return (

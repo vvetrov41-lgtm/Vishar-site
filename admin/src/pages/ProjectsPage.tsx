@@ -5,11 +5,16 @@ import { Link } from '../lib/router';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type { Project } from '../lib/types';
+import { useArtistScope } from '../lib/artist-scope';
 
 export function ProjectsPage() {
   const api = useApi();
   const { t, label, language } = useLanguage();
-  const { data, loading, error, reload } = useAsync<Project[]>(() => api.listProjects(), [api]);
+  const { selectedArtistId } = useArtistScope();
+  const { data, loading, error, reload } = useAsync<Project[]>(
+    () => api.listProjects(undefined, selectedArtistId ?? undefined),
+    [api, selectedArtistId]
+  );
 
   if (loading) return <LoadingState label={t('projects.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;

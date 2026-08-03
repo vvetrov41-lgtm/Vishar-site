@@ -13,6 +13,8 @@ import { RouterProvider } from '../lib/router';
 import { SessionProvider } from '../lib/session';
 import type { CrmRole, EnquiryStatus } from '../lib/types';
 
+export const VLADIMIR_ARTIST_ID = 'a1111111-1111-4111-8111-111111111111';
+export const KRISTINA_ARTIST_ID = 'a2222222-2222-4222-8222-222222222222';
 export const OWNER_ID = '11111111-1111-4111-8111-111111111111';
 export const MANAGER_ID = '22222222-2222-4222-8222-222222222222';
 export const READER_ID = '33333333-3333-4333-8333-333333333333';
@@ -22,6 +24,11 @@ export const ENQUIRY_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 export const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 export const FILE_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
+export const ARTISTS = [
+  { id: VLADIMIR_ARTIST_ID, slug: 'vladimir', display_name: 'Vladimir Vishar', timezone: 'Europe/London', default_currency: 'GBP', is_active: true },
+  { id: KRISTINA_ARTIST_ID, slug: 'kristina', display_name: 'Kristina Vishar', timezone: 'Europe/London', default_currency: 'GBP', is_active: true },
+];
 
 export const PROFILES = {
   owner: { id: OWNER_ID, email: 'owner@example.test', display_name: 'Owner', role: 'owner' as CrmRole, is_active: true, created_at: '2026-01-01T00:00:00Z' },
@@ -46,6 +53,7 @@ export const CLIENT = {
 
 export const ENQUIRY = {
   id: ENQUIRY_ID,
+  artist_id: VLADIMIR_ARTIST_ID,
   client_id: CLIENT_ID,
   reference_number: 'ENQ-2026-0001',
   status: 'new' as const,
@@ -74,6 +82,7 @@ export const ENQUIRY = {
 
 export const PROJECT = {
   id: PROJECT_ID,
+  artist_id: VLADIMIR_ARTIST_ID,
   client_id: CLIENT_ID,
   enquiry_id: ENQUIRY_ID,
   status: 'active' as const,
@@ -90,6 +99,7 @@ export const PROJECT = {
 
 export const PROJECT_FINANCE = {
   project_id: PROJECT_ID,
+  artist_id: VLADIMIR_ARTIST_ID,
   client_id: CLIENT_ID,
   currency: 'GBP',
   hourly_rate: 140,
@@ -100,6 +110,7 @@ export const PROJECT_FINANCE = {
 
 export const SESSION = {
   id: SESSION_ID,
+  artist_id: VLADIMIR_ARTIST_ID,
   project_id: PROJECT_ID,
   status: 'proposed' as const,
   start_at: '2026-09-01T10:00:00Z',
@@ -134,7 +145,7 @@ export const TRANSITIONS = [
 
 export const ACTIVITY = [
   {
-    id: 'act-1', occurred_at: '2026-07-01T09:00:02Z', event_type: 'enquiry.created',
+    id: 'act-1', artist_id: VLADIMIR_ARTIST_ID, occurred_at: '2026-07-01T09:00:02Z', event_type: 'enquiry.created',
     actor_kind: 'worker', actor_profile_id: null, client_id: CLIENT_ID,
     enquiry_id: ENQUIRY_ID, project_id: null, session_id: null, metadata: {},
   },
@@ -150,6 +161,8 @@ export interface FakeClientOptions {
   failTable?: string;
   /** Override the enquiry lifecycle state for workflow-specific screens. */
   enquiryStatus?: EnquiryStatus;
+  /** Artist identities returned by list_accessible_artists(). */
+  accessibleArtistIds?: string[];
 }
 
 const DENIED = { code: '42501', message: 'permission denied' };
@@ -191,17 +204,17 @@ function tableResult(
     case 'sessions':
       return { data: [SESSION], error: null };
     case 'sessions_finance':
-      return { data: role === 'owner' ? [{ session_id: SESSION_ID, project_id: PROJECT_ID, currency: 'GBP', price: 840, payment_status: 'unpaid' }] : [], error: null };
+      return { data: role === 'owner' ? [{ session_id: SESSION_ID, artist_id: VLADIMIR_ARTIST_ID, project_id: PROJECT_ID, currency: 'GBP', price: 840, payment_status: 'unpaid' }] : [], error: null };
     case 'internal_notes':
       return { data: canManage ? [{ id: 'note-1', author_profile_id: OWNER_ID, body: 'Internal note', created_at: '2026-07-02T09:00:00Z' }] : [], error: null };
     case 'email_messages':
       return { data: canManage ? [] : [], error: null };
     case 'follow_ups':
-      return { data: [{ id: 'fu-1', status: 'open', due_at: '2026-07-05T09:00:00Z', subject: 'Chase references', details: null, client_id: CLIENT_ID, enquiry_id: ENQUIRY_ID, project_id: null, assigned_to: null }], error: null };
+      return { data: [{ id: 'fu-1', artist_id: VLADIMIR_ARTIST_ID, status: 'open', due_at: '2026-07-05T09:00:00Z', subject: 'Chase references', details: null, client_id: CLIENT_ID, enquiry_id: ENQUIRY_ID, project_id: null, assigned_to: null }], error: null };
     case 'activity_log':
       return { data: canManage ? ACTIVITY : [], error: null };
     case 'integration_outbox':
-      return { data: role === 'owner' ? [{ id: 'job-1', kind: 'telegram_notification', status: 'failed', attempt_count: 3, max_attempts: 8, next_attempt_at: '2026-07-01T10:00:00Z', last_error_code: 'telegram_rejected', updated_at: '2026-07-01T09:30:00Z' }] : [], error: null };
+      return { data: role === 'owner' ? [{ id: 'job-1', artist_id: VLADIMIR_ARTIST_ID, kind: 'telegram_notification', status: 'failed', attempt_count: 3, max_attempts: 8, next_attempt_at: '2026-07-01T10:00:00Z', last_error_code: 'telegram_rejected', updated_at: '2026-07-01T09:30:00Z' }] : [], error: null };
     default:
       return { data: [], error: null };
   }
@@ -219,6 +232,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   const effectiveRole: CrmRole | null = profile?.is_active ? profile.role : null;
   const rpcCalls = options.rpcCalls ?? [];
   const queryCalls = options.queryCalls ?? [];
+  const accessibleArtistIds = options.accessibleArtistIds ?? (effectiveRole === 'owner'
+    ? ARTISTS.map((artist) => artist.id)
+    : [VLADIMIR_ARTIST_ID]);
 
   function builder(table: string): any {
     const result = tableResult(table, effectiveRole, options.failTable, options.enquiryStatus);
@@ -267,6 +283,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         return { data: null, error: DENIED };
       }
 
+      if (name === 'list_accessible_artists') {
+        return { data: ARTISTS.filter((artist) => accessibleArtistIds.includes(artist.id)), error: null };
+      }
       if (name === 'list_profiles') return { data: Object.values(PROFILES), error: null };
       if (name === 'list_assignable_profiles') {
         return { data: [PROFILES.owner, PROFILES.booking_manager].map((p) => ({ id: p.id, display_name: p.display_name, role: p.role })), error: null };

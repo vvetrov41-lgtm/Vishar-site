@@ -5,15 +5,17 @@ import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type { ActivityEntry } from '../lib/types';
+import { useArtistScope } from '../lib/artist-scope';
 
 export function ActivityPage() {
   const api = useApi();
   const { t, label, language } = useLanguage();
   const [eventType, setEventType] = useState('');
+  const { selectedArtistId } = useArtistScope();
 
   const { data, loading, error, reload } = useAsync<ActivityEntry[]>(
-    () => api.listActivity({ eventType: eventType || undefined }),
-    [api, eventType]
+    () => api.listActivity({ eventType: eventType || undefined, artistId: selectedArtistId ?? undefined }),
+    [api, eventType, selectedArtistId]
   );
 
   return (

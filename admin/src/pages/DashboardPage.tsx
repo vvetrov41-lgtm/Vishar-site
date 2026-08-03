@@ -6,6 +6,7 @@ import { can } from '../lib/permissions';
 import { formatDateTime, relativeDue } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type { ActivityEntry, CrmSession, Enquiry, FollowUp, OutboxJob } from '../lib/types';
+import { useArtistScope } from '../lib/artist-scope';
 
 interface DashboardData {
   enquiries: Enquiry[];
@@ -20,6 +21,7 @@ export function DashboardPage() {
   const { profile } = useSession();
   const { t, label, language } = useLanguage();
   const role = profile?.role;
+  const { selectedArtistId } = useArtistScope();
 
   const { data, loading, error, reload } = useAsync<DashboardData>(async () => {
     // Each of these is fetched independently and any one may come back empty
@@ -27,14 +29,18 @@ export function DashboardPage() {
     // The role checks below decide what to *ask* for; the database decides what
     // comes back.
     const [enquiries, followUps, sessions, activity, failedJobs] = await Promise.all([
-      api.listEnquiries(),
-      api.listFollowUps({ open: true }),
-      api.listSessions(),
-      can(role, 'viewActivity') ? api.listActivity() : Promise.resolve([]),
-      can(role, 'viewIntegrationJobs') ? api.listFailedJobs() : Promise.resolve([]),
+      api.listEnquiries({ artistId: selectedArtistId ?? undefined }),
+      api.listFollowUps({ open: true, artistId: selectedArtistId ?? undefined }),
+      api.listSessions(undefined, selectedArtistId ?? undefined),
+      can(role, 'viewActivity')
+        ? api.listActivity({ artistId: selectedArtistId ?? undefined })
+        : Promise.resolve([]),
+      can(role, 'viewIntegrationJobs')
+        ? api.listFailedJobs(selectedArtistId ?? undefined)
+        : Promise.resolve([]),
     ]);
     return { enquiries, followUps, sessions, activity, failedJobs };
-  }, [api, role]);
+  }, [api, role, selectedArtistId]);
 
   if (loading) return <LoadingState label={t('dashboard.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
