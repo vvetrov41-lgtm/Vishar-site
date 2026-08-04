@@ -18,10 +18,12 @@ function job(overrides: Partial<OutboxJob> = {}): OutboxJob {
 }
 
 describe('operational labels', () => {
-  it('localises the retained-staging event and integration codes', () => {
+  it('localises retained-staging and appointment event codes', () => {
     expect(operationalLabel('en', 'event', 'membership.updated')).toBe('Artist access updated');
     expect(operationalLabel('ru', 'event', 'profile.deactivated')).toBe('Пользователь деактивирован');
     expect(operationalLabel('ru', 'event', 'session.scheduled')).toBe('Сеанс запланирован');
+    expect(operationalLabel('en', 'event', 'appointment.scheduled')).toBe('Appointment scheduled');
+    expect(operationalLabel('ru', 'event', 'appointment.status_changed')).toBe('Статус записи изменён');
     expect(operationalLabel('ru', 'integrationKind', 'telegram_notification')).toBe('Telegram-уведомление');
     expect(operationalLabel('ru', 'integrationError', 'provider_route_unavailable')).toBe('Маршрут интеграции недоступен');
   });
