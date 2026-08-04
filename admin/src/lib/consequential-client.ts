@@ -62,6 +62,13 @@ interface ConfirmationOptions {
   language?: () => Language;
 }
 
+let dialogSequence = 0;
+
+function nextDialogId(prefix: string): string {
+  dialogSequence += 1;
+  return `${prefix}-${dialogSequence}`;
+}
+
 function currentLanguage(): Language {
   try {
     const saved = window.localStorage.getItem('vishar-crm-language');
@@ -108,8 +115,8 @@ export function showConsequentialDialog(
 ): Promise<boolean> {
   return new Promise((resolve) => {
     const dialog = document.createElement('dialog');
-    const titleId = `consequential-title-${crypto.randomUUID?.() ?? Date.now()}`;
-    const descriptionId = `consequential-description-${crypto.randomUUID?.() ?? Date.now()}`;
+    const titleId = nextDialogId('consequential-title');
+    const descriptionId = nextDialogId('consequential-description');
     const previousOverflow = document.body.style.overflow;
     let settled = false;
 
