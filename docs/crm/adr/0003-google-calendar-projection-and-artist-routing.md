@@ -46,7 +46,9 @@ The existing database overlap query remains authoritative for CRM scheduling. Pr
 
 ## Rescheduling
 
-Rescheduling must use a dedicated authorised RPC that changes start/end atomically, increments `calendar_version`, logs activity and queues one `calendar_update` operation. Editing timestamps directly from the browser is not permitted.
+Rescheduling uses the protected `reschedule_appointment` RPC. It changes start/end atomically, increments `calendar_version`, logs activity and queues one versioned calendar operation. Editing timestamps directly from the browser is not permitted.
+
+The canonical function ACL inventory grants this RPC only to `authenticated`; its body still requires active artist membership with session-management capability. Provider acknowledgement uses `record_calendar_sync_result`, granted only to `service_role`, and rejects stale versions before changing visible sync state.
 
 ## User interface
 
