@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { withConsequentialConfirmations } from '../lib/consequential-client';
+import { fireEvent, screen } from '@testing-library/react';
+import {
+  showConsequentialDialog,
+  withConsequentialConfirmations,
+} from '../lib/consequential-client';
 import { createFakeClient } from './fixtures';
 
 function wrappedClient(
-  confirm: (message: string) => boolean,
+  confirm: (message: string) => boolean | Promise<boolean>,
   rpcCalls: { name: string; args: Record<string, unknown> | undefined }[],
   language: 'en' | 'ru' = 'en'
 ) {
@@ -29,7 +33,11 @@ describe('consequential RPC confirmations', () => {
     });
 
     expect(result).toEqual({ data: null, error: null });
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/cannot be undone/i));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/cannot be undone/i),
+      'convertEnquiry',
+      'en'
+    );
     expect(rpcCalls).toEqual([]);
   });
 
@@ -46,7 +54,11 @@ describe('consequential RPC confirmations', () => {
       p_status: status,
     });
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(expectedMessage));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(expectedMessage),
+      status === 'cancelled' ? 'cancelSession' : 'markNoShow',
+      'en'
+    );
     expect(rpcCalls).toEqual([]);
   });
 
@@ -90,8 +102,8 @@ describe('consequential RPC confirmations', () => {
     });
   });
 
-  it('sends a consequential RPC after confirmation', async () => {
-    const confirm = vi.fn(() => true);
+  it('sends a consequential RPC after asynchronous confirmation', async () => {
+    const confirm = vi.fn(async () => true);
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     const client = wrappedClient(confirm, rpcCalls);
 
@@ -116,7 +128,30 @@ describe('consequential RPC confirmations', () => {
       p_status: 'no_show',
     });
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/клиент не пришёл/i));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/клиент не пришёл/i),
+      'markNoShow',
+      'ru'
+    );
+  });
+
+  it('shows a CRM-owned modal with a safe cancel path', async () => {
+    document.body.style.overflow = 'auto';
+    const decision = showConsequentialDialog(
+      'Cancel this session? It will be removed from the active schedule.',
+      'cancelSession',
+      'en'
+    );
+
+    expect(screen.getByRole('alertdialog', { name: 'Cancel session?' })).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(screen.getByRole('button', { name: 'Cancel session' })).toHaveClass('danger');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
+
+    await expect(decision).resolves.toBe(false);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('auto');
   });
 
   it('keeps an unconfigured client unconfigured', () => {
