@@ -90,22 +90,23 @@ rows "${evidence_dir}/post-migration-check.json" | jq -e '
   and .[0].check.legacy_non_tattoo_rows == 0
 ' >/dev/null || die "migration 0026 schema/backfill verification failed"
 
-# The rollback-only E2E compares its final row counts with this baseline.
-# Keep the Management API response shape identical to snapshot() in the E2E runner.
-rows "${evidence_dir}/post-migration-check.json" | jq '[{
-  snapshot: {
-    clients: .[0].check.clients,
-    enquiries: .[0].check.enquiries,
-    projects: .[0].check.projects,
-    sessions: .[0].check.sessions,
-    outbox: .[0].check.outbox,
-    activity: .[0].check.activity
-  }
-}]' > "${evidence_dir}/database-after.json"
-
-jq -e '.[0].snapshot | all(.[]; type == "number")' \
-  "${evidence_dir}/database-after.json" >/dev/null \
-  || die "could not create the retained row-count baseline"
+# The rollback-only E2E performs an exact JSON comparison. Generate its
+# baseline through the same PostgreSQL jsonb expression as the final snapshot,
+# so both responses use PostgreSQL's deterministic jsonb key ordering.
+cat > "${RUNNER_TEMP}/pr178-e2e-baseline.sql" <<'SQL'
+select jsonb_build_object(
+  'clients', (select count(*) from public.clients),
+  'enquiries', (select count(*) from public.enquiries),
+  'projects', (select count(*) from public.projects),
+  'sessions', (select count(*) from public.sessions),
+  'outbox', (select count(*) from public.integration_outbox),
+  'activity', (select count(*) from public.activity_log)
+) as snapshot;
+SQL
+sql "${RUNNER_TEMP}/pr178-e2e-baseline.sql" "${evidence_dir}/database-after.json"
+rows "${evidence_dir}/database-after.json" | jq -e '
+  .[0].snapshot | all(.[]; type == "number")
+' >/dev/null || die "could not create the retained row-count baseline"
 
 npx supabase@2.111.0 db lint --linked --schema public,crm_private --level error --fail-on error \
   2>&1 | tee "${evidence_dir}/hosted-lint-resume.txt"
