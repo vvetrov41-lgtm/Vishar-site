@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
@@ -6,22 +6,36 @@ import { EmptyState, ErrorState, LoadingState, Section } from '../components/Sta
 import { Link } from '../lib/router';
 import { can } from '../lib/permissions';
 import { formatDateTime, formatMoney } from '../lib/format';
-import { addHoursToLocalDateTime, findSessionConflicts, SESSION_DURATION_SHORTCUTS } from '../lib/session-planning';
-import { useLanguage } from '../lib/i18n';
+import { useLanguage, type Language } from '../lib/i18n';
 import { operationalLabel } from '../lib/operational-labels';
+import { typeLabel } from './AppointmentsPage';
+import type { Appointment, AppointmentConflict, AppointmentType } from '../lib/appointment-api';
 import type {
-  ActivityEntry, CrmSession, InternalNote, Project, ProjectFinance, SessionFinance,
+  ActivityEntry, InternalNote, Project, ProjectFinance, SessionFinance,
 } from '../lib/types';
 
 interface ProjectData {
   project: Project | null;
   finance: ProjectFinance | null;
-  sessions: CrmSession[];
-  artistSessions: CrmSession[];
+  appointments: Appointment[];
   sessionFinance: SessionFinance[];
   notes: InternalNote[];
   activity: ActivityEntry[];
 }
+
+const PROJECT_DURATION_MINUTES: Record<AppointmentType, number[]> = {
+  tattoo_session: [180, 300, 420],
+  in_person_consultation: [30, 45, 60],
+  video_consultation: [20, 30, 45],
+  touch_up: [60, 120, 180],
+};
+
+const APPOINTMENT_TYPES: AppointmentType[] = [
+  'tattoo_session',
+  'in_person_consultation',
+  'video_consultation',
+  'touch_up',
+];
 
 export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const api = useApi();
@@ -30,8 +44,11 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const role = profile?.role;
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [sessionStart, setSessionStart] = useState('');
-  const [sessionEnd, setSessionEnd] = useState('');
+  const [appointmentType, setAppointmentType] = useState<AppointmentType>('tattoo_session');
+  const [appointmentStart, setAppointmentStart] = useState('');
+  const [appointmentEnd, setAppointmentEnd] = useState('');
+  const [conflicts, setConflicts] = useState<AppointmentConflict[]>([]);
+  const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
 
   const { data, loading, error, reload } = useAsync<ProjectData>(async () => {
@@ -40,25 +57,44 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       return {
         project: null,
         finance: null,
-        sessions: [],
-        artistSessions: [],
+        appointments: [],
         sessionFinance: [],
         notes: [],
         activity: [],
       };
     }
 
-    const [finance, sessions, artistSessions, sessionFinance, notes, activity] = await Promise.all([
+    const [finance, appointments, sessionFinance, notes, activity] = await Promise.all([
       can(role, 'viewFinance') ? api.getProjectFinance(projectId) : Promise.resolve(null),
-      api.listSessions(projectId),
-      api.listSessions(undefined, project.artist_id),
+      api.listAppointments({ projectId }),
       can(role, 'viewFinance') ? api.listSessionFinance(projectId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ projectId }) : Promise.resolve([]),
       can(role, 'viewActivity') ? api.listActivity({ projectId }) : Promise.resolve([]),
     ]);
 
-    return { project, finance, sessions, artistSessions, sessionFinance, notes, activity };
+    return { project, finance, appointments, sessionFinance, notes, activity };
   }, [api, projectId, role]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const startIso = inputToIso(appointmentStart);
+    const endIso = inputToIso(appointmentEnd);
+    const artistId = data?.project?.artist_id;
+
+    if (!artistId || !startIso || !endIso || endIso <= startIso) {
+      setConflicts([]);
+      setCheckingConflicts(false);
+      return undefined;
+    }
+
+    setCheckingConflicts(true);
+    api.listAppointmentConflicts({ artistId, startAt: startIso, endAt: endIso })
+      .then((rows) => { if (!cancelled) setConflicts(rows); })
+      .catch(() => { if (!cancelled) setConflicts([]); })
+      .finally(() => { if (!cancelled) setCheckingConflicts(false); });
+
+    return () => { cancelled = true; };
+  }, [api, data?.project?.artist_id, appointmentStart, appointmentEnd]);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -77,20 +113,25 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.project) return <EmptyState title={t('project.notFound')} />;
 
-  const { project, finance, sessions, artistSessions, sessionFinance, notes, activity } = data;
-  const priceFor = (sessionId: string) =>
-    sessionFinance.find((entry) => entry.session_id === sessionId)?.price ?? null;
+  const { project, finance, appointments, sessionFinance, notes, activity } = data;
+  const priceFor = (appointmentId: string) =>
+    sessionFinance.find((entry) => entry.session_id === appointmentId)?.price ?? null;
   const parsedDepositAmount = Number(depositAmount);
   const hasValidDepositAmount =
     depositAmount.trim() !== ''
     && Number.isFinite(parsedDepositAmount)
     && parsedDepositAmount > 0;
-  const sessionConflicts = findSessionConflicts(artistSessions, sessionStart, sessionEnd);
+  const appointmentTitle = language === 'ru' ? 'Записи' : 'Appointments';
+  const noAppointments = language === 'ru' ? 'Записей пока нет' : 'No appointments planned';
+  const proposeLabel = language === 'ru' ? 'Предложить запись' : 'Propose appointment';
+  const startLabel = language === 'ru' ? 'Предлагаемое начало' : 'Proposed start';
+  const endLabel = language === 'ru' ? 'Предлагаемое окончание' : 'Proposed end';
+  const typeSelectLabel = language === 'ru' ? 'Тип записи' : 'Appointment type';
   const durationLabel = language === 'ru' ? 'Выбрать длительность' : 'Set duration';
-  const conflictMessage = sessionConflicts.length > 0
+  const conflictMessage = conflicts.length > 0
     ? language === 'ru'
-      ? `Пересечений с активными сеансами: ${sessionConflicts.length}. Первый начинается ${formatDateTime(sessionConflicts[0].start_at, language)}. Это время всё равно можно предложить, если пересечение намеренное.`
-      : `Conflicting active sessions: ${sessionConflicts.length}. The first starts ${formatDateTime(sessionConflicts[0].start_at, language)}. You can still propose this time if the overlap is intentional.`
+      ? `Пересекающихся активных записей: ${conflicts.length}. Первая начинается ${formatDateTime(conflicts[0].start_at, language)}. Это время всё равно можно предложить, если пересечение намеренное.`
+      : `Conflicting active appointments: ${conflicts.length}. The first starts ${formatDateTime(conflicts[0].start_at, language)}. You can still propose this time if the overlap is intentional.`
     : null;
 
   return (
@@ -139,61 +180,60 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         ) : null}
       </Section>
 
-      <Section title={t('project.sessions')}>
-        {sessions.length === 0 ? (
-          <EmptyState title={t('project.noSessions')} />
+      <Section title={appointmentTitle}>
+        {appointments.length === 0 ? (
+          <EmptyState title={noAppointments} />
         ) : (
           <div className="list">
-            {sessions.map((session) => {
-              const price = priceFor(session.id);
+            {appointments.map((appointment) => {
+              const price = priceFor(appointment.id);
               return (
-                <div key={session.id} className="row">
-                  <div className="title">{formatDateTime(session.start_at, language)}</div>
+                <div key={appointment.id} className="row">
+                  <div className="title">{formatDateTime(appointment.start_at, language)}</div>
                   <div className="meta">
-                    <span className={session.status === 'confirmed' ? 'badge ok' : 'badge'}>
-                      {label('sessionStatus', session.status)}
+                    <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
+                    <span className={appointment.status === 'confirmed' ? 'badge ok' : 'badge'}>
+                      {label('sessionStatus', appointment.status)}
                     </span>{' '}
-                    <span className="badge">
-                      {session.duration_hours ?? '—'} {t('common.hoursShort')}
-                    </span>{' '}
-                    <span className="badge">{label('paymentStatus', session.payment_status)}</span>{' '}
+                    <span className="badge">{durationValue(appointment.duration_hours, language)}</span>{' '}
+                    <span className="badge">{label('paymentStatus', appointment.payment_status)}</span>{' '}
                     {can(role, 'viewFinance') && price !== null ? (
-                      <span className="badge">{formatMoney(price, session.currency, language)}</span>
+                      <span className="badge">{formatMoney(price, appointment.currency, language)}</span>
                     ) : null}{' '}
                     <span className="badge">
-                      {t('common.calendar')}: {session.calendar_event_id ? t('common.linked') : t('common.notConnected')}
+                      {t('common.calendar')}: {appointment.calendar_event_id ? t('common.linked') : t('common.notConnected')}
                     </span>
                   </div>
                   {can(role, 'manageSessions') ? (
                     <div className="actions">
-                      {['draft', 'proposed'].includes(session.status) ? (
+                      {['draft', 'proposed'].includes(appointment.status) ? (
                         <button
                           type="button" disabled={busy}
-                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'confirmed')); }}
+                          onClick={() => { void run(() => api.setAppointmentStatus(appointment.id, 'confirmed')); }}
                         >
                           {t('project.confirm')}
                         </button>
                       ) : null}
-                      {session.status === 'confirmed' ? (
+                      {appointment.status === 'confirmed' ? (
                         <>
                           <button
                             type="button" disabled={busy}
-                            onClick={() => { void run(() => api.setSessionStatus(session.id, 'completed')); }}
+                            onClick={() => { void run(() => api.setAppointmentStatus(appointment.id, 'completed')); }}
                           >
                             {t('project.markCompleted')}
                           </button>
                           <button
                             type="button" disabled={busy}
-                            onClick={() => { void run(() => api.setSessionStatus(session.id, 'no_show')); }}
+                            onClick={() => { void run(() => api.setAppointmentStatus(appointment.id, 'no_show')); }}
                           >
                             {t('project.markNoShow')}
                           </button>
                         </>
                       ) : null}
-                      {['draft', 'proposed', 'confirmed'].includes(session.status) ? (
+                      {['draft', 'proposed', 'confirmed'].includes(appointment.status) ? (
                         <button
                           type="button" className="danger" disabled={busy}
-                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'cancelled')); }}
+                          onClick={() => { void run(() => api.setAppointmentStatus(appointment.id, 'cancelled')); }}
                         >
                           {t('project.cancel')}
                         </button>
@@ -211,71 +251,84 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
             onSubmit={(event) => {
               event.preventDefault();
               void run(async () => {
-                const start = new Date(sessionStart);
-                const end = new Date(sessionEnd);
-                if (
-                  !sessionStart
-                  || !sessionEnd
-                  || Number.isNaN(start.getTime())
-                  || Number.isNaN(end.getTime())
-                  || end <= start
-                ) {
+                const start = inputToIso(appointmentStart);
+                const end = inputToIso(appointmentEnd);
+                if (!start || !end || end <= start) {
                   throw new Error(t('project.invalidSessionTime'));
                 }
-                await api.scheduleSession(
+                await api.scheduleAppointment({
+                  artistId: project.artist_id,
+                  clientId: project.client_id,
+                  appointmentType,
+                  startAt: start,
+                  endAt: end,
+                  status: 'proposed',
+                  enquiryId: project.enquiry_id,
                   projectId,
-                  start.toISOString(),
-                  end.toISOString(),
-                  'proposed'
-                );
-                setSessionStart('');
-                setSessionEnd('');
+                });
+                setAppointmentStart('');
+                setAppointmentEnd('');
+                setConflicts([]);
               });
             }}
           >
+            <label htmlFor="appointment-type" style={{ marginTop: 12 }}>{typeSelectLabel}</label>
+            <select
+              id="appointment-type"
+              value={appointmentType}
+              onChange={(event) => setAppointmentType(event.target.value as AppointmentType)}
+            >
+              {APPOINTMENT_TYPES.map((type) => (
+                <option key={type} value={type}>{typeLabel(type, language)}</option>
+              ))}
+            </select>
+
             <div className="field-row" style={{ marginTop: 12 }}>
               <div>
-                <label htmlFor="session-start">{t('project.proposedStart')}</label>
+                <label htmlFor="appointment-start">{startLabel}</label>
                 <input
-                  id="session-start"
+                  id="appointment-start"
                   type="datetime-local"
-                  value={sessionStart}
-                  onChange={(event) => setSessionStart(event.target.value)}
+                  value={appointmentStart}
+                  onChange={(event) => setAppointmentStart(event.target.value)}
                   required
                 />
               </div>
               <div>
-                <label htmlFor="session-end">{t('project.proposedEnd')}</label>
+                <label htmlFor="appointment-end">{endLabel}</label>
                 <input
-                  id="session-end"
+                  id="appointment-end"
                   type="datetime-local"
-                  value={sessionEnd}
-                  onChange={(event) => setSessionEnd(event.target.value)}
+                  value={appointmentEnd}
+                  onChange={(event) => setAppointmentEnd(event.target.value)}
                   required
                 />
               </div>
             </div>
             <div className="actions" role="group" aria-label={durationLabel}>
-              {SESSION_DURATION_SHORTCUTS.map((hours) => (
+              {PROJECT_DURATION_MINUTES[appointmentType].map((minutes) => (
                 <button
-                  key={hours}
+                  key={minutes}
                   type="button"
-                  disabled={busy || !sessionStart}
+                  disabled={busy || !appointmentStart}
                   onClick={() => {
-                    const end = addHoursToLocalDateTime(sessionStart, hours);
-                    if (end) setSessionEnd(end);
+                    const end = addMinutesToLocalDateTime(appointmentStart, minutes);
+                    if (end) setAppointmentEnd(end);
                   }}
                 >
-                  {hours} {t('common.hoursShort')}
+                  {durationShortcut(minutes, language)}
                 </button>
               ))}
             </div>
+            {checkingConflicts ? (
+              <div className="notice">{language === 'ru' ? 'Проверяем расписание…' : 'Checking the schedule…'}</div>
+            ) : null}
             {conflictMessage ? (
               <div className="notice warn" role="alert">{conflictMessage}</div>
             ) : null}
             <div className="actions">
-              <button type="submit" disabled={busy || !sessionStart || !sessionEnd}>
-                {t('project.proposeSession')}
+              <button type="submit" disabled={busy || !appointmentStart || !appointmentEnd}>
+                {proposeLabel}
               </button>
             </div>
           </form>
@@ -353,4 +406,30 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       ) : null}
     </>
   );
+}
+
+function inputToIso(value: string): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function addMinutesToLocalDateTime(value: string, minutes: number): string | null {
+  const start = new Date(value);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = new Date(start.getTime() + minutes * 60_000);
+  const local = new Date(end.getTime() - end.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function durationShortcut(minutes: number, language: Language): string {
+  if (minutes < 60) return language === 'ru' ? `${minutes} мин` : `${minutes} min`;
+  const hours = minutes / 60;
+  return language === 'ru' ? `${hours} ч` : `${hours} h`;
+}
+
+function durationValue(hours: number | null, language: Language): string {
+  if (hours === null) return '—';
+  if (hours < 1) return durationShortcut(Math.round(hours * 60), language);
+  return language === 'ru' ? `${hours} ч` : `${hours} h`;
 }
