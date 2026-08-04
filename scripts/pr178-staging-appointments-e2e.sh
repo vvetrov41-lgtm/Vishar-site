@@ -66,35 +66,35 @@ migrate_and_validate() {
 
   mapfile -t before_versions < <(migration_versions "${evidence_dir}/migrations-before.txt")
   case "${#before_versions[@]}" in
-    25)
-      verify_contiguous_migrations "${evidence_dir}/migrations-before.txt" 25
-      ;;
     26)
       verify_contiguous_migrations "${evidence_dir}/migrations-before.txt" 26
       ;;
+    27)
+      verify_contiguous_migrations "${evidence_dir}/migrations-before.txt" 27
+      ;;
     *)
-      die "retained staging must contain exactly migrations 0001-0025 or the idempotent resume state 0001-0026"
+      die "retained staging must contain exactly migrations 0001-0026 or the idempotent resume state 0001-0027"
       ;;
   esac
 
   snapshot "${evidence_dir}/database-before.json"
 
-  if [ "${#before_versions[@]}" -eq 25 ]; then
+  if [ "${#before_versions[@]}" -eq 26 ]; then
     npx supabase@2.111.0 db push --linked --dry-run 2>&1 | tee "${evidence_dir}/migration-dry-run.txt"
-    grep -Fq '0026_appointment_types.sql' "${evidence_dir}/migration-dry-run.txt" \
-      || die "dry-run omitted migration 0026"
-    if grep -Eq '00(2[7-9]|[3-9][0-9])_' "${evidence_dir}/migration-dry-run.txt"; then
-      die "dry-run included an unexpected migration after 0026"
+    grep -Fq '0027_consultation_duration_bounds.sql' "${evidence_dir}/migration-dry-run.txt" \
+      || die "dry-run omitted migration 0027"
+    if grep -Eq '00(2[8-9]|[3-9][0-9])_' "${evidence_dir}/migration-dry-run.txt"; then
+      die "dry-run included an unexpected migration after 0027"
     fi
     npx supabase@2.111.0 db push --linked --yes
   fi
 
   npx supabase@2.111.0 migration list --linked > "${evidence_dir}/migrations-after.txt"
-  verify_contiguous_migrations "${evidence_dir}/migrations-after.txt" 26
+  verify_contiguous_migrations "${evidence_dir}/migrations-after.txt" 27
 
   npx supabase@2.111.0 test db --linked 2>&1 | tee "${evidence_dir}/hosted-pgtap.txt"
-  grep -Eq 'Tests=960|Tests[=:][[:space:]]*960|1\.\.960' "${evidence_dir}/hosted-pgtap.txt" \
-    || die "hosted pgTAP count was not exactly 960"
+  grep -Eq 'Tests=964|Tests[=:][[:space:]]*964|1\.\.964' "${evidence_dir}/hosted-pgtap.txt" \
+    || die "hosted pgTAP count was not exactly 964"
   grep -Eq 'Result:[[:space:]]*PASS|All tests successful' "${evidence_dir}/hosted-pgtap.txt" \
     || die "hosted pgTAP did not pass"
 
@@ -104,7 +104,7 @@ migrate_and_validate() {
   snapshot "${evidence_dir}/database-after.json"
   before_snapshot="$(rows "${evidence_dir}/database-before.json" | jq -c '.[0].snapshot')"
   after_snapshot="$(rows "${evidence_dir}/database-after.json" | jq -c '.[0].snapshot')"
-  [ "$before_snapshot" = "$after_snapshot" ] || die "migration 0026 changed retained row counts"
+  [ "$before_snapshot" = "$after_snapshot" ] || die "migration 0027 changed retained row counts"
 
   cat > "${RUNNER_TEMP}/pr178-schema-check.sql" <<'SQL'
 select jsonb_build_object(
@@ -123,6 +123,12 @@ select jsonb_build_object(
       select 1 from information_schema.columns
       where table_schema='public' and table_name='sessions' and column_name='enquiry_id'
     ),
+  'consultation_duration_constraint',
+    exists (
+      select 1 from pg_constraint
+      where conrelid = 'public.sessions'::regclass
+        and conname = 'sessions_consultation_duration_bounds'
+    ),
   'null_client_rows', (select count(*) from public.sessions where client_id is null),
   'legacy_non_tattoo_rows', (
     select count(*) from public.sessions
@@ -135,9 +141,10 @@ SQL
     .[0].schema_check.appointment_type_column == true
     and .[0].schema_check.client_id_column == true
     and .[0].schema_check.enquiry_id_column == true
+    and .[0].schema_check.consultation_duration_constraint == true
     and .[0].schema_check.null_client_rows == 0
     and .[0].schema_check.legacy_non_tattoo_rows == 0
-  ' >/dev/null || die "appointment schema or backfill verification failed"
+  ' >/dev/null || die "appointment schema, backfill or duration verification failed"
 }
 
 run_hosted_appointment_e2e() {
@@ -222,7 +229,7 @@ begin
 
   v_result := public.schedule_appointment(
     v_artist, v_consult_client, 'in_person_consultation',
-    v_start + interval '15 minutes', v_start + interval '1 hour', 'proposed',
+    v_start + interval '15 minutes', v_start + interval '45 minutes', 'proposed',
     v_consult_enquiry, null, 'PR178 synthetic in-person consultation'
   );
   v_id := (v_result ->> 'appointment_id')::uuid;
@@ -312,9 +319,10 @@ begin
   from public.sessions s
   join pr178_e2e_ids i on i.appointment_id = s.id
   where i.appointment_type in ('in_person_consultation','video_consultation')
-    and s.project_id is null;
+    and s.project_id is null
+    and (s.end_at - s.start_at) between interval '15 minutes' and interval '30 minutes';
   if v_count <> 2 then
-    raise exception 'projectless consultation verification failed';
+    raise exception 'projectless consultation duration verification failed';
   end if;
 
   select count(*) into v_count
@@ -391,6 +399,7 @@ select jsonb_build_object(
   'ok', true,
   'appointment_types', 4,
   'projectless_consultations', 2,
+  'consultation_duration_policy', '15_to_30_minutes',
   'conflict_domain', 'all_active_types',
   'lifecycle_checked', true,
   'read_only_denied', true,
@@ -403,6 +412,7 @@ SQL
     .[-1].summary.ok == true
     and .[-1].summary.appointment_types == 4
     and .[-1].summary.projectless_consultations == 2
+    and .[-1].summary.consultation_duration_policy == "15_to_30_minutes"
     and .[-1].summary.lifecycle_checked == true
     and .[-1].summary.read_only_denied == true
     and .[-1].summary.transaction_rolled_back == true
@@ -433,6 +443,7 @@ deploy_crm() {
   grep -R -Fq 'Все типы записей' admin/dist
   grep -R -Fq 'In-person consultation' admin/dist
   grep -R -Fq 'Видеоконсультация' admin/dist
+  grep -R -Fq '15 min' admin/dist
   ! grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{20,}' admin/dist
 
   npx wrangler pages deploy admin/dist \
