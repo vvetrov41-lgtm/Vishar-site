@@ -141,7 +141,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/enquiries', label: 'Enquiries', capability: 'viewEnquiries' },
   { path: '/clients', label: 'Clients', capability: 'viewClients' },
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
-  { path: '/sessions', label: 'Sessions', capability: 'viewSessions' },
+  { path: '/appointments', label: 'Appointments', capability: 'viewSessions' },
   { path: '/users', label: 'Users', capability: 'manageUsers' },
   { path: '/activity', label: 'Activity', capability: 'viewActivity' },
 ];
