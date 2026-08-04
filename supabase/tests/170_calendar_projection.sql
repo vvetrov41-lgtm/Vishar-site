@@ -52,6 +52,16 @@ insert into public.profiles (id, email, display_name, role, is_active) values
   ('c8111111-1111-4111-8111-111111111111', 'calendar-owner@example.test',
    'Calendar Owner', 'owner', true);
 
+insert into public.artist_memberships (
+  profile_id, artist_id, access_level,
+  can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active
+) values (
+  'c8111111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111',
+  'owner', true, true, true, true, true
+);
+
 insert into public.clients (id, full_name, email) values
   ('c8211111-1111-4111-8111-111111111111', 'Calendar Client', 'calendar-client@example.test');
 
