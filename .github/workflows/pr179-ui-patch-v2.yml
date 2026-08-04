@@ -1,0 +1,201 @@
+name: PR 179 one-time calendar UI patch v2
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.number == 179 &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/google-calendar-foundation' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/google-calendar-foundation
+          fetch-depth: 0
+      - name: Apply appointment calendar UI patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('admin/src/pages/AppointmentsPage.tsx')
+          text = path.read_text()
+
+          anchor = """  function applyDuration(minutes: number) {"""
+          addition = """  async function rescheduleAppointment(appointmentId: string, nextStartAt: string, nextEndAt: string) {
+            setChangingAppointmentId(appointmentId);
+            setStatusError(null);
+            try {
+              await api.rescheduleAppointment({ appointmentId, startAt: nextStartAt, endAt: nextEndAt });
+              reload();
+            } catch (cause) {
+              setStatusError(cause instanceof Error ? cause.message : copy.rescheduleFailed);
+              throw cause;
+            } finally {
+              setChangingAppointmentId(null);
+            }
+          }
+
+          function applyDuration(minutes: number) {"""
+          if anchor not in text:
+              raise SystemExit('duration anchor not found')
+          text = text.replace(anchor, addition, 1)
+
+          anchor = """                onStatus={(status) => { void changeStatus(appointment.id, status); }}
+              />"""
+          replacement = """                onStatus={(status) => { void changeStatus(appointment.id, status); }}
+                onReschedule={(nextStartAt, nextEndAt) => rescheduleAppointment(appointment.id, nextStartAt, nextEndAt)}
+              />"""
+          if text.count(anchor) != 2:
+              raise SystemExit(f'expected two row anchors, found {text.count(anchor)}')
+          text = text.replace(anchor, replacement)
+
+          anchor = """  changing,
+  onStatus,
+}: {"""
+          replacement = """  changing,
+  onStatus,
+  onReschedule,
+}: {"""
+          if anchor not in text:
+              raise SystemExit('row destructure anchor not found')
+          text = text.replace(anchor, replacement, 1)
+
+          anchor = """  changing: boolean;
+  onStatus: (status: SessionStatus) => void;
+}) {
+  const copy = COPY[language];
+  const appointmentName = `${typeLabel(appointment.appointment_type, language)} · ${formatDateTime(appointment.start_at, language)}`;
+  const isActive = ['draft', 'proposed', 'confirmed'].includes(appointment.status);"""
+          replacement = """  changing: boolean;
+  onStatus: (status: SessionStatus) => void;
+  onReschedule: (startAt: string, endAt: string) => Promise<void>;
+}) {
+  const copy = COPY[language];
+  const appointmentName = `${typeLabel(appointment.appointment_type, language)} · ${formatDateTime(appointment.start_at, language)}`;
+  const isActive = ['draft', 'proposed', 'confirmed'].includes(appointment.status);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [nextStartAt, setNextStartAt] = useState(toDateTimeLocal(new Date(appointment.start_at)));
+  const [nextEndAt, setNextEndAt] = useState(toDateTimeLocal(new Date(appointment.end_at)));
+  const nextStartIso = inputToIso(nextStartAt);
+  const nextEndIso = inputToIso(nextEndAt);
+  const rescheduleValid = Boolean(nextStartIso && nextEndIso && nextEndIso > nextStartIso);"""
+          if anchor not in text:
+              raise SystemExit('row type anchor not found')
+          text = text.replace(anchor, replacement, 1)
+
+          anchor = """        <span className=\"badge\">
+          {copy.calendar}: {appointment.calendar_event_id ? copy.linked : copy.notConnected}
+        </span>"""
+          replacement = """        <span className={appointment.calendar_sync_status === 'failed' ? 'badge warn' : 'badge'}>
+          {copy.calendar}: {calendarSyncLabel(appointment, language)}
+        </span>"""
+          if anchor not in text:
+              raise SystemExit('calendar badge anchor not found')
+          text = text.replace(anchor, replacement, 1)
+
+          anchor = """      {mayManage && isActive ? (
+        <div className=\"actions\">"""
+          replacement = """      {mayManage && isActive ? (
+        <>
+          <div className=\"actions\">
+            <button
+              type=\"button\"
+              disabled={changing}
+              aria-expanded={rescheduleOpen}
+              onClick={() => setRescheduleOpen((open) => !open)}
+            >
+              {copy.reschedule}
+            </button>"""
+          if anchor not in text:
+              raise SystemExit('actions open anchor not found')
+          text = text.replace(anchor, replacement, 1)
+
+          anchor = """          </button>
+        </div>
+      ) : null}
+    </div>"""
+          replacement = """          </button>
+          </div>
+          {rescheduleOpen ? (
+            <div className=\"notice\" style={{ marginTop: 12 }}>
+              <div className=\"form-grid\">
+                <label>
+                  <span>{copy.newStart}</span>
+                  <input type=\"datetime-local\" value={nextStartAt} onChange={(event) => setNextStartAt(event.target.value)} />
+                </label>
+                <label>
+                  <span>{copy.newEnd}</span>
+                  <input type=\"datetime-local\" value={nextEndAt} onChange={(event) => setNextEndAt(event.target.value)} />
+                </label>
+              </div>
+              <div className=\"actions\">
+                <button
+                  type=\"button\"
+                  disabled={changing || !rescheduleValid}
+                  onClick={() => {
+                    if (!nextStartIso || !nextEndIso) return;
+                    void onReschedule(nextStartIso, nextEndIso).then(() => setRescheduleOpen(false));
+                  }}
+                >
+                  {changing ? copy.saving : copy.saveReschedule}
+                </button>
+                <button type=\"button\" disabled={changing} onClick={() => setRescheduleOpen(false)}>
+                  {copy.goBack}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </div>"""
+          if anchor not in text:
+              raise SystemExit('actions close anchor not found')
+          text = text.replace(anchor, replacement, 1)
+
+          anchor = "function durationShortcut(minutes: number, language: Language): string {"
+          helper = """function calendarSyncLabel(appointment: Appointment, language: Language): string {
+  const labels: Record<Language, Record<Appointment['calendar_sync_status'], string>> = {
+    en: { not_connected: 'not connected', queued: 'queued', synced: 'synced', retrying: 'retrying', failed: 'failed' },
+    ru: { not_connected: 'не подключён', queued: 'в очереди', synced: 'синхронизирован', retrying: 'повторная попытка', failed: 'ошибка' },
+  };
+  const base = labels[language][appointment.calendar_sync_status];
+  return appointment.calendar_sync_status === 'failed' && appointment.calendar_last_error_code
+    ? `${base}: ${appointment.calendar_last_error_code}`
+    : base;
+}
+
+function durationShortcut(minutes: number, language: Language): string {"""
+          if anchor not in text:
+              raise SystemExit('helper anchor not found')
+          text = text.replace(anchor, helper, 1)
+
+          replacements = {
+            "    statusFailed: 'Could not change that appointment.',\n    saving: 'Saving…',": "    statusFailed: 'Could not change that appointment.',\n    rescheduleFailed: 'Could not reschedule that appointment.',\n    reschedule: 'Reschedule',\n    newStart: 'New start',\n    newEnd: 'New end',\n    saveReschedule: 'Save new time',\n    goBack: 'Go back',\n    saving: 'Saving…',",
+            "    calendarNotice: 'Calendar status is a placeholder. No appointment is written to Google Calendar because no provider is connected.',\n    calendar: 'Calendar',\n    linked: 'linked',\n    notConnected: 'not connected',": "    calendarNotice: 'Supabase remains authoritative. Calendar delivery stays queued or disconnected until the artist Google Calendar route is connected.',\n    calendar: 'Calendar',",
+            "    statusFailed: 'Не удалось изменить статус записи.',\n    saving: 'Сохраняем…',": "    statusFailed: 'Не удалось изменить статус записи.',\n    rescheduleFailed: 'Не удалось перенести запись.',\n    reschedule: 'Перенести',\n    newStart: 'Новое начало',\n    newEnd: 'Новое окончание',\n    saveReschedule: 'Сохранить новое время',\n    goBack: 'Назад',\n    saving: 'Сохраняем…',",
+            "    calendarNotice: 'Статус календаря пока служебный. Ни одна запись не отправляется в Google Calendar, потому что провайдер не подключён.',\n    calendar: 'Календарь',\n    linked: 'подключён',\n    notConnected: 'не подключён',": "    calendarNotice: 'Supabase остаётся источником данных. Отправка в календарь будет ждать подключения Google Calendar выбранного мастера.',\n    calendar: 'Календарь',",
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'copy anchor not found: {old[:40]}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+          rm -f .github/workflows/pr179-ui-patch.yml .github/workflows/pr179-ui-patch-v2.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add admin/src/pages/AppointmentsPage.tsx .github/workflows/pr179-ui-patch.yml .github/workflows/pr179-ui-patch-v2.yml
+          git commit -m "Add calendar sync state and reschedule controls"
+          git push origin HEAD:agent/google-calendar-foundation
