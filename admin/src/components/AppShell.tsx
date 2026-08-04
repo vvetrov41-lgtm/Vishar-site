@@ -19,6 +19,7 @@ const NAV_KEYS: Record<string, string> = {
   '/enquiries': 'nav.enquiries',
   '/clients': 'nav.clients',
   '/projects': 'nav.projects',
+  '/appointments': 'nav.sessions',
   '/sessions': 'nav.sessions',
   '/users': 'nav.users',
   '/activity': 'nav.activity',
@@ -26,8 +27,8 @@ const NAV_KEYS: Record<string, string> = {
 
 // Order is deliberate. Filtering the general navigation list through a Set
 // preserved membership but inherited the desktop ordering, which put Clients
-// before Sessions. Keep the phone task order explicit as the CRM expands.
-const MOBILE_PRIMARY_PATHS = ['/', '/enquiries', '/sessions', '/clients'] as const;
+// before Appointments. Keep the phone task order explicit as the CRM expands.
+const MOBILE_PRIMARY_PATHS = ['/', '/enquiries', '/appointments', '/clients'] as const;
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -145,7 +146,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav className="sidebar-nav">
           {items.map((item) => (
-            <NavigationLink key={item.path} item={item} path={path} label={t(NAV_KEYS[item.path] ?? item.label)} />
+            <NavigationLink
+              key={item.path}
+              item={item}
+              path={path}
+              label={navigationLabel(item.path, language, t(NAV_KEYS[item.path] ?? item.label))}
+            />
           ))}
         </nav>
         <div className="sidebar-user">
@@ -163,7 +169,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="topbar-identity">
               <h1>
                 <span className="topbar-brand">Vishar CRM</span>
-                <span className="topbar-page-title">{activeItem ? t(NAV_KEYS[activeItem.path] ?? activeItem.label) : 'Vishar CRM'}</span>
+                <span className="topbar-page-title">
+                  {activeItem
+                    ? navigationLabel(
+                        activeItem.path,
+                        language,
+                        t(NAV_KEYS[activeItem.path] ?? activeItem.label)
+                      )
+                    : 'Vishar CRM'}
+                </span>
               </h1>
             </div>
             <ProfileMenu
@@ -196,7 +210,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             key={item.path}
             item={item}
             path={path}
-            label={t(NAV_KEYS[item.path] ?? item.label)}
+            label={navigationLabel(item.path, language, t(NAV_KEYS[item.path] ?? item.label))}
             mobile
           />
         ))}
@@ -252,7 +266,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                           key={item.path}
                           item={item}
                           path={path}
-                          label={t(NAV_KEYS[item.path] ?? item.label)}
+                          label={navigationLabel(
+                            item.path,
+                            language,
+                            t(NAV_KEYS[item.path] ?? item.label)
+                          )}
                           sheet
                         />
                       ))}
@@ -423,6 +441,11 @@ function overflowGroupLabel(group: OverflowGroupId, language: Language): string 
   return labels[language][group];
 }
 
+function navigationLabel(path: string, language: Language, fallback: string): string {
+  if (path === '/appointments') return language === 'ru' ? 'Записи' : 'Appointments';
+  return fallback;
+}
+
 function pageScopeFor(path: string): PageScope {
   if (path === '/clients' || path.startsWith('/clients/')) return 'shared';
   if (
@@ -431,6 +454,7 @@ function pageScopeFor(path: string): PageScope {
     || path.startsWith('/enquiries/')
     || path === '/projects'
     || path.startsWith('/projects/')
+    || path === '/appointments'
     || path === '/sessions'
     || path === '/activity'
   ) return 'artist';
@@ -466,6 +490,7 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
 
 function isActivePath(itemPath: string, currentPath: string): boolean {
   if (itemPath === '/') return currentPath === '/';
+  if (itemPath === '/appointments' && currentPath === '/sessions') return true;
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`);
 }
 
@@ -498,6 +523,7 @@ function NavIcon({ path }: { path: string }) {
       return <svg {...common}><circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><circle cx="17" cy="9" r="2.5" /><path d="M15.5 14.5A5 5 0 0 1 21 19" /></svg>;
     case '/projects':
       return <svg {...common}><path d="M3 6.5h7l2 2h9v10.5H3z" /><path d="M3 6.5V5h7l2 2" /></svg>;
+    case '/appointments':
     case '/sessions':
       return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /><path d="M8 14h3M8 17h6" /></svg>;
     case '/users':
