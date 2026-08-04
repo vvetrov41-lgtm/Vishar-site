@@ -1,0 +1,102 @@
+name: PR 179 one-time calendar ACL patch
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.number == 179 &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/google-calendar-foundation' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/google-calendar-foundation
+          fetch-depth: 0
+      - name: Apply exact ACL and grant patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          acl = Path('supabase/tests/050_rls_roles.sql')
+          text = acl.read_text()
+          old = """  ('public.list_appointment_conflicts(uuid,timestamptz,timestamptz,uuid)', false, true, false),
+            ('public.schedule_appointment(uuid,uuid,public.appointment_type,timestamptz,timestamptz,public.session_status,uuid,uuid,text)', false, true, false),
+            ('public.set_appointment_status(uuid,public.session_status)', false, true, false),"""
+          new = """  ('public.list_appointment_conflicts(uuid,timestamptz,timestamptz,uuid)', false, true, false),
+            ('public.schedule_appointment(uuid,uuid,public.appointment_type,timestamptz,timestamptz,public.session_status,uuid,uuid,text)', false, true, false),
+            ('public.set_appointment_status(uuid,public.session_status)', false, true, false),
+            ('public.reschedule_appointment(uuid,timestamptz,timestamptz)', false, true, false),"""
+          if old not in text:
+              raise SystemExit('authenticated ACL anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """  ('public.record_provider_payment(uuid,uuid,uuid,text,numeric,boolean,timestamptz)', false, false, true),"""
+          new = """  ('public.record_provider_payment(uuid,uuid,uuid,text,numeric,boolean,timestamptz)', false, false, true),
+            ('public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)', false, false, true),"""
+          if old not in text:
+              raise SystemExit('service ACL anchor not found')
+          acl.write_text(text.replace(old, new, 1))
+
+          migration = Path('supabase/migrations/0028_calendar_projection_foundation.sql')
+          text = migration.read_text()
+          old = """revoke all on function public.reschedule_appointment(uuid,timestamptz,timestamptz)
+            from public, anon, authenticated, service_role;
+
+          comment on function public.reschedule_appointment(uuid,timestamptz,timestamptz) is
+            'Closed workflow primitive until its authenticated ACL is added to the canonical API inventory.';"""
+          new = """revoke all on function public.reschedule_appointment(uuid,timestamptz,timestamptz)
+            from public, anon, authenticated, service_role;
+          grant execute on function public.reschedule_appointment(uuid,timestamptz,timestamptz)
+            to authenticated;
+
+          comment on function public.reschedule_appointment(uuid,timestamptz,timestamptz) is
+            'Authorised atomic appointment reschedule that increments calendar_version and queues a versioned calendar operation.';"""
+          if old not in text:
+              raise SystemExit('reschedule grant anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """revoke all on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)
+            from public, anon, authenticated, service_role;
+
+          comment on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text) is
+            'Closed backend primitive until its service-role ACL is added to the canonical API inventory.';"""
+          new = """revoke all on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)
+            from public, anon, authenticated, service_role;
+          grant execute on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)
+            to service_role;
+
+          comment on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text) is
+            'Backend-only idempotent provider acknowledgement; stale results cannot overwrite a newer appointment version.';"""
+          if old not in text:
+              raise SystemExit('provider grant anchor not found')
+          migration.write_text(text.replace(old, new, 1))
+
+          test = Path('supabase/tests/170_calendar_projection.sql')
+          text = test.read_text()
+          text = text.replace(
+              "not has_function_privilege(\n    'authenticated', 'public.reschedule_appointment(uuid,timestamptz,timestamptz)', 'EXECUTE'\n  ),\n  'reschedule stays closed until its canonical authenticated ACL is reviewed'",
+              "has_function_privilege(\n    'authenticated', 'public.reschedule_appointment(uuid,timestamptz,timestamptz)', 'EXECUTE'\n  ),\n  'authenticated CRM users can call the protected reschedule RPC'"
+          )
+          text = text.replace(
+              "not has_function_privilege(\n    'service_role',\n    'public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)',\n    'EXECUTE'\n  ),\n  'provider acknowledgement stays closed until its backend ACL is reviewed'",
+              "has_function_privilege(\n    'service_role',\n    'public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)',\n    'EXECUTE'\n  ),\n  'service role can acknowledge provider results through the backend-only RPC'"
+          )
+          test.write_text(text)
+          PY
+          rm .github/workflows/pr179-acl-patch.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add supabase/tests/050_rls_roles.sql supabase/tests/170_calendar_projection.sql supabase/migrations/0028_calendar_projection_foundation.sql .github/workflows/pr179-acl-patch.yml
+          git commit -m "Open reviewed calendar RPC ACLs"
+          git push origin HEAD:agent/google-calendar-foundation
