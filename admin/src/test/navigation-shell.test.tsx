@@ -31,10 +31,22 @@ describe('responsive navigation shell', () => {
     expect(links.map((link) => link.textContent)).toEqual([
       'Dashboard',
       'Enquiries',
-      'Sessions',
+      'Appointments',
       'Clients',
     ]);
+    expect(within(tabbar as HTMLElement).getByRole('link', { name: 'Appointments' }))
+      .toHaveAttribute('href', '#/appointments');
     expect(within(tabbar as HTMLElement).getByRole('button', { name: 'More' })).toBeInTheDocument();
+  });
+
+  it('keeps /sessions as an artist-scoped compatibility alias', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/sessions' });
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Appointments' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Artist' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Appointments' }).some(
+      (link) => link.getAttribute('aria-current') === 'page'
+    )).toBe(true);
   });
 
   it('groups owner overflow destinations by task area', async () => {
