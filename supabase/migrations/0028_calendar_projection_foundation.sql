@@ -4,30 +4,19 @@
 -- public.sessions authoritative. No Google credentials or live provider drain
 -- are introduced by this migration.
 
--- ---------------------------------------------------------------------------
--- Calendar projection state
--- ---------------------------------------------------------------------------
-
 do $$ begin
   create type public.calendar_sync_status as enum (
-    'not_connected',
-    'queued',
-    'synced',
-    'retrying',
-    'failed'
+    'not_connected', 'queued', 'synced', 'retrying', 'failed'
   );
 exception when duplicate_object then null; end $$;
 
 alter table public.sessions
   add column if not exists calendar_sync_status public.calendar_sync_status
   not null default 'not_connected';
-
 alter table public.sessions
   add column if not exists calendar_last_synced_version integer;
-
 alter table public.sessions
   add column if not exists calendar_last_synced_at timestamptz;
-
 alter table public.sessions
   add column if not exists calendar_last_error_code text;
 
@@ -51,8 +40,7 @@ alter table public.sessions
       and calendar_last_synced_version is not null
       and calendar_last_synced_at is not null
       and calendar_last_error_code is null)
-    or
-    (calendar_sync_status <> 'synced')
+    or calendar_sync_status <> 'synced'
   );
 
 create index if not exists sessions_calendar_sync_status_idx
@@ -73,41 +61,6 @@ comment on column public.sessions.calendar_last_synced_at is
   'Timestamp of the latest successful provider acknowledgement.';
 comment on column public.sessions.calendar_last_error_code is
   'Safe non-secret failure code from the calendar drain.';
-
--- Queue state follows authoritative appointment writes. Provider credentials
--- remain outside Postgres and are resolved by artist route in the drain.
-create or replace function crm_private.mark_calendar_queued(
-  p_appointment_id uuid,
-  p_error_code text default null
-)
-returns void
-language plpgsql
-security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-begin
-  update public.sessions
-  set calendar_sync_status = case
-        when p_error_code is null then 'queued'::public.calendar_sync_status
-        else 'failed'::public.calendar_sync_status
-      end,
-      calendar_last_error_code = p_error_code,
-      updated_at = now()
-  where id = p_appointment_id;
-
-  if not found then
-    raise exception 'appointment % does not exist', p_appointment_id
-      using errcode = '23503';
-  end if;
-end;
-$$;
-
-revoke all on function crm_private.mark_calendar_queued(uuid,text)
-  from public, anon, authenticated, service_role;
-
--- ---------------------------------------------------------------------------
--- Authorised reschedule workflow
--- ---------------------------------------------------------------------------
 
 create or replace function public.reschedule_appointment(
   p_appointment_id uuid,
@@ -131,7 +84,7 @@ declare
   v_event_id text;
   v_version integer;
   v_next_version integer;
-  v_outbox_kind text;
+  v_outbox_kind public.outbox_kind;
   v_actor_kind text;
 begin
   if p_start_at is null or p_end_at is null or p_end_at <= p_start_at then
@@ -208,10 +161,10 @@ begin
   );
 
   if public.session_is_calendar_eligible(v_status) then
-    v_outbox_kind := case when v_event_id is null then 'calendar_create' else 'calendar_update' end;
+    v_outbox_kind := case when v_event_id is null then 'calendar_create'::public.outbox_kind else 'calendar_update'::public.outbox_kind end;
 
     perform crm_private.enqueue_outbox(
-      v_outbox_kind::public.integration_kind,
+      v_outbox_kind,
       public.calendar_outbox_dedupe_key(
         case when v_event_id is null then 'create' else 'update' end,
         p_appointment_id,
@@ -249,10 +202,6 @@ grant execute on function public.reschedule_appointment(uuid,timestamptz,timesta
 comment on function public.reschedule_appointment(uuid,timestamptz,timestamptz) is
   'Authorised atomic appointment reschedule that increments calendar_version and queues an artist-routed calendar projection operation.';
 
--- ---------------------------------------------------------------------------
--- Backend-only provider acknowledgement
--- ---------------------------------------------------------------------------
-
 create or replace function public.record_calendar_sync_result(
   p_appointment_id uuid,
   p_calendar_version integer,
@@ -286,7 +235,6 @@ begin
       using errcode = '22023';
   end if;
 
-  -- A stale provider response must not overwrite a newer projection state.
   if p_calendar_version < v_current_version then
     return jsonb_build_object(
       'appointment_id', p_appointment_id,
