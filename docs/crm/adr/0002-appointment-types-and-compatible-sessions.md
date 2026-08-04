@@ -88,16 +88,18 @@ This foundation does not connect Google Calendar, video calls, email or payment 
 - calendar provider remains `none` until a separate integration stage;
 - confirmed appointments may create durable calendar outbox rows, but no provider drain is activated by this PR.
 
-### 7. Use type-aware but conservative UI defaults
+### 7. Use type-aware duration policy
 
-The planner shows type-specific duration shortcuts while keeping explicit start/end controls authoritative:
+The planner shows type-specific shortcuts:
 
 - tattoo session: 3, 5 and 7 hours;
-- in-person consultation: 30, 45 and 60 minutes;
-- video consultation: 20, 30 and 45 minutes;
+- in-person consultation: 15, 20 and 30 minutes;
+- video consultation: 15, 20 and 30 minutes;
 - touch-up: 1, 2 and 3 hours.
 
-These are convenience defaults, not database policy. A later settings stage may make them artist-configurable.
+For in-person and video consultations, 15 through 30 minutes inclusive is an authoritative database policy, not only a UI default. Migration `0027_consultation_duration_bounds.sql` adds a table constraint so direct table writes and every current or future RPC obey the same range.
+
+Tattoo-session and touch-up shortcuts remain convenience defaults. A later settings stage may make those artist-configurable.
 
 ## Consequences
 
@@ -105,15 +107,17 @@ These are convenience defaults, not database policy. A later settings stage may 
 
 - Consultations can be scheduled before project conversion.
 - Existing session IDs, activity links, payment links and future calendar references remain valid.
-- The stacked PR adds one forward migration instead of rewriting migrations 0001–0025.
+- The stacked PR uses forward migrations instead of rewriting applied history.
 - Conflict checks naturally cover all appointment types.
 - Existing API clients continue to work through the unchanged compatibility RPCs.
+- Consultation duration is consistent across the shared queue, project planner and database boundary.
 
 ### Trade-offs
 
 - The database table keeps the historical name `sessions` while the product calls the section Appointments.
 - Capability, finance-view and some internal code names retain session terminology for compatibility.
 - Type-specific location, meeting-link and touch-up policy fields are deferred.
+- Changing the consultation range later requires another forward migration.
 
 ## Rejected alternatives
 
@@ -137,7 +141,7 @@ Rejected because UI state is not an authorization boundary. Artist ownership mus
 
 Separate later stages may add:
 
-- artist-configurable duration defaults;
+- artist-configurable tattoo-session and touch-up duration defaults;
 - studio/location records;
 - video meeting provider and meeting URLs;
 - Google Calendar projection;
