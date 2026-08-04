@@ -1,5 +1,6 @@
 import type { CrmClient } from './api';
 import type { Language } from './i18n';
+import './consequential-dialog.css';
 
 export type ConsequentialAction =
   | 'convertEnquiry'
@@ -22,8 +23,42 @@ const COPY: Record<Language, Record<ConsequentialAction, string>> = {
   },
 };
 
+const TITLES: Record<Language, Record<ConsequentialAction, string>> = {
+  en: {
+    convertEnquiry: 'Create project?',
+    cancelSession: 'Cancel session?',
+    markNoShow: 'Record no-show?',
+    deactivateUser: 'Deactivate user?',
+  },
+  ru: {
+    convertEnquiry: 'Создать проект?',
+    cancelSession: 'Отменить сеанс?',
+    markNoShow: 'Отметить неявку?',
+    deactivateUser: 'Деактивировать пользователя?',
+  },
+};
+
+const CONFIRM_LABELS: Record<Language, Record<ConsequentialAction, string>> = {
+  en: {
+    convertEnquiry: 'Create project',
+    cancelSession: 'Cancel session',
+    markNoShow: 'Mark no-show',
+    deactivateUser: 'Deactivate user',
+  },
+  ru: {
+    convertEnquiry: 'Создать проект',
+    cancelSession: 'Отменить сеанс',
+    markNoShow: 'Отметить неявку',
+    deactivateUser: 'Деактивировать',
+  },
+};
+
 interface ConfirmationOptions {
-  confirm?: (message: string) => boolean;
+  confirm?: (
+    message: string,
+    action?: ConsequentialAction,
+    language?: Language
+  ) => boolean | Promise<boolean>;
   language?: () => Language;
 }
 
@@ -48,6 +83,109 @@ function consequentialAction(
   return null;
 }
 
+function appendTextElement<K extends keyof HTMLElementTagNameMap>(
+  parent: HTMLElement,
+  tagName: K,
+  text: string,
+  className?: string
+): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tagName);
+  element.textContent = text;
+  if (className) element.className = className;
+  parent.append(element);
+  return element;
+}
+
+/**
+ * Shows a CRM-owned modal rather than the browser's hostname-labelled confirm
+ * prompt. Native dialog modality supplies focus containment and Escape support;
+ * the explicit handlers preserve a safe cancel path and restore page scrolling.
+ */
+export function showConsequentialDialog(
+  message: string,
+  action: ConsequentialAction,
+  language: Language
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog');
+    const titleId = `consequential-title-${crypto.randomUUID?.() ?? Date.now()}`;
+    const descriptionId = `consequential-description-${crypto.randomUUID?.() ?? Date.now()}`;
+    const previousOverflow = document.body.style.overflow;
+    let settled = false;
+
+    dialog.className = 'consequential-dialog';
+    dialog.setAttribute('role', 'alertdialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', titleId);
+    dialog.setAttribute('aria-describedby', descriptionId);
+
+    const content = document.createElement('div');
+    content.className = 'consequential-dialog-content';
+    const title = appendTextElement(content, 'h2', TITLES[language][action]);
+    title.id = titleId;
+    const description = appendTextElement(content, 'p', message);
+    description.id = descriptionId;
+
+    const actions = document.createElement('div');
+    actions.className = 'consequential-dialog-actions';
+
+    const cancelButton = appendTextElement(
+      actions,
+      'button',
+      language === 'ru' ? 'Назад' : 'Go back',
+      'consequential-dialog-cancel'
+    );
+    cancelButton.type = 'button';
+
+    const confirmButton = appendTextElement(
+      actions,
+      'button',
+      CONFIRM_LABELS[language][action],
+      action === 'convertEnquiry'
+        ? 'primary consequential-dialog-confirm'
+        : 'danger consequential-dialog-confirm'
+    );
+    confirmButton.type = 'button';
+
+    content.append(actions);
+    dialog.append(content);
+
+    const finish = (approved: boolean) => {
+      if (settled) return;
+      settled = true;
+      document.body.style.overflow = previousOverflow;
+      if (dialog.open && typeof dialog.close === 'function') dialog.close();
+      dialog.remove();
+      resolve(approved);
+    };
+
+    cancelButton.addEventListener('click', () => finish(false));
+    confirmButton.addEventListener('click', () => finish(true));
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      finish(false);
+    });
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) finish(false);
+    });
+
+    document.body.append(dialog);
+    document.body.style.overflow = 'hidden';
+
+    try {
+      if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute('open', '');
+      }
+    } catch {
+      dialog.setAttribute('open', '');
+    }
+
+    queueMicrotask(() => cancelButton.focus());
+  });
+}
+
 /**
  * Adds a last client-side confirmation immediately before consequential RPCs.
  * Database role checks and RLS remain authoritative; declining a prompt simply
@@ -59,7 +197,7 @@ export function withConsequentialConfirmations(
 ): CrmClient | null {
   if (!client) return null;
 
-  const ask = options.confirm ?? ((message: string) => window.confirm(message));
+  const ask = options.confirm ?? showConsequentialDialog;
   const language = options.language ?? currentLanguage;
 
   return {
@@ -68,8 +206,10 @@ export function withConsequentialConfirmations(
     auth: client.auth,
     rpc: async (name, args) => {
       const action = consequentialAction(name, args);
-      if (action && !ask(COPY[language()][action])) {
-        return { data: null, error: null };
+      if (action) {
+        const selectedLanguage = language();
+        const approved = await ask(COPY[selectedLanguage][action], action, selectedLanguage);
+        if (!approved) return { data: null, error: null };
       }
       return client.rpc(name, args);
     },
