@@ -14,6 +14,7 @@ import {
   CLIENT_ID,
   ENQUIRY_ID,
   PROJECT_ID,
+  SESSION_ID,
   MANAGER_ID,
 } from './fixtures';
 
@@ -95,8 +96,8 @@ describe('enquiry workflow', () => {
   });
 });
 
-describe('session workflow', () => {
-  it('proposes a session through schedule_session, not as confirmed', async () => {
+describe('appointment workflow', () => {
+  it('proposes an appointment through schedule_appointment, not as confirmed', async () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'booking_manager', path: `/projects/${PROJECT_ID}`, rpcCalls });
 
@@ -106,15 +107,17 @@ describe('session workflow', () => {
     fireEvent.change(screen.getByLabelText('Proposed end'), {
       target: { value: '2026-09-10T17:00' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /propose session/i }));
+    fireEvent.click(screen.getByRole('button', { name: /propose appointment/i }));
 
     await waitFor(() => {
-      const call = rpcCalls.find((entry) => entry.name === 'schedule_session');
+      const call = rpcCalls.find((entry) => entry.name === 'schedule_appointment');
       expect(call).toBeDefined();
-      // A proposed session must never be created as confirmed: confirming is
-      // what queues a calendar entry.
+      // A proposed appointment must never be created as confirmed: confirming
+      // is the separate lifecycle action that may queue a future calendar job.
       expect(call!.args.p_status).toBe('proposed');
       expect(call!.args.p_project_id).toBe(PROJECT_ID);
+      expect(call!.args.p_client_id).toBe(CLIENT_ID);
+      expect(call!.args.p_appointment_type).toBe('tattoo_session');
     });
   });
 
@@ -136,15 +139,16 @@ describe('session workflow', () => {
     });
   });
 
-  it('confirms a session through set_session_status', async () => {
+  it('confirms an appointment through set_appointment_status', async () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'booking_manager', path: `/projects/${PROJECT_ID}`, rpcCalls });
 
     fireEvent.click(await screen.findByRole('button', { name: /^confirm$/i }));
 
     await waitFor(() => {
-      const call = rpcCalls.find((entry) => entry.name === 'set_session_status');
+      const call = rpcCalls.find((entry) => entry.name === 'set_appointment_status');
       expect(call).toBeDefined();
+      expect(call!.args.p_appointment_id).toBe(SESSION_ID);
       expect(call!.args.p_status).toBe('confirmed');
     });
   });
