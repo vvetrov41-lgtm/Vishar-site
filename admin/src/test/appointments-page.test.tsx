@@ -33,6 +33,20 @@ describe('appointments queue', () => {
     });
   });
 
+  it('offers only 15 to 30 minute consultation shortcuts', async () => {
+    renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Appointments' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Appointment type' }), {
+      target: { value: 'video_consultation' },
+    });
+
+    expect(screen.getByRole('button', { name: '15 min' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '20 min' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '30 min' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '45 min' })).not.toBeInTheDocument();
+  });
+
   it('keeps lifecycle controls hidden from read-only users', async () => {
     renderWithSession(<App />, { role: 'read_only', path: '/appointments' });
 
