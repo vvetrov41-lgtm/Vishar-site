@@ -5,6 +5,7 @@ import { Link } from '../lib/router';
 import { can } from '../lib/permissions';
 import { formatDateTime, relativeDue } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
+import { groupFailedJobs, operationalLabel } from '../lib/operational-labels';
 import type { ActivityEntry, CrmSession, Enquiry, FollowUp, OutboxJob } from '../lib/types';
 import { useArtistScope } from '../lib/artist-scope';
 
@@ -54,6 +55,7 @@ export function DashboardPage() {
   const upcoming = data.sessions
     .filter((session) => session.status === 'confirmed' && new Date(session.start_at) >= now)
     .slice(0, 5);
+  const failedJobGroups = groupFailedJobs(data.failedJobs);
 
   return (
     <>
@@ -123,7 +125,7 @@ export function DashboardPage() {
 
       {can(role, 'viewIntegrationJobs') ? (
         <Section title={t('dashboard.failedJobs')}>
-          {data.failedJobs.length === 0 ? (
+          {failedJobGroups.length === 0 ? (
             <EmptyState
               compact
               title={t('dashboard.nothingFailed')}
@@ -131,15 +133,27 @@ export function DashboardPage() {
             />
           ) : (
             <div className="list">
-              {data.failedJobs.map((job) => (
-                <div key={job.id} className="row">
-                  <div className="title">{job.kind}</div>
+              {failedJobGroups.map((group) => (
+                <div key={group.key} className="row">
+                  <div className="title">
+                    {operationalLabel(language, 'integrationKind', group.kind)}
+                  </div>
                   <div className="meta">
-                    <span className="badge danger">{job.last_error_code ?? job.status}</span>{' '}
+                    <span
+                      className="badge danger"
+                      title={group.errorCode ?? group.status}
+                    >
+                      {operationalLabel(
+                        language,
+                        'integrationError',
+                        group.errorCode ?? group.status
+                      )}
+                    </span>{' '}
+                    {failedCountLabel(language, group.count)} ·{' '}
                     {t('common.attemptOf', {
-                      attempt: job.attempt_count,
-                      max: job.max_attempts,
-                      date: formatDateTime(job.updated_at, language),
+                      attempt: group.latestJob.attempt_count,
+                      max: group.latestJob.max_attempts,
+                      date: formatDateTime(group.latestJob.updated_at, language),
                     })}
                   </div>
                 </div>
@@ -157,7 +171,9 @@ export function DashboardPage() {
             <ul className="timeline">
               {data.activity.slice(0, 8).map((entry) => (
                 <li key={entry.id}>
-                  <div>{label('event', entry.event_type)}</div>
+                  <div title={entry.event_type}>
+                    {operationalLabel(language, 'event', entry.event_type)}
+                  </div>
                   <div className="when">
                     {formatDateTime(entry.occurred_at, language)} · {label('actor', entry.actor_kind)}
                   </div>
@@ -176,6 +192,21 @@ function followUpTarget(followUp: FollowUp): string | null {
   if (followUp.project_id) return `/projects/${followUp.project_id}`;
   if (followUp.client_id) return `/clients/${followUp.client_id}`;
   return null;
+}
+
+function failedCountLabel(language: 'en' | 'ru', count: number): string {
+  if (language === 'en') return `${count} ${count === 1 ? 'failure' : 'failures'}`;
+
+  const lastTwo = count % 100;
+  const last = count % 10;
+  const noun = lastTwo >= 11 && lastTwo <= 14
+    ? 'ошибок'
+    : last === 1
+      ? 'ошибка'
+      : last >= 2 && last <= 4
+        ? 'ошибки'
+        : 'ошибок';
+  return `${count} ${noun}`;
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
