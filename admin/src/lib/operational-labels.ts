@@ -4,6 +4,7 @@ import type { OutboxJob } from './types';
 export type OperationalLabelGroup = 'event' | 'integrationKind' | 'integrationError';
 
 export const ACTIVITY_EVENT_TYPES = [
+  'appointment.rescheduled',
   'appointment.scheduled',
   'appointment.status_changed',
   'artist.work_transferred',
@@ -40,6 +41,7 @@ export const ACTIVITY_EVENT_TYPES = [
 const LABELS: Record<Language, Record<OperationalLabelGroup, Record<string, string>>> = {
   en: {
     event: {
+      'appointment.rescheduled': 'Appointment rescheduled',
       'appointment.scheduled': 'Appointment scheduled',
       'appointment.status_changed': 'Appointment status changed',
       'artist.work_transferred': 'Artist work transferred',
@@ -73,17 +75,22 @@ const LABELS: Record<Language, Record<OperationalLabelGroup, Record<string, stri
       'session.status_changed': 'Session status changed',
     },
     integrationKind: {
-      calendar_create: 'Calendar event',
+      calendar_create: 'Create calendar event',
+      calendar_update: 'Update calendar event',
+      calendar_cancel: 'Cancel calendar event',
       telegram_notification: 'Telegram notification',
     },
     integrationError: {
       calendar_not_configured: 'Calendar is not configured',
+      calendar_oauth_expired: 'Calendar connection needs attention',
+      calendar_provider_rejected: 'Calendar provider rejected the request',
       provider_route_unavailable: 'Provider route unavailable',
       telegram_rejected: 'Telegram rejected the request',
     },
   },
   ru: {
     event: {
+      'appointment.rescheduled': 'Запись перенесена',
       'appointment.scheduled': 'Запись запланирована',
       'appointment.status_changed': 'Статус записи изменён',
       'artist.work_transferred': 'Работа передана другому мастеру',
@@ -117,11 +124,15 @@ const LABELS: Record<Language, Record<OperationalLabelGroup, Record<string, stri
       'session.status_changed': 'Статус сеанса изменён',
     },
     integrationKind: {
-      calendar_create: 'Событие календаря',
+      calendar_create: 'Создание события календаря',
+      calendar_update: 'Обновление события календаря',
+      calendar_cancel: 'Отмена события календаря',
       telegram_notification: 'Telegram-уведомление',
     },
     integrationError: {
       calendar_not_configured: 'Календарь не настроен',
+      calendar_oauth_expired: 'Подключение календаря требует внимания',
+      calendar_provider_rejected: 'Календарь отклонил запрос',
       provider_route_unavailable: 'Маршрут интеграции недоступен',
       telegram_rejected: 'Telegram отклонил запрос',
     },
