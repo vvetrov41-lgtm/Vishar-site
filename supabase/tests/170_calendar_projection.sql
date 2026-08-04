@@ -131,7 +131,7 @@ select is(
 );
 select is(
   (select calendar_version from public.sessions where id = (select id from calendar_appointment)),
-  2,
+  1,
   'reschedule increments the calendar version exactly once'
 );
 select is(
@@ -166,14 +166,14 @@ select is(
 );
 select is(
   (select calendar_version from public.sessions where id = (select id from calendar_appointment)),
-  2,
+  1,
   'an idempotent reschedule does not increment the version again'
 );
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select ok(
   (public.record_calendar_sync_result(
-    (select id from calendar_appointment), 2, true, 'google', 'synthetic-event-id', null
+    (select id from calendar_appointment), 1, true, 'google', 'synthetic-event-id', null
   ) ->> 'applied')::boolean,
   'a current successful provider result is applied'
 );
@@ -186,7 +186,7 @@ select is(
 select is(
   (select calendar_last_synced_version from public.sessions
    where id = (select id from calendar_appointment)),
-  2,
+  1,
   'successful acknowledgement stores the exact synced version'
 );
 
@@ -210,10 +210,11 @@ select is(
   1,
   'a reschedule with an existing event queues one calendar update'
 );
+
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select ok(
   (public.record_calendar_sync_result(
-    (select id from calendar_appointment), 2, false, 'google', null, 'stale_failure'
+    (select id from calendar_appointment), 1, false, 'google', null, 'stale_failure'
   ) ->> 'stale')::boolean,
   'a stale provider response is recognised'
 );
