@@ -1,0 +1,344 @@
+name: PR 178 apply consultation duration policy
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  apply-duration-policy:
+    if: >-
+      github.event.action == 'submitted' &&
+      github.event.review.state == 'commented' &&
+      github.event.review.body == 'APPLY PR178 CONSULTATION DURATION' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.number == 178 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/appointment-types-foundation' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Guard exact source state
+        shell: bash
+        env:
+          EXPECTED_SHA: 5baeb61dd85ca7198644becbd334c8ba59d6409f
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$EXPECTED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .review.body == "APPLY PR178 CONSULTATION DURATION"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 178
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.head.ref == "agent/appointment-types-foundation"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Check out PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/appointment-types-foundation
+          fetch-depth: 0
+
+      - name: Apply 15 to 30 minute consultation policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+
+          def read(path: str) -> str:
+              return Path(path).read_text()
+
+          def write(path: str, text: str) -> None:
+              Path(path).write_text(text)
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              text = read(path)
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old!r}')
+              write(path, text.replace(old, new, 1))
+
+          for path, old in [
+              ('admin/src/pages/AppointmentsPage.tsx', "  in_person_consultation: [30, 45, 60],\n  video_consultation: [20, 30, 45],"),
+              ('admin/src/pages/ProjectDetailPage.tsx', "  in_person_consultation: [30, 45, 60],\n  video_consultation: [20, 30, 45],"),
+          ]:
+              replace_once(path, old, "  in_person_consultation: [15, 20, 30],\n  video_consultation: [15, 20, 30],")
+
+          test_path = 'admin/src/test/appointments-page.test.tsx'
+          test_text = read(test_path)
+          marker = "\n  it('keeps lifecycle controls hidden from read-only users', async () => {"
+          addition = """
+
+  it('offers only 15 to 30 minute consultation shortcuts', async () => {
+    renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Appointments' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Appointment type' }), {
+      target: { value: 'video_consultation' },
+    });
+
+    expect(screen.getByRole('button', { name: '15 min' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '20 min' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '30 min' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '45 min' })).not.toBeInTheDocument();
+  });
+"""
+          if addition.strip() not in test_text:
+              if test_text.count(marker) != 1:
+                  raise SystemExit('appointments page test insertion marker is not unique')
+              test_text = test_text.replace(marker, addition + marker, 1)
+              write(test_path, test_text)
+
+          sql_test = 'supabase/tests/160_appointment_types.sql'
+          replace_once(
+              sql_test,
+              "      '2026-09-12T12:00:00Z', '2026-09-12T12:45:00Z',",
+              "      '2026-09-12T12:00:00Z', '2026-09-12T12:30:00Z',",
+          )
+          sql_text = read(sql_test)
+          constraint_marker = """select ok(
+  not (select a.attnotnull from pg_attribute a
+       where a.attrelid = 'public.sessions'::regclass
+         and a.attname = 'project_id' and not a.attisdropped),
+  'project_id is nullable for pre-project consultations'
+);
+"""
+          constraint_test = constraint_marker + """
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.sessions'::regclass
+      and conname = 'sessions_consultation_duration_bounds'
+  ),
+  'consultation duration bounds are enforced by the sessions table'
+);
+"""
+          if "consultation duration bounds are enforced" not in sql_text:
+              if sql_text.count(constraint_marker) != 1:
+                  raise SystemExit('constraint test insertion marker is not unique')
+              sql_text = sql_text.replace(constraint_marker, constraint_test, 1)
+
+          duration_marker = """select throws_ok(
+  $$select public.schedule_appointment(
+      'a1111111-1111-4111-8111-111111111111',
+      'b8211111-1111-4111-8111-111111111111',
+      'tattoo_session',
+"""
+          duration_tests = """select lives_ok(
+  $$select public.schedule_appointment(
+      'a1111111-1111-4111-8111-111111111111',
+      'b8211111-1111-4111-8111-111111111111',
+      'video_consultation',
+      '2026-09-12T13:00:00Z', '2026-09-12T13:15:00Z',
+      'proposed', null, null, 'Minimum consultation duration'
+    )$$,
+  'a 15 minute consultation is accepted'
+);
+
+select throws_ok(
+  $$select public.schedule_appointment(
+      'a1111111-1111-4111-8111-111111111111',
+      'b8211111-1111-4111-8111-111111111111',
+      'video_consultation',
+      '2026-09-12T14:00:00Z', '2026-09-12T14:14:00Z',
+      'proposed', null, null, 'Too short consultation'
+    )$$,
+  '23514', null,
+  'a consultation shorter than 15 minutes is rejected'
+);
+
+select throws_ok(
+  $$select public.schedule_appointment(
+      'a1111111-1111-4111-8111-111111111111',
+      'b8211111-1111-4111-8111-111111111111',
+      'in_person_consultation',
+      '2026-09-12T15:00:00Z', '2026-09-12T15:31:00Z',
+      'proposed', null, null, 'Too long consultation'
+    )$$,
+  '23514', null,
+  'a consultation longer than 30 minutes is rejected'
+);
+
+"""
+          if "a consultation shorter than 15 minutes is rejected" not in sql_text:
+              if sql_text.count(duration_marker) != 1:
+                  raise SystemExit('duration test insertion marker is not unique')
+              sql_text = sql_text.replace(duration_marker, duration_tests + duration_marker, 1)
+          write(sql_test, sql_text)
+
+          migration = Path('supabase/migrations/0027_consultation_duration_bounds.sql')
+          if migration.exists():
+              raise SystemExit('migration 0027 already exists')
+          migration.write_text("""-- 0027_consultation_duration_bounds.sql
+--
+-- Consultation appointments are intentionally short. Enforce the product
+-- policy at the authoritative table boundary as well as in CRM shortcuts.
+
+ do $$
+ begin
+   if exists (
+     select 1
+     from public.sessions
+     where appointment_type in ('in_person_consultation', 'video_consultation')
+       and (end_at - start_at) not between interval '15 minutes' and interval '30 minutes'
+   ) then
+     raise exception 'existing consultation rows fall outside the 15 to 30 minute policy'
+       using errcode = '23514';
+   end if;
+ end;
+ $$;
+
+alter table public.sessions
+  add constraint sessions_consultation_duration_bounds
+  check (
+    appointment_type not in ('in_person_consultation', 'video_consultation')
+    or (end_at - start_at) between interval '15 minutes' and interval '30 minutes'
+  );
+
+comment on constraint sessions_consultation_duration_bounds on public.sessions is
+  'In-person and video consultations must last from 15 through 30 minutes inclusive.';
+""")
+
+          replace_once(
+              'scripts/pr178-staging-appointments-e2e.sh',
+              "    v_start + interval '15 minutes', v_start + interval '1 hour', 'proposed',",
+              "    v_start + interval '15 minutes', v_start + interval '45 minutes', 'proposed',",
+          )
+
+          runner_path = 'scripts/pr178-staging-appointments-e2e.sh'
+          runner = read(runner_path)
+          runner = runner.replace('migration 0026', 'migration 0027')
+          runner = runner.replace('0026_appointment_types.sql', '0027_consultation_duration_bounds.sql')
+          runner = runner.replace('0001-0025 or the idempotent resume state 0001-0026', '0001-0026 or the idempotent resume state 0001-0027')
+          runner = runner.replace('Tests=960', 'Tests=964').replace('Tests[=:][[:space:]]*960', 'Tests[=:][[:space:]]*964').replace('1\\.\\.960', '1\\.\\.964')
+          runner = runner.replace('exactly 960', 'exactly 964')
+          runner = runner.replace('verify_contiguous_migrations "${evidence_dir}/migrations-after.txt" 26', 'verify_contiguous_migrations "${evidence_dir}/migrations-after.txt" 27')
+          runner = runner.replace('case "${#before_versions[@]}" in\n    25)', 'case "${#before_versions[@]}" in\n    26)')
+          runner = runner.replace('      verify_contiguous_migrations "${evidence_dir}/migrations-before.txt" 25', '      verify_contiguous_migrations "${evidence_dir}/migrations-before.txt" 26')
+          runner = runner.replace('    26)\n      verify_contiguous_migrations "${evidence_dir}/migrations-before.txt" 26', '    27)\n      verify_contiguous_migrations "${evidence_dir}/migrations-before.txt" 27')
+          runner = runner.replace('if [ "${#before_versions[@]}" -eq 25 ]; then', 'if [ "${#before_versions[@]}" -eq 26 ]; then')
+          runner = runner.replace("grep -Eq '00(2[7-9]|[3-9][0-9])_'", "grep -Eq '00(2[8-9]|[3-9][0-9])_'")
+          write(runner_path, runner)
+
+          post_path = 'scripts/pr178-staging-post-migration-check.sh'
+          post = read(post_path)
+          start = post.index('mapfile -t versions < <(')
+          end = post.index('cat > "${RUNNER_TEMP}/pr178-post-migration-check.sql"')
+          new_history = """mapfile -t versions < <(
+  awk -F'|' '{gsub(/[[:space:]`]/,"",$2); if ($2 ~ /^[0-9][0-9][0-9][0-9]$/) print $2}' \\
+    "${evidence_dir}/migrations-resume.txt"
+)
+case "${#versions[@]}" in
+  26|27) ;;
+  *) die "retained staging must contain exactly migrations 0001-0026 or 0001-0027" ;;
+esac
+for n in $(seq -w 1 "${#versions[@]}"); do
+  printf '%s\\n' "${versions[@]}" | grep -Fxq "00$n" || die "remote migration 00$n is absent"
+done
+
+if [ "${#versions[@]}" -eq 26 ]; then
+  npx supabase@2.111.0 db push --linked --dry-run 2>&1 | tee "${evidence_dir}/migration-0027-dry-run.txt"
+  grep -Fq '0027_consultation_duration_bounds.sql' "${evidence_dir}/migration-0027-dry-run.txt" \\
+    || die "dry-run omitted migration 0027"
+  if grep -Eq '00(2[8-9]|[3-9][0-9])_' "${evidence_dir}/migration-0027-dry-run.txt"; then
+    die "dry-run included an unexpected migration after 0027"
+  fi
+  npx supabase@2.111.0 db push --linked --yes
+fi
+
+npx supabase@2.111.0 migration list --linked > "${evidence_dir}/migrations-resume.txt"
+mapfile -t versions < <(
+  awk -F'|' '{gsub(/[[:space:]`]/,"",$2); if ($2 ~ /^[0-9][0-9][0-9][0-9]$/) print $2}' \\
+    "${evidence_dir}/migrations-resume.txt"
+)
+[ "${#versions[@]}" -eq 27 ] || die "retained staging must contain exactly migrations 0001-0027"
+for n in $(seq -w 1 27); do
+  printf '%s\\n' "${versions[@]}" | grep -Fxq "00$n" || die "remote migration 00$n is absent"
+done
+
+"""
+          post = post[:start] + new_history + post[end:]
+          post = post.replace("'migration_0026_present'", "'migration_0027_present'")
+          post = post.replace("where version = '0026'", "where version = '0027'")
+          post = post.replace('.check.migration_0026_present == true', '.check.migration_0027_present == true')
+          post = post.replace('canonical 960-test', 'canonical 964-test')
+          schema_anchor = """  'enquiry_id_column',
+    exists (
+      select 1 from information_schema.columns
+      where table_schema='public' and table_name='sessions' and column_name='enquiry_id'
+    ),
+"""
+          schema_add = schema_anchor + """  'consultation_duration_constraint',
+    exists (
+      select 1 from pg_constraint
+      where conrelid = 'public.sessions'::regclass
+        and conname = 'sessions_consultation_duration_bounds'
+    ),
+"""
+          if post.count(schema_anchor) != 1:
+              raise SystemExit('post-migration schema marker is not unique')
+          post = post.replace(schema_anchor, schema_add, 1)
+          post = post.replace(
+              'and .[0].check.enquiry_id_column == true\n',
+              'and .[0].check.enquiry_id_column == true\n  and .[0].check.consultation_duration_constraint == true\n',
+              1,
+          )
+          write(post_path, post)
+
+          workflow_path = '.github/workflows/pr178-staging-resume-e2e.yml'
+          workflow = read(workflow_path)
+          workflow = workflow.replace('Verify 0026, run rollback E2E and deploy CRM', 'Apply or verify 0027, run rollback E2E and deploy CRM')
+          workflow = workflow.replace('Verify retained migration 0026, schema, backfill and hosted lint', 'Apply or verify retained migration 0027 and hosted lint')
+          workflow = workflow.replace('id: verify_0026', 'id: verify_0027')
+          workflow = workflow.replace('VERIFY_0026_OUTCOME', 'VERIFY_0027_OUTCOME')
+          workflow = workflow.replace('steps.verify_0026.outcome', 'steps.verify_0027.outcome')
+          workflow = workflow.replace('verify_0026=', 'verify_0027=')
+          workflow = workflow.replace('${VERIFY_0026_OUTCOME:-unknown}', '${VERIFY_0027_OUTCOME:-unknown}')
+          workflow = workflow.replace('0001-0026', '0001-0027')
+          workflow = workflow.replace('960/960', '964/964')
+          workflow = workflow.replace(
+              'The first hosted attempt successfully applied migration 0026 but incorrectly ran clean-database canonical tests against retained rows. This continuation uses the correct hosted-data boundary.',
+              'Migration 0027 applies the 15 to 30 minute consultation policy forward-only. Hosted validation uses the retained-data-safe boundary.',
+          )
+          write(workflow_path, workflow)
+
+          adr_path = 'docs/crm/adr/0002-appointment-types-and-compatible-sessions.md'
+          adr = read(adr_path)
+          policy = """
+
+## Consultation duration policy
+
+In-person and video consultations last from 15 through 30 minutes inclusive. CRM shortcuts offer 15, 20 and 30 minutes, while the database constraint remains authoritative for every write path.
+"""
+          if '## Consultation duration policy' not in adr:
+              write(adr_path, adr.rstrip() + policy + '\n')
+
+          Path('.github/workflows/pr178-apply-consultation-duration.yml').unlink()
+          PY
+
+          git diff --check
+          git status --short
+          allowed='^(.github/workflows/pr178-apply-consultation-duration.yml|.github/workflows/pr178-staging-resume-e2e.yml|admin/src/pages/AppointmentsPage.tsx|admin/src/pages/ProjectDetailPage.tsx|admin/src/test/appointments-page.test.tsx|docs/crm/adr/0002-appointment-types-and-compatible-sessions.md|scripts/pr178-staging-appointments-e2e.sh|scripts/pr178-staging-post-migration-check.sh|supabase/migrations/0027_consultation_duration_bounds.sql|supabase/tests/160_appointment_types.sql)$'
+          while IFS= read -r path; do
+            [[ "$path" =~ $allowed ]] || { echo "Unexpected changed path: $path" >&2; exit 1; }
+          done < <(git status --short | sed 's/^...//')
+
+      - name: Commit exact scoped update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Set consultation duration to 15-30 minutes"
+          git push origin HEAD:agent/appointment-types-foundation
