@@ -4,6 +4,8 @@ import type { OutboxJob } from './types';
 export type OperationalLabelGroup = 'event' | 'integrationKind' | 'integrationError';
 
 export const ACTIVITY_EVENT_TYPES = [
+  'appointment.scheduled',
+  'appointment.status_changed',
   'artist.work_transferred',
   'client.created',
   'enquiry.assigned',
@@ -38,6 +40,8 @@ export const ACTIVITY_EVENT_TYPES = [
 const LABELS: Record<Language, Record<OperationalLabelGroup, Record<string, string>>> = {
   en: {
     event: {
+      'appointment.scheduled': 'Appointment scheduled',
+      'appointment.status_changed': 'Appointment status changed',
       'artist.work_transferred': 'Artist work transferred',
       'client.created': 'Client created',
       'enquiry.assigned': 'Enquiry assigned',
@@ -80,6 +84,8 @@ const LABELS: Record<Language, Record<OperationalLabelGroup, Record<string, stri
   },
   ru: {
     event: {
+      'appointment.scheduled': 'Запись запланирована',
+      'appointment.status_changed': 'Статус записи изменён',
       'artist.work_transferred': 'Работа передана другому мастеру',
       'client.created': 'Клиент создан',
       'enquiry.assigned': 'Назначен исполнитель',
