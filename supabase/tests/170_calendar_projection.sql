@@ -29,18 +29,18 @@ select ok(
   'anonymous callers cannot reschedule appointments'
 );
 select ok(
-  not has_function_privilege(
+  has_function_privilege(
     'authenticated', 'public.reschedule_appointment(uuid,timestamptz,timestamptz)', 'EXECUTE'
   ),
-  'reschedule stays closed until its canonical authenticated ACL is reviewed'
+  'authenticated CRM users can call the protected reschedule RPC'
 );
 select ok(
-  not has_function_privilege(
+  has_function_privilege(
     'service_role',
     'public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)',
     'EXECUTE'
   ),
-  'provider acknowledgement stays closed until its backend ACL is reviewed'
+  'service role can acknowledge provider results through the backend-only RPC'
 );
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);

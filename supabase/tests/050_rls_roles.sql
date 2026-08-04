@@ -521,6 +521,7 @@ insert into expected_function_acl values
   ('public.resolve_booking_source(text,text,text)', false, false, true),
   ('public.register_payment_webhook_event(text,text,text,text)', false, false, true),
   ('public.record_provider_payment(uuid,uuid,uuid,text,numeric,boolean,timestamptz)', false, false, true),
+  ('public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)', false, false, true),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
   ('public.record_activity(text,uuid,uuid,uuid,uuid,jsonb)', false, true, false),
@@ -532,6 +533,7 @@ insert into expected_function_acl values
   ('public.list_appointment_conflicts(uuid,timestamptz,timestamptz,uuid)', false, true, false),
   ('public.schedule_appointment(uuid,uuid,public.appointment_type,timestamptz,timestamptz,public.session_status,uuid,uuid,text)', false, true, false),
   ('public.set_appointment_status(uuid,public.session_status)', false, true, false),
+  ('public.reschedule_appointment(uuid,timestamptz,timestamptz)', false, true, false),
   ('public.update_project_deposit(uuid,numeric,public.deposit_status,text)', false, true, false),
   ('public.update_project_estimate(uuid,numeric,numeric,integer,numeric,text)', false, true, false),
   ('public.create_internal_note(text,uuid,uuid,uuid,uuid)', false, true, false),

@@ -185,9 +185,11 @@ $$;
 
 revoke all on function public.reschedule_appointment(uuid,timestamptz,timestamptz)
   from public, anon, authenticated, service_role;
+grant execute on function public.reschedule_appointment(uuid,timestamptz,timestamptz)
+  to authenticated;
 
 comment on function public.reschedule_appointment(uuid,timestamptz,timestamptz) is
-  'Closed workflow primitive until its authenticated ACL is added to the canonical API inventory.';
+  'Authorised atomic appointment reschedule that increments calendar_version and queues a versioned calendar operation.';
 
 create or replace function public.record_calendar_sync_result(
   p_appointment_id uuid,
@@ -271,6 +273,8 @@ $$;
 
 revoke all on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)
   from public, anon, authenticated, service_role;
+grant execute on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)
+  to service_role;
 
 comment on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text) is
-  'Closed backend primitive until its service-role ACL is added to the canonical API inventory.';
+  'Backend-only idempotent provider acknowledgement; stale results cannot overwrite a newer appointment version.';
