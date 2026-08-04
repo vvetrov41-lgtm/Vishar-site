@@ -16,7 +16,7 @@ The CRM currently models every scheduled item as a project-owned tattoo session.
 
 A consultation can happen before an enquiry is converted to a project. Therefore `project_id` cannot remain mandatory for every scheduled record. At the same time, PR #177 already has tested RLS, activity, payment and future-calendar links to `public.sessions`, so replacing or renaming the table would create avoidable migration and stacked-PR risk.
 
-Artist scope remains authoritative in the database. The browser may select a type and related record, but it may not choose a different artist than the linked enquiry/project/client permits.
+Artist scope remains authoritative in the database. The browser may select a type and related record, but it may not choose a different artist than the authoritative linked workflow permits.
 
 ## Decision
 
@@ -24,9 +24,9 @@ Artist scope remains authoritative in the database. The browser may select a typ
 
 The physical table name remains `sessions` for backwards compatibility. It becomes the appointment storage table by adding an `appointment_type` enum and optional relationship columns.
 
-Existing rows are backfilled as `tattoo_session`. Existing public RPC signatures remain available as compatibility wrappers.
+Existing rows are backfilled as `tattoo_session`. Existing public RPC signatures remain available as a compatibility boundary.
 
-The CRM labels the user-facing section **Appointments / Записи**. The old `/sessions` route remains a compatibility alias while `/appointments` becomes the canonical route.
+The CRM labels the user-facing section **Appointments / Записи**. The old `/sessions` route remains a compatibility alias while `/appointments` is the canonical navigation route.
 
 ### 2. Use four closed appointment types
 
@@ -52,20 +52,23 @@ Link rules:
 
 - tattoo sessions and touch-ups require a project;
 - consultations may exist without a project;
-- a consultation may be linked to an enquiry, a project, or both;
-- when a project is supplied, its client and artist must match the appointment;
-- when an enquiry is supplied, its client and artist must match the appointment;
-- when both enquiry and project are supplied, they must describe a consistent workflow chain.
+- a consultation may be linked to a client, enquiry, project, or a consistent combination;
+- when a project is supplied, its client and current artist must match the appointment;
+- when an enquiry is supplied without a project, its client and artist must match the appointment;
+- when both enquiry and project are supplied, the enquiry must be the project's source enquiry and the clients must match;
+- an explicitly transferred project may retain an originating enquiry whose historical artist differs, so the current project artist is authoritative for project-linked appointments.
 
 A trigger validates these rules for inserts and relationship updates. RLS remains artist-scoped.
 
-### 4. Add one authoritative appointment RPC
+### 4. Add authoritative appointment RPCs
 
 `public.schedule_appointment(...)` accepts the type and relationship identifiers, validates access and inserts through the database boundary.
 
 The caller cannot override artist ownership through a mismatched link. The RPC requires `manage_sessions` capability for the resolved artist.
 
-`public.schedule_session(...)` remains available and delegates to `schedule_appointment` with `tattoo_session` for existing clients and tests.
+`public.set_appointment_status(...)` applies the existing lifecycle to every appointment type, including projectless consultations, and maintains the durable future-calendar outbox boundary without connecting a provider.
+
+`public.schedule_session(...)` and `public.set_session_status(...)` remain unchanged and callable for existing project-owned tattoo-session clients. The new columns' defaults and relationship trigger keep their rows compatible with the appointment model.
 
 ### 5. Keep one lifecycle and one conflict domain
 
@@ -82,7 +85,8 @@ This foundation does not connect Google Calendar, video calls, email or payment 
 - in-person consultations do not require a stored studio address yet;
 - video consultations do not create a meeting URL yet;
 - touch-ups continue to use the existing optional finance fields;
-- calendar provider remains `none` until a separate integration stage.
+- calendar provider remains `none` until a separate integration stage;
+- confirmed appointments may create durable calendar outbox rows, but no provider drain is activated by this PR.
 
 ### 7. Use type-aware but conservative UI defaults
 
@@ -103,12 +107,12 @@ These are convenience defaults, not database policy. A later settings stage may 
 - Existing session IDs, activity links, payment links and future calendar references remain valid.
 - The stacked PR adds one forward migration instead of rewriting migrations 0001–0025.
 - Conflict checks naturally cover all appointment types.
-- Existing API clients continue to work through the compatibility RPC.
+- Existing API clients continue to work through the unchanged compatibility RPCs.
 
 ### Trade-offs
 
 - The database table keeps the historical name `sessions` while the product calls the section Appointments.
-- Some old code and tests retain session terminology until a later cleanup.
+- Capability, finance-view and some internal code names retain session terminology for compatibility.
 - Type-specific location, meeting-link and touch-up policy fields are deferred.
 
 ## Rejected alternatives
