@@ -194,6 +194,20 @@ export function AppointmentsPage() {
     }
   }
 
+  async function rescheduleAppointment(appointmentId: string, nextStartAt: string, nextEndAt: string) {
+    setChangingAppointmentId(appointmentId);
+    setStatusError(null);
+    try {
+      await api.rescheduleAppointment({ appointmentId, startAt: nextStartAt, endAt: nextEndAt });
+      reload();
+    } catch (cause) {
+      setStatusError(cause instanceof Error ? cause.message : copy.rescheduleFailed);
+      throw cause;
+    } finally {
+      setChangingAppointmentId(null);
+    }
+  }
+
   function applyDuration(minutes: number) {
     if (!startAt) return;
     const start = new Date(startAt);
@@ -338,6 +352,7 @@ export function AppointmentsPage() {
                 mayManage={mayManage}
                 changing={changingAppointmentId === appointment.id}
                 onStatus={(status) => { void changeStatus(appointment.id, status); }}
+                onReschedule={(nextStartAt, nextEndAt) => rescheduleAppointment(appointment.id, nextStartAt, nextEndAt)}
               />
             ))}
           </div>
@@ -360,6 +375,7 @@ export function AppointmentsPage() {
                 mayManage={mayManage}
                 changing={changingAppointmentId === appointment.id}
                 onStatus={(status) => { void changeStatus(appointment.id, status); }}
+                onReschedule={(nextStartAt, nextEndAt) => rescheduleAppointment(appointment.id, nextStartAt, nextEndAt)}
               />
             ))}
           </div>
@@ -382,6 +398,7 @@ function AppointmentRow({
   mayManage,
   changing,
   onStatus,
+  onReschedule,
 }: {
   appointment: Appointment;
   client: Client | null;
@@ -393,10 +410,17 @@ function AppointmentRow({
   mayManage: boolean;
   changing: boolean;
   onStatus: (status: SessionStatus) => void;
+  onReschedule: (startAt: string, endAt: string) => Promise<void>;
 }) {
   const copy = COPY[language];
   const appointmentName = `${typeLabel(appointment.appointment_type, language)} · ${formatDateTime(appointment.start_at, language)}`;
   const isActive = ['draft', 'proposed', 'confirmed'].includes(appointment.status);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [nextStartAt, setNextStartAt] = useState(toDateTimeLocal(new Date(appointment.start_at)));
+  const [nextEndAt, setNextEndAt] = useState(toDateTimeLocal(new Date(appointment.end_at)));
+  const nextStartIso = inputToIso(nextStartAt);
+  const nextEndIso = inputToIso(nextEndAt);
+  const rescheduleValid = Boolean(nextStartIso && nextEndIso && nextEndIso > nextStartIso);
 
   return (
     <div className="row">
@@ -406,8 +430,8 @@ function AppointmentRow({
         <span className={appointment.status === 'confirmed' ? 'badge ok' : 'badge'}>{statusLabel}</span>{' '}
         <span className="badge">{durationValue(appointment.duration_hours, language)}</span>{' '}
         <span className="badge">{paymentLabel}</span>{' '}
-        <span className="badge">
-          {copy.calendar}: {appointment.calendar_event_id ? copy.linked : copy.notConnected}
+        <span className={appointment.calendar_sync_status === 'failed' ? 'badge warn' : 'badge'}>
+          {copy.calendar}: {calendarSyncLabel(appointment, language)}
         </span>
       </div>
       <div className="meta" style={{ marginTop: 8 }}>
@@ -424,7 +448,16 @@ function AppointmentRow({
         )}
       </div>
       {mayManage && isActive ? (
-        <div className="actions">
+        <>
+          <div className="actions">
+            <button
+              type="button"
+              disabled={changing}
+              aria-expanded={rescheduleOpen}
+              onClick={() => setRescheduleOpen((open) => !open)}
+            >
+              {copy.reschedule}
+            </button>
           {['draft', 'proposed'].includes(appointment.status) ? (
             <button
               type="button"
@@ -464,7 +497,37 @@ function AppointmentRow({
           >
             {copy.cancel}
           </button>
-        </div>
+          </div>
+          {rescheduleOpen ? (
+            <div className="notice" style={{ marginTop: 12 }}>
+              <div className="form-grid">
+                <label>
+                  <span>{copy.newStart}</span>
+                  <input type="datetime-local" value={nextStartAt} onChange={(event) => setNextStartAt(event.target.value)} />
+                </label>
+                <label>
+                  <span>{copy.newEnd}</span>
+                  <input type="datetime-local" value={nextEndAt} onChange={(event) => setNextEndAt(event.target.value)} />
+                </label>
+              </div>
+              <div className="actions">
+                <button
+                  type="button"
+                  disabled={changing || !rescheduleValid}
+                  onClick={() => {
+                    if (!nextStartIso || !nextEndIso) return;
+                    void onReschedule(nextStartIso, nextEndIso).then(() => setRescheduleOpen(false));
+                  }}
+                >
+                  {changing ? copy.saving : copy.saveReschedule}
+                </button>
+                <button type="button" disabled={changing} onClick={() => setRescheduleOpen(false)}>
+                  {copy.goBack}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </div>
   );
@@ -472,6 +535,17 @@ function AppointmentRow({
 
 export function typeLabel(type: AppointmentType, language: Language): string {
   return TYPE_LABELS[language][type];
+}
+
+function calendarSyncLabel(appointment: Appointment, language: Language): string {
+  const labels: Record<Language, Record<Appointment['calendar_sync_status'], string>> = {
+    en: { not_connected: 'not connected', queued: 'queued', synced: 'synced', retrying: 'retrying', failed: 'failed' },
+    ru: { not_connected: 'не подключён', queued: 'в очереди', synced: 'синхронизирован', retrying: 'повторная попытка', failed: 'ошибка' },
+  };
+  const base = labels[language][appointment.calendar_sync_status];
+  return appointment.calendar_sync_status === 'failed' && appointment.calendar_last_error_code
+    ? `${base}: ${appointment.calendar_last_error_code}`
+    : base;
 }
 
 function durationShortcut(minutes: number, language: Language): string {
@@ -540,6 +614,12 @@ const COPY: Record<Language, Record<string, string>> = {
     completeRequired: 'Choose valid links, a start time and a later end time.',
     saveFailed: 'Could not schedule that appointment.',
     statusFailed: 'Could not change that appointment.',
+    rescheduleFailed: 'Could not reschedule that appointment.',
+    reschedule: 'Reschedule',
+    newStart: 'New start',
+    newEnd: 'New end',
+    saveReschedule: 'Save new time',
+    goBack: 'Go back',
     saving: 'Saving…',
     propose: 'Propose appointment',
     confirm: 'Confirm',
@@ -550,10 +630,8 @@ const COPY: Record<Language, Record<string, string>> = {
     nothingUpcoming: 'Nothing scheduled ahead',
     past: 'Past',
     noPast: 'No past appointments',
-    calendarNotice: 'Calendar status is a placeholder. No appointment is written to Google Calendar because no provider is connected.',
+    calendarNotice: 'Supabase remains authoritative. Calendar delivery stays queued or disconnected until the artist Google Calendar route is connected.',
     calendar: 'Calendar',
-    linked: 'linked',
-    notConnected: 'not connected',
   },
   ru: {
     title: 'Записи',
@@ -582,6 +660,12 @@ const COPY: Record<Language, Record<string, string>> = {
     completeRequired: 'Выберите корректные связи, начало и более позднее окончание.',
     saveFailed: 'Не удалось создать запись.',
     statusFailed: 'Не удалось изменить статус записи.',
+    rescheduleFailed: 'Не удалось перенести запись.',
+    reschedule: 'Перенести',
+    newStart: 'Новое начало',
+    newEnd: 'Новое окончание',
+    saveReschedule: 'Сохранить новое время',
+    goBack: 'Назад',
     saving: 'Сохраняем…',
     propose: 'Предложить запись',
     confirm: 'Подтвердить',
@@ -592,9 +676,7 @@ const COPY: Record<Language, Record<string, string>> = {
     nothingUpcoming: 'Впереди ничего не запланировано',
     past: 'Прошедшие',
     noPast: 'Прошедших записей нет',
-    calendarNotice: 'Статус календаря пока служебный. Ни одна запись не отправляется в Google Calendar, потому что провайдер не подключён.',
+    calendarNotice: 'Supabase остаётся источником данных. Отправка в календарь будет ждать подключения Google Calendar выбранного мастера.',
     calendar: 'Календарь',
-    linked: 'подключён',
-    notConnected: 'не подключён',
   },
 };

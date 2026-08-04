@@ -111,12 +111,6 @@ select is(
   'confirmation queues one versioned calendar create operation'
 );
 
--- The functions are deliberately closed to API roles in this commit. Execute
--- them as the migration owner to verify their internal contract independently
--- of the future ACL-opening commit.
-reset role;
-select set_config('request.jwt.claims', '{"role":"service_role"}', true);
-
 select ok(
   (public.reschedule_appointment(
     (select id from calendar_appointment),
@@ -176,6 +170,7 @@ select is(
   'an idempotent reschedule does not increment the version again'
 );
 
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select ok(
   (public.record_calendar_sync_result(
     (select id from calendar_appointment), 2, true, 'google', 'synthetic-event-id', null
@@ -195,6 +190,11 @@ select is(
   'successful acknowledgement stores the exact synced version'
 );
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"c8111111-1111-4111-8111-111111111111","role":"authenticated"}',
+  true
+);
 select ok(
   (public.reschedule_appointment(
     (select id from calendar_appointment),
@@ -210,6 +210,7 @@ select is(
   1,
   'a reschedule with an existing event queues one calendar update'
 );
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select ok(
   (public.record_calendar_sync_result(
     (select id from calendar_appointment), 2, false, 'google', null, 'stale_failure'
