@@ -1,8 +1,8 @@
 -- 0028_calendar_projection_foundation.sql
 --
--- Add explicit calendar sync state and authorised rescheduling while keeping
--- public.sessions authoritative. No Google credentials or live provider drain
--- are introduced by this migration.
+-- Add explicit calendar sync state and authorised workflow primitives while
+-- keeping public.sessions authoritative. No Google credentials or live
+-- provider drain are introduced by this migration.
 
 do $$ begin
   create type public.calendar_sync_status as enum (
@@ -88,8 +88,7 @@ declare
   v_actor_kind text;
 begin
   if p_start_at is null or p_end_at is null or p_end_at <= p_start_at then
-    raise exception 'appointment end must be after its start'
-      using errcode = '22023';
+    raise exception 'appointment end must be after its start' using errcode = '22023';
   end if;
 
   select s.artist_id, s.client_id, s.enquiry_id, s.project_id,
@@ -103,24 +102,18 @@ begin
   for update;
 
   if not found then
-    raise exception 'appointment % does not exist', p_appointment_id
-      using errcode = '23503';
+    raise exception 'appointment % does not exist', p_appointment_id using errcode = '23503';
   end if;
 
   perform crm_private.require_artist_access(v_artist, 'manage_sessions');
   perform crm_private.require_active_artist(v_artist);
 
   if v_status in ('completed', 'cancelled', 'no_show') then
-    raise exception 'a terminal appointment cannot be rescheduled'
-      using errcode = '42501';
+    raise exception 'a terminal appointment cannot be rescheduled' using errcode = '42501';
   end if;
 
   if v_previous_start = p_start_at and v_previous_end = p_end_at then
-    return jsonb_build_object(
-      'appointment_id', p_appointment_id,
-      'changed', false,
-      'calendar_version', v_version
-    );
+    return jsonb_build_object('appointment_id', p_appointment_id, 'changed', false, 'calendar_version', v_version);
   end if;
 
   v_next_version := v_version + 1;
@@ -141,15 +134,8 @@ begin
   v_actor_kind := case when public.is_owner() then 'owner' else 'staff' end;
 
   perform crm_private.log_artist_activity(
-    v_artist,
-    'appointment.rescheduled',
-    v_actor_kind,
-    auth.uid(),
-    v_client,
-    v_enquiry,
-    v_project,
-    p_appointment_id,
-    null,
+    v_artist, 'appointment.rescheduled', v_actor_kind, auth.uid(),
+    v_client, v_enquiry, v_project, p_appointment_id, null,
     jsonb_build_object(
       'appointment_type', v_type,
       'from_start_at', v_previous_start,
@@ -161,7 +147,10 @@ begin
   );
 
   if public.session_is_calendar_eligible(v_status) then
-    v_outbox_kind := case when v_event_id is null then 'calendar_create'::public.outbox_kind else 'calendar_update'::public.outbox_kind end;
+    v_outbox_kind := case
+      when v_event_id is null then 'calendar_create'::public.outbox_kind
+      else 'calendar_update'::public.outbox_kind
+    end;
 
     perform crm_private.enqueue_outbox(
       v_outbox_kind,
@@ -196,11 +185,9 @@ $$;
 
 revoke all on function public.reschedule_appointment(uuid,timestamptz,timestamptz)
   from public, anon, authenticated, service_role;
-grant execute on function public.reschedule_appointment(uuid,timestamptz,timestamptz)
-  to authenticated;
 
 comment on function public.reschedule_appointment(uuid,timestamptz,timestamptz) is
-  'Authorised atomic appointment reschedule that increments calendar_version and queues an artist-routed calendar projection operation.';
+  'Closed workflow primitive until its authenticated ACL is added to the canonical API inventory.';
 
 create or replace function public.record_calendar_sync_result(
   p_appointment_id uuid,
@@ -226,13 +213,11 @@ begin
   for update;
 
   if not found then
-    raise exception 'appointment % does not exist', p_appointment_id
-      using errcode = '23503';
+    raise exception 'appointment % does not exist', p_appointment_id using errcode = '23503';
   end if;
 
   if p_calendar_version > v_current_version then
-    raise exception 'calendar result version is ahead of the appointment version'
-      using errcode = '22023';
+    raise exception 'calendar result version is ahead of the appointment version' using errcode = '22023';
   end if;
 
   if p_calendar_version < v_current_version then
@@ -246,13 +231,11 @@ begin
 
   if p_succeeded then
     if p_provider <> 'google' then
-      raise exception 'unsupported calendar provider %', p_provider
-        using errcode = '22023';
+      raise exception 'unsupported calendar provider %', p_provider using errcode = '22023';
     end if;
 
     if coalesce(nullif(btrim(p_event_id), ''), v_current_event_id) is null then
-      raise exception 'successful calendar sync requires an event id'
-        using errcode = '22023';
+      raise exception 'successful calendar sync requires an event id' using errcode = '22023';
     end if;
 
     update public.sessions
@@ -266,8 +249,7 @@ begin
     where id = p_appointment_id;
   else
     if nullif(btrim(p_error_code), '') is null then
-      raise exception 'failed calendar sync requires a safe error code'
-        using errcode = '22023';
+      raise exception 'failed calendar sync requires a safe error code' using errcode = '22023';
     end if;
 
     update public.sessions
@@ -288,9 +270,7 @@ end;
 $$;
 
 revoke all on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)
-  from public, anon, authenticated;
-grant execute on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)
-  to service_role;
+  from public, anon, authenticated, service_role;
 
 comment on function public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text) is
-  'Backend-only idempotent provider acknowledgement. Stale results cannot overwrite a newer appointment version.';
+  'Closed backend primitive until its service-role ACL is added to the canonical API inventory.';
