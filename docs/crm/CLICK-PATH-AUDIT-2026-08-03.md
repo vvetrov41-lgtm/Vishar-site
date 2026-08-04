@@ -3,14 +3,15 @@
 - **Repository:** `vvetrov41-lgtm/Vishar-site`
 - **Branch:** `agent/multi-artist-payments-foundation`
 - **Original audit date:** 2026-08-03
-- **Final evidence update:** 2026-08-04
-- **Validated and retained-staging implementation head:** `8ea7724df6f62a7ba14681d41ee8db4103940455`
+- **Owner device audit:** 2026-08-04
+- **Post-audit UI polish update:** 2026-08-04
+- **Retained-staging deployed implementation head:** `8ea7724df6f62a7ba14681d41ee8db4103940455`
 - **Retained staging workflow:** `PR 177 retained staging resume and E2E`
 - **Retained staging run:** `30884006932`
 - **Related decision:** `docs/crm/adr/0001-responsive-navigation-and-artist-scope.md`
 - **Audit type:** source, automated interaction, hosted staging and owner-attested responsive-device audit
 
-This document records the resolved click-path findings and the remaining evidence boundary. It does not describe the Cloudflare control plane as independently reviewed because the available deployment token could not read Access policy contents or Rulesets configuration.
+This document records the resolved click-path findings, the UI defects found during the real-device pass and their source fixes. The post-audit UI fixes are not described as staging-verified until a separately authorised retained-staging redeployment and focused recheck are completed. The Cloudflare control plane is also not described as independently reviewed because the available deployment token could not read Access policy contents or Rulesets configuration.
 
 ## Scope
 
@@ -110,7 +111,7 @@ Enquiry, client and project details include stable contextual return links. Enqu
 - Background scrolling is locked.
 - Explicit dismissal restores focus to the More trigger.
 
-The owner-attested pass visually confirmed the sheet layout, backdrop and usable controls. Keyboard focus trapping cannot be independently demonstrated by touch-device screenshots, so the detailed focus lifecycle continues to rely on the automated interaction tests.
+The owner-attested pass visually confirmed the sheet layout, backdrop and usable controls. Keyboard focus trapping cannot be independently demonstrated by touch-device screenshots, so the detailed focus lifecycle continues to rely on automated interaction tests.
 
 ### P1.7 Artist-scope loading failure was silent — complete
 
@@ -157,9 +158,9 @@ Confirmation is required before:
 - no-show recording;
 - user deactivation.
 
-Owner-attested evidence confirmed conversion and cancellation dialogs before mutation. These dialogs fit the iPhone viewport and preserve an explicit cancel path. Database authorization remains independent of this UI safeguard.
+The original device audit confirmed that the browser-native prompts prevented mutation when declined. The post-audit source update replaces those hostname-labelled prompts with a CRM-owned accessible modal while preserving the same database-independent confirmation boundary.
 
-## Automated and hosted evidence
+## Automated and hosted evidence before the UI polish update
 
 Normal CI completed successfully for `8ea7724df6f62a7ba14681d41ee8db4103940455`:
 
@@ -175,15 +176,17 @@ Normal CI completed successfully for `8ea7724df6f62a7ba14681d41ee8db4103940455`:
 - pgTAP: 933/933 passed;
 - PostgreSQL error-level lint: passed.
 
-The guarded retained-staging workflow `30884006932` completed successfully against the same exact SHA. It confirmed migrations `0001–0025` without reapplying them and passed hosted artist routing, role scope, RLS, private Storage, Activity Log, exact-origin CORS, wrong-origin rejection, WAF path/method probes, rate-limit/recovery probes and staging-retention guards.
+The guarded retained-staging workflow `30884006932` completed successfully against that exact SHA. It confirmed migrations `0001–0025` without reapplying them and passed hosted artist routing, role scope, RLS, private Storage, Activity Log, exact-origin CORS, wrong-origin rejection, WAF path/method probes, rate-limit/recovery probes and staging-retention guards.
+
+The post-audit UI polish commit must have both normal workflows green at its exact final PR head before it is eligible for a separately authorised retained-staging continuation.
 
 ## Owner-attested responsive-device audit
 
 The owner completed the authenticated pass through the canonical CRM staging hostname with Cloudflare Access and CRM owner authentication active. Only synthetic retained-staging records were used.
 
-### iPhone Safari portrait — passed with no P0/P1 finding
+### iPhone Safari portrait
 
-Visually and interactively confirmed:
+The initial pass found no P0 or P1 defect. It covered:
 
 - Dashboard layout and bottom-navigation order;
 - Enquiries list and detail;
@@ -199,46 +202,73 @@ Visually and interactively confirmed:
 - `3/5/7` hour shortcuts;
 - same-artist conflict warning;
 - conversion and session-cancellation confirmation boundaries;
-- no horizontal overflow, clipped labels, unusable tap targets or bottom-navigation overlap on the supplied screens.
+- horizontal overflow, label clipping, tap targets and bottom-navigation overlap.
 
-### iPad Safari landscape — passed with no P0/P1 finding
+### iPad Safari landscape
 
-Visually confirmed:
+The initial pass found no P0 or P1 defect. It covered Projects, Sessions and Clients wide layouts, the artist selector, bottom navigation, cards and empty states.
 
-- Projects, Sessions and Clients layouts;
-- wide artist selector;
-- stable bottom navigation;
-- readable cards and empty states;
-- no horizontal overflow, clipped controls or modal/navigation overlap on the supplied screens.
+Screenshots containing the owner's personal email or browser/authentication context must not be attached to public PR evidence. The result is owner-attested rather than an independent agent-executed browser audit.
 
-### Device findings
+## Post-audit UI findings and source fixes
 
-- **P0:** none.
-- **P1:** none.
-- **P2:** internal event and integration identifiers remain visible in operational UI, including strings such as `telegram_notification`, `provider_route_unavailable`, `membership updated`, `profile deactivated` and event keys such as `enquiry.status_changed`.
-- **P2:** repeated identical integration failures consume substantial Dashboard space and could later be grouped by type and latest occurrence.
-- **P2:** browser-native confirmation dialogs include the hostname and are visually less integrated than a CRM modal, although they are usable and preserve the required confirmation boundary.
-- **P2:** one project-session card displayed a missing duration while the corresponding Sessions view displayed `7 h`; the scheduling workflow remained usable, but the presentation should be reviewed in a later polish pass.
+### Session duration differed between views — fixed in source
 
-Screenshots containing the owner's personal email or browser/authentication context must not be attached to public PR evidence. The PR should record the result as owner-attested evidence rather than independent agent-executed browser evidence.
+The Sessions page displayed `7 h` while the corresponding Project session card displayed an ambiguous dash. Project detail now renders `duration_hours` consistently. A missing finance price is omitted instead of being represented by a dash beside the session metadata.
+
+### Technical event and integration identifiers were exposed — fixed in source
+
+Known activity event types, integration job kinds and safe error codes now receive explicit English and Russian labels. The Activity filter is a localised select while still applying the exact raw event key server-side. Unknown future values fall back to readable text without punctuation separators.
+
+### Repeated integration failures dominated Dashboard — fixed in source
+
+Failed outbox rows are grouped by integration kind and safe error code. Each group shows a localised label, count, latest attempt state and latest timestamp instead of one large card per identical failure.
+
+### Browser-native confirmations exposed the staging hostname — fixed in source
+
+Consequential actions now use a CRM-owned `alertdialog` with:
+
+- action-specific heading and button copy;
+- English and Russian text;
+- an explicit safe back action;
+- destructive styling where appropriate;
+- Escape and backdrop dismissal;
+- page-scroll locking and restoration;
+- focus placed inside the dialog.
+
+RPC authorization and RLS remain authoritative. Declining the dialog prevents the RPC from being sent.
+
+### Regression coverage added
+
+Automated tests cover:
+
+- Project session duration display;
+- operational EN/RU labels and readable fallback;
+- grouping repeated failed jobs and retaining the latest attempt;
+- asynchronous consequential confirmations;
+- the CRM-owned modal's accessible name, safe cancel path and scroll restoration.
 
 ## Readiness determination
 
 ### Source readiness
 
-**Ready for the current draft scope.**
-
-No P0 or unresolved P1 source or responsive blocker remains. The identified P2 items do not block the implemented workflows.
+The four defects found during the owner visual audit are fixed in source. Final source readiness depends on both normal workflows passing at the exact final PR head.
 
 ### Device readiness
 
-**Owner-attested iPhone portrait and iPad landscape audit complete.**
+The original owner-attested iPhone and iPad audit remains valid for the unchanged navigation and workflow structure. A focused recheck is still required after the UI polish is deployed to retained staging, limited to:
 
-This is not represented as an independent external browser audit. It is evidence supplied by the authenticated owner from the real target device classes.
+- one Project session card showing duration;
+- grouped and localised Dashboard failures;
+- localised Activity labels/filter;
+- one consequential CRM modal on iPhone portrait;
+- a quick iPad landscape smoke check for the changed surfaces.
+
+This recheck must not be described as complete before the new source head is actually deployed.
 
 ### Cloudflare control-plane evidence
 
-**Incomplete and still the only sign-off evidence gap.**
+**Incomplete.**
 
 Live edge probes passed for Access redirects, exact-origin CORS, wrong-origin rejection, WAF path/method enforcement, rate limiting and recovery, and disabled `workers.dev` behaviour. However, the available deployment token could not independently read:
 
@@ -253,7 +283,7 @@ Do not infer that a policy or rule is missing from a permission failure. Complet
 - retained Supabase project: `vishar-crm-staging`;
 - retained migrations: `0001–0025`;
 - retained Worker: `tattooai-preview`;
-- deployed Worker version: `f756142c-e6c3-4f7c-b297-4ec239c114b3`;
+- deployed Worker version before the UI polish: `f756142c-e6c3-4f7c-b297-4ec239c114b3`;
 - Booking Pages and CRM Pages remain staging-only;
 - production unchanged;
 - PR #174, PR #176 and PR #177 remain open, draft and unmerged;
@@ -262,7 +292,14 @@ Do not infer that a policy or rule is missing from a permission failure. Complet
 - no production provider or payment connection was added;
 - no RLS, RPC authorization, ACL, Storage policy, Access, WAF, rate-limit or CORS control was weakened.
 
-The owner device audit created and changed synthetic session state while testing confirmation and conflict behaviour. It did not introduce real client data.
+The owner device audit created and changed synthetic project and session state while testing confirmation and conflict behaviour. It did not introduce real client data.
+
+## Remaining evidence gaps
+
+1. Both normal workflows must pass at the exact final UI-polish PR head.
+2. Retained staging must not be redeployed until the owner separately authorises the guarded continuation workflow.
+3. After that deployment, the focused device recheck listed above must be completed.
+4. Cloudflare control-plane contents still require a read-only independent or owner-documented review.
 
 ## Deferred product work
 
@@ -275,9 +312,6 @@ The following remains outside this PR scope:
 - production Telegram routing for Kristina;
 - production GPT identities or tools;
 - a dedicated session detail route without a separate architecture decision;
-- replacing technical event identifiers with user-facing labels;
-- grouping repeated integration failures;
-- replacing native confirmation dialogs with an accessible CRM modal;
 - appointment-type architecture for:
   - tattoo session;
   - in-person consultation;
@@ -288,4 +322,4 @@ The appointment-type stage should be designed separately because consultations m
 
 ## Safety constraints
 
-This final evidence update changes documentation only. It does not deploy production or staging, mutate retained Supabase data, apply migrations, change DNS, alter Worker bindings, or modify Cloudflare controls.
+This post-audit source update does not deploy production or staging, mutate retained Supabase data, apply migrations, change DNS, alter Worker bindings, or modify Cloudflare controls.
