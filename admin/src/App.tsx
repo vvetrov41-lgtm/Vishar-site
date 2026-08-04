@@ -13,6 +13,7 @@ import { ArtistScopeProvider } from './lib/artist-scope';
 import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
+import { AppointmentsPage } from './pages/AppointmentsPage';
 import { ClientDetailPage } from './pages/ClientDetailPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -21,7 +22,6 @@ import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
-import { SessionsPage } from './pages/SessionsPage';
 import { UsersPage } from './pages/UsersPage';
 
 export function App() {
@@ -105,8 +105,9 @@ function Routes() {
       return <RequireCapability capability="viewClients"><ClientsPage /></RequireCapability>;
     case '/projects':
       return <RequireCapability capability="viewProjects"><ProjectsPage /></RequireCapability>;
+    case '/appointments':
     case '/sessions':
-      return <RequireCapability capability="viewSessions"><SessionsPage /></RequireCapability>;
+      return <RequireCapability capability="viewSessions"><AppointmentsPage /></RequireCapability>;
     case '/users':
       return <RequireCapability capability="manageUsers"><UsersPage /></RequireCapability>;
     case '/activity':
