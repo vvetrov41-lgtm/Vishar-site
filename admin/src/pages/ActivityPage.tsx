@@ -4,7 +4,7 @@ import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
-import { operationalLabel } from '../lib/operational-labels';
+import { ACTIVITY_EVENT_TYPES, operationalLabel } from '../lib/operational-labels';
 import type { ActivityEntry } from '../lib/types';
 import { useArtistScope } from '../lib/artist-scope';
 
@@ -15,16 +15,17 @@ export function ActivityPage() {
   const { selectedArtistId } = useArtistScope();
 
   const { data, loading, error, reload } = useAsync<ActivityEntry[]>(
-    () => api.listActivity({ artistId: selectedArtistId ?? undefined }),
-    [api, selectedArtistId]
+    () => api.listActivity({
+      eventType: eventType || undefined,
+      artistId: selectedArtistId ?? undefined,
+    }),
+    [api, eventType, selectedArtistId]
   );
 
-  const eventTypes = Array.from(new Set((data ?? []).map((entry) => entry.event_type)))
-    .sort((left, right) => operationalLabel(language, 'event', left)
-      .localeCompare(operationalLabel(language, 'event', right), language));
-  const visibleEntries = eventType
-    ? (data ?? []).filter((entry) => entry.event_type === eventType)
-    : (data ?? []);
+  const eventTypes = [...ACTIVITY_EVENT_TYPES].sort((left, right) =>
+    operationalLabel(language, 'event', left)
+      .localeCompare(operationalLabel(language, 'event', right), language)
+  );
 
   return (
     <>
@@ -47,13 +48,13 @@ export function ActivityPage() {
 
       {loading ? <LoadingState label={t('activity.loading')} /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
-      {!loading && !error && visibleEntries.length === 0 ? (
+      {!loading && !error && data && data.length === 0 ? (
         <EmptyState title={t('activity.noMatch')} />
       ) : null}
 
-      {!loading && !error && visibleEntries.length > 0 ? (
+      {!loading && !error && data && data.length > 0 ? (
         <ul className="timeline">
-          {visibleEntries.map((entry) => (
+          {data.map((entry) => (
             <li key={entry.id}>
               <div title={entry.event_type}>
                 {operationalLabel(language, 'event', entry.event_type)}
