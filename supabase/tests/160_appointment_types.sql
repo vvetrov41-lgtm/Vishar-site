@@ -245,6 +245,12 @@ select lives_ok(
   ),
   'a projectless consultation can be confirmed'
 );
+
+-- Managers intentionally cannot read integration_outbox. Verify the durable
+-- projection boundary through the same backend-only RLS context used by the
+-- outbox drain, rather than widening operational CRM visibility.
+reset role;
+select pg_temp.appointment_claims('{"role":"service_role"}');
 select is(
   (select count(*)::int from public.integration_outbox
    where session_id = (select (result ->> 'appointment_id')::uuid from video_result)
@@ -260,6 +266,10 @@ select is(
   'appointment status changes are recorded in the append-only log'
 );
 
+set local role authenticated;
+select pg_temp.appointment_claims(
+  '{"sub":"b8111111-1111-4111-8111-111111111111","role":"authenticated"}'
+);
 select lives_ok(
   $$select public.schedule_session(
       'b8511111-1111-4111-8111-111111111111',
