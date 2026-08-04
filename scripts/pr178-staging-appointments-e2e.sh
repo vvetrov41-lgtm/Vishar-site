@@ -430,6 +430,11 @@ deploy_crm() {
   require_env VITE_SUPABASE_URL
   require_env VITE_SUPABASE_PUBLISHABLE_KEY
 
+  grep -Fq 'in_person_consultation: [15, 20, 30]' admin/src/pages/AppointmentsPage.tsx
+  grep -Fq 'video_consultation: [15, 20, 30]' admin/src/pages/AppointmentsPage.tsx
+  grep -Fq 'in_person_consultation: [15, 20, 30]' admin/src/pages/ProjectDetailPage.tsx
+  grep -Fq 'video_consultation: [15, 20, 30]' admin/src/pages/ProjectDetailPage.tsx
+
   (
     cd admin
     npm ci
@@ -443,7 +448,6 @@ deploy_crm() {
   grep -R -Fq 'Все типы записей' admin/dist
   grep -R -Fq 'In-person consultation' admin/dist
   grep -R -Fq 'Видеоконсультация' admin/dist
-  grep -R -Fq '15 min' admin/dist
   ! grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{20,}' admin/dist
 
   npx wrangler pages deploy admin/dist \
