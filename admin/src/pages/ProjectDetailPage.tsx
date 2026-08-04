@@ -8,6 +8,7 @@ import { can } from '../lib/permissions';
 import { formatDateTime, formatMoney } from '../lib/format';
 import { addHoursToLocalDateTime, findSessionConflicts, SESSION_DURATION_SHORTCUTS } from '../lib/session-planning';
 import { useLanguage } from '../lib/i18n';
+import { operationalLabel } from '../lib/operational-labels';
 import type {
   ActivityEntry, CrmSession, InternalNote, Project, ProjectFinance, SessionFinance,
 } from '../lib/types';
@@ -143,59 +144,65 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           <EmptyState title={t('project.noSessions')} />
         ) : (
           <div className="list">
-            {sessions.map((session) => (
-              <div key={session.id} className="row">
-                <div className="title">{formatDateTime(session.start_at, language)}</div>
-                <div className="meta">
-                  <span className={session.status === 'confirmed' ? 'badge ok' : 'badge'}>
-                    {label('sessionStatus', session.status)}
-                  </span>{' '}
-                  <span className="badge">{label('paymentStatus', session.payment_status)}</span>{' '}
-                  {can(role, 'viewFinance') ? (
-                    <span className="badge">{formatMoney(priceFor(session.id), session.currency, language)}</span>
-                  ) : null}{' '}
-                  <span className="badge">
-                    {t('common.calendar')}: {session.calendar_event_id ? t('common.linked') : t('common.notConnected')}
-                  </span>
-                </div>
-                {can(role, 'manageSessions') ? (
-                  <div className="actions">
-                    {['draft', 'proposed'].includes(session.status) ? (
-                      <button
-                        type="button" disabled={busy}
-                        onClick={() => { void run(() => api.setSessionStatus(session.id, 'confirmed')); }}
-                      >
-                        {t('project.confirm')}
-                      </button>
-                    ) : null}
-                    {session.status === 'confirmed' ? (
-                      <>
-                        <button
-                          type="button" disabled={busy}
-                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'completed')); }}
-                        >
-                          {t('project.markCompleted')}
-                        </button>
-                        <button
-                          type="button" disabled={busy}
-                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'no_show')); }}
-                        >
-                          {t('project.markNoShow')}
-                        </button>
-                      </>
-                    ) : null}
-                    {['draft', 'proposed', 'confirmed'].includes(session.status) ? (
-                      <button
-                        type="button" className="danger" disabled={busy}
-                        onClick={() => { void run(() => api.setSessionStatus(session.id, 'cancelled')); }}
-                      >
-                        {t('project.cancel')}
-                      </button>
-                    ) : null}
+            {sessions.map((session) => {
+              const price = priceFor(session.id);
+              return (
+                <div key={session.id} className="row">
+                  <div className="title">{formatDateTime(session.start_at, language)}</div>
+                  <div className="meta">
+                    <span className={session.status === 'confirmed' ? 'badge ok' : 'badge'}>
+                      {label('sessionStatus', session.status)}
+                    </span>{' '}
+                    <span className="badge">
+                      {session.duration_hours ?? '—'} {t('common.hoursShort')}
+                    </span>{' '}
+                    <span className="badge">{label('paymentStatus', session.payment_status)}</span>{' '}
+                    {can(role, 'viewFinance') && price !== null ? (
+                      <span className="badge">{formatMoney(price, session.currency, language)}</span>
+                    ) : null}{' '}
+                    <span className="badge">
+                      {t('common.calendar')}: {session.calendar_event_id ? t('common.linked') : t('common.notConnected')}
+                    </span>
                   </div>
-                ) : null}
-              </div>
-            ))}
+                  {can(role, 'manageSessions') ? (
+                    <div className="actions">
+                      {['draft', 'proposed'].includes(session.status) ? (
+                        <button
+                          type="button" disabled={busy}
+                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'confirmed')); }}
+                        >
+                          {t('project.confirm')}
+                        </button>
+                      ) : null}
+                      {session.status === 'confirmed' ? (
+                        <>
+                          <button
+                            type="button" disabled={busy}
+                            onClick={() => { void run(() => api.setSessionStatus(session.id, 'completed')); }}
+                          >
+                            {t('project.markCompleted')}
+                          </button>
+                          <button
+                            type="button" disabled={busy}
+                            onClick={() => { void run(() => api.setSessionStatus(session.id, 'no_show')); }}
+                          >
+                            {t('project.markNoShow')}
+                          </button>
+                        </>
+                      ) : null}
+                      {['draft', 'proposed', 'confirmed'].includes(session.status) ? (
+                        <button
+                          type="button" className="danger" disabled={busy}
+                          onClick={() => { void run(() => api.setSessionStatus(session.id, 'cancelled')); }}
+                        >
+                          {t('project.cancel')}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -332,7 +339,9 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
             <ul className="timeline">
               {activity.slice(0, 12).map((entry) => (
                 <li key={entry.id}>
-                  <div>{label('event', entry.event_type)}</div>
+                  <div title={entry.event_type}>
+                    {operationalLabel(language, 'event', entry.event_type)}
+                  </div>
                   <div className="when">
                     {formatDateTime(entry.occurred_at, language)} · {label('actor', entry.actor_kind)}
                   </div>
