@@ -5,8 +5,9 @@ import { useArtistScope } from '../lib/artist-scope';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { can } from '../lib/permissions';
+import { Link } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
-import type { Enquiry, Project, Client } from '../lib/types';
+import type { Client, Enquiry, Project, SessionStatus } from '../lib/types';
 import type {
   Appointment,
   AppointmentConflict,
@@ -65,7 +66,9 @@ export function AppointmentsPage() {
   const [conflicts, setConflicts] = useState<AppointmentConflict[]>([]);
   const [conflictLoading, setConflictLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [changingAppointmentId, setChangingAppointmentId] = useState<string | null>(null);
 
   const selectedProject = data?.projects.find((project) => project.id === projectId) ?? null;
   const selectedEnquiry = data?.enquiries.find((enquiry) => enquiry.id === enquiryId) ?? null;
@@ -178,6 +181,19 @@ export function AppointmentsPage() {
     }
   }
 
+  async function changeStatus(appointmentId: string, status: SessionStatus) {
+    setChangingAppointmentId(appointmentId);
+    setStatusError(null);
+    try {
+      await api.setAppointmentStatus(appointmentId, status);
+      reload();
+    } catch (cause) {
+      setStatusError(cause instanceof Error ? cause.message : copy.statusFailed);
+    } finally {
+      setChangingAppointmentId(null);
+    }
+  }
+
   function applyDuration(minutes: number) {
     if (!startAt) return;
     const start = new Date(startAt);
@@ -212,7 +228,6 @@ export function AppointmentsPage() {
                   onChange={(event) => {
                     const next = event.target.value as AppointmentType;
                     setAppointmentType(next);
-                    if (next === 'tattoo_session' || next === 'touch_up') return;
                   }}
                 >
                   {TYPES.map((type) => (
@@ -305,6 +320,8 @@ export function AppointmentsPage() {
         </Section>
       ) : null}
 
+      {statusError ? <p className="notice warn" role="alert">{statusError}</p> : null}
+
       <Section title={copy.upcoming}>
         {upcoming.length === 0 ? <EmptyState title={copy.nothingUpcoming} /> : (
           <div className="list">
@@ -312,9 +329,15 @@ export function AppointmentsPage() {
               <AppointmentRow
                 key={appointment.id}
                 appointment={appointment}
+                client={data.clients.find((client) => client.id === appointment.client_id) ?? null}
+                enquiry={data.enquiries.find((enquiry) => enquiry.id === appointment.enquiry_id) ?? null}
+                project={data.projects.find((project) => project.id === appointment.project_id) ?? null}
                 language={language}
                 statusLabel={label('sessionStatus', appointment.status)}
                 paymentLabel={label('paymentStatus', appointment.payment_status)}
+                mayManage={mayManage}
+                changing={changingAppointmentId === appointment.id}
+                onStatus={(status) => { void changeStatus(appointment.id, status); }}
               />
             ))}
           </div>
@@ -328,9 +351,15 @@ export function AppointmentsPage() {
               <AppointmentRow
                 key={appointment.id}
                 appointment={appointment}
+                client={data.clients.find((client) => client.id === appointment.client_id) ?? null}
+                enquiry={data.enquiries.find((enquiry) => enquiry.id === appointment.enquiry_id) ?? null}
+                project={data.projects.find((project) => project.id === appointment.project_id) ?? null}
                 language={language}
                 statusLabel={label('sessionStatus', appointment.status)}
                 paymentLabel={label('paymentStatus', appointment.payment_status)}
+                mayManage={mayManage}
+                changing={changingAppointmentId === appointment.id}
+                onStatus={(status) => { void changeStatus(appointment.id, status); }}
               />
             ))}
           </div>
@@ -344,16 +373,31 @@ export function AppointmentsPage() {
 
 function AppointmentRow({
   appointment,
+  client,
+  enquiry,
+  project,
   language,
   statusLabel,
   paymentLabel,
+  mayManage,
+  changing,
+  onStatus,
 }: {
   appointment: Appointment;
+  client: Client | null;
+  enquiry: Enquiry | null;
+  project: Project | null;
   language: Language;
   statusLabel: string;
   paymentLabel: string;
+  mayManage: boolean;
+  changing: boolean;
+  onStatus: (status: SessionStatus) => void;
 }) {
   const copy = COPY[language];
+  const appointmentName = `${typeLabel(appointment.appointment_type, language)} · ${formatDateTime(appointment.start_at, language)}`;
+  const isActive = ['draft', 'proposed', 'confirmed'].includes(appointment.status);
+
   return (
     <div className="row">
       <div className="title">{formatDateTime(appointment.start_at, language)}</div>
@@ -366,6 +410,62 @@ function AppointmentRow({
           {copy.calendar}: {appointment.calendar_event_id ? copy.linked : copy.notConnected}
         </span>
       </div>
+      <div className="meta" style={{ marginTop: 8 }}>
+        {client ? (
+          <Link to={`/clients/${client.id}`} className="badge">{copy.client}: {client.full_name}</Link>
+        ) : null}{' '}
+        {enquiry ? (
+          <Link to={`/enquiries/${enquiry.id}`} className="badge">{copy.enquiry}: {enquiry.reference_number}</Link>
+        ) : null}{' '}
+        {project ? (
+          <Link to={`/projects/${project.id}`} className="badge">{copy.project}: {project.title}</Link>
+        ) : (
+          <span className="badge">{copy.noProject}</span>
+        )}
+      </div>
+      {mayManage && isActive ? (
+        <div className="actions">
+          {['draft', 'proposed'].includes(appointment.status) ? (
+            <button
+              type="button"
+              disabled={changing}
+              aria-label={`${copy.confirm}: ${appointmentName}`}
+              onClick={() => onStatus('confirmed')}
+            >
+              {copy.confirm}
+            </button>
+          ) : null}
+          {appointment.status === 'confirmed' ? (
+            <>
+              <button
+                type="button"
+                disabled={changing}
+                aria-label={`${copy.markCompleted}: ${appointmentName}`}
+                onClick={() => onStatus('completed')}
+              >
+                {copy.markCompleted}
+              </button>
+              <button
+                type="button"
+                disabled={changing}
+                aria-label={`${copy.markNoShow}: ${appointmentName}`}
+                onClick={() => onStatus('no_show')}
+              >
+                {copy.markNoShow}
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className="danger"
+            disabled={changing}
+            aria-label={`${copy.cancel}: ${appointmentName}`}
+            onClick={() => onStatus('cancelled')}
+          >
+            {copy.cancel}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -439,8 +539,13 @@ const COPY: Record<Language, Record<string, string>> = {
     conflicts: 'Conflicting active appointments: {count}. The first starts {date}. You may still propose this time if the overlap is intentional.',
     completeRequired: 'Choose valid links, a start time and a later end time.',
     saveFailed: 'Could not schedule that appointment.',
+    statusFailed: 'Could not change that appointment.',
     saving: 'Saving…',
     propose: 'Propose appointment',
+    confirm: 'Confirm',
+    markCompleted: 'Mark completed',
+    markNoShow: 'Mark no-show',
+    cancel: 'Cancel',
     upcoming: 'Upcoming',
     nothingUpcoming: 'Nothing scheduled ahead',
     past: 'Past',
@@ -476,8 +581,13 @@ const COPY: Record<Language, Record<string, string>> = {
     conflicts: 'Пересекающихся активных записей: {count}. Первая начинается {date}. Время всё равно можно предложить, если пересечение намеренное.',
     completeRequired: 'Выберите корректные связи, начало и более позднее окончание.',
     saveFailed: 'Не удалось создать запись.',
+    statusFailed: 'Не удалось изменить статус записи.',
     saving: 'Сохраняем…',
     propose: 'Предложить запись',
+    confirm: 'Подтвердить',
+    markCompleted: 'Завершить',
+    markNoShow: 'Не пришёл',
+    cancel: 'Отменить',
     upcoming: 'Предстоящие',
     nothingUpcoming: 'Впереди ничего не запланировано',
     past: 'Прошедшие',
