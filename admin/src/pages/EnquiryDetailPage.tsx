@@ -8,6 +8,7 @@ import { Link, useRouter } from '../lib/router';
 import { availableTransitions, can } from '../lib/permissions';
 import { formatDateTime, localiseKnownValue, localiseSystemSubject, relativeDue } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
+import { operationalLabel } from '../lib/operational-labels';
 import type {
   ActivityEntry, Client, Enquiry, EnquiryFile, FollowUp, InternalNote, Profile, StatusTransition,
 } from '../lib/types';
@@ -349,7 +350,9 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
             <ul className="timeline">
               {activity.map((entry) => (
                 <li key={entry.id}>
-                  <div>{label('event', entry.event_type)}</div>
+                  <div title={entry.event_type}>
+                    {operationalLabel(language, 'event', entry.event_type)}
+                  </div>
                   <div className="when">
                     {formatDateTime(entry.occurred_at, language)} · {label('actor', entry.actor_kind)}
                   </div>
