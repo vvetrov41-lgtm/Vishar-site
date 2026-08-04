@@ -7,6 +7,13 @@ export type AppointmentType =
   | 'video_consultation'
   | 'touch_up';
 
+export type CalendarSyncStatus =
+  | 'not_connected'
+  | 'queued'
+  | 'synced'
+  | 'retrying'
+  | 'failed';
+
 export interface Appointment {
   id: string;
   artist_id: string;
@@ -23,6 +30,10 @@ export interface Appointment {
   calendar_provider: CalendarProvider;
   calendar_event_id: string | null;
   calendar_version: number;
+  calendar_sync_status: CalendarSyncStatus;
+  calendar_last_synced_version: number | null;
+  calendar_last_synced_at: string | null;
+  calendar_last_error_code: string | null;
   notes: string | null;
   cancelled_at: string | null;
 }
@@ -70,6 +81,10 @@ function normaliseAppointment(row: Partial<Appointment> & Pick<Appointment, 'id'
     calendar_provider: row.calendar_provider ?? 'none',
     calendar_event_id: row.calendar_event_id ?? null,
     calendar_version: row.calendar_version ?? 0,
+    calendar_sync_status: row.calendar_sync_status ?? 'not_connected',
+    calendar_last_synced_version: row.calendar_last_synced_version ?? null,
+    calendar_last_synced_at: row.calendar_last_synced_at ?? null,
+    calendar_last_error_code: row.calendar_last_error_code ?? null,
     notes: row.notes ?? null,
     cancelled_at: row.cancelled_at ?? null,
   } as Appointment;
@@ -85,7 +100,7 @@ export function createAppointmentApi(client: CrmClient) {
     } = {}): Promise<Appointment[]> {
       let query = client
         .from('sessions')
-        .select('id, artist_id, client_id, enquiry_id, project_id, appointment_type, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, notes, cancelled_at')
+        .select('id, artist_id, client_id, enquiry_id, project_id, appointment_type, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, calendar_sync_status, calendar_last_synced_version, calendar_last_synced_at, calendar_last_error_code, notes, cancelled_at')
         .order('start_at', { ascending: true })
         .limit(300);
 
@@ -125,6 +140,21 @@ export function createAppointmentApi(client: CrmClient) {
           p_status: status,
         }),
         'change that appointment'
+      );
+    },
+
+    async rescheduleAppointment(input: {
+      appointmentId: string;
+      startAt: string;
+      endAt: string;
+    }) {
+      return unwrap<Record<string, unknown>>(
+        await client.rpc('reschedule_appointment', {
+          p_appointment_id: input.appointmentId,
+          p_start_at: input.startAt,
+          p_end_at: input.endAt,
+        }),
+        'reschedule that appointment'
       );
     },
 
