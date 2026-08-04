@@ -60,6 +60,8 @@ The CRM shows per-appointment calendar sync state:
 - retrying;
 - failed with a safe description.
 
+Active appointments expose a reschedule control that writes only through the protected RPC. The browser never updates appointment timestamps directly.
+
 The artist integration screen shows metadata-only connection state. It never displays refresh tokens, access tokens, OAuth codes or provider secrets.
 
 ## Staging and production
