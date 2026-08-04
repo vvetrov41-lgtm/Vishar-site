@@ -21,6 +21,14 @@ select ok(
          and a.attname = 'project_id' and not a.attisdropped),
   'project_id is nullable for pre-project consultations'
 );
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.sessions'::regclass
+      and conname = 'sessions_consultation_duration_bounds'
+  ),
+  'consultation duration bounds are enforced by the sessions table'
+);
 
 select ok(
   has_function_privilege(
@@ -176,10 +184,45 @@ select lives_ok(
       'a1111111-1111-4111-8111-111111111111',
       'b8211111-1111-4111-8111-111111111111',
       'in_person_consultation',
-      '2026-09-12T12:00:00Z', '2026-09-12T12:45:00Z',
+      '2026-09-12T12:00:00Z', '2026-09-12T12:30:00Z',
       'proposed', null, null, 'Synthetic client-only consultation'
     )$$,
   'an in-person consultation may be linked only to the shared client'
+);
+
+select lives_ok(
+  $$select public.schedule_appointment(
+      'a1111111-1111-4111-8111-111111111111',
+      'b8211111-1111-4111-8111-111111111111',
+      'video_consultation',
+      '2026-09-12T13:00:00Z', '2026-09-12T13:15:00Z',
+      'proposed', null, null, 'Minimum consultation duration'
+    )$$,
+  'a 15 minute consultation is accepted'
+);
+
+select throws_ok(
+  $$select public.schedule_appointment(
+      'a1111111-1111-4111-8111-111111111111',
+      'b8211111-1111-4111-8111-111111111111',
+      'video_consultation',
+      '2026-09-12T14:00:00Z', '2026-09-12T14:14:00Z',
+      'proposed', null, null, 'Too short consultation'
+    )$$,
+  '23514', null,
+  'a consultation shorter than 15 minutes is rejected'
+);
+
+select throws_ok(
+  $$select public.schedule_appointment(
+      'a1111111-1111-4111-8111-111111111111',
+      'b8211111-1111-4111-8111-111111111111',
+      'in_person_consultation',
+      '2026-09-12T15:00:00Z', '2026-09-12T15:31:00Z',
+      'proposed', null, null, 'Too long consultation'
+    )$$,
+  '23514', null,
+  'a consultation longer than 30 minutes is rejected'
 );
 
 select throws_ok(
