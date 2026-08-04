@@ -62,6 +62,27 @@ describe('consequential RPC confirmations', () => {
     expect(rpcCalls).toEqual([]);
   });
 
+  it.each([
+    ['cancelled', 'cancelAppointment'],
+    ['no_show', 'markAppointmentNoShow'],
+  ] as const)('guards the %s appointment state', async (status, action) => {
+    const confirm = vi.fn(() => false);
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    const client = wrappedClient(confirm, rpcCalls);
+
+    await client.rpc('set_appointment_status', {
+      p_appointment_id: 'appointment-id',
+      p_status: status,
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/appointment/i),
+      action,
+      'en'
+    );
+    expect(rpcCalls).toEqual([]);
+  });
+
   it('guards user deactivation but not reactivation', async () => {
     const confirm = vi.fn(() => false);
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
