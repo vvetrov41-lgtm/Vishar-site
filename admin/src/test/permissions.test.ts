@@ -79,7 +79,7 @@ describe('capabilities', () => {
 describe('navigation', () => {
   it('shows the owner every section', () => {
     const paths = navItemsFor('owner').map((item) => item.path);
-    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/sessions', '/users', '/activity']);
+    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/appointments', '/users', '/activity']);
   });
 
   it('hides Users from a booking manager but keeps their working sections', () => {
@@ -91,7 +91,7 @@ describe('navigation', () => {
 
   it('leaves read_only with viewing sections only', () => {
     const paths = navItemsFor('read_only').map((item) => item.path);
-    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/sessions']);
+    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/appointments']);
   });
 
   it('shows nothing at all without an active profile', () => {
