@@ -1,0 +1,195 @@
+name: PR 178 retained staging appointments and E2E
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr177-retained-staging-mutation
+  cancel-in-progress: false
+
+jobs:
+  retained-staging-appointments:
+    name: Guarded migration 0026, CRM deploy and hosted E2E
+    if: >-
+      github.event.action == 'submitted' &&
+      github.event.review.state == 'commented' &&
+      github.event.review.body == 'DEPLOY PR178 APPOINTMENTS TO RETAINED STAGING' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.number == 178 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/appointment-types-foundation' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      CONFIRMATION: ${{ github.event.review.body }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+
+    steps:
+      - name: Fail closed before checkout
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$CONFIRMATION" = "DEPLOY PR178 APPOINTMENTS TO RETAINED STAGING" ]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "submitted"
+            and .review.state == "commented"
+            and .review.body == "DEPLOY PR178 APPOINTMENTS TO RETAINED STAGING"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 178
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.head.ref == "agent/appointment-types-foundation"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Check out exact approved SHA
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify PR state, ancestry and completed normal CI
+        id: verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          git merge-base --is-ancestor 539ef759526783b56307f09426ef312b1c2fd8e3 "$APPROVED_SHA"
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/178" > "$RUNNER_TEMP/pr.json"
+          jq -e --arg sha "$APPROVED_SHA" '
+            .state == "open" and .draft == true and .merged == false
+            and .base.ref == "agent/multi-artist-payments-foundation"
+            and .head.ref == "agent/appointment-types-foundation"
+            and .head.sha == $sha
+          ' "$RUNNER_TEMP/pr.json" >/dev/null
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify staging-only encrypted configuration
+        id: credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_DB_PASSWORD STAGING_SUPABASE_URL \
+            STAGING_SUPABASE_PUBLISHABLE_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+          [ "${#missing[@]}" -eq 0 ] || {
+            printf 'Missing encrypted staging configuration names: %s\n' "$(IFS=,; echo "${missing[*]}")" >&2
+            exit 1
+          }
+          [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ]
+          case "$STAGING_SUPABASE_PUBLISHABLE_KEY" in
+            sb_publishable_*) ;;
+            *) echo 'Staging browser key is not publishable' >&2; exit 1 ;;
+          esac
+
+      - name: Set up Node.js
+        id: node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked repository dependencies
+        id: npm
+        run: npm ci
+
+      - name: Apply only migration 0026 and run hosted pgTAP and lint
+        id: migrate
+        run: bash scripts/pr178-staging-appointments-e2e.sh migrate
+
+      - name: Run rollback-only synthetic appointment E2E
+        id: e2e
+        run: bash scripts/pr178-staging-appointments-e2e.sh e2e
+
+      - name: Build and deploy exact CRM staging artifact
+        id: deploy
+        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr178-staging-appointments-e2e.sh deploy
+
+      - name: Upload safe appointment evidence
+        id: evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr178-retained-staging-appointments-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr178-staging-evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Record safe retained-staging result on PR 178
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+          GUARD_OUTCOME: ${{ steps.guard.outcome }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          NODE_OUTCOME: ${{ steps.node.outcome }}
+          NPM_OUTCOME: ${{ steps.npm.outcome }}
+          MIGRATE_OUTCOME: ${{ steps.migrate.outcome }}
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/pr178-staging-result.md"
+          cat > "$body" <<EOF_RESULT
+          <!-- pr178-retained-staging-appointments-e2e -->
+          ### PR #178 retained staging appointment validation
+
+          - Exact reviewed SHA: ${APPROVED_SHA}
+          - GitHub run ID: ${GITHUB_RUN_ID}
+          - GitHub run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Guarded job: ${JOB_STATUS}
+          - Step outcomes: guard=${GUARD_OUTCOME:-unknown}, checkout=${CHECKOUT_OUTCOME:-unknown}, verify=${VERIFY_OUTCOME:-unknown}, credentials=${CREDENTIALS_OUTCOME:-unknown}, node=${NODE_OUTCOME:-unknown}, npm=${NPM_OUTCOME:-unknown}, migration=${MIGRATE_OUTCOME:-unknown}, e2e=${E2E_OUTCOME:-unknown}, crm_deploy=${DEPLOY_OUTCOME:-unknown}, evidence=${EVIDENCE_OUTCOME:-unknown}
+          - Database target: retained vishar-crm-staging only
+          - Forward migration: 0026 only
+          - Hosted pgTAP expectation: 960 tests
+          - Hosted E2E: four appointment types, projectless consultations, cross-type conflicts, lifecycle and read-only denial
+          - E2E persistence: rollback-only; no synthetic appointment rows retained
+          - Pages target: vishar-crm-staging only
+          - Worker and booking Pages: not deployed
+          - Production targeted: false
+          - Staging retained: true
+
+          The artifact contains migration lists, safe row counts, pgTAP/lint output, a rollback-only E2E summary, CRM deployment output and Access redirect headers. It contains no credential values.
+          EOF_RESULT
+          sed -i 's/^          //' "$body"
+          gh pr comment 178 --repo "$GITHUB_REPOSITORY" --body-file "$body"
