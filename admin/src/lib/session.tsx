@@ -16,26 +16,23 @@ import {
   type ReactNode,
 } from 'react';
 import { createApi, type Api, type CrmClient } from './api';
+import { createAppointmentApi, type AppointmentApi } from './appointment-api';
 import type { Profile } from './types';
 
 export type AccessState =
   | 'loading'
   | 'signed_out'
-  | 'no_profile'   // signed in, but no readable CRM profile
-  // Signed in with a readable but inactive profile. Under the current
-  // `profiles_select_self` policy — which is gated on `is_active` — a
-  // deactivated account cannot read its own row either, so it presents as
-  // `no_profile`. This state is kept because it is the honest model of "profile
-  // exists, access withdrawn" and would become reachable if that policy ever
-  // widened; both outcomes deny identically.
+  | 'no_profile'
   | 'deactivated'
   | 'active'
-  | 'unconfigured'; // the build has no Supabase URL or anon key
+  | 'unconfigured';
+
+export type CrmApi = Api & AppointmentApi;
 
 export interface SessionValue {
   state: AccessState;
   profile: Profile | null;
-  api: Api | null;
+  api: CrmApi | null;
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -49,7 +46,10 @@ export function SessionProvider({ client, children }: { client: CrmClient | null
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const api = useMemo(() => (client ? createApi(client) : null), [client]);
+  const api = useMemo<CrmApi | null>(() => {
+    if (!client) return null;
+    return Object.assign(createApi(client), createAppointmentApi(client));
+  }, [client]);
 
   const load = useCallback(async () => {
     if (!client || !api) {
@@ -75,9 +75,6 @@ export function SessionProvider({ client, children }: { client: CrmClient | null
       setProfile(found);
       setState(found.is_active ? 'active' : 'deactivated');
     } catch {
-      // A profile that cannot be read is treated as no access rather than as a
-      // transient error: the safe reading of "the database would not tell me
-      // who you are" is that you are not staff.
       setProfile(null);
       setState('no_profile');
     }
@@ -95,8 +92,6 @@ export function SessionProvider({ client, children }: { client: CrmClient | null
     setError(null);
     const result = await client.auth.signInWithPassword({ email, password });
     if (result.error) {
-      // Deliberately generic: distinguishing "no such account" from "wrong
-      // password" tells an attacker which addresses are staff addresses.
       setError('That email address and password did not match.');
       throw new Error('sign in failed');
     }
@@ -124,7 +119,7 @@ export function useSession(): SessionValue {
   return value;
 }
 
-export function useApi(): Api {
+export function useApi(): CrmApi {
   const { api } = useSession();
   if (!api) throw new Error('The CRM is not configured.');
   return api;
