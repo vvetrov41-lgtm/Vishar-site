@@ -67,13 +67,6 @@ alter table public.sessions
   on delete restrict;
 
 alter table public.sessions
-  add constraint sessions_enquiry_artist_fkey
-  foreign key (enquiry_id, artist_id)
-  references public.enquiries(id, artist_id)
-  on delete restrict
-  deferrable initially deferred;
-
-alter table public.sessions
   add constraint sessions_enquiry_client_fkey
   foreign key (enquiry_id, client_id)
   references public.enquiries(id, client_id)
@@ -132,10 +125,9 @@ begin
         using errcode = '23514';
     end if;
 
-    if new.enquiry_id is null and v_project_enquiry is not null then
+    if new.enquiry_id is null then
       new.enquiry_id := v_project_enquiry;
-    elsif v_project_enquiry is not null
-       and new.enquiry_id is distinct from v_project_enquiry then
+    elsif new.enquiry_id is distinct from v_project_enquiry then
       raise exception 'appointment enquiry must match the linked project enquiry'
         using errcode = '23514';
     end if;
@@ -159,11 +151,17 @@ begin
         using errcode = '23514';
     end if;
 
-    if new.artist_id is null then
-      new.artist_id := v_enquiry_artist;
-    elsif new.artist_id <> v_enquiry_artist then
-      raise exception 'appointment artist must match the linked enquiry artist'
-        using errcode = '23514';
+    -- A project may have been explicitly transferred to another artist while
+    -- the originating enquiry keeps its historical artist. In that case the
+    -- current project artist is authoritative. Only a projectless appointment
+    -- must match the enquiry artist directly.
+    if new.project_id is null then
+      if new.artist_id is null then
+        new.artist_id := v_enquiry_artist;
+      elsif new.artist_id <> v_enquiry_artist then
+        raise exception 'projectless appointment artist must match the linked enquiry artist'
+          using errcode = '23514';
+      end if;
     end if;
   end if;
 
@@ -493,75 +491,12 @@ grant execute on function public.schedule_appointment(uuid,uuid,public.appointme
 grant execute on function public.set_appointment_status(uuid,public.session_status)
   to authenticated;
 
--- ---------------------------------------------------------------------------
--- Backwards-compatible session RPCs
--- ---------------------------------------------------------------------------
-
-create or replace function public.schedule_session(
-  p_project_id uuid,
-  p_start_at timestamptz,
-  p_end_at timestamptz,
-  p_status public.session_status default 'proposed',
-  p_notes text default null
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-declare
-  v_project record;
-begin
-  select p.artist_id, p.client_id, p.enquiry_id
-    into v_project
-  from public.projects p
-  where p.id = p_project_id;
-
-  if not found then
-    raise exception 'project % does not exist', p_project_id
-      using errcode = '23503';
-  end if;
-
-  return public.schedule_appointment(
-    v_project.artist_id,
-    v_project.client_id,
-    'tattoo_session',
-    p_start_at,
-    p_end_at,
-    p_status,
-    v_project.enquiry_id,
-    p_project_id,
-    p_notes
-  );
-end;
-$$;
-
-create or replace function public.set_session_status(
-  p_session_id uuid,
-  p_status public.session_status
-)
-returns jsonb
-language sql
-security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-  select public.set_appointment_status(p_session_id, p_status);
-$$;
-
-revoke all on function public.schedule_session(uuid,timestamptz,timestamptz,public.session_status,text)
-  from public, anon, authenticated, service_role;
-revoke all on function public.set_session_status(uuid,public.session_status)
-  from public, anon, authenticated, service_role;
-grant execute on function public.schedule_session(uuid,timestamptz,timestamptz,public.session_status,text)
-  to authenticated;
-grant execute on function public.set_session_status(uuid,public.session_status)
-  to authenticated;
-
 comment on function public.schedule_appointment(uuid,uuid,public.appointment_type,timestamptz,timestamptz,public.session_status,uuid,uuid,text) is
   'Schedules one artist-scoped appointment. Relationship consistency and manage_sessions capability are enforced by the database.';
 comment on function public.set_appointment_status(uuid,public.session_status) is
   'Changes one appointment lifecycle state, including projectless consultations.';
-comment on function public.schedule_session(uuid,timestamptz,timestamptz,public.session_status,text) is
-  'Compatibility wrapper that schedules a tattoo_session for an existing project.';
-comment on function public.set_session_status(uuid,public.session_status) is
-  'Compatibility wrapper for set_appointment_status.';
+
+-- Existing public.schedule_session and public.set_session_status functions are
+-- intentionally left unchanged. They remain the tested compatibility boundary
+-- for project-owned tattoo sessions while the new appointment RPCs support all
+-- four types and projectless consultations.
