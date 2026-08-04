@@ -51,9 +51,13 @@ describe('responsive navigation shell', () => {
 
   it('groups owner overflow destinations by task area', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/' });
-    fireEvent.click(await screen.findByRole('button', { name: 'More' }));
+    await screen.findByRole('heading', { level: 2, name: 'Enquiries' });
 
-    const dialog = await screen.findByRole('dialog', { name: 'Sections' });
+    const more = screen.getByRole('button', { name: 'More' });
+    fireEvent.click(more);
+    await waitFor(() => expect(more).toHaveAttribute('aria-expanded', 'true'));
+
+    const dialog = screen.getByRole('dialog', { name: 'Sections' });
     const operations = within(dialog).getByRole('group', { name: 'Operations' });
     const administration = within(dialog).getByRole('group', { name: 'Administration' });
 
