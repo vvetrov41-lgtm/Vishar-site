@@ -50,6 +50,8 @@ Rescheduling uses the protected `reschedule_appointment` RPC. It changes start/e
 
 The canonical function ACL inventory grants this RPC only to `authenticated`; its body still requires active artist membership with session-management capability. Provider acknowledgement uses `record_calendar_sync_result`, granted only to `service_role`, and rejects stale versions before changing visible sync state.
 
+The database contract test switches explicitly between an authenticated owner context for appointment changes and a service-role context for provider acknowledgements. This verifies the same boundary used by the CRM and future calendar drain.
+
 ## User interface
 
 The CRM shows per-appointment calendar sync state:
