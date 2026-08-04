@@ -57,6 +57,24 @@ function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
   return (result.data ?? ([] as unknown)) as T;
 }
 
+function normaliseAppointment(row: Partial<Appointment> & Pick<Appointment, 'id' | 'artist_id' | 'status' | 'start_at' | 'end_at'>): Appointment {
+  return {
+    ...row,
+    client_id: row.client_id ?? '',
+    enquiry_id: row.enquiry_id ?? null,
+    project_id: row.project_id ?? null,
+    appointment_type: row.appointment_type ?? 'tattoo_session',
+    duration_hours: row.duration_hours ?? null,
+    currency: row.currency ?? 'GBP',
+    payment_status: row.payment_status ?? 'unpaid',
+    calendar_provider: row.calendar_provider ?? 'none',
+    calendar_event_id: row.calendar_event_id ?? null,
+    calendar_version: row.calendar_version ?? 0,
+    notes: row.notes ?? null,
+    cancelled_at: row.cancelled_at ?? null,
+  } as Appointment;
+}
+
 export function createAppointmentApi(client: CrmClient) {
   return {
     async listAppointments(filters: {
@@ -76,7 +94,11 @@ export function createAppointmentApi(client: CrmClient) {
       if (filters.clientId) query = query.eq('client_id', filters.clientId);
       if (filters.appointmentType) query = query.eq('appointment_type', filters.appointmentType);
 
-      return unwrap<Appointment[]>(await query, 'load appointments');
+      const rows = unwrap<Array<Partial<Appointment> & Pick<Appointment, 'id' | 'artist_id' | 'status' | 'start_at' | 'end_at'>>>(
+        await query,
+        'load appointments'
+      );
+      return rows.map(normaliseAppointment);
     },
 
     async scheduleAppointment(input: ScheduleAppointmentInput) {
