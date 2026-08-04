@@ -119,6 +119,11 @@ function appendTextElement<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
+/**
+ * Shows a CRM-owned modal rather than the browser's hostname-labelled confirm
+ * prompt. Native dialog modality supplies focus containment and Escape support;
+ * the explicit handlers preserve a safe cancel path and restore page scrolling.
+ */
 export function showConsequentialDialog(
   message: string,
   action: ConsequentialAction,
@@ -204,6 +209,11 @@ export function showConsequentialDialog(
   });
 }
 
+/**
+ * Adds a last client-side confirmation immediately before consequential RPCs.
+ * Database role checks and RLS remain authoritative; declining a prompt simply
+ * prevents the RPC from being sent. Ordinary workflow actions pass through.
+ */
 export function withConsequentialConfirmations(
   client: CrmClient | null,
   options: ConfirmationOptions = {}
