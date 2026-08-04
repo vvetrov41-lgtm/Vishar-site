@@ -32,8 +32,8 @@ const TYPES: AppointmentType[] = [
 
 const DURATION_MINUTES: Record<AppointmentType, number[]> = {
   tattoo_session: [180, 300, 420],
-  in_person_consultation: [30, 45, 60],
-  video_consultation: [20, 30, 45],
+  in_person_consultation: [15, 20, 30],
+  video_consultation: [15, 20, 30],
   touch_up: [60, 120, 180],
 };
 
