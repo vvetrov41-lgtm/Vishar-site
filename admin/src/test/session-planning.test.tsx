@@ -42,7 +42,7 @@ describe('session planning helpers', () => {
 });
 
 describe('project session planner', () => {
-  it('offers 3, 5 and 7 hour shortcuts and warns about an artist overlap', async () => {
+  it('shows session duration, offers shortcuts and warns about an artist overlap', async () => {
     const queryCalls: { table: string; method: string; args: unknown[] }[] = [];
     renderWithSession(<App />, {
       role: 'booking_manager',
@@ -54,6 +54,7 @@ describe('project session planner', () => {
     const end = screen.getByLabelText('Proposed end');
     const threeHours = screen.getByRole('button', { name: '3 h' });
 
+    expect(screen.getByText('6 h')).toBeInTheDocument();
     expect(threeHours).toBeDisabled();
     expect(screen.getByRole('button', { name: '5 h' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '7 h' })).toBeInTheDocument();
