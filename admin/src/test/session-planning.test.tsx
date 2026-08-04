@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { App } from '../App';
+import { RouterProvider } from '../lib/router';
+import { SessionProvider } from '../lib/session';
 import { addHoursToLocalDateTime, findSessionConflicts } from '../lib/session-planning';
 import {
   PROJECT_ID,
   SESSION,
+  SESSION_ID,
   VLADIMIR_ARTIST_ID,
-  renderWithSession,
+  createFakeClient,
 } from './fixtures';
 
 function toLocalInput(value: string): string {
@@ -41,14 +44,40 @@ describe('session planning helpers', () => {
   });
 });
 
-describe('project session planner', () => {
-  it('shows session duration, offers shortcuts and warns about an artist overlap', async () => {
-    const queryCalls: { table: string; method: string; args: unknown[] }[] = [];
-    renderWithSession(<App />, {
-      role: 'booking_manager',
-      path: `/projects/${PROJECT_ID}`,
-      queryCalls,
-    });
+describe('project appointment planner', () => {
+  it('shows duration shortcuts and warns about a database-reported artist overlap', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    const baseClient = createFakeClient({ role: 'booking_manager', rpcCalls });
+    const client = {
+      ...baseClient,
+      rpc: async (name: string, args?: Record<string, unknown>) => {
+        if (name === 'list_appointment_conflicts') {
+          rpcCalls.push({ name, args });
+          return {
+            data: [{
+              appointment_id: SESSION_ID,
+              appointment_type: 'tattoo_session',
+              status: 'proposed',
+              start_at: SESSION.start_at,
+              end_at: SESSION.end_at,
+              client_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+              enquiry_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+              project_id: PROJECT_ID,
+            }],
+            error: null,
+          };
+        }
+        return baseClient.rpc(name, args);
+      },
+    } as typeof baseClient;
+
+    render(
+      <SessionProvider client={client}>
+        <RouterProvider initialPath={`/projects/${PROJECT_ID}`}>
+          <App />
+        </RouterProvider>
+      </SessionProvider>
+    );
 
     const start = await screen.findByLabelText('Proposed start');
     const end = screen.getByLabelText('Proposed end');
@@ -67,13 +96,13 @@ describe('project session planner', () => {
     fireEvent.click(threeHours);
 
     expect(end).toHaveValue(expectedEnd);
-    expect(screen.getByRole('alert')).toHaveTextContent('Conflicting active sessions: 1');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Conflicting active appointments: 1');
 
     await waitFor(() => {
-      expect(queryCalls).toContainEqual({
-        table: 'sessions',
-        method: 'eq',
-        args: ['artist_id', VLADIMIR_ARTIST_ID],
+      const call = rpcCalls.find((entry) => entry.name === 'list_appointment_conflicts');
+      expect(call).toBeDefined();
+      expect(call!.args).toMatchObject({
+        p_artist_id: VLADIMIR_ARTIST_ID,
       });
     });
   });
