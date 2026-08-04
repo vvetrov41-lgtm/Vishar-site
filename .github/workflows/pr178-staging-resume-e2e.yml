@@ -16,11 +16,11 @@ concurrency:
 
 jobs:
   retained-staging-appointments:
-    name: Guarded migration 0026, CRM deploy and hosted E2E
+    name: Verify 0026, run rollback E2E and deploy CRM
     if: >-
       github.event.action == 'submitted' &&
       github.event.review.state == 'commented' &&
-      github.event.review.body == 'DEPLOY PR178 APPOINTMENTS TO RETAINED STAGING' &&
+      github.event.review.body == 'RESUME PR178 HOSTED VALIDATION' &&
       github.event.sender.login == 'vvetrov41-lgtm' &&
       github.event.pull_request.number == 178 &&
       github.event.pull_request.state == 'open' &&
@@ -28,7 +28,7 @@ jobs:
       github.event.pull_request.head.ref == 'agent/appointment-types-foundation' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     env:
       APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
       CONFIRMATION: ${{ github.event.review.body }}
@@ -48,12 +48,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ "$CONFIRMATION" = "DEPLOY PR178 APPOINTMENTS TO RETAINED STAGING" ]
+          [ "$CONFIRMATION" = "RESUME PR178 HOSTED VALIDATION" ]
           [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
           jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
             .action == "submitted"
             and .review.state == "commented"
-            and .review.body == "DEPLOY PR178 APPOINTMENTS TO RETAINED STAGING"
+            and .review.body == "RESUME PR178 HOSTED VALIDATION"
             and .sender.login == "vvetrov41-lgtm"
             and .pull_request.number == 178
             and .pull_request.state == "open"
@@ -78,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
-          git merge-base --is-ancestor 539ef759526783b56307f09426ef312b1c2fd8e3 "$APPROVED_SHA"
+          git merge-base --is-ancestor d9a0158d238bb46d9540a90e859f4a1dd3e9ac03 "$APPROVED_SHA"
 
           gh api "repos/$GITHUB_REPOSITORY/pulls/178" > "$RUNNER_TEMP/pr.json"
           jq -e --arg sha "$APPROVED_SHA" '
@@ -129,9 +129,9 @@ jobs:
         id: npm
         run: npm ci
 
-      - name: Apply only migration 0026 and run hosted pgTAP and lint
-        id: migrate
-        run: bash scripts/pr178-staging-appointments-e2e.sh migrate
+      - name: Verify retained migration 0026, schema, backfill and hosted lint
+        id: verify_0026
+        run: bash scripts/pr178-staging-post-migration-check.sh
 
       - name: Run rollback-only synthetic appointment E2E
         id: e2e
@@ -163,7 +163,7 @@ jobs:
           CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
           NODE_OUTCOME: ${{ steps.node.outcome }}
           NPM_OUTCOME: ${{ steps.npm.outcome }}
-          MIGRATE_OUTCOME: ${{ steps.migrate.outcome }}
+          VERIFY_0026_OUTCOME: ${{ steps.verify_0026.outcome }}
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
@@ -178,18 +178,19 @@ jobs:
           - GitHub run ID: ${GITHUB_RUN_ID}
           - GitHub run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           - Guarded job: ${JOB_STATUS}
-          - Step outcomes: guard=${GUARD_OUTCOME:-unknown}, checkout=${CHECKOUT_OUTCOME:-unknown}, verify=${VERIFY_OUTCOME:-unknown}, credentials=${CREDENTIALS_OUTCOME:-unknown}, node=${NODE_OUTCOME:-unknown}, npm=${NPM_OUTCOME:-unknown}, migration=${MIGRATE_OUTCOME:-unknown}, e2e=${E2E_OUTCOME:-unknown}, crm_deploy=${DEPLOY_OUTCOME:-unknown}, evidence=${EVIDENCE_OUTCOME:-unknown}
+          - Step outcomes: guard=${GUARD_OUTCOME:-unknown}, checkout=${CHECKOUT_OUTCOME:-unknown}, verify=${VERIFY_OUTCOME:-unknown}, credentials=${CREDENTIALS_OUTCOME:-unknown}, node=${NODE_OUTCOME:-unknown}, npm=${NPM_OUTCOME:-unknown}, verify_0026=${VERIFY_0026_OUTCOME:-unknown}, e2e=${E2E_OUTCOME:-unknown}, crm_deploy=${DEPLOY_OUTCOME:-unknown}, evidence=${EVIDENCE_OUTCOME:-unknown}
           - Database target: retained vishar-crm-staging only
-          - Forward migration: 0026 only
-          - Hosted pgTAP expectation: 960 tests
+          - Confirmed migrations: 0001-0026
+          - Canonical validation: 960/960 pgTAP passed on a clean database in normal CI
+          - Hosted validation: migration history, schema/backfill, error-level database lint and rollback-only synthetic E2E
           - Hosted E2E: four appointment types, projectless consultations, cross-type conflicts, lifecycle and read-only denial
-          - E2E persistence: rollback-only; no synthetic appointment rows retained
+          - E2E persistence: no appointment rows retained
           - Pages target: vishar-crm-staging only
           - Worker and booking Pages: not deployed
           - Production targeted: false
           - Staging retained: true
 
-          The artifact contains migration lists, safe row counts, pgTAP/lint output, a rollback-only E2E summary, CRM deployment output and Access redirect headers. It contains no credential values.
+          The first hosted attempt successfully applied migration 0026 but incorrectly ran clean-database canonical tests against retained rows. This continuation uses the correct hosted-data boundary. The artifact contains no credential values.
           EOF_RESULT
           sed -i 's/^          //' "$body"
           gh pr comment 178 --repo "$GITHUB_REPOSITORY" --body-file "$body"
