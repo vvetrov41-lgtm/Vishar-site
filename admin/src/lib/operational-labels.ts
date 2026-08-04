@@ -3,6 +3,38 @@ import type { OutboxJob } from './types';
 
 export type OperationalLabelGroup = 'event' | 'integrationKind' | 'integrationError';
 
+export const ACTIVITY_EVENT_TYPES = [
+  'artist.work_transferred',
+  'client.created',
+  'enquiry.assigned',
+  'enquiry.converted',
+  'enquiry.created',
+  'enquiry.intake_completed',
+  'enquiry.reviewed',
+  'enquiry.source_resolved',
+  'enquiry.status_changed',
+  'finance.updated',
+  'follow_up.completed',
+  'follow_up.created',
+  'integration.configured',
+  'integration.queued',
+  'membership.updated',
+  'note.created',
+  'outbox.failed',
+  'outbox.succeeded',
+  'owner.bootstrapped',
+  'payment.recorded',
+  'profile.activated',
+  'profile.deactivated',
+  'profile.role_changed',
+  'profile.updated',
+  'project.deposit_changed',
+  'project.reviewed',
+  'session.created',
+  'session.scheduled',
+  'session.status_changed',
+] as const;
+
 const LABELS: Record<Language, Record<OperationalLabelGroup, Record<string, string>>> = {
   en: {
     event: {
