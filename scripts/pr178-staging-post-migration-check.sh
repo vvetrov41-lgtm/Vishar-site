@@ -90,6 +90,23 @@ rows "${evidence_dir}/post-migration-check.json" | jq -e '
   and .[0].check.legacy_non_tattoo_rows == 0
 ' >/dev/null || die "migration 0026 schema/backfill verification failed"
 
+# The rollback-only E2E compares its final row counts with this baseline.
+# Keep the Management API response shape identical to snapshot() in the E2E runner.
+rows "${evidence_dir}/post-migration-check.json" | jq '[{
+  snapshot: {
+    clients: .[0].check.clients,
+    enquiries: .[0].check.enquiries,
+    projects: .[0].check.projects,
+    sessions: .[0].check.sessions,
+    outbox: .[0].check.outbox,
+    activity: .[0].check.activity
+  }
+}]' > "${evidence_dir}/database-after.json"
+
+jq -e '.[0].snapshot | all(.[]; type == "number")' \
+  "${evidence_dir}/database-after.json" >/dev/null \
+  || die "could not create the retained row-count baseline"
+
 npx supabase@2.111.0 db lint --linked --schema public,crm_private --level error --fail-on error \
   2>&1 | tee "${evidence_dir}/hosted-lint-resume.txt"
 
