@@ -524,6 +524,7 @@ insert into expected_function_acl values
   ('public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)', false, false, true),
   ('public.claim_calendar_outbox(text,integer,integer)', false, false, true),
   ('public.record_calendar_outbox_result(uuid,text,integer,boolean,text,text)', false, false, true),
+  ('public.set_calendar_connection_metadata(uuid,text,text,boolean)', false, false, true),
   ('public.list_calendar_connection_status()', false, true, false),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
