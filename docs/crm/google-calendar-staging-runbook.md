@@ -11,64 +11,49 @@ This runbook completes the hosted staging validation for the separate Vladimir a
 - Never place OAuth codes, cookies, OTPs, client secrets, refresh tokens, Supabase backend keys or the token-encryption key in GitHub comments, chat or screenshots.
 - Cloudflare Access and CORS are separate controls. Interactive connector routes must remain behind owner-only Access and must validate the signed Access application JWT inside the Worker.
 
-## 1. Create the Access application
+## 1. Access and routing configuration
 
-Create one Cloudflare Access self-hosted application:
+The owner-only Cloudflare Access application protects:
 
-- Name: `Vishar Calendar Staging`
-- Hostname: `calendar-staging.vishartattoo.com`
-- Policy: allow only the owner email approved for staging
-- Session duration: use the existing owner-only staging convention
+- `calendar-staging.vishartattoo.com`
+- team origin `https://vishar-site-pages.cloudflareaccess.com`
+- Calendar application AUD `2a0569d2cc1acb785ccf190585be7ca9cad70fe6db7042a8094bf39160a26013`
+- approved owner `vvetrov41@gmail.com`
 
-Record the exact Cloudflare Access team origin and the application's Audience (AUD) tag. The Worker uses both values to verify `Cf-Access-Jwt-Assertion`; the forwarded email header alone is not an authentication boundary.
+The exact team origin, AUD, owner allowlist, artist IDs, expected Google account labels and retained staging Supabase URL are committed as non-secret staging variables and validated fail-closed by `validate-calendar-staging.mjs`.
 
 Verify in a private browser session that `/health` cannot be read without completing Access.
 
-## 2. Create the KV namespaces
+## 2. KV namespaces
 
-Create two distinct staging-only Workers KV namespaces:
+The following distinct staging-only Workers KV namespaces are bound:
 
 - `CALENDAR_OAUTH_STATE`
 - `CALENDAR_OAUTH_TOKENS`
 
 `CALENDAR_OAUTH_STATE` stores short-lived PKCE/OAuth state and single-use disconnect confirmation nonces. `CALENDAR_OAUTH_TOKENS` stores only AES-GCM encrypted refresh-token envelopes.
 
-Record only their namespace IDs for the Wrangler binding change. Do not read or copy token-envelope values during ordinary validation.
-
-Add exactly these bindings to `wrangler.calendar.staging.toml`:
-
-```toml
-[[kv_namespaces]]
-binding = "CALENDAR_OAUTH_STATE"
-id = "<STATE_NAMESPACE_ID>"
-
-[[kv_namespaces]]
-binding = "CALENDAR_OAUTH_TOKENS"
-id = "<TOKENS_NAMESPACE_ID>"
-```
-
-The IDs must be different. Run the deploy-ready preflight before deployment:
+Do not read or copy token-envelope values during ordinary validation. Run the deploy-ready preflight before deployment:
 
 ```sh
 npm run validate:calendar-staging:deploy-ready
 ```
 
-## 3. Confirm encrypted secrets and variables
+## 3. Remaining encrypted secrets
 
-Configure the staging Worker with:
+The guarded PR #180 workflow reads these secret names from the GitHub `staging` environment and uploads them atomically with the Worker deployment through a temporary mode-`0600` file that is deleted immediately afterward:
 
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `CALENDAR_TOKEN_ENCRYPTION_KEY`
-- `CALENDAR_OWNER_EMAILS`
-- `CALENDAR_ACCESS_TEAM_DOMAIN` — exact `https://<team>.cloudflareaccess.com` origin
-- `CALENDAR_ACCESS_AUD` — exact AUD tag for the Calendar Access application
-- `VLADIMIR_ARTIST_ID`
-- `VLADIMIR_GOOGLE_EMAIL`
-- `KRISTINA_ARTIST_ID`
-- `KRISTINA_GOOGLE_EMAIL`
-- `SUPABASE_URL`
-- exactly one of `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEY`
+
+The repository already uses these staging deployment credentials:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+`CALENDAR_TOKEN_ENCRYPTION_KEY` must be a base64url value that decodes to exactly 32 random bytes. Never place any of the secret values in a PR body, comment, chat, screenshot, committed file or workflow output.
 
 Keep:
 
@@ -76,9 +61,7 @@ Keep:
 - `CRM_APPOINTMENTS_URL = "https://vishar-crm-staging.pages.dev/#/appointments"`
 - `CALENDAR_DRAIN_ENABLED = "false"`
 
-The two CRM URLs are intentionally separate. OAuth and Disconnect return to Calendar Connections; links projected into Google events return to Appointments. Both must preserve the CRM hash router.
-
-Do not print secret values or JWTs. Validation should report configured booleans only.
+The two CRM URLs are intentionally separate. OAuth and Disconnect return to Calendar Connections; links projected into Google events return to Appointments. Both preserve the CRM hash router.
 
 ## 4. Guarded staging deployment
 
@@ -107,23 +90,22 @@ Remove the PR #181 marker immediately after the guarded run.
 
 ### 4.2 Calendar Worker from PR #180
 
-After the Access application, Access AUD/team domain, both KV namespaces and all Worker secrets are configured, run the permanent PR #180 Calendar staging workflow with its documented marker.
+After all four Calendar Worker secrets are present in the GitHub `staging` environment, run the permanent PR #180 Calendar staging workflow with its documented marker.
 
-Before triggering it, verify:
+The workflow must:
 
-- exact PR heads and bases;
-- normal CI is green;
-- both KV bindings are present with distinct valid namespace IDs;
-- `workers_dev = false`;
-- the only custom domain is `calendar-staging.vishartattoo.com`;
-- no cron trigger exists;
-- the OAuth/Disconnect return URL is `https://vishar-crm-staging.pages.dev/#/integrations/calendar`;
-- the calendar-event appointment URL is `https://vishar-crm-staging.pages.dev/#/appointments`;
-- `CALENDAR_DRAIN_ENABLED = "false"`.
+- verify PR #180 remains open, draft and unmerged at its exact current head;
+- require green normal CI;
+- verify the exact Access origin, AUD, owner/artist routing and retained Supabase URL;
+- verify both KV bindings are present with distinct valid namespace IDs;
+- keep `workers_dev = false` and cron absent;
+- deploy only `vishar-calendar-staging`;
+- create or preserve only the custom domain `calendar-staging.vishartattoo.com`;
+- upload the four encrypted secrets without printing their values;
+- verify unauthenticated requests remain intercepted by Access;
+- not perform Google OAuth, create Calendar events, enable cron or target production.
 
 Remove the PR #180 marker immediately after the guarded run.
-
-Neither guarded deployment performs Google OAuth, creates Calendar events or enables a recurring drain.
 
 ## 5. Health, Access and JWT checks
 
@@ -146,7 +128,7 @@ Do not copy the JWT into logs, screenshots or chat.
 
 From the CRM Calendar Connections page, use Vladimir's Connect action.
 
-Complete Google consent manually with the exact approved Vladimir Google account. Do not share credentials or consent codes.
+Complete Google consent manually with `vvetrov41@gmail.com`. Do not share credentials or consent codes.
 
 Verify:
 
@@ -179,7 +161,7 @@ Do not enable a recurring cron for this test. Remove any temporary manual trigge
 
 ## 8. Connect and validate Kristina
 
-Repeat the connection and synthetic create/update/cancel flow with the exact approved Kristina Google account.
+Repeat the connection and synthetic create/update/cancel flow with `tinaakaten@gmail.com`.
 
 Verify isolation explicitly:
 
