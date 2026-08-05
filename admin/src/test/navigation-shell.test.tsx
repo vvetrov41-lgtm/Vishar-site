@@ -66,6 +66,7 @@ describe('responsive navigation shell', () => {
       'Activity',
     ]);
     expect(within(administration).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Calendar',
       'Users',
     ]);
   });
