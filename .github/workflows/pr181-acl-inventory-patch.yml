@@ -1,0 +1,47 @@
+name: PR181 ACL inventory patch
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/calendar-connections-ui' &&
+      contains(github.event.pull_request.body || '', '[run-pr181-acl-inventory-patch]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/calendar-connections-ui
+          fetch-depth: 0
+      - name: Add the authenticated-only status RPC to the canonical ACL inventory
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/tests/050_rls_roles.sql')
+          source = path.read_text()
+          signature = "  ('public.list_calendar_connection_status()', false, true, false),"
+          if signature in source:
+              print('ACL inventory already patched')
+          else:
+              anchor = "  ('public.record_calendar_outbox_result(uuid,text,integer,boolean,text,text)', false, false, true),"
+              if source.count(anchor) != 1:
+                  raise SystemExit('expected ACL inventory anchor was not unique')
+              source = source.replace(anchor, anchor + "\n" + signature)
+              path.write_text(source)
+          PY
+      - name: Commit patch when needed
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/tests/050_rls_roles.sql
+          git commit -m "Register Calendar Connections RPC ACL"
+          git push origin HEAD:agent/calendar-connections-ui
