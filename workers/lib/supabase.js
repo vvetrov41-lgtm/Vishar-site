@@ -24,6 +24,8 @@ export const ALLOWED_RPCS = new Set([
   'record_outbox_attempt',
   'resolve_outbox_route',
   'list_incomplete_intakes',
+  'claim_calendar_outbox',
+  'record_calendar_outbox_result',
 ]);
 
 export class SupabaseError extends Error {
