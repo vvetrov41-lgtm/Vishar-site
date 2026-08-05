@@ -1,0 +1,41 @@
+name: PR180 disconnect hardening retry fix
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/google-calendar-oauth-connector' &&
+      contains(github.event.pull_request.body || '', '[run-pr180-disconnect-hardening-retry-fix]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/google-calendar-oauth-connector
+          fetch-depth: 0
+      - name: Repair consumed Request fixture
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/pr180-disconnect-csrf-hardening.yml')
+          source = path.read_text()
+          old = "  assert.equal(await disconnectConfirmationToken(confirmed), token);\\n  assert.equal(await isConfirmedDisconnectRequest(confirmed.clone()), true);"
+          new = "  const confirmedCopy = confirmed.clone();\\n  assert.equal(await disconnectConfirmationToken(confirmed), token);\\n  assert.equal(await isConfirmedDisconnectRequest(confirmedCopy), true);"
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one fixture anchor, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
+          Path('.github/workflows/pr180-disconnect-hardening-retry-fix.yml').unlink()
+          PY
+      - name: Commit fixture repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/pr180-disconnect-csrf-hardening.yml .github/workflows/pr180-disconnect-hardening-retry-fix.yml
+          git commit -m "Repair Calendar hardening test fixture"
+          git push origin HEAD:agent/google-calendar-oauth-connector
