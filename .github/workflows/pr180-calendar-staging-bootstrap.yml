@@ -69,7 +69,7 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           node <<'NODE'
-          const fs = require('node:fs');
+          const fs = await import('node:fs');
 
           const token = process.env.CLOUDFLARE_API_TOKEN;
           const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
