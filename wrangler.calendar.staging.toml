@@ -10,6 +10,7 @@ routes = [
 VISHAR_ENVIRONMENT = "staging"
 GOOGLE_OAUTH_REDIRECT_URI = "https://calendar-staging.vishartattoo.com/oauth/google/callback"
 CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/appointments"
+CALENDAR_DRAIN_ENABLED = "false"
 
 # Required encrypted secrets:
 # GOOGLE_OAUTH_CLIENT_ID
@@ -21,7 +22,7 @@ CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/appointments"
 # KRISTINA_ARTIST_ID
 # KRISTINA_GOOGLE_EMAIL
 # SUPABASE_URL
-# SUPABASE_SERVICE_ROLE_KEY
+# Exactly one of SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
 #
 # Required KV bindings, supplied after the namespaces are created:
 # CALENDAR_OAUTH_STATE  - short-lived PKCE/state records
