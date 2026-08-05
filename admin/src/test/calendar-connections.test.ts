@@ -77,6 +77,15 @@ describe('Calendar Connections navigation', () => {
     expect(connectionResultNotice('?artist=vladimir', 'ru')).toBeNull();
   });
 
+  it('preserves the Calendar Connections hash route after OAuth returns', () => {
+    const returned = new URL(
+      'https://vishar-crm-staging.pages.dev/?calendar=connected&artist=vladimir#/integrations/calendar',
+    );
+    expect(returned.pathname).toBe('/');
+    expect(returned.hash).toBe('#/integrations/calendar');
+    expect(connectionResultNotice(returned.search, 'en')).toContain('reloaded from the CRM');
+  });
+
   it('shows integration navigation only to coarse roles that may hold artist capability', () => {
     expect(can('owner', 'manageIntegrations')).toBe(true);
     expect(can('booking_manager', 'manageIntegrations')).toBe(true);
