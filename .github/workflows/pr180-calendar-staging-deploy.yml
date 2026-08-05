@@ -58,6 +58,9 @@ jobs:
           grep -Fx 'workers_dev = false' wrangler.calendar.staging.toml
           grep -F 'calendar-staging.vishartattoo.com' wrangler.calendar.staging.toml
           grep -F 'workers/calendar-oauth.js' wrangler.calendar.staging.toml
+          test "$(grep -c '^\[\[kv_namespaces\]\]$' wrangler.calendar.staging.toml)" = "2"
+          grep -Fx 'binding = "CALENDAR_OAUTH_STATE"' wrangler.calendar.staging.toml
+          grep -Fx 'binding = "CALENDAR_OAUTH_TOKENS"' wrangler.calendar.staging.toml
           ! grep -E 'tattooai-preview|intake-staging|vishar-booking-staging|production' wrangler.calendar.staging.toml
 
       - name: Verify Cloudflare deployment configuration
@@ -70,6 +73,34 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
 
+      - name: Build route-preserving deployment config
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('wrangler.calendar.staging.toml').read_text()
+          output = []
+          skipping_routes = False
+          for line in source.splitlines(keepends=True):
+              if line.startswith('routes = ['):
+                  skipping_routes = True
+                  continue
+              if skipping_routes:
+                  if line.strip() == ']':
+                      skipping_routes = False
+                  continue
+              output.append(line)
+          if skipping_routes:
+              raise SystemExit('Unclosed routes block')
+          Path('.wrangler.calendar.deploy.toml').write_text(''.join(output))
+          PY
+          grep -Fx 'name = "vishar-calendar-staging"' .wrangler.calendar.deploy.toml
+          grep -Fx 'workers_dev = false' .wrangler.calendar.deploy.toml
+          ! grep -F 'routes = [' .wrangler.calendar.deploy.toml
+          ! grep -F 'custom_domain' .wrangler.calendar.deploy.toml
+
       - name: Deploy isolated calendar staging Worker
         shell: bash
         env:
@@ -77,19 +108,27 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 deploy --config wrangler.calendar.staging.toml
+          npx --yes wrangler@4 deploy --config .wrangler.calendar.deploy.toml --keep-vars
+          rm -f .wrangler.calendar.deploy.toml
 
-      - name: Verify custom-domain health endpoint
+      - name: Verify Cloudflare Access gates the custom domain
         shell: bash
         run: |
           set -euo pipefail
           for attempt in $(seq 1 20); do
-            body="$(curl --silent --show-error --fail --max-time 10 https://calendar-staging.vishartattoo.com/health || true)"
-            if printf '%s' "$body" | grep -Fq '"service":"vishar-calendar-oauth"'; then
-              printf '%s\n' "$body"
-              exit 0
-            fi
+            headers="$(mktemp)"
+            status="$(curl --silent --show-error --dump-header "$headers" --output /dev/null --write-out '%{http_code}' --max-time 10 https://calendar-staging.vishartattoo.com/health || true)"
+            echo "HTTP_AFTER_DEPLOY=$status"
+            case "$status" in
+              302|303|307|401|403)
+                exit 0
+                ;;
+              200)
+                echo 'Access is not gating the calendar staging hostname yet.' >&2
+                exit 1
+                ;;
+            esac
             sleep 6
           done
-          echo 'Calendar staging health endpoint did not become ready.' >&2
+          echo 'Calendar staging hostname did not return an Access response.' >&2
           exit 1
