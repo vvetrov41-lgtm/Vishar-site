@@ -26,6 +26,10 @@ const EXPECTED_KEYS: Record<CalendarConnectorAlias, CalendarConnectionStatus['in
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_ERROR_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
 
+function invalidResponse(): ApiError {
+  return new ApiError('Could not load calendar connections. Please try again.');
+}
+
 function isAlias(value: unknown): value is CalendarConnectorAlias {
   return value === 'vladimir' || value === 'kristina';
 }
@@ -40,13 +44,11 @@ function isNullableDate(value: unknown): value is string | null {
 }
 
 function isCount(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) >= 0;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
 function validateRow(value: unknown): CalendarConnectionStatus {
-  if (!value || typeof value !== 'object') {
-    throw new ApiError('Could not load calendar connections. Please try again.');
-  }
+  if (!value || typeof value !== 'object') throw invalidResponse();
   const row = value as Record<string, unknown>;
   if (
     typeof row.artist_id !== 'string'
@@ -66,22 +68,17 @@ function validateRow(value: unknown): CalendarConnectionStatus {
     || !(row.last_error_code === null
       || (typeof row.last_error_code === 'string' && SAFE_ERROR_PATTERN.test(row.last_error_code)))
   ) {
-    throw new ApiError('Could not load calendar connections. Please try again.');
+    throw invalidResponse();
   }
   return row as unknown as CalendarConnectionStatus;
 }
 
 function validateResult(value: unknown): CalendarConnectionStatus[] {
-  if (!Array.isArray(value)) return [];
-  if (value.length > 2) {
-    throw new ApiError('Could not load calendar connections. Please try again.');
-  }
+  if (!Array.isArray(value) || value.length > 2) throw invalidResponse();
   const rows = value.map(validateRow);
   const aliases = new Set(rows.map((row) => row.artist_slug));
   const artistIds = new Set(rows.map((row) => row.artist_id));
-  if (aliases.size !== rows.length || artistIds.size !== rows.length) {
-    throw new ApiError('Could not load calendar connections. Please try again.');
-  }
+  if (aliases.size !== rows.length || artistIds.size !== rows.length) throw invalidResponse();
   return rows;
 }
 
