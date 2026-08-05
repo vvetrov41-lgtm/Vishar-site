@@ -183,6 +183,18 @@ jobs:
               'CALENDAR_DRAIN_ENABLED = "true"',
               1,
           )
+          for namespace_id in (
+              'dd43224461504e898addeba5b7915142',
+              '93302bc4f35242c38358a16fcd4ab9a2',
+          ):
+              needle = f'id = "{namespace_id}"'
+              if config.count(needle) != 1:
+                  raise SystemExit(f'Expected exactly one KV namespace ID {namespace_id}')
+              config = config.replace(
+                  needle,
+                  f'{needle}\npreview_id = "{namespace_id}"',
+                  1,
+              )
           Path('wrangler.calendar.manual-drain.toml').write_text(config, encoding='utf-8')
 
           worker_path = Path('workers/calendar-oauth.js')
