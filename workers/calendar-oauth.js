@@ -6,17 +6,20 @@ import {
 } from './lib/google-calendar.js';
 import {
   OAuthSecurityError,
+  assertDisconnectConfiguration,
   assertOAuthCallbackConfiguration,
   assertOAuthStartConfiguration,
+  buildDisconnectStateRecord,
   buildOAuthStateRecord,
   calendarReadiness,
+  consumeDisconnectState,
   consumeOAuthState,
   disconnectConfirmationPage,
+  disconnectConfirmationToken,
   disconnectReturnUrl,
-  isConfirmedDisconnectRequest,
-  requireOwnerAccess,
   validateGoogleAccount,
   validateTokenExchange,
+  verifiedOwnerEmail,
 } from './lib/calendar-oauth-security.js';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -24,6 +27,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const OAUTH_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events';
 const STATE_TTL_SECONDS = 600;
+const DISCONNECT_TTL_SECONDS = 600;
 
 const json = (body, status = 200) => Response.json(body, {
   status,
@@ -115,8 +119,8 @@ async function updateIntegrationMetadata(config, accountEmail, enabled, env, fet
   if (!response.ok) throw new OAuthSecurityError('calendar_metadata_update_failed', 502);
 }
 
-async function startOAuth(request, alias, env) {
-  if (!requireOwnerAccess(request, env)) return json({ ok: false, code: 'owner_access_required' }, 403);
+async function startOAuth(request, alias, env, fetchImpl = fetch) {
+  const ownerEmail = await verifiedOwnerEmail(request, env, fetchImpl);
   const config = artistConfig(alias, env);
   if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);
   assertOAuthStartConfiguration(env);
@@ -124,7 +128,7 @@ async function startOAuth(request, alias, env) {
   const state = randomToken();
   const verifier = randomToken(64);
   const challenge = await sha256Base64Url(verifier);
-  const stateRecord = buildOAuthStateRecord(alias, verifier, request);
+  const stateRecord = buildOAuthStateRecord(alias, verifier, ownerEmail);
   await env.CALENDAR_OAUTH_STATE.put(`state:${state}`, JSON.stringify(stateRecord), {
     expirationTtl: STATE_TTL_SECONDS,
   });
@@ -145,16 +149,18 @@ async function startOAuth(request, alias, env) {
 }
 
 async function callback(request, env, fetchImpl = fetch) {
-  if (!requireOwnerAccess(request, env)) return json({ ok: false, code: 'owner_access_required' }, 403);
+  const ownerEmail = await verifiedOwnerEmail(request, env, fetchImpl);
   assertOAuthCallbackConfiguration(env);
   const url = new URL(request.url);
   const state = url.searchParams.get('state');
   const code = url.searchParams.get('code');
   const oauthError = url.searchParams.get('error');
-  if (oauthError) return json({ ok: false, code: 'google_authorisation_denied' }, 400);
-  if (!state || !code) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);
+  if (!state) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);
 
-  const stored = await consumeOAuthState(env.CALENDAR_OAUTH_STATE, state, request);
+  const stored = await consumeOAuthState(env.CALENDAR_OAUTH_STATE, state, ownerEmail);
+  if (oauthError) return json({ ok: false, code: 'google_authorisation_denied' }, 400);
+  if (!code) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);
+
   const config = artistConfig(stored.alias, env);
   if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 400);
 
@@ -204,24 +210,42 @@ async function callback(request, env, fetchImpl = fetch) {
     throw error;
   }
 
-  const destination = new URL(env.CRM_RETURN_URL || 'https://vishar-crm-staging.pages.dev/appointments');
+  const destination = new URL(
+    env.CRM_RETURN_URL || 'https://vishar-crm-staging.pages.dev/#/appointments',
+  );
   destination.searchParams.set('calendar', 'connected');
   destination.searchParams.set('artist', stored.alias);
   return Response.redirect(destination.toString(), 302);
 }
 
 async function disconnect(request, alias, env, fetchImpl = fetch) {
-  if (!requireOwnerAccess(request, env)) return json({ ok: false, code: 'owner_access_required' }, 403);
+  const ownerEmail = await verifiedOwnerEmail(request, env, fetchImpl);
   const config = artistConfig(alias, env);
   if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);
+  assertDisconnectConfiguration(env);
 
   if (request.method === 'GET') {
-    return html(disconnectConfirmationPage(alias, request.url, env.CRM_RETURN_URL));
+    const disconnectToken = randomToken();
+    await env.CALENDAR_OAUTH_STATE.put(
+      `disconnect:${disconnectToken}`,
+      JSON.stringify(buildDisconnectStateRecord(alias, ownerEmail)),
+      { expirationTtl: DISCONNECT_TTL_SECONDS },
+    );
+    const returnUrl = env.CRM_RETURN_URL
+      || 'https://vishar-crm-staging.pages.dev/#/appointments';
+    return html(disconnectConfirmationPage(alias, request.url, returnUrl, disconnectToken));
   }
   if (request.method !== 'POST') return json({ ok: false, code: 'method_not_allowed' }, 405);
-  if (!(await isConfirmedDisconnectRequest(request))) {
+  const disconnectToken = await disconnectConfirmationToken(request);
+  if (!disconnectToken) {
     return json({ ok: false, code: 'disconnect_confirmation_required' }, 400);
   }
+  await consumeDisconnectState(
+    env.CALENDAR_OAUTH_STATE,
+    alias,
+    disconnectToken,
+    ownerEmail,
+  );
 
   const tokenKey = `artist:${config.artistId}`;
   const rawEnvelope = await env.CALENDAR_OAUTH_TOKENS.get(tokenKey);
@@ -239,8 +263,8 @@ async function disconnect(request, alias, env, fetchImpl = fetch) {
   await env.CALENDAR_OAUTH_TOKENS.delete(tokenKey);
   await updateIntegrationMetadata(config, config.expectedEmail, false, env, fetchImpl);
 
-  const url = new URL(request.url);
-  const wantsJson = url.searchParams.get('format') === 'json'
+  const responseUrl = new URL(request.url);
+  const wantsJson = responseUrl.searchParams.get('format') === 'json'
     || (request.headers.get('Accept') || '').includes('application/json');
   if (wantsJson) return json({ ok: true, artist: alias, connected: false, revoked });
   return Response.redirect(disconnectReturnUrl(env, alias, revoked), 303);
