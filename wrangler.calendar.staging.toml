@@ -2,6 +2,9 @@ name = "vishar-calendar-staging"
 main = "workers/calendar-oauth.js"
 compatibility_date = "2026-05-25"
 workers_dev = false
+routes = [
+  { pattern = "calendar-staging.vishartattoo.com", custom_domain = true }
+]
 
 [vars]
 VISHAR_ENVIRONMENT = "staging"
@@ -20,7 +23,6 @@ CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/appointments"
 # SUPABASE_URL
 # SUPABASE_SERVICE_ROLE_KEY
 #
-# Required KV bindings, supplied at deployment time or added after namespaces
-# are created:
+# Required KV bindings, supplied after the namespaces are created:
 # CALENDAR_OAUTH_STATE  - short-lived PKCE/state records
 # CALENDAR_OAUTH_TOKENS - AES-GCM encrypted refresh-token envelopes
