@@ -23,27 +23,66 @@ const EXPECTED_KEYS: Record<CalendarConnectorAlias, CalendarConnectionStatus['in
   kristina: 'google_calendar_kristina',
 };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SAFE_ERROR_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
+
 function isAlias(value: unknown): value is CalendarConnectorAlias {
   return value === 'vladimir' || value === 'kristina';
 }
 
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isNullableDate(value: unknown): value is string | null {
+  return value === null
+    || (typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value)));
+}
+
+function isCount(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0;
+}
+
 function validateRow(value: unknown): CalendarConnectionStatus {
-  if (!value || typeof value !== 'object') throw new ApiError('Could not load calendar connections. Please try again.');
+  if (!value || typeof value !== 'object') {
+    throw new ApiError('Could not load calendar connections. Please try again.');
+  }
   const row = value as Record<string, unknown>;
   if (
     typeof row.artist_id !== 'string'
+    || !UUID_PATTERN.test(row.artist_id)
     || !isAlias(row.artist_slug)
     || typeof row.artist_display_name !== 'string'
+    || row.artist_display_name.trim().length === 0
     || row.provider !== 'google'
     || row.integration_key !== EXPECTED_KEYS[row.artist_slug]
     || typeof row.connected !== 'boolean'
-    || !Number.isInteger(row.queued_jobs)
-    || !Number.isInteger(row.retrying_jobs)
-    || !Number.isInteger(row.failed_jobs)
+    || !isNullableString(row.external_account_label)
+    || !isNullableDate(row.connection_updated_at)
+    || !isNullableDate(row.last_successful_sync_at)
+    || !isCount(row.queued_jobs)
+    || !isCount(row.retrying_jobs)
+    || !isCount(row.failed_jobs)
+    || !(row.last_error_code === null
+      || (typeof row.last_error_code === 'string' && SAFE_ERROR_PATTERN.test(row.last_error_code)))
   ) {
     throw new ApiError('Could not load calendar connections. Please try again.');
   }
   return row as unknown as CalendarConnectionStatus;
+}
+
+function validateResult(value: unknown): CalendarConnectionStatus[] {
+  if (!Array.isArray(value)) return [];
+  if (value.length > 2) {
+    throw new ApiError('Could not load calendar connections. Please try again.');
+  }
+  const rows = value.map(validateRow);
+  const aliases = new Set(rows.map((row) => row.artist_slug));
+  const artistIds = new Set(rows.map((row) => row.artist_id));
+  if (aliases.size !== rows.length || artistIds.size !== rows.length) {
+    throw new ApiError('Could not load calendar connections. Please try again.');
+  }
+  return rows;
 }
 
 export function createCalendarConnectionsApi(client: CrmClient) {
@@ -56,12 +95,11 @@ export function createCalendarConnectionsApi(client: CrmClient) {
           result.error,
         );
       }
-      if (!Array.isArray(result.data)) return [];
-      return result.data.map(validateRow);
+      return validateResult(result.data);
     },
   };
 }
 
 export type CalendarConnectionsApi = ReturnType<typeof createCalendarConnectionsApi>;
 
-export const __testing = { validateRow };
+export const __testing = { validateRow, validateResult };
