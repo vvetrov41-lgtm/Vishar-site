@@ -20,7 +20,7 @@ jobs:
       github.event.pull_request.draft == true &&
       contains(github.event.pull_request.body, '<!-- RUN_PR180_CALENDAR_TOKEN_PREFLIGHT -->')
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     environment: staging
     env:
       APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
@@ -88,7 +88,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Validate Vladimir refresh grant without outbox access
+      - name: Validate Vladimir refresh grant through remote KV binding
         shell: bash
         run: |
           set -euo pipefail
@@ -104,50 +104,179 @@ jobs:
             }
           done
 
-          token_envelope="$RUNNER_TEMP/vladimir-calendar-token-envelope.json"
+          temp_config="wrangler.calendar.token-preflight.toml"
+          temp_worker="workers/calendar-token-preflight-runtime.js"
+          dev_vars=".dev.vars"
+          remote_log="$RUNNER_TEMP/calendar-token-preflight.log"
+          response_json="$RUNNER_TEMP/calendar-token-preflight-response.json"
           cleanup() {
-            rm -f "$token_envelope"
+            if [ -n "${dev_pid:-}" ]; then
+              kill "$dev_pid" 2>/dev/null || true
+              wait "$dev_pid" 2>/dev/null || true
+            fi
+            rm -f "$temp_config" "$temp_worker" "$dev_vars" "$response_json"
           }
           trap cleanup EXIT
 
-          npx wrangler kv key get \
-            'artist:a1111111-1111-4111-8111-111111111111' \
-            --namespace-id '93302bc4f35242c38358a16fcd4ab9a2' \
-            --remote \
-            --text \
-            > "$token_envelope"
-          [ -s "$token_envelope" ] || {
-            echo 'TOKEN_PREFLIGHT_FAILED=calendar_not_configured' >&2
-            exit 1
-          }
-          chmod 600 "$token_envelope"
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
 
-          TOKEN_ENVELOPE_FILE="$token_envelope" node --input-type=module <<'NODE'
-          import { readFile } from 'node:fs/promises';
-          import {
+          config = Path('wrangler.calendar.staging.toml').read_text(encoding='utf-8')
+          config, route_count = re.subn(
+              r'(?ms)^routes\s*=\s*\[\n.*?^\]\n',
+              '',
+              config,
+              count=1,
+          )
+          if route_count != 1:
+              raise SystemExit('Expected exactly one routes block')
+          if config.count('main = "workers/calendar-oauth.js"') != 1:
+              raise SystemExit('Expected canonical Calendar Worker entrypoint')
+          config = config.replace(
+              'main = "workers/calendar-oauth.js"',
+              'main = "workers/calendar-token-preflight-runtime.js"',
+              1,
+          )
+          if config.count('workers_dev = false') != 1:
+              raise SystemExit('Expected exactly one workers_dev setting')
+          config = config.replace(
+              'workers_dev = false',
+              'workers_dev = false\npreview_urls = true',
+              1,
+          )
+          config = config.replace(
+              'name = "vishar-calendar-staging"',
+              'name = "vishar-calendar-staging-token-preflight"',
+              1,
+          )
+          for namespace_id in (
+              'dd43224461504e898addeba5b7915142',
+              '93302bc4f35242c38358a16fcd4ab9a2',
+          ):
+              needle = f'id = "{namespace_id}"'
+              if config.count(needle) != 1:
+                  raise SystemExit(f'Expected exactly one KV namespace ID {namespace_id}')
+              config = config.replace(
+                  needle,
+                  f'{needle}\npreview_id = "{namespace_id}"',
+                  1,
+              )
+          if 'CALENDAR_DRAIN_ENABLED = "false"' not in config:
+              raise SystemExit('Calendar drain must remain disabled')
+          Path('wrangler.calendar.token-preflight.toml').write_text(config, encoding='utf-8')
+
+          worker = r'''import {
             decryptTokenRecord,
             refreshGoogleAccessToken,
-          } from './workers/lib/google-calendar.js';
+          } from './lib/google-calendar.js';
 
-          try {
-            const rawEnvelope = await readFile(process.env.TOKEN_ENVELOPE_FILE, 'utf8');
-            const record = await decryptTokenRecord(
-              rawEnvelope,
-              process.env.CALENDAR_TOKEN_ENCRYPTION_KEY,
-            );
-            if (record.accountEmail.trim().toLowerCase() !== 'vvetrov41@gmail.com') {
-              throw Object.assign(new Error('account mismatch'), { code: 'google_account_mismatch' });
-            }
-            await refreshGoogleAccessToken({
-              GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID,
-              GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
-            }, record.refreshToken);
-            console.log('TOKEN_PREFLIGHT_OK=true');
-          } catch (error) {
-            const code = typeof error?.code === 'string'
-              ? error.code
-              : 'calendar_connector_error';
-            console.error(`TOKEN_PREFLIGHT_FAILED=${code}`);
-            process.exit(1);
+          const json = (body, status = 200) => Response.json(body, {
+            status,
+            headers: { 'Cache-Control': 'no-store' },
+          });
+
+          const safeCodes = new Set([
+            'calendar_connector_error',
+            'calendar_encryption_key_invalid',
+            'calendar_not_configured',
+            'calendar_oauth_expired',
+            'calendar_provider_rejected',
+            'calendar_provider_unavailable',
+            'calendar_token_invalid',
+            'google_account_mismatch',
+          ]);
+
+          export default {
+            async fetch(request, env) {
+              const url = new URL(request.url);
+              if (request.method !== 'GET' || url.pathname !== '/__token-preflight') {
+                return json({ ok: false, code: 'not_found' }, 404);
+              }
+              try {
+                const rawEnvelope = await env.CALENDAR_OAUTH_TOKENS.get(
+                  'artist:a1111111-1111-4111-8111-111111111111',
+                );
+                if (!rawEnvelope) {
+                  throw Object.assign(new Error('missing token'), {
+                    code: 'calendar_not_configured',
+                  });
+                }
+                const record = await decryptTokenRecord(
+                  rawEnvelope,
+                  env.CALENDAR_TOKEN_ENCRYPTION_KEY,
+                );
+                if (record.accountEmail.trim().toLowerCase() !== 'vvetrov41@gmail.com') {
+                  throw Object.assign(new Error('account mismatch'), {
+                    code: 'google_account_mismatch',
+                  });
+                }
+                await refreshGoogleAccessToken(env, record.refreshToken);
+                return json({ ok: true });
+              } catch (error) {
+                const candidate = typeof error?.code === 'string'
+                  ? error.code
+                  : 'calendar_connector_error';
+                const code = safeCodes.has(candidate)
+                  ? candidate
+                  : 'calendar_connector_error';
+                return json({ ok: false, code }, 503);
+              }
+            },
+          };
+          '''
+          Path('workers/calendar-token-preflight-runtime.js').write_text(worker, encoding='utf-8')
+
+          secret_names = (
+              'GOOGLE_OAUTH_CLIENT_ID',
+              'GOOGLE_OAUTH_CLIENT_SECRET',
+              'CALENDAR_TOKEN_ENCRYPTION_KEY',
+          )
+          lines = [f'{name}={json.dumps(os.environ[name])}' for name in secret_names]
+          vars_path = Path('.dev.vars')
+          vars_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          vars_path.chmod(0o600)
+          PY
+
+          npx wrangler dev \
+            --remote \
+            --config "$temp_config" \
+            --ip 127.0.0.1 \
+            --port 8787 \
+            --log-level error \
+            >"$remote_log" 2>&1 &
+          dev_pid=$!
+
+          ready=false
+          status=000
+          for _ in $(seq 1 60); do
+            status="$(curl --silent --output "$response_json" --write-out '%{http_code}' --max-time 15 http://127.0.0.1:8787/__token-preflight || true)"
+            if [ "$status" = "200" ] || [ "$status" = "503" ]; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$dev_pid" 2>/dev/null; then
+              echo 'TOKEN_PREFLIGHT_FAILED=calendar_connector_error' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          [ "$ready" = true ] || {
+            echo 'TOKEN_PREFLIGHT_FAILED=calendar_connector_error' >&2
+            exit 1
           }
-          NODE
+
+          if [ "$status" = "200" ] && jq -e '.ok == true' "$response_json" >/dev/null; then
+            echo 'TOKEN_PREFLIGHT_OK=true'
+            exit 0
+          fi
+
+          code="$(jq -r 'if (.code | type) == "string" then .code else "calendar_connector_error" end' "$response_json" 2>/dev/null || echo calendar_connector_error)"
+          case "$code" in
+            calendar_connector_error|calendar_encryption_key_invalid|calendar_not_configured|calendar_oauth_expired|calendar_provider_rejected|calendar_provider_unavailable|calendar_token_invalid|google_account_mismatch) ;;
+            *) code=calendar_connector_error ;;
+          esac
+          echo "TOKEN_PREFLIGHT_FAILED=$code" >&2
+          exit 1
