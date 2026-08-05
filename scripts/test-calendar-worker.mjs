@@ -44,7 +44,7 @@ const env = {
   VLADIMIR_GOOGLE_EMAIL: 'vvetrov41@gmail.com',
   KRISTINA_ARTIST_ID: kristinaId,
   KRISTINA_GOOGLE_EMAIL: 'tinaakaten@gmail.com',
-  CRM_RETURN_URL: 'https://vishar-crm-staging.pages.dev/appointments',
+  CRM_APPOINTMENTS_URL: 'https://vishar-crm-staging.pages.dev/#/appointments',
 };
 
 function routeFor(artistId = vladimirId, outboxId = 'outbox-1', kind = 'calendar_create') {
@@ -110,17 +110,18 @@ await test('stable Google event ids are deterministic and appointment-specific',
   assert.match(first, /^[0-9a-v]{5,1024}$/);
 });
 
-await test('event projection contains bounded client context and no private notes', async () => {
+await test('event projection contains bounded client context and a hash-safe CRM link', async () => {
   const event = buildGoogleEvent(job(), {
     eventId: 'vishar0123456789abcdef',
     includeId: true,
-    crmReturnUrl: env.CRM_RETURN_URL,
+    crmReturnUrl: env.CRM_APPOINTMENTS_URL,
   });
   assert.equal(event.id, 'vishar0123456789abcdef');
   assert.match(event.summary, /Tattoo session · Synthetic Client/);
   assert.equal(event.start.timeZone, 'Europe/London');
   assert.equal(event.end.timeZone, 'Europe/London');
   assert.match(event.description, /Appointment ID:/);
+  assert.match(event.description, /\?appointment=.*#\/appointments/);
   assert.ok(!JSON.stringify(event).includes('notes'));
 });
 
@@ -176,6 +177,38 @@ await test('refresh-token exchange stays server-side and maps invalid_grant safe
   await assert.rejects(
     refreshGoogleAccessToken(env, 'refresh', expiredFetch),
     (error) => error.code === 'calendar_oauth_expired',
+  );
+});
+
+await test('Google 403 rate-limit reasons remain transient', async () => {
+  const provider = createGoogleCalendarProvider({
+    accessToken: 'access',
+    fetchImpl: async () => Response.json({
+      error: {
+        errors: [{ domain: 'usageLimits', reason: 'rateLimitExceeded' }],
+        code: 403,
+      },
+    }, { status: 403 }),
+  });
+  await assert.rejects(
+    provider.createEvent(job()),
+    (error) => error.code === 'calendar_provider_unavailable',
+  );
+});
+
+await test('Google 403 permission failures remain permanent', async () => {
+  const provider = createGoogleCalendarProvider({
+    accessToken: 'access',
+    fetchImpl: async () => Response.json({
+      error: {
+        errors: [{ domain: 'calendar', reason: 'forbiddenForNonOrganizer' }],
+        code: 403,
+      },
+    }, { status: 403 }),
+  });
+  await assert.rejects(
+    provider.createEvent(job()),
+    (error) => error.code === 'calendar_provider_rejected',
   );
 });
 
@@ -294,4 +327,4 @@ if (failures) {
   process.exit(1);
 }
 
-console.log(`Calendar Worker tests passed: ${passes} cases covering encrypted token custody, exact artist routing, deterministic idempotency, refresh, create/update/cancel and stale-job draining.`);
+console.log(`Calendar Worker tests passed: ${passes} cases covering encrypted token custody, exact artist routing, deterministic idempotency, provider error classification, refresh, create/update/cancel and stale-job draining.`);
