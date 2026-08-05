@@ -48,6 +48,10 @@ jobs:
       - name: Validate calendar staging configuration
         run: npm run validate:calendar-staging
 
+      - name: Validate PR181 dormant staging boundary
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 181
+        run: bash scripts/validate-pr181-staging-source.sh
+
       - name: Compile Worker with Wrangler
         run: npm run check:worker-bundle
 
