@@ -206,8 +206,8 @@ select is(
 );
 select is(
   (select queued_jobs + retrying_jobs from public.list_calendar_connection_status() where artist_slug = 'vladimir'),
-  0,
-  'the current queue view excludes work from the previous connection generation'
+  2,
+  'a reconnect keeps pending and leased work visible until the Worker processes it'
 );
 reset role;
 
