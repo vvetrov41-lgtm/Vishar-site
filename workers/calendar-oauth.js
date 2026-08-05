@@ -1,3 +1,10 @@
+import { drainCalendarOutbox } from './lib/calendar-drain.js';
+import {
+  decryptTokenRecord,
+  encryptTokenRecord,
+  revokeGoogleRefreshToken,
+} from './lib/google-calendar.js';
+
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
@@ -25,29 +32,6 @@ function randomToken(size = 32) {
 async function sha256Base64Url(value) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return base64Url(new Uint8Array(digest));
-}
-
-function decodeKey(value) {
-  if (!value) throw new Error('CALENDAR_TOKEN_ENCRYPTION_KEY is missing');
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-  const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
-  if (bytes.length !== 32) throw new Error('CALENDAR_TOKEN_ENCRYPTION_KEY must decode to 32 bytes');
-  return bytes;
-}
-
-async function encryptionKey(env) {
-  return crypto.subtle.importKey('raw', decodeKey(env.CALENDAR_TOKEN_ENCRYPTION_KEY), 'AES-GCM', false, ['encrypt', 'decrypt']);
-}
-
-async function encryptJson(value, env) {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    await encryptionKey(env),
-    new TextEncoder().encode(JSON.stringify(value)),
-  );
-  return JSON.stringify({ v: 1, iv: base64Url(iv), data: base64Url(new Uint8Array(encrypted)) });
 }
 
 function artistConfig(alias, env) {
@@ -184,12 +168,12 @@ async function callback(request, env) {
 
   await env.CALENDAR_OAUTH_TOKENS.put(
     `artist:${config.artistId}`,
-    await encryptJson({
+    await encryptTokenRecord({
       refreshToken: tokens.refresh_token,
       scope: tokens.scope || OAUTH_SCOPE,
       accountEmail,
       connectedAt: new Date().toISOString(),
-    }, env),
+    }, env.CALENDAR_TOKEN_ENCRYPTION_KEY),
   );
   await updateIntegrationMetadata(config, accountEmail, true, env);
 
@@ -204,9 +188,34 @@ async function disconnect(request, alias, env) {
   if (!requireOwnerAccess(request, env)) return json({ ok: false, code: 'owner_access_required' }, 403);
   const config = artistConfig(alias, env);
   if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);
-  await env.CALENDAR_OAUTH_TOKENS.delete(`artist:${config.artistId}`);
+
+  const tokenKey = `artist:${config.artistId}`;
+  const rawEnvelope = await env.CALENDAR_OAUTH_TOKENS.get(tokenKey);
+  let revoked = false;
+  if (rawEnvelope) {
+    try {
+      const record = await decryptTokenRecord(rawEnvelope, env.CALENDAR_TOKEN_ENCRYPTION_KEY);
+      revoked = await revokeGoogleRefreshToken(record.refreshToken);
+    } catch {
+      // Local token deletion is authoritative for disconnect. A token that is
+      // already invalid or unreadable must not keep the integration enabled.
+    }
+  }
+
+  await env.CALENDAR_OAUTH_TOKENS.delete(tokenKey);
   await updateIntegrationMetadata(config, config.expectedEmail, false, env);
-  return json({ ok: true, artist: alias, connected: false });
+  return json({ ok: true, artist: alias, connected: false, revoked });
+}
+
+async function runScheduledDrain(env) {
+  const result = await drainCalendarOutbox(env);
+  console.log('calendar outbox drain', JSON.stringify({
+    claimed: result.claimed,
+    succeeded: result.succeeded,
+    obsolete: result.obsolete,
+    failed: result.failed,
+    unrecorded: result.unrecorded,
+  }));
 }
 
 export default {
@@ -227,4 +236,15 @@ export default {
       return json({ ok: false, code: 'calendar_connector_error' }, 500);
     }
   },
+
+  scheduled(_controller, env, ctx) {
+    // No cron is configured in staging yet. This handler is intentionally inert
+    // until the explicit synthetic E2E stage enables a guarded trigger.
+    ctx.waitUntil(runScheduledDrain(env));
+  },
+};
+
+export const __testing = {
+  artistConfig,
+  requireOwnerAccess,
 };
