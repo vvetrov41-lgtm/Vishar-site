@@ -49,7 +49,14 @@ as $$
       count(*) filter (where o.status = 'leased')::integer as retrying_jobs,
       count(*) filter (where o.status in ('failed', 'dead'))::integer as failed_jobs
     from public.integration_outbox o
+    join supported_artists a on a.id = o.artist_id
+    left join public.artist_integrations i
+      on i.artist_id = a.id
+     and i.integration_type = 'calendar'
+     and i.provider = 'google'
+     and i.integration_key = a.expected_integration_key
     where o.kind in ('calendar_create', 'calendar_update', 'calendar_cancel')
+      and (i.updated_at is null or o.updated_at >= i.updated_at)
     group by o.artist_id
   ),
   calendar_sync as (
@@ -57,6 +64,7 @@ as $$
       s.artist_id,
       max(s.calendar_last_synced_at) as last_successful_sync_at
     from public.sessions s
+    join supported_artists a on a.id = s.artist_id
     where s.calendar_last_synced_at is not null
     group by s.artist_id
   )
@@ -89,6 +97,7 @@ as $$
       and o.kind in ('calendar_create', 'calendar_update', 'calendar_cancel')
       and o.status in ('failed', 'dead')
       and o.last_error_code is not null
+      and (i.updated_at is null or o.updated_at >= i.updated_at)
     order by o.updated_at desc, o.id desc
     limit 1
   ) e on true
@@ -101,4 +110,4 @@ grant execute on function public.list_calendar_connection_status()
   to authenticated;
 
 comment on function public.list_calendar_connection_status() is
-  'Returns safe per-artist Google Calendar connection and queue metadata only to CRM users with can_manage_integrations for that artist.';
+  'Returns safe per-artist Google Calendar connection and current queue metadata only to CRM users with can_manage_integrations for that artist. Historical failures before the latest connection update are excluded.';
