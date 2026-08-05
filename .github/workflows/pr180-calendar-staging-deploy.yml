@@ -101,8 +101,9 @@ jobs:
           }
 
           secrets_file="$RUNNER_TEMP/calendar-worker-secrets.json"
-          export secrets_file
-          trap 'rm -f "$secrets_file"' EXIT
+          deploy_config="$GITHUB_WORKSPACE/.wrangler.calendar.deploy.toml"
+          export secrets_file deploy_config
+          trap 'rm -f "$secrets_file" "$deploy_config"' EXIT
           python - <<'PY'
           import base64
           import json
@@ -131,16 +132,41 @@ jobs:
               'CALENDAR_TOKEN_ENCRYPTION_KEY': raw_key,
               'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
           }
-          path = Path(os.environ['secrets_file'])
-          path.write_text(json.dumps(payload), encoding='utf-8')
-          path.chmod(0o600)
+          secrets_path = Path(os.environ['secrets_file'])
+          secrets_path.write_text(json.dumps(payload), encoding='utf-8')
+          secrets_path.chmod(0o600)
+
+          source = Path('wrangler.calendar.staging.toml').read_text(encoding='utf-8').splitlines()
+          output = []
+          skipping_routes = False
+          removed_routes = False
+          for line in source:
+              if not skipping_routes and re.match(r'^routes\s*=\s*\[\s*$', line):
+                  skipping_routes = True
+                  removed_routes = True
+                  continue
+              if skipping_routes:
+                  if line.strip() == ']':
+                      skipping_routes = False
+                  continue
+              output.append(line)
+          if skipping_routes or not removed_routes:
+              raise SystemExit('Expected one top-level routes array in canonical staging config')
+          deploy_text = '\n'.join(output).rstrip() + '\n'
+          if 'custom_domain' in deploy_text or re.search(r'^routes\s*=', deploy_text, re.M):
+              raise SystemExit('Dashboard-managed routes were not removed from deploy config')
+          if not re.search(r'^workers_dev\s*=\s*false$', deploy_text, re.M):
+              raise SystemExit('workers_dev must remain disabled in deploy config')
+          deploy_path = Path(os.environ['deploy_config'])
+          deploy_path.write_text(deploy_text, encoding='utf-8')
+          deploy_path.chmod(0o600)
           PY
 
           npx wrangler deploy \
-            --config wrangler.calendar.staging.toml \
+            --config "$deploy_config" \
             --keep-vars \
             --secrets-file "$secrets_file"
-          rm -f "$secrets_file"
+          rm -f "$secrets_file" "$deploy_config"
           trap - EXIT
 
       - name: Verify Cloudflare Access gates the custom domain

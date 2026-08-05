@@ -12,7 +12,7 @@
     "validate:calendar-staging:deploy-ready": "node scripts/validate-calendar-staging.mjs --deploy-ready",
     "test:booking": "node scripts/test-booking-flow.mjs",
     "test:db": "bash scripts/run-crm-db-tests.sh",
-    "test:worker": "node scripts/test-worker-modules.mjs && node scripts/test-calendar-worker.mjs && node scripts/test-calendar-oauth-hardening.mjs",
+    "test:worker": "node scripts/test-worker-modules.mjs && node scripts/test-calendar-worker.mjs && node scripts/test-calendar-oauth-hardening.mjs && node scripts/test-calendar-metadata-rpc.mjs",
     "check:worker-bundle": "XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --env=\"\" --dry-run --outdir .wrangler/dry-run",
     "scan:secrets": "node scripts/scan-secrets.mjs",
     "vendor:3d-libs": "node scripts/vendor-3d-libs.mjs",

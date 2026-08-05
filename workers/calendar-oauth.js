@@ -93,27 +93,18 @@ function supabaseBackend(env) {
 }
 
 async function updateIntegrationMetadata(config, accountEmail, enabled, env, fetchImpl = fetch) {
-  const url = `${env.SUPABASE_URL}/rest/v1/artist_integrations?on_conflict=artist_id,integration_type,integration_key`;
+  const url = `${env.SUPABASE_URL}/rest/v1/rpc/set_calendar_connection_metadata`;
   const response = await fetchImpl(url, {
     method: 'POST',
     headers: {
       ...supabaseBackend(env),
       'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
     },
     body: JSON.stringify({
-      artist_id: config.artistId,
-      integration_type: 'calendar',
-      provider: 'google',
-      integration_key: config.integrationKey,
-      external_account_label: accountEmail,
-      configuration: {
-        calendar_id: 'primary',
-        oauth_scope: 'calendar.events',
-        connection_mode: 'worker_oauth',
-      },
-      is_enabled: enabled,
-      updated_at: new Date().toISOString(),
+      p_artist_id: config.artistId,
+      p_integration_key: config.integrationKey,
+      p_external_account_label: accountEmail,
+      p_is_enabled: enabled,
     }),
   });
   if (!response.ok) throw new OAuthSecurityError('calendar_metadata_update_failed', 502);
@@ -296,12 +287,12 @@ export default {
         return json(calendarReadiness(env));
       }
       const startMatch = url.pathname.match(/^\/oauth\/google\/start\/(vladimir|kristina)$/);
-      if (request.method === 'GET' && startMatch) return startOAuth(request, startMatch[1], env);
+      if (request.method === 'GET' && startMatch) return await startOAuth(request, startMatch[1], env);
       if (request.method === 'GET' && url.pathname === '/oauth/google/callback') {
-        return callback(request, env);
+        return await callback(request, env);
       }
       const disconnectMatch = url.pathname.match(/^\/oauth\/google\/disconnect\/(vladimir|kristina)$/);
-      if (disconnectMatch) return disconnect(request, disconnectMatch[1], env);
+      if (disconnectMatch) return await disconnect(request, disconnectMatch[1], env);
       return json({ ok: false, code: 'not_found' }, 404);
     } catch (error) {
       const safe = errorResponse(error);
