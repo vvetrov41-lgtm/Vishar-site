@@ -1,0 +1,153 @@
+name: PR 180 calendar staging token preflight
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr180-calendar-staging-token-preflight
+  cancel-in-progress: false
+
+jobs:
+  token-preflight:
+    if: >-
+      github.event.pull_request.number == 180 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- RUN_PR180_CALENDAR_TOKEN_PREFLIGHT -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      CALENDAR_TOKEN_ENCRYPTION_KEY: ${{ secrets.CALENDAR_TOKEN_ENCRYPTION_KEY }}
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- RUN_PR180_CALENDAR_TOKEN_PREFLIGHT -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 180
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/google-calendar-foundation"
+            and .pull_request.head.ref == "agent/google-calendar-oauth-connector"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact head and green normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[];
+                .name == $name
+                and .head_sha == $sha
+                and .status == "completed"
+                and .conclusion == "success"
+              )
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+          node scripts/validate-calendar-staging.mjs --deploy-ready
+          grep -Fx 'CALENDAR_DRAIN_ENABLED = "false"' wrangler.calendar.staging.toml
+          ! grep -Eq '^\[triggers\]$|^crons\s*=' wrangler.calendar.staging.toml
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate Vladimir refresh grant without outbox access
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            CLOUDFLARE_API_TOKEN \
+            CLOUDFLARE_ACCOUNT_ID \
+            GOOGLE_OAUTH_CLIENT_ID \
+            GOOGLE_OAUTH_CLIENT_SECRET \
+            CALENDAR_TOKEN_ENCRYPTION_KEY; do
+            [ -n "${!name:-}" ] || {
+              echo "Missing encrypted staging configuration name: $name" >&2
+              exit 1
+            }
+          done
+
+          token_envelope="$RUNNER_TEMP/vladimir-calendar-token-envelope.json"
+          cleanup() {
+            rm -f "$token_envelope"
+          }
+          trap cleanup EXIT
+
+          npx wrangler kv key get \
+            'artist:a1111111-1111-4111-8111-111111111111' \
+            --namespace-id '93302bc4f35242c38358a16fcd4ab9a2' \
+            --remote \
+            --text \
+            > "$token_envelope"
+          [ -s "$token_envelope" ] || {
+            echo 'TOKEN_PREFLIGHT_FAILED=calendar_not_configured' >&2
+            exit 1
+          }
+          chmod 600 "$token_envelope"
+
+          TOKEN_ENVELOPE_FILE="$token_envelope" node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import {
+            decryptTokenRecord,
+            refreshGoogleAccessToken,
+          } from './workers/lib/google-calendar.js';
+
+          try {
+            const rawEnvelope = await readFile(process.env.TOKEN_ENVELOPE_FILE, 'utf8');
+            const record = await decryptTokenRecord(
+              rawEnvelope,
+              process.env.CALENDAR_TOKEN_ENCRYPTION_KEY,
+            );
+            if (record.accountEmail.trim().toLowerCase() !== 'vvetrov41@gmail.com') {
+              throw Object.assign(new Error('account mismatch'), { code: 'google_account_mismatch' });
+            }
+            await refreshGoogleAccessToken({
+              GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID,
+              GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+            }, record.refreshToken);
+            console.log('TOKEN_PREFLIGHT_OK=true');
+          } catch (error) {
+            const code = typeof error?.code === 'string'
+              ? error.code
+              : 'calendar_connector_error';
+            console.error(`TOKEN_PREFLIGHT_FAILED=${code}`);
+            process.exit(1);
+          }
+          NODE
