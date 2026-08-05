@@ -132,10 +132,12 @@ export function AppointmentsPage() {
 
   const now = Date.now();
   const upcoming = visibleAppointments.filter(
-    (appointment) => new Date(appointment.start_at).getTime() >= now
+    (appointment) => appointment.status !== 'cancelled'
+      && new Date(appointment.start_at).getTime() >= now
   );
   const past = visibleAppointments.filter(
-    (appointment) => new Date(appointment.start_at).getTime() < now
+    (appointment) => appointment.status === 'cancelled'
+      || new Date(appointment.start_at).getTime() < now
   ).reverse();
 
   const projectRequired = appointmentType === 'tattoo_session' || appointmentType === 'touch_up';
@@ -312,7 +314,7 @@ export function AppointmentsPage() {
               <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={8000} />
             </label>
 
-            {!resolvedArtistId ? <p className="notice warn">{copy.chooseArtist}</p> : null}
+            {!projectRequired && !resolvedArtistId ? <p className="notice warn">{copy.chooseArtist}</p> : null}
             {projectRequired && !selectedProject ? <p className="notice warn">{copy.projectRequired}</p> : null}
             {conflictLoading ? <p className="notice">{copy.checkingConflicts}</p> : null}
             {conflicts.length > 0 ? (
