@@ -17,6 +17,10 @@ import {
 } from 'react';
 import { createApi, type Api, type CrmClient } from './api';
 import { createAppointmentApi, type AppointmentApi } from './appointment-api';
+import {
+  createCalendarConnectionsApi,
+  type CalendarConnectionsApi,
+} from './calendar-connections-api';
 import type { Profile } from './types';
 
 export type AccessState =
@@ -33,7 +37,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi;
+export type CrmApi = Api & AppointmentApi & CalendarConnectionsApi;
 
 export interface SessionValue {
   state: AccessState;
@@ -54,7 +58,11 @@ export function SessionProvider({ client, children }: { client: CrmClient | null
 
   const api = useMemo<CrmApi | null>(() => {
     if (!client) return null;
-    return Object.assign(createApi(client), createAppointmentApi(client));
+    return Object.assign(
+      createApi(client),
+      createAppointmentApi(client),
+      createCalendarConnectionsApi(client),
+    );
   }, [client]);
 
   const load = useCallback(async () => {
