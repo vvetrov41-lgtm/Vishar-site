@@ -45,8 +45,10 @@ jobs:
       - name: Test Worker modules
         run: npm run test:worker
 
-      - name: Validate calendar staging configuration
-        run: npm run validate:calendar-staging
+      - name: Validate Calendar staging configuration
+        run: |
+          npm run validate:calendar-staging
+          npm run validate:calendar-staging:deploy-ready
 
       - name: Compile Worker with Wrangler
         run: npm run check:worker-bundle
