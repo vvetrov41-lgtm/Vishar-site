@@ -1,0 +1,237 @@
+name: PR 180 calendar staging manual drain
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr180-calendar-staging-manual-drain
+  cancel-in-progress: false
+
+jobs:
+  drain-once:
+    if: >-
+      github.event.pull_request.number == 180 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- RUN_PR180_CALENDAR_MANUAL_DRAIN -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      CALENDAR_TOKEN_ENCRYPTION_KEY: ${{ secrets.CALENDAR_TOKEN_ENCRYPTION_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- RUN_PR180_CALENDAR_MANUAL_DRAIN -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 180
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/google-calendar-foundation"
+            and .pull_request.head.ref == "agent/google-calendar-oauth-connector"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact head and green normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[];
+                .name == $name
+                and .head_sha == $sha
+                and .status == "completed"
+                and .conclusion == "success"
+              )
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+          node scripts/validate-calendar-staging.mjs --deploy-ready
+          grep -Fx 'CALENDAR_DRAIN_ENABLED = "false"' wrangler.calendar.staging.toml
+          ! grep -Eq '^\[triggers\]$|^crons\s*=' wrangler.calendar.staging.toml
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run exactly one remote staging drain
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            CLOUDFLARE_API_TOKEN \
+            CLOUDFLARE_ACCOUNT_ID \
+            GOOGLE_OAUTH_CLIENT_ID \
+            GOOGLE_OAUTH_CLIENT_SECRET \
+            CALENDAR_TOKEN_ENCRYPTION_KEY \
+            SUPABASE_SECRET_KEY; do
+            [ -n "${!name:-}" ] || {
+              echo "Missing encrypted staging configuration name: $name" >&2
+              exit 1
+            }
+          done
+
+          temp_config="wrangler.calendar.manual-drain.toml"
+          dev_vars=".dev.vars"
+          remote_log="$RUNNER_TEMP/calendar-manual-drain.log"
+          cleanup() {
+            if [ -n "${dev_pid:-}" ]; then
+              kill "$dev_pid" 2>/dev/null || true
+              wait "$dev_pid" 2>/dev/null || true
+            fi
+            rm -f "$temp_config" "$dev_vars"
+          }
+          trap cleanup EXIT
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          config_path = Path('wrangler.calendar.staging.toml')
+          config = config_path.read_text(encoding='utf-8')
+          config, route_count = re.subn(
+              r'(?ms)^routes\s*=\s*\[\n.*?^\]\n',
+              '',
+              config,
+              count=1,
+          )
+          if route_count != 1:
+              raise SystemExit('Expected exactly one routes block in Calendar staging config')
+          config = config.replace(
+              'name = "vishar-calendar-staging"',
+              'name = "vishar-calendar-staging-manual-drain"',
+              1,
+          )
+          config = config.replace(
+              'CALENDAR_DRAIN_ENABLED = "false"',
+              'CALENDAR_DRAIN_ENABLED = "true"',
+              1,
+          )
+          Path('wrangler.calendar.manual-drain.toml').write_text(config, encoding='utf-8')
+
+          worker_path = Path('workers/calendar-oauth.js')
+          worker = worker_path.read_text(encoding='utf-8')
+          old = 'const result = await drainCalendarOutbox(env);'
+          new = 'const result = await drainCalendarOutbox(env, { limit: 1 });'
+          if worker.count(old) != 1:
+              raise SystemExit('Expected exactly one scheduled drain call')
+          worker_path.write_text(worker.replace(old, new, 1), encoding='utf-8')
+
+          secret_names = (
+              'GOOGLE_OAUTH_CLIENT_ID',
+              'GOOGLE_OAUTH_CLIENT_SECRET',
+              'CALENDAR_TOKEN_ENCRYPTION_KEY',
+              'SUPABASE_SECRET_KEY',
+          )
+          lines = [f'{name}={json.dumps(os.environ[name])}' for name in secret_names]
+          vars_path = Path('.dev.vars')
+          vars_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          vars_path.chmod(0o600)
+          PY
+
+          npx wrangler dev \
+            --remote \
+            --test-scheduled \
+            --config "$temp_config" \
+            --ip 127.0.0.1 \
+            --port 8787 \
+            --log-level log \
+            >"$remote_log" 2>&1 &
+          dev_pid=$!
+
+          ready=false
+          for _ in $(seq 1 60); do
+            status="$(curl --silent --output "$RUNNER_TEMP/manual-drain-health.json" --write-out '%{http_code}' --max-time 5 http://127.0.0.1:8787/health || true)"
+            if [ "$status" = "200" ]; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$dev_pid" 2>/dev/null; then
+              echo 'Remote Wrangler session exited before readiness.' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          [ "$ready" = true ] || {
+            echo 'Remote Wrangler session did not become ready.' >&2
+            exit 1
+          }
+
+          jq -e '
+            .ok == true
+            and .bindings.oauthState == true
+            and .bindings.oauthTokens == true
+            and .configuration.googleOauth == true
+            and .configuration.supabase == true
+            and .configuration.artists == true
+            and .configuration.scheduledDrain == true
+          ' "$RUNNER_TEMP/manual-drain-health.json" >/dev/null
+
+          curl --fail --silent --show-error \
+            --max-time 90 \
+            'http://127.0.0.1:8787/__scheduled?cron=manual-staging-e2e' \
+            > "$RUNNER_TEMP/manual-drain-response.txt"
+
+          for _ in $(seq 1 30); do
+            if grep -Fq 'calendar outbox drain {' "$remote_log"; then
+              break
+            fi
+            sleep 1
+          done
+
+          python3 - "$remote_log" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          marker = 'calendar outbox drain '
+          lines = [line for line in Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace').splitlines() if marker in line]
+          if not lines:
+              raise SystemExit('Remote drain did not emit a safe result summary')
+          payload = json.loads(lines[-1].split(marker, 1)[1])
+          expected_zero = ('obsolete', 'failed', 'unrecorded')
+          if payload.get('claimed') != 1 or payload.get('succeeded') != 1:
+              raise SystemExit(f'Unexpected manual drain result: {json.dumps(payload, sort_keys=True)}')
+          if any(payload.get(key) != 0 for key in expected_zero):
+              raise SystemExit(f'Unexpected manual drain result: {json.dumps(payload, sort_keys=True)}')
+          print('MANUAL_DRAIN_RESULT=' + json.dumps(payload, sort_keys=True))
+          PY
