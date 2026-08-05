@@ -1,0 +1,50 @@
+name: PR 181 patch Calendar metadata ACL
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.number == 181 &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/calendar-connections-ui' &&
+      contains(github.event.pull_request.body, '<!-- PATCH_PR181_CALENDAR_METADATA_ACL -->')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/calendar-connections-ui
+          fetch-depth: 1
+      - name: Patch canonical function ACL inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/tests/050_rls_roles.sql')
+          text = path.read_text()
+          anchor = "  ('public.record_calendar_outbox_result(uuid,text,integer,boolean,text,text)', false, false, true),\n"
+          addition = anchor + "  ('public.set_calendar_connection_metadata(uuid,text,text,boolean)', false, false, true),\n"
+          if text.count(anchor) != 1:
+              raise SystemExit('Expected one Calendar outbox ACL anchor')
+          if 'public.set_calendar_connection_metadata(uuid,text,text,boolean)' in text:
+              raise SystemExit('Calendar metadata RPC already present in ACL inventory')
+          path.write_text(text.replace(anchor, addition))
+          PY
+          git diff --check
+          git diff -- supabase/tests/050_rls_roles.sql
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add supabase/tests/050_rls_roles.sql
+          git commit -m 'Register Calendar metadata RPC ACL'
+          git push origin HEAD:agent/calendar-connections-ui
