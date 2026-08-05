@@ -45,8 +45,10 @@ jobs:
       - name: Test Worker modules
         run: npm run test:worker
 
-      - name: Validate calendar staging configuration
-        run: npm run validate:calendar-staging
+      - name: Validate Calendar staging configuration
+        run: |
+          npm run validate:calendar-staging
+          npm run validate:calendar-staging:deploy-ready
 
       - name: Validate PR181 dormant staging boundary
         if: github.event_name == 'pull_request' && github.event.pull_request.number == 181
