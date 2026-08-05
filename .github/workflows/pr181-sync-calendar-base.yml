@@ -1,0 +1,54 @@
+name: PR181 sync Calendar base
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/calendar-connections-ui' &&
+      contains(github.event.pull_request.body || '', '[run-pr181-sync-calendar-base]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/calendar-connections-ui
+          fetch-depth: 0
+      - name: Merge the exact PR180 branch and resolve only the known config conflict
+        run: |
+          git fetch origin agent/google-calendar-oauth-connector
+          set +e
+          git merge --no-ff --no-commit origin/agent/google-calendar-oauth-connector
+          merge_status=$?
+          set -e
+
+          conflicts="$(git diff --name-only --diff-filter=U)"
+          unexpected="$(printf '%s\n' "$conflicts" | grep -v '^wrangler.calendar.staging.toml$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected merge conflicts:" >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          if [ "$merge_status" -ne 0 ] && [ -z "$conflicts" ]; then
+            echo "Merge failed without a resolvable file conflict" >&2
+            exit 1
+          fi
+          if printf '%s\n' "$conflicts" | grep -qx 'wrangler.calendar.staging.toml'; then
+            git checkout --ours wrangler.calendar.staging.toml
+            git add wrangler.calendar.staging.toml
+          fi
+
+          grep -Fq 'CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/#/integrations/calendar"' wrangler.calendar.staging.toml
+          grep -Fq 'CRM_APPOINTMENTS_URL = "https://vishar-crm-staging.pages.dev/#/appointments"' wrangler.calendar.staging.toml
+          rm .github/workflows/pr181-sync-calendar-base.yml
+          git add .github/workflows/pr181-sync-calendar-base.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync Calendar Connections with OAuth hardening"
+          git push origin HEAD:agent/calendar-connections-ui
