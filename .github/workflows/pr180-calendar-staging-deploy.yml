@@ -54,14 +54,19 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          node scripts/validate-calendar-staging.mjs --deploy-ready
           grep -Fx 'name = "vishar-calendar-staging"' wrangler.calendar.staging.toml
           grep -Fx 'workers_dev = false' wrangler.calendar.staging.toml
           grep -F 'calendar-staging.vishartattoo.com' wrangler.calendar.staging.toml
           grep -F 'workers/calendar-oauth.js' wrangler.calendar.staging.toml
+          grep -Fx 'CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/#/appointments"' wrangler.calendar.staging.toml
+          grep -Fx 'CRM_APPOINTMENTS_URL = "https://vishar-crm-staging.pages.dev/#/appointments"' wrangler.calendar.staging.toml
+          grep -Fx 'CALENDAR_DRAIN_ENABLED = "false"' wrangler.calendar.staging.toml
           test "$(grep -c '^\[\[kv_namespaces\]\]$' wrangler.calendar.staging.toml)" = "2"
           grep -Fx 'binding = "CALENDAR_OAUTH_STATE"' wrangler.calendar.staging.toml
           grep -Fx 'binding = "CALENDAR_OAUTH_TOKENS"' wrangler.calendar.staging.toml
           ! grep -E 'tattooai-preview|intake-staging|vishar-booking-staging|production' wrangler.calendar.staging.toml
+          ! grep -Eq '^\[triggers\]$|^crons\s*=' wrangler.calendar.staging.toml
 
       - name: Verify Cloudflare deployment configuration
         shell: bash
