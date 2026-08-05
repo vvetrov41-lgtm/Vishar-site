@@ -381,5 +381,60 @@ select is(
   'a completed queue has nothing left to lease'
 );
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"d8111111-1111-4111-8111-111111111111","role":"authenticated"}',
+  true
+);
+create temporary table permanent_appointment as
+select (public.schedule_appointment(
+  'a1111111-1111-4111-8111-111111111111',
+  'd8311111-1111-4111-8111-111111111111',
+  'tattoo_session',
+  '2026-11-20T09:00:00Z',
+  '2026-11-20T16:00:00Z',
+  'confirmed',
+  'd8411111-1111-4111-8111-111111111111',
+  'd8611111-1111-4111-8111-111111111111',
+  'Synthetic permanent Calendar failure test'
+) ->> 'appointment_id')::uuid as id;
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+create temporary table permanent_claim as
+select * from public.claim_calendar_outbox('calendar-worker-permanent', 10, 120);
+
+select is((select count(*)::int from permanent_claim), 1,
+          'the permanent-failure fixture leases one current Calendar job');
+select is(
+  (public.record_calendar_outbox_result(
+    (select outbox_id from permanent_claim),
+    'calendar-worker-permanent',
+    0,
+    false,
+    null,
+    'calendar_oauth_expired'
+  ) ->> 'status'),
+  'dead',
+  'an expired OAuth grant is dead-lettered after the first proved attempt'
+);
+select is(
+  (select attempt_count from public.integration_outbox
+   where id = (select outbox_id from permanent_claim)),
+  1,
+  'a permanent failure records exactly one provider attempt'
+);
+select is(
+  (select calendar_last_error_code from public.sessions
+   where id = (select id from permanent_appointment)),
+  'calendar_oauth_expired',
+  'the CRM retains the safe reconnect-required error code'
+);
+select is(
+  (select count(*)::int
+   from public.claim_calendar_outbox('calendar-worker-no-permanent-retry', 10, 120)),
+  0,
+  'a permanent Calendar failure is never leased again automatically'
+);
+
 select * from finish(true);
 rollback;
