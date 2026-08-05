@@ -185,6 +185,32 @@ select is(
 );
 reset role;
 
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update public.artist_integrations
+set updated_at = now() + interval '1 minute'
+where artist_id = 'a1111111-1111-4111-8111-111111111111'
+  and integration_type = 'calendar'
+  and integration_key = 'google_calendar_vladimir';
+
+set local role authenticated;
+select pg_temp.calendar_claims('{"sub":"81111111-1111-4111-8111-111111111111","role":"authenticated"}');
+select is(
+  (select failed_jobs from public.list_calendar_connection_status() where artist_slug = 'vladimir'),
+  0,
+  'a successful reconnect clears historical failed-job warnings from the current status'
+);
+select is(
+  (select last_error_code from public.list_calendar_connection_status() where artist_slug = 'vladimir'),
+  null,
+  'a successful reconnect clears the historical current-error label'
+);
+select is(
+  (select queued_jobs + retrying_jobs from public.list_calendar_connection_status() where artist_slug = 'vladimir'),
+  0,
+  'the current queue view excludes work from the previous connection generation'
+);
+reset role;
+
 select * from finish();
 
 rollback;
