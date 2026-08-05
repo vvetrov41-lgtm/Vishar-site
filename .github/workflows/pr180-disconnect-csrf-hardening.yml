@@ -1,0 +1,128 @@
+name: PR180 disconnect CSRF hardening
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/google-calendar-oauth-connector' &&
+      contains(github.event.pull_request.body || '', '[run-pr180-disconnect-csrf-hardening]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/google-calendar-oauth-connector
+          fetch-depth: 0
+
+      - name: Apply Access-bound single-use disconnect confirmation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              source = path.read_text()
+              if source.count(old) != 1:
+                  raise SystemExit(f'expected one anchor in {path}: {old[:80]!r}, found {source.count(old)}')
+              path.write_text(source.replace(old, new, 1))
+
+          security = Path('workers/lib/calendar-oauth-security.js')
+          replace_once(
+              security,
+              "const STATE_TTL_SECONDS = 600;\nconst ALIASES = new Set(['vladimir', 'kristina']);",
+              "const STATE_TTL_SECONDS = 600;\nconst DISCONNECT_TTL_SECONDS = 600;\nconst ALIASES = new Set(['vladimir', 'kristina']);\nconst CONFIRMATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43,256}$/;",
+          )
+          replace_once(
+              security,
+              "export function assertOAuthCallbackConfiguration(env) {\n  assertOAuthStartConfiguration(env);\n  if (\n    !env?.GOOGLE_OAUTH_CLIENT_SECRET\n    || !env?.CALENDAR_OAUTH_TOKENS\n    || !env?.CALENDAR_TOKEN_ENCRYPTION_KEY\n  ) {\n    throw new OAuthSecurityError('calendar_not_configured', 503);\n  }\n}\n",
+              "export function assertOAuthCallbackConfiguration(env) {\n  assertOAuthStartConfiguration(env);\n  if (\n    !env?.GOOGLE_OAUTH_CLIENT_SECRET\n    || !env?.CALENDAR_OAUTH_TOKENS\n    || !env?.CALENDAR_TOKEN_ENCRYPTION_KEY\n  ) {\n    throw new OAuthSecurityError('calendar_not_configured', 503);\n  }\n}\n\nexport function assertDisconnectConfiguration(env) {\n  if (\n    !env?.CALENDAR_OAUTH_STATE\n    || !env?.CALENDAR_OAUTH_TOKENS\n    || !env?.CALENDAR_TOKEN_ENCRYPTION_KEY\n  ) {\n    throw new OAuthSecurityError('calendar_not_configured', 503);\n  }\n}\n",
+          )
+          replace_once(
+              security,
+              "export function validateTokenExchange(responseOk, tokens) {",
+              "export function buildDisconnectStateRecord(alias, request) {\n  if (!ALIASES.has(alias)) {\n    throw new OAuthSecurityError('artist_route_unconfigured', 404);\n  }\n  const ownerEmail = accessEmail(request);\n  if (!ownerEmail) throw new OAuthSecurityError('owner_access_required', 403);\n  return {\n    alias,\n    ownerEmail,\n    createdAt: new Date().toISOString(),\n  };\n}\n\nexport async function consumeDisconnectState(namespace, alias, token, request) {\n  if (\n    !namespace\n    || !ALIASES.has(alias)\n    || typeof token !== 'string'\n    || !CONFIRMATION_TOKEN_PATTERN.test(token)\n  ) {\n    throw new OAuthSecurityError('disconnect_confirmation_invalid_or_expired');\n  }\n  const key = `disconnect:${token}`;\n  const stored = await namespace.get(key, 'json');\n  await namespace.delete(key);\n  if (\n    !stored\n    || stored.alias !== alias\n    || normalizeEmail(stored.ownerEmail) !== accessEmail(request)\n  ) {\n    throw new OAuthSecurityError('disconnect_confirmation_invalid_or_expired');\n  }\n  return stored;\n}\n\nexport function validateTokenExchange(responseOk, tokens) {",
+          )
+          replace_once(
+              security,
+              "export function disconnectConfirmationPage(alias, actionUrl, crmReturnUrl) {\n  if (!ALIASES.has(alias)) throw new OAuthSecurityError('artist_route_unconfigured', 404);\n  const artistName = alias === 'vladimir' ? 'Vladimir' : 'Kristina';",
+              "export function disconnectConfirmationPage(alias, actionUrl, crmReturnUrl, token) {\n  if (!ALIASES.has(alias)) throw new OAuthSecurityError('artist_route_unconfigured', 404);\n  if (typeof token !== 'string' || !CONFIRMATION_TOKEN_PATTERN.test(token)) {\n    throw new OAuthSecurityError('disconnect_confirmation_invalid_or_expired');\n  }\n  const artistName = alias === 'vladimir' ? 'Vladimir' : 'Kristina';",
+          )
+          replace_once(
+              security,
+              '<input type="hidden" name="confirm" value="disconnect">\n<button type="submit">Disconnect calendar</button>',
+              '<input type="hidden" name="confirm" value="disconnect">\n<input type="hidden" name="disconnect_token" value="${escapeHtml(token)}">\n<button type="submit">Disconnect calendar</button>',
+          )
+          replace_once(
+              security,
+              "export async function isConfirmedDisconnectRequest(request) {\n  const contentType = request.headers.get('Content-Type') || '';\n  if (contentType.includes('application/x-www-form-urlencoded')) {\n    const form = await request.formData();\n    return form.get('confirm') === 'disconnect';\n  }\n  if (contentType.includes('application/json')) {\n    const body = await request.json().catch(() => null);\n    return body?.confirm === 'disconnect';\n  }\n  return false;\n}\n",
+              "export async function disconnectConfirmationToken(request) {\n  const contentType = request.headers.get('Content-Type') || '';\n  let confirm = null;\n  let token = null;\n  if (contentType.includes('application/x-www-form-urlencoded')) {\n    const form = await request.formData();\n    confirm = form.get('confirm');\n    token = form.get('disconnect_token');\n  } else if (contentType.includes('application/json')) {\n    const body = await request.json().catch(() => null);\n    confirm = body?.confirm;\n    token = body?.disconnect_token;\n  }\n  return confirm === 'disconnect'\n    && typeof token === 'string'\n    && CONFIRMATION_TOKEN_PATTERN.test(token)\n    ? token\n    : '';\n}\n\nexport async function isConfirmedDisconnectRequest(request) {\n  return Boolean(await disconnectConfirmationToken(request));\n}\n",
+          )
+          replace_once(
+              security,
+              "  STATE_TTL_SECONDS,\n  escapeHtml,",
+              "  STATE_TTL_SECONDS,\n  DISCONNECT_TTL_SECONDS,\n  CONFIRMATION_TOKEN_PATTERN,\n  escapeHtml,",
+          )
+
+          worker = Path('workers/calendar-oauth.js')
+          replace_once(
+              worker,
+              "  assertOAuthCallbackConfiguration,\n  assertOAuthStartConfiguration,\n  buildOAuthStateRecord,",
+              "  assertDisconnectConfiguration,\n  assertOAuthCallbackConfiguration,\n  assertOAuthStartConfiguration,\n  buildDisconnectStateRecord,\n  buildOAuthStateRecord,",
+          )
+          replace_once(
+              worker,
+              "  calendarReadiness,\n  consumeOAuthState,\n  disconnectConfirmationPage,\n  disconnectReturnUrl,\n  isConfirmedDisconnectRequest,",
+              "  calendarReadiness,\n  consumeDisconnectState,\n  consumeOAuthState,\n  disconnectConfirmationPage,\n  disconnectConfirmationToken,\n  disconnectReturnUrl,",
+          )
+          replace_once(
+              worker,
+              "const STATE_TTL_SECONDS = 600;",
+              "const STATE_TTL_SECONDS = 600;\nconst DISCONNECT_TTL_SECONDS = 600;",
+          )
+          replace_once(
+              worker,
+              "  const oauthError = url.searchParams.get('error');\n  if (oauthError) return json({ ok: false, code: 'google_authorisation_denied' }, 400);\n  if (!state || !code) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);\n\n  const stored = await consumeOAuthState(env.CALENDAR_OAUTH_STATE, state, request);",
+              "  const oauthError = url.searchParams.get('error');\n  if (!state) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);\n\n  const stored = await consumeOAuthState(env.CALENDAR_OAUTH_STATE, state, request);\n  if (oauthError) return json({ ok: false, code: 'google_authorisation_denied' }, 400);\n  if (!code) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);",
+          )
+          replace_once(
+              worker,
+              "  const config = artistConfig(alias, env);\n  if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);\n\n  if (request.method === 'GET') {\n    return html(disconnectConfirmationPage(alias, request.url, env.CRM_RETURN_URL));\n  }\n  if (request.method !== 'POST') return json({ ok: false, code: 'method_not_allowed' }, 405);\n  if (!(await isConfirmedDisconnectRequest(request))) {\n    return json({ ok: false, code: 'disconnect_confirmation_required' }, 400);\n  }\n",
+              "  const config = artistConfig(alias, env);\n  if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);\n  assertDisconnectConfiguration(env);\n\n  if (request.method === 'GET') {\n    const disconnectToken = randomToken();\n    await env.CALENDAR_OAUTH_STATE.put(\n      `disconnect:${disconnectToken}`,\n      JSON.stringify(buildDisconnectStateRecord(alias, request)),\n      { expirationTtl: DISCONNECT_TTL_SECONDS },\n    );\n    const returnUrl = env.CRM_RETURN_URL\n      || 'https://vishar-crm-staging.pages.dev/integrations/calendar';\n    return html(disconnectConfirmationPage(alias, request.url, returnUrl, disconnectToken));\n  }\n  if (request.method !== 'POST') return json({ ok: false, code: 'method_not_allowed' }, 405);\n  const disconnectToken = await disconnectConfirmationToken(request);\n  if (!disconnectToken) {\n    return json({ ok: false, code: 'disconnect_confirmation_required' }, 400);\n  }\n  await consumeDisconnectState(\n    env.CALENDAR_OAUTH_STATE,\n    alias,\n    disconnectToken,\n    request,\n  );\n",
+          )
+
+          tests = Path('scripts/test-calendar-oauth-hardening.mjs')
+          replace_once(
+              tests,
+              "  accessEmail,\n  buildOAuthStateRecord,\n  calendarReadiness,\n  consumeOAuthState,\n  disconnectConfirmationPage,\n  disconnectReturnUrl,\n  isConfirmedDisconnectRequest,",
+              "  accessEmail,\n  buildDisconnectStateRecord,\n  buildOAuthStateRecord,\n  calendarReadiness,\n  consumeDisconnectState,\n  consumeOAuthState,\n  disconnectConfirmationPage,\n  disconnectConfirmationToken,\n  disconnectReturnUrl,\n  isConfirmedDisconnectRequest,",
+          )
+          replace_once(
+              tests,
+              "} from '../workers/lib/calendar-oauth-security.js';\n",
+              "} from '../workers/lib/calendar-oauth-security.js';\nimport { __testing as workerTesting } from '../workers/calendar-oauth.js';\n",
+          )
+          replace_once(
+              tests,
+              "await test('disconnect confirmation is explicit and escapes all URLs', () => {\n  const page = disconnectConfirmationPage(\n    'vladimir',\n    'https://calendar-staging.vishartattoo.com/oauth/google/disconnect/vladimir?x=\"bad\"',\n    'https://vishar-crm-staging.pages.dev/integrations/calendar?a=<bad>',\n  );\n  assert.match(page, /name=\"confirm\" value=\"disconnect\"/);\n  assert.ok(!page.includes('<bad>'));\n  assert.ok(!page.includes('x=\"bad\"'));\n});\n\nawait test('disconnect POST requires an explicit confirmation payload', async () => {\n  const confirmed = new Request('https://example.test/disconnect', {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n    body: 'confirm=disconnect',\n  });\n  const missing = new Request('https://example.test/disconnect', {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: '{}',\n  });\n  assert.equal(await isConfirmedDisconnectRequest(confirmed), true);\n  assert.equal(await isConfirmedDisconnectRequest(missing), false);\n});\n",
+              "await test('disconnect confirmation is explicit, tokenized and escapes all URLs', () => {\n  const token = 'd'.repeat(64);\n  const page = disconnectConfirmationPage(\n    'vladimir',\n    'https://calendar-staging.vishartattoo.com/oauth/google/disconnect/vladimir?x=\"bad\"',\n    'https://vishar-crm-staging.pages.dev/integrations/calendar?a=<bad>',\n    token,\n  );\n  assert.match(page, /name=\"confirm\" value=\"disconnect\"/);\n  assert.match(page, new RegExp(`name=\"disconnect_token\" value=\"${token}\"`));\n  assert.ok(!page.includes('<bad>'));\n  assert.ok(!page.includes('x=\"bad\"'));\n});\n\nawait test('disconnect POST rejects a static cross-site payload without a nonce', async () => {\n  const token = 'd'.repeat(64);\n  const confirmed = new Request('https://example.test/disconnect', {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n    body: `confirm=disconnect&disconnect_token=${token}`,\n  });\n  const staticPayload = new Request('https://example.test/disconnect', {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n    body: 'confirm=disconnect',\n  });\n  assert.equal(await disconnectConfirmationToken(confirmed), token);\n  assert.equal(await isConfirmedDisconnectRequest(confirmed.clone()), true);\n  assert.equal(await disconnectConfirmationToken(staticPayload), '');\n});\n\nawait test('disconnect nonce is Access-bound, artist-bound and single-use', async () => {\n  const token = 'n'.repeat(64);\n  const store = new Map();\n  const namespace = {\n    get: async (key) => store.has(key) ? JSON.parse(store.get(key)) : null,\n    delete: async (key) => { store.delete(key); },\n  };\n  store.set(\n    `disconnect:${token}`,\n    JSON.stringify(buildDisconnectStateRecord('vladimir', ownerRequest)),\n  );\n  assert.equal(\n    (await consumeDisconnectState(namespace, 'vladimir', token, ownerRequest)).alias,\n    'vladimir',\n  );\n  await assert.rejects(\n    consumeDisconnectState(namespace, 'vladimir', token, ownerRequest),\n    (error) => error.code === 'disconnect_confirmation_invalid_or_expired',\n  );\n\n  store.set(\n    `disconnect:${token}`,\n    JSON.stringify(buildDisconnectStateRecord('vladimir', ownerRequest)),\n  );\n  const other = new Request(ownerRequest.url, {\n    headers: { 'Cf-Access-Authenticated-User-Email': 'other@example.com' },\n  });\n  await assert.rejects(\n    consumeDisconnectState(namespace, 'vladimir', token, other),\n    (error) => error.code === 'disconnect_confirmation_invalid_or_expired',\n  );\n});\n\nawait test('OAuth denial consumes its state before returning a safe error', async () => {\n  const state = 'denied-state';\n  const store = new Map([[\n    `state:${state}`,\n    JSON.stringify(buildOAuthStateRecord('vladimir', 'v'.repeat(64), ownerRequest)),\n  ]]);\n  const callbackEnv = {\n    ...env,\n    CALENDAR_OAUTH_STATE: {\n      get: async (key) => store.has(key) ? JSON.parse(store.get(key)) : null,\n      delete: async (key) => { store.delete(key); },\n    },\n  };\n  const denied = new Request(\n    `https://calendar-staging.vishartattoo.com/oauth/google/callback?state=${state}&error=access_denied`,\n    { headers: ownerRequest.headers },\n  );\n  const response = await workerTesting.callback(denied, callbackEnv, async () => {\n    throw new Error('provider fetch must not run after denial');\n  });\n  assert.equal(response.status, 400);\n  assert.equal((await response.json()).code, 'google_authorisation_denied');\n  assert.equal(store.has(`state:${state}`), false);\n});\n",
+          )
+
+          workflow = Path('.github/workflows/pr180-disconnect-csrf-hardening.yml')
+          workflow.unlink()
+          PY
+
+      - name: Run focused security tests
+        run: node scripts/test-calendar-oauth-hardening.mjs
+
+      - name: Commit isolated hardening fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add workers/lib/calendar-oauth-security.js workers/calendar-oauth.js scripts/test-calendar-oauth-hardening.mjs .github/workflows/pr180-disconnect-csrf-hardening.yml
+          git commit -m "Harden Calendar disconnect confirmation"
+          git push origin HEAD:agent/google-calendar-oauth-connector
