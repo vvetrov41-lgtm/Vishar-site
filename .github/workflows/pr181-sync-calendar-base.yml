@@ -50,3 +50,5 @@ jobs:
 
           git commit -m "Sync Calendar Connections with OAuth hardening"
           git push origin HEAD:agent/calendar-connections-ui
+
+# Connector touch: trigger the one-shot branch synchronization.
