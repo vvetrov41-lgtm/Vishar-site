@@ -47,6 +47,16 @@ assert.equal(
   'https://calendar-staging.vishartattoo.com/oauth/google/callback',
   'OAuth redirect URI must be exact',
 );
+assert.equal(
+  exactValue('CALENDAR_ACCESS_TEAM_DOMAIN'),
+  'https://vishar-site-pages.cloudflareaccess.com',
+  'Cloudflare Access team domain must be exact',
+);
+assert.equal(
+  exactValue('CALENDAR_ACCESS_AUD'),
+  '2a0569d2cc1acb785ccf190585be7ca9cad70fe6db7042a8094bf39160a26013',
+  'Cloudflare Access application AUD must be exact',
+);
 crmUrl('CRM_RETURN_URL', ['#/appointments', '#/integrations/calendar']);
 crmUrl('CRM_APPOINTMENTS_URL', ['#/appointments']);
 
@@ -73,6 +83,8 @@ const result = {
     oauthRedirect: true,
     crmReturn: true,
     crmAppointments: true,
+    accessTeamDomain: true,
+    accessAudience: true,
     kvBindings: bindings.length === 2,
     scheduledDrain: false,
     workersDev: false,
