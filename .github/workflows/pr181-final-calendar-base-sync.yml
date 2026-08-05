@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
+          fetch-depth: 1
       - name: Merge the exact current PR180 head
         run: |
           set -euo pipefail
@@ -28,9 +28,12 @@ jobs:
           test "$(git rev-parse HEAD)" = "$start_sha"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin agent/google-calendar-oauth-connector
+          git fetch --no-tags --depth=200 origin \
+            agent/calendar-connections-ui \
+            agent/google-calendar-oauth-connector
+          test "$(git rev-parse origin/agent/calendar-connections-ui)" = "$start_sha"
           base_sha="$(git rev-parse origin/agent/google-calendar-oauth-connector)"
-          test "$base_sha" = "76af82a81f98a663624566ce5c414e1a7e4b4995"
+          test "$base_sha" = "bfc1c6ef85f0bc672864a0daaf6baaafe246a6be"
 
           set +e
           git merge --no-ff --no-commit "$base_sha"
