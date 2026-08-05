@@ -109,7 +109,7 @@ jobs:
             | jq -s . > "$RUNNER_TEMP/runs.json"
           for workflow in "Static Validation" "CRM and booking validation"; do
             jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
-              any(.[ ];
+              any(.[];
                 .name == $name
                 and .head_sha == $sha
                 and .status == "completed"
