@@ -51,7 +51,8 @@ describe('capabilities', () => {
     const writes: Capability[] = [
       'transitionEnquiry', 'assignEnquiry', 'convertEnquiry',
       'manageProjects', 'manageSessions', 'manageFinance', 'createNotes',
-      'manageFollowUps', 'createEmailDraft', 'approveEmail', 'manageUsers', 'manageSettings',
+      'manageFollowUps', 'createEmailDraft', 'approveEmail', 'manageIntegrations',
+      'manageUsers', 'manageSettings',
     ];
     for (const capability of writes) {
       expect(can('read_only', capability)).toBe(false);
@@ -59,7 +60,7 @@ describe('capabilities', () => {
   });
 
   it('gives read_only no file, note, email, activity or integration access', () => {
-    for (const capability of ['viewEnquiryFiles', 'viewNotes', 'viewActivity', 'viewIntegrationJobs'] as Capability[]) {
+    for (const capability of ['viewEnquiryFiles', 'viewNotes', 'viewActivity', 'viewIntegrationJobs', 'manageIntegrations'] as Capability[]) {
       expect(can('read_only', capability)).toBe(false);
     }
   });
@@ -70,16 +71,26 @@ describe('capabilities', () => {
     expect(can(undefined, 'viewClients')).toBe(false);
   });
 
-  it('keeps the manager out of integration jobs', () => {
+  it('keeps the manager out of integration jobs while allowing scoped integration management', () => {
     expect(can('owner', 'viewIntegrationJobs')).toBe(true);
     expect(can('booking_manager', 'viewIntegrationJobs')).toBe(false);
+    expect(can('booking_manager', 'manageIntegrations')).toBe(true);
   });
 });
 
 describe('navigation', () => {
   it('shows the owner every section', () => {
     const paths = navItemsFor('owner').map((item) => item.path);
-    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/appointments', '/users', '/activity']);
+    expect(paths).toEqual([
+      '/',
+      '/enquiries',
+      '/clients',
+      '/projects',
+      '/appointments',
+      '/integrations',
+      '/users',
+      '/activity',
+    ]);
   });
 
   it('hides Users from a booking manager but keeps their working sections', () => {
@@ -87,6 +98,7 @@ describe('navigation', () => {
     expect(paths).not.toContain('/users');
     expect(paths).toContain('/enquiries');
     expect(paths).toContain('/activity');
+    expect(paths).toContain('/integrations');
   });
 
   it('leaves read_only with viewing sections only', () => {
