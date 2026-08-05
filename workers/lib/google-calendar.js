@@ -4,6 +4,11 @@ const GOOGLE_CALENDAR_BASE_URL = 'https://www.googleapis.com/calendar/v3';
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const TOKEN_ENVELOPE_VERSION = 1;
 const EVENT_ID_PREFIX = 'vishar';
+const TRANSIENT_PROVIDER_REASONS = new Set([
+  'rateLimitExceeded',
+  'userRateLimitExceeded',
+  'quotaExceeded',
+]);
 
 export class CalendarConnectorError extends Error {
   constructor(code, message = code) {
@@ -300,10 +305,21 @@ export function buildGoogleEvent(job, { eventId = null, includeId = false, crmRe
   return event;
 }
 
-function providerError(status) {
+function providerReasons(body) {
+  const errors = Array.isArray(body?.error?.errors) ? body.error.errors : [];
+  return errors
+    .map((item) => typeof item?.reason === 'string' ? item.reason : '')
+    .filter(Boolean);
+}
+
+function providerError(status, body = {}) {
   if (status === 404 || status === 410) return new CalendarConnectorError('calendar_event_not_found');
   if (status === 401) return new CalendarConnectorError('calendar_oauth_expired');
-  if (status === 429 || status >= 500) {
+  if (
+    status === 429
+    || status >= 500
+    || (status === 403 && providerReasons(body).some((reason) => TRANSIENT_PROVIDER_REASONS.has(reason)))
+  ) {
     return new CalendarConnectorError('calendar_provider_unavailable');
   }
   return new CalendarConnectorError('calendar_provider_rejected');
@@ -340,7 +356,7 @@ export function createGoogleCalendarProvider({
       },
     );
     const body = await readProviderJson(response);
-    if (!response.ok) throw providerError(response.status);
+    if (!response.ok) throw providerError(response.status, body);
     return { providerEventId: body.id || eventId };
   }
 
@@ -359,7 +375,7 @@ export function createGoogleCalendarProvider({
       return patchEvent(eventId, job);
     }
     const body = await readProviderJson(response);
-    if (!response.ok) throw providerError(response.status);
+    if (!response.ok) throw providerError(response.status, body);
     return { providerEventId: body.id || eventId };
   }
 
@@ -396,7 +412,7 @@ export function createGoogleCalendarProvider({
       if (response.ok || response.status === 404 || response.status === 410) {
         return { cancelled: true };
       }
-      throw providerError(response.status);
+      throw providerError(response.status, await readProviderJson(response));
     },
   };
 }
@@ -404,6 +420,8 @@ export function createGoogleCalendarProvider({
 export const __testing = {
   GOOGLE_SCOPE,
   TOKEN_ENVELOPE_VERSION,
+  TRANSIENT_PROVIDER_REASONS,
   normalizeEmail,
   appointmentLabel,
+  providerReasons,
 };
