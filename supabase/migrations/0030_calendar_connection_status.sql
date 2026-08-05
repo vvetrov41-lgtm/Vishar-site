@@ -2,10 +2,130 @@
 --
 -- CRM-visible, metadata-only status for the separate Vladimir and Kristina
 -- Google Calendar connections. Provider credentials remain in encrypted
--- Cloudflare KV; this function cannot return token material, raw provider
+-- Cloudflare KV; these functions cannot return token material, raw provider
 -- responses or a KV key.
 --
 -- Forward-only. No OAuth consent, provider call, cron or deployment is enabled.
+
+create or replace function public.set_calendar_connection_metadata(
+  p_artist_id uuid,
+  p_integration_key text,
+  p_external_account_label text,
+  p_is_enabled boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_artist_slug text;
+  v_external_account_label text;
+  v_integration_id uuid;
+begin
+  if not crm_private.is_service_backend() then
+    raise exception 'calendar connection metadata is backend-only'
+      using errcode = '42501';
+  end if;
+
+  if p_artist_id is null or p_is_enabled is null then
+    raise exception 'calendar connection metadata is incomplete'
+      using errcode = '22023';
+  end if;
+
+  perform crm_private.require_active_artist(p_artist_id);
+
+  select a.slug
+  into v_artist_slug
+  from public.artists a
+  where a.id = p_artist_id
+    and a.is_active;
+
+  if v_artist_slug not in ('vladimir', 'kristina') then
+    raise exception 'calendar artist route is unsupported'
+      using errcode = '22023';
+  end if;
+
+  if p_integration_key is distinct from ('google_calendar_' || v_artist_slug) then
+    raise exception 'calendar integration key does not match artist route'
+      using errcode = '22023';
+  end if;
+
+  v_external_account_label := lower(btrim(coalesce(p_external_account_label, '')));
+  if v_external_account_label = ''
+     or length(v_external_account_label) > 320
+     or v_external_account_label !~ '^[^[:space:]@]+@[^[:space:]@]+$' then
+    raise exception 'calendar account label is invalid'
+      using errcode = '22023';
+  end if;
+
+  insert into public.artist_integrations (
+    artist_id,
+    integration_type,
+    provider,
+    integration_key,
+    external_account_label,
+    configuration,
+    is_enabled
+  ) values (
+    p_artist_id,
+    'calendar',
+    'google',
+    p_integration_key,
+    v_external_account_label,
+    jsonb_build_object(
+      'calendar_id', 'primary',
+      'oauth_scope', 'calendar.events',
+      'connection_mode', 'worker_oauth'
+    ),
+    p_is_enabled
+  )
+  on conflict (artist_id, integration_type, integration_key) do update
+    set provider = 'google',
+        external_account_label = excluded.external_account_label,
+        configuration = excluded.configuration,
+        is_enabled = excluded.is_enabled,
+        updated_at = now()
+  returning id into v_integration_id;
+
+  perform crm_private.log_artist_activity(
+    p_artist_id,
+    case
+      when p_is_enabled then 'integration.calendar_connected'
+      else 'integration.calendar_disconnected'
+    end,
+    'worker',
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    jsonb_build_object(
+      'integration_type', 'calendar',
+      'provider', 'google',
+      'integration_key', p_integration_key,
+      'is_enabled', p_is_enabled
+    )
+  );
+
+  return jsonb_build_object(
+    'integration_id', v_integration_id,
+    'artist_id', p_artist_id,
+    'provider', 'google',
+    'integration_key', p_integration_key,
+    'is_enabled', p_is_enabled
+  );
+end;
+$$;
+
+revoke all on function public.set_calendar_connection_metadata(uuid,text,text,boolean)
+  from public, anon, authenticated, service_role;
+grant execute on function public.set_calendar_connection_metadata(uuid,text,text,boolean)
+  to service_role;
+
+comment on function public.set_calendar_connection_metadata(uuid,text,text,boolean) is
+  'Backend-only Google Calendar connection metadata upsert. Provider, configuration and supported artist routes are fixed server-side; no token material is accepted or returned.';
 
 create or replace function public.list_calendar_connection_status()
 returns table (
