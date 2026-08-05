@@ -6,6 +6,14 @@ routes = [
   { pattern = "calendar-staging.vishartattoo.com", custom_domain = true }
 ]
 
+[[kv_namespaces]]
+binding = "CALENDAR_OAUTH_STATE"
+id = "dd43224461504e898addeba5b7915142"
+
+[[kv_namespaces]]
+binding = "CALENDAR_OAUTH_TOKENS"
+id = "93302bc4f35242c38358a16fcd4ab9a2"
+
 [vars]
 VISHAR_ENVIRONMENT = "staging"
 GOOGLE_OAUTH_REDIRECT_URI = "https://calendar-staging.vishartattoo.com/oauth/google/callback"
@@ -27,6 +35,5 @@ CALENDAR_DRAIN_ENABLED = "false"
 # SUPABASE_URL
 # Exactly one of SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
 #
-# Required KV bindings, supplied after the namespaces are created:
-# CALENDAR_OAUTH_STATE  - short-lived PKCE, OAuth state and disconnect nonce records
-# CALENDAR_OAUTH_TOKENS - AES-GCM encrypted refresh-token envelopes
+# CALENDAR_OAUTH_STATE stores short-lived PKCE, OAuth state and disconnect nonce records.
+# CALENDAR_OAUTH_TOKENS stores AES-GCM encrypted refresh-token envelopes.
