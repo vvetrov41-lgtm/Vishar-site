@@ -9,7 +9,7 @@ routes = [
 [vars]
 VISHAR_ENVIRONMENT = "staging"
 GOOGLE_OAUTH_REDIRECT_URI = "https://calendar-staging.vishartattoo.com/oauth/google/callback"
-CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/appointments"
+CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/integrations/calendar"
 CALENDAR_DRAIN_ENABLED = "false"
 
 # Required encrypted secrets:
