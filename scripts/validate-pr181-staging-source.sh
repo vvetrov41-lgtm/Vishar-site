@@ -35,6 +35,9 @@ grep -Fq "case '/integrations/calendar':" admin/src/App.tsx
 grep -Fq "path: '/integrations'" admin/src/lib/permissions.ts
 grep -Fq 'list_calendar_connection_status' admin/src/lib/calendar-connections-api.ts
 grep -Fq 'https://calendar-staging.vishartattoo.com' admin/src/pages/CalendarConnectionsPage.tsx
+grep -Fq 'env.SUPABASE_SERVICE_ROLE_KEY' admin/src/lib/supabase.ts
+grep -Fq 'supabase_secret_value|sb_secret_[A-Za-z0-9_-]{20,}' scripts/pr181-staging-calendar-connections.sh
+! grep -Fq 'legacy_supabase_secret_name|SUPABASE_SERVICE_ROLE_KEY' scripts/pr181-staging-calendar-connections.sh
 grep -Fxq 'CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/#/integrations/calendar"' wrangler.calendar.staging.toml
 grep -Fxq 'CRM_APPOINTMENTS_URL = "https://vishar-crm-staging.pages.dev/#/appointments"' wrangler.calendar.staging.toml
 grep -Fxq 'CALENDAR_DRAIN_ENABLED = "false"' wrangler.calendar.staging.toml
