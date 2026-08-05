@@ -1,0 +1,66 @@
+name: PR 181 one-time artifact scan patch
+
+on:
+  push:
+    branches: [agent/calendar-connections-ui]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr181-one-time-artifact-scan-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    if: >-
+      github.repository == 'vvetrov41-lgtm/Vishar-site' &&
+      github.ref == 'refs/heads/agent/calendar-connections-ui'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/calendar-connections-ui
+          fetch-depth: 1
+      - name: Patch scanner and remove one-time workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/pr181-staging-calendar-connections.sh')
+          text = path.read_text()
+          old = '''  ! grep -R -E -q \\
+    'sb_secret_[A-Za-z0-9_-]{20,}|SUPABASE_SERVICE_ROLE_KEY|CALENDAR_TOKEN_ENCRYPTION_KEY|Cf-Access-Jwt-Assertion' \\
+    admin/dist || die "CRM artifact contains a forbidden secret marker"
+'''
+          new = '''  local marker pattern match_file
+  while IFS='|' read -r marker pattern; do
+    [ -n "$marker" ] || continue
+    match_file="$(grep -R -E -l -m1 "$pattern" admin/dist | head -n1 || true)"
+    [ -z "$match_file" ] \\
+      || die "CRM artifact contains forbidden marker $marker in ${match_file#admin/dist/}"
+  done <<'MARKERS'
+supabase_secret_value|sb_secret_[A-Za-z0-9_-]{20,}
+legacy_supabase_secret_name|SUPABASE_SERVICE_ROLE_KEY
+calendar_encryption_secret_name|CALENDAR_TOKEN_ENCRYPTION_KEY
+cloudflare_access_jwt_header|Cf-Access-Jwt-Assertion
+MARKERS
+'''
+          if text.count(old) != 1:
+              raise SystemExit('Expected one legacy artifact scan block')
+          path.write_text(text.replace(old, new))
+          PY
+          rm -f .github/workflows/pr181-patch-artifact-scan.yml
+          git rm .github/workflows/pr181-patch-artifact-scan-push.yml
+          bash -n scripts/pr181-staging-calendar-connections.sh
+          git diff --check
+      - name: Commit permanent scanner diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Report safe CRM artifact scan marker'
+          git push origin HEAD:agent/calendar-connections-ui
