@@ -118,6 +118,10 @@ jobs:
             ' "$RUNNER_TEMP/runs.json" >/dev/null
           done
 
+      - name: Validate local PR181 staging boundary
+        shell: bash
+        run: bash scripts/validate-pr181-staging-source.sh
+
       - name: Verify encrypted staging configuration
         shell: bash
         run: |
