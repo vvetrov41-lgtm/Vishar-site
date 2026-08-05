@@ -1,0 +1,320 @@
+name: PR 180 calendar provider readiness
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr180-calendar-provider-readiness
+  cancel-in-progress: false
+
+jobs:
+  provider-readiness:
+    if: >-
+      github.event.pull_request.number == 180 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- RUN_PR180_CALENDAR_PROVIDER_READINESS -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      CALENDAR_TOKEN_ENCRYPTION_KEY: ${{ secrets.CALENDAR_TOKEN_ENCRYPTION_KEY }}
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- RUN_PR180_CALENDAR_PROVIDER_READINESS -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 180
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/google-calendar-foundation"
+            and .pull_request.head.ref == "agent/google-calendar-oauth-connector"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact head and green normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[];
+                .name == $name
+                and .head_sha == $sha
+                and .status == "completed"
+                and .conclusion == "success"
+              )
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+          node scripts/validate-calendar-staging.mjs --deploy-ready
+          grep -Fx 'CALENDAR_DRAIN_ENABLED = "false"' wrangler.calendar.staging.toml
+          ! grep -Eq '^\[triggers\]$|^crons\s*=' wrangler.calendar.staging.toml
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check Calendar API without reading event data
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            CLOUDFLARE_API_TOKEN \
+            CLOUDFLARE_ACCOUNT_ID \
+            GOOGLE_OAUTH_CLIENT_ID \
+            GOOGLE_OAUTH_CLIENT_SECRET \
+            CALENDAR_TOKEN_ENCRYPTION_KEY; do
+            [ -n "${!name:-}" ] || {
+              echo "Missing encrypted staging configuration name: $name" >&2
+              exit 1
+            }
+          done
+
+          temp_config="wrangler.calendar.provider-readiness.toml"
+          temp_worker="workers/calendar-provider-readiness-runtime.js"
+          dev_vars=".dev.vars"
+          remote_log="$RUNNER_TEMP/calendar-provider-readiness.log"
+          response_json="$RUNNER_TEMP/calendar-provider-readiness-response.json"
+          cleanup() {
+            if [ -n "${dev_pid:-}" ]; then
+              kill "$dev_pid" 2>/dev/null || true
+              wait "$dev_pid" 2>/dev/null || true
+            fi
+            rm -f "$temp_config" "$temp_worker" "$dev_vars" "$response_json"
+          }
+          trap cleanup EXIT
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          config = Path('wrangler.calendar.staging.toml').read_text(encoding='utf-8')
+          config, route_count = re.subn(
+              r'(?ms)^routes\s*=\s*\[\n.*?^\]\n',
+              '',
+              config,
+              count=1,
+          )
+          if route_count != 1:
+              raise SystemExit('Expected exactly one routes block')
+          config = config.replace(
+              'main = "workers/calendar-oauth.js"',
+              'main = "workers/calendar-provider-readiness-runtime.js"',
+              1,
+          )
+          config = config.replace(
+              'workers_dev = false',
+              'workers_dev = false\npreview_urls = true',
+              1,
+          )
+          config = config.replace(
+              'name = "vishar-calendar-staging"',
+              'name = "vishar-calendar-staging-provider-readiness"',
+              1,
+          )
+          for namespace_id in (
+              'dd43224461504e898addeba5b7915142',
+              '93302bc4f35242c38358a16fcd4ab9a2',
+          ):
+              needle = f'id = "{namespace_id}"'
+              if config.count(needle) != 1:
+                  raise SystemExit(f'Expected exactly one KV namespace ID {namespace_id}')
+              config = config.replace(
+                  needle,
+                  f'{needle}\npreview_id = "{namespace_id}"',
+                  1,
+              )
+          if 'CALENDAR_DRAIN_ENABLED = "false"' not in config:
+              raise SystemExit('Calendar drain must remain disabled')
+          Path('wrangler.calendar.provider-readiness.toml').write_text(config, encoding='utf-8')
+
+          worker = r'''import {
+            decryptTokenRecord,
+            refreshGoogleAccessToken,
+          } from './lib/google-calendar.js';
+
+          const json = (body, status = 200) => Response.json(body, {
+            status,
+            headers: { 'Cache-Control': 'no-store' },
+          });
+
+          const safeReasons = new Set([
+            'accessNotConfigured',
+            'authError',
+            'backendError',
+            'badRequest',
+            'dailyLimitExceeded',
+            'forbidden',
+            'insufficientPermissions',
+            'invalid',
+            'notFound',
+            'quotaExceeded',
+            'rateLimitExceeded',
+            'required',
+            'userRateLimitExceeded',
+          ]);
+
+          function safeProviderReason(body) {
+            const errors = Array.isArray(body?.error?.errors) ? body.error.errors : [];
+            const reason = errors.find((item) => safeReasons.has(item?.reason))?.reason;
+            return reason || 'unknown';
+          }
+
+          function safeProviderCode(status, reason) {
+            if (status === 401 || reason === 'authError') return 'calendar_oauth_expired';
+            if (reason === 'accessNotConfigured') return 'calendar_api_disabled';
+            if (reason === 'insufficientPermissions') return 'calendar_scope_missing';
+            if (status === 429 || status >= 500 || [
+              'backendError',
+              'dailyLimitExceeded',
+              'quotaExceeded',
+              'rateLimitExceeded',
+              'userRateLimitExceeded',
+            ].includes(reason)) return 'calendar_provider_unavailable';
+            return 'calendar_provider_rejected';
+          }
+
+          export default {
+            async fetch(request, env) {
+              const url = new URL(request.url);
+              if (request.method !== 'GET' || url.pathname !== '/__provider-readiness') {
+                return json({ ok: false, code: 'not_found' }, 404);
+              }
+              try {
+                const rawEnvelope = await env.CALENDAR_OAUTH_TOKENS.get(
+                  'artist:a1111111-1111-4111-8111-111111111111',
+                );
+                if (!rawEnvelope) return json({
+                  ok: false,
+                  code: 'calendar_not_configured',
+                  providerStatus: 0,
+                  providerReason: 'unknown',
+                }, 503);
+                const record = await decryptTokenRecord(
+                  rawEnvelope,
+                  env.CALENDAR_TOKEN_ENCRYPTION_KEY,
+                );
+                if (record.accountEmail.trim().toLowerCase() !== 'vvetrov41@gmail.com') {
+                  return json({
+                    ok: false,
+                    code: 'google_account_mismatch',
+                    providerStatus: 0,
+                    providerReason: 'unknown',
+                  }, 503);
+                }
+                const accessToken = await refreshGoogleAccessToken(env, record.refreshToken);
+                const response = await fetch(
+                  'https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=1&fields=kind',
+                  { headers: { Authorization: `Bearer ${accessToken}` } },
+                );
+                if (response.ok) return json({ ok: true, providerStatus: response.status });
+                const body = await response.json().catch(() => ({}));
+                const providerReason = safeProviderReason(body);
+                return json({
+                  ok: false,
+                  code: safeProviderCode(response.status, providerReason),
+                  providerStatus: response.status,
+                  providerReason,
+                }, 503);
+              } catch (error) {
+                const code = typeof error?.code === 'string'
+                  ? error.code
+                  : 'calendar_connector_error';
+                return json({
+                  ok: false,
+                  code,
+                  providerStatus: 0,
+                  providerReason: 'unknown',
+                }, 503);
+              }
+            },
+          };
+          '''
+          Path('workers/calendar-provider-readiness-runtime.js').write_text(worker, encoding='utf-8')
+
+          secret_names = (
+              'GOOGLE_OAUTH_CLIENT_ID',
+              'GOOGLE_OAUTH_CLIENT_SECRET',
+              'CALENDAR_TOKEN_ENCRYPTION_KEY',
+          )
+          lines = [f'{name}={json.dumps(os.environ[name])}' for name in secret_names]
+          vars_path = Path('.dev.vars')
+          vars_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          vars_path.chmod(0o600)
+          PY
+
+          npx wrangler dev \
+            --remote \
+            --config "$temp_config" \
+            --ip 127.0.0.1 \
+            --port 8787 \
+            --log-level error \
+            >"$remote_log" 2>&1 &
+          dev_pid=$!
+
+          ready=false
+          status=000
+          for _ in $(seq 1 60); do
+            status="$(curl --silent --output "$response_json" --write-out '%{http_code}' --max-time 20 http://127.0.0.1:8787/__provider-readiness || true)"
+            if [ "$status" = "200" ] || [ "$status" = "503" ]; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$dev_pid" 2>/dev/null; then
+              echo 'PROVIDER_READINESS_FAILED=calendar_connector_error;STATUS=0;REASON=unknown' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          [ "$ready" = true ] || {
+            echo 'PROVIDER_READINESS_FAILED=calendar_connector_error;STATUS=0;REASON=unknown' >&2
+            exit 1
+          }
+
+          if [ "$status" = "200" ] && jq -e '.ok == true' "$response_json" >/dev/null; then
+            provider_status="$(jq -r '.providerStatus' "$response_json")"
+            echo "PROVIDER_READINESS_OK=true;STATUS=$provider_status"
+            exit 0
+          fi
+
+          code="$(jq -r '.code // "calendar_connector_error"' "$response_json")"
+          provider_status="$(jq -r '.providerStatus // 0' "$response_json")"
+          provider_reason="$(jq -r '.providerReason // "unknown"' "$response_json")"
+          echo "PROVIDER_READINESS_FAILED=$code;STATUS=$provider_status;REASON=$provider_reason" >&2
+          exit 1
