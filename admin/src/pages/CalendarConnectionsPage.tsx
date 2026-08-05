@@ -7,9 +7,21 @@ import type {
 } from '../lib/calendar-connections-api';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
+import { operationalLabel } from '../lib/operational-labels';
 import { useApi } from '../lib/session';
 
 const CONNECTOR_ORIGIN = 'https://calendar-staging.vishartattoo.com';
+
+const RECONNECT_ERROR_CODES = new Set([
+  'calendar_oauth_expired',
+  'calendar_scope_missing',
+  'calendar_token_invalid',
+  'google_account_mismatch',
+  'google_refresh_invalid_grant',
+  'google_token_revoked',
+]);
+
+export type CalendarConnectionHealth = 'connected' | 'disconnected' | 'attention' | 'reconnect';
 
 export function calendarConnectorUrl(
   action: 'start' | 'disconnect',
@@ -35,6 +47,16 @@ export function connectionResultNotice(search: string, language: Language): stri
       : `${name}’s Google Calendar is disconnected. The status below was reloaded from the CRM.`;
   }
   return null;
+}
+
+export function calendarConnectionHealth(
+  connection: Pick<CalendarConnectionStatus, 'connected' | 'failed_jobs' | 'last_error_code'>,
+): CalendarConnectionHealth {
+  if (connection.last_error_code && RECONNECT_ERROR_CODES.has(connection.last_error_code)) {
+    return 'reconnect';
+  }
+  if (connection.failed_jobs > 0 || connection.last_error_code) return 'attention';
+  return connection.connected ? 'connected' : 'disconnected';
 }
 
 export function CalendarConnectionsPage() {
@@ -82,17 +104,17 @@ function ConnectionCard({
   language: Language;
 }) {
   const copy = COPY[language];
-  const reconnectRequired = connection.last_error_code === 'google_token_revoked'
-    || connection.last_error_code === 'google_refresh_invalid_grant'
-    || connection.last_error_code === 'google_account_mismatch';
-  const status = reconnectRequired
+  const health = calendarConnectionHealth(connection);
+  const status = health === 'reconnect'
     ? copy.reconnectRequired
-    : connection.connected
-      ? copy.connected
-      : copy.disconnected;
-  const statusClass = reconnectRequired || connection.failed_jobs > 0
+    : health === 'attention'
+      ? copy.attentionRequired
+      : health === 'connected'
+        ? copy.connected
+        : copy.disconnected;
+  const statusClass = health === 'reconnect' || health === 'attention'
     ? 'badge warn'
-    : connection.connected
+    : health === 'connected'
       ? 'badge ok'
       : 'badge';
   const startLabel = connection.connected ? copy.reconnect : copy.connect;
@@ -131,7 +153,9 @@ function ConnectionCard({
         </div>
         <div>
           <dt>{copy.lastError}</dt>
-          <dd>{connection.last_error_code ?? copy.noError}</dd>
+          <dd>{connection.last_error_code
+            ? operationalLabel(language, 'integrationError', connection.last_error_code)
+            : copy.noError}</dd>
         </div>
       </dl>
 
@@ -172,6 +196,7 @@ const COPY: Record<Language, Record<string, string>> = {
     securityNotice: 'Connect and disconnect use a top-level navigation through the Access-protected Calendar connector. Query parameters only display a notice; Supabase remains the source of truth.',
     connected: 'Connected',
     disconnected: 'Not connected',
+    attentionRequired: 'Attention required',
     reconnectRequired: 'Reconnect required',
     connect: 'Connect',
     reconnect: 'Reconnect',
@@ -182,7 +207,7 @@ const COPY: Record<Language, Record<string, string>> = {
     lastSuccessfulSync: 'Last successful sync',
     queue: 'Calendar queue',
     queueValue: '{queued} queued · {retrying} retrying · {failed} failed',
-    lastError: 'Last safe error code',
+    lastError: 'Last current error',
     noError: 'No current error',
   },
   ru: {
@@ -194,6 +219,7 @@ const COPY: Record<Language, Record<string, string>> = {
     securityNotice: 'Подключение и отключение открываются отдельной страницей через Calendar connector, защищённый Access. Параметры URL показывают только уведомление; источником истины остаётся Supabase.',
     connected: 'Подключён',
     disconnected: 'Не подключён',
+    attentionRequired: 'Требует внимания',
     reconnectRequired: 'Нужно переподключить',
     connect: 'Подключить',
     reconnect: 'Переподключить',
@@ -204,7 +230,7 @@ const COPY: Record<Language, Record<string, string>> = {
     lastSuccessfulSync: 'Последняя успешная синхронизация',
     queue: 'Очередь календаря',
     queueValue: 'в очереди: {queued} · повтор: {retrying} · ошибок: {failed}',
-    lastError: 'Последний безопасный код ошибки',
+    lastError: 'Последняя текущая ошибка',
     noError: 'Текущих ошибок нет',
   },
 };
