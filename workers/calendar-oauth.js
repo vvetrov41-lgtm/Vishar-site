@@ -296,12 +296,12 @@ export default {
         return json(calendarReadiness(env));
       }
       const startMatch = url.pathname.match(/^\/oauth\/google\/start\/(vladimir|kristina)$/);
-      if (request.method === 'GET' && startMatch) return startOAuth(request, startMatch[1], env);
+      if (request.method === 'GET' && startMatch) return await startOAuth(request, startMatch[1], env);
       if (request.method === 'GET' && url.pathname === '/oauth/google/callback') {
-        return callback(request, env);
+        return await callback(request, env);
       }
       const disconnectMatch = url.pathname.match(/^\/oauth\/google\/disconnect\/(vladimir|kristina)$/);
-      if (disconnectMatch) return disconnect(request, disconnectMatch[1], env);
+      if (disconnectMatch) return await disconnect(request, disconnectMatch[1], env);
       return json({ ok: false, code: 'not_found' }, 404);
     } catch (error) {
       const safe = errorResponse(error);
