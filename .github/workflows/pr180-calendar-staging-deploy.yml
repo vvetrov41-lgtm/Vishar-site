@@ -101,7 +101,7 @@ jobs:
           }
 
           secrets_file="$RUNNER_TEMP/calendar-worker-secrets.json"
-          deploy_config="$RUNNER_TEMP/wrangler.calendar.deploy.toml"
+          deploy_config="$GITHUB_WORKSPACE/.wrangler.calendar.deploy.toml"
           export secrets_file deploy_config
           trap 'rm -f "$secrets_file" "$deploy_config"' EXIT
           python - <<'PY'
