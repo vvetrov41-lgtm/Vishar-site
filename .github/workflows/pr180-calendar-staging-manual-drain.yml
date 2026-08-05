@@ -111,12 +111,13 @@ jobs:
           temp_config="wrangler.calendar.manual-drain.toml"
           dev_vars=".dev.vars"
           remote_log="$RUNNER_TEMP/calendar-manual-drain.log"
+          token_envelope="$RUNNER_TEMP/vladimir-calendar-token-envelope.json"
           cleanup() {
             if [ -n "${dev_pid:-}" ]; then
               kill "$dev_pid" 2>/dev/null || true
               wait "$dev_pid" 2>/dev/null || true
             fi
-            rm -f "$temp_config" "$dev_vars"
+            rm -f "$temp_config" "$dev_vars" "$token_envelope"
           }
           diagnose_remote_log() {
             python3 - "$remote_log" <<'PY'
@@ -216,6 +217,46 @@ jobs:
           vars_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           vars_path.chmod(0o600)
           PY
+
+          npx wrangler kv key get \
+            'artist:a1111111-1111-4111-8111-111111111111' \
+            --namespace-id '93302bc4f35242c38358a16fcd4ab9a2' \
+            --remote \
+            --text \
+            > "$token_envelope"
+          [ -s "$token_envelope" ] || {
+            echo 'TOKEN_PREFLIGHT_FAILED=calendar_not_configured' >&2
+            exit 1
+          }
+          chmod 600 "$token_envelope"
+
+          TOKEN_ENVELOPE_FILE="$token_envelope" node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          import {
+            decryptTokenRecord,
+            refreshGoogleAccessToken,
+          } from './workers/lib/google-calendar.js';
+
+          try {
+            const rawEnvelope = await readFile(process.env.TOKEN_ENVELOPE_FILE, 'utf8');
+            const record = await decryptTokenRecord(
+              rawEnvelope,
+              process.env.CALENDAR_TOKEN_ENCRYPTION_KEY,
+            );
+            await refreshGoogleAccessToken({
+              GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID,
+              GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+            }, record.refreshToken);
+            console.log('TOKEN_PREFLIGHT_OK=true');
+          } catch (error) {
+            const code = typeof error?.code === 'string'
+              ? error.code
+              : 'calendar_connector_error';
+            console.error(`TOKEN_PREFLIGHT_FAILED=${code}`);
+            process.exit(1);
+          }
+          NODE
+          rm -f "$token_envelope"
 
           npx wrangler dev \
             --remote \
