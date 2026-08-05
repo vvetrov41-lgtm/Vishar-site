@@ -242,7 +242,7 @@ jobs:
             and .configuration.googleOauth == true
             and .configuration.supabase == true
             and .configuration.artists == true
-            and .configuration.scheduledDrain == true
+            and .scheduledDrain == true
           ' "$RUNNER_TEMP/manual-drain-health.json" >/dev/null
 
           curl --fail --silent --show-error \
