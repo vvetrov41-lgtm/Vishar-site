@@ -43,6 +43,7 @@ grep -Fxq 'CALENDAR_DRAIN_ENABLED = "false"' wrangler.calendar.staging.toml
 ! grep -R -E -q \
   '<!-- RUN_PR181_CALENDAR_CONNECTIONS_STAGING -->' \
   --exclude='pr181-calendar-connections-staging.yml' \
+  --exclude='validate-pr181-staging-source.sh' \
   .
 
 printf '%s\n' 'PR181 staging source validation passed.'
