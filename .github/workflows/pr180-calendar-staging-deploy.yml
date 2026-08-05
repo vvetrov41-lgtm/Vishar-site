@@ -1,0 +1,95 @@
+name: PR 180 calendar staging deploy
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr180-calendar-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.pull_request.number == 180 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DEPLOY_PR180_CALENDAR_STAGING -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        env:
+          EXPECTED_REPOSITORY: vvetrov41-lgtm/Vishar-site
+          EXPECTED_HEAD_REF: agent/google-calendar-oauth-connector
+          EXPECTED_BASE_REF: agent/google-calendar-foundation
+          ACTUAL_REPOSITORY: ${{ github.repository }}
+          ACTUAL_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          ACTUAL_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          ACTUAL_STATE: ${{ github.event.pull_request.state }}
+          ACTUAL_DRAFT: ${{ github.event.pull_request.draft }}
+          ACTUAL_MERGED: ${{ github.event.pull_request.merged }}
+        run: |
+          set -euo pipefail
+          test "$ACTUAL_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test "$ACTUAL_HEAD_REF" = "$EXPECTED_HEAD_REF"
+          test "$ACTUAL_BASE_REF" = "$EXPECTED_BASE_REF"
+          test "$ACTUAL_STATE" = "open"
+          test "$ACTUAL_DRAFT" = "true"
+          test "$ACTUAL_MERGED" = "false"
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify isolated staging configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          grep -Fx 'name = "vishar-calendar-staging"' wrangler.calendar.staging.toml
+          grep -Fx 'workers_dev = false' wrangler.calendar.staging.toml
+          grep -F 'calendar-staging.vishartattoo.com' wrangler.calendar.staging.toml
+          grep -F 'workers/calendar-oauth.js' wrangler.calendar.staging.toml
+          ! grep -E 'tattooai-preview|intake-staging|vishar-booking-staging|production' wrangler.calendar.staging.toml
+
+      - name: Verify Cloudflare deployment configuration
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - name: Deploy isolated calendar staging Worker
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy --config wrangler.calendar.staging.toml
+
+      - name: Verify custom-domain health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            body="$(curl --silent --show-error --fail --max-time 10 https://calendar-staging.vishartattoo.com/health || true)"
+            if printf '%s' "$body" | grep -Fq '"service":"vishar-calendar-oauth"'; then
+              printf '%s\n' "$body"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo 'Calendar staging health endpoint did not become ready.' >&2
+          exit 1
