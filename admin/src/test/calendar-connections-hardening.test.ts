@@ -40,7 +40,7 @@ describe('Calendar Connections hardening', () => {
     }
   });
 
-  it('rejects duplicate aliases and impossible result sizes', async () => {
+  it('rejects non-array, duplicate and impossible result shapes', async () => {
     const kristina = {
       ...VALID,
       artist_id: 'a2222222-2222-4222-8222-222222222222',
@@ -49,6 +49,8 @@ describe('Calendar Connections hardening', () => {
       integration_key: 'google_calendar_kristina',
     };
 
+    await expect(apiFor(null).listCalendarConnectionStatus()).rejects.toThrow();
+    await expect(apiFor({ rows: [VALID] }).listCalendarConnectionStatus()).rejects.toThrow();
     await expect(apiFor([VALID, { ...VALID }]).listCalendarConnectionStatus()).rejects.toThrow();
     await expect(apiFor([
       VALID,
