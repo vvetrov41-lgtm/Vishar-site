@@ -28,6 +28,17 @@ describe('operational labels', () => {
     expect(operationalLabel('ru', 'integrationError', 'provider_route_unavailable')).toBe('Маршрут интеграции недоступен');
   });
 
+  it('localises current and retained Calendar failure codes in both languages', () => {
+    expect(operationalLabel('en', 'integrationError', 'calendar_provider_unavailable'))
+      .toBe('Calendar provider is temporarily unavailable');
+    expect(operationalLabel('ru', 'integrationError', 'google_rate_limited'))
+      .toBe('Превышен лимит запросов Google Calendar');
+    expect(operationalLabel('en', 'integrationError', 'google_refresh_invalid_grant'))
+      .toBe('Google Calendar access grant is invalid');
+    expect(operationalLabel('ru', 'integrationError', 'google_token_revoked'))
+      .toBe('Доступ Google Calendar отозван');
+  });
+
   it('keeps an unknown value readable without exposing separators', () => {
     expect(operationalLabel('en', 'event', 'future.event_code')).toBe('Future event code');
   });
