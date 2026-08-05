@@ -6,7 +6,7 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
   pull-requests: write
 
 concurrency:
@@ -14,54 +14,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  apply-visual-audit-fixes:
-    if: >-
-      github.event.action == 'edited' &&
-      contains(github.event.pull_request.body, '<!-- PATCH_PR179_VISUAL_AUDIT -->') &&
-      github.event.sender.login == 'vvetrov41-lgtm' &&
-      github.event.pull_request.number == 179 &&
-      github.event.pull_request.state == 'open' &&
-      github.event.pull_request.draft == true &&
-      github.event.pull_request.head.ref == 'agent/google-calendar-foundation' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/google-calendar-foundation
-          fetch-depth: 0
-      - name: Patch proven visual-audit defects
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('admin/src/pages/AppointmentsPage.tsx')
-          text = path.read_text()
-          old = """  const upcoming = visibleAppointments.filter(\n    (appointment) => new Date(appointment.start_at).getTime() >= now\n  );\n  const past = visibleAppointments.filter(\n    (appointment) => new Date(appointment.start_at).getTime() < now\n  ).reverse();\n"""
-          new = """  const upcoming = visibleAppointments.filter(\n    (appointment) => appointment.status !== 'cancelled'\n      && new Date(appointment.start_at).getTime() >= now\n  );\n  const past = visibleAppointments.filter(\n    (appointment) => appointment.status === 'cancelled'\n      || new Date(appointment.start_at).getTime() < now\n  ).reverse();\n"""
-          if old not in text:
-              raise SystemExit('appointment grouping anchor not found')
-          text = text.replace(old, new, 1)
-          old = """            {!resolvedArtistId ? <p className=\"notice warn\">{copy.chooseArtist}</p> : null}\n            {projectRequired && !selectedProject ? <p className=\"notice warn\">{copy.projectRequired}</p> : null}\n"""
-          new = """            {!projectRequired && !resolvedArtistId ? <p className=\"notice warn\">{copy.chooseArtist}</p> : null}\n            {projectRequired && !selectedProject ? <p className=\"notice warn\">{copy.projectRequired}</p> : null}\n"""
-          if old not in text:
-              raise SystemExit('validation notice anchor not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
-          git diff --check
-          git diff -- admin/src/pages/AppointmentsPage.tsx
-      - name: Commit exact patch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add admin/src/pages/AppointmentsPage.tsx
-          git commit -m "fix(crm): correct appointment grouping and warnings"
-          git push origin HEAD:agent/google-calendar-foundation
-
   retained-staging-calendar:
     if: >-
       github.event.action == 'edited' &&
