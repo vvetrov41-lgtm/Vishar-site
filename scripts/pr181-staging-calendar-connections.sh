@@ -149,6 +149,9 @@ select jsonb_build_object(
   'result_rpc', to_regprocedure(
     'public.record_calendar_outbox_result(uuid,text,integer,boolean,text,text)'
   ) is not null,
+  'metadata_rpc', to_regprocedure(
+    'public.set_calendar_connection_metadata(uuid,text,text,boolean)'
+  ) is not null,
   'status_rpc', to_regprocedure(
     'public.list_calendar_connection_status()'
   ) is not null,
@@ -171,6 +174,31 @@ select jsonb_build_object(
     'authenticated',
     'public.record_calendar_outbox_result(uuid,text,integer,boolean,text,text)',
     'EXECUTE'
+  ),
+  'metadata_service', has_function_privilege(
+    'service_role',
+    'public.set_calendar_connection_metadata(uuid,text,text,boolean)',
+    'EXECUTE'
+  ),
+  'metadata_authenticated_denied', not has_function_privilege(
+    'authenticated',
+    'public.set_calendar_connection_metadata(uuid,text,text,boolean)',
+    'EXECUTE'
+  ),
+  'metadata_anon_denied', not has_function_privilege(
+    'anon',
+    'public.set_calendar_connection_metadata(uuid,text,text,boolean)',
+    'EXECUTE'
+  ),
+  'metadata_table_insert_denied', not has_table_privilege(
+    'service_role',
+    'public.artist_integrations',
+    'INSERT'
+  ),
+  'metadata_table_update_denied', not has_table_privilege(
+    'service_role',
+    'public.artist_integrations',
+    'UPDATE'
   ),
   'status_authenticated', has_function_privilege(
     'authenticated',
@@ -196,11 +224,17 @@ SQL
       and .migration_0030
       and .claim_rpc
       and .result_rpc
+      and .metadata_rpc
       and .status_rpc
       and .claim_service
       and .claim_authenticated_denied
       and .result_service
       and .result_authenticated_denied
+      and .metadata_service
+      and .metadata_authenticated_denied
+      and .metadata_anon_denied
+      and .metadata_table_insert_denied
+      and .metadata_table_update_denied
       and .status_authenticated
       and .status_anon_denied
       and .status_service_denied
@@ -240,9 +274,18 @@ deploy_crm() {
   )
 
   test -f admin/dist/index.html || die "CRM build artifact is missing"
-  ! grep -R -E -q \
-    'sb_secret_[A-Za-z0-9_-]{20,}|SUPABASE_SERVICE_ROLE_KEY|CALENDAR_TOKEN_ENCRYPTION_KEY|Cf-Access-Jwt-Assertion' \
-    admin/dist || die "CRM artifact contains a forbidden secret marker"
+  local marker pattern match_file
+  while IFS='|' read -r marker pattern; do
+    [ -n "$marker" ] || continue
+    match_file="$(grep -R -E -l -m1 "$pattern" admin/dist | head -n1 || true)"
+    [ -z "$match_file" ] \
+      || die "CRM artifact contains forbidden marker $marker in ${match_file#admin/dist/}"
+  done <<'MARKERS'
+supabase_secret_value|sb_secret_[A-Za-z0-9_-]{20,}
+legacy_supabase_secret_name|SUPABASE_SERVICE_ROLE_KEY
+calendar_encryption_secret_name|CALENDAR_TOKEN_ENCRYPTION_KEY
+cloudflare_access_jwt_header|Cf-Access-Jwt-Assertion
+MARKERS
 
   npx --yes wrangler@4 pages deploy admin/dist \
     --project-name vishar-crm-staging \
