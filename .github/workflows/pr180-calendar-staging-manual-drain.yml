@@ -118,6 +118,36 @@ jobs:
             fi
             rm -f "$temp_config" "$dev_vars"
           }
+          diagnose_remote_log() {
+            python3 - "$remote_log" <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding='utf-8', errors='replace') if path.exists() else ''
+          for name in (
+              'CLOUDFLARE_API_TOKEN',
+              'CLOUDFLARE_ACCOUNT_ID',
+              'GOOGLE_OAUTH_CLIENT_ID',
+              'GOOGLE_OAUTH_CLIENT_SECRET',
+              'CALENDAR_TOKEN_ENCRYPTION_KEY',
+              'SUPABASE_SECRET_KEY',
+          ):
+              value = os.environ.get(name, '')
+              if value:
+                  text = text.replace(value, '[REDACTED]')
+          selected = []
+          for line in text.splitlines()[-100:]:
+              lowered = line.lower()
+              if any(word in lowered for word in ('error', 'failed', 'preview', 'permission', 'remote')):
+                  selected.append(line)
+          if selected:
+              print('SAFE_REMOTE_DIAGNOSTIC_START')
+              print('\n'.join(selected[-30:]))
+              print('SAFE_REMOTE_DIAGNOSTIC_END')
+          PY
+          }
           trap cleanup EXIT
 
           python3 - <<'PY'
@@ -136,6 +166,13 @@ jobs:
           )
           if route_count != 1:
               raise SystemExit('Expected exactly one routes block in Calendar staging config')
+          if config.count('workers_dev = false') != 1:
+              raise SystemExit('Expected exactly one workers_dev setting')
+          config = config.replace(
+              'workers_dev = false',
+              'workers_dev = false\npreview_urls = true',
+              1,
+          )
           config = config.replace(
               'name = "vishar-calendar-staging"',
               'name = "vishar-calendar-staging-manual-drain"',
@@ -187,12 +224,14 @@ jobs:
             fi
             if ! kill -0 "$dev_pid" 2>/dev/null; then
               echo 'Remote Wrangler session exited before readiness.' >&2
+              diagnose_remote_log
               exit 1
             fi
             sleep 2
           done
           [ "$ready" = true ] || {
             echo 'Remote Wrangler session did not become ready.' >&2
+            diagnose_remote_log
             exit 1
           }
 
