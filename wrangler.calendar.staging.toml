@@ -19,6 +19,8 @@ VISHAR_ENVIRONMENT = "staging"
 GOOGLE_OAUTH_REDIRECT_URI = "https://calendar-staging.vishartattoo.com/oauth/google/callback"
 CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/#/integrations/calendar"
 CRM_APPOINTMENTS_URL = "https://vishar-crm-staging.pages.dev/#/appointments"
+CALENDAR_ACCESS_TEAM_DOMAIN = "https://vishar-site-pages.cloudflareaccess.com"
+CALENDAR_ACCESS_AUD = "2a0569d2cc1acb785ccf190585be7ca9cad70fe6db7042a8094bf39160a26013"
 CALENDAR_DRAIN_ENABLED = "false"
 
 # Required encrypted secrets / environment bindings:
@@ -26,8 +28,6 @@ CALENDAR_DRAIN_ENABLED = "false"
 # GOOGLE_OAUTH_CLIENT_SECRET
 # CALENDAR_TOKEN_ENCRYPTION_KEY (32 random bytes, base64url encoded)
 # CALENDAR_OWNER_EMAILS
-# CALENDAR_ACCESS_TEAM_DOMAIN (exact https://<team>.cloudflareaccess.com origin)
-# CALENDAR_ACCESS_AUD (Calendar Access application AUD tag)
 # VLADIMIR_ARTIST_ID
 # VLADIMIR_GOOGLE_EMAIL
 # KRISTINA_ARTIST_ID
@@ -35,5 +35,7 @@ CALENDAR_DRAIN_ENABLED = "false"
 # SUPABASE_URL
 # Exactly one of SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
 #
+# CALENDAR_ACCESS_TEAM_DOMAIN and CALENDAR_ACCESS_AUD are non-secret,
+# application-specific Access verification identifiers.
 # CALENDAR_OAUTH_STATE stores short-lived PKCE, OAuth state and disconnect nonce records.
 # CALENDAR_OAUTH_TOKENS stores AES-GCM encrypted refresh-token envelopes.
