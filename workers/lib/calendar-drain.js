@@ -93,7 +93,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl) {
   const provider = createGoogleCalendarProvider({
     accessToken,
     calendarId,
-    crmReturnUrl: env.CRM_RETURN_URL,
+    crmReturnUrl: env.CRM_APPOINTMENTS_URL,
     fetchImpl,
   });
 

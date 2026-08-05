@@ -16,6 +16,20 @@ function exactValue(key) {
   return match?.[1] ?? null;
 }
 
+function crmUrl(key, allowedHashes) {
+  const value = exactValue(key);
+  assert.ok(value, `${key} is required`);
+  const url = new URL(value);
+  assert.equal(url.protocol, 'https:', `${key} must use HTTPS`);
+  assert.equal(url.hostname, 'vishar-crm-staging.pages.dev', `${key} has an unexpected host`);
+  assert.equal(url.pathname, '/', `${key} must preserve the hash-router root path`);
+  assert.equal(url.username, '', `${key} must not contain credentials`);
+  assert.equal(url.password, '', `${key} must not contain credentials`);
+  assert.equal(url.search, '', `${key} must not contain a committed query string`);
+  assert.ok(allowedHashes.includes(url.hash), `${key} has an unexpected CRM hash route`);
+  return url;
+}
+
 assert.equal(exactValue('name'), 'vishar-calendar-staging', 'unexpected Worker name');
 assert.equal(exactValue('main'), 'workers/calendar-oauth.js', 'unexpected Worker entrypoint');
 assert.match(active, /^workers_dev\s*=\s*false$/m, 'workers.dev must remain disabled');
@@ -33,9 +47,8 @@ assert.equal(
   'https://calendar-staging.vishartattoo.com/oauth/google/callback',
   'OAuth redirect URI must be exact',
 );
-const crmReturn = new URL(exactValue('CRM_RETURN_URL'));
-assert.equal(crmReturn.protocol, 'https:');
-assert.equal(crmReturn.hostname, 'vishar-crm-staging.pages.dev');
+crmUrl('CRM_RETURN_URL', ['#/appointments', '#/integrations/calendar']);
+crmUrl('CRM_APPOINTMENTS_URL', ['#/appointments']);
 
 const bindings = [...active.matchAll(/\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"([^"]+)"[\s\S]*?id\s*=\s*"([^"]+)"/g)]
   .map((match) => ({ binding: match[1], id: match[2] }));
@@ -59,6 +72,7 @@ const result = {
     customDomain: true,
     oauthRedirect: true,
     crmReturn: true,
+    crmAppointments: true,
     kvBindings: bindings.length === 2,
     scheduledDrain: false,
     workersDev: false,
