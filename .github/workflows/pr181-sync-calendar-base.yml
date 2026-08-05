@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: pr181-sync-calendar-base
+  cancel-in-progress: true
+
 jobs:
   sync:
     if: github.repository == 'vvetrov41-lgtm/Vishar-site'
@@ -19,9 +23,13 @@ jobs:
           fetch-depth: 0
       - name: Merge the exact PR180 branch and resolve only the known config conflict
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin agent/google-calendar-oauth-connector
+          start_sha="$(git rev-parse HEAD)"
+          git fetch origin agent/calendar-connections-ui agent/google-calendar-oauth-connector
+          test "$(git rev-parse origin/agent/calendar-connections-ui)" = "$start_sha"
+
           set +e
           git merge --no-ff --no-commit origin/agent/google-calendar-oauth-connector
           merge_status=$?
@@ -49,6 +57,4 @@ jobs:
           git add .github/workflows/pr181-sync-calendar-base.yml
 
           git commit -m "Sync Calendar Connections with OAuth hardening"
-          git push origin HEAD:agent/calendar-connections-ui
-
-# Connector touch: trigger the one-shot branch synchronization.
+          git push --force-with-lease=refs/heads/agent/calendar-connections-ui:"$start_sha" origin HEAD:agent/calendar-connections-ui
