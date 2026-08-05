@@ -82,18 +82,48 @@ Do not print secret values or JWTs. Validation should report configured booleans
 
 ## 4. Guarded staging deployment
 
-Use only the permanent PR #180 staging workflow and its documented PR marker. Before triggering it, verify:
+There are two separate permanent workflows. Neither runs without its exact PR marker.
+
+### 4.1 Database and CRM Pages from PR #181
+
+Run `PR 181 retained staging Calendar Connections` first by adding its documented marker to PR #181 only after normal CI is green.
+
+The workflow must:
+
+- verify PR #181 remains open, draft and unmerged;
+- verify its exact base is the current open, draft and unmerged PR #180 head;
+- accept retained staging only when migrations are consecutive through `0028`, `0029` or `0030`;
+- apply only forward migrations `0029` and/or `0030` when missing;
+- reject any migration after `0030`;
+- prove retained clients, enquiries, projects, appointments, outbox and activity counts are unchanged by migration;
+- verify the narrow Calendar drain and Calendar Connections RPC ACLs;
+- run hosted PostgreSQL error-level lint;
+- rebuild and test the exact CRM artifact;
+- deploy only the `vishar-crm-staging` Pages project;
+- verify the canonical CRM hostname remains protected by Cloudflare Access;
+- not deploy the Calendar Worker, Booking Pages, intake Worker or production.
+
+Remove the PR #181 marker immediately after the guarded run.
+
+### 4.2 Calendar Worker from PR #180
+
+After the Access application, Access AUD/team domain, both KV namespaces and all Worker secrets are configured, run the permanent PR #180 Calendar staging workflow with its documented marker.
+
+Before triggering it, verify:
 
 - exact PR heads and bases;
 - normal CI is green;
-- both KV bindings are present;
+- both KV bindings are present with distinct valid namespace IDs;
 - `workers_dev = false`;
 - the only custom domain is `calendar-staging.vishartattoo.com`;
 - no cron trigger exists;
 - the OAuth/Disconnect return URL is `https://vishar-crm-staging.pages.dev/#/integrations/calendar`;
-- the calendar-event appointment URL is `https://vishar-crm-staging.pages.dev/#/appointments`.
+- the calendar-event appointment URL is `https://vishar-crm-staging.pages.dev/#/appointments`;
+- `CALENDAR_DRAIN_ENABLED = "false"`.
 
-Remove the deployment marker immediately after the guarded run.
+Remove the PR #180 marker immediately after the guarded run.
+
+Neither guarded deployment performs Google OAuth, creates Calendar events or enables a recurring drain.
 
 ## 5. Health, Access and JWT checks
 
@@ -173,7 +203,10 @@ Validate with synthetic state only:
 - missing refresh token;
 - revoked refresh token / `invalid_grant`;
 - corrupt encrypted KV envelope;
-- Google `429` and `5xx` retry behaviour;
+- Google HTTP `429` retry behaviour;
+- Google HTTP `403` with `rateLimitExceeded`, `userRateLimitExceeded` or `quotaExceeded` remains transient;
+- Google HTTP `403` permission failure is dead-lettered as permanent;
+- Google `5xx` retry behaviour;
 - stale outbox version retirement;
 - expired lease recovery;
 - duplicate create;
