@@ -1,20 +1,16 @@
 name: PR180 permanent Calendar failure semantics
 
 on:
-  pull_request:
-    types: [edited]
+  push:
+    branches:
+      - agent/google-calendar-oauth-connector
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: >-
-      github.event.pull_request.number == 180 &&
-      github.event.pull_request.draft == true &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'agent/google-calendar-oauth-connector' &&
-      contains(github.event.pull_request.body || '', '[run-pr180-permanent-calendar-failures]')
+    if: github.repository == 'vvetrov41-lgtm/Vishar-site'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
