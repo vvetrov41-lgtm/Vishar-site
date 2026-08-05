@@ -35,6 +35,7 @@ export type Capability =
   | 'approveEmail'
   | 'viewActivity'
   | 'viewIntegrationJobs'
+  | 'manageIntegrations'
   | 'manageUsers'
   | 'manageSettings';
 
@@ -47,7 +48,7 @@ const OWNER: Capability[] = [
   'viewNotes', 'createNotes',
   'viewFollowUps', 'manageFollowUps',
   'createEmailDraft', 'approveEmail',
-  'viewActivity', 'viewIntegrationJobs',
+  'viewActivity', 'viewIntegrationJobs', 'manageIntegrations',
   'manageUsers', 'manageSettings',
 ];
 
@@ -59,7 +60,9 @@ const BOOKING_MANAGER: Capability[] = [
   'viewNotes', 'createNotes',
   'viewFollowUps', 'manageFollowUps',
   'createEmailDraft',
-  'viewActivity',
+  'viewActivity', 'manageIntegrations',
+  // The frontend can only express the coarse global role. The database narrows
+  // Calendar Connections to memberships whose can_manage_integrations is true.
   // Deliberately absent: viewFinance, manageFinance, approveEmail,
   // viewIntegrationJobs, manageUsers, manageSettings.
 ];
@@ -71,7 +74,7 @@ const READ_ONLY: Capability[] = [
   'viewSessions',
   'viewFollowUps',
   // Deliberately absent: every write, all finance, files, notes, emails,
-  // activity, integration jobs, users and settings.
+  // activity, integration jobs, integration management, users and settings.
 ];
 
 const CAPABILITIES: Record<CrmRole, ReadonlySet<Capability>> = {
@@ -142,6 +145,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/clients', label: 'Clients', capability: 'viewClients' },
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
   { path: '/appointments', label: 'Appointments', capability: 'viewSessions' },
+  { path: '/integrations', label: 'common.calendar', capability: 'manageIntegrations' },
   { path: '/users', label: 'Users', capability: 'manageUsers' },
   { path: '/activity', label: 'Activity', capability: 'viewActivity' },
 ];
