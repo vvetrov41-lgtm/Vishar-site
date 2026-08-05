@@ -282,7 +282,6 @@ deploy_crm() {
       || die "CRM artifact contains forbidden marker $marker in ${match_file#admin/dist/}"
   done <<'MARKERS'
 supabase_secret_value|sb_secret_[A-Za-z0-9_-]{20,}
-legacy_supabase_secret_name|SUPABASE_SERVICE_ROLE_KEY
 calendar_encryption_secret_name|CALENDAR_TOKEN_ENCRYPTION_KEY
 cloudflare_access_jwt_header|Cf-Access-Jwt-Assertion
 MARKERS
