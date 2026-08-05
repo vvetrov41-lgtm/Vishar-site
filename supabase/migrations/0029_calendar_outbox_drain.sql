@@ -444,6 +444,17 @@ begin
     );
 
     v_status := case
+      when p_error_code in (
+        'artist_route_unconfigured',
+        'calendar_encryption_key_invalid',
+        'calendar_event_missing',
+        'calendar_oauth_expired',
+        'calendar_provider_rejected',
+        'calendar_scope_missing',
+        'calendar_token_invalid',
+        'google_account_mismatch',
+        'provider_route_invalid'
+      ) then 'dead'::public.outbox_status
       when v_attempt_count >= v_job.max_attempts then 'dead'::public.outbox_status
       else 'failed'::public.outbox_status
     end;
@@ -453,7 +464,7 @@ begin
   set status = v_status,
       attempt_count = v_attempt_count,
       next_attempt_at = case
-        when p_succeeded then o.next_attempt_at
+        when p_succeeded or v_status = 'dead' then o.next_attempt_at
         else now() + make_interval(
           secs => least((power(2, least(v_job.attempt_count, 7)) * 30)::integer, 3600)
         )
