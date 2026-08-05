@@ -1,18 +1,16 @@
 name: PR181 sync Calendar base
 
 on:
-  pull_request:
-    types: [opened, edited, synchronize]
+  push:
+    branches:
+      - agent/calendar-connections-ui
 
 permissions:
   contents: write
 
 jobs:
   sync:
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'agent/calendar-connections-ui' &&
-      contains(github.event.pull_request.body || '', '[run-pr181-sync-calendar-base]')
+    if: github.repository == 'vvetrov41-lgtm/Vishar-site'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
