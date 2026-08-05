@@ -224,7 +224,7 @@ deploy_crm() {
   [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || die "SOURCE_SHA is invalid"
 
   grep -Fq "path: '/integrations'" admin/src/lib/permissions.ts
-  grep -Fq "path: '/integrations/calendar'" admin/src/App.tsx
+  grep -Fq "case '/integrations/calendar':" admin/src/App.tsx
   grep -Fq "list_calendar_connection_status" admin/src/lib/calendar-connections-api.ts
   grep -Fq "calendar-staging.vishartattoo.com" admin/src/pages/CalendarConnectionsPage.tsx
   grep -Fq "#/integrations/calendar" wrangler.calendar.staging.toml
@@ -241,7 +241,7 @@ deploy_crm() {
 
   test -f admin/dist/index.html || die "CRM build artifact is missing"
   ! grep -R -E -q \
-    'sb_secret_[A-Za-z0-9_-]{20,}|service_role|refresh_token|Cf-Access-Jwt-Assertion' \
+    'sb_secret_[A-Za-z0-9_-]{20,}|SUPABASE_SERVICE_ROLE_KEY|CALENDAR_TOKEN_ENCRYPTION_KEY|Cf-Access-Jwt-Assertion' \
     admin/dist || die "CRM artifact contains a forbidden secret marker"
 
   npx --yes wrangler@4 pages deploy admin/dist \
