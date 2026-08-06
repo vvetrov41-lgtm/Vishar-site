@@ -98,26 +98,12 @@ jobs:
 
           cat > "$sql_file" <<'SQL'
           begin;
-          select set_config(
-            'request.jwt.claims',
-            jsonb_build_object(
-              'sub', (
-                select profile_id
-                from crm_private.profile_access
-                where role = 'owner' and is_active
-                order by profile_id
-                limit 1
-              ),
-              'role', 'authenticated'
-            )::text,
-            true
-          );
-          set local role authenticated;
 
-          do $create_version$
+          -- Direct retained-state checks run under the management connection.
+          -- The authenticated role is used only for the authorised RPC call.
+          do $precheck$
           declare
             v_session public.sessions%rowtype;
-            v_result jsonb;
             v_pending integer;
             v_dead integer;
           begin
@@ -174,21 +160,87 @@ jobs:
             ) then
               raise exception 'approved target slot is no longer free';
             end if;
-
-            v_result := public.reschedule_appointment(
-              v_session.id,
-              '2026-08-06 08:46:00+00'::timestamptz,
-              '2026-08-06 09:01:00+00'::timestamptz
-            );
-            if not coalesce((v_result->>'changed')::boolean, false)
-              or (v_result->>'calendar_version')::integer <> 2
-              or v_result->>'calendar_operation' <> 'create' then
-              raise exception 'authorised reschedule result was unexpected';
-            end if;
           end
-          $create_version$;
+          $precheck$;
+
+          select set_config(
+            'request.jwt.claims',
+            jsonb_build_object(
+              'sub', (
+                select profile_id
+                from crm_private.profile_access
+                where role = 'owner' and is_active
+                order by profile_id
+                limit 1
+              ),
+              'role', 'authenticated'
+            )::text,
+            true
+          );
+          set local role authenticated;
+
+          select public.reschedule_appointment(
+            'beecc81c-9a3e-4fdf-9f3a-7b77df1ef616'::uuid,
+            '2026-08-06 08:46:00+00'::timestamptz,
+            '2026-08-06 09:01:00+00'::timestamptz
+          );
 
           reset role;
+
+          do $postcheck$
+          declare
+            v_session public.sessions%rowtype;
+            v_pending integer;
+            v_dead integer;
+            v_pending_attempt integer;
+            v_type_matches boolean;
+            v_version_matches boolean;
+          begin
+            select * into strict v_session
+            from public.sessions
+            where id = 'beecc81c-9a3e-4fdf-9f3a-7b77df1ef616'::uuid
+            for update;
+
+            if v_session.start_at <> '2026-08-06 08:46:00+00'::timestamptz
+              or v_session.end_at <> '2026-08-06 09:01:00+00'::timestamptz
+              or v_session.status <> 'confirmed'::public.session_status
+              or v_session.appointment_type <> 'in_person_consultation'::public.appointment_type
+              or v_session.calendar_version <> 2
+              or v_session.calendar_sync_status <> 'queued'::public.calendar_sync_status
+              or v_session.calendar_event_id is not null then
+              raise exception 'authorised reschedule postcondition failed';
+            end if;
+
+            select
+              count(*) filter (where status = 'pending'),
+              count(*) filter (where status = 'dead'),
+              max(attempt_count) filter (where status = 'pending'),
+              bool_and(
+                (payload->>'appointment_type') = v_session.appointment_type::text
+              ) filter (where status = 'pending'),
+              bool_and(
+                (payload->>'calendar_version')::integer = v_session.calendar_version
+              ) filter (where status = 'pending')
+            into
+              v_pending,
+              v_dead,
+              v_pending_attempt,
+              v_type_matches,
+              v_version_matches
+            from public.integration_outbox
+            where session_id = v_session.id
+              and kind::text like 'calendar_%';
+
+            if v_pending <> 1
+              or v_dead <> 1
+              or v_pending_attempt <> 0
+              or v_type_matches is not true
+              or v_version_matches is not true then
+              raise exception 'versioned Calendar outbox postcondition failed';
+            end if;
+          end
+          $postcheck$;
+
           commit;
 
           select jsonb_build_object(
@@ -218,12 +270,17 @@ jobs:
           SQL
 
           jq -Rs '{query: .}' < "$sql_file" > "$request_file"
-          curl --fail-with-body --silent --show-error \
+          http_status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             -H 'Content-Type: application/json' \
             --data-binary "@$request_file" \
-            'https://api.supabase.com/v1/projects/gwaliusblwrzisrwnsvs/database/query' \
-            > "$response_file"
+            'https://api.supabase.com/v1/projects/gwaliusblwrzisrwnsvs/database/query')"
+          [ "$http_status" = '200' ] || {
+            echo "CALENDAR_CREATE_VERSION_FAILED=database_query;STATUS=$http_status" >&2
+            exit 1
+          }
 
           jq -e '
             (if type == "array" then . else .result end) as $rows
