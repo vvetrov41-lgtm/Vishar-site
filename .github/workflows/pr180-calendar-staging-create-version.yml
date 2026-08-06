@@ -277,10 +277,13 @@ jobs:
             -H 'Content-Type: application/json' \
             --data-binary "@$request_file" \
             'https://api.supabase.com/v1/projects/gwaliusblwrzisrwnsvs/database/query')"
-          [ "$http_status" = '200' ] || {
-            echo "CALENDAR_CREATE_VERSION_FAILED=database_query;STATUS=$http_status" >&2
-            exit 1
-          }
+          case "$http_status" in
+            2??) ;;
+            *)
+              echo "CALENDAR_CREATE_VERSION_FAILED=database_query;STATUS=$http_status" >&2
+              exit 1
+              ;;
+          esac
 
           jq -e '
             (if type == "array" then . else .result end) as $rows
