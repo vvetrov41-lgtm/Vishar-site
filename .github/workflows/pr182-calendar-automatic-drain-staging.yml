@@ -112,7 +112,9 @@ jobs:
           grep -Fx 'name: PR 182 Exact-Head Validation' "$validation_workflow"
           test "$(grep -c '^  TARGET_SHA:' "$validation_workflow")" = "1"
           grep -Fx "  TARGET_SHA: $APPROVED_SHA" "$validation_workflow"
-          test "$(grep -Fc '          ref: ${{ env.TARGET_SHA }}' "$validation_workflow")" = "4"
+          target_ref='          ref: $'
+          target_ref+='{{ env.TARGET_SHA }}'
+          test "$(grep -Fc "$target_ref" "$validation_workflow")" = "4"
           test "$(grep -Fc '      - name: Verify exact head' "$validation_workflow")" = "4"
 
           gh api --paginate \
