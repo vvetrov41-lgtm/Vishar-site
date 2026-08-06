@@ -6,6 +6,9 @@ routes = [
   { pattern = "calendar-staging.vishartattoo.com", custom_domain = true }
 ]
 
+[triggers]
+crons = ["*/5 * * * *"]
+
 [[kv_namespaces]]
 binding = "CALENDAR_OAUTH_STATE"
 id = "dd43224461504e898addeba5b7915142"
@@ -27,7 +30,12 @@ VLADIMIR_GOOGLE_EMAIL = "vvetrov41@gmail.com"
 KRISTINA_ARTIST_ID = "a2222222-2222-4222-8222-222222222222"
 KRISTINA_GOOGLE_EMAIL = "tinaakaten@gmail.com"
 SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"
-CALENDAR_DRAIN_ENABLED = "false"
+CALENDAR_DRAIN_ENABLED = "true"
+
+# The retained staging Worker drains at most the code-level default of 10 jobs
+# per scheduled invocation. Database SKIP LOCKED leasing prevents duplicate work
+# if scheduled invocations overlap, and failed jobs retain the existing backoff.
+# Production configuration is not changed by this staging-only file.
 
 # Required encrypted secrets / environment bindings:
 # GOOGLE_OAUTH_CLIENT_ID
