@@ -1,0 +1,247 @@
+name: PR 180 calendar staging create version
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr180-calendar-staging-create-version
+  cancel-in-progress: false
+
+jobs:
+  create-version:
+    if: >-
+      github.event.pull_request.number == 180 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- RUN_PR180_CALENDAR_CREATE_VERSION -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- RUN_PR180_CALENDAR_CREATE_VERSION -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 180
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/google-calendar-foundation"
+            and .pull_request.head.ref == "agent/google-calendar-oauth-connector"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Verify exact head, normal CI and provider custody
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in \
+            "Static Validation" \
+            "CRM and booking validation" \
+            "PR 180 calendar staging token preflight" \
+            "PR 180 calendar provider readiness"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[];
+                .name == $name
+                and .head_sha == $sha
+                and .status == "completed"
+                and .conclusion == "success"
+              )
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+          node scripts/validate-calendar-staging.mjs --deploy-ready
+          grep -Fx 'CALENDAR_DRAIN_ENABLED = "false"' wrangler.calendar.staging.toml
+          ! grep -Eq '^\[triggers\]$|^crons\s*=' wrangler.calendar.staging.toml
+
+      - name: Create one fresh synthetic Calendar version
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || {
+            echo 'Missing encrypted staging configuration name: SUPABASE_ACCESS_TOKEN' >&2
+            exit 1
+          }
+
+          sql_file="$RUNNER_TEMP/calendar-create-version.sql"
+          request_file="$RUNNER_TEMP/calendar-create-version-request.json"
+          response_file="$RUNNER_TEMP/calendar-create-version-response.json"
+          cleanup() {
+            rm -f "$sql_file" "$request_file" "$response_file"
+          }
+          trap cleanup EXIT
+
+          cat > "$sql_file" <<'SQL'
+          begin;
+          select set_config(
+            'request.jwt.claims',
+            jsonb_build_object(
+              'sub', (
+                select profile_id
+                from crm_private.profile_access
+                where role = 'owner' and is_active
+                order by profile_id
+                limit 1
+              ),
+              'role', 'authenticated'
+            )::text,
+            true
+          );
+          set local role authenticated;
+
+          do $create_version$
+          declare
+            v_session public.sessions%rowtype;
+            v_result jsonb;
+            v_pending integer;
+            v_dead integer;
+          begin
+            select * into v_session
+            from public.sessions
+            where id = 'beecc81c-9a3e-4fdf-9f3a-7b77df1ef616'::uuid
+            for update;
+
+            if not found then
+              raise exception 'approved synthetic appointment is missing';
+            end if;
+            if v_session.artist_id <> 'a1111111-1111-4111-8111-111111111111'::uuid
+              or v_session.status <> 'confirmed'::public.session_status
+              or v_session.appointment_type <> 'in_person_consultation'::public.appointment_type
+              or v_session.calendar_version <> 1
+              or v_session.calendar_event_id is not null
+              or v_session.start_at <> '2026-08-06 08:31:00+00'::timestamptz
+              or v_session.end_at <> '2026-08-06 08:46:00+00'::timestamptz then
+              raise exception 'approved synthetic appointment state changed';
+            end if;
+            if not exists (
+              select 1
+              from public.clients c
+              where c.id = v_session.client_id
+                and c.full_name = 'PR177 Synthetic NoRoute'
+                and c.email::text = 'pr177-30884006932-noroute@example.invalid'
+            ) then
+              raise exception 'approved synthetic identity marker is missing';
+            end if;
+
+            select
+              count(*) filter (where status = 'pending'),
+              count(*) filter (where status = 'dead')
+            into v_pending, v_dead
+            from public.integration_outbox
+            where session_id = v_session.id
+              and kind::text like 'calendar_%';
+
+            if v_pending <> 0 or v_dead <> 1 then
+              raise exception 'approved Calendar outbox precondition changed';
+            end if;
+            if exists (
+              select 1
+              from public.sessions s
+              where s.artist_id = v_session.artist_id
+                and s.id <> v_session.id
+                and s.status not in ('cancelled', 'completed')
+                and tstzrange(s.start_at, s.end_at, '[)')
+                  && tstzrange(
+                    '2026-08-06 08:46:00+00'::timestamptz,
+                    '2026-08-06 09:01:00+00'::timestamptz,
+                    '[)'
+                  )
+            ) then
+              raise exception 'approved target slot is no longer free';
+            end if;
+
+            v_result := public.reschedule_appointment(
+              v_session.id,
+              '2026-08-06 08:46:00+00'::timestamptz,
+              '2026-08-06 09:01:00+00'::timestamptz
+            );
+            if not coalesce((v_result->>'changed')::boolean, false)
+              or (v_result->>'calendar_version')::integer <> 2
+              or v_result->>'calendar_operation' <> 'create' then
+              raise exception 'authorised reschedule result was unexpected';
+            end if;
+          end
+          $create_version$;
+
+          reset role;
+          commit;
+
+          select jsonb_build_object(
+            'session_id', s.id,
+            'start_at', s.start_at,
+            'end_at', s.end_at,
+            'status', s.status,
+            'appointment_type', s.appointment_type,
+            'calendar_version', s.calendar_version,
+            'calendar_sync_status', s.calendar_sync_status,
+            'has_calendar_event_id', s.calendar_event_id is not null,
+            'pending_jobs', count(*) filter (where o.status = 'pending'),
+            'dead_jobs', count(*) filter (where o.status = 'dead'),
+            'pending_attempt_count', max(o.attempt_count) filter (where o.status = 'pending'),
+            'appointment_type_matches', bool_and(
+              (o.payload->>'appointment_type') = s.appointment_type::text
+            ) filter (where o.status = 'pending'),
+            'calendar_version_matches', bool_and(
+              (o.payload->>'calendar_version')::integer = s.calendar_version
+            ) filter (where o.status = 'pending')
+          ) as summary
+          from public.sessions s
+          left join public.integration_outbox o
+            on o.session_id = s.id and o.kind::text like 'calendar_%'
+          where s.id = 'beecc81c-9a3e-4fdf-9f3a-7b77df1ef616'::uuid
+          group by s.id;
+          SQL
+
+          jq -Rs '{query: .}' < "$sql_file" > "$request_file"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$request_file" \
+            'https://api.supabase.com/v1/projects/gwaliusblwrzisrwnsvs/database/query' \
+            > "$response_file"
+
+          jq -e '
+            (if type == "array" then . else .result end) as $rows
+            | ($rows | type) == "array"
+            and ($rows | length) >= 1
+            and ($rows[-1].summary.session_id == "beecc81c-9a3e-4fdf-9f3a-7b77df1ef616")
+            and ($rows[-1].summary.start_at == "2026-08-06T08:46:00+00:00")
+            and ($rows[-1].summary.end_at == "2026-08-06T09:01:00+00:00")
+            and ($rows[-1].summary.status == "confirmed")
+            and ($rows[-1].summary.appointment_type == "in_person_consultation")
+            and ($rows[-1].summary.calendar_version == 2)
+            and ($rows[-1].summary.calendar_sync_status == "queued")
+            and ($rows[-1].summary.has_calendar_event_id == false)
+            and ($rows[-1].summary.pending_jobs == 1)
+            and ($rows[-1].summary.dead_jobs == 1)
+            and ($rows[-1].summary.pending_attempt_count == 0)
+            and ($rows[-1].summary.appointment_type_matches == true)
+            and ($rows[-1].summary.calendar_version_matches == true)
+          ' "$response_file" >/dev/null
+
+          echo 'CALENDAR_CREATE_VERSION_OK=true'
