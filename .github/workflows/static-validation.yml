@@ -1,46 +1,149 @@
-name: Static Validation
+name: PR 182 Exact-Head Validation
 
 on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: pr182-exact-head-validation
+  cancel-in-progress: true
+
+env:
+  TARGET_SHA: 8bc483ef5d66ccf18ae8d7a61a17225b83f3b2f3
+
 jobs:
   static-validation:
+    name: Static Validation
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout exact PR 182 head
         uses: actions/checkout@v4
-
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "$TARGET_SHA"
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-
+          node-version: 22
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install dependencies
-        run: npm install
-
+        run: npm ci
       - name: Install Python test dependency
         run: python -m pip install pytest
-
       - name: Build Tailwind CSS
         run: npm run build:tailwind
-
       - name: Validate static site
         run: npm run validate:site
-
       - name: Compile GEO runtime and launcher
         run: python -m compileall .geo-topic-agent-runtime scripts
-
       - name: Test GEO runtime
-        run: pytest tests -q
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.geo-topic-agent-runtime
+        run: python -m pytest tests -q
+
+  site-and-worker:
+    name: Public site and Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR 182 head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+      - name: Validate public site
+        run: npm run validate:site
+      - name: Test booking flow
+        run: npm run test:booking
+      - name: Test Worker modules
+        run: npm run test:worker
+      - name: Validate Calendar staging configuration
+        run: |
+          npm run validate:calendar-staging
+          npm run validate:calendar-staging:deploy-ready
+      - name: Compile Worker with Wrangler
+        run: npm run check:worker-bundle
+      - name: Scan repository for committed secrets
+        run: npm run scan:secrets
+
+  admin:
+    name: Private CRM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - name: Checkout exact PR 182 head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+      - name: Verify exact head
+        working-directory: .
+        run: test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+      - name: Test
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+
+  supabase:
+    name: Supabase migrations and pgTAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact PR 182 head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+      - name: Verify exact head
+        run: test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+      - name: Start local Supabase stack
+        run: supabase start
+      - name: Reset canonical test database without development seed
+        run: supabase db reset --local --no-seed
+      - name: Run pgTAP suite
+        run: supabase test db
+      - name: Lint PostgreSQL functions
+        run: supabase db lint --local --schema public,crm_private --level error --fail-on error
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop --no-backup
