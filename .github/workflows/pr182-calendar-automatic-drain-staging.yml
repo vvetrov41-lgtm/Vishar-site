@@ -85,6 +85,7 @@ jobs:
           [[ "$VALIDATION_RUN_ID" =~ ^[1-9][0-9]*$ ]]
 
           validation_run="$RUNNER_TEMP/pr182-validation-run.json"
+          validation_pr="$RUNNER_TEMP/pr183-validation-pr.json"
           validation_jobs="$RUNNER_TEMP/pr182-validation-jobs.json"
           validation_workflow="$RUNNER_TEMP/pr182-validation-workflow.yml"
 
@@ -101,6 +102,18 @@ jobs:
 
           validation_head_sha="$(jq -r '.head_sha' "$validation_run")"
           [[ "$validation_head_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/183" > "$validation_pr"
+          jq -e --arg sha "$validation_head_sha" --arg repo "$GITHUB_REPOSITORY" '
+            .number == 183
+            and .state == "open"
+            and .draft == true
+            and .merged == false
+            and .base.ref == "main"
+            and .head.ref == "agent/pr182-exact-head-validation"
+            and .head.sha == $sha
+            and .head.repo.full_name == $repo
+          ' "$validation_pr" >/dev/null
 
           gh api \
             "repos/$GITHUB_REPOSITORY/contents/.github/workflows/static-validation.yml?ref=$validation_head_sha" \
