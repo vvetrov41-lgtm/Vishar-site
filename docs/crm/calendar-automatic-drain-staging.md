@@ -33,6 +33,7 @@ PR #182 can deploy only after one successful exact-head validation run. Add both
 The deployment workflow fails closed unless the referenced run:
 
 - is the `PR 182 Exact-Head Validation` workflow from `agent/pr182-exact-head-validation`;
+- belongs to the current head of open, draft and unmerged PR #183;
 - completed successfully;
 - has exactly the four required successful jobs;
 - uses a harness whose single `TARGET_SHA` equals the current PR #182 head;
