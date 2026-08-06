@@ -33,8 +33,14 @@ function crmUrl(key, allowedHashes) {
 assert.equal(exactValue('name'), 'vishar-calendar-staging', 'unexpected Worker name');
 assert.equal(exactValue('main'), 'workers/calendar-oauth.js', 'unexpected Worker entrypoint');
 assert.match(active, /^workers_dev\s*=\s*false$/m, 'workers.dev must remain disabled');
-assert.ok(!/^\s*\[triggers\]\s*$/m.test(active), 'cron triggers must remain absent before hosted E2E');
-assert.ok(!/^\s*crons\s*=/m.test(active), 'cron triggers must remain absent before hosted E2E');
+assert.equal(
+  (active.match(/^\[triggers\]$/gm) || []).length,
+  1,
+  'exactly one cron trigger block is required',
+);
+const cronMatch = active.match(/^crons\s*=\s*\[\s*"([^"]+)"\s*\]$/m);
+assert.equal(cronMatch?.[1], '*/5 * * * *', 'unexpected Calendar drain schedule');
+assert.equal(exactValue('CALENDAR_DRAIN_ENABLED'), 'true', 'staging Calendar drain must be enabled');
 assert.ok(!/vishartattoo\.com(?![^\n]*calendar-staging)/i.test(
   active.replace(/calendar-staging\.vishartattoo\.com/g, ''),
 ), 'production host found in staging configuration');
@@ -107,7 +113,9 @@ const result = {
     artists: true,
     supabase: true,
     kvBindings: bindings.length === 2,
-    scheduledDrain: false,
+    scheduledDrain: true,
+    drainSchedule: cronMatch[1],
+    drainLimit: 10,
     workersDev: false,
   },
 };
