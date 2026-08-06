@@ -24,11 +24,21 @@ The Worker uses the existing backend-only `claim_calendar_outbox` RPC. PostgreSQ
 
 ## Guarded deployment
 
-PR #182 can deploy only when its exact-head normal CI is green and the PR body contains:
+PR #182 can deploy only after one successful exact-head validation run. Add both markers to the PR body, replacing the example run ID with the actual successful run:
 
 `<!-- DEPLOY_PR182_CALENDAR_AUTOMATIC_DRAIN_STAGING -->`
 
-The workflow verifies the exact retained-staging hostname, Worker name, Supabase URL, cron expression, Access gate and the deployed Cron Trigger through the Cloudflare API. Remove the marker immediately after the guarded run.
+`<!-- PR182_EXACT_HEAD_VALIDATION_RUN=123456789 -->`
+
+The deployment workflow fails closed unless the referenced run:
+
+- is the `PR 182 Exact-Head Validation` workflow from `agent/pr182-exact-head-validation`;
+- completed successfully;
+- has exactly the four required successful jobs;
+- uses a harness whose single `TARGET_SHA` equals the current PR #182 head;
+- checks out and verifies that target in every job.
+
+The workflow then verifies the exact retained-staging hostname, Worker name, Supabase URL, cron expression, Access gate and deployed Cron Trigger through the Cloudflare API. Remove both markers immediately after the guarded run.
 
 ## Hosted E2E
 
