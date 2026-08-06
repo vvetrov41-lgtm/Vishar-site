@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TARGET_SHA: 8bc483ef5d66ccf18ae8d7a61a17225b83f3b2f3
+  TARGET_SHA: dbdc8f495618c3d12f202ad21722d778815d9e24
 
 jobs:
   static-validation:
