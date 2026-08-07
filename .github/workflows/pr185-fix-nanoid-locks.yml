@@ -76,10 +76,10 @@ jobs:
           test "$(jq -r '.packages["node_modules/nanoid"].version' package-lock.json)" = "3.3.16"
           test "$(jq -r '.packages["node_modules/nanoid"].version' admin/package-lock.json)" = "3.3.16"
 
-          npm audit fix --package-lock-only --ignore-scripts
+          npm update nanoid --package-lock-only --ignore-scripts
           (
             cd admin
-            npm audit fix --package-lock-only --ignore-scripts
+            npm update nanoid --package-lock-only --ignore-scripts
           )
 
           git diff --exit-code -- package.json admin/package.json
