@@ -1,0 +1,12 @@
+name = "vishar-gpt-actions-staging"
+main = "workers/gpt-actions.js"
+compatibility_date = "2026-08-07"
+workers_dev = false
+
+# Retained-staging preparation is deliberately fail-closed. This Worker is
+# deployed without a public route and with actions disabled. A custom hostname
+# and WAF/rate-limit policy must be configured and reviewed before a later
+# activation step may set GPT_ACTIONS_ENABLED=true.
+[vars]
+GPT_ACTIONS_ENABLED = "false"
+SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"
