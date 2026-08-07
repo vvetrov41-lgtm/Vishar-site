@@ -23,6 +23,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { EnquiriesPage } from './pages/EnquiriesPage';
 import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
 import { LoginPage } from './pages/LoginPage';
+import { OAuthConsentPage } from './pages/OAuthConsentPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { UsersPage } from './pages/UsersPage';
@@ -109,6 +110,8 @@ function Routes() {
   switch (path) {
     case '/':
       return <RequireCapability capability="viewEnquiries"><DashboardPage /></RequireCapability>;
+    case '/oauth/consent':
+      return <OAuthConsentPage />;
     case '/enquiries':
       return <RequireCapability capability="viewEnquiries"><EnquiriesPage /></RequireCapability>;
     case '/clients':

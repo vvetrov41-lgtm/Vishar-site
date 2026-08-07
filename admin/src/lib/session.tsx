@@ -21,6 +21,10 @@ import {
   createCalendarConnectionsApi,
   type CalendarConnectionsApi,
 } from './calendar-connections-api';
+import {
+  createOAuthConsentApi,
+  type OAuthConsentApi,
+} from './oauth-consent-api';
 import type { Profile } from './types';
 
 export type AccessState =
@@ -37,7 +41,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi & CalendarConnectionsApi;
+export type CrmApi = Api & AppointmentApi & CalendarConnectionsApi & OAuthConsentApi;
 
 export interface SessionValue {
   state: AccessState;
@@ -62,6 +66,7 @@ export function SessionProvider({ client, children }: { client: CrmClient | null
       createApi(client),
       createAppointmentApi(client),
       createCalendarConnectionsApi(client),
+      createOAuthConsentApi(client),
     );
   }, [client]);
 

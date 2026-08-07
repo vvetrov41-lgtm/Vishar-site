@@ -1,22 +1,19 @@
 // AI tool gateway definitions.
 //
-// NO GATEWAY IS RUNNING. This module defines the complete set of tools an AI
-// assistant may ever be offered, and the constraints each one carries. There is
-// no execution backend, no credential, and no route wired to it.
+// NO GATEWAY IS DEPLOYED. This module defines the complete allow-list of tools
+// an AI assistant may ever be offered. The appointment proxy and RPC code exist
+// only as an inactive foundation until exact-head CI, retained-staging OAuth
+// configuration and hosted E2E are complete.
 //
-// The design rule is that an AI assistant gets the same narrow surface a member
-// of staff gets, and never more:
+// The design rule is that an AI assistant gets the same narrow surface as the
+// authenticated human and never more:
 //
-//   * ten named tools, and nothing else — no arbitrary SQL, no generic table
-//     endpoint, no "run this query" escape hatch;
-//   * every tool declares the role it needs, and the caller's own role is what
-//     is checked — the gateway does not act on its own authority;
-//   * every read declares exactly which fields it may return, so a tool cannot
-//     quietly widen into a client-data export;
+//   * named tools only, with no arbitrary SQL or generic table endpoint;
+//   * the caller's Supabase OAuth identity remains authoritative;
+//   * appointment GPTs are additionally bound by OAuth client_id to one artist;
+//   * every read declares exactly which fields it may return;
 //   * every read is paginated with a hard row cap;
-//   * every write would go through a named SECURITY DEFINER RPC. The future
-//     gateway must add attributable AI/on-behalf-of audit semantics before any
-//     execution route is connected;
+//   * appointment writes are idempotent, version-checked and AI-audited;
 //   * `create_email_draft` can only draft. There is no send tool.
 
 /** Hard limits. A tool may ask for fewer rows, never more. */
@@ -24,9 +21,8 @@ export const MAX_ROWS_PER_CALL = 25;
 export const DEFAULT_ROWS_PER_CALL = 10;
 
 /**
- * The complete tool set. Adding an entry here is a deliberate act: it widens
- * what an AI assistant can see or do, and needs the same scrutiny as widening
- * a role.
+ * The complete tool set. Adding an entry here is a deliberate permission
+ * expansion and requires the same scrutiny as widening a CRM role.
  */
 export const AI_TOOLS = Object.freeze([
   {
@@ -35,9 +31,6 @@ export const AI_TOOLS = Object.freeze([
     summary: 'Find clients by name or contact detail.',
     requiresRole: ['owner', 'booking_manager'],
     rpc: null,
-    // No email, no phone, no Instagram: an assistant helping triage does not
-    // need contact details, and returning them would make every conversation a
-    // potential contact-list export.
     returns: ['id', 'full_name', 'travelling_from', 'created_at'],
     paginated: true,
   },
@@ -124,29 +117,118 @@ export const AI_TOOLS = Object.freeze([
     rpc: 'create_email_draft',
     returns: ['email_message_id', 'status'],
     paginated: false,
-    // The RPC hard-codes `status = 'draft'` and a trigger refuses an
-    // AI-originated row in any other state, so this cannot become a send tool
-    // by changing an argument.
     draftOnly: true,
+  },
+  {
+    name: 'search_appointment_clients',
+    kind: 'read',
+    summary: 'Find client IDs by name only inside the GPT client’s fixed artist scope.',
+    requiresRole: ['owner', 'booking_manager'],
+    artistCapability: 'view',
+    oauthClientBound: true,
+    rpc: 'gpt_search_clients',
+    returns: ['client_id', 'client_name'],
+    paginated: true,
+  },
+  {
+    name: 'list_appointments',
+    kind: 'read',
+    summary: 'List appointments in the GPT client’s fixed artist scope.',
+    requiresRole: ['owner', 'booking_manager'],
+    artistCapability: 'view',
+    oauthClientBound: true,
+    rpc: 'gpt_list_appointments',
+    returns: [
+      'appointment_id', 'appointment_type', 'status', 'start_at', 'end_at',
+      'calendar_version', 'calendar_sync_status', 'client_id', 'client_name',
+      'enquiry_id', 'project_id',
+    ],
+    paginated: true,
+  },
+  {
+    name: 'get_appointment',
+    kind: 'read',
+    summary: 'Read one appointment only inside the GPT client’s fixed artist scope.',
+    requiresRole: ['owner', 'booking_manager'],
+    artistCapability: 'view',
+    oauthClientBound: true,
+    rpc: 'gpt_get_appointment',
+    returns: [
+      'appointment_id', 'appointment_type', 'status', 'start_at', 'end_at',
+      'calendar_version', 'calendar_sync_status', 'client_id', 'client_name',
+      'enquiry_id', 'project_id',
+    ],
+    paginated: false,
+  },
+  {
+    name: 'check_appointment_conflicts',
+    kind: 'read',
+    summary: 'Check a proposed time range against active appointments for the fixed artist.',
+    requiresRole: ['owner', 'booking_manager'],
+    artistCapability: 'view',
+    oauthClientBound: true,
+    rpc: 'gpt_list_appointment_conflicts',
+    returns: ['appointment_id', 'appointment_type', 'status', 'start_at', 'end_at', 'client_name'],
+    paginated: true,
+  },
+  {
+    name: 'schedule_appointment',
+    kind: 'write',
+    summary: 'Create an appointment for the fixed artist with idempotency protection.',
+    requiresRole: ['owner', 'booking_manager'],
+    artistCapability: 'manage_sessions',
+    oauthClientBound: true,
+    rpc: 'gpt_schedule_appointment',
+    returns: ['appointment_id', 'status', 'calendar_version', 'calendar_sync_status'],
+    paginated: false,
+    consequential: true,
+  },
+  {
+    name: 'reschedule_appointment',
+    kind: 'write',
+    summary: 'Move an appointment for the fixed artist after an optimistic version check.',
+    requiresRole: ['owner', 'booking_manager'],
+    artistCapability: 'manage_sessions',
+    oauthClientBound: true,
+    rpc: 'gpt_reschedule_appointment',
+    returns: ['appointment_id', 'changed', 'start_at', 'end_at', 'calendar_version'],
+    paginated: false,
+    consequential: true,
+  },
+  {
+    name: 'cancel_appointment',
+    kind: 'write',
+    summary: 'Cancel an appointment for the fixed artist after an optimistic version check.',
+    requiresRole: ['owner', 'booking_manager'],
+    artistCapability: 'manage_sessions',
+    oauthClientBound: true,
+    rpc: 'gpt_cancel_appointment',
+    returns: ['appointment_id', 'from_status', 'to_status', 'changed', 'calendar_version'],
+    paginated: false,
+    consequential: true,
   },
 ]);
 
 const TOOLS_BY_NAME = new Map(AI_TOOLS.map((tool) => [tool.name, tool]));
 
-/** Names only — useful for building a tool manifest without leaking detail. */
-export const AI_TOOL_NAMES = Object.freeze(AI_TOOLS.map((tool) => tool.name));
+/**
+ * The original internal CRM assistant manifest remains stable. GPT appointment
+ * Actions use the separate OAuth-bound list below and are never mixed into the
+ * generic internal assistant surface.
+ */
+export const AI_TOOL_NAMES = Object.freeze(
+  AI_TOOLS.filter((tool) => !tool.oauthClientBound).map((tool) => tool.name),
+);
+
+/** Exact public action names offered by the private artist-bound GPT schema. */
+export const GPT_APPOINTMENT_TOOL_NAMES = Object.freeze(
+  AI_TOOLS.filter((tool) => tool.oauthClientBound).map((tool) => tool.name),
+);
 
 export function getTool(name) {
   return TOOLS_BY_NAME.get(name) ?? null;
 }
 
-/**
- * Whether a caller in `role` may invoke `name`.
- *
- * The role is the *caller's*, resolved from their own identity. A gateway
- * credential is never the authority: it may execute a narrow RPC only after
- * this check has passed, and it is never disclosed to the assistant.
- */
 export function isToolAllowed(name, role) {
   const tool = getTool(name);
   if (!tool || !role) return false;
@@ -160,11 +242,7 @@ export function clampLimit(requested) {
   return Math.min(Math.floor(value), MAX_ROWS_PER_CALL);
 }
 
-/**
- * Drops every field a tool did not declare. A read tool returns its declared
- * projection or nothing — it cannot leak a column by accident because the query
- * happened to select it.
- */
+/** Drops every field a tool did not explicitly declare. */
 export function projectFields(name, row) {
   const tool = getTool(name);
   if (!tool || !row) return null;
@@ -180,5 +258,5 @@ export function projectRows(name, rows) {
   return (Array.isArray(rows) ? rows : []).map((row) => projectFields(name, row));
 }
 
-/** No executable gateway, credential, or route is present in this repository. */
+/** Code exists, but no validated or enabled GPT gateway is deployed. */
 export const AI_GATEWAY_CONNECTED = false;

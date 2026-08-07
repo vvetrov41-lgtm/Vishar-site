@@ -1,0 +1,548 @@
+openapi: 3.1.0
+info:
+  title: Vishar CRM Private Appointment Actions
+  version: 0.1.0-staging
+  description: >-
+    Private, OAuth-authenticated appointment actions for one artist. The artist
+    scope is fixed by the OAuth client and cannot be selected in an API request.
+servers:
+  - url: https://gpt-actions-staging.vishartattoo.com
+    description: Retained staging only. Not deployed by this branch.
+security:
+  - supabaseOAuth:
+      - email
+tags:
+  - name: Clients
+  - name: Appointments
+paths:
+  /v1/clients/search:
+    get:
+      operationId: searchAppointmentClients
+      summary: Find a client by name in this GPT's artist scope
+      description: >-
+        Returns only client IDs and names. It never returns email, phone,
+        Instagram, address or notes. Use this before creating an appointment.
+      tags: [Clients]
+      x-openai-isConsequential: false
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+          description: Two or more characters from the client's name.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 10
+      responses:
+        '200':
+          description: Matching clients in the fixed artist scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 20
+                items:
+                  $ref: '#/components/schemas/ClientSearchResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/appointments:
+    get:
+      operationId: listAppointments
+      summary: List appointments in this GPT's artist scope
+      description: >-
+        List appointments overlapping a bounded time range. The response includes
+        calendar_version, which must be supplied before a reschedule or cancel.
+      tags: [Appointments]
+      x-openai-isConsequential: false
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 25
+            default: 20
+      responses:
+        '200':
+          description: Appointments in the fixed artist scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 25
+                items:
+                  $ref: '#/components/schemas/Appointment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      operationId: scheduleAppointment
+      summary: Create an appointment for this GPT's fixed artist
+      description: >-
+        Creates one appointment for a client already associated with this artist.
+        Check conflicts first. Generate one UUID request_id and reuse it only
+        when retrying the exact same request.
+      tags: [Appointments]
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleAppointmentRequest'
+      responses:
+        '200':
+          description: Appointment created, or the same idempotent request replayed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentMutationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/appointments/conflicts:
+    post:
+      operationId: checkAppointmentConflicts
+      summary: Check active appointment conflicts for this GPT's fixed artist
+      description: >-
+        Checks proposed and confirmed appointments using half-open time ranges.
+        This is advisory; the human should resolve any reported conflict.
+      tags: [Appointments]
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [start_at, end_at]
+              properties:
+                start_at:
+                  type: string
+                  format: date-time
+                end_at:
+                  type: string
+                  format: date-time
+                exclude_appointment_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Active conflicts in the fixed artist scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 25
+                items:
+                  $ref: '#/components/schemas/AppointmentConflict'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/appointments/{appointment_id}:
+    get:
+      operationId: getAppointment
+      summary: Read one appointment in this GPT's fixed artist scope
+      tags: [Appointments]
+      x-openai-isConsequential: false
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: Appointment details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/appointments/{appointment_id}/time:
+    patch:
+      operationId: rescheduleAppointment
+      summary: Reschedule an appointment in this GPT's fixed artist scope
+      description: >-
+        Read the appointment first and supply its current calendar_version.
+        Generate one UUID request_id and reuse it only for the exact same retry.
+      tags: [Appointments]
+      x-openai-isConsequential: true
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - request_id
+                - expected_calendar_version
+                - start_at
+                - end_at
+              properties:
+                request_id:
+                  type: string
+                  format: uuid
+                expected_calendar_version:
+                  type: integer
+                  minimum: 0
+                start_at:
+                  type: string
+                  format: date-time
+                end_at:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Appointment rescheduled or unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentMutationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/appointments/{appointment_id}/cancel:
+    post:
+      operationId: cancelAppointment
+      summary: Cancel an appointment in this GPT's fixed artist scope
+      description: >-
+        Read the appointment first and supply its current calendar_version.
+        Generate one UUID request_id and reuse it only for the exact same retry.
+      tags: [Appointments]
+      x-openai-isConsequential: true
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, expected_calendar_version]
+              properties:
+                request_id:
+                  type: string
+                  format: uuid
+                expected_calendar_version:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: Appointment cancelled or already cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentMutationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  securitySchemes:
+    supabaseOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://gwaliusblwrzisrwnsvs.supabase.co/auth/v1/oauth/authorize
+          tokenUrl: https://gwaliusblwrzisrwnsvs.supabase.co/auth/v1/oauth/token
+          scopes:
+            email: Authenticate the CRM user. Database access remains controlled by CRM membership and OAuth client ID.
+
+  parameters:
+    AppointmentId:
+      name: appointment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    AppointmentType:
+      type: string
+      enum:
+        - tattoo_session
+        - in_person_consultation
+        - video_consultation
+        - touch_up
+
+    AppointmentStatus:
+      type: string
+      enum:
+        - draft
+        - proposed
+        - confirmed
+        - completed
+        - cancelled
+        - no_show
+
+    SchedulableAppointmentStatus:
+      type: string
+      enum:
+        - draft
+        - proposed
+        - confirmed
+      default: proposed
+
+    CalendarSyncStatus:
+      type: string
+      enum:
+        - not_connected
+        - queued
+        - synced
+        - retrying
+        - failed
+
+    ClientSearchResult:
+      type: object
+      additionalProperties: false
+      required: [client_id, client_name]
+      properties:
+        client_id:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+
+    Appointment:
+      type: object
+      additionalProperties: false
+      required:
+        - appointment_id
+        - appointment_type
+        - status
+        - start_at
+        - end_at
+        - calendar_version
+        - calendar_sync_status
+        - client_id
+        - client_name
+      properties:
+        appointment_id:
+          type: string
+          format: uuid
+        appointment_type:
+          $ref: '#/components/schemas/AppointmentType'
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        calendar_version:
+          type: integer
+          minimum: 0
+        calendar_sync_status:
+          $ref: '#/components/schemas/CalendarSyncStatus'
+        client_id:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        enquiry_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+
+    AppointmentConflict:
+      type: object
+      additionalProperties: false
+      required:
+        - appointment_id
+        - appointment_type
+        - status
+        - start_at
+        - end_at
+        - client_name
+      properties:
+        appointment_id:
+          type: string
+          format: uuid
+        appointment_type:
+          $ref: '#/components/schemas/AppointmentType'
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        client_name:
+          type: string
+
+    ScheduleAppointmentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - client_id
+        - appointment_type
+        - start_at
+        - end_at
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        appointment_type:
+          $ref: '#/components/schemas/AppointmentType'
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/SchedulableAppointmentStatus'
+        enquiry_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        notes:
+          type: string
+
+    AppointmentMutationResult:
+      type: object
+      additionalProperties: true
+      required: [appointment_id, calendar_version, idempotent_replay]
+      properties:
+        appointment_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        from_status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        to_status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        changed:
+          type: boolean
+        start_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        calendar_version:
+          type: integer
+          minimum: 0
+        calendar_sync_status:
+          $ref: '#/components/schemas/CalendarSyncStatus'
+        idempotent_replay:
+          type: boolean
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        field:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Invalid or out-of-policy request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthenticated:
+      description: Supabase OAuth sign-in is required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: The authenticated person or this GPT OAuth client lacks access to the fixed artist scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The appointment is absent from this GPT's fixed artist scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: The appointment changed since it was read or the request ID conflicts with a different action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
