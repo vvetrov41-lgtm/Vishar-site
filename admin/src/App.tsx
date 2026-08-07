@@ -4,12 +4,14 @@
 // active CRM profile is shown why, not a broken dashboard — and it is told the
 // same thing the database would enforce anyway.
 
+import { useEffect } from 'react';
 import { AppShell } from './components/AppShell';
 import './components/AppShell.css';
 import { RequireCapability } from './components/RequireCapability';
 import { EmptyState, LoadingState } from './components/StateViews';
 import { useLanguage } from './lib/i18n';
 import { ArtistScopeProvider } from './lib/artist-scope';
+import { applyAppointmentTimeStep } from './lib/appointment-time-step';
 import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
@@ -69,6 +71,13 @@ export function App() {
 function Routes() {
   const { path } = useRouter();
   const { t } = useLanguage();
+
+  useEffect(() => {
+    applyAppointmentTimeStep();
+    const observer = new MutationObserver(() => applyAppointmentTimeStep());
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [path]);
 
   const enquiryDetail = matchRoute('/enquiries/:id', path);
   if (enquiryDetail) {
