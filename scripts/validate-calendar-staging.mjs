@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const deployReady = process.argv.includes('--deploy-ready');
 const configPath = resolve(process.cwd(), 'wrangler.calendar.staging.toml');
 const source = readFileSync(configPath, 'utf8');
+const deploymentWorkflowPath = resolve(
+  process.cwd(),
+  '.github/workflows/pr182-calendar-automatic-drain-staging.yml',
+);
+const deploymentWorkflow = readFileSync(deploymentWorkflowPath, 'utf8');
 const active = source
   .split(/\r?\n/)
   .map((line) => line.replace(/\s+#.*$/, '').trim())
@@ -31,7 +36,12 @@ function crmUrl(key, allowedHashes) {
 }
 
 assert.equal(exactValue('name'), 'vishar-calendar-staging', 'unexpected Worker name');
-assert.equal(exactValue('main'), 'workers/calendar-oauth.js', 'unexpected Worker entrypoint');
+const workerEntrypoint = exactValue('main');
+assert.equal(workerEntrypoint, 'workers/calendar-oauth.js', 'unexpected Worker entrypoint');
+assert.ok(
+  existsSync(resolve(process.cwd(), workerEntrypoint)),
+  'configured Calendar Worker entrypoint must exist in the exact checkout',
+);
 assert.match(active, /^workers_dev\s*=\s*false$/m, 'workers.dev must remain disabled');
 assert.equal(
   (active.match(/^\[triggers\]$/gm) || []).length,
@@ -44,6 +54,22 @@ assert.equal(exactValue('CALENDAR_DRAIN_ENABLED'), 'true', 'staging Calendar dra
 assert.ok(!/vishartattoo\.com(?![^\n]*calendar-staging)/i.test(
   active.replace(/calendar-staging\.vishartattoo\.com/g, ''),
 ), 'production host found in staging configuration');
+
+assert.match(
+  deploymentWorkflow,
+  /deploy_config="\$GITHUB_WORKSPACE\/\.wrangler\.calendar\.deploy\.toml"/,
+  'generated Wrangler deploy config must stay in the checkout root so relative main resolves correctly',
+);
+assert.doesNotMatch(
+  deploymentWorkflow,
+  /deploy_config="\$RUNNER_TEMP\/wrangler\.calendar\.deploy\.toml"/,
+  'generated Wrangler deploy config must not move relative main into RUNNER_TEMP',
+);
+assert.match(
+  deploymentWorkflow,
+  /npx wrangler deploy[\s\S]*?--config "\$deploy_config"[\s\S]*?--dry-run[\s\S]*?--outdir "\$dry_run_dir"/,
+  'guarded staging workflow must compile the generated config with Wrangler dry-run before live deploy',
+);
 
 const routeMatches = [...active.matchAll(/\{\s*pattern\s*=\s*"([^"]+)"\s*,\s*custom_domain\s*=\s*true\s*\}/g)];
 assert.equal(routeMatches.length, 1, 'exactly one custom-domain route is required');
@@ -117,6 +143,9 @@ const result = {
     drainSchedule: cronMatch[1],
     drainLimit: 10,
     workersDev: false,
+    entrypointExists: true,
+    deployConfigAnchoredToCheckout: true,
+    deployDryRunRequired: true,
   },
 };
 console.log(JSON.stringify(result));
