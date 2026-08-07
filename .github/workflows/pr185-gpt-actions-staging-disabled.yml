@@ -1,0 +1,155 @@
+name: PR 185 GPT actions staging disabled deploy
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-actions-staging-disabled
+  cancel-in-progress: false
+
+jobs:
+  deploy-disabled-worker:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DEPLOY_PR185_GPT_ACTIONS_STAGING_DISABLED -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- DEPLOY_PR185_GPT_ACTIONS_STAGING_DISABLED -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify disabled staging boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx 'name = "vishar-gpt-actions-staging"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'main = "workers/gpt-actions.js"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'workers_dev = false' wrangler.gpt-actions.staging.toml
+          grep -Fx 'GPT_ACTIONS_ENABLED = "false"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"' wrangler.gpt-actions.staging.toml
+          ! grep -Eq '(^|[[:space:]])routes[[:space:]]*=|custom_domain[[:space:]]*=' wrangler.gpt-actions.staging.toml
+          ! grep -Eq 'service_role|secret_key|SUPABASE_SECRET|SUPABASE_SERVICE' wrangler.gpt-actions.staging.toml
+
+      - name: Verify staging-only encrypted configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_SUPABASE_URL STAGING_SUPABASE_PUBLISHABLE_KEY; do
+            [ -n "${!name:-}" ] || {
+              echo "Missing encrypted staging configuration name: $name" >&2
+              exit 1
+            }
+          done
+          [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ]
+          case "$STAGING_SUPABASE_PUBLISHABLE_KEY" in
+            sb_publishable_*) ;;
+            *) echo 'Staging browser key is not publishable' >&2; exit 1 ;;
+          esac
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Dry-run exact Worker bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dry_run_dir="$RUNNER_TEMP/gpt-actions-dry-run"
+          rm -rf "$dry_run_dir"
+          npx wrangler deploy \
+            --config wrangler.gpt-actions.staging.toml \
+            --dry-run \
+            --outdir "$dry_run_dir" \
+            --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
+            --var GPT_ACTIONS_ENABLED:false
+
+      - name: Deploy disabled retained-staging Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy \
+            --config wrangler.gpt-actions.staging.toml \
+            --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
+            --var GPT_ACTIONS_ENABLED:false
+
+      - name: Verify deployment remains non-public and disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deployments list --config wrangler.gpt-actions.staging.toml > "$RUNNER_TEMP/deployments.txt"
+          test -s "$RUNNER_TEMP/deployments.txt"
+          grep -Fq "$APPROVED_SHA" "$RUNNER_TEMP/deployments.txt" || true
+          # Public reachability is intentionally absent here: workers.dev=false
+          # and this config contains no route/custom domain. Activation requires
+          # a separately reviewed hostname plus WAF/rate-limit boundary.
+
+      - name: Upload safe deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-actions-disabled-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/deployments.txt
+          if-no-files-found: warn
+          retention-days: 30
