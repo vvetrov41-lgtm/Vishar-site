@@ -1,3 +1,9 @@
+-- Restore migration-0031 enforcement before the dedicated five-minute tests.
+-- This is intentionally outside the rollback transaction so every later pgTAP
+-- file also sees the real sessions trigger enabled.
+alter table public.sessions
+  enable trigger sessions_validate_appointment_time_step;
+
 begin;
 
 select plan(12);
