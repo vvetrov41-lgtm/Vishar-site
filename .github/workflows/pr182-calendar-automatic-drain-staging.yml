@@ -191,10 +191,12 @@ jobs:
           done
 
           secrets_file="$RUNNER_TEMP/calendar-worker-secrets.json"
-          deploy_config="$RUNNER_TEMP/wrangler.calendar.deploy.toml"
+          deploy_config="$GITHUB_WORKSPACE/.wrangler.calendar.deploy.toml"
+          dry_run_dir="$RUNNER_TEMP/calendar-worker-dry-run"
           export secrets_file deploy_config
           cleanup() {
             rm -f "$secrets_file" "$deploy_config"
+            rm -rf "$dry_run_dir"
           }
           trap cleanup EXIT
 
@@ -253,6 +255,13 @@ jobs:
               raise SystemExit('Expected exact retained-staging cron')
           Path(os.environ['deploy_config']).write_text(deploy_text, encoding='utf-8')
           PY
+
+          test -f "$GITHUB_WORKSPACE/workers/calendar-oauth.js"
+          rm -rf "$dry_run_dir"
+          npx wrangler deploy \
+            --config "$deploy_config" \
+            --dry-run \
+            --outdir "$dry_run_dir"
 
           npx wrangler deploy \
             --config "$deploy_config" \
