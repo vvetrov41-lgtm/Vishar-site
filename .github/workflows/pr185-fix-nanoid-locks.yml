@@ -84,6 +84,25 @@ jobs:
 
           git diff --exit-code -- package.json admin/package.json
 
+          echo "root_nanoid=$(jq -r '.packages["node_modules/nanoid"].version' package-lock.json)"
+          echo "admin_nanoid=$(jq -r '.packages["node_modules/nanoid"].version' admin/package-lock.json)"
+          echo "root_changed_package_entries:"
+          jq -nr --slurpfile b "$RUNNER_TEMP/root-lock-before.json" --slurpfile a package-lock.json '
+            ($b[0].packages) as $bp
+            | ($a[0].packages) as $ap
+            | (($bp | keys) + ($ap | keys) | unique)[] as $k
+            | select($bp[$k] != $ap[$k])
+            | "\($k)\t\($bp[$k].version // "<missing>") -> \($ap[$k].version // "<missing>")"
+          '
+          echo "admin_changed_package_entries:"
+          jq -nr --slurpfile b "$RUNNER_TEMP/admin-lock-before.json" --slurpfile a admin/package-lock.json '
+            ($b[0].packages) as $bp
+            | ($a[0].packages) as $ap
+            | (($bp | keys) + ($ap | keys) | unique)[] as $k
+            | select($bp[$k] != $ap[$k])
+            | "\($k)\t\($bp[$k].version // "<missing>") -> \($ap[$k].version // "<missing>")"
+          '
+
           jq 'del(.packages["node_modules/nanoid"])' "$RUNNER_TEMP/root-lock-before.json" > "$RUNNER_TEMP/root-before-without-nanoid.json"
           jq 'del(.packages["node_modules/nanoid"])' package-lock.json > "$RUNNER_TEMP/root-after-without-nanoid.json"
           cmp "$RUNNER_TEMP/root-before-without-nanoid.json" "$RUNNER_TEMP/root-after-without-nanoid.json"
