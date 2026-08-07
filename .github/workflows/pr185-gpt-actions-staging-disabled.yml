@@ -132,19 +132,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          supabase migration list --linked > "$RUNNER_TEMP/migrations-before.txt"
-          supabase db push --linked --dry-run > "$RUNNER_TEMP/db-push-dry-run.txt"
-          grep -Fq '0031' "$RUNNER_TEMP/db-push-dry-run.txt"
-          grep -Fq '0032' "$RUNNER_TEMP/db-push-dry-run.txt"
-          grep -Fq '0033' "$RUNNER_TEMP/db-push-dry-run.txt"
-          grep -Fq '0034' "$RUNNER_TEMP/db-push-dry-run.txt"
+          supabase migration list --linked > "$RUNNER_TEMP/migrations-before.txt" 2>&1
+          supabase db push --linked --dry-run > "$RUNNER_TEMP/db-push-dry-run.txt" 2>&1
+          grep -Fq '0031_appointment_five_minute_step.sql' "$RUNNER_TEMP/db-push-dry-run.txt"
+          grep -Fq '0032_gpt_appointment_actions.sql' "$RUNNER_TEMP/db-push-dry-run.txt"
+          grep -Fq '0033_gpt_appointment_actions_hardening.sql' "$RUNNER_TEMP/db-push-dry-run.txt"
+          grep -Fq '0034_gpt_oauth_consent_guard.sql' "$RUNNER_TEMP/db-push-dry-run.txt"
 
       - name: Apply pending migrations without reset or seed
         shell: bash
         run: |
           set -euo pipefail
           supabase db push --linked
-          supabase migration list --linked > "$RUNNER_TEMP/migrations-after.txt"
+          supabase migration list --linked > "$RUNNER_TEMP/migrations-after.txt" 2>&1
           for version in 0031 0032 0033 0034; do
             grep -Fq "$version" "$RUNNER_TEMP/migrations-after.txt"
           done
