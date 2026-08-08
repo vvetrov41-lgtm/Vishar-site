@@ -1,0 +1,163 @@
+name: PR 185 GPT Actions Cloudflare edge preflight
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-actions-edge-preflight
+  cancel-in-progress: false
+
+jobs:
+  inspect-edge:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- INSPECT_PR185_GPT_EDGE -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      TARGET_ZONE: vishartattoo.com
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- INSPECT_PR185_GPT_EDGE -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Inspect target zone and edge controls without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+          [ "$TARGET_ZONE" = "vishartattoo.com" ]
+          [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
+
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          safe="$RUNNER_TEMP/pr185-edge-safe.txt"
+          zone_json="$RUNNER_TEMP/zone.json"
+          domains_json="$RUNNER_TEMP/domains.json"
+          waf_json="$RUNNER_TEMP/waf.json"
+          rate_json="$RUNNER_TEMP/rate.json"
+          access_json="$RUNNER_TEMP/access.json"
+          trap 'rm -f "$zone_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"' EXIT
+
+          curl --fail --silent --show-error "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
+          zone_id="$(jq -r --arg name "$TARGET_ZONE" '
+            [.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end
+          ' "$zone_json")"
+          [ -n "$zone_id" ] || { echo 'Exact Cloudflare zone could not be resolved.' >&2; exit 1; }
+
+          cf_get() {
+            local url="$1" output="$2"
+            local status
+            status="$(curl --silent --show-error -o "$output" -w '%{http_code}' "${auth[@]}" "$url" || true)"
+            printf '%s' "$status"
+          }
+
+          domains_status="$(cf_get "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" "$domains_json")"
+          waf_status="$(cf_get "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" "$waf_json")"
+          rate_status="$(cf_get "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" "$rate_json")"
+          access_status="$(cf_get "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/apps" "$access_json")"
+
+          domains_match=unknown
+          if [ "$domains_status" = 200 ]; then
+            domains_match="$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.hostname == $host)] | length' "$domains_json")"
+          fi
+
+          waf_target_rules=unknown
+          if [ "$waf_status" = 200 ]; then
+            waf_target_rules="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$waf_json")"
+          elif [ "$waf_status" = 404 ]; then
+            waf_target_rules=0
+          fi
+
+          rate_target_rules=unknown
+          if [ "$rate_status" = 200 ]; then
+            rate_target_rules="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$rate_json")"
+          elif [ "$rate_status" = 404 ]; then
+            rate_target_rules=0
+          fi
+
+          access_target_apps=unknown
+          if [ "$access_status" = 200 ]; then
+            access_target_apps="$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.domain // "") == $host or (.domain // "") == ($host + "/*"))] | length' "$access_json")"
+          fi
+
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_zone=$TARGET_ZONE
+          target_host=$TARGET_HOST
+          zone_resolved=true
+          workers_domains_read_status=$domains_status
+          existing_target_custom_domains=$domains_match
+          waf_read_status=$waf_status
+          waf_target_rule_count=$waf_target_rules
+          rate_limit_read_status=$rate_status
+          rate_limit_target_rule_count=$rate_target_rules
+          access_read_status=$access_status
+          access_target_app_count=$access_target_apps
+          cloudflare_mutated=false
+          production_targeted=false
+          EOF
+          cat "$safe"
+
+          rm -f "$zone_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"
+          trap - EXIT
+
+      - name: Upload safe edge evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-edge-preflight-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr185-edge-safe.txt
+          if-no-files-found: warn
+          retention-days: 30
