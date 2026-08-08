@@ -26,6 +26,7 @@ jobs:
       APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
       TARGET_ZONE: vishartattoo.com
       TARGET_HOST: gpt-actions-staging.vishartattoo.com
+      WORKER_NAME: vishar-gpt-actions-staging
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
@@ -79,16 +80,18 @@ jobs:
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
           [ "$TARGET_ZONE" = "vishartattoo.com" ]
           [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
+          [ "$WORKER_NAME" = "vishar-gpt-actions-staging" ]
 
           auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
           safe="$RUNNER_TEMP/pr185-edge-safe.txt"
           zone_json="$RUNNER_TEMP/zone.json"
           dns_json="$RUNNER_TEMP/dns.json"
+          routes_json="$RUNNER_TEMP/routes.json"
           domains_json="$RUNNER_TEMP/domains.json"
           waf_json="$RUNNER_TEMP/waf.json"
           rate_json="$RUNNER_TEMP/rate.json"
           access_json="$RUNNER_TEMP/access.json"
-          trap 'rm -f "$zone_json" "$dns_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"' EXIT
+          trap 'rm -f "$zone_json" "$dns_json" "$routes_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"' EXIT
 
           curl --fail --silent --show-error "${auth[@]}" \
             "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
@@ -105,6 +108,7 @@ jobs:
           }
 
           dns_status="$(cf_get "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=$TARGET_HOST&per_page=100" "$dns_json")"
+          routes_status="$(cf_get "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes" "$routes_json")"
           domains_status="$(cf_get "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" "$domains_json")"
           waf_status="$(cf_get "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" "$waf_json")"
           rate_status="$(cf_get "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" "$rate_json")"
@@ -113,6 +117,13 @@ jobs:
           dns_target_records=unknown
           if [ "$dns_status" = 200 ]; then
             dns_target_records="$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.name == $host)] | length' "$dns_json")"
+          fi
+
+          worker_route_bindings=unknown
+          target_host_routes=unknown
+          if [ "$routes_status" = 200 ]; then
+            worker_route_bindings="$(jq --arg worker "$WORKER_NAME" '[.result[]? | select((.script // "") == $worker)] | length' "$routes_json")"
+            target_host_routes="$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.pattern // "") | contains($host))] | length' "$routes_json")"
           fi
 
           domains_match=unknown
@@ -139,13 +150,25 @@ jobs:
             access_target_apps="$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.domain // "") == $host or (.domain // "") == ($host + "/*"))] | length' "$access_json")"
           fi
 
+          edge_readable=true
+          [ "$dns_status" = 200 ] || edge_readable=false
+          [ "$routes_status" = 200 ] || edge_readable=false
+          [ "$domains_status" = 200 ] || edge_readable=false
+          case "$waf_status" in 200|404) ;; *) edge_readable=false ;; esac
+          case "$rate_status" in 200|404) ;; *) edge_readable=false ;; esac
+          [ "$access_status" = 200 ] || edge_readable=false
+
           cat > "$safe" <<EOF
           exact_sha=$APPROVED_SHA
           target_zone=$TARGET_ZONE
           target_host=$TARGET_HOST
+          worker=$WORKER_NAME
           zone_resolved=true
           dns_read_status=$dns_status
           existing_target_dns_records=$dns_target_records
+          workers_routes_read_status=$routes_status
+          worker_route_binding_count=$worker_route_bindings
+          target_host_route_count=$target_host_routes
           workers_domains_read_status=$domains_status
           existing_target_custom_domains=$domains_match
           waf_read_status=$waf_status
@@ -154,13 +177,19 @@ jobs:
           rate_limit_target_rule_count=$rate_target_rules
           access_read_status=$access_status
           access_target_app_count=$access_target_apps
+          edge_readable=$edge_readable
           cloudflare_mutated=false
           production_targeted=false
           EOF
           cat "$safe"
 
-          rm -f "$zone_json" "$dns_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"
+          rm -f "$zone_json" "$dns_json" "$routes_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"
           trap - EXIT
+
+          if [ "$edge_readable" != true ]; then
+            echo 'Required Cloudflare edge controls could not all be inspected with the configured read-only credentials.' >&2
+            exit 1
+          fi
 
       - name: Upload safe edge evidence
         if: always()
