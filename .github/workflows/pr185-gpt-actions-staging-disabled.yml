@@ -25,6 +25,9 @@ jobs:
     env:
       APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
       STAGING_PROJECT_REF: gwaliusblwrzisrwnsvs
+      TARGET_ZONE: vishartattoo.com
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+      WORKER_NAME: vishar-gpt-actions-staging
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
       STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -115,6 +118,93 @@ jobs:
             *) echo 'Staging browser key is not publishable' >&2; exit 1 ;;
           esac
 
+      - name: Verify Worker is non-public before retained-staging mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$TARGET_ZONE" = "vishartattoo.com" ]
+          [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
+          [ "$WORKER_NAME" = "vishar-gpt-actions-staging" ]
+
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          safe="$RUNNER_TEMP/edge-boundary.txt"
+          zone_json="$RUNNER_TEMP/deploy-zone.json"
+          routes_json="$RUNNER_TEMP/deploy-routes.json"
+          domains_json="$RUNNER_TEMP/deploy-domains.json"
+          trap 'rm -f "$zone_json" "$routes_json" "$domains_json"' EXIT
+
+          curl --fail --silent --show-error "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
+          zone_id="$(jq -r --arg name "$TARGET_ZONE" '
+            [.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end
+          ' "$zone_json")"
+          [ -n "$zone_id" ] || { echo 'Exact Cloudflare zone could not be resolved.' >&2; exit 1; }
+
+          cf_get() {
+            local url="$1" output="$2"
+            local status
+            status="$(curl --silent --show-error -o "$output" -w '%{http_code}' "${auth[@]}" "$url" || true)"
+            printf '%s' "$status"
+          }
+
+          routes_status="$(cf_get "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes" "$routes_json")"
+          domains_status="$(cf_get "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" "$domains_json")"
+
+          worker_route_bindings=unknown
+          target_host_routes=unknown
+          if [ "$routes_status" = 200 ]; then
+            worker_route_bindings="$(jq --arg worker "$WORKER_NAME" '[.result[]? | select((.script // "") == $worker)] | length' "$routes_json")"
+            target_host_routes="$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.pattern // "") | contains($host))] | length' "$routes_json")"
+          fi
+
+          target_custom_domains=unknown
+          if [ "$domains_status" = 200 ]; then
+            target_custom_domains="$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.hostname == $host)] | length' "$domains_json")"
+          fi
+
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          worker=$WORKER_NAME
+          target_host=$TARGET_HOST
+          workers_routes_read_status=$routes_status
+          worker_route_binding_count=$worker_route_bindings
+          target_host_route_count=$target_host_routes
+          workers_domains_read_status=$domains_status
+          target_custom_domain_count=$target_custom_domains
+          verified_non_public=false
+          EOF
+
+          [ "$routes_status" = 200 ] || {
+            echo 'Worker routes are not readable; refusing disabled deploy because a dashboard-managed public route cannot be excluded.' >&2
+            cat "$safe"
+            exit 1
+          }
+          [ "$domains_status" = 200 ] || {
+            echo 'Worker custom domains are not readable; refusing disabled deploy.' >&2
+            cat "$safe"
+            exit 1
+          }
+          [ "$worker_route_bindings" = 0 ] || {
+            echo 'The GPT Actions Worker already has a Worker route; refusing disabled deploy.' >&2
+            cat "$safe"
+            exit 1
+          }
+          [ "$target_host_routes" = 0 ] || {
+            echo 'The planned GPT Actions hostname already appears in a Worker route; refusing disabled deploy.' >&2
+            cat "$safe"
+            exit 1
+          }
+          [ "$target_custom_domains" = 0 ] || {
+            echo 'The planned GPT Actions hostname already has a Worker custom domain; refusing disabled deploy.' >&2
+            cat "$safe"
+            exit 1
+          }
+
+          sed -i 's/verified_non_public=false/verified_non_public=true/' "$safe"
+          cat "$safe"
+          rm -f "$zone_json" "$routes_json" "$domains_json"
+          trap - EXIT
+
       - name: Install pinned Supabase CLI
         uses: supabase/setup-cli@v3
         with:
@@ -190,6 +280,39 @@ jobs:
             --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
             --var GPT_ACTIONS_ENABLED:false
 
+      - name: Reconfirm Worker remains non-public after deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zone_json="$RUNNER_TEMP/post-zone.json"
+          routes_json="$RUNNER_TEMP/post-routes.json"
+          domains_json="$RUNNER_TEMP/post-domains.json"
+          trap 'rm -f "$zone_json" "$routes_json" "$domains_json"' EXIT
+
+          curl --fail --silent --show-error "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
+          zone_id="$(jq -r --arg name "$TARGET_ZONE" '[.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end' "$zone_json")"
+          [ -n "$zone_id" ]
+          curl --fail --silent --show-error "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes" > "$routes_json"
+          curl --fail --silent --show-error "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > "$domains_json"
+
+          test "$(jq --arg worker "$WORKER_NAME" '[.result[]? | select((.script // "") == $worker)] | length' "$routes_json")" = 0
+          test "$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.pattern // "") | contains($host))] | length' "$routes_json")" = 0
+          test "$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.hostname == $host)] | length' "$domains_json")" = 0
+
+          cat >> "$RUNNER_TEMP/edge-boundary.txt" <<EOF
+          post_deploy_worker_route_binding_count=0
+          post_deploy_target_host_route_count=0
+          post_deploy_target_custom_domain_count=0
+          post_deploy_verified_non_public=true
+          EOF
+
+          rm -f "$zone_json" "$routes_json" "$domains_json"
+          trap - EXIT
+
       - name: Record safe deployment evidence
         shell: bash
         run: |
@@ -213,6 +336,7 @@ jobs:
         with:
           name: pr185-gpt-actions-disabled-${{ env.APPROVED_SHA }}
           path: |
+            ${{ runner.temp }}/edge-boundary.txt
             ${{ runner.temp }}/migrations-before.txt
             ${{ runner.temp }}/db-push-dry-run.txt
             ${{ runner.temp }}/migrations-after.txt
