@@ -16,6 +16,36 @@ assert.deepEqual(
   'null fields are removed recursively without changing non-null values',
 );
 
+{
+  const disabledEnv = {
+    GPT_ACTIONS_ENABLED: 'false',
+    SUPABASE_URL: 'https://exampleproject.supabase.co',
+  };
+  const response = await worker.fetch(
+    new Request('https://gpt-actions-staging.vishartattoo.com/privacy'),
+    disabledEnv,
+  );
+  assert.equal(response.status, 200, 'privacy notice stays available while action API is disabled');
+  assert.match(response.headers.get('content-type') || '', /^text\/html/);
+  assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow, noarchive');
+  assert.match(response.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
+  const html = await response.text();
+  assert.match(html, /synthetic retained-staging data only/);
+  assert.match(html, /does not accept an artist identifier from ChatGPT/);
+  assert.match(html, /does not expose client email addresses/);
+  assert.match(html, /OpenAI provides ChatGPT/);
+  assert.doesNotMatch(html, /service_role|SUPABASE_SECRET_KEY|sb_secret_/);
+}
+
+{
+  const response = await worker.fetch(
+    new Request('https://gpt-actions-staging.vishartattoo.com/privacy', { method: 'HEAD' }),
+    { GPT_ACTIONS_ENABLED: 'false' },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), '');
+}
+
 const env = {
   GPT_ACTIONS_ENABLED: 'true',
   SUPABASE_URL: 'https://exampleproject.supabase.co',
@@ -58,4 +88,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log('GPT Actions entrypoint tests passed: optional null fields are removed from public responses.');
+console.log('GPT Actions entrypoint tests passed: privacy is public while actions remain OAuth-gated.');
