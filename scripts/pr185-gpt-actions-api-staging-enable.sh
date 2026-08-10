@@ -169,21 +169,21 @@ rollback() {
 }
 trap rollback EXIT
 
+waf_changed=true
 waf_patch_status="$(curl --silent --show-error -o "$RUNNER_TEMP/waf-patch.json" -w '%{http_code}' "${waf_write_auth[@]}" -X PATCH --data-binary @"$RUNNER_TEMP/waf-new.json" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$waf_ruleset_id/rules/$waf_rule_id" || true)"
 [ "$waf_patch_status" = 200 ] || { echo "Unable to expand staging WAF boundary, HTTP $waf_patch_status." >&2; exit 1; }
 jq -e '.success == true' "$RUNNER_TEMP/waf-patch.json" >/dev/null
-waf_changed=true
 sed -i 's/^waf_updated=.*/waf_updated=true/' "$safe"
 
+rate_changed=true
 rate_patch_status="$(curl --silent --show-error -o "$RUNNER_TEMP/rate-patch.json" -w '%{http_code}' "${waf_write_auth[@]}" -X PATCH --data-binary @"$RUNNER_TEMP/rate-new.json" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$rate_ruleset_id/rules/$rate_rule_id" || true)"
 [ "$rate_patch_status" = 200 ] || { echo "Unable to extend shared staging rate limit, HTTP $rate_patch_status." >&2; exit 1; }
 jq -e '.success == true' "$RUNNER_TEMP/rate-patch.json" >/dev/null
-rate_changed=true
 sed -i 's/^rate_updated=.*/rate_updated=true/' "$safe"
 
 npx wrangler deploy --config wrangler.gpt-actions.staging.toml --dry-run --outdir "$RUNNER_TEMP/gpt-actions-api-dry-run" --var SUPABASE_URL:"$STAGING_SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" --var GPT_ACTIONS_ENABLED:true --var GPT_OAUTH_RELAY_ENABLED:true >/dev/null
-npx wrangler deploy --config wrangler.gpt-actions.staging.toml --var SUPABASE_URL:"$STAGING_SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" --var GPT_ACTIONS_ENABLED:true --var GPT_OAUTH_RELAY_ENABLED:true | tee "$RUNNER_TEMP/worker-deploy.log"
 worker_changed=true
+npx wrangler deploy --config wrangler.gpt-actions.staging.toml --var SUPABASE_URL:"$STAGING_SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" --var GPT_ACTIONS_ENABLED:true --var GPT_OAUTH_RELAY_ENABLED:true | tee "$RUNNER_TEMP/worker-deploy.log"
 sed -i 's/^worker_updated=.*/worker_updated=true/' "$safe"
 
 active_version_id=''
