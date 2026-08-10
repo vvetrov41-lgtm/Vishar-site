@@ -53,8 +53,8 @@ For every database RPC under investigation:
 Use:
 
 ```bash
-scripts/ai/trace-rpc.sh <rpc_name>
-scripts/ai/migration-history.sh <rpc_name>
+bash scripts/ai/trace-rpc.sh <rpc_name>
+bash scripts/ai/migration-history.sh <rpc_name>
 ```
 
 Do not stop at the first matching migration.
