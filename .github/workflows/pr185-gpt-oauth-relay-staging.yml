@@ -31,6 +31,7 @@ jobs:
       STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ZONE_WAF_WRITE_TOKEN: ${{ secrets.CLOUDFLARE_ZONE_WAF_WRITE_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
     steps:
@@ -92,7 +93,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in STAGING_SUPABASE_URL STAGING_SUPABASE_PUBLISHABLE_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_EDGE_READ_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+          for name in STAGING_SUPABASE_URL STAGING_SUPABASE_PUBLISHABLE_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_EDGE_READ_TOKEN CLOUDFLARE_ZONE_WAF_WRITE_TOKEN CLOUDFLARE_ACCOUNT_ID; do
             [ -n "${!name:-}" ] || { echo "Missing staging configuration name: $name" >&2; exit 1; }
           done
           [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ]
@@ -161,6 +162,7 @@ jobs:
           pre_target_custom_domain_count=$target_domains
           pre_target_waf_rule_count=$waf_target
           pre_target_rate_rule_count=$rate_target
+          dedicated_zone_waf_write_token_configured=true
           production_targeted=false
           EOF
 
@@ -172,6 +174,7 @@ jobs:
           waf_ruleset_id="$(cat "$RUNNER_TEMP/waf-ruleset-id")"
           rate_ruleset_id="$(cat "$RUNNER_TEMP/rate-ruleset-id")"
           write_auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          waf_write_auth=(-H "Authorization: Bearer $CLOUDFLARE_ZONE_WAF_WRITE_TOKEN" -H 'Content-Type: application/json')
           edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
           waf_rule_id=''
           rate_rule_id=''
@@ -195,11 +198,11 @@ jobs:
                 --var GPT_OAUTH_RELAY_ENABLED:false >/dev/null 2>&1
             fi
             if [ -n "$rate_rule_id" ]; then
-              curl --silent --show-error "${write_auth[@]}" -X DELETE \
+              curl --silent --show-error "${waf_write_auth[@]}" -X DELETE \
                 "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$rate_ruleset_id/rules/$rate_rule_id" >/dev/null
             fi
             if [ -n "$waf_rule_id" ]; then
-              curl --silent --show-error "${write_auth[@]}" -X DELETE \
+              curl --silent --show-error "${waf_write_auth[@]}" -X DELETE \
                 "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$waf_ruleset_id/rules/$waf_rule_id" >/dev/null
             fi
             return "$status"
@@ -209,7 +212,7 @@ jobs:
           waf_expression='(http.host eq "gpt-actions-staging.vishartattoo.com" and not ((http.request.method eq "GET" and (http.request.uri.path eq "/oauth/authorize" or http.request.uri.path eq "/oauth/authorize/" or http.request.uri.path eq "/privacy" or http.request.uri.path eq "/privacy/")) or (http.request.method eq "HEAD" and (http.request.uri.path eq "/privacy" or http.request.uri.path eq "/privacy/")) or (http.request.method eq "POST" and (http.request.uri.path eq "/oauth/token" or http.request.uri.path eq "/oauth/token/"))))'
           jq -n --arg expression "$waf_expression" '{description:"Vishar GPT OAuth staging path boundary",expression:$expression,action:"block",enabled:true}' > "$RUNNER_TEMP/waf-create.json"
           waf_response="$RUNNER_TEMP/waf-create-response.json"
-          waf_status="$(curl --silent --show-error -o "$waf_response" -w '%{http_code}' "${write_auth[@]}" -X POST \
+          waf_status="$(curl --silent --show-error -o "$waf_response" -w '%{http_code}' "${waf_write_auth[@]}" -X POST \
             --data-binary @"$RUNNER_TEMP/waf-create.json" \
             "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$waf_ruleset_id/rules" || true)"
           [ "$waf_status" = 200 ] || { echo "Unable to create staging WAF rule, HTTP $waf_status." >&2; exit 1; }
@@ -219,7 +222,7 @@ jobs:
           rate_expression='(http.host eq "gpt-actions-staging.vishartattoo.com" and (http.request.uri.path eq "/oauth/authorize" or http.request.uri.path eq "/oauth/authorize/" or http.request.uri.path eq "/oauth/token" or http.request.uri.path eq "/oauth/token/"))'
           jq -n --arg expression "$rate_expression" '{description:"Vishar GPT OAuth staging rate limit",expression:$expression,action:"block",enabled:true,ratelimit:{characteristics:["cf.colo.id","ip.src"],period:60,requests_per_period:30,mitigation_timeout:60}}' > "$RUNNER_TEMP/rate-create.json"
           rate_response="$RUNNER_TEMP/rate-create-response.json"
-          rate_status="$(curl --silent --show-error -o "$rate_response" -w '%{http_code}' "${write_auth[@]}" -X POST \
+          rate_status="$(curl --silent --show-error -o "$rate_response" -w '%{http_code}' "${waf_write_auth[@]}" -X POST \
             --data-binary @"$RUNNER_TEMP/rate-create.json" \
             "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$rate_ruleset_id/rules" || true)"
           [ "$rate_status" = 200 ] || { echo "Unable to create staging rate-limit rule, HTTP $rate_status." >&2; exit 1; }
