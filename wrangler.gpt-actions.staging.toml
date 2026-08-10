@@ -1,12 +1,13 @@
 name = "vishar-gpt-actions-staging"
-main = "workers/gpt-actions.js"
+main = "workers/gpt-actions-staging.js"
 compatibility_date = "2026-08-07"
 workers_dev = false
 
-# Retained-staging preparation is deliberately fail-closed. This Worker is
-# deployed without a public route and with actions disabled. A custom hostname
-# and WAF/rate-limit policy must be configured and reviewed before a later
-# activation step may set GPT_ACTIONS_ENABLED=true.
+# Retained staging stays fail-closed by default. The OAuth relay may be enabled
+# independently for the private GPT OAuth handshake while appointment actions
+# remain disabled. The public action API still requires separate edge review
+# before GPT_ACTIONS_ENABLED may ever become true.
 [vars]
 GPT_ACTIONS_ENABLED = "false"
+GPT_OAUTH_RELAY_ENABLED = "false"
 SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"
