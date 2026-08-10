@@ -3,6 +3,7 @@
 
 import worker from './tattooai.js';
 import { isAllowedOriginFor, isMultipartRequest } from './lib/http.js';
+import { withTrustedStagingBookingEnv } from './lib/staging-booking-routing.js';
 
 function rejectOrigin() {
   return Response.json(
@@ -31,6 +32,15 @@ export default {
       return rejectOrigin();
     }
 
+    // The deployment allow-list decides which origins may reach staging. This
+    // second boundary decides which server-side booking source that exact
+    // origin is allowed to use. Browser multipart fields never participate in
+    // source or artist selection.
+    const routedEnv = withTrustedStagingBookingEnv(env, origin);
+    if (!routedEnv) {
+      return rejectOrigin();
+    }
+
     if (request.method === 'POST' && !isMultipartRequest(request)) {
       return Response.json(
         {
@@ -50,6 +60,6 @@ export default {
       );
     }
 
-    return worker.fetch(request, env, ctx);
+    return worker.fetch(request, routedEnv, ctx);
   },
 };
