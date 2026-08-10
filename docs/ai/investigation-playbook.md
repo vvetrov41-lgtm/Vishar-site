@@ -22,8 +22,8 @@ Given `RPC_NAME`:
 Useful commands:
 
 ```bash
-scripts/ai/trace-rpc.sh RPC_NAME
-scripts/ai/migration-history.sh RPC_NAME
+bash scripts/ai/trace-rpc.sh RPC_NAME
+bash scripts/ai/migration-history.sh RPC_NAME
 ```
 
 ## Investigating a Worker route
