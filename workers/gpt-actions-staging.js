@@ -73,7 +73,9 @@ export async function handleOAuthRelay(request, env) {
   const body = await request.arrayBuffer();
   if (body.byteLength > OAUTH_TOKEN_BODY_BYTES) return jsonError(413, 'oauth_token_body_too_large');
 
-  const headers = new Headers({ 'content-type': contentType });
+  const headers = new Headers({
+    'content-type': contentType,
+  });
   const authorization = request.headers.get('authorization');
   if (authorization) headers.set('authorization', authorization);
   const accept = request.headers.get('accept');
@@ -95,7 +97,10 @@ export async function handleOAuthRelay(request, env) {
   const upstreamContentType = upstream.headers.get('content-type');
   if (upstreamContentType) responseHeaders.set('content-type', upstreamContentType);
 
-  return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: responseHeaders,
+  });
 }
 
 export default {
@@ -106,4 +111,7 @@ export default {
   },
 };
 
-export const __testing = Object.freeze({ RETAINED_STAGING_SUPABASE_ORIGIN, OAUTH_TOKEN_BODY_BYTES });
+export const __testing = Object.freeze({
+  RETAINED_STAGING_SUPABASE_ORIGIN,
+  OAUTH_TOKEN_BODY_BYTES,
+});
