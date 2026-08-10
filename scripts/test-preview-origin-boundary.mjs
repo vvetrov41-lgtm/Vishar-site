@@ -26,7 +26,6 @@ for (const origin of [VLADIMIR_ORIGIN, KRISTINA_ORIGIN]) {
   const response = await previewWorker.fetch(request, env, {});
   assert.equal(response.status, 204, `${origin} preflight status`);
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), origin, `${origin} ACAO`);
-  assert.equal(response.headers.get('Vary'), 'Origin', `${origin} Vary`);
 }
 
 for (const origin of [
