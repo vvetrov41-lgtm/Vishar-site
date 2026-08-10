@@ -98,7 +98,7 @@ const env = {
 
 {
   const response = await worker.fetch(new Request('https://gpt-actions-staging.vishartattoo.com/v1/appointments?from=2026-08-10T00%3A00%3A00Z&to=2026-08-11T00%3A00%3A00Z'), env);
-  assert.equal(response.status, 503, 'OAuth relay activation must not activate appointment actions');
+  assert.equal(response.status, 404, 'OAuth relay activation must not expose appointment actions while the action surface is disabled');
 }
 
 console.log('GPT OAuth relay tests passed: exact staging target, bounded token proxy, actions remain disabled.');
