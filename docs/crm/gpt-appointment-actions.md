@@ -1,104 +1,61 @@
 # Private GPT appointment actions
 
-This stage prepares one private appointment-action GPT for Vladimir and one for Kristina. It does not deploy an endpoint, enable Supabase OAuth, register an OAuth client, change production, or activate either logical GPT client.
+This stage prepares one private appointment-action GPT for Vladimir and one for Kristina. It does not change production. Retained staging uses synthetic data only.
 
 ## User-facing capability
 
-After retained-staging validation and explicit activation, Kristina's private GPT may:
+After retained-staging validation and explicit activation, each private GPT may find existing clients by name, list and read appointments, check conflicts, and create, reschedule or cancel appointments only within the artist scope fixed by its OAuth client. No action accepts `artist_id`.
 
-- find an existing Kristina client by name, returning only the client ID and name;
-- list and read Kristina appointments;
-- check proposed times against Kristina's active appointments;
-- create Kristina appointments for an existing Kristina client;
-- reschedule a Kristina appointment after checking its current `calendar_version`;
-- cancel a Kristina appointment after checking its current `calendar_version`.
-
-Vladimir's private GPT uses the same OpenAPI schema but a different OAuth client. The OAuth client ID, not a prompt parameter, fixes the artist scope.
-
-This stage does not allow either GPT to:
-
-- send or draft client messages;
-- read phone numbers, email addresses, Instagram handles, addresses or private client notes;
-- read or modify finance, deposits or payments;
-- update enquiries or projects;
-- choose or switch `artist_id`;
-- run arbitrary SQL or call arbitrary Supabase tables/RPCs;
-- hold a Supabase secret/service-role key;
-- bypass the authenticated human's CRM membership or appointment capability.
+The action surface does not expose client email addresses, phone numbers, Instagram handles, addresses, finance, deposits, payments, arbitrary SQL or privileged Supabase credentials. It does not provide an action for sending client messages.
 
 ## Authorization model
 
 1. ChatGPT Actions uses Supabase OAuth 2.1 authorization-code flow.
-2. The staff member signs in through the existing CRM account.
-3. The CRM consent page loads the Supabase authorization details.
-4. Before showing Approve, `get_gpt_action_consent_summary` verifies that:
-   - the OAuth client ID is known and active;
-   - it is fixed to exactly one artist;
-   - the artist is active;
-   - the signed-in person has `view` or `manage_sessions`, matching the logical GPT mode.
-5. Supabase issues a normal user token containing `auth.uid()`, the authenticated role and the OAuth `client_id` claim.
-6. The public action Worker forwards that user token and only the Supabase publishable key.
-7. Each named database RPC resolves artist scope from `auth.jwt()->>'client_id'`; no endpoint accepts `artist_id`.
-8. Existing CRM membership/capability checks run again inside the database.
+2. The staff member signs in through the existing CRM account and consent page.
+3. Each private GPT has a separate confidential OAuth client.
+4. The OAuth client ID, not a prompt or request field, fixes the artist scope.
+5. Supabase access tokens retain the authenticated human identity and include the OAuth `client_id` claim.
+6. The public action Worker forwards the bearer token and only the Supabase publishable key.
+7. Database RPCs resolve artist scope from `auth.jwt()->>'client_id'` and re-check CRM membership and appointment permissions.
 
-The two logical clients are seeded disabled:
+Both logical clients are seeded disabled. Only the non-secret OAuth client ID is stored in CRM metadata. Client secrets stay in Supabase Auth and the corresponding private GPT configuration.
 
-- `vladimir-gpt-actions` -> Vladimir artist
-- `kristina-gpt-actions` -> Kristina artist
+## Same-host OAuth relay
 
-Only the non-secret OAuth client ID is stored in CRM metadata. Client secrets stay in Supabase Auth and the corresponding private GPT configuration.
+The current ChatGPT GPT editor accepted the OAuth configuration only when the Authorization URL and Token URL used the same staging hostname as the Action API. Direct `*.supabase.co` OAuth endpoints produced a draft-save error, while the otherwise identical configuration using `gpt-actions-staging.vishartattoo.com` saved successfully.
+
+Retained staging therefore contains a narrow OAuth relay wrapper:
+
+- `GET /oauth/authorize` redirects to the exact retained-staging Supabase `/auth/v1/oauth/authorize` endpoint while preserving the OAuth query string.
+- `POST /oauth/token` proxies only `application/x-www-form-urlencoded` token exchange requests to the exact retained-staging Supabase `/auth/v1/oauth/token` endpoint.
+- The token request body is bounded to 16 KiB.
+- Only the request `Authorization`, `Content-Type` and optional `Accept` headers are forwarded. Cookies and unrelated headers are not forwarded.
+- Upstream `Set-Cookie` is not returned to ChatGPT, and relay responses are `no-store`.
+- The upstream Supabase origin is hard-coded to the retained staging project and is also checked against `SUPABASE_URL`.
+- `GPT_OAUTH_RELAY_ENABLED` is independent of `GPT_ACTIONS_ENABLED`, so the OAuth handshake can be exposed while the appointment action surface remains disabled.
+
+The relay is staging-only. Production OAuth URLs and production data are not targeted.
 
 ## Mutation safety
 
-Every create, reschedule and cancel request requires a fresh UUID `request_id`.
-
-- An exact retry returns the stored response with `idempotent_replay=true`.
-- Reusing the same request ID for a different payload fails.
-- Reschedule and cancel require the appointment's current `calendar_version`.
-- A stale version fails before overwriting a newer human or GPT change.
-- The existing five-minute database trigger remains authoritative.
-- The existing appointment RPCs retain canonical status transitions, calendar outbox and activity behavior.
-- One additional AI audit row records the authenticated human, fixed artist and operation.
+Every create, reschedule and cancel request requires a fresh UUID `request_id`. Exact retries are idempotent, a reused request ID with different payload fails, and reschedule/cancel require the current `calendar_version`. The five-minute database trigger remains authoritative. AI-assisted mutations are audited with the authenticated human and fixed artist scope.
 
 ## Staging activation checklist
 
-Do not activate any item below until exact-head CI for this stacked PR is fully green.
-
-1. Apply migrations only to retained Supabase staging. Do not reset the project.
-2. Confirm migration, pgTAP, PostgreSQL lint, Worker tests, admin tests/typecheck/build and committed-secret scan are green on the exact head.
-3. Confirm the retained CRM staging site is the Supabase Auth `SITE_URL`; the OAuth consent API uses that canonical origin as a security anchor.
-4. In Supabase staging, enable OAuth 2.1 server and set Authorization Path to `/oauth/consent`.
-5. In Vladimir's private GPT editor, add the staging OpenAPI schema and select OAuth authentication.
-6. Copy the exact callback URL generated by the GPT editor. Do not invent or normalize it.
-7. Register a confidential Supabase OAuth client named clearly for Vladimir, using only that exact callback URI and the token exchange method selected in the GPT editor.
-8. Store its client secret only in the Vladimir GPT editor. Store only its non-secret client ID through `configure_gpt_action_client`.
-9. Repeat steps 5-8 independently for Kristina. Do not reuse Vladimir's OAuth client, callback registration or secret.
-10. Deploy a dedicated retained-staging Worker endpoint with:
-    - `GPT_ACTIONS_ENABLED=true` only after deployment checks pass;
-    - retained-staging Supabase URL;
-    - publishable key only;
-    - no service-role or secret key;
-    - workers.dev disabled;
-    - a staging-only custom hostname;
-    - a WAF/rate-limit policy suitable for ChatGPT server requests.
-11. Do not put Cloudflare Access in front of the action endpoint. OAuth bearer validation is the endpoint authentication boundary; Cloudflare Access would block ChatGPT's server-to-server action call unless a separate supported service-token design existed.
-12. Run synthetic hosted E2E independently for both GPT clients:
-    - OAuth login and consent;
-    - client-name lookup;
-    - list/get own appointments;
-    - conflict check;
-    - create, exact retry, reschedule, stale-version denial, cancel, exact retry;
-    - explicit cross-artist read/write denials;
-    - read-only downgrade and immediate write denial;
-    - AI activity audit and Calendar outbox behavior;
-    - no duplicate appointments or calendar events.
-13. Keep both GPTs private. Do not publish them to a public link or GPT Store during retained-staging validation.
-14. Remove or disable the staging OAuth clients and endpoint after the authorised test period if retained operation is not approved.
+1. Keep PR #185 open, draft and unmerged and require exact-head normal CI to be fully green.
+2. Keep retained Supabase staging at the expected migration boundary. Do not reset or seed it.
+3. Keep both logical GPT clients disabled and without OAuth client IDs until exact callback URLs are obtained.
+4. Deploy the staging OAuth relay with `GPT_ACTIONS_ENABLED=false`, `workers_dev=false`, the retained-staging Supabase URL and publishable key only.
+5. Before attaching the custom hostname, create a staging-only WAF path boundary and a rate-limit rule for the OAuth relay. Do not place Cloudflare Access in front of the OAuth relay or future Action API because ChatGPT server requests cannot complete an interactive Access login.
+6. Attach only `gpt-actions-staging.vishartattoo.com` to `vishar-gpt-actions-staging` and verify no Worker Routes exist.
+7. Verify `/privacy`, the non-followed OAuth authorization redirect, token content-type guard, WAF denial of disabled `/v1/*` paths, WAF/rate rules and custom-domain binding.
+8. In Vladimir's private GPT editor, use the same-host staging OAuth URLs and copy the exact callback URL generated by ChatGPT. Do not invent or normalize it.
+9. Register a confidential Supabase OAuth client for Vladimir using only that callback URI and Basic client authentication. Store the secret only in the Vladimir GPT editor; store only the non-secret client ID in CRM metadata.
+10. Repeat independently for Kristina. Do not reuse Vladimir's OAuth client, callback registration or secret.
+11. Keep both GPT clients and artist integrations disabled until the full Action API edge policy and hosted synthetic E2E are ready.
+12. Before enabling `GPT_ACTIONS_ENABLED=true`, update the WAF path boundary to permit exactly the approved `/v1` methods, preserve rate limiting, verify the full OpenAPI schema in ChatGPT, and run independent synthetic E2E for both artist scopes including cross-artist denials and idempotent mutation retries.
+13. Keep both GPTs private/invite-only throughout staging validation.
 
 ## Current deployment state
 
-- `AI_GATEWAY_CONNECTED` remains `false`.
-- Both logical database clients remain disabled and have no OAuth client ID.
-- No GPT action Worker configuration or route is deployed.
-- Supabase OAuth server settings are unchanged.
-- Retained staging and production are unchanged by this branch.
+At source level, `GPT_ACTIONS_ENABLED=false` and `GPT_OAUTH_RELAY_ENABLED=false` are the defaults. The guarded staging workflow may temporarily set only the relay flag to true after exact-head CI and edge checks pass. Both database GPT clients remain disabled and have no OAuth client ID until exact callback URLs are supplied by the two private GPT definitions.
