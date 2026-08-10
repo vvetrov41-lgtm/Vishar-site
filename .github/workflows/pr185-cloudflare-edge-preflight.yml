@@ -27,7 +27,7 @@ jobs:
       TARGET_ZONE: vishartattoo.com
       TARGET_HOST: gpt-actions-staging.vishartattoo.com
       WORKER_NAME: vishar-gpt-actions-staging
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
     steps:
@@ -76,13 +76,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_EDGE_READ_TOKEN" ]
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
           [ "$TARGET_ZONE" = "vishartattoo.com" ]
           [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
           [ "$WORKER_NAME" = "vishar-gpt-actions-staging" ]
 
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
           safe="$RUNNER_TEMP/pr185-edge-safe.txt"
           zone_json="$RUNNER_TEMP/zone.json"
           dns_json="$RUNNER_TEMP/dns.json"
