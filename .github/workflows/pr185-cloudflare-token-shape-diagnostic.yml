@@ -1,0 +1,154 @@
+name: PR 185 Cloudflare token shape diagnostic
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-cloudflare-token-shape-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose-token-shape:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DIAGNOSE_PR185_CLOUDFLARE_TOKEN_SHAPE -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- DIAGNOSE_PR185_CLOUDFLARE_TOKEN_SHAPE -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Record safe token-shape and verification evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_EDGE_READ_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+          token="$CLOUDFLARE_EDGE_READ_TOKEN"
+          token_format=other
+          case "$token" in
+            cfat_*) token_format=cfat ;;
+            cfut_*) token_format=cfut ;;
+          esac
+
+          token_has_whitespace=false
+          if [[ "$token" =~ [[:space:]] ]]; then
+            token_has_whitespace=true
+          fi
+
+          token_id_like=false
+          if [[ "$token" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+            token_id_like=true
+          fi
+
+          token_length="${#token}"
+          if [ "$token_length" -lt 32 ]; then
+            token_length_bucket=lt32
+          elif [ "$token_length" -eq 32 ]; then
+            token_length_bucket=eq32
+          elif [ "$token_length" -lt 40 ]; then
+            token_length_bucket=33_39
+          elif [ "$token_length" -le 80 ]; then
+            token_length_bucket=40_80
+          else
+            token_length_bucket=gt80
+          fi
+
+          auth=(-H "Authorization: Bearer $token" -H 'Content-Type: application/json')
+          account_json="$RUNNER_TEMP/account-verify.json"
+          user_json="$RUNNER_TEMP/user-verify.json"
+          trap 'rm -f "$account_json" "$user_json"' EXIT
+
+          account_verify_status="$(curl --silent --show-error -o "$account_json" -w '%{http_code}' "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" || true)"
+          user_verify_status="$(curl --silent --show-error -o "$user_json" -w '%{http_code}' "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/user/tokens/verify" || true)"
+
+          account_token_state=unknown
+          if [ "$account_verify_status" = 200 ]; then
+            account_token_state="$(jq -r '.result.status // "unknown"' "$account_json")"
+          fi
+          user_token_state=unknown
+          if [ "$user_verify_status" = 200 ]; then
+            user_token_state="$(jq -r '.result.status // "unknown"' "$user_json")"
+          fi
+
+          cat > "$RUNNER_TEMP/pr185-token-shape-safe.txt" <<EOF
+          exact_sha=$APPROVED_SHA
+          edge_token_present=true
+          edge_token_format=$token_format
+          edge_token_has_whitespace=$token_has_whitespace
+          edge_token_id_like=$token_id_like
+          edge_token_length_bucket=$token_length_bucket
+          account_verify_status=$account_verify_status
+          account_token_state=$account_token_state
+          user_verify_status=$user_verify_status
+          user_token_state=$user_token_state
+          cloudflare_mutated=false
+          production_targeted=false
+          EOF
+          cat "$RUNNER_TEMP/pr185-token-shape-safe.txt"
+
+          rm -f "$account_json" "$user_json"
+          trap - EXIT
+
+      - name: Upload safe diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-cloudflare-token-shape-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr185-token-shape-safe.txt
+          if-no-files-found: warn
+          retention-days: 7
