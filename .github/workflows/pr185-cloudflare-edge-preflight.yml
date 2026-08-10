@@ -27,6 +27,7 @@ jobs:
       TARGET_ZONE: vishartattoo.com
       TARGET_HOST: gpt-actions-staging.vishartattoo.com
       WORKER_NAME: vishar-gpt-actions-staging
+      CLOUDFLARE_ZONE_LOOKUP_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
@@ -76,13 +77,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          [ -n "$CLOUDFLARE_ZONE_LOOKUP_TOKEN" ]
           [ -n "$CLOUDFLARE_EDGE_READ_TOKEN" ]
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
           [ "$TARGET_ZONE" = "vishartattoo.com" ]
           [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
           [ "$WORKER_NAME" = "vishar-gpt-actions-staging" ]
 
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          lookup_auth=(-H "Authorization: Bearer $CLOUDFLARE_ZONE_LOOKUP_TOKEN" -H 'Content-Type: application/json')
+          edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
           safe="$RUNNER_TEMP/pr185-edge-safe.txt"
           zone_json="$RUNNER_TEMP/zone.json"
           dns_json="$RUNNER_TEMP/dns.json"
@@ -93,17 +96,51 @@ jobs:
           access_json="$RUNNER_TEMP/access.json"
           trap 'rm -f "$zone_json" "$dns_json" "$routes_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"' EXIT
 
-          curl --fail --silent --show-error "${auth[@]}" \
-            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
-          zone_id="$(jq -r --arg name "$TARGET_ZONE" '
-            [.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end
-          ' "$zone_json")"
-          [ -n "$zone_id" ] || { echo 'Exact Cloudflare zone could not be resolved.' >&2; exit 1; }
+          zone_status="$(curl --silent --show-error -o "$zone_json" -w '%{http_code}' "${lookup_auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" || true)"
+          zone_id=""
+          if [ "$zone_status" = 200 ]; then
+            zone_id="$(jq -r --arg name "$TARGET_ZONE" '
+              [.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end
+            ' "$zone_json")"
+          fi
+
+          if [ -z "$zone_id" ]; then
+            cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_zone=$TARGET_ZONE
+          target_host=$TARGET_HOST
+          worker=$WORKER_NAME
+          zone_lookup_read_status=$zone_status
+          zone_resolved=false
+          zone_lookup_via_existing_staging_token=true
+          edge_reads_via_dedicated_read_token=true
+          dns_read_status=not_attempted
+          existing_target_dns_records=unknown
+          workers_routes_read_status=not_attempted
+          worker_route_binding_count=unknown
+          target_host_route_count=unknown
+          workers_domains_read_status=not_attempted
+          existing_target_custom_domains=unknown
+          waf_read_status=not_attempted
+          waf_target_rule_count=unknown
+          rate_limit_read_status=not_attempted
+          rate_limit_target_rule_count=unknown
+          access_read_status=not_attempted
+          access_target_app_count=unknown
+          edge_readable=false
+          cloudflare_mutated=false
+          production_targeted=false
+          EOF
+            cat "$safe"
+            echo 'Exact Cloudflare zone could not be resolved with the existing staging lookup credential.' >&2
+            exit 1
+          fi
 
           cf_get() {
             local url="$1" output="$2"
             local status
-            status="$(curl --silent --show-error -o "$output" -w '%{http_code}' "${auth[@]}" "$url" || true)"
+            status="$(curl --silent --show-error -o "$output" -w '%{http_code}' "${edge_auth[@]}" "$url" || true)"
             printf '%s' "$status"
           }
 
@@ -163,7 +200,10 @@ jobs:
           target_zone=$TARGET_ZONE
           target_host=$TARGET_HOST
           worker=$WORKER_NAME
+          zone_lookup_read_status=$zone_status
           zone_resolved=true
+          zone_lookup_via_existing_staging_token=true
+          edge_reads_via_dedicated_read_token=true
           dns_read_status=$dns_status
           existing_target_dns_records=$dns_target_records
           workers_routes_read_status=$routes_status
@@ -187,7 +227,7 @@ jobs:
           trap - EXIT
 
           if [ "$edge_readable" != true ]; then
-            echo 'Required Cloudflare edge controls could not all be inspected with the configured read-only credentials.' >&2
+            echo 'Required Cloudflare edge controls could not all be inspected with the dedicated read-only credential.' >&2
             exit 1
           fi
 
