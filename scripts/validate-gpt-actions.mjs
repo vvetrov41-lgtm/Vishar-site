@@ -151,13 +151,23 @@ assert.doesNotMatch(openapi, /artist_id/, 'GPT schema must never allow caller-se
 assert.doesNotMatch(openapi, /service_role|SUPABASE_SECRET_KEY/, 'GPT schema must contain no privileged key surface');
 assert.match(
   openapi,
-  /authorizationUrl: https:\/\/gwaliusblwrzisrwnsvs\.supabase\.co\/auth\/v1\/oauth\/authorize/,
-  'OpenAPI must use the retained-staging Supabase OAuth authorization endpoint',
+  /authorizationUrl: https:\/\/gpt-actions-staging\.vishartattoo\.com\/oauth\/authorize/,
+  'OpenAPI must use the same-host protected staging OAuth authorization relay',
 );
 assert.match(
   openapi,
-  /tokenUrl: https:\/\/gwaliusblwrzisrwnsvs\.supabase\.co\/auth\/v1\/oauth\/token/,
-  'OpenAPI must use the retained-staging Supabase OAuth token endpoint',
+  /tokenUrl: https:\/\/gpt-actions-staging\.vishartattoo\.com\/oauth\/token/,
+  'OpenAPI must use the same-host protected staging OAuth token relay',
+);
+assert.doesNotMatch(
+  openapi,
+  /#\/components\/parameters\//,
+  'ChatGPT Actions path parameters must be inlined because the editor skips reusable parameter refs',
+);
+assert.equal(
+  count(openapi, '- name: appointment_id'),
+  3,
+  'all three appointment path operations must inline appointment_id',
 );
 assert.equal(
   count(openapi, 'x-openai-isConsequential: true'),
