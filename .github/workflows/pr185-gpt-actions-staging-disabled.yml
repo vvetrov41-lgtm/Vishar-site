@@ -225,8 +225,9 @@ jobs:
         run: |
           set -euo pipefail
           supabase migration list --linked > "$RUNNER_TEMP/migrations-before.txt" 2>&1
+          sed 's/`//g' "$RUNNER_TEMP/migrations-before.txt" > "$RUNNER_TEMP/migrations-before-normalized.txt"
           for version in 0031 0032 0033 0034; do
-            grep -Eq "^[[:space:]]*$version[[:space:]]+\|[[:space:]]+$version" "$RUNNER_TEMP/migrations-before.txt" || {
+            grep -Eq "^[[:space:]]*$version[[:space:]]+\|[[:space:]]+$version" "$RUNNER_TEMP/migrations-before-normalized.txt" || {
               echo "Retained staging is missing migration $version; disabled Worker redeploy will not mutate an unexpected database state." >&2
               exit 1
             }
@@ -245,8 +246,9 @@ jobs:
           set -euo pipefail
           supabase db push --linked
           supabase migration list --linked > "$RUNNER_TEMP/migrations-after.txt" 2>&1
+          sed 's/`//g' "$RUNNER_TEMP/migrations-after.txt" > "$RUNNER_TEMP/migrations-after-normalized.txt"
           for version in 0031 0032 0033 0034; do
-            grep -Eq "^[[:space:]]*$version[[:space:]]+\|[[:space:]]+$version" "$RUNNER_TEMP/migrations-after.txt"
+            grep -Eq "^[[:space:]]*$version[[:space:]]+\|[[:space:]]+$version" "$RUNNER_TEMP/migrations-after-normalized.txt"
           done
 
       - name: Set up Node
