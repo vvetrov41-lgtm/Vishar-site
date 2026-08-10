@@ -52,6 +52,29 @@ const env = {
   SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test_value_1234567890',
 };
 
+{
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => {
+    called = true;
+    throw new Error('malformed bearer must fail before Supabase');
+  };
+  try {
+    const response = await worker.fetch(
+      new Request(
+        'https://gpt.example/v1/appointments?from=2026-08-01T00%3A00%3A00Z&to=2026-09-01T00%3A00%3A00Z',
+        { headers: { authorization: 'Bearer deliberately-invalid-token' } },
+      ),
+      env,
+    );
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: 'oauth_token_required' });
+    assert.equal(called, false, 'malformed non-JWT bearer must fail before an upstream request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => new Response(JSON.stringify([{
   appointment_id: '22222222-2222-4222-8222-222222222222',

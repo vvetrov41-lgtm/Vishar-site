@@ -7,6 +7,12 @@ const PUBLIC_HEADERS = Object.freeze({
   'x-content-type-options': 'nosniff',
   'x-robots-tag': 'noindex, nofollow, noarchive',
 });
+const PRIVATE_JSON_HEADERS = Object.freeze({
+  'cache-control': 'no-store',
+  'content-type': 'application/json; charset=utf-8',
+  'x-content-type-options': 'nosniff',
+});
+const JWT_BEARER_PATTERN = /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 const PRIVACY_HTML = `<!doctype html>
 <html lang="en-GB">
@@ -65,6 +71,15 @@ function publicRoute(request) {
   });
 }
 
+function malformedOAuthBearer(request) {
+  const authorization = request.headers.get('authorization') || '';
+  if (!authorization.startsWith('Bearer ') || JWT_BEARER_PATTERN.test(authorization)) return null;
+  return new Response(JSON.stringify({ error: 'oauth_token_required' }), {
+    status: 401,
+    headers: PRIVATE_JSON_HEADERS,
+  });
+}
+
 export function omitNullFields(value) {
   if (Array.isArray(value)) return value.map(omitNullFields);
   if (!value || typeof value !== 'object') return value;
@@ -81,6 +96,9 @@ export default {
     const publicResponse = publicRoute(request);
     if (publicResponse) return publicResponse;
 
+    const malformedBearerResponse = malformedOAuthBearer(request);
+    if (malformedBearerResponse) return malformedBearerResponse;
+
     const response = await handleGptActionsRequest(request, env);
     const contentType = response.headers.get('content-type') || '';
     if (response.status < 200 || response.status >= 300 || !contentType.includes('application/json')) {
@@ -93,11 +111,7 @@ export default {
     } catch {
       return new Response(JSON.stringify({ error: 'invalid_gateway_response' }), {
         status: 502,
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'cache-control': 'no-store',
-          'x-content-type-options': 'nosniff',
-        },
+        headers: PRIVATE_JSON_HEADERS,
       });
     }
 
@@ -108,4 +122,4 @@ export default {
   },
 };
 
-export const __testing = Object.freeze({ publicRoute });
+export const __testing = Object.freeze({ publicRoute, malformedOAuthBearer });
