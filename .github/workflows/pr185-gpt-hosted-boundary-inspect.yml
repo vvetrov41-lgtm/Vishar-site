@@ -1,0 +1,139 @@
+name: PR 185 GPT hosted fail-closed boundary inspection
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-hosted-boundary-inspection
+  cancel-in-progress: false
+
+jobs:
+  inspect-hosted-boundary:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- INSPECT_PR185_GPT_HOSTED_BOUNDARY -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- INSPECT_PR185_GPT_HOSTED_BOUNDARY -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+          [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify hosted fail-closed boundary without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://$TARGET_HOST"
+          safe="$RUNNER_TEMP/hosted-boundary-evidence.txt"
+          headers="$RUNNER_TEMP/headers.txt"
+          body="$RUNNER_TEMP/body.txt"
+          trap 'rm -f "$headers" "$body"' EXIT
+
+          request_status() {
+            local method="$1" url="$2"
+            shift 2
+            curl --silent --show-error --max-time 20 \
+              -X "$method" -D "$headers" -o "$body" -w '%{http_code}' "$@" "$url" || true
+          }
+
+          privacy_status="$(request_status GET "$base/privacy")"
+          [ "$privacy_status" = 200 ]
+
+          unauthenticated_status="$(request_status GET "$base/v1/appointments?from=2026-08-10T00%3A00%3A00Z&to=2026-08-11T00%3A00%3A00Z")"
+          [ "$unauthenticated_status" = 401 ]
+
+          invalid_token_status="$(request_status GET "$base/v1/appointments?from=2026-08-10T00%3A00%3A00Z&to=2026-08-11T00%3A00%3A00Z" -H 'Authorization: Bearer not-a-valid-jwt')"
+          [ "$invalid_token_status" = 401 ]
+
+          oauth_authorize_status="$(request_status GET "$base/oauth/authorize?client_id=synthetic-invalid-client&redirect_uri=https%3A%2F%2Fexample.invalid%2Fcallback&response_type=code&scope=email")"
+          [ "$oauth_authorize_status" = 302 ]
+          grep -Eqi '^location: https://gwaliusblwrzisrwnsvs\.supabase\.co/auth/v1/oauth/authorize' "$headers"
+
+          oauth_token_guard_status="$(request_status POST "$base/oauth/token" -H 'Content-Type: application/json' --data '{}')"
+          [ "$oauth_token_guard_status" = 415 ]
+
+          sleep 11
+
+          disallowed_method_status="$(request_status DELETE "$base/v1/appointments/00000000-0000-4000-8000-000000000000")"
+          [ "$disallowed_method_status" = 403 ]
+
+          disallowed_path_status="$(request_status GET "$base/not-an-approved-route")"
+          [ "$disallowed_path_status" = 403 ]
+
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_host=$TARGET_HOST
+          privacy_status=$privacy_status
+          unauthenticated_action_status=$unauthenticated_status
+          invalid_bearer_action_status=$invalid_token_status
+          oauth_authorize_relay_status=$oauth_authorize_status
+          oauth_authorize_relay_target_verified=true
+          oauth_token_content_type_guard_status=$oauth_token_guard_status
+          disallowed_method_waf_status=$disallowed_method_status
+          disallowed_path_waf_status=$disallowed_path_status
+          credentials_used=false
+          staging_mutated=false
+          production_targeted=false
+          EOF
+          cat "$safe"
+
+          rm -f "$headers" "$body"
+          trap - EXIT
+
+      - name: Upload safe hosted-boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-hosted-boundary-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/hosted-boundary-evidence.txt
+          if-no-files-found: warn
+          retention-days: 30
