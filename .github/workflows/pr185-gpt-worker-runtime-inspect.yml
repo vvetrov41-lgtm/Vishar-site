@@ -106,10 +106,18 @@ jobs:
 
           failed_present="$(jq --arg id "$FAILED_RELAY_VERSION" '[.result.items[]? | select(.id == $id)] | length' "$versions")"
           latest_version_id="$(jq -r '.result.items[0].id // empty' "$versions")"
+          active_deployment_id="$(jq -r '.result.deployments[0].id // empty' "$deployments")"
+          active_deployment_created_on="$(jq -r '.result.deployments[0].created_on // "unknown"' "$deployments")"
+          deployment_count="$(jq '[.result.deployments[]?] | length' "$deployments")"
+          failed_relay_deployment_count="$(jq --arg id "$FAILED_RELAY_VERSION" '[.result.deployments[]? | select(any(.versions[]?; .version_id == $id and (.percentage // 0) > 0))] | length' "$deployments")"
+          failed_relay_100pct_deployment_count="$(jq --arg id "$FAILED_RELAY_VERSION" '[.result.deployments[]? | select(any(.versions[]?; .version_id == $id and .percentage == 100))] | length' "$deployments")"
+          deployment_history="$(jq -c '[.result.deployments[]? | {id:(.id // ""),created_on:(.created_on // ""),versions:[.versions[]? | {version_id:(.version_id // ""),percentage:(.percentage // 0)}]}]' "$deployments" | tr '\n\r=' '   ')"
+          failed_version_created_on="$(jq -jr '.result.metadata.created_on // .result.created_on // "unknown"' "$failed")"
+          active_version_created_on="$(jq -jr '.result.metadata.created_on // .result.created_on // "unknown"' "$active")"
 
           safe_binding() {
             local file="$1" name="$2"
-            jq -r --arg name "$name" '
+            jq -jr --arg name "$name" '
               [.result.resources.bindings[]? | select(.name == $name)]
               | if length == 1 then
                   if .[0].type == "plain_text" then ((.[0].text // "") | tostring)
@@ -117,11 +125,11 @@ jobs:
                   end
                 else "missing"
                 end
-            ' "$file" | tr '\n\r=' '   '
+            ' "$file"
           }
           binding_type() {
             local file="$1" name="$2"
-            jq -r --arg name "$name" '[.result.resources.bindings[]? | select(.name == $name)] | if length == 1 then .[0].type else "missing" end' "$file" | tr '\n\r=' '   '
+            jq -jr --arg name "$name" '[.result.resources.bindings[]? | select(.name == $name)] | if length == 1 then .[0].type else "missing" end' "$file"
           }
 
           failed_actions="$(safe_binding "$failed" GPT_ACTIONS_ENABLED)"
@@ -138,10 +146,10 @@ jobs:
           [ "$failed_supabase" = "$EXPECTED_SUPABASE_URL" ] && failed_supabase_matches=true
           [ "$active_supabase" = "$EXPECTED_SUPABASE_URL" ] && active_supabase_matches=true
 
-          failed_default_export_state="$(jq -r '.result.resources.script_runtime.exports.default.state // "unknown"' "$failed" | tr '\n\r=' '   ')"
-          active_default_export_state="$(jq -r '.result.resources.script_runtime.exports.default.state // "unknown"' "$active" | tr '\n\r=' '   ')"
-          workers_dev_enabled="$(jq -r '.result.enabled // "unknown"' "$subdomain")"
-          previews_enabled="$(jq -r '.result.previews_enabled // "unknown"' "$subdomain")"
+          failed_default_export_state="$(jq -jr '.result.resources.script_runtime.exports.default.state // "unknown"' "$failed")"
+          active_default_export_state="$(jq -jr '.result.resources.script_runtime.exports.default.state // "unknown"' "$active")"
+          workers_dev_enabled="$(jq -jr '.result.enabled // "unknown"' "$subdomain")"
+          previews_enabled="$(jq -jr '.result.previews_enabled // "unknown"' "$subdomain")"
 
           cat > "$safe" <<EOF
           exact_sha=$APPROVED_SHA
@@ -151,10 +159,18 @@ jobs:
           failed_version_read_status=$failed_status
           active_version_read_status=$active_status
           subdomain_read_status=$subdomain_status
+          deployment_count=$deployment_count
+          active_deployment_id=$active_deployment_id
+          active_deployment_created_on=$active_deployment_created_on
           active_version_id=$active_version_id
+          active_version_created_on=$active_version_created_on
           latest_version_id=$latest_version_id
           failed_relay_version_id=$FAILED_RELAY_VERSION
+          failed_relay_version_created_on=$failed_version_created_on
           failed_relay_version_present_count=$failed_present
+          failed_relay_deployment_count=$failed_relay_deployment_count
+          failed_relay_100pct_deployment_count=$failed_relay_100pct_deployment_count
+          deployment_history=$deployment_history
           failed_GPT_ACTIONS_ENABLED=$failed_actions
           failed_GPT_OAUTH_RELAY_ENABLED=$failed_relay
           failed_SUPABASE_URL_matches_expected=$failed_supabase_matches
