@@ -7,7 +7,7 @@ info:
     scope is fixed by the OAuth client and cannot be selected in an API request.
 servers:
   - url: https://gpt-actions-staging.vishartattoo.com
-    description: Retained staging only. Not deployed by this branch.
+    description: Retained staging only.
 security:
   - supabaseOAuth:
       - email
@@ -187,7 +187,12 @@ paths:
       tags: [Appointments]
       x-openai-isConsequential: false
       parameters:
-        - $ref: '#/components/parameters/AppointmentId'
+        - name: appointment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
           description: Appointment details.
@@ -212,7 +217,12 @@ paths:
       tags: [Appointments]
       x-openai-isConsequential: true
       parameters:
-        - $ref: '#/components/parameters/AppointmentId'
+        - name: appointment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -266,7 +276,12 @@ paths:
       tags: [Appointments]
       x-openai-isConsequential: true
       parameters:
-        - $ref: '#/components/parameters/AppointmentId'
+        - name: appointment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -306,19 +321,10 @@ components:
       type: oauth2
       flows:
         authorizationCode:
-          authorizationUrl: https://gwaliusblwrzisrwnsvs.supabase.co/auth/v1/oauth/authorize
-          tokenUrl: https://gwaliusblwrzisrwnsvs.supabase.co/auth/v1/oauth/token
+          authorizationUrl: https://gpt-actions-staging.vishartattoo.com/oauth/authorize
+          tokenUrl: https://gpt-actions-staging.vishartattoo.com/oauth/token
           scopes:
             email: Authenticate the CRM user. Database access remains controlled by CRM membership and OAuth client ID.
-
-  parameters:
-    AppointmentId:
-      name: appointment_id
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
 
   schemas:
     AppointmentType:
