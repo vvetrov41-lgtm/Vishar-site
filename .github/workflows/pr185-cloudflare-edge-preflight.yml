@@ -88,13 +88,14 @@ jobs:
           edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
           safe="$RUNNER_TEMP/pr185-edge-safe.txt"
           zone_json="$RUNNER_TEMP/zone.json"
+          verify_json="$RUNNER_TEMP/edge-token-verify.json"
           dns_json="$RUNNER_TEMP/dns.json"
           routes_json="$RUNNER_TEMP/routes.json"
           domains_json="$RUNNER_TEMP/domains.json"
           waf_json="$RUNNER_TEMP/waf.json"
           rate_json="$RUNNER_TEMP/rate.json"
           access_json="$RUNNER_TEMP/access.json"
-          trap 'rm -f "$zone_json" "$dns_json" "$routes_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"' EXIT
+          trap 'rm -f "$zone_json" "$verify_json" "$dns_json" "$routes_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"' EXIT
 
           zone_status="$(curl --silent --show-error -o "$zone_json" -w '%{http_code}' "${lookup_auth[@]}" \
             "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" || true)"
@@ -114,6 +115,8 @@ jobs:
           zone_lookup_read_status=$zone_status
           zone_resolved=false
           zone_lookup_via_existing_staging_token=true
+          edge_token_verify_status=not_attempted
+          edge_token_state=unknown
           edge_reads_via_dedicated_read_token=true
           dns_read_status=not_attempted
           existing_target_dns_records=unknown
@@ -134,6 +137,47 @@ jobs:
           EOF
             cat "$safe"
             echo 'Exact Cloudflare zone could not be resolved with the existing staging lookup credential.' >&2
+            exit 1
+          fi
+
+          edge_verify_status="$(curl --silent --show-error -o "$verify_json" -w '%{http_code}' "${edge_auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" || true)"
+          edge_token_state=unknown
+          if [ "$edge_verify_status" = 200 ]; then
+            edge_token_state="$(jq -r '.result.status // "unknown"' "$verify_json")"
+          fi
+
+          if [ "$edge_verify_status" != 200 ] || [ "$edge_token_state" != active ]; then
+            cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_zone=$TARGET_ZONE
+          target_host=$TARGET_HOST
+          worker=$WORKER_NAME
+          zone_lookup_read_status=$zone_status
+          zone_resolved=true
+          zone_lookup_via_existing_staging_token=true
+          edge_token_verify_status=$edge_verify_status
+          edge_token_state=$edge_token_state
+          edge_reads_via_dedicated_read_token=true
+          dns_read_status=not_attempted
+          existing_target_dns_records=unknown
+          workers_routes_read_status=not_attempted
+          worker_route_binding_count=unknown
+          target_host_route_count=unknown
+          workers_domains_read_status=not_attempted
+          existing_target_custom_domains=unknown
+          waf_read_status=not_attempted
+          waf_target_rule_count=unknown
+          rate_limit_read_status=not_attempted
+          rate_limit_target_rule_count=unknown
+          access_read_status=not_attempted
+          access_target_app_count=unknown
+          edge_readable=false
+          cloudflare_mutated=false
+          production_targeted=false
+          EOF
+            cat "$safe"
+            echo 'Dedicated Cloudflare edge token did not verify as active; refusing further edge calls.' >&2
             exit 1
           fi
 
@@ -203,6 +247,8 @@ jobs:
           zone_lookup_read_status=$zone_status
           zone_resolved=true
           zone_lookup_via_existing_staging_token=true
+          edge_token_verify_status=$edge_verify_status
+          edge_token_state=$edge_token_state
           edge_reads_via_dedicated_read_token=true
           dns_read_status=$dns_status
           existing_target_dns_records=$dns_target_records
@@ -223,7 +269,7 @@ jobs:
           EOF
           cat "$safe"
 
-          rm -f "$zone_json" "$dns_json" "$routes_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"
+          rm -f "$zone_json" "$verify_json" "$dns_json" "$routes_json" "$domains_json" "$waf_json" "$rate_json" "$access_json"
           trap - EXIT
 
           if [ "$edge_readable" != true ]; then
