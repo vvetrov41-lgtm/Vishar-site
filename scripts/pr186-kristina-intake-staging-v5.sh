@@ -4,6 +4,7 @@ set -euo pipefail
 : "${CLOUDFLARE_API_TOKEN:?}"
 : "${CLOUDFLARE_EDGE_READ_TOKEN:?}"
 : "${RUNNER_TEMP:?}"
+: "${GITHUB_WORKSPACE:?}"
 
 # V4 already contains the mutation, rollback and E2E logic. V5 patches only a
 # temporary validation copy so Cloudflare control-plane reads use the dedicated
@@ -32,6 +33,15 @@ needle = "CF_AUTH=(-H \"Authorization: Bearer $CLOUDFLARE_API_TOKEN\" -H 'Conten
 replacement = needle + "\nCF_EDGE_AUTH=(-H \"Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN\" -H 'Content-Type: application/json')"
 if text.count(needle) != 1:
     raise SystemExit('unexpected V4 Cloudflare auth shape')
+text = text.replace(needle, replacement)
+
+# Wrangler resolves a relative `main` from the config file directory. Keep the
+# temporary config in the repository root so `workers/preview.js` resolves to
+# the exact checked-out file rather than under RUNNER_TEMP.
+needle = 'CONFIG="$RUNNER_TEMP/wrangler.pr186-v4.toml"'
+replacement = 'CONFIG="$GITHUB_WORKSPACE/wrangler.pr186-v5.toml"'
+if text.count(needle) != 1:
+    raise SystemExit('unexpected V4 Wrangler config path shape')
 text = text.replace(needle, replacement)
 
 start = text.index('read_control_plane() {')
@@ -64,5 +74,6 @@ bash -n "$work_dir/pr186-kristina-intake-staging-v4-lib.sh"
 bash -n "$work_dir/pr186-kristina-intake-staging-v4.sh"
 
 # Running the copied main script makes its dirname resolve to the copied,
-# token-separated library above. No repository file is rewritten at runtime.
+# token-separated library above. The Wrangler config itself remains at the
+# repository root so relative module paths stay exact.
 bash "$work_dir/pr186-kristina-intake-staging-v4.sh"
