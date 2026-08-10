@@ -78,6 +78,14 @@ jobs:
           body="$RUNNER_TEMP/body.txt"
           trap 'rm -f "$headers" "$body"' EXIT
 
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_host=$TARGET_HOST
+          credentials_used=false
+          staging_mutated=false
+          production_targeted=false
+          EOF
+
           request_status() {
             local method="$1" url="$2"
             shift 2
@@ -85,47 +93,50 @@ jobs:
               -X "$method" -D "$headers" -o "$body" -w '%{http_code}' "$@" "$url" || true
           }
 
+          record_status() {
+            local key="$1" value="$2"
+            printf '%s=%s\n' "$key" "$value" >> "$safe"
+          }
+
           privacy_status="$(request_status GET "$base/privacy")"
+          record_status privacy_status "$privacy_status"
           [ "$privacy_status" = 200 ]
 
           unauthenticated_status="$(request_status GET "$base/v1/appointments?from=2026-08-10T00%3A00%3A00Z&to=2026-08-11T00%3A00%3A00Z")"
+          record_status unauthenticated_action_status "$unauthenticated_status"
           [ "$unauthenticated_status" = 401 ]
+          sleep 11
 
-          invalid_token_status="$(request_status GET "$base/v1/appointments?from=2026-08-10T00%3A00%3A00Z&to=2026-08-11T00%3A00%3A00Z" -H 'Authorization: Bearer not-a-valid-jwt')"
+          invalid_token_status="$(request_status GET "$base/v1/appointments?from=2026-08-10T00%3A00%3A00Z&to=2026-08-11T00%3A00%3A00Z" -H 'Authorization: Bearer deliberately-invalid-token')"
+          record_status invalid_bearer_action_status "$invalid_token_status"
           [ "$invalid_token_status" = 401 ]
+          sleep 11
 
           oauth_authorize_status="$(request_status GET "$base/oauth/authorize?client_id=synthetic-invalid-client&redirect_uri=https%3A%2F%2Fexample.invalid%2Fcallback&response_type=code&scope=email")"
+          record_status oauth_authorize_relay_status "$oauth_authorize_status"
           [ "$oauth_authorize_status" = 302 ]
-          grep -Eqi '^location: https://gwaliusblwrzisrwnsvs\.supabase\.co/auth/v1/oauth/authorize' "$headers"
+          if grep -Eqi '^location: https://gwaliusblwrzisrwnsvs\.supabase\.co/auth/v1/oauth/authorize' "$headers"; then
+            record_status oauth_authorize_relay_target_verified true
+          else
+            record_status oauth_authorize_relay_target_verified false
+            exit 1
+          fi
+          sleep 11
 
           oauth_token_guard_status="$(request_status POST "$base/oauth/token" -H 'Content-Type: application/json' --data '{}')"
+          record_status oauth_token_content_type_guard_status "$oauth_token_guard_status"
           [ "$oauth_token_guard_status" = 415 ]
-
           sleep 11
 
           disallowed_method_status="$(request_status DELETE "$base/v1/appointments/00000000-0000-4000-8000-000000000000")"
+          record_status disallowed_method_waf_status "$disallowed_method_status"
           [ "$disallowed_method_status" = 403 ]
 
           disallowed_path_status="$(request_status GET "$base/not-an-approved-route")"
+          record_status disallowed_path_waf_status "$disallowed_path_status"
           [ "$disallowed_path_status" = 403 ]
 
-          cat > "$safe" <<EOF
-          exact_sha=$APPROVED_SHA
-          target_host=$TARGET_HOST
-          privacy_status=$privacy_status
-          unauthenticated_action_status=$unauthenticated_status
-          invalid_bearer_action_status=$invalid_token_status
-          oauth_authorize_relay_status=$oauth_authorize_status
-          oauth_authorize_relay_target_verified=true
-          oauth_token_content_type_guard_status=$oauth_token_guard_status
-          disallowed_method_waf_status=$disallowed_method_status
-          disallowed_path_waf_status=$disallowed_path_status
-          credentials_used=false
-          staging_mutated=false
-          production_targeted=false
-          EOF
           cat "$safe"
-
           rm -f "$headers" "$body"
           trap - EXIT
 
