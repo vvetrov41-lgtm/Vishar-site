@@ -4,6 +4,7 @@
 -- Calendar projection. This migration intentionally only extends the enum.
 -- Migration 0041 uses these values only after this migration has committed,
 -- avoiding PostgreSQL's same-transaction enum-value restriction.
+-- This boundary is intentionally separate from all projection functions.
 --
 -- Forward-only. No provider call, OAuth change, cron change or deployment.
 
