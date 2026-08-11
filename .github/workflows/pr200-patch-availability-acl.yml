@@ -1,0 +1,65 @@
+name: PR 200 availability ACL inventory patch
+
+on:
+  push:
+    branches:
+      - agent/artist-availability-time-off
+    paths:
+      - .github/workflows/pr200-patch-availability-acl.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/artist-availability-time-off
+          fetch-depth: 0
+
+      - name: Patch canonical security inventory and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('supabase/tests/050_rls_roles.sql')
+          text = path.read_text()
+
+          rpc_anchor = "  ('public.reschedule_appointment(uuid,timestamptz,timestamptz)', false, true, false),\n"
+          rpc_insert = rpc_anchor + """  ('public.list_artist_availability_blocks(uuid,timestamptz,timestamptz,boolean)', false, true, false),
+  ('public.create_artist_availability_block(uuid,public.availability_block_kind,timestamptz,timestamptz,boolean,text)', false, true, false),
+  ('public.update_artist_availability_block(uuid,public.availability_block_kind,timestamptz,timestamptz,boolean,text)', false, true, false),
+  ('public.cancel_artist_availability_block(uuid)', false, true, false),
+"""
+          if text.count(rpc_anchor) != 1:
+              raise SystemExit('expected exactly one appointment RPC allow-list anchor')
+          if 'public.list_artist_availability_blocks(uuid,timestamptz,timestamptz,boolean)' in text:
+              raise SystemExit('availability RPC allow-list already present')
+          text = text.replace(rpc_anchor, rpc_insert, 1)
+
+          rls_anchor = "       'enquiry_status_transitions', 'system_settings', 'retention_holds'))," 
+          rls_insert = "       'enquiry_status_transitions', 'system_settings', 'retention_holds',\n       'artist_availability_blocks'))," 
+          if text.count(rls_anchor) != 1:
+              raise SystemExit('expected exactly one FORCE RLS inventory anchor')
+          text = text.replace(rls_anchor, rls_insert, 1)
+
+          path.write_text(text)
+          PY
+
+          git rm .github/workflows/pr200-patch-availability-acl.yml
+          git diff --check
+          git add supabase/tests/050_rls_roles.sql .github/workflows/pr200-patch-availability-acl.yml
+
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fx 'supabase/tests/050_rls_roles.sql'
+          printf '%s\n' "${changed[@]}" | grep -Fx '.github/workflows/pr200-patch-availability-acl.yml'
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Update availability security inventory'
+          git push origin HEAD:agent/artist-availability-time-off
