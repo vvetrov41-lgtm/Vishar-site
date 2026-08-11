@@ -3,7 +3,7 @@
 // Being signed in is not the same as having access. A Supabase Auth session
 // only establishes identity; the CRM profile establishes whether that identity
 // is a member of staff and what role they hold. An account with no profile, or
-// with `is_active = false`, is signed in and has nothing — which is exactly
+// with `is_active = false`, is signed in and has nothing - which is exactly
 // what the database enforces too.
 
 import {
@@ -21,6 +21,7 @@ import {
   createCalendarConnectionsApi,
   type CalendarConnectionsApi,
 } from './calendar-connections-api';
+import { createManualIntakeApi, type ManualIntakeApi } from './manual-intake-api';
 import {
   createOAuthConsentApi,
   type OAuthConsentApi,
@@ -32,7 +33,7 @@ export type AccessState =
   | 'signed_out'
   | 'no_profile'   // signed in, but no readable CRM profile
   // Signed in with a readable but inactive profile. Under the current
-  // `profiles_select_self` policy — which is gated on `is_active` — a
+  // `profiles_select_self` policy - which is gated on `is_active` - a
   // deactivated account cannot read its own row either, so it presents as
   // `no_profile`. This state is kept because it is the honest model of "profile
   // exists, access withdrawn" and would become reachable if that policy ever
@@ -41,7 +42,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi & CalendarConnectionsApi & OAuthConsentApi;
+export type CrmApi = Api & AppointmentApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi;
 
 export interface SessionValue {
   state: AccessState;
@@ -75,6 +76,7 @@ export function SessionProvider({
       createAppointmentApi(client),
       createCalendarConnectionsApi(client),
       createOAuthConsentApi(client),
+      createManualIntakeApi(client),
     );
   }, [client, teamInviteUrl]);
 
