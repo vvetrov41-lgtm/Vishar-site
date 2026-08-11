@@ -100,6 +100,10 @@ jobs:
       - name: Production build
         run: npm run build
 
+      - name: Verify private CRM artifact contains no staging endpoints or privileged credentials
+        working-directory: .
+        run: node scripts/check-private-crm-artifact.mjs admin/dist
+
   supabase:
     name: Supabase migrations and pgTAP
     runs-on: ubuntu-latest
