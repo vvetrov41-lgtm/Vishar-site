@@ -11,7 +11,7 @@ const ARTIST_ID = 'a1111111-1111-4111-8111-111111111111';
 
 const env = {
   CRM_ALLOWED_ORIGIN: CRM_ORIGIN,
-  CRM_INVITE_REDIRECT_URL: `${CRM_ORIGIN}/#/login`,
+  CRM_INVITE_REDIRECT_URL: `${CRM_ORIGIN}/?staff_invite=1`,
   SUPABASE_URL: SUPABASE_ORIGIN,
   SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test-only',
   SUPABASE_SECRET_KEY: 'sb_secret_test-only',
@@ -89,6 +89,11 @@ function jsonResponse(body, status = 200) {
   assert.equal(calls[0].init.headers.authorization, OWNER_BEARER);
   assert.equal(calls[2].init.headers.authorization, OWNER_BEARER);
   assert.equal(calls[1].init.headers.authorization, `Bearer ${env.SUPABASE_SECRET_KEY}`);
+  assert.equal(
+    new URL(calls[1].url).searchParams.get('redirect_to'),
+    `${CRM_ORIGIN}/?staff_invite=1`,
+    'Auth invite is pinned to the exact same-origin password-setup marker'
+  );
   assert.doesNotMatch(text, /token|secret|password|team\.member@example\.test/i);
 }
 
@@ -231,6 +236,22 @@ function jsonResponse(body, status = 200) {
   }, { fetcher: async () => { calls += 1; } });
   assert.equal(response.status, 503);
   assert.equal(calls, 0, 'missing server secret fails closed before any request');
+}
+
+for (const badRedirect of [
+  `${CRM_ORIGIN}/`,
+  `${CRM_ORIGIN}/?staff_invite=2`,
+  `${CRM_ORIGIN}/?staff_invite=1&next=/users`,
+  `${CRM_ORIGIN}/#/setup-password`,
+  'https://other.vishartattoo.com/?staff_invite=1',
+]) {
+  let calls = 0;
+  const response = await handleTeamAdminRequest(request(), {
+    ...env,
+    CRM_INVITE_REDIRECT_URL: badRedirect,
+  }, { fetcher: async () => { calls += 1; } });
+  assert.equal(response.status, 503, `invalid invite redirect fails closed: ${badRedirect}`);
+  assert.equal(calls, 0);
 }
 
 console.log('Team admin Worker tests passed');
