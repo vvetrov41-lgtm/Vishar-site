@@ -7,10 +7,31 @@ const env = {
   SUPABASE_URL: __testing.RETAINED_STAGING_SUPABASE_ORIGIN,
 };
 
+const VALID_CHALLENGE = 'a'.repeat(43);
+
+function authorizeUrl(overrides = {}) {
+  const url = new URL('https://gpt-actions-staging.vishartattoo.com/oauth/authorize');
+  const params = {
+    client_id: 'synthetic-client',
+    redirect_uri: 'https://chat.openai.com/aip/synthetic/oauth/callback',
+    response_type: 'code',
+    scope: 'email',
+    state: 'synthetic-state',
+    code_challenge: VALID_CHALLENGE,
+    code_challenge_method: 'S256',
+    ...overrides,
+  };
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null) continue;
+    url.searchParams.set(key, value);
+  }
+  return url.toString();
+}
+
 {
   let captured;
   const response = await handleOAuthRelay(
-    new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?client_id=synthetic-client&redirect_uri=https%3A%2F%2Fchat.openai.com%2Faip%2Fsynthetic%2Foauth%2Fcallback&state=synthetic-state&code_challenge=synthetic-challenge&code_challenge_method=S256', {
+    new Request(authorizeUrl(), {
       headers: {
         accept: 'text/html',
         authorization: 'Bearer must-not-forward',
@@ -37,10 +58,15 @@ const env = {
     },
   );
 
-  assert.equal(
-    captured.url,
-    'https://gwaliusblwrzisrwnsvs.supabase.co/auth/v1/oauth/authorize?client_id=synthetic-client&redirect_uri=https%3A%2F%2Fchat.openai.com%2Faip%2Fsynthetic%2Foauth%2Fcallback&state=synthetic-state&code_challenge=synthetic-challenge&code_challenge_method=S256',
-  );
+  const capturedUrl = new URL(captured.url);
+  assert.equal(capturedUrl.origin, __testing.RETAINED_STAGING_SUPABASE_ORIGIN);
+  assert.equal(capturedUrl.pathname, '/auth/v1/oauth/authorize');
+  assert.equal(capturedUrl.searchParams.get('client_id'), 'synthetic-client');
+  assert.equal(capturedUrl.searchParams.get('redirect_uri'), 'https://chat.openai.com/aip/synthetic/oauth/callback');
+  assert.equal(capturedUrl.searchParams.get('response_type'), 'code');
+  assert.equal(capturedUrl.searchParams.get('scope'), 'email');
+  assert.equal(capturedUrl.searchParams.get('code_challenge'), VALID_CHALLENGE);
+  assert.equal(capturedUrl.searchParams.get('code_challenge_method'), 'S256');
   assert.equal(captured.method, 'GET');
   assert.equal(captured.redirect, 'manual');
   assert.equal(captured.accept, 'text/html');
@@ -56,8 +82,59 @@ const env = {
 }
 
 {
+  let upstreamCalled = false;
   const response = await handleOAuthRelay(
-    new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?client_id=synthetic-client'),
+    new Request(authorizeUrl({ code_challenge: null, code_challenge_method: null })),
+    env,
+    async () => {
+      upstreamCalled = true;
+      return new Response(null, { status: 500 });
+    },
+  );
+  assert.equal(upstreamCalled, false);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'oauth_authorize_pkce_missing' });
+}
+
+{
+  const response = await handleOAuthRelay(
+    new Request(authorizeUrl({ code_challenge_method: 'unsupported' })),
+    env,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'oauth_authorize_pkce_method_invalid' });
+}
+
+{
+  const response = await handleOAuthRelay(
+    new Request(authorizeUrl({ code_challenge: 'too-short' })),
+    env,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'oauth_authorize_pkce_challenge_invalid' });
+}
+
+{
+  const response = await handleOAuthRelay(
+    new Request(authorizeUrl({ response_type: 'token' })),
+    env,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'oauth_authorize_response_type_invalid' });
+}
+
+{
+  const response = await handleOAuthRelay(
+    new Request(authorizeUrl({ scope: 'profile' })),
+    env,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'oauth_authorize_scope_invalid' });
+}
+
+{
+  const response = await handleOAuthRelay(
+    new Request(authorizeUrl()),
     env,
     async () => new Response(null, {
       status: 302,
@@ -70,7 +147,7 @@ const env = {
 
 {
   const response = await handleOAuthRelay(
-    new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?client_id=synthetic-client'),
+    new Request(authorizeUrl()),
     env,
     async () => new Response(JSON.stringify({ error: 'invalid_client' }), {
       status: 400,
@@ -113,7 +190,7 @@ const env = {
 
 {
   const response = await handleOAuthRelay(
-    new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?state=synthetic'),
+    new Request(authorizeUrl()),
     { ...env, SUPABASE_URL: 'https://another-project.supabase.co' },
   );
   assert.equal(response.status, 503);
@@ -122,7 +199,7 @@ const env = {
 
 {
   const response = await handleOAuthRelay(
-    new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?state=synthetic'),
+    new Request(authorizeUrl()),
     { ...env, GPT_OAUTH_RELAY_ENABLED: 'false' },
   );
   assert.equal(response, null);
@@ -200,4 +277,4 @@ const env = {
   assert.equal(response.status, 404, 'OAuth relay activation must not expose appointment actions while the action surface is disabled');
 }
 
-console.log('GPT OAuth relay tests passed: proxied staging authorize, bounded token proxy, actions remain disabled.');
+console.log('GPT OAuth relay tests passed: classified authorize guard, proxied staging authorize, bounded token proxy, actions remain disabled.');
