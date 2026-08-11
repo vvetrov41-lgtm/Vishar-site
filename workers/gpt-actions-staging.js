@@ -26,6 +26,47 @@ function exactStagingOrigin(env) {
   return env.SUPABASE_URL === RETAINED_STAGING_SUPABASE_ORIGIN;
 }
 
+function classifyAuthorizeRequest(url) {
+  const responseType = url.searchParams.get('response_type');
+  if (responseType && responseType !== 'code') {
+    return 'oauth_authorize_response_type_invalid';
+  }
+
+  const scope = url.searchParams.get('scope');
+  if (scope && scope.trim() !== 'email') {
+    return 'oauth_authorize_scope_invalid';
+  }
+
+  const resource = url.searchParams.get('resource');
+  if (resource) {
+    try {
+      const parsed = new URL(resource);
+      if (!parsed.protocol || parsed.hash || parsed.search) {
+        return 'oauth_authorize_resource_invalid';
+      }
+    } catch {
+      return 'oauth_authorize_resource_invalid';
+    }
+  }
+
+  const codeChallenge = url.searchParams.get('code_challenge') || '';
+  const codeChallengeMethod = url.searchParams.get('code_challenge_method') || '';
+  if (!codeChallenge || !codeChallengeMethod) {
+    return 'oauth_authorize_pkce_missing';
+  }
+
+  const normalizedMethod = codeChallengeMethod.toLowerCase();
+  if (normalizedMethod !== 's256' && normalizedMethod !== 'plain') {
+    return 'oauth_authorize_pkce_method_invalid';
+  }
+
+  if (codeChallenge.length < 43 || codeChallenge.length > 128) {
+    return 'oauth_authorize_pkce_challenge_invalid';
+  }
+
+  return null;
+}
+
 function safeAuthorizeRedirect(value) {
   if (typeof value !== 'string' || value.length > 4096) return null;
   let url;
@@ -77,6 +118,9 @@ export async function handleOAuthRelay(request, env, fetchImpl = fetch) {
         headers: { ...NO_STORE_HEADERS, allow: 'GET' },
       });
     }
+
+    const requestError = classifyAuthorizeRequest(url);
+    if (requestError) return jsonError(400, requestError);
 
     const target = new URL('/auth/v1/oauth/authorize', RETAINED_STAGING_SUPABASE_ORIGIN);
     target.search = url.search;
@@ -173,5 +217,6 @@ export default {
 export const __testing = Object.freeze({
   RETAINED_STAGING_SUPABASE_ORIGIN,
   OAUTH_TOKEN_BODY_BYTES,
+  classifyAuthorizeRequest,
   safeAuthorizeRedirect,
 });
