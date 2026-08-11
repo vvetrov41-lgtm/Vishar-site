@@ -1,3 +1,4 @@
+# One-shot branch-only helper. It removes itself after patching the canonical inventory.
 name: PR 200 availability ACL inventory patch
 
 on:
