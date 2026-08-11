@@ -1,11 +1,16 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../App';
 import { renderWithSession } from './fixtures';
 
 const PASSWORD = 'Synthetic-Strong-Password-42!';
 
 describe('invited staff first-login flow', () => {
+  beforeEach(() => {
+    window.localStorage.setItem('vishar-crm-language', 'en');
+    window.history.replaceState({}, '', '/');
+  });
+
   it('requires an active invited staff member to set a password before CRM access', async () => {
     window.history.replaceState({}, '', '/?staff_invite=1#synthetic-auth-fragment');
     const { authCalls } = renderWithSession(<App />, {
