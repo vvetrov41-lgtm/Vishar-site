@@ -1,0 +1,115 @@
+name: PR 185 GPT RPC subrequest diagnosis
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-rpc-subrequest-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  diagnose-rpc-subrequest:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DIAGNOSE_PR185_GPT_RPC_SUBREQUEST -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- DIAGNOSE_PR185_GPT_RPC_SUBREQUEST -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+          [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Probe one read with a synthetic invalid JWT
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe="$RUNNER_TEMP/gpt-rpc-subrequest-diagnosis.txt"
+          body="$RUNNER_TEMP/body.json"
+          trap 'rm -f "$body"' EXIT
+
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_host=$TARGET_HOST
+          credentials_used=false
+          synthetic_invalid_jwt=true
+          staging_mutated=false
+          production_targeted=false
+          EOF
+
+          # Three short base64url-compatible segments pass only the local bearer
+          # shape guard. This is deliberately not a signed JWT or credential.
+          synthetic_bearer='a.b.c'
+          url="https://$TARGET_HOST/v1/appointments?from=2026-11-01T00%3A00%3A00Z&to=2026-12-01T00%3A00%3A00Z&limit=1"
+          status="$(curl --silent --show-error --max-time 20 \
+            -H "Authorization: Bearer $synthetic_bearer" \
+            -H 'Accept: application/json' \
+            -o "$body" -w '%{http_code}' "$url")"
+
+          error_code="$(jq -r 'if type == "object" and (.error | type == "string") then .error else "none" end' "$body" 2>/dev/null || printf 'non_json')"
+          case "$error_code" in
+            upstream_fetch_failed|upstream_redirect_rejected|upstream_read_failed|upstream_error|oauth_token_required|none|non_json) ;;
+            *) error_code=other_safe_error ;;
+          esac
+
+          printf 'http_status=%s\n' "$status" >> "$safe"
+          printf 'safe_error=%s\n' "$error_code" >> "$safe"
+          cat "$safe"
+          rm -f "$body"
+          trap - EXIT
+
+      - name: Upload safe diagnosis evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-rpc-subrequest-diagnosis-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/gpt-rpc-subrequest-diagnosis.txt
+          if-no-files-found: warn
+          retention-days: 30

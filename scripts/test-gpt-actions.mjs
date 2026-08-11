@@ -111,6 +111,7 @@ async function read(response) {
   assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_schedule_appointment');
   assert.equal(captured.init.headers.authorization, 'Bearer header.payload.signature');
   assert.equal(captured.init.headers.apikey, enabledEnv.SUPABASE_PUBLISHABLE_KEY);
+  assert.equal(captured.init.redirect, 'manual', 'OAuth bearer subrequests must never follow redirects');
   const payload = JSON.parse(captured.init.body);
   assert.equal(payload.p_status, 'proposed');
   assert.equal('p_artist_id' in payload, false, 'proxy must never forward artist_id');
@@ -162,7 +163,60 @@ async function read(response) {
   assert.equal(result.status, 200);
   assert.equal(result.body.length, 1);
   assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_list_appointments');
+  assert.equal(captured.init.redirect, 'manual');
   assert.equal(JSON.parse(captured.init.body).p_limit, 25);
+}
+
+{
+  const response = await handleGptActionsRequest(
+    new Request(
+      'https://gpt.example/v1/appointments?from=2026-08-01T00%3A00%3A00Z&to=2026-09-01T00%3A00%3A00Z&limit=1',
+      { headers: { authorization: 'Bearer header.payload.signature' } },
+    ),
+    enabledEnv,
+    async () => { throw new TypeError('synthetic network failure'); },
+  );
+  assert.deepEqual(await read(response), {
+    status: 502,
+    body: { error: 'upstream_fetch_failed' },
+  });
+}
+
+{
+  const response = await handleGptActionsRequest(
+    new Request(
+      'https://gpt.example/v1/appointments?from=2026-08-01T00%3A00%3A00Z&to=2026-09-01T00%3A00%3A00Z&limit=1',
+      { headers: { authorization: 'Bearer header.payload.signature' } },
+    ),
+    enabledEnv,
+    async () => new Response(null, {
+      status: 302,
+      headers: { location: 'https://redirect.example.test/' },
+    }),
+  );
+  assert.deepEqual(await read(response), {
+    status: 502,
+    body: { error: 'upstream_redirect_rejected' },
+  });
+}
+
+{
+  const response = await handleGptActionsRequest(
+    new Request(
+      'https://gpt.example/v1/appointments?from=2026-08-01T00%3A00%3A00Z&to=2026-09-01T00%3A00%3A00Z&limit=1',
+      { headers: { authorization: 'Bearer header.payload.signature' } },
+    ),
+    enabledEnv,
+    async () => ({
+      status: 200,
+      ok: true,
+      text: async () => { throw new TypeError('synthetic body read failure'); },
+    }),
+  );
+  assert.deepEqual(await read(response), {
+    status: 502,
+    body: { error: 'upstream_read_failed' },
+  });
 }
 
 {

@@ -266,19 +266,34 @@ export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
     const route = routeFor(request, url, body);
     if (!route) return json(404, { error: 'not_found' });
 
-    const response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${route.rpc}`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        apikey: env.SUPABASE_PUBLISHABLE_KEY,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify(route.payload),
-      redirect: 'error',
-    });
+    let response;
+    try {
+      response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${route.rpc}`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          apikey: env.SUPABASE_PUBLISHABLE_KEY,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(route.payload),
+        // Never allow the caller's OAuth bearer token to follow an upstream redirect.
+        redirect: 'manual',
+      });
+    } catch {
+      return json(502, { error: 'upstream_fetch_failed' });
+    }
 
-    const text = await response.text();
+    if (response.status >= 300 && response.status < 400) {
+      return json(502, { error: 'upstream_redirect_rejected' });
+    }
+
+    let text;
+    try {
+      text = await response.text();
+    } catch {
+      return json(502, { error: 'upstream_read_failed' });
+    }
     if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
       return json(502, { error: 'upstream_response_too_large' });
     }
