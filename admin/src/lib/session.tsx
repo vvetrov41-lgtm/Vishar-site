@@ -46,6 +46,10 @@ export type AccessState =
 
 export type CrmApi = Api & AppointmentApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi;
 
+type PasswordUpdateAuth = CrmClient['auth'] & {
+  updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
+};
+
 export interface SessionValue {
   state: AccessState;
   profile: Profile | null;
@@ -161,7 +165,10 @@ export function SessionProvider({
       throw new Error('Choose a password between 12 and 128 characters.');
     }
 
-    const updated = await client.auth.updateUser({ password });
+    // Password mutation is intentionally kept in the Auth-only session layer.
+    // It is not added to the general CRM data client used by pages/workflows.
+    const auth = client.auth as PasswordUpdateAuth;
+    const updated = await auth.updateUser({ password });
     if (updated.error) {
       throw new Error('Could not set that password. Choose a stronger password and try again.');
     }
