@@ -84,9 +84,9 @@ jobs:
           production_targeted=false
           EOF
 
-          # Three base64url-looking segments pass only the local shape guard. This is
-          # deliberately not a signed token and cannot authenticate to Supabase.
-          synthetic_bearer='eyJ0eXAiOiJKV1QifQ.eyJzdWIiOiJzeW50aGV0aWMtaW52YWxpZCJ9.c3ludGhldGljLWludmFsaWQ'
+          # Three short base64url-compatible segments pass only the local bearer
+          # shape guard. This is deliberately not a signed JWT or credential.
+          synthetic_bearer='a.b.c'
           url="https://$TARGET_HOST/v1/appointments?from=2026-11-01T00%3A00%3A00Z&to=2026-12-01T00%3A00%3A00Z&limit=1"
           status="$(curl --silent --show-error --max-time 20 \
             -H "Authorization: Bearer $synthetic_bearer" \
