@@ -46,7 +46,9 @@ verify_project_health() {
 }
 
 write_snapshot() {
-  local label="$1" query="$RUNNER_TEMP/pr201-${label}.sql" raw="$RUNNER_TEMP/pr201-${label}.json"
+  local label="$1"
+  local query="$RUNNER_TEMP/pr201-${label}.sql"
+  local raw="$RUNNER_TEMP/pr201-${label}.json"
   cat > "$query" <<'SQL'
 select jsonb_build_object(
   'latest_migration', (select max(version) from supabase_migrations.schema_migrations),
