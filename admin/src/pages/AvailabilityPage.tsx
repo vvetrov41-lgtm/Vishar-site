@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { can } from '../lib/permissions';
-import { useApi, useSession } from '../lib/session';
-import { useLanguage } from '../lib/i18n';
+import { LoadingState } from '../components/StateViews';
 import type {
   AvailabilityBlock,
   AvailabilityBlockKind,
   AvailabilityBlockInput,
 } from '../lib/availability-api';
-import { LoadingState } from '../components/StateViews';
+import { useArtistScope } from '../lib/artist-scope';
+import { useLanguage } from '../lib/i18n';
+import { can } from '../lib/permissions';
+import { useApi, useSession } from '../lib/session';
 
 interface BlockFormState {
   blockKind: AvailabilityBlockKind;
@@ -25,51 +26,58 @@ export function AvailabilityPage() {
   const api = useApi();
   const { profile } = useSession();
   const { language } = useLanguage();
-  const [artists, setArtists] = useState<{ id: string; display_name: string }[]>([]);
-  const [artistId, setArtistId] = useState('');
+  const {
+    artists,
+    selectedArtistId,
+    loading: artistScopeLoading,
+  } = useArtistScope();
   const [blocks, setBlocks] = useState<AvailabilityBlock[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<BlockFormState>(() => defaultForm());
   const mayManage = can(profile?.role, 'manageSessions');
   const copy = pageCopy(language);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    void api.listAccessibleArtists()
-      .then((rows) => {
-        if (cancelled) return;
-        setArtists(rows);
-        setArtistId((current) => current || rows[0]?.id || '');
-      })
-      .catch(() => {
-        if (!cancelled) setError(copy.loadArtistsError);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [api, copy.loadArtistsError]);
-
-  useEffect(() => {
-    if (!artistId) {
-      setBlocks([]);
-      return;
-    }
-    void loadBlocks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [artistId]);
-
   const selectedArtist = useMemo(
-    () => artists.find((artist) => artist.id === artistId) ?? null,
-    [artists, artistId]
+    () => artists.find((artist) => artist.id === selectedArtistId) ?? null,
+    [artists, selectedArtistId]
   );
 
+  useEffect(() => {
+    setEditingId(null);
+    setForm(defaultForm());
+    setError(null);
+    if (!selectedArtistId) {
+      setBlocks([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    const from = new Date();
+    from.setDate(from.getDate() - 30);
+    const to = new Date();
+    to.setDate(to.getDate() + 365);
+
+    void api.listAvailabilityBlocks({
+      artistId: selectedArtistId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+    }).then((rows) => {
+      if (!cancelled) setBlocks(rows);
+    }).catch((cause) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : copy.loadBlocksError);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [api, selectedArtistId, copy.loadBlocksError]);
+
   async function loadBlocks() {
-    if (!artistId) return;
+    if (!selectedArtistId) return;
     setLoading(true);
     setError(null);
     const from = new Date();
@@ -78,7 +86,7 @@ export function AvailabilityPage() {
     to.setDate(to.getDate() + 365);
     try {
       const rows = await api.listAvailabilityBlocks({
-        artistId,
+        artistId: selectedArtistId,
         from: from.toISOString(),
         to: to.toISOString(),
       });
@@ -92,11 +100,11 @@ export function AvailabilityPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!artistId || !mayManage) return;
+    if (!selectedArtistId || !mayManage) return;
 
     let input: AvailabilityBlockInput;
     try {
-      input = formToInput(artistId, form);
+      input = formToInput(selectedArtistId, form, copy.invalidRange);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : copy.invalidRange);
       return;
@@ -152,7 +160,21 @@ export function AvailabilityPage() {
     }
   }
 
-  if (loading && artists.length === 0) return <LoadingState label={copy.loading} />;
+  if (artistScopeLoading) return <LoadingState label={copy.loading} />;
+
+  if (!selectedArtistId) {
+    return (
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>{copy.title}</h2>
+            <p>{copy.subtitle}</p>
+          </div>
+        </div>
+        <div className="notice">{copy.chooseOneArtist}</div>
+      </section>
+    );
+  }
 
   return (
     <div className="stack">
@@ -161,19 +183,11 @@ export function AvailabilityPage() {
           <div>
             <h2>{copy.title}</h2>
             <p>{copy.subtitle}</p>
+            {selectedArtist ? <p><strong>{selectedArtist.display_name}</strong></p> : null}
           </div>
         </div>
 
         {error ? <div className="notice warn" role="alert">{error}</div> : null}
-
-        <label className="field" style={{ maxWidth: 420 }}>
-          <span>{copy.artist}</span>
-          <select value={artistId} onChange={(event) => setArtistId(event.target.value)}>
-            {artists.map((artist) => (
-              <option key={artist.id} value={artist.id}>{artist.display_name}</option>
-            ))}
-          </select>
-        </label>
 
         {!mayManage ? (
           <div className="notice">{copy.readOnly}</div>
@@ -261,7 +275,7 @@ export function AvailabilityPage() {
             </label>
 
             <div className="actions">
-              <button type="submit" disabled={saving || !artistId}>
+              <button type="submit" disabled={saving}>
                 {editingId ? copy.saveChanges : copy.blockTime}
               </button>
               {editingId ? (
@@ -287,7 +301,7 @@ export function AvailabilityPage() {
         <div className="panel-heading">
           <div>
             <h2>{copy.upcoming}</h2>
-            <p>{selectedArtist ? selectedArtist.display_name : copy.chooseArtist}</p>
+            <p>{selectedArtist?.display_name ?? copy.chooseArtist}</p>
           </div>
         </div>
 
@@ -340,12 +354,16 @@ function defaultForm(): BlockFormState {
   };
 }
 
-function formToInput(artistId: string, form: BlockFormState): AvailabilityBlockInput {
+function formToInput(
+  artistId: string,
+  form: BlockFormState,
+  invalidRangeMessage: string
+): AvailabilityBlockInput {
   let start: Date;
   let end: Date;
   if (form.allDay) {
     if (!form.startDate || !form.endDate || form.endDate < form.startDate) {
-      throw new Error('Choose a valid first and last day.');
+      throw new Error(invalidRangeMessage);
     }
     start = new Date(`${form.startDate}T00:00:00`);
     end = new Date(`${form.endDate}T00:00:00`);
@@ -355,7 +373,7 @@ function formToInput(artistId: string, form: BlockFormState): AvailabilityBlockI
     end = new Date(form.endDateTime);
   }
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
-    throw new Error('The end of time off must be after the start.');
+    throw new Error(invalidRangeMessage);
   }
   return {
     artistId,
@@ -418,27 +436,29 @@ function pageCopy(language: 'en' | 'ru') {
     ? {
         title: 'Доступность и выходные',
         subtitle: 'Заблокированное здесь время нельзя использовать для активных записей. База данных остаётся источником истины.',
-        artist: 'Мастер', type: 'Причина', allDay: 'Весь день', firstDay: 'Первый день', lastDay: 'Последний день',
+        type: 'Причина', allDay: 'Весь день', firstDay: 'Первый день', lastDay: 'Последний день',
         starts: 'Начало', ends: 'Окончание', note: 'Заметка', notePlaceholder: 'Необязательно, до 500 символов',
         blockTime: 'Заблокировать время', saveChanges: 'Сохранить изменения', stopEditing: 'Отменить редактирование',
         upcoming: 'Предстоящие блокировки', chooseArtist: 'Выберите мастера', none: 'Предстоящих блокировок нет.',
-        edit: 'Изменить', remove: 'Убрать', readOnly: 'У вас есть доступ к просмотру, но нет права управлять расписанием этого уровня.',
+        edit: 'Изменить', remove: 'Убрать', readOnly: 'У вас есть доступ к просмотру, но нет права управлять расписанием.',
         loading: 'Загрузка доступности...', loadingBlocks: 'Загрузка блокировок...',
-        loadArtistsError: 'Не удалось загрузить список мастеров.', loadBlocksError: 'Не удалось загрузить доступность.',
-        saveError: 'Не удалось сохранить блокировку.', cancelError: 'Не удалось убрать блокировку.', invalidRange: 'Проверьте даты и время.',
+        loadBlocksError: 'Не удалось загрузить доступность.', saveError: 'Не удалось сохранить блокировку.',
+        cancelError: 'Не удалось убрать блокировку.', invalidRange: 'Проверьте даты и время.',
+        chooseOneArtist: 'Выберите одного мастера в верхнем фильтре. Блокировка времени всегда относится только к одному мастеру.',
         cancelConfirm: 'Убрать эту блокировку времени? После этого интервал снова можно будет использовать для записей.',
       }
     : {
         title: 'Availability and time off',
         subtitle: 'Time blocked here cannot be used for active appointments. The database remains authoritative.',
-        artist: 'Artist', type: 'Reason', allDay: 'All day', firstDay: 'First day', lastDay: 'Last day',
+        type: 'Reason', allDay: 'All day', firstDay: 'First day', lastDay: 'Last day',
         starts: 'Starts', ends: 'Ends', note: 'Note', notePlaceholder: 'Optional, up to 500 characters',
         blockTime: 'Block time', saveChanges: 'Save changes', stopEditing: 'Stop editing',
         upcoming: 'Upcoming blocks', chooseArtist: 'Choose an artist', none: 'No upcoming availability blocks.',
         edit: 'Edit', remove: 'Remove', readOnly: 'You can view availability but do not have schedule-management access.',
         loading: 'Loading availability...', loadingBlocks: 'Loading blocks...',
-        loadArtistsError: 'Could not load artists.', loadBlocksError: 'Could not load availability.',
-        saveError: 'Could not save that block.', cancelError: 'Could not remove that block.', invalidRange: 'Check the dates and times.',
+        loadBlocksError: 'Could not load availability.', saveError: 'Could not save that block.',
+        cancelError: 'Could not remove that block.', invalidRange: 'Check the dates and times.',
+        chooseOneArtist: 'Choose one artist in the top filter. A time-off block always belongs to exactly one artist.',
         cancelConfirm: 'Remove this time-off block? The interval will become schedulable again.',
       };
 }
