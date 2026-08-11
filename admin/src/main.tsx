@@ -5,7 +5,7 @@ import { withConsequentialConfirmations } from './lib/consequential-client';
 import { LanguageProvider } from './lib/i18n';
 import { RouterProvider } from './lib/router';
 import { SessionProvider } from './lib/session';
-import { createCrmClient, readTeamInviteUrl } from './lib/supabase';
+import { createCrmClient, isStaffInviteUrl, readTeamInviteUrl } from './lib/supabase';
 import './styles.css';
 
 // `import.meta.env` is replaced at build time by Vite. Only VITE_-prefixed
@@ -14,7 +14,10 @@ import './styles.css';
 // Vite is actually in development mode; a production build remains hosted-
 // Supabase-only.
 const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
-const client = withConsequentialConfirmations(createCrmClient(browserEnv, import.meta.env.DEV));
+const staffInviteMode = isStaffInviteUrl(window.location.href);
+const client = withConsequentialConfirmations(
+  createCrmClient(browserEnv, import.meta.env.DEV, window.location.href)
+);
 const teamInviteUrl = readTeamInviteUrl(browserEnv, import.meta.env.DEV);
 
 const container = document.getElementById('root');
@@ -23,7 +26,11 @@ if (!container) throw new Error('Missing #root');
 createRoot(container).render(
   <StrictMode>
     <LanguageProvider>
-      <SessionProvider client={client} teamInviteUrl={teamInviteUrl}>
+      <SessionProvider
+        client={client}
+        teamInviteUrl={teamInviteUrl}
+        staffInviteMode={staffInviteMode}
+      >
         <RouterProvider>
           <App />
         </RouterProvider>
