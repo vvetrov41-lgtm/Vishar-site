@@ -105,6 +105,8 @@ select ok(
   'claim projection contains no client contact, idea, payload or provider credential fields'
 );
 
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
 select throws_ok(
   $$select * from public.claim_telegram_outbox('x', 10, 120)$$,
   '22023', 'Telegram worker id is invalid',
@@ -120,8 +122,6 @@ select throws_ok(
   '22023', 'Telegram lease must be between 30 and 600 seconds',
   'lease duration is bounded'
 );
-
-select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 create temporary table telegram_rollout_cutoff as
 select automatic_after
