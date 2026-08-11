@@ -32,7 +32,9 @@ describe('Team and access management', () => {
     const managerRole = await screen.findByLabelText('Role for Manager');
     const managerCard = managerRole.closest('.team-member-card') as HTMLElement;
     const membershipCard = within(managerCard).getByText('Vladimir Vishar').closest('fieldset') as HTMLElement;
-    fireEvent.click(within(membershipCard).getByLabelText('Manage integrations'));
+    const integrationsToggle = within(membershipCard).getByLabelText('Manage integrations');
+    fireEvent.click(integrationsToggle);
+    await waitFor(() => expect(integrationsToggle).toBeChecked());
     fireEvent.click(within(membershipCard).getByRole('button', { name: 'Save artist access' }));
 
     await waitFor(() => {
