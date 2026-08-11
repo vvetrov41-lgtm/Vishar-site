@@ -1,0 +1,193 @@
+name: Deploy private production CRM
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation. Leave false for validation-only runs.
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-crm
+  cancel-in-progress: false
+
+jobs:
+  private-crm:
+    name: Private CRM production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+
+    steps:
+      - name: Verify exact release branch and explicit production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *)
+              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          fi
+
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            if [ "$DEPLOY_ENABLED" != 'true' ]; then
+              echo 'CRM_PRODUCTION_DEPLOY_ENABLED is not explicitly enabled in the crm-production environment.' >&2
+              exit 1
+            fi
+            if [ "$APPROVAL_PHRASE" != 'DEPLOY_PRIVATE_CRM_ONLY' ]; then
+              echo 'The exact production approval phrase is required for deploy=true.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Verify production-only browser configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$VITE_SUPABASE_URL" in
+            https://*.supabase.co) ;;
+            *)
+              echo 'CRM_PRODUCTION_SUPABASE_URL must be an exact hosted Supabase project root URL.' >&2
+              exit 1
+              ;;
+          esac
+
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in
+            sb_publishable_*) ;;
+            *)
+              echo 'CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY must use the publishable-key format.' >&2
+              exit 1
+              ;;
+          esac
+
+          if [ -n "$VITE_TEAM_INVITE_URL" ]; then
+            case "$VITE_TEAM_INVITE_URL" in
+              https://*.vishartattoo.com/v1/staff/invite) ;;
+              *)
+                echo 'CRM_PRODUCTION_TEAM_INVITE_URL must be the exact owned Team invite endpoint.' >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          if ! [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]; then
+            echo 'CRM_PRODUCTION_PAGES_PROJECT must be a dedicated private CRM project name.' >&2
+            exit 1
+          fi
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+
+      - name: Verify checkout SHA
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install locked CRM dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Audit CRM dependencies
+        working-directory: admin
+        run: npm audit --audit-level=moderate
+
+      - name: Test, typecheck and build only the private CRM
+        working-directory: admin
+        env:
+          VITE_CALENDAR_CONNECTOR_ORIGIN: ''
+        run: |
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify exact private CRM artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Install pinned root deployment tooling
+        if: ${{ inputs.deploy }}
+        run: npm ci
+
+      - name: Deploy only admin/dist to dedicated CRM Pages project
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx wrangler pages deploy admin/dist
+          --project-name "$CRM_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$GITHUB_SHA"
+          --commit-dirty=false
+
+      - name: Production boundary summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+        run: |
+          {
+            echo '### Private CRM production gate'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo '- Source build scope: `admin/` only'
+            echo '- Upload scope: `admin/dist` only'
+            echo '- Calendar connector in this build: disabled'
+            echo '- Public site / booking Worker deploy commands: none'
+          } >> "$GITHUB_STEP_SUMMARY"
