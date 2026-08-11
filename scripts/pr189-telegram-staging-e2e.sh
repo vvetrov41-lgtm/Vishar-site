@@ -25,6 +25,7 @@ readonly HISTORICAL_IDS=(
 
 readonly EVIDENCE_DIR="${RUNNER_TEMP:?}/pr189-telegram-evidence"
 mkdir -p "$EVIDENCE_DIR"
+MIGRATION_ALREADY_APPLIED=false
 
 die() { echo "PR189 staging validation failed: $*" >&2; exit 1; }
 require_env() { [ -n "${!1:-}" ] || die "required encrypted staging configuration $1 is unavailable"; }
@@ -182,21 +183,34 @@ verify_migrations_before() {
     awk -F'|' '{gsub(/[[:space:]`]/,"",$2); if ($2 ~ /^[0-9]{4}$/) print $2}' \
       "${EVIDENCE_DIR}/migrations-before.txt"
   )
-  [ "${#versions[@]}" -eq 34 ] || die "retained staging must contain exactly migrations 0001 through 0034"
+  if [ "${#versions[@]}" -eq 34 ] && [ "${versions[33]}" = '0034' ]; then
+    MIGRATION_ALREADY_APPLIED=false
+  elif [ "${#versions[@]}" -eq 35 ] && [ "${versions[34]}" = '0035' ]; then
+    # A prior exact-head guarded run may have applied the forward-only
+    # migration and then stopped before target setup. Never reset or repair it.
+    MIGRATION_ALREADY_APPLIED=true
+  else
+    die "retained staging must contain exactly migrations 0001 through 0034 or 0035"
+  fi
   for n in $(seq -w 1 34); do
     printf '%s\n' "${versions[@]}" | grep -Fxq "00$n" || die "remote migration 00$n is absent"
   done
 }
 
 apply_exact_migration() {
-  npx --yes supabase@2.111.0 db push --linked --dry-run 2>&1 \
-    | tee "${EVIDENCE_DIR}/migration-dry-run.txt"
-  grep -Fq '0035_telegram_outbox_exact_id_drain.sql' "${EVIDENCE_DIR}/migration-dry-run.txt" \
-    || die "dry-run omitted migration 0035"
-  if grep -E '00(3[6-9]|[4-9][0-9])_' "${EVIDENCE_DIR}/migration-dry-run.txt" >/dev/null; then
-    die "dry-run contained a migration beyond 0035"
+  if [ "$MIGRATION_ALREADY_APPLIED" = 'false' ]; then
+    npx --yes supabase@2.111.0 db push --linked --dry-run 2>&1 \
+      | tee "${EVIDENCE_DIR}/migration-dry-run.txt"
+    grep -Fq '0035_telegram_outbox_exact_id_drain.sql' "${EVIDENCE_DIR}/migration-dry-run.txt" \
+      || die "dry-run omitted migration 0035"
+    if grep -E '00(3[6-9]|[4-9][0-9])_' "${EVIDENCE_DIR}/migration-dry-run.txt" >/dev/null; then
+      die "dry-run contained a migration beyond 0035"
+    fi
+    npx --yes supabase@2.111.0 db push --linked --yes
+  else
+    printf '%s\n' '0035 already applied by an earlier exact-head guarded run; no reset or repair performed.' \
+      > "${EVIDENCE_DIR}/migration-dry-run.txt"
   fi
-  npx --yes supabase@2.111.0 db push --linked --yes
   npx --yes supabase@2.111.0 migration list --linked > "${EVIDENCE_DIR}/migrations-after.txt"
   mapfile -t versions < <(
     awk -F'|' '{gsub(/[[:space:]`]/,"",$2); if ($2 ~ /^[0-9]{4}$/) print $2}' \
@@ -209,7 +223,11 @@ apply_exact_migration() {
   diff -u "${EVIDENCE_DIR}/before.json" "${EVIDENCE_DIR}/after-migration.json" >/dev/null \
     || die "migration 0035 unexpectedly changed Telegram outbox state"
 
-  npx --yes supabase@2.111.0 test db --linked 2>&1 | tee "${EVIDENCE_DIR}/hosted-pgtap.txt"
+  # The full suite is already required on a clean database by exact-head normal
+  # CI. Retained staging contains intentional fixtures, so execute only the new
+  # transaction-wrapped exact-ID suite here.
+  npx --yes supabase@2.111.0 test db supabase/tests/190_telegram_outbox_drain.sql --linked \
+    2>&1 | tee "${EVIDENCE_DIR}/hosted-pgtap.txt"
   grep -Eq 'Result:[[:space:]]*PASS|All tests successful' "${EVIDENCE_DIR}/hosted-pgtap.txt" \
     || die "hosted pgTAP did not pass"
   npx --yes supabase@2.111.0 db lint --linked --schema public,crm_private --level error --fail-on error \
