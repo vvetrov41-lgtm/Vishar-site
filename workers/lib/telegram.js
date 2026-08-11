@@ -20,7 +20,10 @@ function diagnosticError(operation,status){
   if(status===429||status>=500){
     return {reachable:false,errorCode:'telegram_provider_unavailable',statusClass:statusGroup};
   }
-  return {reachable:false,errorCode:'telegram_provider_rejected',statusClass:statusGroup};
+  if(operation==='getMe'){
+    return {reachable:false,errorCode:'telegram_bot_preflight_rejected',statusClass:statusGroup};
+  }
+  return {reachable:false,errorCode:'telegram_destination_rejected',statusClass:statusGroup};
 }
 export async function checkTelegramDestination(env,route,fetchImpl=fetch){
   let selected;

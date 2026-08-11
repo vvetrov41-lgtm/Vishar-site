@@ -141,12 +141,36 @@ await test('destination preflight classifies an invalid bot token without exposi
   assert.ok(!JSON.stringify(result).includes(kristinaBotToken));
 });
 
+await test('destination preflight keeps a non-auth bot rejection distinct from chat rejection', async () => {
+  const mock = diagnosticFetch({ getMeStatus: 400 });
+  const result = await checkTelegramDestination(env, route({ integration_key: kristinaKey }), mock.fetchImpl);
+  assert.deepEqual(result, {
+    reachable: false,
+    errorCode: 'telegram_bot_preflight_rejected',
+    statusClass: '4xx',
+  });
+  assert.equal(mock.calls.length, 1);
+  assert.ok(!JSON.stringify(result).includes(kristinaBotToken));
+});
+
 await test('destination preflight distinguishes an unavailable chat without sending', async () => {
   const mock = diagnosticFetch({ getChatStatus: 400 });
   const result = await checkTelegramDestination(env, route({ integration_key: kristinaKey }), mock.fetchImpl);
   assert.deepEqual(result, {
     reachable: false,
     errorCode: 'telegram_destination_unavailable',
+    statusClass: '4xx',
+  });
+  assert.equal(mock.calls.length, 2);
+  assert.ok(!mock.calls.some((call) => call.url.endsWith('/sendMessage')));
+});
+
+await test('destination preflight keeps an unclassified chat rejection distinct from bot rejection', async () => {
+  const mock = diagnosticFetch({ getChatStatus: 404 });
+  const result = await checkTelegramDestination(env, route({ integration_key: kristinaKey }), mock.fetchImpl);
+  assert.deepEqual(result, {
+    reachable: false,
+    errorCode: 'telegram_destination_rejected',
     statusClass: '4xx',
   });
   assert.equal(mock.calls.length, 2);
