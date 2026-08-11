@@ -283,6 +283,7 @@ export function buildGoogleEvent(job, { eventId = null, includeId = false, crmRe
   }
 
   const event = {
+    status: 'confirmed',
     summary: `${appointmentLabel(job.appointment_type)} · ${safeDisplayName(job.client_display_name)}`,
     description: [
       'Vishar CRM appointment',
@@ -325,6 +326,13 @@ function providerError(status, body = {}) {
   return new CalendarConnectorError('calendar_provider_rejected');
 }
 
+function providerEventResult(body, fallbackEventId) {
+  if (body?.status === 'cancelled') {
+    throw new CalendarConnectorError('calendar_provider_rejected');
+  }
+  return { providerEventId: body?.id || fallbackEventId };
+}
+
 async function readProviderJson(response) {
   if (response.status === 204) return {};
   return response.json().catch(() => ({}));
@@ -357,7 +365,7 @@ export function createGoogleCalendarProvider({
     );
     const body = await readProviderJson(response);
     if (!response.ok) throw providerError(response.status, body);
-    return { providerEventId: body.id || eventId };
+    return providerEventResult(body, eventId);
   }
 
   async function insertEvent(job) {
@@ -376,7 +384,7 @@ export function createGoogleCalendarProvider({
     }
     const body = await readProviderJson(response);
     if (!response.ok) throw providerError(response.status, body);
-    return { providerEventId: body.id || eventId };
+    return providerEventResult(body, eventId);
   }
 
   return {
@@ -424,4 +432,5 @@ export const __testing = {
   normalizeEmail,
   appointmentLabel,
   providerReasons,
+  providerEventResult,
 };
