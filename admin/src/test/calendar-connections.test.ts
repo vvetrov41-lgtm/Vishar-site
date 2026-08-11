@@ -56,9 +56,10 @@ describe('Calendar Connections API boundary', () => {
 });
 
 describe('Calendar Connections navigation', () => {
-  it('uses top-level connector URLs without artist ids, emails or tokens', () => {
-    const start = calendarConnectorUrl('start', 'vladimir');
-    const disconnect = calendarConnectorUrl('disconnect', 'kristina');
+  it('uses only the explicitly configured connector origin without artist ids, emails or tokens', () => {
+    const origin = 'https://calendar-staging.vishartattoo.com';
+    const start = calendarConnectorUrl(origin, 'start', 'vladimir');
+    const disconnect = calendarConnectorUrl(origin, 'disconnect', 'kristina');
 
     expect(start).toBe(
       'https://calendar-staging.vishartattoo.com/oauth/google/start/vladimir',
@@ -67,6 +68,11 @@ describe('Calendar Connections navigation', () => {
       'https://calendar-staging.vishartattoo.com/oauth/google/disconnect/kristina',
     );
     expect(`${start}${disconnect}`).not.toMatch(/artist_id|@|token|calendar_id/i);
+  });
+
+  it('refuses to synthesize a connector URL when the environment has no connector', () => {
+    expect(() => calendarConnectorUrl('', 'start', 'vladimir'))
+      .toThrow(/not configured/i);
   });
 
   it('treats return query parameters as a notice, not connection state', () => {
