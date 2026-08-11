@@ -1,7 +1,7 @@
 // Role capability tests.
 //
 // These assert the shape of the capability matrix itself. What makes them worth
-// having is not that the interface hides a button — it is that this matrix is
+// having is not that the interface hides a button - it is that this matrix is
 // the one the interface reads, and drifting from the database's grants would
 // mean offering people controls that only ever fail.
 
@@ -87,6 +87,7 @@ describe('navigation', () => {
       '/clients',
       '/projects',
       '/appointments',
+      '/availability',
       '/integrations',
       '/users',
       '/activity',
@@ -97,13 +98,14 @@ describe('navigation', () => {
     const paths = navItemsFor('booking_manager').map((item) => item.path);
     expect(paths).not.toContain('/users');
     expect(paths).toContain('/enquiries');
+    expect(paths).toContain('/availability');
     expect(paths).toContain('/activity');
     expect(paths).toContain('/integrations');
   });
 
   it('leaves read_only with viewing sections only', () => {
     const paths = navItemsFor('read_only').map((item) => item.path);
-    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/appointments']);
+    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/appointments', '/availability']);
   });
 
   it('shows nothing at all without an active profile', () => {
