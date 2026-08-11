@@ -5,7 +5,7 @@
 -- Migration 0041 uses these values only after this migration has committed,
 -- avoiding PostgreSQL's same-transaction enum-value restriction.
 -- This boundary is intentionally separate from all projection functions and
--- does not enqueue work by itself.
+-- does not enqueue work by itself or mutate retained provider state.
 --
 -- Forward-only. No provider call, OAuth change, cron change or deployment.
 
