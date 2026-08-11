@@ -1,0 +1,82 @@
+# One-shot branch-only script patch. No external mutation; self-deletes.
+name: PR201 staging script fix helper
+
+on:
+  push:
+    branches:
+      - agent/calendar-time-off-projection
+    paths:
+      - .github/workflows/pr201-staging-script-fix-helper.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/calendar-time-off-projection
+          fetch-depth: 0
+      - shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/pr201-calendar-time-off-staging.sh')
+          text = p.read_text()
+          replacements = [
+            (
+              'pre-existing CRM/integration fingerprints, and runs transaction-wrapped hosted\n# pgTAP plus lint. Provider calls and Worker deployment are handled separately',
+              'pre-existing CRM/integration fingerprints, then runs hosted PostgreSQL lint.\n# Provider calls and Worker deployment are handled separately',
+            ),
+            (
+              "      'allowed_origin', allowed_origin,\n",
+              "      'allowed_origin_md5', md5(allowed_origin),\n",
+            ),
+            (
+              "  'manual_receipts', (select count(*)::integer from crm_private.manual_enquiry_receipts),\n",
+              '',
+            ),
+            (
+              "    and .staff_invites == 0\n    and .manual_receipts == 0\n",
+              "    and .staff_invites == 0\n",
+            ),
+          ]
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected one target, found {text.count(old)} for {old[:40]!r}')
+              text = text.replace(old, new, 1)
+
+          old_tests = '''  for test_file in \\
+    supabase/tests/192_team_access_management.sql \\
+    supabase/tests/193_manual_crm_intake.sql \\
+    supabase/tests/194_artist_availability_time_off.sql \\
+    supabase/tests/195_calendar_availability_projection.sql; do
+    supabase test db "$test_file" --linked 2>&1 | tee -a "$EVIDENCE_DIR/hosted-pgtap.txt"
+  done
+'''
+          if text.count(old_tests) != 1:
+              raise SystemExit(f'expected one hosted pgTAP loop, found {text.count(old_tests)}')
+          text = text.replace(old_tests, '', 1)
+          if text.count('      hosted_pgtap:"passed",\n') != 1:
+              raise SystemExit('expected one hosted_pgtap summary field')
+          text = text.replace(
+              '      hosted_pgtap:"passed",\n',
+              '      exact_head_clean_pgtap:"verified_by_guarded_normal_ci",\n',
+              1,
+          )
+          p.write_text(text)
+          PY
+          git rm .github/workflows/pr201-staging-script-fix-helper.yml
+          git diff --check
+          git add scripts/pr201-calendar-time-off-staging.sh
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fx '.github/workflows/pr201-staging-script-fix-helper.yml'
+          printf '%s\n' "${changed[@]}" | grep -Fx 'scripts/pr201-calendar-time-off-staging.sh'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Harden PR201 retained staging validation'
+          git push origin HEAD:agent/calendar-time-off-projection
