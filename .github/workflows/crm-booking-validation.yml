@@ -63,6 +63,9 @@ jobs:
       - name: Compile disabled Team admin Worker with Wrangler
         run: npm run check:team-admin-bundle
 
+      - name: Test private production release workflow boundaries
+        run: node scripts/test-private-production-release-workflows.mjs
+
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
 
