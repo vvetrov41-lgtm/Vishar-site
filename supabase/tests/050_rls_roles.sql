@@ -532,6 +532,7 @@ insert into expected_function_acl values
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
   ('public.record_activity(text,uuid,uuid,uuid,uuid,jsonb)', false, true, false),
+  ('public.create_manual_enquiry(uuid,uuid,jsonb,jsonb,boolean)', false, true, false),
   ('public.transition_enquiry_status(uuid,public.enquiry_status)', false, true, false),
   ('public.assign_enquiry(uuid,uuid)', false, true, false),
   ('public.convert_enquiry_to_project(uuid,text,text)', false, true, false),
