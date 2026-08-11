@@ -1,6 +1,8 @@
 import gptActionsWorker from './gpt-actions.js';
 
 const RETAINED_STAGING_SUPABASE_ORIGIN = 'https://gwaliusblwrzisrwnsvs.supabase.co';
+const CRM_STAGING_HOST = 'vishar-crm-staging.pages.dev';
+const CHATGPT_CALLBACK_HOSTS = new Set(['chat.openai.com', 'chatgpt.com']);
 const OAUTH_TOKEN_BODY_BYTES = 16 * 1024;
 
 const NO_STORE_HEADERS = Object.freeze({
@@ -24,7 +26,41 @@ function exactStagingOrigin(env) {
   return env.SUPABASE_URL === RETAINED_STAGING_SUPABASE_ORIGIN;
 }
 
-export async function handleOAuthRelay(request, env) {
+function safeAuthorizeRedirect(value) {
+  if (typeof value !== 'string' || value.length > 4096) return null;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return null;
+
+  if (url.hostname === CRM_STAGING_HOST) {
+    return (url.pathname === '/oauth/consent' || url.pathname === '/oauth/consent/')
+      ? url.toString()
+      : null;
+  }
+
+  if (CHATGPT_CALLBACK_HOSTS.has(url.hostname)) {
+    return url.pathname.startsWith('/aip/') ? url.toString() : null;
+  }
+
+  return null;
+}
+
+function safeUpstreamHeaders(upstream, { allowLocation = false } = {}) {
+  const headers = new Headers(NO_STORE_HEADERS);
+  const contentType = upstream.headers.get('content-type');
+  if (contentType) headers.set('content-type', contentType);
+  if (allowLocation) {
+    const location = safeAuthorizeRedirect(upstream.headers.get('location'));
+    if (location) headers.set('location', location);
+  }
+  return headers;
+}
+
+export async function handleOAuthRelay(request, env, fetchImpl = fetch) {
   if (env.GPT_OAUTH_RELAY_ENABLED !== 'true') return null;
 
   const url = new URL(request.url);
@@ -44,12 +80,39 @@ export async function handleOAuthRelay(request, env) {
 
     const target = new URL('/auth/v1/oauth/authorize', RETAINED_STAGING_SUPABASE_ORIGIN);
     target.search = url.search;
-    return new Response(null, {
-      status: 302,
-      headers: {
-        ...NO_STORE_HEADERS,
-        location: target.toString(),
-      },
+
+    const headers = new Headers();
+    const accept = request.headers.get('accept');
+    if (accept) headers.set('accept', accept);
+
+    let upstream;
+    try {
+      upstream = await fetchImpl(target.toString(), {
+        method: 'GET',
+        headers,
+        redirect: 'manual',
+      });
+    } catch {
+      return jsonError(502, 'oauth_authorize_upstream_unavailable');
+    }
+
+    if (upstream.status >= 300 && upstream.status < 400) {
+      const location = safeAuthorizeRedirect(upstream.headers.get('location'));
+      if (!location) return jsonError(502, 'oauth_authorize_unsafe_redirect');
+      return new Response(null, {
+        status: upstream.status,
+        headers: {
+          ...NO_STORE_HEADERS,
+          location,
+        },
+      });
+    }
+
+    if (!upstream.ok) return jsonError(upstream.status, 'oauth_authorize_upstream_rejected');
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: safeUpstreamHeaders(upstream),
     });
   }
 
@@ -83,7 +146,7 @@ export async function handleOAuthRelay(request, env) {
 
   let upstream;
   try {
-    upstream = await fetch(`${RETAINED_STAGING_SUPABASE_ORIGIN}/auth/v1/oauth/token`, {
+    upstream = await fetchImpl(`${RETAINED_STAGING_SUPABASE_ORIGIN}/auth/v1/oauth/token`, {
       method: 'POST',
       headers,
       body,
@@ -93,13 +156,9 @@ export async function handleOAuthRelay(request, env) {
     return jsonError(502, 'oauth_token_upstream_unavailable');
   }
 
-  const responseHeaders = new Headers(NO_STORE_HEADERS);
-  const upstreamContentType = upstream.headers.get('content-type');
-  if (upstreamContentType) responseHeaders.set('content-type', upstreamContentType);
-
   return new Response(upstream.body, {
     status: upstream.status,
-    headers: responseHeaders,
+    headers: safeUpstreamHeaders(upstream),
   });
 }
 
@@ -114,4 +173,5 @@ export default {
 export const __testing = Object.freeze({
   RETAINED_STAGING_SUPABASE_ORIGIN,
   OAUTH_TOKEN_BODY_BYTES,
+  safeAuthorizeRedirect,
 });
