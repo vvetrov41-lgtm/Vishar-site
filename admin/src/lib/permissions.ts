@@ -146,6 +146,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/clients', label: 'Clients', capability: 'viewClients' },
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
   { path: '/appointments', label: 'Appointments', capability: 'viewSessions' },
+  { path: '/availability', label: 'Time off', capability: 'viewSessions' },
   { path: '/integrations', label: 'common.calendar', capability: 'manageIntegrations' },
   { path: '/users', label: 'Users', capability: 'manageUsers' },
   { path: '/activity', label: 'Activity', capability: 'viewActivity' },
