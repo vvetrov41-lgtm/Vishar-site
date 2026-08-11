@@ -21,6 +21,62 @@ If a command cannot be run, explain why.
 
 Before making any production change, produce a patch plan first.
 
+## Engineering and CRM code investigations
+
+The website-audit output rule above does not force normal engineering, CRM, CI, database, Worker, or integration investigations into `TECHNICAL_AUDIT.md`. For those tasks, use the repository-native engineering navigation layer under `docs/ai/` and `.agents/skills/vishar-code-navigation/`.
+
+Vishar-site is branch-heavy and important implementation often lives in stacked draft PRs rather than `main`. Correct revision selection is part of correctness.
+
+For any task involving a PR, feature branch, validation run, recent CRM feature, or integration:
+
+1. resolve current GitHub PR metadata first;
+2. record exact head SHA and exact base SHA;
+3. identify the stacked parent when relevant;
+4. checkout the exact target SHA;
+5. verify `git rev-parse HEAD` matches before making implementation claims;
+6. prefer full-checkout search with `rg`, `git grep`, `git log`, `git show`, and `git diff` over repeated GitHub file-by-file reads.
+
+Read `docs/ai/README.md` and `docs/ai/branch-workflow.md` before substantial branch-heavy investigation. Use the `vishar-code-navigation` skill for code tracing, RPC investigation, migration history, security review, CI diagnosis, Calendar/outbox analysis, and cross-repository contract work.
+
+### Database and RPC tracing
+
+For a database RPC, do not stop at the first matching migration. Trace:
+
+- every application caller;
+- the final effective SQL definition at the target head;
+- all later migrations mentioning the symbol or dependent object;
+- `GRANT` and `REVOKE` history;
+- `SECURITY DEFINER`, fixed `search_path`, role/service/artist checks;
+- RLS implications;
+- positive and denial tests;
+- returned fields crossing trust boundaries.
+
+The Worker Supabase client is intentionally narrow. If a task touches a privileged Worker RPC, verify both the JavaScript allow-list and database callability.
+
+### Security-sensitive tracing
+
+For booking, CRM, outbox, provider, Calendar, OAuth, GPT, Storage, or payment-related work, read `docs/ai/security-boundaries.md` and explicitly verify each applicable trust boundary.
+
+In particular, do not assume browser data may select authoritative artist/provider routing. Prove the provenance of `Origin`, booking source, form version, artist, outbox kind, integration key, provider account, and credential at the exact ref.
+
+Documentation records intent but is not proof. Current code, migrations, policies, grants, tests, and environment/deployment evidence take precedence.
+
+### Cross-repository work
+
+For flows spanning repositories, read `docs/ai/cross-repo-contracts.md`. Resolve and verify each repository independently at its own exact head. Never combine a current Vishar-site revision with a remembered revision from `kisa` or another repository.
+
+### CI evidence
+
+A CI result validates only the SHA it actually checked, unless a purpose-built validation harness explicitly checks out and verifies another target SHA. A green run on `main`, a parent stack head, or an older PR head is not validation of the current target.
+
+Do not weaken production ACL, RLS, origin checks, secret custody, or other security controls merely to make a test harness pass.
+
+### Mutation boundary
+
+Investigation permission is not write permission. Unless explicitly authorized, do not modify existing PR branches, merge PRs, mark drafts Ready, deploy production, mutate staging/Supabase/Cloudflare, or create/rotate secrets.
+
+When implementation is authorized, prefer a separate bounded branch or the explicitly named task branch from the verified target. Parallel engineering tasks should use isolated cloud checkouts, branches, or worktrees and independently verify their own `HEAD`.
+
 ## GEO Topic Agent
 
 The installed GEO Topic Agent is available for explicitly requested GEO/AEO
