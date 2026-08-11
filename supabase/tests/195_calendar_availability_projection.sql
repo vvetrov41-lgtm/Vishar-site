@@ -381,6 +381,18 @@ select public.update_artist_availability_block(
 reset role;
 select pg_temp.calendar_availability_claims('{"role":"service_role"}');
 
+-- now() is transaction-stable, so create v0 and update v1 otherwise share
+-- the same scheduling timestamp. Order this fixture explicitly so the
+-- stale path is deterministic instead of depending on random UUID order.
+update public.integration_outbox
+set next_attempt_at = case
+  when (payload ->> 'calendar_version')::integer = 0 then now() - interval '1 second'
+  else now() + interval '1 minute'
+end
+where availability_block_id =
+  (select (result ->> 'availability_block_id')::uuid from kristina_block)
+  and kind in ('calendar_availability_create', 'calendar_availability_update');
+
 create temporary table kristina_stale_claim as
 select * from public.claim_calendar_availability_outbox(
   'calendar-availability-worker-stale', 1, 120
@@ -405,6 +417,13 @@ select is(
   1,
   'stale acknowledgement never rewinds Kristina Time Off version'
 );
+
+update public.integration_outbox
+set next_attempt_at = now()
+where availability_block_id =
+  (select (result ->> 'availability_block_id')::uuid from kristina_block)
+  and (payload ->> 'calendar_version')::integer = 1
+  and status = 'pending';
 
 create temporary table kristina_current_claim as
 select * from public.claim_calendar_availability_outbox(
