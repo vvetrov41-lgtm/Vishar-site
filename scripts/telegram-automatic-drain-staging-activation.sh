@@ -270,9 +270,36 @@ PY
   settings_status="$(curl --silent --show-error -o "$settings_raw" -w '%{http_code}' \
     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
     "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/settings" || true)"
-  [ "$settings_status" = 404 ] || die "Cloudflare Worker name is already occupied (HTTP $settings_status)"
-  jq -n --arg worker "$WORKER_NAME" '{worker_name:$worker,name_conflict:false,preexisting:false}' \
-    > "$EVIDENCE_DIR/cloudflare-resource-before.json"
+  if [ "$settings_status" = 404 ]; then
+    jq -n --arg worker "$WORKER_NAME" '{worker_name:$worker,name_conflict:false,preexisting:false,partial_cleanup:false}' \
+      > "$EVIDENCE_DIR/cloudflare-resource-before.json"
+  elif [ "$settings_status" = 200 ]; then
+    jq -e '
+      .success == true
+      and any(.result.bindings[]?; .name == "TELEGRAM_DRAIN_ENABLED" and .type == "plain_text" and .text == "false")
+      and ([.result.bindings[]? | select(.type == "secret_text" or .type == "secret") | .name] | sort)
+        == ["ARTIST_TELEGRAM_KRISTINA_HSTAGING", "ARTIST_TELEGRAM_VLADIMIR_HSTAGING", "SUPABASE_SECRET_KEY"]
+      and (any(.result.bindings[]?; .name == "VISHAR_ACTIVATION_SHA") | not)
+    ' "$settings_raw" >/dev/null \
+      || die "Cloudflare Worker name is occupied by a non-matching or enabled runtime"
+    verify_schedule none
+    curl --fail --silent --show-error -X DELETE \
+      -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+      "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME" >/dev/null \
+      || die "failed to delete the previous disabled PR191 Worker"
+    for attempt in $(seq 1 20); do
+      settings_status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' \
+        -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+        "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/settings" || true)"
+      [ "$settings_status" = 404 ] && break
+      sleep 2
+    done
+    [ "$settings_status" = 404 ] || die "previous disabled PR191 Worker still exists after delete"
+    jq -n --arg worker "$WORKER_NAME" '{worker_name:$worker,name_conflict:false,preexisting:false,partial_cleanup:true}' \
+      > "$EVIDENCE_DIR/cloudflare-resource-before.json"
+  else
+    die "Cloudflare Worker name check failed (HTTP $settings_status)"
+  fi
   rm -f "$settings_raw"
 }
 
@@ -444,7 +471,7 @@ SQL
 }
 
 deploy_enabled_worker_and_cron() {
-  local secrets_file="$1" deploy_config="$RUNNER_TEMP/wrangler.telegram-drain.activation.toml"
+  local secrets_file="$1" deploy_config="$PWD/wrangler.telegram-drain.activation.toml"
   local dry_run_dir="$RUNNER_TEMP/telegram-enabled-dry-run"
   export deploy_config
   python3 - <<'PY'
@@ -624,7 +651,7 @@ case "$SUPABASE_SECRET_KEY" in sb_secret_*) ;; *) die "unexpected Supabase backe
 [ "${PRODUCTION_TARGETED:-false}" = false ] || die "production target must remain false"
 
 secrets_file="$RUNNER_TEMP/telegram-drain-secrets.json"
-deploy_config="$RUNNER_TEMP/wrangler.telegram-drain.activation.toml"
+deploy_config="$PWD/wrangler.telegram-drain.activation.toml"
 cleanup() {
   rm -f "$secrets_file" "$deploy_config"
   for directory in "$RUNNER_TEMP/telegram-disabled-dry-run" "$RUNNER_TEMP/telegram-enabled-dry-run"; do
