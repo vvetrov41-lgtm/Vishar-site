@@ -108,10 +108,10 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
             --jq '.workflow_runs[] | {id,name,event,status,conclusion,head_sha,html_url}' \
             | jq -s . > "$RUNNER_TEMP/runs.json"
-          jq -n --argfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
+          jq -n --slurpfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
             ["Static Validation", "CRM and booking validation"] as $required
             | reduce $required[] as $name ({};
-                ($runs | map(select(
+                ($runs[0] | map(select(
                   .name == $name and .event == "pull_request" and .head_sha == $sha
                   and .status == "completed" and .conclusion == "success"
                 )) | sort_by(.id) | last) as $run
