@@ -1,0 +1,52 @@
+# One-shot branch-only helper. It removes itself after fixing the pgTAP trailer.
+name: PR 200 pgTAP finish helper
+
+on:
+  push:
+    branches:
+      - agent/artist-availability-time-off
+    paths:
+      - .github/workflows/pr200-finish-pgtap.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/artist-availability-time-off
+          fetch-depth: 0
+
+      - name: Add pgTAP finish and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/tests/194_artist_availability_time_off.sql')
+          text = path.read_text()
+          old = "\nrollback;\n"
+          new = "\nselect * from finish();\nrollback;\n"
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one rollback trailer')
+          if 'select * from finish();' in text:
+              raise SystemExit('finish already present')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          git rm .github/workflows/pr200-finish-pgtap.yml
+          git diff --check
+          git add supabase/tests/194_artist_availability_time_off.sql
+
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fx 'supabase/tests/194_artist_availability_time_off.sql'
+          printf '%s\n' "${changed[@]}" | grep -Fx '.github/workflows/pr200-finish-pgtap.yml'
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Finish availability pgTAP plan'
+          git push origin HEAD:agent/artist-availability-time-off
