@@ -307,6 +307,7 @@ test('conflicting or misnamed Supabase backend keys fail closed', () => {
 test('the RPC allow-list is exactly the intake surface', () => {
   assert.deepEqual([...supabase.ALLOWED_RPCS].sort(), [
     'claim_calendar_outbox',
+    'claim_telegram_outbox',
     'claim_telegram_outbox_by_id',
     'create_trusted_enquiry_intake',
     'fail_enquiry_intake',

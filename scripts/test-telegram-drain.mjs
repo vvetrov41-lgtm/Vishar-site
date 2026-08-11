@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { drainTelegramOutboxById } from '../workers/lib/telegram-drain.js';
+import { drainTelegramOutbox, drainTelegramOutboxById } from '../workers/lib/telegram-drain.js';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
 import { checkTelegramDestination } from '../workers/lib/telegram.js';
 
@@ -18,7 +18,9 @@ async function test(name, run) {
 }
 
 const outboxId = 'd9111111-1111-4111-8111-111111111111';
+const secondOutboxId = 'd9122222-2222-4222-8222-222222222222';
 const enquiryId = 'd9211111-1111-4111-8111-111111111111';
+const secondEnquiryId = 'd9222222-2222-4222-8222-222222222222';
 const vladimirId = 'a1111111-1111-4111-8111-111111111111';
 const kristinaId = 'a2222222-2222-4222-8222-222222222222';
 const workerId = 'telegram-worker-unit';
@@ -69,7 +71,14 @@ function route(overrides = {}) {
   };
 }
 
-function makeFetch({ claim = [claimedJob()], resolvedRoute = [route()], telegramStatus = 200 } = {}) {
+function makeFetch({
+  claim = [claimedJob()],
+  automaticClaim = claim,
+  resolvedRoute = [route()],
+  routesByOutbox = {},
+  telegramStatus = 200,
+  acknowledgementStatus = 200,
+} = {}) {
   const rpcCalls = [];
   const telegramCalls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -79,12 +88,15 @@ function makeFetch({ claim = [claimedJob()], resolvedRoute = [route()], telegram
       const args = JSON.parse(init.body || '{}');
       rpcCalls.push({ name, args });
       if (name === 'claim_telegram_outbox_by_id') return Response.json(claim);
-      if (name === 'resolve_outbox_route') return Response.json(resolvedRoute);
+      if (name === 'claim_telegram_outbox') return Response.json(automaticClaim);
+      if (name === 'resolve_outbox_route') {
+        return Response.json(routesByOutbox[args.p_outbox_id] ?? resolvedRoute);
+      }
       if (name === 'record_telegram_outbox_result') {
         return Response.json({
           outbox_id: args.p_outbox_id,
           status: args.p_succeeded ? 'succeeded' : 'failed',
-        });
+        }, { status: acknowledgementStatus });
       }
       throw new Error(`unexpected RPC ${name}`);
     }
@@ -375,9 +387,222 @@ await test('credentials do not appear in the drain result or console output', as
   assert.deepEqual(messages, []);
 });
 
+await test('automatic drain with zero jobs calls only the bounded claim RPC', async () => {
+  const mock = makeFetch({ automaticClaim: [] });
+  const result = await drainTelegramOutbox(env, {
+    workerId,
+    limit: 4,
+    leaseSeconds: 90,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 0, succeeded: 0, failed: 0, unrecorded: 0 });
+  assert.deepEqual(mock.rpcCalls, [{
+    name: 'claim_telegram_outbox',
+    args: { p_worker_id: workerId, p_limit: 4, p_lease_seconds: 90 },
+  }]);
+  assert.equal(mock.telegramCalls.length, 0);
+});
+
+await test('automatic drain rejects a database batch larger than the requested limit', async () => {
+  const mock = makeFetch({
+    automaticClaim: [
+      claimedJob(),
+      claimedJob({ outbox_id: secondOutboxId, enquiry_id: secondEnquiryId }),
+    ],
+  });
+  await assert.rejects(
+    drainTelegramOutbox(env, { workerId, limit: 1, fetchImpl: mock.fetchImpl }),
+    (error) => error.code === 'telegram_claim_invalid',
+  );
+  assert.equal(mock.telegramCalls.length, 0);
+});
+
+await test('automatic Vladimir job uses only the Vladimir binding', async () => {
+  const mock = makeFetch();
+  const result = await drainTelegramOutbox(env, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 1, succeeded: 1, failed: 0, unrecorded: 0 });
+  assert.equal(mock.telegramCalls.length, 1);
+  assert.equal(mock.telegramCalls[0].body.chat_id, chatId);
+  assert.ok(mock.telegramCalls[0].url.includes(botToken));
+  assert.ok(!mock.telegramCalls[0].url.includes(kristinaBotToken));
+});
+
+await test('automatic Kristina job uses only the Kristina binding', async () => {
+  const mock = makeFetch({
+    automaticClaim: [claimedJob({ artist_id: kristinaId })],
+    resolvedRoute: [route({ artist_id: kristinaId, integration_key: kristinaKey })],
+  });
+  const result = await drainTelegramOutbox(env, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 1, succeeded: 1, failed: 0, unrecorded: 0 });
+  assert.equal(mock.telegramCalls[0].body.chat_id, kristinaChatId);
+  assert.ok(mock.telegramCalls[0].url.includes(kristinaBotToken));
+  assert.ok(!mock.telegramCalls[0].url.includes(botToken));
+});
+
+await test('one automatic batch routes Vladimir and Kristina independently', async () => {
+  const mock = makeFetch({
+    automaticClaim: [
+      claimedJob(),
+      claimedJob({
+        outbox_id: secondOutboxId,
+        enquiry_id: secondEnquiryId,
+        artist_id: kristinaId,
+        reference_number: 'ENQ-2026-9002',
+      }),
+    ],
+    routesByOutbox: {
+      [outboxId]: [route()],
+      [secondOutboxId]: [route({
+        outbox_id: secondOutboxId,
+        artist_id: kristinaId,
+        integration_key: kristinaKey,
+      })],
+    },
+  });
+  const result = await drainTelegramOutbox(env, {
+    workerId,
+    limit: 2,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 2, succeeded: 2, failed: 0, unrecorded: 0 });
+  assert.deepEqual(mock.telegramCalls.map((call) => call.body.chat_id), [chatId, kristinaChatId]);
+  assert.deepEqual(
+    mock.rpcCalls.filter((call) => call.name === 'record_telegram_outbox_result')
+      .map((call) => [call.args.p_outbox_id, call.args.p_succeeded]),
+    [[outboxId, true], [secondOutboxId, true]],
+  );
+});
+
+await test('automatic Kristina job cannot fall back to a Vladimir binding', async () => {
+  const vladimirOnlyEnv = {
+    SUPABASE_URL: env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+    [bindingNameFor('telegram', vladimirKey)]: env[bindingNameFor('telegram', vladimirKey)],
+  };
+  const mock = makeFetch({
+    automaticClaim: [claimedJob({ artist_id: kristinaId })],
+    resolvedRoute: [route({ artist_id: kristinaId, integration_key: kristinaKey })],
+  });
+  const result = await drainTelegramOutbox(vladimirOnlyEnv, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 1, succeeded: 0, failed: 1, unrecorded: 0 });
+  assert.equal(mock.telegramCalls.length, 0);
+  assert.equal(mock.rpcCalls.at(-1).args.p_error_code, 'provider_binding_missing');
+});
+
+await test('automatic Vladimir job cannot fall back to a Kristina binding', async () => {
+  const kristinaOnlyEnv = {
+    SUPABASE_URL: env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+    [bindingNameFor('telegram', kristinaKey)]: env[bindingNameFor('telegram', kristinaKey)],
+  };
+  const mock = makeFetch();
+  const result = await drainTelegramOutbox(kristinaOnlyEnv, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 1, succeeded: 0, failed: 1, unrecorded: 0 });
+  assert.equal(mock.telegramCalls.length, 0);
+  assert.equal(mock.rpcCalls.at(-1).args.p_error_code, 'provider_binding_missing');
+});
+
+await test('automatic artist mismatch fails closed and is acknowledged false', async () => {
+  const mock = makeFetch({
+    resolvedRoute: [route({ artist_id: kristinaId, integration_key: kristinaKey })],
+  });
+  const result = await drainTelegramOutbox(env, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 1, succeeded: 0, failed: 1, unrecorded: 0 });
+  assert.equal(mock.telegramCalls.length, 0);
+  assert.deepEqual(mock.rpcCalls.at(-1).args, {
+    p_outbox_id: outboxId,
+    p_worker_id: workerId,
+    p_succeeded: false,
+    p_error_code: 'provider_route_invalid',
+  });
+});
+
+await test('automatic invalid projection never sends and is acknowledged false', async () => {
+  const mock = makeFetch({ automaticClaim: [claimedJob({ job_valid: false })] });
+  const result = await drainTelegramOutbox(env, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 1, succeeded: 0, failed: 1, unrecorded: 0 });
+  assert.equal(mock.telegramCalls.length, 0);
+  assert.equal(mock.rpcCalls.at(-1).args.p_error_code, 'telegram_job_invalid');
+});
+
+await test('automatic provider failure is acknowledged false', async () => {
+  const mock = makeFetch({ telegramStatus: 502 });
+  const result = await drainTelegramOutbox(env, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 1, succeeded: 0, failed: 1, unrecorded: 0 });
+  assert.equal(mock.rpcCalls.at(-1).args.p_succeeded, false);
+  assert.equal(mock.rpcCalls.at(-1).args.p_error_code, 'telegram_rejected');
+});
+
+await test('provider success with acknowledgement failure is reported unrecorded', async () => {
+  const mock = makeFetch({ acknowledgementStatus: 503 });
+  const result = await drainTelegramOutbox(env, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: 1, succeeded: 0, failed: 0, unrecorded: 1 });
+  assert.equal(mock.telegramCalls.length, 1);
+  assert.equal(mock.rpcCalls.at(-1).args.p_succeeded, true);
+});
+
+await test('automatic aggregate and console output contain no provider credentials', async () => {
+  const mock = makeFetch();
+  const messages = [];
+  const original = { log: console.log, warn: console.warn, error: console.error };
+  console.log = (...args) => messages.push(args.join(' '));
+  console.warn = (...args) => messages.push(args.join(' '));
+  console.error = (...args) => messages.push(args.join(' '));
+  let result;
+  try {
+    result = await drainTelegramOutbox(env, {
+      workerId,
+      limit: 1,
+      fetchImpl: mock.fetchImpl,
+    });
+  } finally {
+    console.log = original.log;
+    console.warn = original.warn;
+    console.error = original.error;
+  }
+  const evidence = JSON.stringify({ result, messages });
+  assert.ok(!evidence.includes(botToken));
+  assert.ok(!evidence.includes(chatId));
+  assert.ok(!evidence.includes(kristinaBotToken));
+  assert.ok(!evidence.includes(kristinaChatId));
+  assert.deepEqual(messages, []);
+});
+
 if (failures) {
   console.error(`\n${failures} Telegram drain test(s) failed, ${passes} passed.`);
   process.exit(1);
 }
 
-console.log(`Telegram drain tests passed: ${passes} exact-ID cases covering lease acknowledgement, existing sender use, route isolation, provider failure, invalid projection and secret-safe results.`);
+console.log(`Telegram drain tests passed: ${passes} exact-ID and automatic cases covering bounded claims, lease acknowledgement, existing sender use, two-artist route isolation, provider failure, invalid projection and secret-safe results.`);
