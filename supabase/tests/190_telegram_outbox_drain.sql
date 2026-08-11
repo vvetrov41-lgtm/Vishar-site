@@ -299,9 +299,20 @@ select ok(
 select is(
   (select count(*)::integer from public.activity_log
    where outbox_id = 'c9411111-1111-4111-8111-111111111111'
-     and event_type = 'outbox.succeeded'),
+     and event_type = 'outbox.succeeded'
+     and metadata ->> 'worker_id' = 'telegram-worker-target'
+     and metadata ->> 'lease_aware' = 'true'),
   1,
   'success appends one safe Activity Log event'
+);
+select throws_ok(
+  $$select public.record_telegram_outbox_result(
+      'c9411111-1111-4111-8111-111111111111',
+      'telegram-worker-wrong', true, null
+    )$$,
+  '42501',
+  'Telegram outbox lease is not owned by this worker',
+  'a different worker cannot replay a successful acknowledgement'
 );
 select ok(
   not (public.record_telegram_outbox_result(

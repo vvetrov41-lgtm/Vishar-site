@@ -173,6 +173,17 @@ begin
   -- A successful acknowledgement replay is idempotent. The claim RPC will
   -- never lease this row again, so this path cannot trigger a second send.
   if v_job.status = 'succeeded' and p_succeeded then
+    if not exists (
+      select 1
+      from public.activity_log a
+      where a.outbox_id = p_outbox_id
+        and a.event_type = 'outbox.succeeded'
+        and a.metadata ->> 'worker_id' = p_worker_id
+    ) then
+      raise exception 'Telegram outbox lease is not owned by this worker'
+        using errcode = '42501';
+    end if;
+
     return jsonb_build_object(
       'outbox_id', p_outbox_id,
       'status', 'succeeded',
@@ -239,6 +250,7 @@ begin
     jsonb_build_object(
       'attempt_count', v_attempt_count,
       'error_code', case when p_succeeded then null else p_error_code end,
+      'worker_id', p_worker_id,
       'lease_aware', true,
       'dead_letter', v_status = 'dead'
     )
