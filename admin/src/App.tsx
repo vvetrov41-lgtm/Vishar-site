@@ -16,6 +16,7 @@ import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
+import { AvailabilityPage } from './pages/AvailabilityPage';
 import { CalendarConnectionsPage } from './pages/CalendarConnectionsPage';
 import { ClientDetailPage } from './pages/ClientDetailPage';
 import { ClientsPage } from './pages/ClientsPage';
@@ -123,6 +124,8 @@ function Routes() {
     case '/appointments':
     case '/sessions':
       return <RequireCapability capability="viewSessions"><AppointmentsPage /></RequireCapability>;
+    case '/availability':
+      return <RequireCapability capability="viewSessions"><AvailabilityPage /></RequireCapability>;
     case '/integrations':
     case '/integrations/calendar':
       return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
