@@ -26,6 +26,25 @@ describe('availability API boundary', () => {
     });
   });
 
+  it('opts into cancelled availability only for explicit audit-oriented reads', async () => {
+    const { client, rpc } = clientWithRpc({ data: [], error: null });
+    const api = createAvailabilityApi(client);
+
+    await api.listAvailabilityBlocks({
+      artistId: 'artist-1',
+      from: '2026-10-01T00:00:00.000Z',
+      to: '2026-11-01T00:00:00.000Z',
+      includeCancelled: true,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('list_artist_availability_blocks', {
+      p_artist_id: 'artist-1',
+      p_from: '2026-10-01T00:00:00.000Z',
+      p_to: '2026-11-01T00:00:00.000Z',
+      p_include_cancelled: true,
+    });
+  });
+
   it('creates time off without accepting an artist selector from the response', async () => {
     const { client, rpc } = clientWithRpc();
     const api = createAvailabilityApi(client);
