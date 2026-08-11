@@ -177,7 +177,7 @@ export function SessionProvider({
 
     // End the invitation-derived session. The next access must prove the new
     // password through the ordinary signInWithPassword path.
-    const signedOut = await auth.signOut();
+    const signedOut = await client.auth.signOut();
     if (signedOut.error) {
       throw new Error('The password was saved, but the invitation session could not be closed. Try again before continuing.');
     }
