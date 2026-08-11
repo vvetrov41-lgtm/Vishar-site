@@ -8,13 +8,55 @@ const env = {
 };
 
 {
-  const response = await handleOAuthRelay(
-    new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?client_id=synthetic-client&redirect_uri=https%3A%2F%2Fexample.invalid%2Fcallback&state=synthetic-state&code_challenge=synthetic-challenge&code_challenge_method=S256'),
-    env,
-  );
+  let captured;
+  const response = await handleOAuthRelay(new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?client_id=synthetic-client&redirect_uri=https%3A%2F%2Fchat.openai.com%2Faip%2Fsynthetic%2Foauth%2Fcallback&state=synthetic-state&code_challenge=synthetic-challenge&code_challenge_method=S256', {
+    headers: { accept: 'text/html', authorization: 'Bearer must-not-forward', cookie: 'must-not-forward=1' },
+  }), env, async (url, init) => {
+    captured = {
+      url: String(url),
+      method: init.method,
+      redirect: init.redirect,
+      accept: init.headers.get('accept'),
+      authorization: init.headers.get('authorization'),
+      cookie: init.headers.get('cookie'),
+    };
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: 'https://vishar-crm-staging.pages.dev/oauth/consent?authorization_id=synthetic-authorization',
+        'set-cookie': 'must-not-forward=1',
+      },
+    });
+  });
+
+  assert.equal(captured.url, 'https://gwaliusblwrzisrwnsvs.supabase.co/auth/v1/oauth/authorize?client_id=synthetic-client&redirect_uri=https%3A%2F%2Fchat.openai.com%2Faip%2Fsynthetic%2Foauth%2Fcallback&state=synthetic-state&code_challenge=synthetic-challenge&code_challenge_method=S256');
+  assert.equal(captured.method, 'GET');
+  assert.equal(captured.redirect, 'manual');
+  assert.equal(captured.accept, 'text/html');
+  assert.equal(captured.authorization, null);
+  assert.equal(captured.cookie, null);
   assert.equal(response.status, 302);
-  assert.equal(response.headers.get('location'), 'https://gwaliusblwrzisrwnsvs.supabase.co/auth/v1/oauth/authorize?client_id=synthetic-client&redirect_uri=https%3A%2F%2Fexample.invalid%2Fcallback&state=synthetic-state&code_challenge=synthetic-challenge&code_challenge_method=S256');
+  assert.equal(response.headers.get('location'), 'https://vishar-crm-staging.pages.dev/oauth/consent?authorization_id=synthetic-authorization');
   assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('set-cookie'), null);
+}
+
+{
+  const response = await handleOAuthRelay(new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?client_id=synthetic-client'), env, async () => new Response(null, {
+    status: 302,
+    headers: { location: 'https://example.invalid/callback' },
+  }));
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { error: 'oauth_authorize_unsafe_redirect' });
+}
+
+{
+  const response = await handleOAuthRelay(new Request('https://gpt-actions-staging.vishartattoo.com/oauth/authorize?client_id=synthetic-client'), env, async () => new Response(JSON.stringify({ error: 'invalid_client' }), {
+    status: 400,
+    headers: { 'content-type': 'application/json' },
+  }));
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'oauth_authorize_upstream_rejected' });
 }
 
 {
@@ -101,4 +143,4 @@ const env = {
   assert.equal(response.status, 404, 'OAuth relay activation must not expose appointment actions while the action surface is disabled');
 }
 
-console.log('GPT OAuth relay tests passed: exact staging target, bounded token proxy, actions remain disabled.');
+console.log('GPT OAuth relay tests passed: proxied staging authorize, bounded token proxy, actions remain disabled.');
