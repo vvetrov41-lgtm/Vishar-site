@@ -1,4 +1,5 @@
 import { drainCalendarOutbox } from './lib/calendar-drain.js';
+import { drainCalendarAvailabilityOutbox } from './lib/calendar-availability-drain.js';
 import {
   decryptTokenRecord,
   encryptTokenRecord,
@@ -262,13 +263,23 @@ async function disconnect(request, alias, env, fetchImpl = fetch) {
 }
 
 async function runScheduledDrain(env) {
-  const result = await drainCalendarOutbox(env);
+  const appointments = await drainCalendarOutbox(env);
+  const availability = await drainCalendarAvailabilityOutbox(env);
   console.log('calendar outbox drain', JSON.stringify({
-    claimed: result.claimed,
-    succeeded: result.succeeded,
-    obsolete: result.obsolete,
-    failed: result.failed,
-    unrecorded: result.unrecorded,
+    appointments: {
+      claimed: appointments.claimed,
+      succeeded: appointments.succeeded,
+      obsolete: appointments.obsolete,
+      failed: appointments.failed,
+      unrecorded: appointments.unrecorded,
+    },
+    availability: {
+      claimed: availability.claimed,
+      succeeded: availability.succeeded,
+      obsolete: availability.obsolete,
+      failed: availability.failed,
+      unrecorded: availability.unrecorded,
+    },
   }));
 }
 
