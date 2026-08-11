@@ -3,11 +3,14 @@ main = "workers/gpt-actions-staging.js"
 compatibility_date = "2026-08-07"
 workers_dev = false
 
-# Retained staging stays fail-closed by default. The OAuth relay may be enabled
-# independently for the private GPT OAuth handshake while appointment actions
-# remain disabled. The public action API still requires separate edge review
-# before GPT_ACTIONS_ENABLED may ever become true.
+# Retained staging stays fail-closed by default. OAuth relay and PKCE bridge are
+# independently enabled only by guarded staging workflows. Appointment actions
+# remain disabled in source defaults and production is not targeted here.
 [vars]
 GPT_ACTIONS_ENABLED = "false"
 GPT_OAUTH_RELAY_ENABLED = "false"
+GPT_OAUTH_PKCE_BRIDGE_ENABLED = "false"
 SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"
+
+[secrets]
+required = ["GPT_OAUTH_BRIDGE_KEY"]

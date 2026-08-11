@@ -34,7 +34,9 @@ grep -Fx 'main = "workers/gpt-actions-staging.js"' wrangler.gpt-actions.staging.
 grep -Fx 'workers_dev = false' wrangler.gpt-actions.staging.toml >/dev/null
 grep -Fx 'GPT_ACTIONS_ENABLED = "false"' wrangler.gpt-actions.staging.toml >/dev/null
 grep -Fx 'GPT_OAUTH_RELAY_ENABLED = "false"' wrangler.gpt-actions.staging.toml >/dev/null
+grep -Fx 'GPT_OAUTH_PKCE_BRIDGE_ENABLED = "false"' wrangler.gpt-actions.staging.toml >/dev/null
 grep -Fx 'SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"' wrangler.gpt-actions.staging.toml >/dev/null
+grep -Fx 'required = ["GPT_OAUTH_BRIDGE_KEY"]' wrangler.gpt-actions.staging.toml >/dev/null
 ! grep -Eq 'service_role|SUPABASE_SECRET|SUPABASE_SERVICE|sb_secret_' workers/gpt-actions-staging.js workers/gpt-actions.js workers/lib/gpt-actions.js wrangler.gpt-actions.staging.toml
 ! grep -Eq '(^|[[:space:]])routes[[:space:]]*=|custom_domain[[:space:]]*=' wrangler.gpt-actions.staging.toml
 
@@ -51,6 +53,7 @@ access_json="$RUNNER_TEMP/access.json"
 deployments_json="$RUNNER_TEMP/deployments.json"
 pre_version_json="$RUNNER_TEMP/pre-version.json"
 post_version_json="$RUNNER_TEMP/post-version.json"
+secret_file="$RUNNER_TEMP/gpt-oauth-bridge-secrets.json"
 
 read_edge() {
   curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=$TARGET_HOST&per_page=100" > "$dns_json"
@@ -100,7 +103,7 @@ binding_value() {
 
 binding_type() {
   local file="$1" name="$2"
-  jq -jr --arg name "$name" '[.result.resources.bindings[]? | select(.name == $name)] | if length == 1 then (. [0].type // "missing") else "missing" end' "$file"
+  jq -jr --arg name "$name" '[.result.resources.bindings[]? | select(.name == $name)] | if length == 1 then (.[0].type // "missing") else "missing" end' "$file"
 }
 
 curl --fail --silent --show-error "${lookup_auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
@@ -117,6 +120,7 @@ worker=$WORKER_NAME
 zone_plan_legacy_id=$plan_legacy_id
 rollback_attempted=false
 worker_updated=false
+bridge_secret_created=false
 waf_mutated=false
 rate_limit_mutated=false
 production_targeted=false
@@ -131,18 +135,24 @@ pre_active_version_id="$(jq -r '.result.deployments[0].versions | map(select(.pe
 curl --fail --silent --show-error "${lookup_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions/$pre_active_version_id" > "$pre_version_json"
 pre_actions="$(binding_value "$pre_version_json" GPT_ACTIONS_ENABLED)"
 pre_relay="$(binding_value "$pre_version_json" GPT_OAUTH_RELAY_ENABLED)"
+pre_bridge="$(binding_value "$pre_version_json" GPT_OAUTH_PKCE_BRIDGE_ENABLED)"
 pre_url="$(binding_value "$pre_version_json" SUPABASE_URL)"
 pre_key_type="$(binding_type "$pre_version_json" SUPABASE_PUBLISHABLE_KEY)"
+pre_bridge_secret_type="$(binding_type "$pre_version_json" GPT_OAUTH_BRIDGE_KEY)"
 [ "$pre_actions" = true ] || { echo 'Pre-active Worker Actions are not enabled.' >&2; exit 1; }
 [ "$pre_relay" = true ] || { echo 'Pre-active OAuth relay is not enabled.' >&2; exit 1; }
+case "$pre_bridge" in missing|false|true) ;; *) echo 'Unexpected pre-active bridge flag.' >&2; exit 1 ;; esac
 [ "$pre_url" = "$EXPECTED_SUPABASE_URL" ] || { echo 'Pre-active Worker points outside retained staging.' >&2; exit 1; }
 [ "$pre_key_type" = plain_text ] || { echo 'Unexpected publishable-key binding type.' >&2; exit 1; }
-printf 'pre_active_version_id=%s\npre_GPT_ACTIONS_ENABLED=%s\npre_GPT_OAUTH_RELAY_ENABLED=%s\n' "$pre_active_version_id" "$pre_actions" "$pre_relay" >> "$safe"
+case "$pre_bridge_secret_type" in missing|secret_text) ;; *) echo 'Unexpected bridge secret binding type.' >&2; exit 1 ;; esac
+printf 'pre_active_version_id=%s\npre_GPT_ACTIONS_ENABLED=%s\npre_GPT_OAUTH_RELAY_ENABLED=%s\npre_GPT_OAUTH_PKCE_BRIDGE_ENABLED=%s\npre_GPT_OAUTH_BRIDGE_KEY_binding_type=%s\n' \
+  "$pre_active_version_id" "$pre_actions" "$pre_relay" "$pre_bridge" "$pre_bridge_secret_type" >> "$safe"
 
 complete=false
 worker_changed=false
 rollback() {
   original_status=$?
+  rm -f "$secret_file"
   if [ "$complete" = true ]; then return "$original_status"; fi
   set +e
   sed -i 's/^rollback_attempted=.*/rollback_attempted=true/' "$safe"
@@ -156,18 +166,31 @@ rollback() {
 }
 trap rollback EXIT
 
+deploy_secret_args=()
+if [ "$pre_bridge_secret_type" = missing ]; then
+  node -e 'process.stdout.write(JSON.stringify({GPT_OAUTH_BRIDGE_KEY:require("node:crypto").randomBytes(32).toString("base64url")}))' > "$secret_file"
+  chmod 600 "$secret_file"
+  deploy_secret_args=(--secrets-file "$secret_file")
+  sed -i 's/^bridge_secret_created=.*/bridge_secret_created=true/' "$safe"
+fi
+
 npx wrangler deploy --config wrangler.gpt-actions.staging.toml --dry-run --outdir "$RUNNER_TEMP/gpt-actions-runtime-dry-run" \
+  "${deploy_secret_args[@]}" \
   --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
   --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
   --var GPT_ACTIONS_ENABLED:true \
-  --var GPT_OAUTH_RELAY_ENABLED:true >/dev/null
+  --var GPT_OAUTH_RELAY_ENABLED:true \
+  --var GPT_OAUTH_PKCE_BRIDGE_ENABLED:true >/dev/null
 
 npx wrangler deploy --config wrangler.gpt-actions.staging.toml \
+  "${deploy_secret_args[@]}" \
   --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
   --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
   --var GPT_ACTIONS_ENABLED:true \
-  --var GPT_OAUTH_RELAY_ENABLED:true | tee "$RUNNER_TEMP/worker-deploy.log"
+  --var GPT_OAUTH_RELAY_ENABLED:true \
+  --var GPT_OAUTH_PKCE_BRIDGE_ENABLED:true | tee "$RUNNER_TEMP/worker-deploy.log"
 worker_changed=true
+rm -f "$secret_file"
 sed -i 's/^worker_updated=.*/worker_updated=true/' "$safe"
 
 post_active_version_id=''
@@ -181,11 +204,16 @@ done
 curl --fail --silent --show-error "${lookup_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions/$post_active_version_id" > "$post_version_json"
 post_actions="$(binding_value "$post_version_json" GPT_ACTIONS_ENABLED)"
 post_relay="$(binding_value "$post_version_json" GPT_OAUTH_RELAY_ENABLED)"
+post_bridge="$(binding_value "$post_version_json" GPT_OAUTH_PKCE_BRIDGE_ENABLED)"
 post_url="$(binding_value "$post_version_json" SUPABASE_URL)"
+post_bridge_secret_type="$(binding_type "$post_version_json" GPT_OAUTH_BRIDGE_KEY)"
 [ "$post_actions" = true ]
 [ "$post_relay" = true ]
+[ "$post_bridge" = true ]
 [ "$post_url" = "$EXPECTED_SUPABASE_URL" ]
-printf 'post_active_version_id=%s\npost_GPT_ACTIONS_ENABLED=%s\npost_GPT_OAUTH_RELAY_ENABLED=%s\n' "$post_active_version_id" "$post_actions" "$post_relay" >> "$safe"
+[ "$post_bridge_secret_type" = secret_text ]
+printf 'post_active_version_id=%s\npost_GPT_ACTIONS_ENABLED=%s\npost_GPT_OAUTH_RELAY_ENABLED=%s\npost_GPT_OAUTH_PKCE_BRIDGE_ENABLED=%s\npost_GPT_OAUTH_BRIDGE_KEY_binding_type=%s\n' \
+  "$post_active_version_id" "$post_actions" "$post_relay" "$post_bridge" "$post_bridge_secret_type" >> "$safe"
 
 request_status() {
   local method="$1" url="$2"
@@ -227,4 +255,5 @@ assert_edge post
 printf 'cloudflare_mutated=true\n' >> "$safe"
 complete=true
 trap - EXIT
+rm -f "$secret_file"
 cat "$safe"
