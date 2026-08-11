@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
 import { createSupabaseClient } from '../workers/lib/supabase.js';
 import { drainTelegramOutboxById } from '../workers/lib/telegram-drain.js';
+import { checkTelegramDestination } from '../workers/lib/telegram.js';
 
 const EXPECTED_ARTIST_ID = 'a2222222-2222-4222-8222-222222222222';
 const EXPECTED_INTEGRATION_KEY = 'kristina-staging';
@@ -73,6 +74,12 @@ const supabase = createSupabaseClient(runtimeEnv);
 const route = oneRow(await supabase.rpc('resolve_outbox_route', { p_outbox_id: outboxId }));
 assertSafeRoute(route, outboxId);
 
+const destination = await checkTelegramDestination(runtimeEnv, route);
+if (!destination.reachable) {
+  const status = destination.statusClass ? ` (${destination.statusClass})` : '';
+  throw new Error(`safe Telegram destination preflight failed: ${destination.errorCode}${status}`);
+}
+
 const result = await drainTelegramOutboxById(runtimeEnv, {
   outboxId,
   workerId,
@@ -91,6 +98,7 @@ const evidence = {
     safe_projection_keys: Object.keys(route).sort(),
   },
   binding_name: EXPECTED_BINDING,
+  destination_preflight: { reachable: true },
   drain: result,
   provider_accepted: true,
 };

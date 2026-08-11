@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { drainTelegramOutboxById } from '../workers/lib/telegram-drain.js';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
+import { checkTelegramDestination } from '../workers/lib/telegram.js';
 
 let passes = 0;
 let failures = 0;
@@ -97,6 +98,60 @@ function makeFetch({ claim = [claimedJob()], resolvedRoute = [route()], telegram
   };
   return { fetchImpl, rpcCalls, telegramCalls };
 }
+
+function diagnosticFetch({ getMeStatus = 200, getChatStatus = 200, returnedChatId = kristinaChatId } = {}) {
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    calls.push({ url: value, body: init.body ? JSON.parse(init.body) : null });
+    if (value.endsWith('/getMe')) {
+      return Response.json({ ok: getMeStatus === 200, result: { id: 190 } }, { status: getMeStatus });
+    }
+    if (value.endsWith('/getChat')) {
+      return Response.json({ ok: getChatStatus === 200, result: { id: returnedChatId } }, { status: getChatStatus });
+    }
+    throw new Error(`unexpected diagnostic URL ${value}`);
+  };
+  return { calls, fetchImpl };
+}
+
+await test('Kristina destination preflight validates bot and exact chat without sending', async () => {
+  const mock = diagnosticFetch();
+  const result = await checkTelegramDestination(env, route({
+    artist_id: kristinaId,
+    integration_key: kristinaKey,
+    external_account_label: 'Kristina CRM Staging',
+  }), mock.fetchImpl);
+  assert.deepEqual(result, { reachable: true });
+  assert.deepEqual(mock.calls.map((call) => new URL(call.url).pathname.split('/').pop()), ['getMe', 'getChat']);
+  assert.deepEqual(mock.calls[1].body, { chat_id: kristinaChatId });
+  assert.ok(!JSON.stringify(result).includes(kristinaChatId));
+  assert.ok(!JSON.stringify(result).includes(kristinaBotToken));
+});
+
+await test('destination preflight classifies an invalid bot token without exposing it', async () => {
+  const mock = diagnosticFetch({ getMeStatus: 401 });
+  const result = await checkTelegramDestination(env, route({ integration_key: kristinaKey }), mock.fetchImpl);
+  assert.deepEqual(result, {
+    reachable: false,
+    errorCode: 'telegram_bot_token_invalid',
+    statusClass: '4xx',
+  });
+  assert.equal(mock.calls.length, 1);
+  assert.ok(!JSON.stringify(result).includes(kristinaBotToken));
+});
+
+await test('destination preflight distinguishes an unavailable chat without sending', async () => {
+  const mock = diagnosticFetch({ getChatStatus: 400 });
+  const result = await checkTelegramDestination(env, route({ integration_key: kristinaKey }), mock.fetchImpl);
+  assert.deepEqual(result, {
+    reachable: false,
+    errorCode: 'telegram_destination_unavailable',
+    statusClass: '4xx',
+  });
+  assert.equal(mock.calls.length, 2);
+  assert.ok(!mock.calls.some((call) => call.url.endsWith('/sendMessage')));
+});
 
 await test('one explicit UUID is claimed, routed, sent and acknowledged by the same worker', async () => {
   const mock = makeFetch();

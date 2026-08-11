@@ -34,6 +34,11 @@ readonly HISTORICAL_IDS=(
 readonly EVIDENCE_DIR="${RUNNER_TEMP:?}/kristina-telegram-parity-evidence"
 mkdir -p "$EVIDENCE_DIR"
 
+BASELINE_MODE=''
+EXPECTED_BEFORE_ATTEMPT=0
+EXPECTED_AFTER_ATTEMPT=0
+EXPECTED_FAILED_ACTIVITY_COUNT=0
+
 die() { echo "Kristina Telegram parity validation failed: $*" >&2; exit 1; }
 require_env() { [ -n "${!1:-}" ] || die "required encrypted staging configuration $1 is unavailable"; }
 
@@ -130,6 +135,31 @@ select jsonb_build_object(
     from public.integration_outbox t
     where t.kind = 'telegram_notification'
   ), '[]'::jsonb),
+  'target_due', exists(
+    select 1 from public.integration_outbox d
+    where d.id = '271407db-640d-405b-bc89-4838cf8d56b5'::uuid
+      and d.status = 'failed' and d.next_attempt_at <= now()
+  ),
+  'target_activities', coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', l.id, 'event_type', l.event_type, 'outbox_id', l.outbox_id,
+      'enquiry_id', l.enquiry_id, 'metadata', l.metadata,
+      'created_at', l.created_at
+    ) order by l.created_at)
+    from public.activity_log l
+    where l.outbox_id = '271407db-640d-405b-bc89-4838cf8d56b5'::uuid
+  ), '[]'::jsonb),
+  'kristina_fixture', (
+    select jsonb_build_object(
+      'id', e.id, 'artist_id', e.artist_id,
+      'email_domain', split_part(lower(e.submitted_email), '@', 2),
+      'intake_state', e.intake_state,
+      'file_count', (select count(*) from public.enquiry_files f where f.enquiry_id = e.id),
+      'ready_file_count', (select count(*) from public.enquiry_files f where f.enquiry_id = e.id and f.upload_state = 'ready')
+    )
+    from public.enquiries e
+    where e.id = '72e570f3-b767-45da-a74c-2872b910be9d'::uuid
+  ),
   'historical', coalesce((
     select jsonb_agg(jsonb_build_object(
       'id', h.id, 'status', h.status, 'attempt_count', h.attempt_count,
@@ -194,7 +224,7 @@ verify_baseline() {
   verify_project_health before
   write_snapshot before
   verify_historical_shape "${EVIDENCE_DIR}/before.json"
-  jq -e \
+  if jq -e \
     --arg vladimir "$VLADIMIR_ARTIST_ID" \
     --arg kristina "$KRISTINA_ARTIST_ID" \
     --arg pr189 "$PR189_TARGET_ID" \
@@ -223,8 +253,74 @@ verify_baseline() {
     and all(.integrations[];
       .artist_id != $kristina or .integration_type != "telegram"
     )
+    and .target_activities == []
+    and .kristina_fixture == null
+  ' "${EVIDENCE_DIR}/before.json" >/dev/null; then
+    BASELINE_MODE='fresh'
+    EXPECTED_BEFORE_ATTEMPT=1
+    EXPECTED_AFTER_ATTEMPT=2
+    EXPECTED_FAILED_ACTIVITY_COUNT=0
+    return
+  fi
+
+  jq -e \
+    --arg vladimir "$VLADIMIR_ARTIST_ID" \
+    --arg kristina "$KRISTINA_ARTIST_ID" \
+    --arg pr189 "$PR189_TARGET_ID" \
+    --arg target "$TARGET_OUTBOX_ID" \
+    --arg integration "$KRISTINA_INTEGRATION_ID" '
+    .latest_migration == "0035"
+    and .telegram_counts == {succeeded:9, failed:8, pending:0, leased:0, dead:0, total:17}
+    and (.telegram_rows | length) == 17
+    and all(.telegram_rows[]; .artist_id == $vladimir or .id == $target)
+    and any(.telegram_rows[];
+      .id == $pr189 and .status == "succeeded" and .attempt_count == 2
+      and .last_error_code == null and .leased_by == null
+      and .leased_at == null and .lease_expires_at == null
+    )
+    and any(.telegram_rows[];
+      .id == $target and .artist_id == $kristina
+      and .status == "failed" and .attempt_count == 2
+      and .max_attempts == 8 and .last_error_code == "telegram_rejected"
+      and .leased_by == null and .leased_at == null and .lease_expires_at == null
+    )
+    and .target_due == true
+    and (.artists | length) == 2
+    and all(.artists[]; .is_active == true)
+    and .kristina_booking_source.artist_id == $kristina
+    and .kristina_booking_source.source_key == "kristina-website"
+    and .kristina_booking_source.is_active == false
+    and .kristina_booking_source.allowed_origin == null
+    and any(.integrations[];
+      .artist_id == $vladimir and .integration_type == "telegram"
+      and .provider == "telegram" and .integration_key == "vladimir-staging"
+      and .is_enabled == true
+    )
+    and any(.integrations[];
+      .id == $integration and .artist_id == $kristina
+      and .integration_type == "telegram" and .provider == "telegram"
+      and .integration_key == "kristina-staging" and .is_enabled == true
+    )
+    and ([.integrations[] | select(.artist_id == $kristina and .integration_type == "telegram")] | length) == 1
+    and .kristina_fixture.id == "72e570f3-b767-45da-a74c-2872b910be9d"
+    and .kristina_fixture.artist_id == $kristina
+    and .kristina_fixture.email_domain == "example.invalid"
+    and .kristina_fixture.intake_state == "complete"
+    and .kristina_fixture.file_count == 1
+    and .kristina_fixture.ready_file_count == 1
+    and (.target_activities | length) == 1
+    and .target_activities[0].event_type == "outbox.failed"
+    and .target_activities[0].outbox_id == $target
+    and .target_activities[0].enquiry_id == "72e570f3-b767-45da-a74c-2872b910be9d"
+    and .target_activities[0].metadata.lease_aware == true
+    and .target_activities[0].metadata.attempt_count == 2
+    and .target_activities[0].metadata.error_code == "telegram_rejected"
   ' "${EVIDENCE_DIR}/before.json" >/dev/null \
-    || die "retained staging baseline does not match the guarded parity scope"
+    || die "retained staging baseline does not match either guarded parity state"
+  BASELINE_MODE='recovery'
+  EXPECTED_BEFORE_ATTEMPT=2
+  EXPECTED_AFTER_ATTEMPT=3
+  EXPECTED_FAILED_ACTIVITY_COUNT=1
 }
 
 create_route_and_one_fixture() {
@@ -437,6 +533,21 @@ SQL
     || die "setup changed state outside one Kristina target and route"
 }
 
+prepare_exact_target() {
+  if [ "$BASELINE_MODE" = 'fresh' ]; then
+    create_route_and_one_fixture
+    return
+  fi
+  jq -S --arg target "$TARGET_OUTBOX_ID" '
+    .telegram_rows[] | select(.id == $target) |
+    {
+      outbox_id:.id, artist_id, enquiry_id, status, attempt_count,
+      max_attempts, due:true, last_error_code,
+      lease_clear:(.leased_by == null and .leased_at == null and .lease_expires_at == null)
+    }
+  ' "${EVIDENCE_DIR}/before.json" > "${EVIDENCE_DIR}/target-before.json"
+}
+
 run_exact_kristina_drain() {
   local binding_file
   binding_file="$(mktemp "${RUNNER_TEMP}/kristina-provider-binding.XXXXXX.json")"
@@ -474,10 +585,11 @@ select jsonb_build_object(
   'lease_clear', o.leased_by is null and o.leased_at is null and o.lease_expires_at is null,
   'integration_key', i.integration_key,
   'success_activity_count', count(a.id) filter (where a.event_type = 'outbox.succeeded'),
+  'failed_activity_count', count(a.id) filter (where a.event_type = 'outbox.failed'),
   'lease_aware_success', bool_or(
     a.event_type = 'outbox.succeeded'
     and a.metadata ->> 'lease_aware' = 'true'
-    and a.metadata ->> 'attempt_count' = '2'
+    and a.metadata ->> 'attempt_count' = '$EXPECTED_AFTER_ATTEMPT'
   ),
   'activity_relationship_valid', bool_and(
     a.outbox_id = o.id and a.enquiry_id = o.enquiry_id
@@ -497,17 +609,20 @@ SQL
     --arg outbox "$TARGET_OUTBOX_ID" \
     --arg artist "$KRISTINA_ARTIST_ID" \
     --arg enquiry "$SYNTHETIC_ENQUIRY_ID" \
-    --arg key "$KRISTINA_INTEGRATION_KEY" '
+    --arg key "$KRISTINA_INTEGRATION_KEY" \
+    --argjson expected_attempt "$EXPECTED_AFTER_ATTEMPT" \
+    --argjson expected_failed_activity_count "$EXPECTED_FAILED_ACTIVITY_COUNT" '
     length == 1
     and .[0].target.outbox_id == $outbox
     and .[0].target.artist_id == $artist
     and .[0].target.enquiry_id == $enquiry
     and .[0].target.status == "succeeded"
-    and .[0].target.attempt_count == 2
+    and .[0].target.attempt_count == $expected_attempt
     and .[0].target.last_error_code == null
     and .[0].target.lease_clear == true
     and .[0].target.integration_key == $key
     and .[0].target.success_activity_count == 1
+    and .[0].target.failed_activity_count == $expected_failed_activity_count
     and .[0].target.lease_aware_success == true
     and .[0].target.activity_relationship_valid == true
   ' "$raw_file" >/dev/null || die "Kristina target acknowledgement evidence is invalid"
@@ -521,15 +636,23 @@ SQL
     <(jq -S '.historical' "${EVIDENCE_DIR}/after.json") >/dev/null \
     || die "a historical Vladimir failure changed"
   diff -u \
-    <(jq -S '.telegram_rows' "${EVIDENCE_DIR}/before.json") \
+    <(jq -S --arg target "$TARGET_OUTBOX_ID" '[.telegram_rows[] | select(.id != $target)]' \
+      "${EVIDENCE_DIR}/before.json") \
     <(jq -S --arg target "$TARGET_OUTBOX_ID" '[.telegram_rows[] | select(.id != $target)]' \
       "${EVIDENCE_DIR}/after.json") >/dev/null \
     || die "a pre-existing Vladimir Telegram job changed"
-  diff -u \
-    <(jq -S '.integrations' "${EVIDENCE_DIR}/before.json") \
-    <(jq -S --arg integration "$KRISTINA_INTEGRATION_ID" \
-      '[.integrations[] | select(.id != $integration)]' "${EVIDENCE_DIR}/after.json") >/dev/null \
-    || die "a pre-existing artist integration changed"
+  if [ "$BASELINE_MODE" = 'fresh' ]; then
+    diff -u \
+      <(jq -S '.integrations' "${EVIDENCE_DIR}/before.json") \
+      <(jq -S --arg integration "$KRISTINA_INTEGRATION_ID" \
+        '[.integrations[] | select(.id != $integration)]' "${EVIDENCE_DIR}/after.json") >/dev/null \
+      || die "a pre-existing artist integration changed"
+  else
+    diff -u \
+      <(jq -S '.integrations' "${EVIDENCE_DIR}/before.json") \
+      <(jq -S '.integrations' "${EVIDENCE_DIR}/after.json") >/dev/null \
+      || die "an artist integration changed during recovery"
+  fi
   diff -u \
     <(jq -S '.kristina_booking_source' "${EVIDENCE_DIR}/before.json") \
     <(jq -S '.kristina_booking_source' "${EVIDENCE_DIR}/after.json") >/dev/null \
@@ -538,7 +661,8 @@ SQL
     --arg vladimir "$VLADIMIR_ARTIST_ID" \
     --arg kristina "$KRISTINA_ARTIST_ID" \
     --arg target "$TARGET_OUTBOX_ID" \
-    --arg integration "$KRISTINA_INTEGRATION_ID" '
+    --arg integration "$KRISTINA_INTEGRATION_ID" \
+    --argjson expected_attempt "$EXPECTED_AFTER_ATTEMPT" '
     .latest_migration == "0035"
     and .telegram_counts == {succeeded:10, failed:7, pending:0, leased:0, dead:0, total:17}
     and any(.telegram_by_artist[];
@@ -552,7 +676,7 @@ SQL
     )
     and any(.telegram_rows[];
       .id == $target and .artist_id == $kristina
-      and .status == "succeeded" and .attempt_count == 2
+      and .status == "succeeded" and .attempt_count == $expected_attempt
       and .last_error_code == null and .leased_by == null
       and .leased_at == null and .lease_expires_at == null
     )
@@ -572,18 +696,23 @@ SQL
     --arg head_sha "${APPROVED_SHA:?}" \
     --arg outbox_id "$TARGET_OUTBOX_ID" \
     --arg integration_key "$KRISTINA_INTEGRATION_KEY" \
-    --arg binding_name "$KRISTINA_BINDING" '
+    --arg binding_name "$KRISTINA_BINDING" \
+    --arg baseline_mode "$BASELINE_MODE" \
+    --argjson before_attempt "$EXPECTED_BEFORE_ATTEMPT" \
+    --argjson after_attempt "$EXPECTED_AFTER_ATTEMPT" '
     {
       project_ref:"gwaliusblwrzisrwnsvs",
       migration_latest:"0035",
       head_sha:$head_sha,
       integration_key:$integration_key,
       binding_name:$binding_name,
+      baseline_mode:$baseline_mode,
       target_outbox_id:$outbox_id,
-      target_before:{status:"failed",attempt_count:1},
-      target_after:{status:"succeeded",attempt_count:2,last_error_code:null,lease_clear:true},
+      target_before:{status:"failed",attempt_count:$before_attempt},
+      target_after:{status:"succeeded",attempt_count:$after_attempt,last_error_code:null,lease_clear:true},
       provider_accepted:true,
       activity_log_success_count:1,
+      prior_failed_activity_count:($before_attempt - 1),
       historical_seven_unchanged:true,
       all_preexisting_vladimir_jobs_unchanged:true,
       vladimir_integration_unchanged:true,
@@ -606,7 +735,7 @@ case "$SUPABASE_SECRET_KEY" in sb_secret_*) ;; *) die "unexpected Supabase backe
 [ "${PRODUCTION_TARGETED:-false}" = 'false' ] || die "production target must remain false"
 
 verify_baseline
-create_route_and_one_fixture
+prepare_exact_target
 run_exact_kristina_drain
 verify_post_state
 
