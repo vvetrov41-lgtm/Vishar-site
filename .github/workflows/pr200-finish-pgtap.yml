@@ -29,13 +29,13 @@ jobs:
           from pathlib import Path
           path = Path('supabase/tests/194_artist_availability_time_off.sql')
           text = path.read_text()
-          old = "\nrollback;\n"
-          new = "\nselect * from finish();\nrollback;\n"
-          if text.count(old) != 1:
-              raise SystemExit('expected exactly one rollback trailer')
           if 'select * from finish();' in text:
               raise SystemExit('finish already present')
-          path.write_text(text.replace(old, new, 1))
+          if not text.rstrip().endswith('rollback;'):
+              raise SystemExit('expected rollback trailer')
+          trimmed = text.rstrip()
+          prefix = trimmed[:-len('rollback;')]
+          path.write_text(prefix + 'select * from finish();\nrollback;\n')
           PY
 
           git rm .github/workflows/pr200-finish-pgtap.yml
