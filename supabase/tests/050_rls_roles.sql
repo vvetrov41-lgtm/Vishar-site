@@ -542,6 +542,10 @@ insert into expected_function_acl values
   ('public.schedule_appointment(uuid,uuid,public.appointment_type,timestamptz,timestamptz,public.session_status,uuid,uuid,text)', false, true, false),
   ('public.set_appointment_status(uuid,public.session_status)', false, true, false),
   ('public.reschedule_appointment(uuid,timestamptz,timestamptz)', false, true, false),
+  ('public.list_artist_availability_blocks(uuid,timestamptz,timestamptz,boolean)', false, true, false),
+  ('public.create_artist_availability_block(uuid,public.availability_block_kind,timestamptz,timestamptz,boolean,text)', false, true, false),
+  ('public.update_artist_availability_block(uuid,public.availability_block_kind,timestamptz,timestamptz,boolean,text)', false, true, false),
+  ('public.cancel_artist_availability_block(uuid)', false, true, false),
   ('public.update_project_deposit(uuid,numeric,public.deposit_status,text)', false, true, false),
   ('public.update_project_estimate(uuid,numeric,numeric,integer,numeric,text)', false, true, false),
   ('public.create_internal_note(text,uuid,uuid,uuid,uuid)', false, true, false),
@@ -618,7 +622,8 @@ select ok(
        'profiles', 'clients', 'enquiries', 'enquiry_files', 'projects',
        'project_files', 'sessions', 'activity_log', 'internal_notes',
        'email_messages', 'follow_ups', 'integration_outbox',
-       'enquiry_status_transitions', 'system_settings', 'retention_holds')),
+       'enquiry_status_transitions', 'system_settings', 'retention_holds',
+       'artist_availability_blocks')),
   'every CRM table has row level security enabled and forced'
 );
 
