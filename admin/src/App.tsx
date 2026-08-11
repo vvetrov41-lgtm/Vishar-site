@@ -1,7 +1,7 @@
 // Application root: access gate, then routing.
 //
 // The gate runs before any screen. An account that is signed in but has no
-// active CRM profile is shown why, not a broken dashboard — and it is told the
+// active CRM profile is shown why, not a broken dashboard - and it is told the
 // same thing the database would enforce anyway.
 
 import { useEffect } from 'react';
@@ -24,6 +24,7 @@ import { EnquiriesPage } from './pages/EnquiriesPage';
 import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
+import { PasswordSetupPage } from './pages/PasswordSetupPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { UsersPage } from './pages/UsersPage';
@@ -45,6 +46,7 @@ export function App() {
 
   if (state === 'loading') return <LoadingState label={t('app.checkingAccess')} />;
   if (state === 'signed_out') return <LoginPage />;
+  if (state === 'password_setup') return <PasswordSetupPage />;
 
   if (state === 'no_profile' || state === 'deactivated') {
     return (
