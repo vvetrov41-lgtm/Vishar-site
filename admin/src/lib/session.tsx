@@ -17,6 +17,7 @@ import {
 } from 'react';
 import { createApi, type Api, type CrmClient } from './api';
 import { createAppointmentApi, type AppointmentApi } from './appointment-api';
+import { createAvailabilityApi, type AvailabilityApi } from './availability-api';
 import {
   createCalendarConnectionsApi,
   type CalendarConnectionsApi,
@@ -44,7 +45,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi;
+export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -84,6 +85,7 @@ export function SessionProvider({
     return Object.assign(
       createApi(client, { teamInviteUrl }),
       createAppointmentApi(client),
+      createAvailabilityApi(client),
       createCalendarConnectionsApi(client),
       createOAuthConsentApi(client),
       createManualIntakeApi(client),
@@ -175,7 +177,7 @@ export function SessionProvider({
 
     // End the invitation-derived session. The next access must prove the new
     // password through the ordinary signInWithPassword path.
-    const signedOut = await client.auth.signOut();
+    const signedOut = await auth.signOut();
     if (signedOut.error) {
       throw new Error('The password was saved, but the invitation session could not be closed. Try again before continuing.');
     }
