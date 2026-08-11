@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isStaffInviteUrl,
   readCalendarConnectorOrigin,
   readConfig,
   readTeamInviteUrl,
@@ -89,6 +90,27 @@ describe('CRM Supabase configuration', () => {
         VITE_SUPABASE_URL: url,
         VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test',
       }, true)).toThrow(/permitted Supabase project root URL/i);
+    }
+  });
+});
+
+describe('staff invitation Auth URL marker', () => {
+  it('accepts the exact root marker while ignoring the provider-owned Auth fragment', () => {
+    expect(isStaffInviteUrl('https://crm.vishartattoo.com/?staff_invite=1')).toBe(true);
+    expect(isStaffInviteUrl(
+      'https://crm.vishartattoo.com/?staff_invite=1#access_token=synthetic&refresh_token=synthetic'
+    )).toBe(true);
+  });
+
+  it('does not enable URL session detection for ordinary or widened URLs', () => {
+    for (const url of [
+      'https://crm.vishartattoo.com/',
+      'https://crm.vishartattoo.com/?staff_invite=2',
+      'https://crm.vishartattoo.com/?staff_invite=1&next=/users',
+      'https://crm.vishartattoo.com/admin?staff_invite=1',
+      'not-a-url',
+    ]) {
+      expect(isStaffInviteUrl(url)).toBe(false);
     }
   });
 });
