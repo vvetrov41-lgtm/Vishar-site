@@ -516,6 +516,8 @@ insert into expected_function_acl values
   ('public.finalize_enquiry_intake(uuid)', false, false, true),
   ('public.fail_enquiry_intake(uuid,text)', false, false, true),
   ('public.record_outbox_attempt(uuid,boolean,text)', false, false, true),
+  ('public.claim_telegram_outbox_by_id(uuid,text,integer)', false, false, true),
+  ('public.record_telegram_outbox_result(uuid,text,boolean,text)', false, false, true),
   ('public.resolve_outbox_route(uuid)', false, false, true),
   ('public.list_incomplete_intakes(integer,integer)', false, false, true),
   ('public.resolve_booking_source(text,text,text)', false, false, true),
