@@ -41,11 +41,13 @@ declare
   v_match_method text := 'created';
   v_conflict boolean := false;
   v_client_created boolean := false;
+  v_actor_kind text;
   v_privacy_version constant text := '2026-07-29';
 begin
   perform crm_private.require_role('owner', 'booking_manager');
   perform crm_private.require_active_artist(p_artist_id);
   perform crm_private.require_artist_access(p_artist_id, 'manage');
+  v_actor_kind := case when public.is_owner() then 'owner' else 'staff' end;
 
   if p_idempotency_key is null then
     raise exception 'idempotency key is required' using errcode = '22023';
@@ -262,7 +264,7 @@ begin
     perform crm_private.log_artist_activity(
       p_artist_id,
       'client.created',
-      'user',
+      v_actor_kind,
       auth.uid(),
       v_client_id,
       v_enquiry_id,
@@ -277,7 +279,7 @@ begin
     perform crm_private.log_artist_activity(
       p_artist_id,
       'client.identifier_conflict',
-      'user',
+      v_actor_kind,
       auth.uid(),
       v_client_id,
       v_enquiry_id,
@@ -296,7 +298,7 @@ begin
   perform crm_private.log_artist_activity(
     p_artist_id,
     'enquiry.manual_created',
-    'user',
+    v_actor_kind,
     auth.uid(),
     v_client_id,
     v_enquiry_id,
