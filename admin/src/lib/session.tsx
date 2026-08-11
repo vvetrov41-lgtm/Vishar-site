@@ -26,6 +26,7 @@ import {
   createOAuthConsentApi,
   type OAuthConsentApi,
 } from './oauth-consent-api';
+import { clearStaffInviteUrl } from './supabase';
 import type { Profile } from './types';
 
 export type AccessState =
@@ -39,6 +40,7 @@ export type AccessState =
   // exists, access withdrawn" and would become reachable if that policy ever
   // widened; both outcomes deny identically.
   | 'deactivated'
+  | 'password_setup'
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
@@ -51,6 +53,7 @@ export interface SessionValue {
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  completePasswordSetup: (password: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -59,15 +62,18 @@ const SessionContext = createContext<SessionValue | null>(null);
 export function SessionProvider({
   client,
   teamInviteUrl = '',
+  staffInviteMode = false,
   children,
 }: {
   client: CrmClient | null;
   teamInviteUrl?: string;
+  staffInviteMode?: boolean;
   children: ReactNode;
 }) {
   const [state, setState] = useState<AccessState>(client ? 'loading' : 'unconfigured');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inviteMode, setInviteMode] = useState(staffInviteMode);
 
   const api = useMemo<CrmApi | null>(() => {
     if (!client) return null;
@@ -102,7 +108,11 @@ export function SessionProvider({
         return;
       }
       setProfile(found);
-      setState(found.is_active ? 'active' : 'deactivated');
+      if (!found.is_active) {
+        setState('deactivated');
+        return;
+      }
+      setState(inviteMode ? 'password_setup' : 'active');
     } catch {
       // A profile that cannot be read is treated as no access rather than as a
       // transient error: the safe reading of "the database would not tell me
@@ -110,7 +120,7 @@ export function SessionProvider({
       setProfile(null);
       setState('no_profile');
     }
-  }, [client, api]);
+  }, [client, api, inviteMode]);
 
   useEffect(() => {
     void load();
@@ -135,13 +145,53 @@ export function SessionProvider({
   const signOut = useCallback(async () => {
     if (!client) return;
     await client.auth.signOut();
+    if (inviteMode) {
+      clearStaffInviteUrl();
+      setInviteMode(false);
+    }
     setProfile(null);
     setState('signed_out');
-  }, [client]);
+  }, [client, inviteMode]);
+
+  const completePasswordSetup = useCallback(async (password: string) => {
+    if (!client || !inviteMode || state !== 'password_setup' || !profile?.is_active) {
+      throw new Error('Password setup is not available for this session.');
+    }
+    if (password.length < 12 || password.length > 128) {
+      throw new Error('Choose a password between 12 and 128 characters.');
+    }
+
+    const updated = await client.auth.updateUser({ password });
+    if (updated.error) {
+      throw new Error('Could not set that password. Choose a stronger password and try again.');
+    }
+
+    // End the invitation-derived session. The next access must prove the new
+    // password through the ordinary signInWithPassword path.
+    const signedOut = await client.auth.signOut();
+    if (signedOut.error) {
+      throw new Error('The password was saved, but the invitation session could not be closed. Try again before continuing.');
+    }
+
+    clearStaffInviteUrl();
+    setInviteMode(false);
+    setError(null);
+    setProfile(null);
+    setState('signed_out');
+  }, [client, inviteMode, profile, state]);
 
   const value = useMemo<SessionValue>(
-    () => ({ state, profile, api, error, signIn, signOut, refresh: load }),
-    [state, profile, api, error, signIn, signOut, load]
+    () => ({
+      state,
+      profile,
+      api,
+      error,
+      signIn,
+      signOut,
+      completePasswordSetup,
+      refresh: load,
+    }),
+    [state, profile, api, error, signIn, signOut, completePasswordSetup, load]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
