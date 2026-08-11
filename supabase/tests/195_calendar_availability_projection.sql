@@ -138,7 +138,6 @@ select is(
 
 reset role;
 select pg_temp.calendar_availability_claims('{"role":"service_role"}');
-set local role service_role;
 
 select is(
   (select count(*)::integer
@@ -240,7 +239,6 @@ select is(
 
 reset role;
 select pg_temp.calendar_availability_claims('{"role":"service_role"}');
-set local role service_role;
 
 create temporary table vladimir_update_claim as
 select * from public.claim_calendar_availability_outbox(
@@ -318,7 +316,6 @@ select is(
 
 reset role;
 select pg_temp.calendar_availability_claims('{"role":"service_role"}');
-set local role service_role;
 
 create temporary table vladimir_cancel_claim as
 select * from public.claim_calendar_availability_outbox(
@@ -383,7 +380,6 @@ select public.update_artist_availability_block(
 
 reset role;
 select pg_temp.calendar_availability_claims('{"role":"service_role"}');
-set local role service_role;
 
 create temporary table kristina_stale_claim as
 select * from public.claim_calendar_availability_outbox(
@@ -457,7 +453,6 @@ grant select on disconnected_block to authenticated, service_role;
 
 reset role;
 select pg_temp.calendar_availability_claims('{"role":"service_role"}');
-set local role service_role;
 create temporary table disconnected_claim as
 select * from public.claim_calendar_availability_outbox(
   'calendar-availability-worker-disconnected', 1, 120
