@@ -55,7 +55,7 @@ jobs:
 
           git rm .github/workflows/pr200-patch-availability-acl.yml
           git diff --check
-          git add supabase/tests/050_rls_roles.sql .github/workflows/pr200-patch-availability-acl.yml
+          git add supabase/tests/050_rls_roles.sql
 
           mapfile -t changed < <(git diff --cached --name-only)
           test "${#changed[@]}" -eq 2
