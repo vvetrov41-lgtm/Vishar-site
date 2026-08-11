@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { readConfig, readTeamInviteUrl } from '../lib/supabase';
+import {
+  readCalendarConnectorOrigin,
+  readConfig,
+  readTeamInviteUrl,
+} from '../lib/supabase';
 
 function jwtWithRole(role: string) {
   const encode = (value: object) =>
@@ -112,5 +116,34 @@ describe('Team invitation endpoint configuration', () => {
     expect(readTeamInviteUrl({
       VITE_TEAM_INVITE_URL: 'http://127.0.0.1:8787/v1/staff/invite',
     }, true)).toBe('http://127.0.0.1:8787/v1/staff/invite');
+  });
+});
+
+describe('Calendar connector configuration', () => {
+  it('is optional so integration controls stay disabled by default', () => {
+    expect(readCalendarConnectorOrigin({})).toBe('');
+  });
+
+  it('accepts only an HTTPS root below the owned domain', () => {
+    expect(readCalendarConnectorOrigin({
+      VITE_CALENDAR_CONNECTOR_ORIGIN: 'https://calendar-staging.vishartattoo.com',
+    })).toBe('https://calendar-staging.vishartattoo.com');
+
+    for (const url of [
+      'https://attacker.example',
+      'https://vishartattoo.com.attacker.example',
+      'http://calendar.vishartattoo.com',
+      'https://calendar.vishartattoo.com/oauth/google/start/vladimir',
+      'https://user:pass@calendar.vishartattoo.com',
+    ]) {
+      expect(() => readCalendarConnectorOrigin({ VITE_CALENDAR_CONNECTOR_ORIGIN: url }))
+        .toThrow(/permitted connector root URL/i);
+    }
+  });
+
+  it('allows loopback only in development', () => {
+    expect(readCalendarConnectorOrigin({
+      VITE_CALENDAR_CONNECTOR_ORIGIN: 'http://127.0.0.1:8787',
+    }, true)).toBe('http://127.0.0.1:8787');
   });
 });
