@@ -1,0 +1,235 @@
+name: Deploy private production Team admin Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation. Leave false for validation-only runs.
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-team-admin
+  cancel-in-progress: false
+
+jobs:
+  team-admin:
+    name: Private CRM Team admin production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      CRM_ORIGIN: ${{ vars.CRM_PRODUCTION_ORIGIN }}
+      TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      WORKER_NAME: ${{ vars.CRM_PRODUCTION_TEAM_ADMIN_WORKER }}
+
+    steps:
+      - name: Verify exact release branch and explicit production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_TEAM_ADMIN_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *)
+              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          fi
+
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            if [ "$DEPLOY_ENABLED" != 'true' ]; then
+              echo 'CRM_PRODUCTION_TEAM_ADMIN_DEPLOY_ENABLED is not explicitly enabled.' >&2
+              exit 1
+            fi
+            if [ "$APPROVAL_PHRASE" != 'DEPLOY_PRIVATE_CRM_TEAM_ADMIN' ]; then
+              echo 'The exact Team admin production approval phrase is required for deploy=true.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Verify production-only Team admin configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export RETAINED_STAGING_SUPABASE_URL='https://gwaliusblwrzisrwnsvs.supabase.co'
+
+          node <<'NODE'
+          const required = [
+            'CRM_ORIGIN',
+            'TEAM_INVITE_URL',
+            'SUPABASE_URL',
+            'SUPABASE_PUBLISHABLE_KEY',
+            'WORKER_NAME',
+          ];
+          for (const name of required) {
+            if (!process.env[name]) throw new Error(`${name} is not configured`);
+          }
+
+          const exactOrigin = (value, label) => {
+            const parsed = new URL(value);
+            if (
+              parsed.protocol !== 'https:'
+              || !parsed.hostname.endsWith('.vishartattoo.com')
+              || parsed.hostname === 'vishartattoo.com'
+              || parsed.username
+              || parsed.password
+              || parsed.pathname !== '/'
+              || parsed.search
+              || parsed.hash
+              || parsed.origin !== value
+            ) throw new Error(`${label} must be an exact owned HTTPS origin`);
+            return parsed;
+          };
+
+          const crm = exactOrigin(process.env.CRM_ORIGIN, 'CRM_PRODUCTION_ORIGIN');
+          const invite = new URL(process.env.TEAM_INVITE_URL);
+          if (
+            invite.protocol !== 'https:'
+            || !invite.hostname.endsWith('.vishartattoo.com')
+            || invite.hostname === 'vishartattoo.com'
+            || invite.origin === crm.origin
+            || invite.username
+            || invite.password
+            || invite.pathname !== '/v1/staff/invite'
+            || invite.search
+            || invite.hash
+          ) throw new Error('CRM_PRODUCTION_TEAM_INVITE_URL must be an exact owned Team admin endpoint');
+
+          const supabase = new URL(process.env.SUPABASE_URL);
+          if (
+            supabase.protocol !== 'https:'
+            || !/^[a-z0-9]{20}\.supabase\.co$/.test(supabase.hostname)
+            || supabase.pathname !== '/'
+            || supabase.search
+            || supabase.hash
+            || supabase.origin !== process.env.SUPABASE_URL
+            || process.env.SUPABASE_URL === process.env.RETAINED_STAGING_SUPABASE_URL
+          ) throw new Error('CRM_PRODUCTION_SUPABASE_URL must be a non-staging hosted project root');
+
+          if (!process.env.SUPABASE_PUBLISHABLE_KEY.startsWith('sb_publishable_')) {
+            throw new Error('CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY must use the publishable-key format');
+          }
+
+          if (!/^vishar-team-admin-production(?:-[a-z0-9-]+)?$/.test(process.env.WORKER_NAME)) {
+            throw new Error('CRM_PRODUCTION_TEAM_ADMIN_WORKER must be a dedicated production Worker name');
+          }
+          NODE
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+
+      - name: Verify checkout SHA
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
+      - name: Audit root dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Test Team admin boundary
+        run: node scripts/test-team-admin-worker.mjs
+
+      - name: Compile Team admin Worker with workers.dev disabled
+        run: npm run check:team-admin-bundle
+
+      - name: Scan repository for committed secrets
+        run: npm run scan:secrets
+
+      - name: Verify pre-provisioned Worker secret boundary
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          secrets_json="$(npx wrangler secret list --config wrangler.team-admin.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const names = new Set(values.map((entry) => entry?.name).filter(Boolean));
+          if (!names.has('SUPABASE_SECRET_KEY')) {
+            throw new Error('Pre-provisioned production Worker is missing SUPABASE_SECRET_KEY');
+          }
+          NODE
+
+      - name: Deploy only the Team admin Worker
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npx wrangler deploy \
+            --config wrangler.team-admin.toml \
+            --name "$WORKER_NAME" \
+            --strict \
+            --keep-vars \
+            --var "CRM_ALLOWED_ORIGIN:$CRM_ORIGIN" \
+            --var "CRM_INVITE_REDIRECT_URL:${CRM_ORIGIN}/?staff_invite=1" \
+            --var "SUPABASE_URL:$SUPABASE_URL" \
+            --var "SUPABASE_PUBLISHABLE_KEY:$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Production Team admin boundary summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+        run: |
+          {
+            echo '### Private CRM Team admin production gate'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo '- Worker source: `workers/team-admin.js` only'
+            echo '- Wrangler config: `wrangler.team-admin.toml` with `workers_dev=false`'
+            echo '- Route/custom domain provisioning: not performed by this workflow'
+            echo '- Required pre-existing secret: `SUPABASE_SECRET_KEY`'
+            echo '- Calendar / Telegram / GPT / booking Worker deploy commands: none'
+          } >> "$GITHUB_STEP_SUMMARY"
