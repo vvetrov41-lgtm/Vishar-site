@@ -61,9 +61,17 @@ export interface ScheduleAppointmentInput {
   notes?: string | null;
 }
 
+function appointmentMessage(error: any, what: string): string {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  if (message.includes('artist availability blocks this time')) {
+    return 'That time is blocked in artist availability.';
+  }
+  return friendlyMessage(error, what);
+}
+
 function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
   if (result.error) {
-    throw new ApiError(friendlyMessage(result.error, what), result.error);
+    throw new ApiError(appointmentMessage(result.error, what), result.error);
   }
   return (result.data ?? ([] as unknown)) as T;
 }
