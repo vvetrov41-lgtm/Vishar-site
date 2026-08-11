@@ -27,9 +27,20 @@ interface RouterValue extends Route {
 
 const RouterContext = createContext<RouterValue | null>(null);
 
+const DIRECT_ENTRY_PATHS: Readonly<Record<string, string>> = Object.freeze({
+  '/oauth/consent': '/oauth/consent',
+  '/oauth/consent/': '/oauth/consent',
+});
+
 function currentPath(): string {
   const hash = window.location.hash.replace(/^#/, '');
-  return hash || '/';
+  if (hash) return hash;
+
+  // Supabase OAuth Server redirects the browser to the configured authorization
+  // path as a normal pathname, not a hash route. Preserve exactly that one
+  // external entry point so the pending authorization_id reaches the consent
+  // screen. All ordinary CRM navigation remains hash-based.
+  return DIRECT_ENTRY_PATHS[window.location.pathname] ?? '/';
 }
 
 /** Matches `/enquiries/:id` against `/enquiries/abc`. */
@@ -111,3 +122,5 @@ export function Link({
     </a>
   );
 }
+
+export const __testing = Object.freeze({ currentPath });
