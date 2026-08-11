@@ -1,0 +1,186 @@
+name: Deploy private production CRM database
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Apply pending migrations after validation. Leave false for dry-run only.
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-crm-database
+  cancel-in-progress: false
+
+jobs:
+  production-database:
+    name: Private CRM production database gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+
+    steps:
+      - name: Verify exact release branch and explicit production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *)
+              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          fi
+
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            if [ "$DEPLOY_ENABLED" != 'true' ]; then
+              echo 'CRM_PRODUCTION_DB_DEPLOY_ENABLED is not explicitly enabled.' >&2
+              exit 1
+            fi
+            if [ "$APPROVAL_PHRASE" != 'DEPLOY_PRIVATE_CRM_DATABASE' ]; then
+              echo 'The exact production database approval phrase is required for deploy=true.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Verify production Supabase target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RETAINED_STAGING_PROJECT_REF='gwaliusblwrzisrwnsvs'
+
+          if ! [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
+            echo 'CRM_PRODUCTION_SUPABASE_PROJECT_REF is missing or malformed.' >&2
+            exit 1
+          fi
+
+          if [ "$PROJECT_REF" = "$RETAINED_STAGING_PROJECT_REF" ]; then
+            echo 'Refusing to target the retained staging Supabase project.' >&2
+            exit 1
+          fi
+
+          if [ "$PROJECT_URL" != "https://${PROJECT_REF}.supabase.co" ]; then
+            echo 'CRM_PRODUCTION_SUPABASE_URL must exactly match the production project ref.' >&2
+            exit 1
+          fi
+
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo 'Production Supabase deployment credentials are not configured.' >&2
+            exit 1
+          fi
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+
+      - name: Verify checkout SHA
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
+      - name: Audit root dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Scan repository for committed secrets
+        run: npm run scan:secrets
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Start clean local Supabase stack
+        run: supabase start
+
+      - name: Reset local database without development seed
+        run: supabase db reset --local --no-seed
+
+      - name: Run full pgTAP suite
+        run: supabase test db
+
+      - name: Lint PostgreSQL functions
+        run: supabase db lint --local --schema public,crm_private --level error --fail-on error
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop --no-backup
+
+      - name: Link exact production Supabase project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Show migration state before production dry-run
+        run: supabase migration list
+
+      - name: Dry-run production migrations without seed
+        run: supabase db push --dry-run
+
+      - name: Apply production migrations without seed
+        if: ${{ inputs.deploy }}
+        run: supabase db push
+
+      - name: Show migration state after production deploy
+        if: ${{ inputs.deploy }}
+        run: supabase migration list
+
+      - name: Production database boundary summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+        run: |
+          {
+            echo '### Private CRM production database gate'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo '- Local validation: clean no-seed reset, pgTAP and PostgreSQL lint'
+            echo '- Remote validation: migration list and db push --dry-run'
+            echo '- Remote reset command: none'
+            echo '- Seed command: none'
+          } >> "$GITHUB_STEP_SUMMARY"
