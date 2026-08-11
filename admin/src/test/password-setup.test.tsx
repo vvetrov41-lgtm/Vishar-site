@@ -19,13 +19,21 @@ function renderInviteSession(
   const auth = client.auth as CrmClient['auth'] & {
     updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
   };
+  const originalGetSession = auth.getSession;
+  let signedOut = false;
 
+  auth.getSession = async () => (
+    signedOut
+      ? { data: { session: null }, error: null }
+      : originalGetSession()
+  );
   auth.updateUser = async ({ password }) => {
     authCalls.push({ method: 'updateUser', passwordLength: password.length });
     return { data: {}, error: null };
   };
   auth.signOut = async () => {
     authCalls.push({ method: 'signOut' });
+    signedOut = true;
     return { error: null };
   };
 
@@ -94,6 +102,6 @@ describe('invited staff first-login flow', () => {
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'Set your CRM password' })).not.toBeInTheDocument();
     });
-    expect(await screen.findByText('Dashboard')).toBeInTheDocument();
+    expect((await screen.findAllByText('Dashboard')).length).toBeGreaterThan(0);
   });
 });
