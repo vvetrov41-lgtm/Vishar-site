@@ -1,0 +1,304 @@
+name: PR 185 single Telegram retry validation
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-single-telegram-retry-validation
+  cancel-in-progress: false
+
+jobs:
+  retry-one-synthetic-job:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'agent/gpt-appointment-actions' &&
+      github.event.pull_request.head.ref == 'agent/pr185-telegram-single-retry-validation' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      contains(github.event.pull_request.body, '<!-- RUN_PR185_SINGLE_TELEGRAM_RETRY -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_BASE_SHA: 2afdbb87f755ba32eedc4535deb3e9835204c4b7
+      EXPECTED_SUPABASE_URL: https://gwaliusblwrzisrwnsvs.supabase.co
+      TARGET_OUTBOX_ID: 4bf5cb94-60cd-4347-b292-fc0af986fc1f
+      TARGET_ENQUIRY_ID: e71433f0-4638-4744-ba75-2a8aae124cf8
+      TARGET_REFERENCE: ENQ-2026-0074
+      SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg base "$EXPECTED_BASE_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/gpt-appointment-actions"
+            and .pull_request.base.sha == $base
+            and .pull_request.head.ref == "agent/pr185-telegram-single-retry-validation"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains("<!-- RUN_PR185_SINGLE_TELEGRAM_RETRY -->"))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+          [ "$SUPABASE_URL" = "$EXPECTED_SUPABASE_URL" ]
+          case "$SUPABASE_SECRET_KEY" in sb_secret_*) ;; *) exit 1 ;; esac
+          [ -n "$TELEGRAM_BOT_TOKEN" ]
+          [ -n "$TELEGRAM_CHAT_ID" ]
+
+      - name: Checkout exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact ancestry and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$APPROVED_SHA"
+          [ "$(git diff --name-only "$EXPECTED_BASE_SHA" "$APPROVED_SHA" | wc -l | tr -d ' ')" = 1 ]
+          [ "$(git diff --name-only "$EXPECTED_BASE_SHA" "$APPROVED_SHA")" = ".github/workflows/pr185-telegram-single-retry-validation.yml" ]
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Retry exactly one due synthetic Telegram job
+        shell: bash
+        env:
+          EVIDENCE_PATH: ${{ runner.temp }}/telegram-single-retry-evidence.txt
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { createSupabaseClient } from './workers/lib/supabase.js';
+          import { bindingNameFor } from './workers/lib/provider-routing.js';
+          import { buildEnquiryNotification, sendNotification } from './workers/lib/telegram.js';
+
+          const expected = {
+            supabaseUrl: process.env.EXPECTED_SUPABASE_URL,
+            outboxId: process.env.TARGET_OUTBOX_ID,
+            enquiryId: process.env.TARGET_ENQUIRY_ID,
+            reference: process.env.TARGET_REFERENCE,
+            baseSha: process.env.EXPECTED_BASE_SHA,
+            headSha: process.env.APPROVED_SHA,
+          };
+          const evidence = {
+            exact_sha: expected.headSha,
+            base_sha: expected.baseSha,
+            target_outbox_id: expected.outboxId,
+            target_reference: expected.reference,
+            synthetic_provenance_verified: false,
+            initial_failed_count: null,
+            route_resolved: false,
+            binding_name: null,
+            provider_delivery: false,
+            provider_error_code: null,
+            acknowledgement_status: null,
+            target_attempt_count_after: null,
+            remaining_failed_count: null,
+            untouched_failed_jobs_preserved: false,
+            retained_staging_reset: false,
+            production_targeted: false,
+          };
+
+          const writeEvidence = () => {
+            const lines = Object.entries(evidence).map(([key, value]) => `${key}=${value ?? 'null'}`);
+            fs.writeFileSync(process.env.EVIDENCE_PATH, `${lines.join('\n')}\n`, { mode: 0o600 });
+          };
+
+          const fail = (message) => {
+            writeEvidence();
+            throw new Error(message);
+          };
+
+          try {
+            if (process.env.SUPABASE_URL !== expected.supabaseUrl) fail('staging Supabase boundary mismatch');
+            if (!process.env.SUPABASE_SECRET_KEY?.startsWith('sb_secret_')) fail('staging backend key missing');
+            if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) fail('staging Telegram configuration missing');
+
+            const supabase = createSupabaseClient({
+              SUPABASE_URL: process.env.SUPABASE_URL,
+              SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
+            });
+
+            async function readRows(table, query) {
+              const response = await fetch(`${supabase.url}/rest/v1/${table}?${query}`, {
+                headers: { ...supabase.authHeaders, Accept: 'application/json' },
+              });
+              if (!response.ok) throw new Error(`read ${table} failed with ${response.status}`);
+              return response.json();
+            }
+
+            const targetRows = await readRows(
+              'integration_outbox',
+              new URLSearchParams({
+                id: `eq.${expected.outboxId}`,
+                select: 'id,kind,status,attempt_count,max_attempts,next_attempt_at,last_error_code,artist_id,enquiry_id,payload,leased_by,leased_at,lease_expires_at',
+              }).toString(),
+            );
+            if (targetRows.length !== 1) fail('target outbox row missing');
+            const target = targetRows[0];
+
+            const enquiryRows = await readRows(
+              'enquiries',
+              new URLSearchParams({
+                id: `eq.${expected.enquiryId}`,
+                select: 'id,reference_number,utm_source,utm_medium,intake_state',
+              }).toString(),
+            );
+            if (enquiryRows.length !== 1) fail('target enquiry missing');
+            const enquiry = enquiryRows[0];
+
+            const failedBefore = await readRows(
+              'integration_outbox',
+              new URLSearchParams({
+                kind: 'eq.telegram_notification',
+                status: 'eq.failed',
+                select: 'id,attempt_count,last_error_code',
+                order: 'created_at.asc',
+              }).toString(),
+            );
+            evidence.initial_failed_count = failedBefore.length;
+
+            const payload = target.payload ?? {};
+            const fileCount = Number(payload.file_count);
+            const due = Number.isFinite(Date.parse(target.next_attempt_at)) && Date.parse(target.next_attempt_at) <= Date.now();
+            const targetIsSynthetic =
+              target.id === expected.outboxId &&
+              target.enquiry_id === expected.enquiryId &&
+              target.kind === 'telegram_notification' &&
+              target.status === 'failed' &&
+              Number(target.attempt_count) === 1 &&
+              Number(target.max_attempts) === 8 &&
+              target.last_error_code === 'provider_route_unavailable' &&
+              due &&
+              !target.leased_by && !target.leased_at && !target.lease_expires_at &&
+              enquiry.id === expected.enquiryId &&
+              enquiry.reference_number === expected.reference &&
+              enquiry.utm_source === 'pr177-staging' &&
+              enquiry.utm_medium === 'synthetic' &&
+              enquiry.intake_state === 'complete' &&
+              payload.reference_number === expected.reference &&
+              fileCount === 1;
+            const allSevenOldFailuresUntouched =
+              failedBefore.length === 7 &&
+              failedBefore.some((row) => row.id === expected.outboxId) &&
+              failedBefore.every((row) => Number(row.attempt_count) === 1 && row.last_error_code === 'provider_route_unavailable');
+            if (!targetIsSynthetic || !allSevenOldFailuresUntouched) fail('synthetic retry preconditions changed');
+            evidence.synthetic_provenance_verified = true;
+
+            let route;
+            let notification;
+            try {
+              const resolved = await supabase.rpc('resolve_outbox_route', { p_outbox_id: expected.outboxId });
+              route = Array.isArray(resolved) ? resolved[0] : resolved;
+              if (!route || route.kind !== 'telegram_notification' || route.integration_type !== 'telegram' || route.provider !== 'telegram' || route.integration_key !== 'vladimir-staging') {
+                throw new Error('resolved route does not match expected staging Telegram route');
+              }
+              evidence.route_resolved = true;
+              const bindingName = bindingNameFor('telegram', route.integration_key);
+              if (bindingName !== 'ARTIST_TELEGRAM_VLADIMIR_HSTAGING') throw new Error('unexpected artist binding name');
+              evidence.binding_name = bindingName;
+
+              notification = await sendNotification(
+                { [bindingName]: JSON.stringify({ botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID }) },
+                route,
+                buildEnquiryNotification({ referenceNumber: expected.reference, fileCount, clientConflict: false }),
+              );
+            } catch (error) {
+              notification = { delivered: false, errorCode: 'provider_route_unavailable' };
+            }
+
+            evidence.provider_delivery = Boolean(notification.delivered);
+            evidence.provider_error_code = notification.delivered ? null : notification.errorCode;
+
+            const acknowledgement = await supabase.rpc('record_outbox_attempt', {
+              p_outbox_id: expected.outboxId,
+              p_succeeded: Boolean(notification.delivered),
+              p_error_code: notification.delivered ? null : notification.errorCode,
+            });
+            evidence.acknowledgement_status = acknowledgement?.status ?? null;
+
+            const afterRows = await readRows(
+              'integration_outbox',
+              new URLSearchParams({
+                id: `eq.${expected.outboxId}`,
+                select: 'id,status,attempt_count,last_error_code,leased_by,leased_at,lease_expires_at',
+              }).toString(),
+            );
+            if (afterRows.length !== 1) fail('target outbox row missing after retry');
+            const after = afterRows[0];
+            evidence.target_attempt_count_after = Number(after.attempt_count);
+
+            const failedAfter = await readRows(
+              'integration_outbox',
+              new URLSearchParams({
+                kind: 'eq.telegram_notification',
+                status: 'eq.failed',
+                select: 'id,attempt_count,last_error_code',
+                order: 'created_at.asc',
+              }).toString(),
+            );
+            evidence.remaining_failed_count = failedAfter.length;
+            const otherRows = failedAfter.filter((row) => row.id !== expected.outboxId);
+            evidence.untouched_failed_jobs_preserved = otherRows.length === 6 && otherRows.every(
+              (row) => Number(row.attempt_count) === 1 && row.last_error_code === 'provider_route_unavailable',
+            );
+
+            if (notification.delivered) {
+              if (after.status !== 'succeeded' || Number(after.attempt_count) !== 2 || after.last_error_code !== null) {
+                fail('successful Telegram send was not acknowledged canonically');
+              }
+              if (failedAfter.length !== 6 || failedAfter.some((row) => row.id === expected.outboxId)) {
+                fail('bounded retry changed the failed set unexpectedly');
+              }
+            } else {
+              if (after.status !== 'failed' || Number(after.attempt_count) !== 2 || after.last_error_code !== notification.errorCode) {
+                fail('failed Telegram retry was not recorded canonically');
+              }
+              if (failedAfter.length !== 7) fail('failed retry changed another outbox row');
+            }
+            if (!evidence.untouched_failed_jobs_preserved) fail('another old Telegram job changed');
+
+            writeEvidence();
+            if (!notification.delivered) throw new Error('single synthetic Telegram retry did not deliver');
+          } catch (error) {
+            writeEvidence();
+            throw error;
+          }
+          NODE
+
+      - name: Upload safe retry evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-single-telegram-retry-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/telegram-single-retry-evidence.txt
+          if-no-files-found: warn
+          retention-days: 30
