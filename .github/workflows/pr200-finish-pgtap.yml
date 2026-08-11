@@ -1,4 +1,5 @@
 # One-shot branch-only helper. It removes itself after fixing the pgTAP trailer.
+# Trigger after initial registration.
 name: PR 200 pgTAP finish helper
 
 on:
