@@ -154,10 +154,10 @@ select is(
   (select count(*)::int from public.activity_log
    where enquiry_id = (select (result ->> 'enquiry_id')::uuid from manual_result)
      and event_type = 'enquiry.manual_created'
-     and actor_kind = 'user'
+     and actor_kind = 'staff'
      and actor_profile_id = 'd8111111-1111-4111-8111-111111111111'),
   1,
-  'manual creation has one artist-scoped human audit event'
+  'manual creation has one artist-scoped staff audit event'
 );
 
 set local role authenticated;
