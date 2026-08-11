@@ -141,7 +141,7 @@ insert into public.integration_outbox (
   ),
   (
     'c9431111-1111-4111-8111-111111111111',
-    'reconciliation_sweep', 'reconciliation:exact_id:nontelegram', 'pending', '{}'::jsonb,
+    'reconciliation', 'reconciliation:exact_id:nontelegram', 'pending', '{}'::jsonb,
     null, null, 'a1111111-1111-4111-8111-111111111111', 0, 8, now()
   ),
   (
