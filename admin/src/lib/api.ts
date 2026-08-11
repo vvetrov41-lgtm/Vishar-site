@@ -11,6 +11,7 @@
 import type {
   ActivityEntry,
   Artist,
+  ArtistMembership,
   Client,
   CrmRole,
   CrmSession,
@@ -26,6 +27,8 @@ import type {
   ProjectFinance,
   SessionFinance,
   StatusTransition,
+  StaffInviteRequest,
+  StaffInviteResult,
 } from './types';
 
 /**
@@ -77,8 +80,18 @@ export function friendlyMessage(error: any, what: string): string {
   return `Could not ${what}. Please try again.`;
 }
 
-export function createApi(client: CrmClient) {
+export interface ApiOptions {
+  teamInviteUrl?: string;
+  fetcher?: typeof fetch;
+}
+
+export function createApi(client: CrmClient, options: ApiOptions = {}) {
+  const teamInviteUrl = options.teamInviteUrl ?? '';
+  const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
+
   return {
+    teamInviteConfigured: Boolean(teamInviteUrl),
+
     // ---- profile ----------------------------------------------------------
     async currentProfile(userId: string): Promise<Profile | null> {
       const result = await client
@@ -101,6 +114,13 @@ export function createApi(client: CrmClient) {
       return unwrap<Profile[]>(await client.rpc('list_profiles'), 'list staff');
     },
 
+    async listTeamMemberships(): Promise<ArtistMembership[]> {
+      return unwrap<ArtistMembership[]>(
+        await client.rpc('list_team_memberships'),
+        'list team artist access'
+      );
+    },
+
     async listAssignableProfiles(): Promise<Pick<Profile, 'id' | 'display_name' | 'role'>[]> {
       return unwrap(await client.rpc('list_assignable_profiles'), 'list colleagues');
     },
@@ -114,6 +134,85 @@ export function createApi(client: CrmClient) {
         await client.rpc('set_profile_active', { p_profile_id: profileId, p_is_active: isActive }),
         isActive ? 'activate that account' : 'deactivate that account'
       );
+    },
+
+    async upsertArtistMembership(membership: ArtistMembership) {
+      return unwrap(
+        await client.rpc('upsert_artist_membership', {
+          p_profile_id: membership.profile_id,
+          p_artist_id: membership.artist_id,
+          p_access_level: membership.access_level,
+          p_can_view_finance: membership.can_view_finance,
+          p_can_manage_finance: membership.can_manage_finance,
+          p_can_manage_sessions: membership.can_manage_sessions,
+          p_can_manage_integrations: membership.can_manage_integrations,
+          p_is_active: membership.is_active,
+        }),
+        'change artist access'
+      );
+    },
+
+    async inviteStaff(invite: StaffInviteRequest): Promise<StaffInviteResult> {
+      if (!teamInviteUrl) throw new ApiError('Staff invitations are not configured.');
+      const session = await client.auth.getSession();
+      const accessToken = session.data?.session?.access_token;
+      if (session.error || typeof accessToken !== 'string' || !accessToken) {
+        throw new ApiError('Your session has expired. Sign in again.');
+      }
+
+      let response: Response;
+      try {
+        response = await fetcher(teamInviteUrl, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(invite),
+        });
+      } catch (cause) {
+        throw new ApiError('Could not reach the staff invitation service.', cause);
+      }
+
+      let payload: any = null;
+      try {
+        payload = await response.json();
+      } catch {
+        // A trusted boundary still has to return the documented safe shape.
+      }
+
+      if (!response.ok) {
+        const safeMessages: Record<string, string> = {
+          owner_access_required: 'You do not have permission to invite staff.',
+          invalid_email: 'Enter a valid email address.',
+          invalid_role: 'Choose a permitted staff role.',
+          invalid_membership: 'Review the artist access settings.',
+          invalid_memberships: 'Choose at least one artist.',
+          provisioning_pending: 'The invitation was sent, but access is still pending. Retry with the same form.',
+          invite_not_completed: 'The invitation could not be completed. Retry with the same form.',
+          team_admin_not_configured: 'Staff invitations are not configured.',
+        };
+        const code = typeof payload?.error === 'string' ? payload.error : '';
+        throw new ApiError(safeMessages[code] ?? 'Could not invite that person. Please try again.');
+      }
+
+      if (
+        typeof payload?.profile_id !== 'string'
+        || !['booking_manager', 'read_only'].includes(payload?.role)
+        || payload?.is_active !== true
+        || typeof payload?.idempotent_replay !== 'boolean'
+        || !['sent', 'existing_account', 'not_repeated'].includes(payload?.delivery)
+      ) {
+        throw new ApiError('The staff invitation service returned an invalid response.');
+      }
+
+      return {
+        profile_id: payload.profile_id,
+        role: payload.role,
+        is_active: true,
+        idempotent_replay: payload.idempotent_replay,
+        delivery: payload.delivery,
+      } as StaffInviteResult;
     },
 
     // ---- enquiries --------------------------------------------------------

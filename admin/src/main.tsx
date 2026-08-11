@@ -5,7 +5,7 @@ import { withConsequentialConfirmations } from './lib/consequential-client';
 import { LanguageProvider } from './lib/i18n';
 import { RouterProvider } from './lib/router';
 import { SessionProvider } from './lib/session';
-import { createCrmClient } from './lib/supabase';
+import { createCrmClient, readTeamInviteUrl } from './lib/supabase';
 import './styles.css';
 
 // `import.meta.env` is replaced at build time by Vite. Only VITE_-prefixed
@@ -13,10 +13,9 @@ import './styles.css';
 // service-role key can never end up here. Loopback HTTP is accepted only while
 // Vite is actually in development mode; a production build remains hosted-
 // Supabase-only.
-const client = withConsequentialConfirmations(createCrmClient(
-  import.meta.env as unknown as Record<string, string | undefined>,
-  import.meta.env.DEV
-));
+const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
+const client = withConsequentialConfirmations(createCrmClient(browserEnv, import.meta.env.DEV));
+const teamInviteUrl = readTeamInviteUrl(browserEnv, import.meta.env.DEV);
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Missing #root');
@@ -24,7 +23,7 @@ if (!container) throw new Error('Missing #root');
 createRoot(container).render(
   <StrictMode>
     <LanguageProvider>
-      <SessionProvider client={client}>
+      <SessionProvider client={client} teamInviteUrl={teamInviteUrl}>
         <RouterProvider>
           <App />
         </RouterProvider>

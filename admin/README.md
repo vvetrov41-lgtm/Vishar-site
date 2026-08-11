@@ -20,12 +20,23 @@ cp .env.example .env.local   # then fill in your own Supabase values
 npm run dev
 ```
 
-`.env.local` needs exactly two values:
+`.env.local` needs the two Supabase browser values:
 
 ```
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_... key>
 ```
+
+Owner-managed staff invitations additionally require the dedicated Team API:
+
+```
+VITE_TEAM_INVITE_URL=https://<team-api-subdomain>.vishartattoo.com/v1/staff/invite
+```
+
+The URL is optional while the Team Worker is undeployed. Without it, the Team
+page remains available for existing staff and artist access management, while
+the invite form fails closed as not configured. A production build accepts
+only the exact HTTPS path on a `*.vishartattoo.com` host.
 
 For `npm run dev` against `supabase start`, the standard loopback API URL
 `http://127.0.0.1:54321` is also accepted. Loopback HTTP is disabled in a
@@ -85,6 +96,23 @@ Editing the capability matrix in a browser gains nothing. `src/test/roles.test.t
 renders against a fake client that models the same denials, so a test cannot
 pass by asserting the interface hides something the database would have served.
 
+### Staff invitation boundary
+
+The browser sends the current owner's access token and a bounded invitation
+request to the single-purpose `workers/team-admin.js` endpoint. The Worker
+first calls the owner-only `begin_staff_invite` RPC with that same token. Only
+after the database accepts the role and artist memberships does the Worker use
+its server-only Supabase secret to send the Auth invitation. The Auth response
+is discarded. The Worker then calls `finalize_staff_invite`, again as the
+owner, to create an initially inactive profile, create every membership, and
+activate the profile in one database transaction.
+
+The database stores no password or invitation token. A failed or interrupted
+flow leaves either no profile or a profile transaction that did not commit, so
+an Auth account cannot enter the CRM until provisioning is complete. Replaying
+the same idempotency key does not create another profile, membership, audit
+event, or Auth invitation after provisioning.
+
 ## Files
 
 ```text
@@ -112,7 +140,7 @@ into a link, a data attribute or visible text — a test asserts that.
 
 ## Deliberately not built
 
-- password reset and account creation — handled in Supabase, not here;
+- password reset — handled by Supabase Auth, never by the CRM;
 - Gmail and Google Calendar — no provider is connected, and the session screens
   say so rather than showing a placeholder that implies otherwise;
 - bulk export — an owner-only, audited operation that has not been specified;

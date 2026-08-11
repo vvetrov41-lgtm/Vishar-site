@@ -60,6 +60,9 @@ jobs:
       - name: Compile disabled Telegram drain Worker with Wrangler
         run: npm run check:telegram-drain-bundle
 
+      - name: Compile disabled Team admin Worker with Wrangler
+        run: npm run check:team-admin-bundle
+
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
 

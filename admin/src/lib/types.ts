@@ -8,6 +8,7 @@
 // return rows exclusively to the owner.
 
 export type CrmRole = 'owner' | 'booking_manager' | 'read_only';
+export type ArtistAccessLevel = 'owner' | 'artist' | 'manager' | 'read_only';
 
 export interface Artist {
   id: string;
@@ -48,6 +49,42 @@ export interface Profile {
   role: CrmRole;
   is_active: boolean;
   created_at: string;
+}
+
+export interface ArtistMembership {
+  profile_id: string;
+  artist_id: string;
+  access_level: ArtistAccessLevel;
+  can_view_finance: boolean;
+  can_manage_finance: boolean;
+  can_manage_sessions: boolean;
+  can_manage_integrations: boolean;
+  is_active: boolean;
+}
+
+export interface StaffInviteMembership {
+  artist_id: string;
+  access_level: Exclude<ArtistAccessLevel, 'owner'>;
+  can_view_finance: boolean;
+  can_manage_finance: boolean;
+  can_manage_sessions: boolean;
+  can_manage_integrations: boolean;
+}
+
+export interface StaffInviteRequest {
+  idempotency_key: string;
+  email: string;
+  display_name: string | null;
+  role: Exclude<CrmRole, 'owner'>;
+  memberships: StaffInviteMembership[];
+}
+
+export interface StaffInviteResult {
+  profile_id: string;
+  role: Exclude<CrmRole, 'owner'>;
+  is_active: true;
+  idempotent_replay: boolean;
+  delivery: 'sent' | 'existing_account' | 'not_repeated';
 }
 
 export interface Client {

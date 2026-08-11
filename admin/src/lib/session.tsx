@@ -55,7 +55,15 @@ export interface SessionValue {
 
 const SessionContext = createContext<SessionValue | null>(null);
 
-export function SessionProvider({ client, children }: { client: CrmClient | null; children: ReactNode }) {
+export function SessionProvider({
+  client,
+  teamInviteUrl = '',
+  children,
+}: {
+  client: CrmClient | null;
+  teamInviteUrl?: string;
+  children: ReactNode;
+}) {
   const [state, setState] = useState<AccessState>(client ? 'loading' : 'unconfigured');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,12 +71,12 @@ export function SessionProvider({ client, children }: { client: CrmClient | null
   const api = useMemo<CrmApi | null>(() => {
     if (!client) return null;
     return Object.assign(
-      createApi(client),
+      createApi(client, { teamInviteUrl }),
       createAppointmentApi(client),
       createCalendarConnectionsApi(client),
       createOAuthConsentApi(client),
     );
-  }, [client]);
+  }, [client, teamInviteUrl]);
 
   const load = useCallback(async () => {
     if (!client || !api) {

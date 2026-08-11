@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readConfig } from '../lib/supabase';
+import { readConfig, readTeamInviteUrl } from '../lib/supabase';
 
 function jwtWithRole(role: string) {
   const encode = (value: object) =>
@@ -86,5 +86,31 @@ describe('CRM Supabase configuration', () => {
         VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test',
       }, true)).toThrow(/permitted Supabase project root URL/i);
     }
+  });
+});
+
+describe('Team invitation endpoint configuration', () => {
+  it('accepts only the exact HTTPS Team API path below the owned domain', () => {
+    expect(readTeamInviteUrl({
+      VITE_TEAM_INVITE_URL: 'https://team-api.vishartattoo.com/v1/staff/invite',
+    })).toBe('https://team-api.vishartattoo.com/v1/staff/invite');
+
+    for (const url of [
+      'https://attacker.example/v1/staff/invite',
+      'https://vishartattoo.com.attacker.example/v1/staff/invite',
+      'http://team-api.vishartattoo.com/v1/staff/invite',
+      'https://team-api.vishartattoo.com/v1/admin/proxy',
+      'https://user:pass@team-api.vishartattoo.com/v1/staff/invite',
+    ]) {
+      expect(() => readTeamInviteUrl({ VITE_TEAM_INVITE_URL: url }))
+        .toThrow(/permitted Team API endpoint/i);
+    }
+  });
+
+  it('is optional and allows loopback only in development', () => {
+    expect(readTeamInviteUrl({})).toBe('');
+    expect(readTeamInviteUrl({
+      VITE_TEAM_INVITE_URL: 'http://127.0.0.1:8787/v1/staff/invite',
+    }, true)).toBe('http://127.0.0.1:8787/v1/staff/invite');
   });
 });

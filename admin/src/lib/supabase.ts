@@ -97,6 +97,40 @@ export function readConfig(env: Record<string, string | undefined>, allowLocal =
   return { url, publishableKey: key, configured: Boolean(url && key) };
 }
 
+export function readTeamInviteUrl(
+  env: Record<string, string | undefined>,
+  allowLocal = false
+): string {
+  const value = (env.VITE_TEAM_INVITE_URL ?? '').trim();
+  if (!value) return '';
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('VITE_TEAM_INVITE_URL must be the permitted Team API endpoint.');
+  }
+
+  const loopback = allowLocal
+    && parsed.protocol === 'http:'
+    && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost');
+  const hosted = parsed.protocol === 'https:'
+    && parsed.hostname.endsWith('.vishartattoo.com');
+
+  if (
+    (!hosted && !loopback)
+    || parsed.username
+    || parsed.password
+    || parsed.pathname !== '/v1/staff/invite'
+    || parsed.search
+    || parsed.hash
+  ) {
+    throw new Error('VITE_TEAM_INVITE_URL must be the permitted Team API endpoint.');
+  }
+
+  return parsed.toString();
+}
+
 export function createCrmClient(
   env: Record<string, string | undefined>,
   allowLocal = false

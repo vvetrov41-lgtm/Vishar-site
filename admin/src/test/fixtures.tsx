@@ -37,6 +37,39 @@ export const PROFILES = {
   deactivated: { id: DISABLED_ID, email: 'former@example.test', display_name: 'Former', role: 'booking_manager' as CrmRole, is_active: false, created_at: '2026-01-04T00:00:00Z' },
 };
 
+export const MEMBERSHIPS = [
+  ...ARTISTS.map((artist) => ({
+    profile_id: OWNER_ID,
+    artist_id: artist.id,
+    access_level: 'owner' as const,
+    can_view_finance: true,
+    can_manage_finance: true,
+    can_manage_sessions: true,
+    can_manage_integrations: true,
+    is_active: true,
+  })),
+  {
+    profile_id: MANAGER_ID,
+    artist_id: VLADIMIR_ARTIST_ID,
+    access_level: 'manager' as const,
+    can_view_finance: false,
+    can_manage_finance: false,
+    can_manage_sessions: true,
+    can_manage_integrations: false,
+    is_active: true,
+  },
+  {
+    profile_id: READER_ID,
+    artist_id: VLADIMIR_ARTIST_ID,
+    access_level: 'read_only' as const,
+    can_view_finance: false,
+    can_manage_finance: false,
+    can_manage_sessions: false,
+    can_manage_integrations: false,
+    is_active: true,
+  },
+];
+
 export const CLIENT = {
   id: CLIENT_ID,
   full_name: 'Fixture Client',
@@ -163,6 +196,7 @@ export interface FakeClientOptions {
   enquiryStatus?: EnquiryStatus;
   /** Artist identities returned by list_accessible_artists(). */
   accessibleArtistIds?: string[];
+  teamInviteUrl?: string;
 }
 
 const DENIED = { code: '42501', message: 'permission denied' };
@@ -275,7 +309,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
 
       // Role checks live in the database. The fake enforces the same ones, so a
       // component test cannot "pass" by calling something the real RPC refuses.
-      const ownerOnly = ['list_profiles', 'set_profile_role', 'set_profile_active', 'approve_email_draft', 'update_project_deposit', 'update_project_estimate', 'update_retention_policy'];
+      const ownerOnly = ['list_profiles', 'list_team_memberships', 'set_profile_role', 'set_profile_active', 'upsert_artist_membership', 'approve_email_draft', 'update_project_deposit', 'update_project_estimate', 'update_retention_policy'];
       const managerOrOwner = ['transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles'];
 
       if (ownerOnly.includes(name) && effectiveRole !== 'owner') return { data: null, error: DENIED };
@@ -287,6 +321,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         return { data: ARTISTS.filter((artist) => accessibleArtistIds.includes(artist.id)), error: null };
       }
       if (name === 'list_profiles') return { data: Object.values(PROFILES), error: null };
+      if (name === 'list_team_memberships') return { data: MEMBERSHIPS, error: null };
       if (name === 'list_assignable_profiles') {
         return { data: [PROFILES.owner, PROFILES.booking_manager].map((p) => ({ id: p.id, display_name: p.display_name, role: p.role })), error: null };
       }
@@ -303,7 +338,10 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     },
     auth: {
       getSession: async () => ({
-        data: { session: roleKey === 'signed_out' ? null : { user: { id: profile?.id ?? '99999999-9999-4999-8999-999999999999' } } },
+        data: { session: roleKey === 'signed_out' ? null : {
+          user: { id: profile?.id ?? '99999999-9999-4999-8999-999999999999' },
+          access_token: 'synthetic.browser.access.token',
+        } },
         error: null,
       }),
       signInWithPassword: async () => ({ data: {}, error: null }),
@@ -321,7 +359,7 @@ export function renderWithSession(
   const client = createFakeClient({ ...options, rpcCalls });
 
   const result = render(
-    <SessionProvider client={client}>
+    <SessionProvider client={client} teamInviteUrl={options.teamInviteUrl}>
       <RouterProvider initialPath={options.path ?? '/'}>{ui}</RouterProvider>
     </SessionProvider>
   );
