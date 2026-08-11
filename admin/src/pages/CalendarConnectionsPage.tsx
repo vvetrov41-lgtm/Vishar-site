@@ -9,8 +9,10 @@ import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { operationalLabel } from '../lib/operational-labels';
 import { useApi } from '../lib/session';
+import { readCalendarConnectorOrigin } from '../lib/supabase';
 
-const CONNECTOR_ORIGIN = 'https://calendar-staging.vishartattoo.com';
+const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
+const CONNECTOR_ORIGIN = readCalendarConnectorOrigin(browserEnv, import.meta.env.DEV);
 
 const RECONNECT_ERROR_CODES = new Set([
   'calendar_oauth_expired',
@@ -24,10 +26,12 @@ const RECONNECT_ERROR_CODES = new Set([
 export type CalendarConnectionHealth = 'connected' | 'disconnected' | 'attention' | 'reconnect';
 
 export function calendarConnectorUrl(
+  connectorOrigin: string,
   action: 'start' | 'disconnect',
   alias: CalendarConnectorAlias,
 ): string {
-  return `${CONNECTOR_ORIGIN}/oauth/google/${action}/${alias}`;
+  if (!connectorOrigin) throw new Error('Calendar connector is not configured.');
+  return `${connectorOrigin}/oauth/google/${action}/${alias}`;
 }
 
 export function connectionResultNotice(search: string, language: Language): string | null {
@@ -82,12 +86,18 @@ export function CalendarConnectionsPage() {
     <>
       <Section title={copy.title}>
         <p className="notice">{copy.intro}</p>
+        {!CONNECTOR_ORIGIN ? <p className="notice">{copy.connectorDisabled}</p> : null}
         {resultNotice ? <p className="notice ok" role="status">{resultNotice}</p> : null}
       </Section>
 
       <div className="list" aria-label={copy.title}>
         {data.map((connection) => (
-          <ConnectionCard key={connection.artist_id} connection={connection} language={language} />
+          <ConnectionCard
+            key={connection.artist_id}
+            connection={connection}
+            language={language}
+            connectorOrigin={CONNECTOR_ORIGIN}
+          />
         ))}
       </div>
 
@@ -99,9 +109,11 @@ export function CalendarConnectionsPage() {
 function ConnectionCard({
   connection,
   language,
+  connectorOrigin,
 }: {
   connection: CalendarConnectionStatus;
   language: Language;
+  connectorOrigin: string;
 }) {
   const copy = COPY[language];
   const health = calendarConnectionHealth(connection);
@@ -159,25 +171,31 @@ function ConnectionCard({
         </div>
       </dl>
 
-      <div className="actions">
-        <button
-          type="button"
-          onClick={() => window.location.assign(calendarConnectorUrl('start', connection.artist_slug))}
-          aria-label={`${startLabel}: ${connection.artist_display_name}`}
-        >
-          {startLabel}
-        </button>
-        {connection.connected ? (
+      {connectorOrigin ? (
+        <div className="actions">
           <button
             type="button"
-            className="danger"
-            onClick={() => window.location.assign(calendarConnectorUrl('disconnect', connection.artist_slug))}
-            aria-label={`${copy.disconnect}: ${connection.artist_display_name}`}
+            onClick={() => window.location.assign(
+              calendarConnectorUrl(connectorOrigin, 'start', connection.artist_slug)
+            )}
+            aria-label={`${startLabel}: ${connection.artist_display_name}`}
           >
-            {copy.disconnect}
+            {startLabel}
           </button>
-        ) : null}
-      </div>
+          {connection.connected ? (
+            <button
+              type="button"
+              className="danger"
+              onClick={() => window.location.assign(
+                calendarConnectorUrl(connectorOrigin, 'disconnect', connection.artist_slug)
+              )}
+              aria-label={`${copy.disconnect}: ${connection.artist_display_name}`}
+            >
+              {copy.disconnect}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -193,6 +211,7 @@ const COPY: Record<Language, Record<string, string>> = {
     noneTitle: 'No calendar connections are available',
     noneHint: 'Your current artist memberships do not allow integration management.',
     intro: 'Vladimir and Kristina use separate Google accounts, encrypted token envelopes and primary calendars. The CRM never receives provider credentials.',
+    connectorDisabled: 'Calendar connection controls are disabled in this environment. Existing CRM metadata remains read-only.',
     securityNotice: 'Connect and disconnect use a top-level navigation through the Access-protected Calendar connector. Query parameters only display a notice; Supabase remains the source of truth.',
     connected: 'Connected',
     disconnected: 'Not connected',
@@ -216,6 +235,7 @@ const COPY: Record<Language, Record<string, string>> = {
     noneTitle: 'Нет доступных подключений календаря',
     noneHint: 'Ваши текущие права на мастеров не разрешают управление интеграциями.',
     intro: 'Владимир и Кристина используют отдельные Google-аккаунты, зашифрованные token envelopes и основные календари. CRM не получает данные доступа провайдера.',
+    connectorDisabled: 'Управление подключением календаря отключено в этом окружении. Существующие метаданные CRM доступны только для просмотра.',
     securityNotice: 'Подключение и отключение открываются отдельной страницей через Calendar connector, защищённый Access. Параметры URL показывают только уведомление; источником истины остаётся Supabase.',
     connected: 'Подключён',
     disconnected: 'Не подключён',
