@@ -11,6 +11,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { CrmClient } from './api';
 
+const STAFF_INVITE_PARAMETER = 'staff_invite';
+const STAFF_INVITE_VALUE = '1';
+
 function jwtRole(value: string): string | null {
   const parts = value.split('.');
   if (parts.length !== 3) return null;
@@ -166,13 +169,42 @@ export function readCalendarConnectorOrigin(
   return parsed.origin;
 }
 
+/**
+ * Staff invitation links are the only Supabase Auth flow the private CRM
+ * accepts from the browser URL. The Team Worker configures this exact same-
+ * origin marker as the Auth invite redirect. Supabase may append its implicit-
+ * flow session fragment, which is intentionally not parsed here.
+ */
+export function isStaffInviteUrl(value: string): boolean {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.pathname === '/'
+      && parsed.searchParams.size === 1
+      && parsed.searchParams.get(STAFF_INVITE_PARAMETER) === STAFF_INVITE_VALUE;
+  } catch {
+    return false;
+  }
+}
+
+/** Remove both the non-secret invite marker and any remaining Auth fragment. */
+export function clearStaffInviteUrl() {
+  if (typeof window === 'undefined') return;
+  window.history.replaceState(window.history.state, '', window.location.pathname || '/');
+}
+
 export function createCrmClient(
   env: Record<string, string | undefined>,
-  allowLocal = false
+  allowLocal = false,
+  currentUrl = typeof window === 'undefined' ? '' : window.location.href
 ): CrmClient | null {
   const { url, publishableKey, configured } = readConfig(env, allowLocal);
   if (!configured) return null;
   return createClient(url, publishableKey, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: isStaffInviteUrl(currentUrl),
+    },
   }) as unknown as CrmClient;
 }
