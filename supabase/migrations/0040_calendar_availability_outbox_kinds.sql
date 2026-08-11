@@ -2,7 +2,7 @@
 --
 -- Reserve explicit durable outbox kinds for artist Availability / Time Off
 -- Calendar projection. This migration intentionally only extends the enum.
--- The following migration uses the values after this migration has committed,
+-- Migration 0041 uses these values only after this migration has committed,
 -- avoiding PostgreSQL's same-transaction enum-value restriction.
 --
 -- Forward-only. No provider call, OAuth change, cron change or deployment.
