@@ -131,6 +131,41 @@ export function readTeamInviteUrl(
   return parsed.toString();
 }
 
+export function readCalendarConnectorOrigin(
+  env: Record<string, string | undefined>,
+  allowLocal = false
+): string {
+  const value = (env.VITE_CALENDAR_CONNECTOR_ORIGIN ?? '').trim();
+  if (!value) return '';
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('VITE_CALENDAR_CONNECTOR_ORIGIN must be a permitted connector root URL.');
+  }
+
+  const loopback = allowLocal
+    && parsed.protocol === 'http:'
+    && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost');
+  const hosted = parsed.protocol === 'https:'
+    && parsed.hostname.endsWith('.vishartattoo.com')
+    && !parsed.port;
+
+  if (
+    (!hosted && !loopback)
+    || parsed.username
+    || parsed.password
+    || parsed.pathname !== '/'
+    || parsed.search
+    || parsed.hash
+  ) {
+    throw new Error('VITE_CALENDAR_CONNECTOR_ORIGIN must be a permitted connector root URL.');
+  }
+
+  return parsed.origin;
+}
+
 export function createCrmClient(
   env: Record<string, string | undefined>,
   allowLocal = false
