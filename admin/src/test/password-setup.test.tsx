@@ -1,9 +1,44 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../App';
-import { renderWithSession } from './fixtures';
+import type { CrmClient } from '../lib/api';
+import { RouterProvider } from '../lib/router';
+import { SessionProvider } from '../lib/session';
+import { createFakeClient, type FakeClientOptions } from './fixtures';
 
 const PASSWORD = 'Synthetic-Strong-Password-42!';
+
+type AuthCall = { method: string; passwordLength?: number };
+
+function renderInviteSession(
+  role: FakeClientOptions['role'],
+  staffInviteMode: boolean,
+) {
+  const authCalls: AuthCall[] = [];
+  const client = createFakeClient({ role });
+  const auth = client.auth as CrmClient['auth'] & {
+    updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
+  };
+
+  auth.updateUser = async ({ password }) => {
+    authCalls.push({ method: 'updateUser', passwordLength: password.length });
+    return { data: {}, error: null };
+  };
+  auth.signOut = async () => {
+    authCalls.push({ method: 'signOut' });
+    return { error: null };
+  };
+
+  render(
+    <SessionProvider client={client} staffInviteMode={staffInviteMode}>
+      <RouterProvider initialPath="/">
+        <App />
+      </RouterProvider>
+    </SessionProvider>
+  );
+
+  return { authCalls };
+}
 
 describe('invited staff first-login flow', () => {
   beforeEach(() => {
@@ -13,11 +48,7 @@ describe('invited staff first-login flow', () => {
 
   it('requires an active invited staff member to set a password before CRM access', async () => {
     window.history.replaceState({}, '', '/?staff_invite=1#synthetic-auth-fragment');
-    const { authCalls } = renderWithSession(<App />, {
-      role: 'booking_manager',
-      staffInviteMode: true,
-      path: '/',
-    });
+    const { authCalls } = renderInviteSession('booking_manager', true);
 
     expect(await screen.findByRole('heading', { name: 'Set your CRM password' })).toBeInTheDocument();
     expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
@@ -39,11 +70,7 @@ describe('invited staff first-login flow', () => {
   });
 
   it('does not allow a mismatched password to reach Supabase Auth', async () => {
-    const { authCalls } = renderWithSession(<App />, {
-      role: 'booking_manager',
-      staffInviteMode: true,
-      path: '/',
-    });
+    const { authCalls } = renderInviteSession('booking_manager', true);
 
     await screen.findByRole('heading', { name: 'Set your CRM password' });
     fireEvent.change(screen.getByLabelText('New password'), { target: { value: PASSWORD } });
@@ -55,22 +82,14 @@ describe('invited staff first-login flow', () => {
   });
 
   it('does not offer password setup to an invited Auth user with no active CRM profile', async () => {
-    renderWithSession(<App />, {
-      role: 'no_profile',
-      staffInviteMode: true,
-      path: '/',
-    });
+    renderInviteSession('no_profile', true);
 
     expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Set your CRM password' })).not.toBeInTheDocument();
   });
 
   it('keeps ordinary active staff sessions on the normal CRM path', async () => {
-    renderWithSession(<App />, {
-      role: 'booking_manager',
-      staffInviteMode: false,
-      path: '/',
-    });
+    renderInviteSession('booking_manager', false);
 
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'Set your CRM password' })).not.toBeInTheDocument();
