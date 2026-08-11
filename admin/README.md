@@ -1,4 +1,4 @@
-# Vishar CRM — private application
+# Vishar CRM - private application
 
 A mobile-first CRM for tattoo enquiries, projects and sessions.
 
@@ -7,8 +7,8 @@ dependencies and its own host, and it is excluded from the public site's
 `npm run validate:site` checks by name. It is never indexed: `index.html`
 carries `noindex, nofollow`.
 
-**Nothing here is deployed.** There is no hosted Supabase project, no
-`admin.vishartattoo.com`, and no CRM deployment. See
+**Nothing here is deployed.** There is no hosted production Supabase project,
+production CRM hostname or production CRM deployment. See
 [`../docs/crm/DEPLOYMENT.md`](../docs/crm/DEPLOYMENT.md).
 
 ## Running it locally
@@ -38,12 +38,19 @@ page remains available for existing staff and artist access management, while
 the invite form fails closed as not configured. A production build accepts
 only the exact HTTPS path on a `*.vishartattoo.com` host.
 
+The Team Worker must configure its Supabase Auth invitation redirect to the CRM
+root with the exact non-secret marker `/?staff_invite=1`. The browser enables
+Supabase Auth URL-session detection only for that marker. After an invited user
+has an active CRM profile, the app requires them to set a password, closes the
+invitation-derived session and requires a fresh normal email/password login.
+The application never parses, displays or logs the Auth fragment itself.
+
 For `npm run dev` against `supabase start`, the standard loopback API URL
 `http://127.0.0.1:54321` is also accepted. Loopback HTTP is disabled in a
 production build; every staging or production build must use the HTTPS root of
 a hosted `*.supabase.co` project.
 
-The publishable key is a public identifier. It grants nothing on its own —
+The publishable key is a public identifier. It grants nothing on its own -
 every read and write is decided by row level security and by the role checks
 inside the workflow RPCs. A legacy anon key is accepted only as a migration
 fallback; do not configure both.
@@ -51,7 +58,7 @@ fallback; do not configure both.
 **A Supabase secret key or legacy service-role key must never appear here.**
 Either is a privileged backend credential that bypasses RLS and belongs only in
 a Cloudflare Worker secret. `src/lib/supabase.ts` refuses to start when it finds
-one — including a service-role JWT hidden under the publishable variable name.
+one, including a service-role JWT hidden under the publishable variable name.
 
 ## Commands
 
@@ -70,8 +77,9 @@ Signing in is not the same as having access:
 |---|---|
 | Not signed in | Sign-in form |
 | Signed in, no CRM profile | "This account has no CRM access" |
-| Signed in, profile deactivated | Same refusal — a deactivated account cannot read even its own profile row, because `profiles_select_self` is gated on `is_active` |
-| Signed in, active profile | The CRM, with navigation filtered to the role |
+| Signed in, profile deactivated | Same refusal, a deactivated account cannot read even its own profile row because `profiles_select_self` is gated on `is_active` |
+| Verified staff invite + active profile | Password setup gate, then invitation session is closed |
+| Signed in normally, active profile | The CRM, with navigation filtered to the role |
 
 Roles are `owner`, `booking_manager` and `read_only`. What each may do is in
 [`../docs/crm/SECURITY.md`](../docs/crm/SECURITY.md).
@@ -84,11 +92,11 @@ actually use. It is **not** what stops anything:
 
 - finance columns are withheld at the privilege level, so `hourly_rate`,
   `estimate_total`, `deposit_amount` and `price` are not selectable by the
-  `authenticated` role at all — the owner reads them through
+  `authenticated` role at all, the owner reads them through
   `projects_finance` / `sessions_finance`, which return zero rows to anyone
   else;
-- every write goes through a `SECURITY DEFINER` RPC that re-checks the caller's
-  role and writes the audit trail in the same transaction;
+- every CRM workflow write goes through a `SECURITY DEFINER` RPC that re-checks
+  the caller's role and writes the audit trail in the same transaction;
 - there are no `INSERT`, `UPDATE` or `DELETE` grants on any CRM table for
   `authenticated`, so a table write is refused before RLS is even consulted.
 
@@ -111,7 +119,14 @@ The database stores no password or invitation token. A failed or interrupted
 flow leaves either no profile or a profile transaction that did not commit, so
 an Auth account cannot enter the CRM until provisioning is complete. Replaying
 the same idempotency key does not create another profile, membership, audit
-event, or Auth invitation after provisioning.
+event or Auth invitation after provisioning.
+
+The invitation redirect is pinned to the CRM root `/?staff_invite=1`. Supabase
+handles its own Auth fragment. The app only checks the non-secret marker, then
+requires an active profile before exposing the password setup screen. Password
+setup calls the authenticated Supabase `updateUser` API directly. On success it
+signs out, removes the marker/fragment from browser history and requires the
+ordinary password login path.
 
 ## Files
 
@@ -120,28 +135,28 @@ src/
   App.tsx                access gate, then routing
   main.tsx               entry point
   lib/
-    api.ts               narrow reads and named RPCs — no query builder for pages
-    permissions.ts       role capability matrix (UX only; see above)
-    router.tsx           minimal hash router (nine routes do not justify a dependency)
-    session.tsx          auth session + active CRM profile
+    api.ts               narrow reads and named RPCs, no query builder for pages
+    permissions.ts       role capability matrix (UX only, see above)
+    router.tsx           minimal hash router
+    session.tsx          auth session + active CRM profile + invite password gate
     supabase.ts          client factory; refuses privileged backend keys
-    types.ts             domain types — finance columns deliberately absent
+    types.ts             domain types, finance columns deliberately absent
     format.ts            dates and money, formatted from the row's own currency
   components/            shell, route guard, loading/empty/error states, signed image
   pages/                 dashboard, enquiries, clients, projects, sessions, users, activity
-  test/                  fixtures + 67 tests
+  test/                  synthetic fixtures and browser-level tests
 ```
 
 ## Private files
 
 Reference images are in a private bucket and have no public URL. `SignedImage`
 mints a signed URL per render, valid for one minute. The URL is never written
-into a link, a data attribute or visible text — a test asserts that.
+into a link, a data attribute or visible text, a test asserts that.
 
 ## Deliberately not built
 
-- password reset — handled by Supabase Auth, never by the CRM;
-- Gmail and Google Calendar — no provider is connected, and the session screens
-  say so rather than showing a placeholder that implies otherwise;
-- bulk export — an owner-only, audited operation that has not been specified;
-- client merging — never automatic; a wrong merge cannot be undone.
+- self-service password reset, production recovery email configuration remains
+  a separate Supabase Auth operational decision;
+- Gmail and production Google Calendar runtime enablement;
+- bulk export, an owner-only audited operation that has not been specified;
+- client merging, never automatic because a wrong merge cannot be undone.
