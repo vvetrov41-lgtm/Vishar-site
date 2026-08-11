@@ -10,13 +10,14 @@
 //
 // A user who edits these values in their browser gains nothing: the database
 // refuses the operation regardless. Conversely, adding a capability here does
-// not grant it — the corresponding migration has to grant it too.
+// not grant it - the corresponding migration has to grant it too.
 
 import type { CrmRole, EnquiryStatus, StatusTransition } from './types';
 
 export type Capability =
   | 'viewClients'
   | 'viewEnquiries'
+  | 'createEnquiry'
   | 'transitionEnquiry'
   | 'assignEnquiry'
   | 'convertEnquiry'
@@ -41,7 +42,7 @@ export type Capability =
 
 const OWNER: Capability[] = [
   'viewClients',
-  'viewEnquiries', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
+  'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
   'viewProjects', 'manageProjects',
   'viewSessions', 'manageSessions',
   'viewFinance', 'manageFinance',
@@ -54,7 +55,7 @@ const OWNER: Capability[] = [
 
 const BOOKING_MANAGER: Capability[] = [
   'viewClients',
-  'viewEnquiries', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
+  'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
   'viewProjects', 'manageProjects',
   'viewSessions', 'manageSessions',
   'viewNotes', 'createNotes',
@@ -84,7 +85,7 @@ const CAPABILITIES: Record<CrmRole, ReadonlySet<Capability>> = {
 };
 
 /**
- * `role` is null when there is no active profile — a signed-in account that was
+ * `role` is null when there is no active profile - a signed-in account that was
  * never provisioned, or one that has been deactivated. Both get nothing.
  */
 export function can(role: CrmRole | null | undefined, capability: Capability): boolean {
