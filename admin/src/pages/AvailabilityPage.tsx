@@ -100,11 +100,16 @@ export function AvailabilityPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!selectedArtistId || !mayManage) return;
+    if (!selectedArtistId || !selectedArtist || !mayManage) return;
 
     let input: AvailabilityBlockInput;
     try {
-      input = formToInput(selectedArtistId, form, copy.invalidRange);
+      input = formToInput(
+        selectedArtistId,
+        selectedArtist.timezone,
+        form,
+        copy.invalidRange
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : copy.invalidRange);
       return;
@@ -135,8 +140,9 @@ export function AvailabilityPage() {
   }
 
   function beginEdit(block: AvailabilityBlock) {
+    if (!selectedArtist) return;
     setEditingId(block.block_id);
-    setForm(blockToForm(block));
+    setForm(blockToForm(block, selectedArtist.timezone));
     setError(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -275,7 +281,7 @@ export function AvailabilityPage() {
             </label>
 
             <div className="actions">
-              <button type="submit" disabled={saving}>
+              <button type="submit" disabled={saving || !selectedArtist}>
                 {editingId ? copy.saveChanges : copy.blockTime}
               </button>
               {editingId ? (
@@ -314,7 +320,7 @@ export function AvailabilityPage() {
               <div className="panel-heading">
                 <div>
                   <strong>{kindLabel(block.block_kind, language)}</strong>
-                  <p>{formatBlockRange(block, language)}</p>
+                  <p>{formatBlockRange(block, language, selectedArtist?.timezone ?? 'UTC')}</p>
                   {block.note ? <p>{block.note}</p> : null}
                 </div>
                 {mayManage ? (
@@ -356,48 +362,112 @@ function defaultForm(): BlockFormState {
 
 function formToInput(
   artistId: string,
+  timeZone: string,
   form: BlockFormState,
   invalidRangeMessage: string
 ): AvailabilityBlockInput {
-  let start: Date;
-  let end: Date;
+  let startAt: string;
+  let endAt: string;
+
   if (form.allDay) {
     if (!form.startDate || !form.endDate || form.endDate < form.startDate) {
       throw new Error(invalidRangeMessage);
     }
-    start = new Date(`${form.startDate}T00:00:00`);
-    end = new Date(`${form.endDate}T00:00:00`);
-    end.setDate(end.getDate() + 1);
+    startAt = zonedLocalIso(`${form.startDate}T00:00`, timeZone, invalidRangeMessage);
+    endAt = zonedLocalIso(`${addDateDays(form.endDate, 1)}T00:00`, timeZone, invalidRangeMessage);
   } else {
-    start = new Date(form.startDateTime);
-    end = new Date(form.endDateTime);
+    startAt = zonedLocalIso(form.startDateTime, timeZone, invalidRangeMessage);
+    endAt = zonedLocalIso(form.endDateTime, timeZone, invalidRangeMessage);
   }
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
-    throw new Error(invalidRangeMessage);
-  }
+
+  if (new Date(endAt) <= new Date(startAt)) throw new Error(invalidRangeMessage);
+
   return {
     artistId,
     blockKind: form.blockKind,
-    startAt: start.toISOString(),
-    endAt: end.toISOString(),
+    startAt,
+    endAt,
     isAllDay: form.allDay,
     note: form.note.trim() || null,
   };
 }
 
-function blockToForm(block: AvailabilityBlock): BlockFormState {
+function blockToForm(block: AvailabilityBlock, timeZone: string): BlockFormState {
   const start = new Date(block.start_at);
   const end = new Date(block.end_at);
   const inclusiveEnd = new Date(end.getTime() - 1);
   return {
     blockKind: block.block_kind,
     allDay: block.is_all_day,
-    startDate: localDate(start),
-    endDate: localDate(inclusiveEnd),
-    startDateTime: localDateTime(start),
-    endDateTime: localDateTime(end),
+    startDate: dateInputInZone(start, timeZone),
+    endDate: dateInputInZone(inclusiveEnd, timeZone),
+    startDateTime: dateTimeInputInZone(start, timeZone),
+    endDateTime: dateTimeInputInZone(end, timeZone),
     note: block.note ?? '',
   };
+}
+
+function zonedLocalIso(value: string, timeZone: string, errorMessage: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) throw new Error(errorMessage);
+  const desired = {
+    year: Number(match[1]), month: Number(match[2]), day: Number(match[3]),
+    hour: Number(match[4]), minute: Number(match[5]),
+  };
+  if (
+    desired.month < 1 || desired.month > 12 || desired.day < 1 || desired.day > 31
+    || desired.hour > 23 || desired.minute > 59
+  ) throw new Error(errorMessage);
+
+  const desiredEpoch = Date.UTC(
+    desired.year, desired.month - 1, desired.day, desired.hour, desired.minute
+  );
+  let instant = desiredEpoch;
+  for (let pass = 0; pass < 3; pass += 1) {
+    const observed = zonedParts(new Date(instant), timeZone);
+    const observedEpoch = Date.UTC(
+      observed.year, observed.month - 1, observed.day, observed.hour, observed.minute
+    );
+    instant += desiredEpoch - observedEpoch;
+  }
+  const final = zonedParts(new Date(instant), timeZone);
+  if (
+    final.year !== desired.year || final.month !== desired.month || final.day !== desired.day
+    || final.hour !== desired.hour || final.minute !== desired.minute
+  ) throw new Error(errorMessage);
+  return new Date(instant).toISOString();
+}
+
+function zonedParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? NaN);
+  return {
+    year: value('year'), month: value('month'), day: value('day'),
+    hour: value('hour'), minute: value('minute'),
+  };
+}
+
+function addDateDays(value: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return '';
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function dateInputInZone(date: Date, timeZone: string): string {
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}`;
+}
+
+function dateTimeInputInZone(date: Date, timeZone: string): string {
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}T${parts.hour.toString().padStart(2, '0')}:${parts.minute.toString().padStart(2, '0')}`;
 }
 
 function localDate(date: Date): string {
@@ -418,17 +488,21 @@ function kindLabel(kind: AvailabilityBlockKind, language: 'en' | 'ru'): string {
   return labels[language][kind];
 }
 
-function formatBlockRange(block: AvailabilityBlock, language: 'en' | 'ru'): string {
+function formatBlockRange(
+  block: AvailabilityBlock,
+  language: 'en' | 'ru',
+  timeZone: string
+): string {
   const locale = language === 'ru' ? 'ru-RU' : 'en-GB';
   const start = new Date(block.start_at);
   const end = new Date(block.end_at);
   if (block.is_all_day) {
     const inclusiveEnd = new Date(end.getTime() - 1);
-    const startText = start.toLocaleDateString(locale, { dateStyle: 'medium' });
-    const endText = inclusiveEnd.toLocaleDateString(locale, { dateStyle: 'medium' });
+    const startText = start.toLocaleDateString(locale, { dateStyle: 'medium', timeZone });
+    const endText = inclusiveEnd.toLocaleDateString(locale, { dateStyle: 'medium', timeZone });
     return startText === endText ? startText : `${startText} - ${endText}`;
   }
-  return `${start.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })} - ${end.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })}`;
+  return `${start.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone })} - ${end.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone })}`;
 }
 
 function pageCopy(language: 'en' | 'ru') {
