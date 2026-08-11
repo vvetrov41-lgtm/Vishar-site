@@ -1,0 +1,45 @@
+name: PR201 snapshot local helper
+
+on:
+  push:
+    branches:
+      - agent/calendar-time-off-projection
+    paths:
+      - .github/workflows/pr201-snapshot-local-helper.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/calendar-time-off-projection
+          fetch-depth: 0
+      - shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/pr201-calendar-time-off-staging.sh')
+          text = p.read_text()
+          old = '  local label="$1" query="$RUNNER_TEMP/pr201-${label}.sql" raw="$RUNNER_TEMP/pr201-${label}.json"\n'
+          new = '  local label="$1"\n  local query="$RUNNER_TEMP/pr201-${label}.sql"\n  local raw="$RUNNER_TEMP/pr201-${label}.json"\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one snapshot local target, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          git rm .github/workflows/pr201-snapshot-local-helper.yml
+          git diff --check
+          bash -n scripts/pr201-calendar-time-off-staging.sh
+          git add scripts/pr201-calendar-time-off-staging.sh
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fx '.github/workflows/pr201-snapshot-local-helper.yml'
+          printf '%s\n' "${changed[@]}" | grep -Fx 'scripts/pr201-calendar-time-off-staging.sh'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Fix retained-staging snapshot initialization'
+          git push origin HEAD:agent/calendar-time-off-projection
