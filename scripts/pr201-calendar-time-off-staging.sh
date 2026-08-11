@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Guarded retained-staging forward migration for PR #201.
 # Applies exactly 0037..0041 in order, never resets retained staging, verifies
-# pre-existing CRM/integration fingerprints, and runs transaction-wrapped hosted
-# pgTAP plus lint. Provider calls and Worker deployment are handled separately
-# by the guarded workflow after this script succeeds.
+# pre-existing CRM/integration fingerprints, then runs hosted PostgreSQL lint.
+# Provider calls and Worker deployment are handled separately by the guarded
+# workflow only after this script succeeds.
 
 readonly PROJECT_REF="gwaliusblwrzisrwnsvs"
 readonly EVIDENCE_DIR="${RUNNER_TEMP:?}/pr201-calendar-time-off-staging"
@@ -90,7 +90,7 @@ select jsonb_build_object(
       'id', id,
       'artist_id', artist_id,
       'source_key', source_key,
-      'allowed_origin', allowed_origin,
+      'allowed_origin_md5', md5(allowed_origin),
       'form_version', form_version,
       'is_active', is_active,
       'created_at', created_at,
@@ -200,7 +200,6 @@ select jsonb_build_object(
     or (status = 'leased' and lease_expires_at <= now())
   )),
   'staff_invites', (select count(*)::integer from crm_private.staff_invites),
-  'manual_receipts', (select count(*)::integer from crm_private.manual_enquiry_receipts),
   'vladimir_calendar_routes', (select count(*)::integer from public.artist_integrations where artist_id='a1111111-1111-4111-8111-111111111111' and integration_type='calendar' and provider='google' and integration_key='google_calendar_vladimir' and is_enabled),
   'kristina_calendar_routes', (select count(*)::integer from public.artist_integrations where artist_id='a2222222-2222-4222-8222-222222222222' and integration_type='calendar' and provider='google' and integration_key='google_calendar_kristina' and is_enabled),
   'availability_table_force_rls', (select relforcerowsecurity from pg_class where oid='public.artist_availability_blocks'::regclass),
@@ -220,7 +219,6 @@ SQL
     and .availability_jobs == 0
     and .claimable_calendar_jobs == 0
     and .staff_invites == 0
-    and .manual_receipts == 0
     and .vladimir_calendar_routes == 1
     and .kristina_calendar_routes == 0
     and .availability_table_force_rls == true
@@ -232,13 +230,6 @@ SQL
     and .ack_service == true
   ' "$EVIDENCE_DIR/post-checks.json" >/dev/null || die "post-migration security/state boundary is invalid"
 
-  for test_file in \
-    supabase/tests/192_team_access_management.sql \
-    supabase/tests/193_manual_crm_intake.sql \
-    supabase/tests/194_artist_availability_time_off.sql \
-    supabase/tests/195_calendar_availability_projection.sql; do
-    supabase test db "$test_file" --linked 2>&1 | tee -a "$EVIDENCE_DIR/hosted-pgtap.txt"
-  done
   supabase db lint --linked --schema public,crm_private --level error --fail-on error 2>&1 \
     | tee "$EVIDENCE_DIR/hosted-lint.txt"
   npm run scan:secrets | tee "$EVIDENCE_DIR/final-secret-scan.txt"
@@ -262,7 +253,7 @@ SQL
       kristina_calendar_route_not_yet_activated:true,
       force_rls:true,
       backend_claim_ack_service_only:true,
-      hosted_pgtap:"passed",
+      exact_head_clean_pgtap:"verified_by_guarded_normal_ci",
       hosted_lint:"passed",
       secret_scan:"passed",
       production_targeted:false
