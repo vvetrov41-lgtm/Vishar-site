@@ -24,9 +24,20 @@ export interface AvailabilityBlockInput {
   note?: string | null;
 }
 
+function availabilityMessage(error: any, what: string): string {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  if (message.includes('time off overlaps an active appointment')) {
+    return 'Move or cancel the existing appointment before blocking that time.';
+  }
+  if (message.includes('time off overlaps another active availability block')) {
+    return 'That time already overlaps another availability block.';
+  }
+  return friendlyMessage(error, what);
+}
+
 function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
   if (result.error) {
-    throw new ApiError(friendlyMessage(result.error, what), result.error);
+    throw new ApiError(availabilityMessage(result.error, what), result.error);
   }
   return (result.data ?? ([] as unknown)) as T;
 }
