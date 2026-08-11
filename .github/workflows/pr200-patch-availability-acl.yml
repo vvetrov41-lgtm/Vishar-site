@@ -31,11 +31,13 @@ jobs:
           text = path.read_text()
 
           rpc_anchor = "  ('public.reschedule_appointment(uuid,timestamptz,timestamptz)', false, true, false),\n"
-          rpc_insert = rpc_anchor + """  ('public.list_artist_availability_blocks(uuid,timestamptz,timestamptz,boolean)', false, true, false),
-  ('public.create_artist_availability_block(uuid,public.availability_block_kind,timestamptz,timestamptz,boolean,text)', false, true, false),
-  ('public.update_artist_availability_block(uuid,public.availability_block_kind,timestamptz,timestamptz,boolean,text)', false, true, false),
-  ('public.cancel_artist_availability_block(uuid)', false, true, false),
-"""
+          rpc_rows = [
+              "  ('public.list_artist_availability_blocks(uuid,timestamptz,timestamptz,boolean)', false, true, false),",
+              "  ('public.create_artist_availability_block(uuid,public.availability_block_kind,timestamptz,timestamptz,boolean,text)', false, true, false),",
+              "  ('public.update_artist_availability_block(uuid,public.availability_block_kind,timestamptz,timestamptz,boolean,text)', false, true, false),",
+              "  ('public.cancel_artist_availability_block(uuid)', false, true, false),",
+          ]
+          rpc_insert = rpc_anchor + "\n".join(rpc_rows) + "\n"
           if text.count(rpc_anchor) != 1:
               raise SystemExit('expected exactly one appointment RPC allow-list anchor')
           if 'public.list_artist_availability_blocks(uuid,timestamptz,timestamptz,boolean)' in text:
