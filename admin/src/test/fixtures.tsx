@@ -2,8 +2,8 @@
 //
 // Everything here is fabricated: reserved `.test` addresses, fixed UUIDs, no
 // real client and no real credential. The fake client also models the parts of
-// row level security the interface depends on — a manager reading
-// `projects_finance` gets zero rows, exactly as the database returns — so a
+// row level security the interface depends on - a manager reading
+// `projects_finance` gets zero rows, exactly as the database returns - so a
 // component test that "passes" cannot be passing for the wrong reason.
 
 import { render, type RenderResult } from '@testing-library/react';
@@ -190,6 +190,8 @@ export interface FakeClientOptions {
   rpcCalls?: { name: string; args: Record<string, unknown> | undefined }[];
   /** Records PostgREST filters so detail pages can prove server-side scoping. */
   queryCalls?: { table: string; method: string; args: unknown[] }[];
+  /** Records Auth method names without retaining passwords or access tokens. */
+  authCalls?: { method: string; passwordLength?: number }[];
   /** Force an error from one table, to exercise the error state. */
   failTable?: string;
   /** Override the enquiry lifecycle state for workflow-specific screens. */
@@ -197,6 +199,7 @@ export interface FakeClientOptions {
   /** Artist identities returned by list_accessible_artists(). */
   accessibleArtistIds?: string[];
   teamInviteUrl?: string;
+  staffInviteMode?: boolean;
 }
 
 const DENIED = { code: '42501', message: 'permission denied' };
@@ -218,7 +221,7 @@ function tableResult(
   switch (table) {
     case 'profiles':
       // Mirrors `profiles_select_self`, which is gated on `is_active`. A
-      // deactivated account therefore cannot read even its own row — the same
+      // deactivated account therefore cannot read even its own row - the same
       // reason it can read nothing else.
       return { data: role ? PROFILES[role] : null, error: null };
     case 'clients':
@@ -266,6 +269,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   const effectiveRole: CrmRole | null = profile?.is_active ? profile.role : null;
   const rpcCalls = options.rpcCalls ?? [];
   const queryCalls = options.queryCalls ?? [];
+  const authCalls = options.authCalls ?? [];
   const accessibleArtistIds = options.accessibleArtistIds ?? (effectiveRole === 'owner'
     ? ARTISTS.map((artist) => artist.id)
     : [VLADIMIR_ARTIST_ID]);
@@ -344,8 +348,18 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         } },
         error: null,
       }),
-      signInWithPassword: async () => ({ data: {}, error: null }),
-      signOut: async () => ({ error: null }),
+      signInWithPassword: async ({ password }) => {
+        authCalls.push({ method: 'signInWithPassword', passwordLength: password.length });
+        return { data: {}, error: null };
+      },
+      updateUser: async ({ password }) => {
+        authCalls.push({ method: 'updateUser', passwordLength: password.length });
+        return { data: {}, error: null };
+      },
+      signOut: async () => {
+        authCalls.push({ method: 'signOut' });
+        return { error: null };
+      },
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
     },
   };
@@ -354,15 +368,23 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
 export function renderWithSession(
   ui: ReactElement,
   options: FakeClientOptions & { path?: string }
-): RenderResult & { rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] } {
+): RenderResult & {
+  rpcCalls: { name: string; args: Record<string, unknown> | undefined }[];
+  authCalls: { method: string; passwordLength?: number }[];
+} {
   const rpcCalls = options.rpcCalls ?? [];
-  const client = createFakeClient({ ...options, rpcCalls });
+  const authCalls = options.authCalls ?? [];
+  const client = createFakeClient({ ...options, rpcCalls, authCalls });
 
   const result = render(
-    <SessionProvider client={client} teamInviteUrl={options.teamInviteUrl}>
+    <SessionProvider
+      client={client}
+      teamInviteUrl={options.teamInviteUrl}
+      staffInviteMode={options.staffInviteMode}
+    >
       <RouterProvider initialPath={options.path ?? '/'}>{ui}</RouterProvider>
     </SessionProvider>
   );
 
-  return Object.assign(result, { rpcCalls });
+  return Object.assign(result, { rpcCalls, authCalls });
 }
