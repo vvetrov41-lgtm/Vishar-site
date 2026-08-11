@@ -6,6 +6,7 @@
 // owner JWT atomically finalises the inactive profile plus artist memberships.
 
 const INVITE_PATH = '/v1/staff/invite';
+const INVITE_REDIRECT_SEARCH = '?staff_invite=1';
 const MAX_BODY_BYTES = 16 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BEARER_PATTERN = /^Bearer [A-Za-z0-9._~-]{16,4096}$/;
@@ -117,6 +118,9 @@ function readConfig(env) {
     || inviteRedirect.origin !== crmOrigin
     || inviteRedirect.username
     || inviteRedirect.password
+    || inviteRedirect.pathname !== '/'
+    || inviteRedirect.search !== INVITE_REDIRECT_SEARCH
+    || inviteRedirect.hash
   ) {
     throw new TeamAdminError('team_admin_not_configured', 503);
   }
@@ -417,6 +421,7 @@ export default {
 
 export const __testing = Object.freeze({
   INVITE_PATH,
+  INVITE_REDIRECT_SEARCH,
   MAX_BODY_BYTES,
   readConfig,
   validateRequest,
