@@ -26,6 +26,8 @@ describe('availability API boundary', () => {
     });
   });
 
+  // Cancelled blocks are historical records. Normal scheduling reads must not
+  // opt into them unless the caller explicitly requests the audit-oriented view.
   it('opts into cancelled availability only for explicit audit-oriented reads', async () => {
     const { client, rpc } = clientWithRpc({ data: [], error: null });
     const api = createAvailabilityApi(client);
