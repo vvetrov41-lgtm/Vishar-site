@@ -394,4 +394,5 @@ select is(
   'soft-cancelled block remains in the authoritative table'
 );
 
+select * from finish();
 rollback;
