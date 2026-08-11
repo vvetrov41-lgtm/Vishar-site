@@ -23,16 +23,18 @@ const kristinaId = 'a2222222-2222-4222-8222-222222222222';
 const workerId = 'telegram-worker-unit';
 const botToken = 'unit-test-bot-token';
 const chatId = 'unit-test-chat-id';
+const kristinaBotToken = 'unit-test-kristina-token';
+const kristinaChatId = 'unit-test-kristina-chat';
 
-const vladimirKey = 'telegram_vladimir';
-const kristinaKey = 'telegram_kristina';
+const vladimirKey = 'vladimir-staging';
+const kristinaKey = 'kristina-staging';
 const env = {
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
   [bindingNameFor('telegram', vladimirKey)]: JSON.stringify({ botToken, chatId }),
   [bindingNameFor('telegram', kristinaKey)]: JSON.stringify({
-    botToken: 'unit-test-kristina-token',
-    chatId: 'unit-test-kristina-chat',
+    botToken: kristinaBotToken,
+    chatId: kristinaChatId,
   }),
 };
 
@@ -130,6 +132,39 @@ await test('one explicit UUID is claimed, routed, sent and acknowledged by the s
   assert.equal(mock.telegramCalls[0].body.chat_id, chatId);
 });
 
+await test('Kristina staging uses a distinct encrypted binding and the existing sender', async () => {
+  const vladimirBinding = bindingNameFor('telegram', vladimirKey);
+  const kristinaBinding = bindingNameFor('telegram', kristinaKey);
+  assert.equal(vladimirBinding, 'ARTIST_TELEGRAM_VLADIMIR_HSTAGING');
+  assert.equal(kristinaBinding, 'ARTIST_TELEGRAM_KRISTINA_HSTAGING');
+  assert.notEqual(kristinaBinding, vladimirBinding);
+
+  const kristinaOnlyEnv = {
+    SUPABASE_URL: env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+    [kristinaBinding]: env[kristinaBinding],
+  };
+  const mock = makeFetch({
+    claim: [claimedJob({ artist_id: kristinaId })],
+    resolvedRoute: [route({
+      artist_id: kristinaId,
+      integration_key: kristinaKey,
+      external_account_label: 'Kristina CRM Staging',
+    })],
+  });
+  const result = await drainTelegramOutboxById(kristinaOnlyEnv, {
+    outboxId,
+    workerId,
+    fetchImpl: mock.fetchImpl,
+  });
+
+  assert.deepEqual(result, { claimed: true, outboxId, outcome: 'succeeded' });
+  assert.equal(mock.telegramCalls.length, 1);
+  assert.equal(mock.telegramCalls[0].body.chat_id, kristinaChatId);
+  assert.ok(!mock.telegramCalls[0].url.includes(botToken));
+  assert.ok(mock.telegramCalls[0].url.includes(kristinaBotToken));
+});
+
 await test('the module has no broad Telegram claim and a non-claimed job is never sent', async () => {
   const mock = makeFetch({ claim: [] });
   const result = await drainTelegramOutboxById(env, {
@@ -197,6 +232,27 @@ await test('a missing artist binding has no global credential fallback', async (
   assert.equal(result.outcome, 'failed');
   assert.equal(result.errorCode, 'provider_binding_missing');
   assert.equal(mock.telegramCalls.length, 0);
+});
+
+await test('a missing Kristina binding cannot fall back to Vladimir', async () => {
+  const vladimirOnlyEnv = {
+    SUPABASE_URL: env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+    [bindingNameFor('telegram', vladimirKey)]: env[bindingNameFor('telegram', vladimirKey)],
+  };
+  const mock = makeFetch({
+    claim: [claimedJob({ artist_id: kristinaId })],
+    resolvedRoute: [route({ artist_id: kristinaId, integration_key: kristinaKey })],
+  });
+  const result = await drainTelegramOutboxById(vladimirOnlyEnv, {
+    outboxId,
+    workerId,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'provider_binding_missing');
+  assert.equal(mock.telegramCalls.length, 0);
+  assert.equal(mock.rpcCalls.at(-1).args.p_error_code, 'provider_binding_missing');
 });
 
 await test('an invalid authoritative projection is acknowledged safely and never sent', async () => {
