@@ -138,7 +138,7 @@ function makeEnv() {
     MONZO_ACCESS_TEAM_DOMAIN: 'https://vishar-monzo-test.cloudflareaccess.com',
     MONZO_ACCESS_AUD: 'monzo-access-audience',
     MONZO_OAUTH_CLIENT_ID: 'oauth-client-synthetic',
-    MONZO_OAUTH_CLIENT_SECRET: 'oauth-secret-synthetic',
+    MONZO_OAUTH_CLIENT_SECRET: 'oauth-secret-test',
     MONZO_OAUTH_REDIRECT_URI: 'https://monzo-oauth.example.test/oauth/monzo/callback',
     MONZO_CRM_RETURN_URL: 'https://crm.example.test/#/payments',
     MONZO_WEBHOOK_BASE_URL: 'https://monzo-webhook.example.test/',
