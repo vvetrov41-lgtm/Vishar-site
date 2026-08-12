@@ -530,6 +530,8 @@ insert into expected_function_acl values
   ('public.claim_calendar_availability_outbox(text,integer,integer)', false, false, true),
   ('public.record_calendar_availability_outbox_result(uuid,text,integer,boolean,text,text)', false, false, true),
   ('public.set_calendar_connection_metadata(uuid,text,text,boolean)', false, false, true),
+  ('public.resolve_monzo_deposit_redirect(uuid)', false, false, true),
+  ('public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', false, false, true),
   ('public.list_calendar_connection_status()', false, true, false),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
@@ -572,6 +574,9 @@ insert into expected_function_acl values
   ('public.record_manual_refund(uuid,uuid,numeric,boolean,timestamptz,text)', false, true, false),
   ('public.cancel_payment_request(uuid)', false, true, false),
   ('public.transfer_work_to_artist(uuid,uuid,uuid,text)', false, true, false),
+  ('public.configure_monzo_easy_bank_transfer(uuid,text,boolean)', false, true, false),
+  ('public.get_monzo_easy_bank_transfer_settings(uuid)', false, true, false),
+  ('public.request_session_deposit(uuid,uuid,text)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
