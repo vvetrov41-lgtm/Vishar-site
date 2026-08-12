@@ -10,5 +10,6 @@ workers_dev = false
 # - MONZO_OAUTH_TOKENS (KV)
 # - MONZO_WEBHOOK_ROUTES (KV)
 # and encrypted Worker secrets/vars required by workers/monzo-api.js.
-# MONZO_WEBHOOK_REGISTRATION_ENABLED and MONZO_RECONCILIATION_ENABLED must stay
-# false until an exact staging activation is explicitly approved.
+# The foundation exposes no provider webhook-registration endpoint.
+# MONZO_RECONCILIATION_ENABLED must stay false until an exact staging
+# activation is explicitly approved.
