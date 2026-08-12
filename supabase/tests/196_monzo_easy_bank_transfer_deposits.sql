@@ -111,12 +111,21 @@ select is(
   (select result ->> 'payment_request_id' from first_request),
   'a second action reuses the existing pending session deposit'
 );
-select is(
-  (select count(*)::int from public.payment_request_links
-   where payment_request_id = (select (result ->> 'payment_request_id')::uuid from first_request)),
-  1,
-  'the pending deposit has exactly one opaque public link'
-);
+
+-- The link table is deliberately not browser-readable. Switch back to the
+-- privileged pgTAP fixture context only long enough to capture the opaque id,
+-- then expose that one synthetic value through a temporary table.
+reset role;
+create temporary table link_fixture as
+select l.public_id
+from public.payment_request_links l
+where l.payment_request_id = (select (result ->> 'payment_request_id')::uuid from first_request);
+select is((select count(*)::int from link_fixture), 1,
+  'the pending deposit has exactly one opaque public link');
+grant select on link_fixture to authenticated, service_role;
+
+set local role authenticated;
+select pg_temp.claims('{"sub":"c6111111-1111-4111-8111-111111111111","role":"authenticated"}');
 
 select throws_ok(
   $$select public.request_session_deposit(
@@ -131,8 +140,7 @@ select throws_ok(
 select throws_ok(
   format(
     'select public.resolve_monzo_deposit_redirect(%L::uuid)',
-    (select l.public_id from public.payment_request_links l
-     where l.payment_request_id = (select (result ->> 'payment_request_id')::uuid from first_request))
+    (select public_id from link_fixture)
   ),
   '42501', null,
   'browser-authenticated staff cannot call the backend redirect resolver'
@@ -143,10 +151,7 @@ select pg_temp.claims('{"role":"service_role"}');
 set local role service_role;
 
 select is(
-  public.resolve_monzo_deposit_redirect(
-    (select l.public_id from public.payment_request_links l
-     where l.payment_request_id = (select (result ->> 'payment_request_id')::uuid from first_request))
-  ),
+  public.resolve_monzo_deposit_redirect((select public_id from link_fixture)),
   'https://monzo.com/pay/r/synthetic-vladimir_250',
   'service backend resolves only the configured Monzo reusable link'
 );
