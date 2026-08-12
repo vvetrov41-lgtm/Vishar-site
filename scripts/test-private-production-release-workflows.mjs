@@ -62,9 +62,21 @@ expectIncludes(teamProductionConfig, 'workers_dev = false', 'Team admin producti
 expectIncludes(teamProductionConfig, 'preview_urls = false', 'Team admin production config');
 expectExcludes(teamProductionConfig, 'workers_dev = true', 'Team admin production config');
 expectExcludes(teamProductionConfig, 'preview_urls = true', 'Team admin production config');
-expectExcludes(teamProductionConfig, 'routes', 'Team admin production config');
-expectExcludes(teamProductionConfig, 'route =', 'Team admin production config');
-expectExcludes(teamProductionConfig, 'custom_domain', 'Team admin production config');
+
+// The Worker's production Custom Domain (team.vishartattoo.com) was
+// provisioned once, directly against the Cloudflare dashboard, before this
+// config existed. `--strict` compares routes too, so declaring none here
+// read as "delete the production route" and permanently aborted every
+// deploy. The route must be declared and must be exactly the pre-provisioned
+// one — narrower or different values are still rejected, since either would
+// itself be a silent `--strict` conflict or a widened route.
+expectIncludes(teamProductionConfig, 'routes = [', 'Team admin production config');
+expectIncludes(teamProductionConfig, 'pattern = "team.vishartattoo.com"', 'Team admin production config');
+expectIncludes(teamProductionConfig, 'zone_name = "vishartattoo.com"', 'Team admin production config');
+expectIncludes(teamProductionConfig, 'custom_domain = true', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'pattern = "*', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'crm.vishartattoo.com', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'vishartattoo.com/*', 'Team admin production config');
 
 expectIncludes(team, 'node scripts/test-team-admin-worker.mjs', 'Team admin');
 expectIncludes(team, 'npm run check:team-admin-production-bundle', 'Team admin');
@@ -85,5 +97,12 @@ expectExcludes(team, 'wrangler.toml --env', 'Team admin');
 expectExcludes(team, 'wrangler.telegram', 'Team admin');
 expectExcludes(team, 'wrangler.calendar', 'Team admin');
 expectExcludes(team, 'supabase db push', 'Team admin');
+
+// The summary must describe the declared route accurately: it now exists in
+// the production config and must match the pre-provisioned domain, rather
+// than claiming no route/custom domain is involved.
+expectIncludes(team, 'team.vishartattoo.com', 'Team admin');
+expectIncludes(team, 'pre-provisioned', 'Team admin');
+expectExcludes(team, 'not performed by this workflow', 'Team admin');
 
 console.log('Private production release workflow boundaries: passed');

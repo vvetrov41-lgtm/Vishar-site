@@ -229,7 +229,7 @@ jobs:
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Worker source: `workers/team-admin.js` only'
             echo '- Wrangler config: `wrangler.team-admin.production.toml` with `workers_dev=false` and `preview_urls=false`'
-            echo '- Route/custom domain provisioning: not performed by this workflow'
+            echo '- Route: `team.vishartattoo.com` Custom Domain declared in `wrangler.team-admin.production.toml`, matching the pre-provisioned route; this workflow does not create, remove or change it'
             echo '- Required pre-existing secret: `SUPABASE_SECRET_KEY`'
             echo '- Calendar / Telegram / GPT / booking Worker deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"
