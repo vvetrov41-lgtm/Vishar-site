@@ -1,8 +1,4 @@
 // Application root: access gate, then routing.
-//
-// The gate runs before any screen. An account that is signed in but has no
-// active CRM profile is shown why, not a broken dashboard - and it is told the
-// same thing the database would enforce anyway.
 
 import { useEffect } from 'react';
 import { AppShell } from './components/AppShell';
@@ -26,6 +22,7 @@ import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
 import { PasswordSetupPage } from './pages/PasswordSetupPage';
+import { PaymentsPage } from './pages/PaymentsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { UsersPage } from './pages/UsersPage';
@@ -35,16 +32,8 @@ export function App() {
   const { t } = useLanguage();
 
   if (state === 'unconfigured') {
-    return (
-      <div className="container">
-        <EmptyState
-          title={t('app.notConfiguredTitle')}
-          hint={t('app.notConfiguredHint')}
-        />
-      </div>
-    );
+    return <div className="container"><EmptyState title={t('app.notConfiguredTitle')} hint={t('app.notConfiguredHint')} /></div>;
   }
-
   if (state === 'loading') return <LoadingState label={t('app.checkingAccess')} />;
   if (state === 'signed_out') return <LoginPage />;
   if (state === 'password_setup') return <PasswordSetupPage />;
@@ -52,10 +41,7 @@ export function App() {
   if (state === 'no_profile' || state === 'deactivated') {
     return (
       <div className="container">
-        <EmptyState
-          title={state === 'deactivated' ? t('app.accessWithdrawn') : t('app.noAccess')}
-          hint={t('app.askOwner')}
-        />
+        <EmptyState title={state === 'deactivated' ? t('app.accessWithdrawn') : t('app.noAccess')} hint={t('app.askOwner')} />
         <div className="actions" style={{ justifyContent: 'center' }}>
           <button type="button" onClick={() => { void signOut(); }}>{t('common.signOut')}</button>
         </div>
@@ -63,13 +49,7 @@ export function App() {
     );
   }
 
-  return (
-    <ArtistScopeProvider>
-      <AppShell>
-        <Routes />
-      </AppShell>
-    </ArtistScopeProvider>
-  );
+  return <ArtistScopeProvider><AppShell><Routes /></AppShell></ArtistScopeProvider>;
 }
 
 function Routes() {
@@ -84,56 +64,26 @@ function Routes() {
   }, [path]);
 
   const enquiryDetail = matchRoute('/enquiries/:id', path);
-  if (enquiryDetail) {
-    return (
-      <RequireCapability capability="viewEnquiries">
-        <EnquiryDetailPage enquiryId={enquiryDetail.id} />
-      </RequireCapability>
-    );
-  }
-
+  if (enquiryDetail) return <RequireCapability capability="viewEnquiries"><EnquiryDetailPage enquiryId={enquiryDetail.id} /></RequireCapability>;
   const clientDetail = matchRoute('/clients/:id', path);
-  if (clientDetail) {
-    return (
-      <RequireCapability capability="viewClients">
-        <ClientDetailPage clientId={clientDetail.id} />
-      </RequireCapability>
-    );
-  }
-
+  if (clientDetail) return <RequireCapability capability="viewClients"><ClientDetailPage clientId={clientDetail.id} /></RequireCapability>;
   const projectDetail = matchRoute('/projects/:id', path);
-  if (projectDetail) {
-    return (
-      <RequireCapability capability="viewProjects">
-        <ProjectDetailPage projectId={projectDetail.id} />
-      </RequireCapability>
-    );
-  }
+  if (projectDetail) return <RequireCapability capability="viewProjects"><ProjectDetailPage projectId={projectDetail.id} /></RequireCapability>;
 
   switch (path) {
-    case '/':
-      return <RequireCapability capability="viewEnquiries"><DashboardPage /></RequireCapability>;
-    case '/oauth/consent':
-      return <OAuthConsentPage />;
-    case '/enquiries':
-      return <RequireCapability capability="viewEnquiries"><EnquiriesPage /></RequireCapability>;
-    case '/clients':
-      return <RequireCapability capability="viewClients"><ClientsPage /></RequireCapability>;
-    case '/projects':
-      return <RequireCapability capability="viewProjects"><ProjectsPage /></RequireCapability>;
+    case '/': return <RequireCapability capability="viewEnquiries"><DashboardPage /></RequireCapability>;
+    case '/oauth/consent': return <OAuthConsentPage />;
+    case '/enquiries': return <RequireCapability capability="viewEnquiries"><EnquiriesPage /></RequireCapability>;
+    case '/clients': return <RequireCapability capability="viewClients"><ClientsPage /></RequireCapability>;
+    case '/projects': return <RequireCapability capability="viewProjects"><ProjectsPage /></RequireCapability>;
     case '/appointments':
-    case '/sessions':
-      return <RequireCapability capability="viewSessions"><AppointmentsPage /></RequireCapability>;
-    case '/availability':
-      return <RequireCapability capability="viewSessions"><AvailabilityPage /></RequireCapability>;
+    case '/sessions': return <RequireCapability capability="viewSessions"><AppointmentsPage /></RequireCapability>;
+    case '/availability': return <RequireCapability capability="viewSessions"><AvailabilityPage /></RequireCapability>;
+    case '/payments': return <RequireCapability capability="manageFinance"><PaymentsPage /></RequireCapability>;
     case '/integrations':
-    case '/integrations/calendar':
-      return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
-    case '/users':
-      return <RequireCapability capability="manageUsers"><UsersPage /></RequireCapability>;
-    case '/activity':
-      return <RequireCapability capability="viewActivity"><ActivityPage /></RequireCapability>;
-    default:
-      return <EmptyState title={t('app.pageNotFound')} hint={t('app.useNavigation')} />;
+    case '/integrations/calendar': return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
+    case '/users': return <RequireCapability capability="manageUsers"><UsersPage /></RequireCapability>;
+    case '/activity': return <RequireCapability capability="viewActivity"><ActivityPage /></RequireCapability>;
+    default: return <EmptyState title={t('app.pageNotFound')} hint={t('app.useNavigation')} />;
   }
 }
