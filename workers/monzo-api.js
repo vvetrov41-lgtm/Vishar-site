@@ -60,6 +60,15 @@ function routeKey(webhookKey) {
   return `route:${webhookKey}`;
 }
 
+function routeRecord(alias, config, accountId) {
+  return JSON.stringify({
+    alias,
+    artistId: config.artistId,
+    providerAccountKey: config.providerAccountKey,
+    accountId,
+  });
+}
+
 async function saveConnectionStateBestEffort(env, record, connectionState) {
   try {
     await saveMonzoTokenRecord(env, { ...record, connectionState });
@@ -162,7 +171,11 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
       await env.MONZO_WEBHOOK_ROUTES.delete(routeKey(previous.webhookKey)).catch(() => {});
     }
   } catch (error) {
-    await deleteMonzoTokenRecord(env, config.artistId).catch(() => {});
+    if (previous) {
+      await saveMonzoTokenRecord(env, previous).catch(() => {});
+    } else {
+      await deleteMonzoTokenRecord(env, config.artistId).catch(() => {});
+    }
     await logoutMonzoAccessToken(tokens.access_token, fetchImpl).catch(() => false);
     throw error;
   }
@@ -269,18 +282,23 @@ async function selectAccount(request, alias, env, fetchImpl = fetch) {
     webhookId: null,
     accountSelectedAt: new Date().toISOString(),
   };
+  const previousRoute = previous.accountId && previous.webhookKey
+    ? routeRecord(alias, config, previous.accountId)
+    : null;
 
   try {
     await saveMonzoTokenRecord(env, updated);
-    await env.MONZO_WEBHOOK_ROUTES.put(routeKey(updated.webhookKey), JSON.stringify({
-      alias,
-      artistId: config.artistId,
-      providerAccountKey: config.providerAccountKey,
-      accountId: selected.id,
-    }));
+    await env.MONZO_WEBHOOK_ROUTES.put(
+      routeKey(updated.webhookKey),
+      routeRecord(alias, config, selected.id),
+    );
   } catch (error) {
     await saveMonzoTokenRecord(env, previous).catch(() => {});
-    await env.MONZO_WEBHOOK_ROUTES.delete(routeKey(updated.webhookKey)).catch(() => {});
+    if (previousRoute) {
+      await env.MONZO_WEBHOOK_ROUTES.put(routeKey(updated.webhookKey), previousRoute).catch(() => {});
+    } else {
+      await env.MONZO_WEBHOOK_ROUTES.delete(routeKey(updated.webhookKey)).catch(() => {});
+    }
     throw error;
   }
 
