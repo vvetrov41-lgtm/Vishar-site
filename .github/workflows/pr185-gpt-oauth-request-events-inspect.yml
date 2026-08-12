@@ -1,0 +1,156 @@
+name: PR 185 GPT OAuth request events inspection
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-oauth-request-events-inspect
+  cancel-in-progress: false
+
+jobs:
+  inspect-oauth-events:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- INSPECT_PR185_GPT_OAUTH_REQUEST_EVENTS -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      TARGET_ZONE: vishartattoo.com
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+      WINDOW_START: 2026-08-11T06:40:00Z
+      WINDOW_END: 2026-08-11T06:44:00Z
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- INSPECT_PR185_GPT_OAUTH_REQUEST_EVENTS -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Inspect Cloudflare events read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$TARGET_ZONE" = "vishartattoo.com" ]
+          [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_EDGE_READ_TOKEN" ]
+
+          zone_json="$RUNNER_TEMP/zone.json"
+          response="$RUNNER_TEMP/graphql.json"
+          payload="$RUNNER_TEMP/graphql-payload.json"
+          safe="$RUNNER_TEMP/oauth-request-events-safe.txt"
+          trap 'rm -f "$zone_json" "$response" "$payload"' EXIT
+
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
+          zone_id="$(jq -r --arg zone "$TARGET_ZONE" '[.result[] | select(.name == $zone)] | if length == 1 then .[0].id else empty end' "$zone_json")"
+          [ -n "$zone_id" ] || { echo 'Exact zone not resolved.' >&2; exit 1; }
+
+          query='query OAuthWindow($zoneTag: string, $start: Time, $end: Time, $host: string) { viewer { zones(filter: { zoneTag: $zoneTag }) { authorize: httpRequestsAdaptiveGroups(filter: { datetime_geq: $start, datetime_leq: $end, clientRequestHTTPHost: $host, clientRequestPath: "/oauth/authorize" }, limit: 100) { count dimensions { edgeResponseStatus } } authorizeSlash: httpRequestsAdaptiveGroups(filter: { datetime_geq: $start, datetime_leq: $end, clientRequestHTTPHost: $host, clientRequestPath: "/oauth/authorize/" }, limit: 100) { count dimensions { edgeResponseStatus } } firewall: firewallEventsAdaptive(filter: { datetime_geq: $start, datetime_leq: $end, clientRequestHTTPHost: $host }, limit: 100, orderBy: [datetime_ASC]) { action source description clientRequestPath datetime userAgent } } } }'
+          jq -n \
+            --arg query "$query" \
+            --arg zoneTag "$zone_id" \
+            --arg start "$WINDOW_START" \
+            --arg end "$WINDOW_END" \
+            --arg host "$TARGET_HOST" \
+            '{query:$query,variables:{zoneTag:$zoneTag,start:$start,end:$end,host:$host}}' > "$payload"
+
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary @"$payload" \
+            https://api.cloudflare.com/client/v4/graphql > "$response"
+
+          jq -e '.errors == null or .errors == []' "$response" >/dev/null || {
+            jq -r '.errors[]?.message // "Cloudflare GraphQL query failed"' "$response" >&2
+            exit 1
+          }
+
+          zone_count="$(jq '.data.viewer.zones | length' "$response")"
+          [ "$zone_count" = 1 ] || { echo "Unexpected GraphQL zone count: $zone_count" >&2; exit 1; }
+
+          authorize_count="$(jq '[.data.viewer.zones[0].authorize[]?.count] | add // 0' "$response")"
+          slash_count="$(jq '[.data.viewer.zones[0].authorizeSlash[]?.count] | add // 0' "$response")"
+          firewall_total="$(jq '[.data.viewer.zones[0].firewall[]?] | length' "$response")"
+          authorize_firewall="$(jq '[.data.viewer.zones[0].firewall[]? | select(.clientRequestPath == "/oauth/authorize" or .clientRequestPath == "/oauth/authorize/")] | length' "$response")"
+
+          status_summary="$(jq -c '[.data.viewer.zones[0].authorize[]?, .data.viewer.zones[0].authorizeSlash[]?] | group_by(.dimensions.edgeResponseStatus) | map({status:.[0].dimensions.edgeResponseStatus,count:(map(.count)|add)})' "$response")"
+          firewall_summary="$(jq -c '[.data.viewer.zones[0].firewall[]? | select(.clientRequestPath == "/oauth/authorize" or .clientRequestPath == "/oauth/authorize/") | {action,source,description}] | group_by([.action,.source,.description]) | map({action:.[0].action,source:.[0].source,description:.[0].description,count:length})' "$response")"
+          ua_summary="$(jq -c '[.data.viewer.zones[0].firewall[]? | select(.clientRequestPath == "/oauth/authorize" or .clientRequestPath == "/oauth/authorize/") | (.userAgent // "") | if test("openai|chatgpt";"i") then "openai_or_chatgpt" elif startswith("Mozilla/") then "browser" elif . == "" then "empty" else "other" end] | group_by(.) | map({class:.[0],count:length})' "$response")"
+
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_host=$TARGET_HOST
+          window_start=$WINDOW_START
+          window_end=$WINDOW_END
+          authorize_request_count=$authorize_count
+          authorize_slash_request_count=$slash_count
+          firewall_event_count_all_paths=$firewall_total
+          authorize_firewall_event_count=$authorize_firewall
+          edge_status_summary=$status_summary
+          authorize_firewall_summary=$firewall_summary
+          authorize_user_agent_class_summary=$ua_summary
+          cloudflare_mutated=false
+          production_targeted=false
+          EOF
+          cat "$safe"
+
+          rm -f "$zone_json" "$response" "$payload"
+          trap - EXIT
+
+      - name: Upload safe inspection evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-oauth-request-events-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/oauth-request-events-safe.txt
+          if-no-files-found: warn
+          retention-days: 30

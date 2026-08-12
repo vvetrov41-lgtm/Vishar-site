@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Script } from 'node:vm';
 import sharp from 'sharp';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -150,11 +151,17 @@ async function pathExists(filePath) {
   }
 }
 
+// Directories that are not part of the public static site. `admin/` is the
+// private CRM application: it has its own build, is hosted separately, is never
+// indexed, and must not be checked as though it were a public page.
+const NON_SITE_DIRECTORIES = new Set(['.git', 'node_modules', 'admin']);
+
 async function listFiles(dir, predicate = () => true) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
 
   for (const entry of entries) {
+    if (dir === rootDir && NON_SITE_DIRECTORIES.has(entry.name)) continue;
     if (entry.name === '.git' || entry.name === 'node_modules') continue;
     const entryPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -365,6 +372,9 @@ function isBrowserRuntimeFile(filePath) {
   const fileRel = rel(filePath);
   if (fileRel.startsWith('scripts/')) return false;
   if (fileRel.startsWith('workers/')) return false;
+  // The private CRM application is a separate build with its own bundler and
+  // its own checks; it is not part of the public site runtime.
+  if (fileRel.startsWith('admin/')) return false;
   if (fileRel.endsWith('.config.js')) return false;
   return true;
 }
@@ -412,6 +422,96 @@ async function checkBookingWindowSingleSource(htmlFiles) {
   }
 
   pass(`Booking availability has one BOOKING_WINDOW source in components.js and ${markerCount} neutral HTML fallback markers with no hard-coded dates.`);
+}
+
+async function checkBookingWindowRuntime() {
+  const componentsPath = path.join(rootDir, 'components.js');
+  if (!await pathExists(componentsPath)) {
+    fail('components.js is missing; cannot run the booking availability smoke test.');
+    return;
+  }
+
+  const components = await readFile(componentsPath, 'utf8');
+  const closingPattern = /\}\)\(\);\s*$/;
+  if (!closingPattern.test(components)) {
+    fail('components.js does not have the expected IIFE ending; cannot instrument the booking availability smoke test.');
+    return;
+  }
+
+  const instrumented = components.replace(
+    closingPattern,
+    'globalThis.__bookingWindowRuntime = { value: BOOKING_WINDOW, populate: populateBookingWindow };\n})();'
+  );
+  const marker = { textContent: 'Check current availability' };
+  const documentMock = {
+    addEventListener() {},
+    createElement() {
+      return { textContent: '', innerHTML: '' };
+    },
+    querySelectorAll(selector) {
+      return selector === '[data-booking-window]' ? [marker] : [];
+    },
+  };
+  const context = {
+    console,
+    document: documentMock,
+    navigator: {},
+    window: { PAGE_ID: 'validator' },
+  };
+
+  try {
+    new Script(instrumented, { filename: 'components.js' }).runInNewContext(context);
+    context.__bookingWindowRuntime.populate();
+  } catch (error) {
+    fail(`components.js booking availability runtime smoke test failed: ${error.name}: ${error.message}`);
+    return;
+  }
+
+  if (!context.__bookingWindowRuntime.value.trim()) {
+    fail('components.js BOOKING_WINDOW is empty at runtime.');
+    return;
+  }
+  if (marker.textContent !== context.__bookingWindowRuntime.value) {
+    fail(`populateBookingWindow() rendered "${marker.textContent}", expected "${context.__bookingWindowRuntime.value}".`);
+    return;
+  }
+
+  pass(`components.js executes BOOKING_WINDOW and populateBookingWindow() renders "${marker.textContent}".`);
+}
+
+async function checkAnalyticsDisclosureMatchesRuntime() {
+  const components = await readFile(path.join(rootDir, 'components.js'), 'utf8');
+  const privacy = await readFile(path.join(rootDir, 'privacy/index.html'), 'utf8');
+  const idMatch = /const GA_MEASUREMENT_ID\s*=\s*['"]([^'"]+)['"]/.exec(components);
+
+  if (!idMatch) {
+    fail('components.js has no explicit GA_MEASUREMENT_ID configuration.');
+    return;
+  }
+
+  const configured = !idMatch[1].startsWith('G-XXXX');
+  if (!configured) {
+    const guards = components.match(/if\s*\(!analyticsConfigured\(\)\)\s*return;/g) || [];
+    if (guards.length < 3) {
+      fail('Analytics is a placeholder but load, banner and preference management are not all guarded.');
+    }
+    if (!privacy.includes('Google Analytics is not currently configured')) {
+      fail('privacy/index.html does not disclose that the placeholder analytics integration is disabled.');
+    }
+    if (privacy.includes('onclick="visharManageCookies()"')) {
+      fail('privacy/index.html offers cookie management even though analytics is not configured.');
+    }
+    pass('Analytics placeholder is runtime-disabled and the privacy notice describes that actual state.');
+    return;
+  }
+
+  if (privacy.includes('Google Analytics is not currently configured')) {
+    fail('A real GA measurement ID is configured but the privacy notice still says analytics is disconnected.');
+  }
+  if (!privacy.includes('visharManageCookies')) {
+    fail('Analytics is configured but the privacy page has no preference-management control.');
+  }
+  pass('Configured analytics and the privacy preference disclosure are aligned.');
 }
 
 async function checkNoRuntimeCdnjsReferences() {
@@ -1263,6 +1363,8 @@ async function main() {
   await checkLlmsTxt();
   await checkHtmlRuntimeStrings(htmlFiles);
   await checkBookingWindowSingleSource(htmlFiles);
+  await checkBookingWindowRuntime();
+  await checkAnalyticsDisclosureMatchesRuntime();
   await checkNoRuntimeCdnjsReferences();
   await checkVendor3DLibraries();
   await checkHomepageReferencesLocalVendorPaths();
