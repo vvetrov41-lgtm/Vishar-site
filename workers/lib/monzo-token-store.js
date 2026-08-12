@@ -162,7 +162,9 @@ export async function loadMonzoTokenRecord(env, artistId) {
   }
   const raw = await env.MONZO_OAUTH_TOKENS.get(monzoTokenKey(artistId));
   if (!raw) throw new MonzoTokenError('monzo_not_connected');
-  return decryptMonzoTokenRecord(raw, env.MONZO_TOKEN_ENCRYPTION_KEY);
+  const record = await decryptMonzoTokenRecord(raw, env.MONZO_TOKEN_ENCRYPTION_KEY);
+  if (record.artistId !== artistId) throw new MonzoTokenError('monzo_token_invalid');
+  return record;
 }
 
 export async function saveMonzoTokenRecord(env, record) {
