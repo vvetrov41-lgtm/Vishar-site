@@ -109,6 +109,9 @@ export async function refreshMonzoToken(env, refreshToken, fetchImpl = fetch) {
 }
 
 export async function ensureMonzoAccessToken(env, record, fetchImpl = fetch, now = Date.now()) {
+  if (!env?.MONZO_OAUTH_CLIENT_ID || record?.clientId !== env.MONZO_OAUTH_CLIENT_ID) {
+    throw new MonzoApiError('monzo_account_mismatch', 403);
+  }
   if (record.expiresAt > now + 60_000) return { accessToken: record.accessToken, record };
 
   const refreshTokenUsed = record.refreshToken;
@@ -128,15 +131,17 @@ export async function ensureMonzoAccessToken(env, record, fetchImpl = fetch, now
     if (!(error instanceof MonzoApiError) || error.code !== 'monzo_reauthorization_required') throw error;
 
     // A concurrent request may already have rotated the one-time refresh token.
-    // Re-read encrypted storage and accept only a newer, currently usable record.
+    // Re-read encrypted storage and accept only a newer record bound to the
+    // same artist/user and the currently configured OAuth client.
     const raw = await env.MONZO_OAUTH_TOKENS.get(`artist:${record.artistId}`);
     if (raw) {
       const { decryptMonzoTokenRecord } = await import('./monzo-token-store.js');
       const latest = await decryptMonzoTokenRecord(raw, env.MONZO_TOKEN_ENCRYPTION_KEY);
       if (
-        latest.refreshToken !== refreshTokenUsed
+        latest.artistId === record.artistId
+        && latest.refreshToken !== refreshTokenUsed
         && latest.userId === record.userId
-        && latest.clientId === record.clientId
+        && latest.clientId === env.MONZO_OAUTH_CLIENT_ID
         && latest.expiresAt > now + 30_000
       ) {
         return { accessToken: latest.accessToken, record: latest };
@@ -258,7 +263,14 @@ export async function verifyTransactionBelongsToAccount(
 export async function registerMonzoWebhook(accessToken, accountId, callbackUrl, fetchImpl = fetch) {
   if (!ACCOUNT_ID_PATTERN.test(String(accountId || ''))) throw new MonzoApiError('monzo_account_mismatch', 403);
   const callback = new URL(callbackUrl);
-  if (callback.protocol !== 'https:' || callback.username || callback.password || callback.hash) {
+  if (
+    callback.protocol !== 'https:'
+    || callback.username
+    || callback.password
+    || callback.port
+    || callback.search
+    || callback.hash
+  ) {
     throw new MonzoApiError('monzo_webhook_configuration_invalid', 503);
   }
 
