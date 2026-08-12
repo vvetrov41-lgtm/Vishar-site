@@ -22,6 +22,7 @@ declare
   v_artist_id uuid;
   v_existing public.payment_reconciliation_candidates%rowtype;
   v_webhook_event public.payment_webhook_events%rowtype;
+  v_webhook_event_exists boolean := false;
   v_candidate_count integer;
   v_suggested_request_id uuid;
   v_status text;
@@ -62,8 +63,9 @@ begin
   from public.payment_webhook_events e
   where e.provider = 'monzo_easy_bank_transfer'
     and e.provider_event_id = p_provider_event_id;
+  v_webhook_event_exists := found;
 
-  if found and (
+  if v_webhook_event_exists and (
     v_webhook_event.artist_id <> v_artist_id
     or v_webhook_event.provider_account_key <> p_provider_account_key
   ) then
@@ -128,7 +130,7 @@ begin
     v_status := 'unmatched';
   end if;
 
-  if not found then
+  if not v_webhook_event_exists then
     insert into public.payment_webhook_events (
       artist_id, provider, provider_account_key, provider_event_id,
       processing_status, processed_at
