@@ -1,10 +1,10 @@
 -- 0044_monzo_payment_url_validator.sql
 --
 -- PostgreSQL ARE repetition bounds are limited to 255. The original draft
--- validator used {4,256}, which raises 2201B before a valid Monzo URL can be
--- evaluated. Replace only this new function with an equivalent validator using
--- the supported upper bound. No provider connection or production route is
--- enabled here.
+-- validators used {4,256}, which raises 2201B before a valid Monzo URL can be
+-- evaluated. Replace both new URL-validating functions with equivalent
+-- validators using the supported upper bound. No provider connection or
+-- production route is enabled here.
 
 create or replace function public.configure_monzo_easy_bank_transfer(
   p_artist_id uuid,
@@ -106,10 +106,76 @@ begin
 end;
 $$;
 
+create or replace function public.resolve_monzo_deposit_redirect(
+  p_public_id uuid
+)
+returns text
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_link public.payment_request_links%rowtype;
+  v_request public.payment_requests%rowtype;
+  v_url text;
+begin
+  if not crm_private.is_service_backend() then
+    raise exception 'payment redirect resolution is backend-only'
+      using errcode = '42501';
+  end if;
+
+  select * into v_link
+  from public.payment_request_links l
+  where l.public_id = p_public_id
+    and l.revoked_at is null
+  for update;
+  if not found then
+    raise exception 'payment link is unavailable' using errcode = '22023';
+  end if;
+
+  select * into v_request
+  from public.payment_requests r
+  where r.id = v_link.payment_request_id
+    and r.artist_id = v_link.artist_id
+    and r.provider = 'monzo_easy_bank_transfer'
+    and r.status in ('pending', 'partially_paid')
+    and (r.expires_at is null or r.expires_at > now());
+  if not found then
+    raise exception 'payment link is unavailable' using errcode = '22023';
+  end if;
+
+  select i.configuration ->> 'payment_url' into v_url
+  from public.artist_integrations i
+  where i.artist_id = v_link.artist_id
+    and i.integration_type = 'payments'
+    and i.provider = 'monzo_easy_bank_transfer'
+    and i.integration_key = v_request.provider_account_key
+    and i.is_enabled;
+
+  if v_url is null
+     or v_url !~ '^https://monzo[.]com/pay/r/[A-Za-z0-9_-]{4,255}$' then
+    raise exception 'payment link is unavailable' using errcode = '22023';
+  end if;
+
+  update public.payment_request_links l
+  set open_count = l.open_count + 1,
+      last_opened_at = now()
+  where l.id = v_link.id;
+
+  return v_url;
+end;
+$$;
+
 revoke all on function public.configure_monzo_easy_bank_transfer(uuid,text,boolean)
+  from public, anon, authenticated, service_role;
+revoke all on function public.resolve_monzo_deposit_redirect(uuid)
   from public, anon, authenticated, service_role;
 grant execute on function public.configure_monzo_easy_bank_transfer(uuid,text,boolean)
   to authenticated;
+grant execute on function public.resolve_monzo_deposit_redirect(uuid)
+  to service_role;
 
 comment on function public.configure_monzo_easy_bank_transfer(uuid,text,boolean) is
   'Finance-authorised setup for one artist reusable Monzo Easy Bank Transfer URL and fixed GBP 250 deposit policy. Stores no Monzo API credential.';
+comment on function public.resolve_monzo_deposit_redirect(uuid) is
+  'Backend-only redirect resolver. Opening a link never changes payment status or creates a transaction.';
