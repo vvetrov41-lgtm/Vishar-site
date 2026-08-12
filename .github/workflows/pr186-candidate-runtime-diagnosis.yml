@@ -1,0 +1,252 @@
+name: PR 186 candidate runtime diagnosis
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr186-candidate-runtime-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: >-
+      github.event.pull_request.number == 186 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DIAGNOSE_PR186_CANDIDATE_RUNTIME -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      PROJECT_REF: gwaliusblwrzisrwnsvs
+      WORKER_NAME: tattooai-preview
+      WORKER_URL: https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026
+      PRIOR_VERSION: 6231bd44-3d89-425e-b4c8-92d5f6b03dba
+      CANDIDATE_VERSION: 054ee809-919e-42b8-815d-778ddb652ba5
+      VLADIMIR_ORIGIN: https://vishar-booking-staging.pages.dev
+      KRISTINA_ORIGIN: https://agent-kristina-booking-crm-setup-kisa.vvetrov41.workers.dev
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed exact PR and stack guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 186
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.ref == "agent/kristina-crm-intake-staging"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains("<!-- DIAGNOSE_PR186_CANDIDATE_RUNTIME -->"))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify current stack and green normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/185" > "$RUNNER_TEMP/pr185.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/186" > "$RUNNER_TEMP/pr186.json"
+          base_sha="$(jq -r '.head.sha' "$RUNNER_TEMP/pr185.json")"
+          jq -e '.state == "open" and .draft == true and .merged == false and .head.ref == "agent/gpt-appointment-actions"' "$RUNNER_TEMP/pr185.json" >/dev/null
+          jq -e --arg sha "$APPROVED_SHA" --arg base "$base_sha" '
+            .state == "open" and .draft == true and .merged == false
+            and .base.ref == "agent/gpt-appointment-actions"
+            and .base.sha == $base
+            and .head.ref == "agent/kristina-crm-intake-staging"
+            and .head.sha == $sha
+          ' "$RUNNER_TEMP/pr186.json" >/dev/null
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Run reversible existing-version diagnosis
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing encrypted configuration name: $name" >&2; exit 1; }
+          done
+
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          evidence="$RUNNER_TEMP/pr186-candidate-runtime"
+          mkdir -p "$evidence"
+          candidate_activated=false
+          restored=false
+
+          active_version() {
+            curl --fail-with-body --silent --show-error "${auth[@]}" \
+              "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/deployments" > "$RUNNER_TEMP/deployments-current.json"
+            jq -e '.success == true' "$RUNNER_TEMP/deployments-current.json" >/dev/null
+            jq -r '(.result.deployments // .result)[0].versions[]? | select(.percentage == 100) | .version_id' "$RUNNER_TEMP/deployments-current.json" | head -n1
+          }
+
+          deploy_version() {
+            local version="$1"
+            local message="$2"
+            jq -n --arg version "$version" --arg message "$message" '{strategy:"percentage",versions:[{percentage:100,version_id:$version}],annotations:{"workers/message":$message,"workers/triggered_by":"deployment"}}' > "$RUNNER_TEMP/deployment-request.json"
+            curl --fail-with-body --silent --show-error "${auth[@]}" \
+              -X POST --data-binary "@$RUNNER_TEMP/deployment-request.json" \
+              "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/deployments?force=true" > "$RUNNER_TEMP/deployment-response.json"
+            jq -e '.success == true' "$RUNNER_TEMP/deployment-response.json" >/dev/null
+          }
+
+          db_state_ok() {
+            cat > "$RUNNER_TEMP/db-state.sql" <<'SQL'
+          select jsonb_build_object(
+            'latest_migration', (select max(version) from supabase_migrations.schema_migrations),
+            'vladimir', (select jsonb_build_object('allowed_origin',allowed_origin,'is_active',is_active) from public.booking_sources where source_key='vladimir-staging'),
+            'kristina', (select jsonb_build_object('allowed_origin',allowed_origin,'is_active',is_active) from public.booking_sources where source_key='kristina-website')
+          ) as state;
+          SQL
+            sed -i 's/^          //' "$RUNNER_TEMP/db-state.sql"
+            jq -Rs '{query:.}' < "$RUNNER_TEMP/db-state.sql" > "$RUNNER_TEMP/db-state-request.json"
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/db-state-request.json" \
+              "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" > "$RUNNER_TEMP/db-state-raw.json"
+            jq 'if type == "array" then . else .result end' "$RUNNER_TEMP/db-state-raw.json" > "$RUNNER_TEMP/db-state.json"
+            jq -e --arg vorig "$VLADIMIR_ORIGIN" '
+              length == 1
+              and .[0].state.latest_migration == "0034"
+              and .[0].state.vladimir.allowed_origin == $vorig
+              and .[0].state.vladimir.is_active == true
+              and .[0].state.kristina.allowed_origin == null
+              and .[0].state.kristina.is_active == false
+            ' "$RUNNER_TEMP/db-state.json" >/dev/null
+          }
+
+          restore() {
+            local status=$?
+            set +e
+            local current
+            current="$(active_version 2>/dev/null)"
+            if [ "$current" = "$CANDIDATE_VERSION" ]; then
+              if deploy_version "$PRIOR_VERSION" 'Restore PR186 retained staging after candidate runtime diagnosis'; then
+                sleep 2
+                [ "$(active_version)" = "$PRIOR_VERSION" ] && restored=true
+              fi
+            elif [ "$current" = "$PRIOR_VERSION" ]; then
+              restored=true
+            else
+              echo "Refusing to overwrite unknown concurrent Worker version: $current" >&2
+            fi
+
+            local vcode
+            vcode="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' -X OPTIONS -H "Origin: $VLADIMIR_ORIGIN" -H 'Access-Control-Request-Method: POST' "$WORKER_URL" 2>/dev/null)"
+            db_state_ok >/dev/null 2>&1
+            local db_ok=$?
+            jq -n --argjson restored "$restored" --arg active "$(active_version 2>/dev/null)" --arg vladimir_http "$vcode" --argjson db_unchanged "$([ "$db_ok" -eq 0 ] && echo true || echo false)" \
+              '{restored_prior_version:$restored,active_version_after:$active,vladimir_preflight_http:$vladimir_http,db_unchanged:$db_unchanged}' > "$evidence/restore.json"
+            if [ "$restored" != true ] || [ "$vcode" != 204 ] || [ "$db_ok" -ne 0 ]; then
+              exit 1
+            fi
+            exit "$status"
+          }
+          trap restore EXIT
+
+          db_state_ok
+          before="$(active_version)"
+          [ "$before" = "$PRIOR_VERSION" ] || { echo "Unexpected active Worker version before diagnosis: $before" >&2; exit 1; }
+
+          for version in "$PRIOR_VERSION" "$CANDIDATE_VERSION"; do
+            curl --fail-with-body --silent --show-error "${auth[@]}" \
+              "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions/$version" > "$RUNNER_TEMP/version-$version.json"
+            jq -e '.success == true' "$RUNNER_TEMP/version-$version.json" >/dev/null
+          done
+          prior_etag="$(jq -r '.result.resources.script.etag // ""' "$RUNNER_TEMP/version-$PRIOR_VERSION.json")"
+          candidate_etag="$(jq -r '.result.resources.script.etag // ""' "$RUNNER_TEMP/version-$CANDIDATE_VERSION.json")"
+
+          deploy_version "$CANDIDATE_VERSION" 'Temporary PR186 candidate runtime diagnosis'
+          candidate_activated=true
+          sleep 2
+          [ "$(active_version)" = "$CANDIDATE_VERSION" ] || { echo 'Candidate version did not become active.' >&2; exit 1; }
+
+          curl --fail-with-body --silent --show-error "${auth[@]}" \
+            -D "$RUNNER_TEMP/script-headers.txt" \
+            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME" > "$RUNNER_TEMP/active-script.bin"
+          script_sha="$(sha256sum "$RUNNER_TEMP/active-script.bin" | awk '{print $1}')"
+          script_bytes="$(wc -c < "$RUNNER_TEMP/active-script.bin" | tr -d ' ')"
+
+          probe() {
+            local label="$1"
+            local origin="$2"
+            local body="$RUNNER_TEMP/$label-body"
+            local headers="$RUNNER_TEMP/$label-headers"
+            local http content_type json_code acao
+            http="$(curl --silent --show-error --output "$body" --dump-header "$headers" --write-out '%{http_code}' -X OPTIONS -H "Origin: $origin" -H 'Access-Control-Request-Method: POST' "$WORKER_URL")"
+            content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers")"
+            acao="$(awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers")"
+            json_code="$(jq -r '.code // empty' "$body" 2>/dev/null || true)"
+            jq -n --arg http "$http" --arg content_type "$content_type" --arg json_code "$json_code" --arg acao "$acao" '{http_status:$http,content_type:$content_type,json_code:$json_code,access_control_allow_origin:$acao}'
+          }
+
+          probe vladimir "$VLADIMIR_ORIGIN" > "$RUNNER_TEMP/vladimir-probe.json"
+          probe kristina "$KRISTINA_ORIGIN" > "$RUNNER_TEMP/kristina-probe.json"
+
+          jq -n \
+            --arg exact_head "$APPROVED_SHA" \
+            --arg prior_version "$PRIOR_VERSION" \
+            --arg candidate_version "$CANDIDATE_VERSION" \
+            --arg prior_etag "$prior_etag" \
+            --arg candidate_etag "$candidate_etag" \
+            --arg script_sha256 "$script_sha" \
+            --argjson script_bytes "$script_bytes" \
+            --argjson contains_vladimir_origin "$([ "$(grep -aF -c "$VLADIMIR_ORIGIN" "$RUNNER_TEMP/active-script.bin")" -gt 0 ] && echo true || echo false)" \
+            --argjson contains_kristina_origin "$([ "$(grep -aF -c "$KRISTINA_ORIGIN" "$RUNNER_TEMP/active-script.bin")" -gt 0 ] && echo true || echo false)" \
+            --argjson contains_kristina_source "$([ "$(grep -aF -c 'kristina-website' "$RUNNER_TEMP/active-script.bin")" -gt 0 ] && echo true || echo false)" \
+            --argjson contains_vladimir_source "$([ "$(grep -aF -c 'vladimir-staging' "$RUNNER_TEMP/active-script.bin")" -gt 0 ] && echo true || echo false)" \
+            --argjson contains_origin_error "$([ "$(grep -aF -c 'origin_not_allowed' "$RUNNER_TEMP/active-script.bin")" -gt 0 ] && echo true || echo false)" \
+            --slurpfile vladimir "$RUNNER_TEMP/vladimir-probe.json" \
+            --slurpfile kristina "$RUNNER_TEMP/kristina-probe.json" \
+            '{exact_head:$exact_head,prior_version:$prior_version,candidate_version:$candidate_version,prior_script_etag:$prior_etag,candidate_script_etag:$candidate_etag,active_script_sha256:$script_sha256,active_script_bytes:$script_bytes,bundle_facts:{contains_vladimir_origin:$contains_vladimir_origin,contains_kristina_origin:$contains_kristina_origin,contains_vladimir_source:$contains_vladimir_source,contains_kristina_source:$contains_kristina_source,contains_origin_error_code:$contains_origin_error},probes:{vladimir:$vladimir[0],kristina:$kristina[0]},supabase_mutation_performed:false,production_targeted:false}' > "$evidence/diagnosis.json"
+
+          # Restore explicitly, then disable the EXIT trap after exact verification.
+          deploy_version "$PRIOR_VERSION" 'Restore PR186 retained staging after candidate runtime diagnosis'
+          sleep 2
+          [ "$(active_version)" = "$PRIOR_VERSION" ]
+          restored=true
+          db_state_ok
+          vcode="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' -X OPTIONS -H "Origin: $VLADIMIR_ORIGIN" -H 'Access-Control-Request-Method: POST' "$WORKER_URL")"
+          [ "$vcode" = 204 ]
+          jq -n --argjson restored true --arg active "$PRIOR_VERSION" --arg vladimir_http "$vcode" --argjson db_unchanged true '{restored_prior_version:$restored,active_version_after:$active,vladimir_preflight_http:$vladimir_http,db_unchanged:$db_unchanged}' > "$evidence/restore.json"
+          trap - EXIT
+          cat "$evidence/diagnosis.json"
+          cat "$evidence/restore.json"
+
+      - name: Upload safe diagnosis evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr186-candidate-runtime-diagnosis-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr186-candidate-runtime
+          if-no-files-found: warn
+          retention-days: 30

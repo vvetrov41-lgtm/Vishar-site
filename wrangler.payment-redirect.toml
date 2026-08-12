@@ -1,0 +1,8 @@
+name = "vishar-payment-redirect"
+main = "workers/payment-redirect.js"
+compatibility_date = "2026-08-01"
+workers_dev = false
+
+# Intentionally dormant: no routes, no environment target, and no secrets.
+# A staging or production deployment must be separately reviewed and must
+# provide the exact hosted SUPABASE_URL plus encrypted SUPABASE_SECRET_KEY.

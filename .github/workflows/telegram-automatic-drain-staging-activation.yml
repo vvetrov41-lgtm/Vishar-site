@@ -1,0 +1,191 @@
+name: Telegram automatic drain retained staging activation
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: telegram-automatic-drain-retained-staging-activation
+  cancel-in-progress: false
+
+jobs:
+  activate-and-verify:
+    name: Deploy scheduled Worker and verify two-artist automatic drain
+    if: >-
+      github.event.action == 'edited' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.number == 191 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'agent/kristina-telegram-parity' &&
+      github.event.pull_request.head.ref == 'agent/telegram-outbox-automatic-drain' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, format('<!-- RUN_TELEGRAM_AUTO_RUNTIME:{0} -->', github.event.pull_request.head.sha))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_BASE_SHA: 68b9d9eb08e7f9aa119fead893c22d031694ad5f
+      EXPECTED_BASE_BRANCH: agent/kristina-telegram-parity
+      EXPECTED_HEAD_BRANCH: agent/telegram-outbox-automatic-drain
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      KRISTINA_TELEGRAM_BOT_TOKEN: ${{ secrets.KRISTINA_TELEGRAM_BOT_TOKEN }}
+      KRISTINA_TELEGRAM_CHAT_ID: ${{ secrets.KRISTINA_TELEGRAM_CHAT_ID }}
+      PRODUCTION_TARGETED: 'false'
+
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          marker="<!-- RUN_TELEGRAM_AUTO_RUNTIME:${APPROVED_SHA} -->"
+          jq -e \
+            --arg sha "$APPROVED_SHA" \
+            --arg base_sha "$EXPECTED_BASE_SHA" \
+            --arg base "$EXPECTED_BASE_BRANCH" \
+            --arg head "$EXPECTED_HEAD_BRANCH" \
+            --arg marker "$marker" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 191
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == $base
+            and .pull_request.base.sha == $base_sha
+            and .pull_request.head.ref == $head
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains($marker))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+          [ "$PRODUCTION_TARGETED" = false ]
+
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact stack and successful normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "${EXPECTED_BASE_SHA}^{commit}")" = "$EXPECTED_BASE_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$APPROVED_SHA"
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/190" > "$RUNNER_TEMP/pr190.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/191" > "$RUNNER_TEMP/pr191.json"
+          jq -e --arg sha "$EXPECTED_BASE_SHA" '
+            .state == "open" and .draft == true and .merged == false
+            and .head.ref == "agent/kristina-telegram-parity" and .head.sha == $sha
+          ' "$RUNNER_TEMP/pr190.json" >/dev/null
+          jq -e \
+            --arg sha "$APPROVED_SHA" \
+            --arg base_sha "$EXPECTED_BASE_SHA" \
+            --arg base "$EXPECTED_BASE_BRANCH" \
+            --arg head "$EXPECTED_HEAD_BRANCH" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .state == "open" and .draft == true and .merged == false
+            and .base.ref == $base and .base.sha == $base_sha
+            and .head.ref == $head and .head.sha == $sha
+            and .head.repo.full_name == $repo
+          ' "$RUNNER_TEMP/pr191.json" >/dev/null
+
+          mkdir -p "$RUNNER_TEMP/telegram-automatic-drain-activation-evidence"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {id,name,event,status,conclusion,head_sha,html_url}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          jq -n --slurpfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
+            ["Static Validation", "CRM and booking validation"] as $required
+            | reduce $required[] as $name ({};
+                ($runs[0] | map(select(
+                  .name == $name and .event == "pull_request" and .head_sha == $sha
+                  and .status == "completed" and .conclusion == "success"
+                )) | sort_by(.id) | last) as $run
+                | if $run == null then error("missing exact-head normal CI: " + $name)
+                  else .[$name] = $run end
+              )
+          ' > "$RUNNER_TEMP/normal-ci-runs.json"
+          jq -r 'to_entries[].value.id' "$RUNNER_TEMP/normal-ci-runs.json" | while read -r run_id; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/${run_id}/jobs?per_page=100" \
+              --jq '{run_id:'"$run_id"',jobs:[.jobs[]|{id,name,status,conclusion}]}'
+          done | jq -s . > "$RUNNER_TEMP/normal-ci-jobs.json"
+          jq -e '
+            length == 2
+            and all(.[]; all(.jobs[]; .status == "completed" and .conclusion == "success"))
+          ' "$RUNNER_TEMP/normal-ci-jobs.json" >/dev/null
+          jq -n \
+            --argjson runs "$(cat "$RUNNER_TEMP/normal-ci-runs.json")" \
+            --argjson jobs "$(cat "$RUNNER_TEMP/normal-ci-jobs.json")" \
+            '{runs:$runs,jobs:$jobs}' \
+            > "$RUNNER_TEMP/telegram-automatic-drain-activation-evidence/normal-ci.json"
+
+      - name: Verify encrypted staging configuration names
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_URL SUPABASE_SECRET_KEY \
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID \
+            KRISTINA_TELEGRAM_BOT_TOKEN KRISTINA_TELEGRAM_CHAT_ID; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+          [ "${#missing[@]}" -eq 0 ] || {
+            printf 'Missing encrypted staging configuration names: %s\n' "$(IFS=,; echo "${missing[*]}")" >&2
+            exit 1
+          }
+          [ "$STAGING_SUPABASE_URL" = 'https://gwaliusblwrzisrwnsvs.supabase.co' ]
+          case "$SUPABASE_SECRET_KEY" in sb_secret_*) ;; *) exit 1 ;; esac
+          [ "$PRODUCTION_TARGETED" = false ]
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact locked dependencies
+        run: npm ci
+
+      - name: Recheck exact-head code before hosted activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/telegram-automatic-drain-staging-activation.sh
+          node --check scripts/run-telegram-automatic-drain-preflight.mjs
+          npm run test:worker
+          npm run test:booking
+          npm run scan:secrets
+          npm run check:worker-bundle
+          npm run check:telegram-drain-bundle
+
+      - name: Inspect cost, deploy Worker and verify two-artist automatic drain
+        shell: bash
+        run: bash scripts/telegram-automatic-drain-staging-activation.sh
+
+      - name: Upload safe activation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-automatic-drain-activation-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/telegram-automatic-drain-activation-evidence
+          if-no-files-found: warn
+          retention-days: 30
