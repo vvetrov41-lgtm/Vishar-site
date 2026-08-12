@@ -1,0 +1,14 @@
+name = "vishar-monzo-api"
+main = "workers/monzo-api.js"
+compatibility_date = "2026-08-01"
+workers_dev = false
+
+# Intentionally dormant. This file defines no route, cron, KV namespace id,
+# OAuth credential, token encryption key or Supabase secret.
+# A future staging activation must separately bind:
+# - MONZO_OAUTH_STATE (KV)
+# - MONZO_OAUTH_TOKENS (KV)
+# - MONZO_WEBHOOK_ROUTES (KV)
+# and encrypted Worker secrets/vars required by workers/monzo-api.js.
+# MONZO_WEBHOOK_REGISTRATION_ENABLED and MONZO_RECONCILIATION_ENABLED must stay
+# false until an exact staging activation is explicitly approved.
