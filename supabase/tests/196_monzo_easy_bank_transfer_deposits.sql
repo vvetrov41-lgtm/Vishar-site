@@ -43,7 +43,9 @@ insert into public.sessions (id, project_id, artist_id, status, start_at, end_at
   'c6611111-1111-4111-8111-111111111111',
   'c6511111-1111-4111-8111-111111111111',
   'a1111111-1111-4111-8111-111111111111',
-  'proposed', now() + interval '20 days', now() + interval '20 days 7 hours'
+  'proposed',
+  date_trunc('day', now()) + interval '20 days 10 hours',
+  date_trunc('day', now()) + interval '20 days 17 hours'
 );
 
 set local role authenticated;
