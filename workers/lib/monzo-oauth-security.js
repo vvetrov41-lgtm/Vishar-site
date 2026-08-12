@@ -50,8 +50,9 @@ export function monzoCrmReturnUrl(env) {
       || url.username
       || url.password
       || url.port
+      || url.pathname !== '/'
       || url.search
-      || url.hash
+      || url.hash !== '#/payments'
     ) {
       return '';
     }
@@ -119,13 +120,6 @@ export function assertMonzoOAuthCallbackConfiguration(env) {
 export function assertMonzoAccountConfiguration(env) {
   assertMonzoOAuthCallbackConfiguration(env);
   if (!env?.MONZO_WEBHOOK_ROUTES) throw new MonzoSecurityError('monzo_not_configured', 503);
-}
-
-export function assertMonzoWebhookRegistrationConfiguration(env) {
-  assertMonzoAccountConfiguration(env);
-  if (env?.MONZO_WEBHOOK_REGISTRATION_ENABLED !== 'true' || !monzoWebhookBaseUrl(env)) {
-    throw new MonzoSecurityError('monzo_webhook_registration_disabled', 503);
-  }
 }
 
 function base64Url(bytes) {
@@ -243,7 +237,6 @@ export function monzoReadiness(env) {
       webhookBase: Boolean(monzoWebhookBaseUrl(env)),
       artists,
     },
-    webhookRegistrationEnabled: env?.MONZO_WEBHOOK_REGISTRATION_ENABLED === 'true',
     reconciliationEnabled: env?.MONZO_RECONCILIATION_ENABLED === 'true',
   };
 }
