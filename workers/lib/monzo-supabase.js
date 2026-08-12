@@ -1,7 +1,6 @@
 import { readSupabaseConfig } from './supabase.js';
 
 const ALLOWED_MONZO_RPCS = new Set([
-  'set_monzo_api_connection_status',
   'register_monzo_reconciliation_candidate',
 ]);
 
