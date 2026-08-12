@@ -85,7 +85,7 @@ grant select on first_request to authenticated, service_role;
 
 select is((select (result ->> 'amount')::numeric from first_request), 250::numeric,
   'the one-action deposit request is always GBP 250');
-select like((select result ->> 'public_path' from first_request), '/pay-by-bank-transfer/%',
+select ok((select result ->> 'public_path' from first_request) like '/pay-by-bank-transfer/%',
   'the client-facing path contains only the payment route and opaque id');
 select is((select result ->> 'delivery_status' from first_request), 'queued_provider_not_connected',
   'email is queued honestly while no provider is connected');
