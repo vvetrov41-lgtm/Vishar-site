@@ -1,0 +1,529 @@
+name: PR 186 Kristina retained intake staging v2
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr186-kristina-retained-intake-staging-v2
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-verify:
+    if: >-
+      github.event.pull_request.number == 186 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DEPLOY_PR186_KRISTINA_INTAKE_STAGING_V2 -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      PROJECT_REF: gwaliusblwrzisrwnsvs
+      WORKER_NAME: tattooai-preview
+      WORKER_URL: https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026
+      VLADIMIR_ORIGIN: https://vishar-booking-staging.pages.dev
+      KRISTINA_ORIGIN: https://agent-kristina-booking-crm-setup-kisa.vvetrov41.workers.dev
+      VLADIMIR_ID: a1111111-1111-4111-8111-111111111111
+      KRISTINA_ID: a2222222-2222-4222-8222-222222222222
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+
+    steps:
+      - name: Fail-closed PR and stack guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 186
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.ref == "agent/kristina-crm-intake-staging"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains("<!-- DEPLOY_PR186_KRISTINA_INTAKE_STAGING_V2 -->"))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head, stack and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/185" > "$RUNNER_TEMP/pr185.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/186" > "$RUNNER_TEMP/pr186.json"
+          base_sha="$(jq -r '.head.sha' "$RUNNER_TEMP/pr185.json")"
+
+          jq -e '
+            .state == "open" and .draft == true and .merged == false
+            and .head.ref == "agent/gpt-appointment-actions"
+          ' "$RUNNER_TEMP/pr185.json" >/dev/null
+          jq -e --arg sha "$APPROVED_SHA" --arg base "$base_sha" '
+            .state == "open" and .draft == true and .merged == false
+            and .base.ref == "agent/gpt-appointment-actions"
+            and .base.sha == $base
+            and .head.ref == "agent/kristina-crm-intake-staging"
+            and .head.sha == $sha
+          ' "$RUNNER_TEMP/pr186.json" >/dev/null
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify staging-only encrypted configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_URL CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_EDGE_READ_TOKEN; do
+            [ -n "${!name:-}" ] || {
+              echo "Missing encrypted staging configuration name: $name" >&2
+              exit 1
+            }
+          done
+          [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ] || {
+            echo 'STAGING_SUPABASE_URL is not the retained staging project.' >&2
+            exit 1
+          }
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Prepare and verify exact preview Worker boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp wrangler.toml "$RUNNER_TEMP/wrangler.preview.toml"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p = Path(os.environ['RUNNER_TEMP']) / 'wrangler.preview.toml'
+          text = p.read_text(encoding='utf-8')
+          old = 'main = "workers/tattooai.js"'
+          new = 'main = "workers/preview.js"'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one production Worker entrypoint')
+          p.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          grep -Fx 'workers_dev = false' "$RUNNER_TEMP/wrangler.preview.toml"
+          ! grep -Eq '^(route|routes)[[:space:]]*=' "$RUNNER_TEMP/wrangler.preview.toml"
+
+          npx wrangler secret list --config "$RUNNER_TEMP/wrangler.preview.toml" --env preview --format json \
+            > "$RUNNER_TEMP/intake-secrets-before.json"
+          jq -e '[.[].name] | index("SUPABASE_SECRET_KEY") != null' "$RUNNER_TEMP/intake-secrets-before.json" >/dev/null
+          jq -e '[.[].name] | index("ARTIST_TELEGRAM_VLADIMIR_HSTAGING") != null' "$RUNNER_TEMP/intake-secrets-before.json" >/dev/null
+          jq -e '[.[].name] | index("TELEGRAM_BOT_TOKEN") == null and index("TELEGRAM_CHAT_ID") == null' "$RUNNER_TEMP/intake-secrets-before.json" >/dev/null
+
+      - name: Verify retained staging routing state before mutation
+        id: db_before
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql_file="$RUNNER_TEMP/preflight.sql"
+          request_file="$RUNNER_TEMP/preflight-request.json"
+          raw_file="$RUNNER_TEMP/preflight-raw.json"
+          rows_file="$RUNNER_TEMP/preflight-rows.json"
+          cat > "$sql_file" <<SQL
+          select jsonb_build_object(
+            'latest_migration', (select max(version) from supabase_migrations.schema_migrations),
+            'vladimir_source', (
+              select jsonb_build_object('artist_id', artist_id, 'allowed_origin', allowed_origin, 'form_version', form_version, 'is_active', is_active)
+              from public.booking_sources where source_key='vladimir-staging'
+            ),
+            'kristina_source', (
+              select jsonb_build_object('artist_id', artist_id, 'allowed_origin', allowed_origin, 'form_version', form_version, 'is_active', is_active)
+              from public.booking_sources where source_key='kristina-website'
+            ),
+            'kristina_telegram_enabled', (
+              select count(*) from public.artist_integrations
+              where artist_id='$KRISTINA_ID' and integration_type='telegram' and is_enabled
+            )
+          ) as state;
+          SQL
+          sed -i 's/^          //' "$sql_file"
+          jq -Rs '{query: .}' < "$sql_file" > "$request_file"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$request_file" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" > "$raw_file"
+          jq -e 'if type == "array" then true else ((.error // null) == null and (.result // null) != null) end' "$raw_file" >/dev/null
+          jq 'if type == "array" then . else .result end' "$raw_file" > "$rows_file"
+
+          jq -e --arg vladimir "$VLADIMIR_ID" --arg vorig "$VLADIMIR_ORIGIN" --arg kristina "$KRISTINA_ID" --arg korig "$KRISTINA_ORIGIN" '
+            length == 1
+            and .[0].state.latest_migration == "0034"
+            and .[0].state.vladimir_source.artist_id == $vladimir
+            and .[0].state.vladimir_source.allowed_origin == $vorig
+            and .[0].state.vladimir_source.form_version == "booking-v1"
+            and .[0].state.vladimir_source.is_active == true
+            and .[0].state.kristina_source.artist_id == $kristina
+            and .[0].state.kristina_source.form_version == "booking-v1"
+            and (
+              (.[0].state.kristina_source.allowed_origin == null and .[0].state.kristina_source.is_active == false)
+              or
+              (.[0].state.kristina_source.allowed_origin == $korig and .[0].state.kristina_source.is_active == true)
+            )
+            and .[0].state.kristina_telegram_enabled == 0
+          ' "$rows_file" >/dev/null
+          echo "kristina_was_active=$(jq -r '.[0].state.kristina_source.is_active' "$rows_file")" >> "$GITHUB_OUTPUT"
+
+      - name: Read and fingerprint edge controls before mutation
+        id: edge_before
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+
+          curl --fail --silent --show-error "${auth[@]}" "$api/zones?name=vishartattoo.com" > "$RUNNER_TEMP/zone.json"
+          zone_id="$(jq -r '.result[0].id // empty' "$RUNNER_TEMP/zone.json")"
+          [ -n "$zone_id" ] || {
+            echo 'Cloudflare zone was not readable.' >&2
+            exit 1
+          }
+
+          curl --fail --silent --show-error "${auth[@]}" "$api/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$RUNNER_TEMP/waf-before.json"
+          curl --fail --silent --show-error "${auth[@]}" "$api/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" > "$RUNNER_TEMP/ratelimit-before.json"
+          curl --fail --silent --show-error "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/services/$WORKER_NAME/environments/production/subdomain" > "$RUNNER_TEMP/subdomain-before.json"
+
+          waf_count="$(jq '[.result.rules[]? | select(.enabled == true and ((.expression // "") | contains("intake-staging.vishartattoo.com")))] | length' "$RUNNER_TEMP/waf-before.json")"
+          rate_count="$(jq '[.result.rules[]? | select(.enabled == true and ((.expression // "") | contains("intake-staging.vishartattoo.com")))] | length' "$RUNNER_TEMP/ratelimit-before.json")"
+          subdomain_enabled="$(jq -r '.result.enabled // "missing"' "$RUNNER_TEMP/subdomain-before.json")"
+          previews_enabled="$(jq -r '.result.previews_enabled // "missing"' "$RUNNER_TEMP/subdomain-before.json")"
+
+          echo "EDGE_WAF_HOST_RULES=$waf_count"
+          echo "EDGE_RATE_HOST_RULES=$rate_count"
+          echo "EDGE_WORKERS_DEV_ENABLED=$subdomain_enabled"
+          echo "EDGE_PREVIEWS_ENABLED=$previews_enabled"
+
+          [ "$waf_count" -gt 0 ] || {
+            echo 'No enabled WAF rule references the retained intake staging hostname.' >&2
+            exit 1
+          }
+          [ "$rate_count" -gt 0 ] || {
+            echo 'No enabled rate-limit rule references the retained intake staging hostname.' >&2
+            exit 1
+          }
+          [ "$subdomain_enabled" = false ] || {
+            echo 'workers.dev is enabled for the retained intake Worker.' >&2
+            exit 1
+          }
+          [ "$previews_enabled" = false ] || {
+            echo 'Worker preview URLs are enabled for the retained intake Worker.' >&2
+            exit 1
+          }
+
+          waf_hash="$(sha256sum "$RUNNER_TEMP/waf-before.json" | awk '{print $1}')"
+          rate_hash="$(sha256sum "$RUNNER_TEMP/ratelimit-before.json" | awk '{print $1}')"
+          echo "zone_id=$zone_id" >> "$GITHUB_OUTPUT"
+          echo "waf_hash=$waf_hash" >> "$GITHUB_OUTPUT"
+          echo "rate_hash=$rate_hash" >> "$GITHUB_OUTPUT"
+          echo "waf_count=$waf_count" >> "$GITHUB_OUTPUT"
+          echo "rate_count=$rate_count" >> "$GITHUB_OUTPUT"
+
+      - name: Activate exact Kristina booking source in retained staging
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql_file="$RUNNER_TEMP/activate.sql"
+          request_file="$RUNNER_TEMP/activate-request.json"
+          raw_file="$RUNNER_TEMP/activate-raw.json"
+          rows_file="$RUNNER_TEMP/activate-rows.json"
+          cat > "$sql_file" <<SQL
+          update public.booking_sources
+          set allowed_origin='$KRISTINA_ORIGIN', form_version='booking-v1', is_active=true
+          where source_key='kristina-website' and artist_id='$KRISTINA_ID'
+          returning source_key, artist_id, allowed_origin, form_version, is_active;
+          SQL
+          sed -i 's/^          //' "$sql_file"
+          jq -Rs '{query: .}' < "$sql_file" > "$request_file"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$request_file" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" > "$raw_file"
+          jq -e 'if type == "array" then true else ((.error // null) == null and (.result // null) != null) end' "$raw_file" >/dev/null
+          jq 'if type == "array" then . else .result end' "$raw_file" > "$rows_file"
+          jq -e --arg kristina "$KRISTINA_ID" --arg origin "$KRISTINA_ORIGIN" '
+            length == 1
+            and .[0].source_key == "kristina-website"
+            and .[0].artist_id == $kristina
+            and .[0].allowed_origin == $origin
+            and .[0].form_version == "booking-v1"
+            and .[0].is_active == true
+          ' "$rows_file" >/dev/null
+
+      - name: Dry-run exact preview Worker bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/intake-dry-run"
+          npx wrangler deploy \
+            --config "$RUNNER_TEMP/wrangler.preview.toml" \
+            --env preview \
+            --dry-run \
+            --outdir "$RUNNER_TEMP/intake-dry-run" \
+            --var VISHAR_ENVIRONMENT:preview \
+            --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+            --var ALLOWED_ORIGINS:"$VLADIMIR_ORIGIN,$KRISTINA_ORIGIN"
+
+      - name: Deploy exact retained staging intake Worker
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy \
+            --config "$RUNNER_TEMP/wrangler.preview.toml" \
+            --env preview \
+            --var VISHAR_ENVIRONMENT:preview \
+            --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+            --var ALLOWED_ORIGINS:"$VLADIMIR_ORIGIN,$KRISTINA_ORIGIN" \
+            2>&1 | tee "$RUNNER_TEMP/intake-deploy.txt"
+          npx wrangler deployments list --config "$RUNNER_TEMP/wrangler.preview.toml" --env preview --json \
+            > "$RUNNER_TEMP/intake-deployments.json"
+
+          npx wrangler secret list --config "$RUNNER_TEMP/wrangler.preview.toml" --env preview --format json \
+            > "$RUNNER_TEMP/intake-secrets-after.json"
+          jq -e '[.[].name] | index("SUPABASE_SECRET_KEY") != null' "$RUNNER_TEMP/intake-secrets-after.json" >/dev/null
+          jq -e '[.[].name] | index("ARTIST_TELEGRAM_VLADIMIR_HSTAGING") != null' "$RUNNER_TEMP/intake-secrets-after.json" >/dev/null
+          jq -e '[.[].name] | index("TELEGRAM_BOT_TOKEN") == null and index("TELEGRAM_CHAT_ID") == null' "$RUNNER_TEMP/intake-secrets-after.json" >/dev/null
+
+      - name: Run Kristina routed synthetic intake E2E
+        id: e2e
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/pr186-v2-evidence"
+          mkdir -p "$evidence"
+
+          for origin in "$VLADIMIR_ORIGIN" "$KRISTINA_ORIGIN"; do
+            code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              -X OPTIONS -H "Origin: $origin" -H 'Access-Control-Request-Method: POST' "$WORKER_URL")"
+            [ "$code" = 204 ] || {
+              echo "Trusted staging preflight failed with HTTP $code" >&2
+              exit 1
+            }
+          done
+
+          wrong_key="$(python3 - <<'PY'
+          import uuid
+          print(uuid.uuid4())
+          PY
+          )"
+          wrong_code="$(curl --silent --show-error --output "$evidence/wrong-origin.json" --write-out '%{http_code}' \
+            -X POST -H 'Origin: https://evil.example' \
+            -F "idempotencyKey=$wrong_key" -F 'name=PR186 Synthetic Wrong Origin' \
+            -F 'email=pr186-wrong@example.invalid' -F 'preferredReply=Email' \
+            -F 'projectType=Black and grey realism' -F 'placement=Forearm' -F 'size=15 cm' \
+            -F 'coverUp=No' -F 'idea=Synthetic wrong-origin rejection check.' \
+            -F 'privacyAcknowledged=true' -F 'privacyNoticeVersion=2026-07-29' \
+            "$WORKER_URL")"
+          [ "$wrong_code" = 403 ] || {
+            echo "Wrong Origin was not rejected, HTTP $wrong_code" >&2
+            exit 1
+          }
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          Path(os.environ['RUNNER_TEMP'], 'synthetic-reference.png').write_bytes(
+              bytes.fromhex('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000000020001e221bc330000000049454e44ae426082')
+          )
+          PY
+
+          intake_key="$(python3 - <<'PY'
+          import uuid
+          print(uuid.uuid4())
+          PY
+          )"
+          curl --fail-with-body --silent --show-error \
+            -H "Origin: $KRISTINA_ORIGIN" \
+            -F "idempotencyKey=$intake_key" \
+            -F "name=PR186 Synthetic Kristina ${GITHUB_RUN_ID}" \
+            -F "email=pr186-${GITHUB_RUN_ID}@example.invalid" \
+            -F 'phone=' -F 'instagram=' -F 'preferredReply=Email' -F 'travellingFrom=London' \
+            -F 'projectType=Black and grey realism' -F 'placement=Outer forearm' -F 'size=18 cm' \
+            -F 'coverUp=No' -F 'timing=Flexible' \
+            -F 'idea=Synthetic Kristina retained staging intake routing validation.' \
+            -F 'website=' -F 'source=kristinavishar.com/#booking' -F "landingPage=$KRISTINA_ORIGIN/#booking" \
+            -F 'referrer=' -F 'utmSource=pr186-staging' -F 'utmMedium=synthetic' \
+            -F 'privacyAcknowledged=true' -F 'privacyNoticeVersion=2026-07-29' \
+            -F "artist_id=$VLADIMIR_ID" \
+            -F 'integration_key=vladimir-staging' \
+            -F 'provider_account=forbidden-browser-route' \
+            -F 'payment_destination=forbidden-browser-route' \
+            -F "references=@${RUNNER_TEMP}/synthetic-reference.png;type=image/png" \
+            "$WORKER_URL" > "$evidence/kristina-response.json"
+          jq -e '.ok == true and (.reference | type == "string")' "$evidence/kristina-response.json" >/dev/null
+          reference="$(jq -r '.reference' "$evidence/kristina-response.json")"
+
+          sql_file="$RUNNER_TEMP/e2e.sql"
+          request_file="$RUNNER_TEMP/e2e-request.json"
+          raw_file="$RUNNER_TEMP/e2e-raw.json"
+          rows_file="$RUNNER_TEMP/e2e-rows.json"
+          cat > "$sql_file" <<SQL
+          select jsonb_build_object(
+            'wrong_origin_rows', (select count(*) from public.enquiries where idempotency_key='$wrong_key'::uuid),
+            'reference', e.reference_number,
+            'artist_id', e.artist_id,
+            'source_key', s.source_key,
+            'intake_state', e.intake_state,
+            'ready_files', (select count(*) from public.enquiry_files f where f.enquiry_id=e.id and f.upload_state='ready'),
+            'storage_objects', (
+              select count(*) from storage.objects o
+              where o.bucket_id='crm-files'
+                and o.name in (select f.storage_path from public.enquiry_files f where f.enquiry_id=e.id)
+            ),
+            'outbox_rows', (select count(*) from public.integration_outbox o where o.enquiry_id=e.id and o.artist_id='$KRISTINA_ID'),
+            'provider_route_unavailable', (
+              select count(*) from public.integration_outbox o
+              where o.enquiry_id=e.id and o.artist_id='$KRISTINA_ID'
+                and o.status='failed' and o.last_error_code='provider_route_unavailable'
+            ),
+            'kristina_telegram_enabled', (
+              select count(*) from public.artist_integrations i
+              where i.artist_id='$KRISTINA_ID' and i.integration_type='telegram' and i.is_enabled
+            )
+          ) as evidence
+          from public.enquiries e
+          join public.booking_sources s on s.id=e.booking_source_id
+          where e.reference_number='$reference';
+          SQL
+          sed -i 's/^          //' "$sql_file"
+          jq -Rs '{query: .}' < "$sql_file" > "$request_file"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$request_file" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" > "$raw_file"
+          jq -e 'if type == "array" then true else ((.error // null) == null and (.result // null) != null) end' "$raw_file" >/dev/null
+          jq 'if type == "array" then . else .result end' "$raw_file" > "$rows_file"
+          jq -e --arg reference "$reference" --arg kristina "$KRISTINA_ID" '
+            length == 1
+            and .[0].evidence.wrong_origin_rows == 0
+            and .[0].evidence.reference == $reference
+            and .[0].evidence.artist_id == $kristina
+            and .[0].evidence.source_key == "kristina-website"
+            and .[0].evidence.intake_state == "complete"
+            and .[0].evidence.ready_files == 1
+            and .[0].evidence.storage_objects == 1
+            and .[0].evidence.outbox_rows >= 1
+            and .[0].evidence.provider_route_unavailable >= 1
+            and .[0].evidence.kristina_telegram_enabled == 0
+          ' "$rows_file" >/dev/null
+
+          jq -n --arg sha "$APPROVED_SHA" --arg reference "$reference" --argjson run "$GITHUB_RUN_ID" '{
+            exact_head: $sha,
+            run_id: $run,
+            kristina_reference: $reference,
+            artist_id: "a2222222-2222-4222-8222-222222222222",
+            source_key: "kristina-website",
+            intake_state: "complete",
+            ready_files: 1,
+            storage_objects: 1,
+            wrong_origin_rows: 0,
+            browser_routing_fields_ignored: true,
+            crm_side_telegram_enabled: false,
+            production_targeted: false
+          }' > "$evidence/summary.json"
+
+      - name: Reverify edge controls are unchanged after deploy
+        id: edge_after
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          zone_id='${{ steps.edge_before.outputs.zone_id }}'
+          [ -n "$zone_id" ]
+
+          curl --fail --silent --show-error "${auth[@]}" "$api/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$RUNNER_TEMP/waf-after.json"
+          curl --fail --silent --show-error "${auth[@]}" "$api/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" > "$RUNNER_TEMP/ratelimit-after.json"
+          curl --fail --silent --show-error "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/services/$WORKER_NAME/environments/production/subdomain" > "$RUNNER_TEMP/subdomain-after.json"
+
+          waf_count="$(jq '[.result.rules[]? | select(.enabled == true and ((.expression // "") | contains("intake-staging.vishartattoo.com")))] | length' "$RUNNER_TEMP/waf-after.json")"
+          rate_count="$(jq '[.result.rules[]? | select(.enabled == true and ((.expression // "") | contains("intake-staging.vishartattoo.com")))] | length' "$RUNNER_TEMP/ratelimit-after.json")"
+          [ "$waf_count" = '${{ steps.edge_before.outputs.waf_count }}' ] || {
+            echo 'WAF host-rule count changed during Worker deployment.' >&2
+            exit 1
+          }
+          [ "$rate_count" = '${{ steps.edge_before.outputs.rate_count }}' ] || {
+            echo 'Rate-limit host-rule count changed during Worker deployment.' >&2
+            exit 1
+          }
+          [ "$(sha256sum "$RUNNER_TEMP/waf-after.json" | awk '{print $1}')" = '${{ steps.edge_before.outputs.waf_hash }}' ] || {
+            echo 'WAF configuration changed during Worker deployment.' >&2
+            exit 1
+          }
+          [ "$(sha256sum "$RUNNER_TEMP/ratelimit-after.json" | awk '{print $1}')" = '${{ steps.edge_before.outputs.rate_hash }}' ] || {
+            echo 'Rate-limit configuration changed during Worker deployment.' >&2
+            exit 1
+          }
+          jq -e '.result.enabled == false and .result.previews_enabled == false' "$RUNNER_TEMP/subdomain-after.json" >/dev/null || {
+            echo 'workers.dev or Worker preview URLs became enabled.' >&2
+            exit 1
+          }
+
+      - name: Roll back Kristina source activation if verification failed
+        if: failure() && steps.metadata.outcome == 'success' && steps.db_before.outputs.kristina_was_active == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql_file="$RUNNER_TEMP/rollback.sql"
+          request_file="$RUNNER_TEMP/rollback-request.json"
+          raw_file="$RUNNER_TEMP/rollback-raw.json"
+          cat > "$sql_file" <<SQL
+          update public.booking_sources
+          set allowed_origin=null, form_version='booking-v1', is_active=false
+          where source_key='kristina-website' and artist_id='$KRISTINA_ID';
+          SQL
+          sed -i 's/^          //' "$sql_file"
+          jq -Rs '{query: .}' < "$sql_file" > "$request_file"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$request_file" \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" > "$raw_file"
+          jq -e 'if type == "array" then true else ((.error // null) == null and (.result // null) != null) end' "$raw_file" >/dev/null
+
+      - name: Upload safe retained-staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr186-kristina-intake-staging-v2-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr186-v2-evidence
+          if-no-files-found: warn
+          retention-days: 30

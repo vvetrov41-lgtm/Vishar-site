@@ -1,0 +1,182 @@
+name: PR 185 GPT OAuth edge recovery
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-oauth-edge-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover-edge:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- RECOVER_PR185_GPT_OAUTH_EDGE -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      TARGET_ZONE: vishartattoo.com
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+      WORKER_NAME: vishar-gpt-actions-staging
+      CLOUDFLARE_ZONE_LOOKUP_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ZONE_WAF_WRITE_TOKEN: ${{ secrets.CLOUDFLARE_ZONE_WAF_WRITE_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- RECOVER_PR185_GPT_OAUTH_EDGE -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Inspect plan and remove only the stale staging WAF rule
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_ZONE_LOOKUP_TOKEN CLOUDFLARE_EDGE_READ_TOKEN CLOUDFLARE_ZONE_WAF_WRITE_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing staging configuration name: $name" >&2; exit 1; }
+          done
+          [ "$TARGET_ZONE" = "vishartattoo.com" ]
+          [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
+          [ "$WORKER_NAME" = "vishar-gpt-actions-staging" ]
+
+          lookup_auth=(-H "Authorization: Bearer $CLOUDFLARE_ZONE_LOOKUP_TOKEN" -H 'Content-Type: application/json')
+          edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          waf_write_auth=(-H "Authorization: Bearer $CLOUDFLARE_ZONE_WAF_WRITE_TOKEN" -H 'Content-Type: application/json')
+          safe="$RUNNER_TEMP/recovery-evidence.txt"
+          zone_json="$RUNNER_TEMP/zone.json"
+          routes_json="$RUNNER_TEMP/routes.json"
+          domains_json="$RUNNER_TEMP/domains.json"
+          waf_json="$RUNNER_TEMP/waf.json"
+          rate_json="$RUNNER_TEMP/rate.json"
+          delete_json="$RUNNER_TEMP/delete.json"
+          waf_after_json="$RUNNER_TEMP/waf-after.json"
+
+          zone_status="$(curl --silent --show-error -o "$zone_json" -w '%{http_code}' "${lookup_auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" || true)"
+          [ "$zone_status" = 200 ] || { echo "Zone lookup failed, HTTP $zone_status." >&2; exit 1; }
+          zone_id="$(jq -r --arg name "$TARGET_ZONE" '[.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end' "$zone_json")"
+          [ -n "$zone_id" ] || { echo 'Exact Cloudflare zone was not resolved.' >&2; exit 1; }
+          plan_name="$(jq -r --arg name "$TARGET_ZONE" '[.result[] | select(.name == $name)] | .[0].plan.name // "unknown"' "$zone_json" | tr '\n\r=' '   ')"
+          plan_legacy_id="$(jq -r --arg name "$TARGET_ZONE" '[.result[] | select(.name == $name)] | .[0].plan.legacy_id // "unknown"' "$zone_json" | tr '\n\r=' '   ')"
+
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes" > "$routes_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > "$domains_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$waf_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" > "$rate_json"
+
+          worker_routes="$(jq --arg worker "$WORKER_NAME" '[.result[]? | select((.script // "") == $worker)] | length' "$routes_json")"
+          target_routes="$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.pattern // "") | contains($host))] | length' "$routes_json")"
+          target_domains="$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.hostname == $host)] | length' "$domains_json")"
+          rate_target="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$rate_json")"
+
+          expected_waf_expression='(http.host eq "gpt-actions-staging.vishartattoo.com" and not ((http.request.method eq "GET" and (http.request.uri.path eq "/oauth/authorize" or http.request.uri.path eq "/oauth/authorize/" or http.request.uri.path eq "/privacy" or http.request.uri.path eq "/privacy/")) or (http.request.method eq "HEAD" and (http.request.uri.path eq "/privacy" or http.request.uri.path eq "/privacy/")) or (http.request.method eq "POST" and (http.request.uri.path eq "/oauth/token" or http.request.uri.path eq "/oauth/token/"))))'
+          host_waf_count="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$waf_json")"
+          exact_waf_count="$(jq --arg expression "$expected_waf_expression" '[.result.rules[]? | select(.description == "Vishar GPT OAuth staging path boundary" and .expression == $expression)] | length' "$waf_json")"
+
+          [ "$worker_routes" = 0 ] || { echo 'Worker has an unexpected route binding; refusing recovery.' >&2; exit 1; }
+          [ "$target_routes" = 0 ] || { echo 'Target host appears in a Worker route; refusing recovery.' >&2; exit 1; }
+          [ "$target_domains" = 0 ] || { echo 'Target custom domain exists; refusing WAF-only recovery.' >&2; exit 1; }
+          [ "$rate_target" = 0 ] || { echo 'Target rate-limit rule exists; refusing WAF-only recovery.' >&2; exit 1; }
+          [ "$host_waf_count" = 1 ] || { echo "Expected exactly one target-host WAF rule, found $host_waf_count." >&2; exit 1; }
+          [ "$exact_waf_count" = 1 ] || { echo 'Target-host WAF rule does not exactly match the failed staging activation rule.' >&2; exit 1; }
+
+          waf_ruleset_id="$(jq -r '.result.id // empty' "$waf_json")"
+          waf_rule_id="$(jq -r --arg expression "$expected_waf_expression" '.result.rules[]? | select(.description == "Vishar GPT OAuth staging path boundary" and .expression == $expression) | .id' "$waf_json")"
+          [ -n "$waf_ruleset_id" ]
+          [ -n "$waf_rule_id" ]
+
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_zone=$TARGET_ZONE
+          target_host=$TARGET_HOST
+          zone_plan_name=$plan_name
+          zone_plan_legacy_id=$plan_legacy_id
+          pre_worker_route_binding_count=$worker_routes
+          pre_target_route_count=$target_routes
+          pre_target_custom_domain_count=$target_domains
+          pre_target_rate_rule_count=$rate_target
+          pre_target_waf_rule_count=$host_waf_count
+          exact_failed_waf_rule_count=$exact_waf_count
+          cleanup_attempted=false
+          cleanup_delete_status=not_attempted
+          post_target_waf_rule_count=unknown
+          cloudflare_mutated=false
+          production_targeted=false
+          EOF
+
+          delete_status="$(curl --silent --show-error -o "$delete_json" -w '%{http_code}' "${waf_write_auth[@]}" -X DELETE \
+            "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$waf_ruleset_id/rules/$waf_rule_id" || true)"
+          delete_errors="none"
+          if [ "$delete_status" != 200 ]; then
+            delete_errors="$(jq -r '[.errors[]? | ((.code // "unknown")|tostring) + ":" + (.message // "unknown")] | if length == 0 then "none" else join(" | ") end' "$delete_json" 2>/dev/null | tr '\n\r=' '   ')"
+          fi
+
+          sed -i 's/^cleanup_attempted=.*/cleanup_attempted=true/' "$safe"
+          sed -i "s/^cleanup_delete_status=.*/cleanup_delete_status=$delete_status/" "$safe"
+          if [ "$delete_status" != 200 ]; then
+            printf 'cleanup_delete_errors=%s\n' "$delete_errors" >> "$safe"
+            cat "$safe"
+            echo "Staging WAF cleanup failed, HTTP $delete_status: $delete_errors" >&2
+            exit 1
+          fi
+
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$waf_after_json"
+          post_waf_count="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$waf_after_json")"
+          sed -i "s/^post_target_waf_rule_count=.*/post_target_waf_rule_count=$post_waf_count/" "$safe"
+          sed -i 's/^cloudflare_mutated=.*/cloudflare_mutated=true/' "$safe"
+          cat "$safe"
+          [ "$post_waf_count" = 0 ] || { echo 'Target WAF rule remains after successful delete response.' >&2; exit 1; }
+
+      - name: Upload safe recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-oauth-edge-recovery-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/recovery-evidence.txt
+          if-no-files-found: warn
+          retention-days: 30

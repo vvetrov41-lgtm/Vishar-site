@@ -1,0 +1,168 @@
+name: PR 185 CRM OAuth consent staging
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-crm-oauth-consent-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy-crm-oauth-consent:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DEPLOY_PR185_CRM_OAUTH_CONSENT_STAGING -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- DEPLOY_PR185_CRM_OAUTH_CONSENT_STAGING -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify staging-only browser configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ]
+          case "$STAGING_SUPABASE_PUBLISHABLE_KEY" in
+            sb_publishable_*) ;;
+            *) echo 'Staging browser key is not publishable' >&2; exit 1 ;;
+          esac
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Verify OAuth consent implementation exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/src/pages/OAuthConsentPage.tsx
+          test -f admin/src/lib/oauth-consent-api.ts
+          grep -Fq '/oauth/consent' admin/src/App.tsx
+          grep -Fq 'getAuthorizationDetails' admin/src/lib/oauth-consent-api.ts
+          grep -Fq 'approveAuthorization' admin/src/lib/oauth-consent-api.ts
+          grep -Fq 'denyAuthorization' admin/src/lib/oauth-consent-api.ts
+          grep -Fq 'get_gpt_action_consent_summary' admin/src/lib/oauth-consent-api.ts
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install locked CRM dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Test typecheck and build exact CRM artifact
+        working-directory: admin
+        env:
+          VITE_SUPABASE_URL: ${{ env.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify private staging artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$STAGING_SUPABASE_URL" admin/dist
+          grep -R -Fq "$STAGING_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          if grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{20,}' admin/dist; then
+            echo 'Secret-key-shaped value found in CRM browser artifact' >&2
+            exit 1
+          fi
+          if grep -R -E -q 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}' admin/dist; then
+            echo 'JWT-shaped value found in CRM browser artifact' >&2
+            exit 1
+          fi
+
+      - name: Deploy exact CRM artifact to retained staging Pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler pages deploy admin/dist \
+            --project-name vishar-crm-staging \
+            --branch main \
+            --commit-hash "$APPROVED_SHA" \
+            --commit-dirty=false
+
+      - name: Record safe deployment evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/pr185-crm-boundary.txt" <<EOF
+          exact_sha=$APPROVED_SHA
+          pages_project=vishar-crm-staging
+          oauth_consent_path=/oauth/consent
+          supabase_project_ref=gwaliusblwrzisrwnsvs
+          production_targeted=false
+          oauth_server_settings_changed=false
+          EOF
+
+      - name: Upload safe deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-crm-oauth-consent-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr185-crm-boundary.txt
+          if-no-files-found: warn
+          retention-days: 30

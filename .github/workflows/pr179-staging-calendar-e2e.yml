@@ -1,0 +1,105 @@
+name: PR 179 retained staging calendar foundation
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr177-retained-staging-mutation
+  cancel-in-progress: false
+
+jobs:
+  retained-staging-calendar:
+    if: >-
+      github.event.action == 'edited' &&
+      contains(github.event.pull_request.body, '<!-- RUN_PR179_STAGING_0028 -->') &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.number == 179 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/google-calendar-foundation' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- RUN_PR179_STAGING_0028 -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 179
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.head.ref == "agent/google-calendar-foundation"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+      - name: Check out exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+      - name: Verify PR state and completed normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          gh api "repos/$GITHUB_REPOSITORY/pulls/179" > "$RUNNER_TEMP/pr.json"
+          jq -e --arg sha "$APPROVED_SHA" '.state=="open" and .draft==true and .merged==false and .base.ref=="agent/appointment-types-foundation" and .head.ref=="agent/google-calendar-foundation" and .head.sha==$sha' "$RUNNER_TEMP/pr.json" >/dev/null
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" 'any(.[]; .name==$name and .head_sha==$sha and .status=="completed" and .conclusion=="success")' "$RUNNER_TEMP/runs.json" >/dev/null; done
+      - name: Verify encrypted staging configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_DB_PASSWORD STAGING_SUPABASE_URL STAGING_SUPABASE_PUBLISHABLE_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do [ -n "${!name:-}" ]; done
+          [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ]
+          case "$STAGING_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply or verify migration 0028
+        run: bash scripts/pr179-staging-calendar-e2e.sh migrate
+      - name: Run rollback-only calendar E2E
+        run: bash scripts/pr179-staging-calendar-e2e.sh e2e
+      - name: Build and deploy CRM staging
+        run: GITHUB_SHA="$APPROVED_SHA" bash scripts/pr179-staging-calendar-e2e.sh deploy
+      - name: Upload safe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr179-retained-staging-calendar-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr179-staging-evidence
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Record result on PR 179
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 179 --repo "$GITHUB_REPOSITORY" --body "### PR #179 retained staging calendar validation\n\n- Exact SHA: ${APPROVED_SHA}\n- Run ID: ${GITHUB_RUN_ID}\n- Job status: ${JOB_STATUS:-${{ job.status }}}\n- Database: retained vishar-crm-staging only\n- Migration target: forward-only 0028\n- Hosted E2E: reschedule, queued state, successful acknowledgement, stale-response protection, rollback\n- CRM Pages: vishar-crm-staging only\n- Real Google OAuth/event creation: false\n- Production targeted: false"
