@@ -32,7 +32,7 @@ create table crm_private.monzo_api_connections (
       and account_label !~ '[\u0000-\u001f\u007f]'
     )),
   constraint monzo_api_connections_webhook_state_check
-    check ((status = 'webhook_registered') = webhook_registered)
+    check (status <> 'webhook_registered' or webhook_registered)
 );
 
 alter table crm_private.monzo_api_connections enable row level security;
@@ -82,7 +82,7 @@ begin
        char_length(p_account_label) > 120
        or p_account_label ~ '[\u0000-\u001f\u007f]'
      ))
-     or ((p_status = 'webhook_registered') <> coalesce(p_webhook_registered, false)) then
+     or (p_status = 'webhook_registered' and not coalesce(p_webhook_registered, false)) then
     raise exception 'Monzo API connection metadata is invalid'
       using errcode = '22023';
   end if;
@@ -95,7 +95,8 @@ begin
       using errcode = '22023';
   end if;
 
-  if p_status in ('account_selected', 'webhook_registered') and p_account_label is null then
+  if (p_status in ('account_selected', 'webhook_registered') or coalesce(p_webhook_registered, false))
+     and p_account_label is null then
     raise exception 'Monzo API selected account label is required'
       using errcode = '22023';
   end if;
@@ -166,6 +167,7 @@ as $$
 declare
   v_integration public.artist_integrations%rowtype;
   v_connection crm_private.monzo_api_connections%rowtype;
+  v_connection_found boolean := false;
 begin
   perform crm_private.require_artist_access(p_artist_id, 'manage_finance');
 
@@ -197,6 +199,7 @@ begin
   from crm_private.monzo_api_connections c
   where c.artist_id = p_artist_id
     and c.provider_account_key = v_integration.integration_key;
+  v_connection_found := found;
 
   return jsonb_build_object(
     'configured', true,
@@ -207,9 +210,9 @@ begin
     'default_delivery_channel', 'email',
     'email_status', 'provider_not_connected',
     'sms_status', 'not_configured',
-    'monzo_api_status', case when found then v_connection.status else 'not_connected' end,
-    'monzo_account_label', case when found then v_connection.account_label else null end,
-    'monzo_webhook_registered', case when found then v_connection.webhook_registered else false end
+    'monzo_api_status', case when v_connection_found then v_connection.status else 'not_connected' end,
+    'monzo_account_label', case when v_connection_found then v_connection.account_label else null end,
+    'monzo_webhook_registered', case when v_connection_found then v_connection.webhook_registered else false end
   );
 end;
 $$;
