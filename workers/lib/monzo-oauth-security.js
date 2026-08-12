@@ -14,6 +14,53 @@ export class MonzoSecurityError extends Error {
   }
 }
 
+function exactHttpsUrl(value, expectedPath = null) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (
+      url.protocol !== 'https:'
+      || url.username
+      || url.password
+      || url.port
+      || url.search
+      || url.hash
+      || (expectedPath && url.pathname !== expectedPath)
+    ) {
+      return '';
+    }
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+export function monzoOAuthRedirectUri(env) {
+  return exactHttpsUrl(env?.MONZO_OAUTH_REDIRECT_URI, '/oauth/monzo/callback');
+}
+
+export function monzoCrmReturnUrl(env) {
+  const raw = String(env?.MONZO_CRM_RETURN_URL || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (
+      url.protocol !== 'https:'
+      || url.username
+      || url.password
+      || url.port
+      || url.search
+      || url.hash
+    ) {
+      return '';
+    }
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
 export function artistMonzoConfig(alias, env) {
   const configs = {
     vladimir: {
@@ -50,7 +97,7 @@ export async function verifiedMonzoOwnerEmail(request, env, fetchImpl = fetch) {
 export function assertMonzoOAuthStartConfiguration(env) {
   if (
     !env?.MONZO_OAUTH_CLIENT_ID
-    || !env?.MONZO_OAUTH_REDIRECT_URI
+    || !monzoOAuthRedirectUri(env)
     || !env?.MONZO_OAUTH_STATE
   ) {
     throw new MonzoSecurityError('monzo_not_configured', 503);
@@ -63,6 +110,7 @@ export function assertMonzoOAuthCallbackConfiguration(env) {
     !env?.MONZO_OAUTH_CLIENT_SECRET
     || !env?.MONZO_OAUTH_TOKENS
     || !env?.MONZO_TOKEN_ENCRYPTION_KEY
+    || !monzoCrmReturnUrl(env)
   ) {
     throw new MonzoSecurityError('monzo_not_configured', 503);
   }
@@ -183,8 +231,9 @@ export function monzoReadiness(env) {
       oauth: Boolean(
         env?.MONZO_OAUTH_CLIENT_ID
         && env?.MONZO_OAUTH_CLIENT_SECRET
-        && env?.MONZO_OAUTH_REDIRECT_URI
+        && monzoOAuthRedirectUri(env)
         && env?.MONZO_TOKEN_ENCRYPTION_KEY
+        && monzoCrmReturnUrl(env)
       ),
       ownerAccess: Boolean(
         env?.MONZO_ACCESS_TEAM_DOMAIN
@@ -203,4 +252,5 @@ export const __testing = {
   STATE_PATTERN,
   WEBHOOK_KEY_PATTERN,
   STATE_TTL_SECONDS,
+  exactHttpsUrl,
 };
