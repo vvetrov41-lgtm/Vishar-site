@@ -1,11 +1,10 @@
 // Narrow Supabase client for the future public payment-redirect Worker.
-// It exposes no table API and only the explicitly allow-listed payment RPCs.
+// It exposes no table API and only the single backend redirect resolver RPC.
 
 import { readSupabaseConfig } from './supabase.js';
 
 const ALLOWED_PAYMENT_RPCS = new Set([
   'resolve_monzo_deposit_redirect',
-  'register_monzo_reconciliation_candidate',
 ]);
 
 export class PaymentSupabaseError extends Error {
