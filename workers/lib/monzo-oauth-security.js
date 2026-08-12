@@ -1,6 +1,7 @@
 import { verifiedOwnerEmail } from './calendar-oauth-security.js';
 
 const ALIASES = new Set(['vladimir', 'kristina']);
+const ARTIST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATE_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
 const WEBHOOK_KEY_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
 const STATE_TTL_SECONDS = 600;
@@ -63,27 +64,19 @@ export function monzoCrmReturnUrl(env) {
 }
 
 export function artistMonzoConfig(alias, env) {
-  const configs = {
-    vladimir: {
-      alias: 'vladimir',
-      artistId: env?.VLADIMIR_ARTIST_ID,
-      providerAccountKey: env?.VLADIMIR_ARTIST_ID
-        ? `monzo_ebt_${String(env.VLADIMIR_ARTIST_ID).replace(/-/g, '')}`
-        : '',
-    },
-    kristina: {
-      alias: 'kristina',
-      artistId: env?.KRISTINA_ARTIST_ID,
-      providerAccountKey: env?.KRISTINA_ARTIST_ID
-        ? `monzo_ebt_${String(env.KRISTINA_ARTIST_ID).replace(/-/g, '')}`
-        : '',
-    },
-  };
-  const config = configs[alias];
-  if (!config?.artistId || !config.providerAccountKey) {
+  const artistId = alias === 'vladimir'
+    ? env?.VLADIMIR_ARTIST_ID
+    : alias === 'kristina'
+      ? env?.KRISTINA_ARTIST_ID
+      : '';
+  if (!ALIASES.has(alias) || !ARTIST_ID_PATTERN.test(String(artistId || ''))) {
     throw new MonzoSecurityError('artist_route_unconfigured', 404);
   }
-  return config;
+  return {
+    alias,
+    artistId,
+    providerAccountKey: `monzo_ebt_${String(artistId).replace(/-/g, '')}`,
+  };
 }
 
 export async function verifiedMonzoOwnerEmail(request, env, fetchImpl = fetch) {
@@ -242,6 +235,7 @@ export function monzoReadiness(env) {
 }
 
 export const __testing = {
+  ARTIST_ID_PATTERN,
   STATE_PATTERN,
   WEBHOOK_KEY_PATTERN,
   STATE_TTL_SECONDS,
