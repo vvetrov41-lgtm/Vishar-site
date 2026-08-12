@@ -31,7 +31,7 @@ function isAllowedMonzoUrl(value) {
     const url = new URL(value);
     return url.protocol === 'https:'
       && url.hostname === 'monzo.com'
-      && /^\/pay\/r\/[A-Za-z0-9_-]{4,256}$/.test(url.pathname)
+      && /^\/pay\/r\/[A-Za-z0-9_-]{4,255}$/.test(url.pathname)
       && !url.search
       && !url.hash
       && !url.username
