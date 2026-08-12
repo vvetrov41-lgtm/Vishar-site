@@ -66,6 +66,9 @@ jobs:
       - name: Compile dormant payment redirect Worker with Wrangler
         run: npm run check:payment-redirect-bundle
 
+      - name: Compile dormant Monzo API Worker with Wrangler
+        run: npm run check:monzo-api-bundle
+
       - name: Test private production release workflow boundaries
         run: node scripts/test-private-production-release-workflows.mjs
 
