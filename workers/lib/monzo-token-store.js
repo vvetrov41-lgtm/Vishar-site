@@ -1,5 +1,12 @@
 const TOKEN_ENVELOPE_VERSION = 1;
 const ALIASES = new Set(['vladimir', 'kristina']);
+const CONNECTION_STATES = new Set([
+  'oauth_authorized',
+  'approval_pending',
+  'account_selected',
+  'webhook_registered',
+  'reauthorization_required',
+]);
 const ACCOUNT_ID_PATTERN = /^acc_[A-Za-z0-9]+$/;
 const WEBHOOK_ID_PATTERN = /^webhook_[A-Za-z0-9]+$/;
 const WEBHOOK_KEY_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
@@ -60,6 +67,7 @@ function validateRecord(record) {
     !record
     || typeof record !== 'object'
     || !ALIASES.has(record.alias)
+    || !CONNECTION_STATES.has(record.connectionState)
     || typeof record.artistId !== 'string'
     || !record.artistId
     || typeof record.providerAccountKey !== 'string'
@@ -89,9 +97,10 @@ function validateRecord(record) {
   if (record.webhookKey != null && !WEBHOOK_KEY_PATTERN.test(record.webhookKey)) {
     throw new MonzoTokenError();
   }
-  if (record.webhookId && (!record.accountId || !record.webhookKey)) {
-    throw new MonzoTokenError();
-  }
+  if (record.accountId && !cleanLabel(record.accountLabel)) throw new MonzoTokenError();
+  if (record.webhookId && (!record.accountId || !record.webhookKey)) throw new MonzoTokenError();
+  if (record.connectionState === 'account_selected' && !record.accountId) throw new MonzoTokenError();
+  if (record.connectionState === 'webhook_registered' && !record.webhookId) throw new MonzoTokenError();
 
   return {
     ...record,
@@ -169,3 +178,8 @@ export async function deleteMonzoTokenRecord(env, artistId) {
   if (!env?.MONZO_OAUTH_TOKENS) throw new MonzoTokenError('monzo_not_configured');
   await env.MONZO_OAUTH_TOKENS.delete(monzoTokenKey(artistId));
 }
+
+export const __testing = {
+  CONNECTION_STATES,
+  validateRecord,
+};
