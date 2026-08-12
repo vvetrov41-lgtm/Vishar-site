@@ -88,6 +88,7 @@ describe('navigation', () => {
       '/projects',
       '/appointments',
       '/availability',
+      '/payments',
       '/integrations',
       '/users',
       '/activity',
