@@ -13,6 +13,16 @@ const database = read('.github/workflows/deploy-private-production-database.yml'
 const team = read('.github/workflows/deploy-private-production-team-admin.yml');
 const teamConfig = read('wrangler.team-admin.toml');
 
+// Assertions about a TOML file must describe its directives, not its prose.
+// Stripping comments keeps an explanatory comment from either satisfying or
+// failing a check that is meant to be about actual configuration.
+const directivesOf = (text) => text
+  .split('\n')
+  .map((line) => line.replace(/(^|\s)#.*$/, '').trim())
+  .filter(Boolean)
+  .join('\n');
+const teamProductionConfig = directivesOf(read('wrangler.team-admin.production.toml'));
+
 for (const [label, text] of [
   ['CRM Pages', crm],
   ['production database', database],
@@ -40,12 +50,31 @@ expectExcludes(database, 'wrangler deploy', 'production database');
 expectExcludes(database, 'wrangler pages deploy', 'production database');
 
 expectIncludes(teamConfig, 'workers_dev = false', 'Team admin config');
+
+// The production deployment runs `wrangler deploy --strict`, which compares the
+// generated local configuration against the deployed Worker. Every value that
+// `--strict` compares must therefore be declared in the production config and
+// match the production Worker exactly, otherwise the deployment aborts on a
+// permanent conflict and the only "fix" left would be dropping `--strict`.
+expectIncludes(teamProductionConfig, 'name = "vishar-team-admin-production"', 'Team admin production config');
+expectIncludes(teamProductionConfig, 'main = "workers/team-admin.js"', 'Team admin production config');
+expectIncludes(teamProductionConfig, 'workers_dev = false', 'Team admin production config');
+expectIncludes(teamProductionConfig, 'preview_urls = false', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'workers_dev = true', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'preview_urls = true', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'routes', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'route =', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'custom_domain', 'Team admin production config');
+
 expectIncludes(team, 'node scripts/test-team-admin-worker.mjs', 'Team admin');
-expectIncludes(team, 'npm run check:team-admin-bundle', 'Team admin');
+expectIncludes(team, 'npm run check:team-admin-production-bundle', 'Team admin');
 expectIncludes(team, "'DEPLOY_PRIVATE_CRM_TEAM_ADMIN'", 'Team admin');
 expectIncludes(team, 'wrangler secret list', 'Team admin');
 expectIncludes(team, "names.has('SUPABASE_SECRET_KEY')", 'Team admin');
-expectIncludes(team, '--config wrangler.team-admin.toml', 'Team admin');
+// Both the secret pre-flight and the deploy must target the production config.
+expectIncludes(team, 'secret list --config wrangler.team-admin.production.toml', 'Team admin');
+expectIncludes(team, '--config wrangler.team-admin.production.toml', 'Team admin');
+expectExcludes(team, '--config wrangler.team-admin.toml', 'Team admin');
 expectIncludes(team, '--keep-vars', 'Team admin');
 expectIncludes(team, '--strict', 'Team admin');
 expectExcludes(team, 'wrangler secret put', 'Team admin');
