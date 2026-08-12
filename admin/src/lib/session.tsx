@@ -34,11 +34,17 @@ import type { Profile } from './types';
 export type AccessState =
   | 'loading'
   | 'signed_out'
-  | 'no_profile'
+  | 'no_profile'   // signed in, but no readable CRM profile
+  // Signed in with a readable but inactive profile. Under the current
+  // `profiles_select_self` policy - which is gated on `is_active` - a
+  // deactivated account cannot read its own row either, so it presents as
+  // `no_profile`. This state is kept because it is the honest model of "profile
+  // exists, access withdrawn" and would become reachable if that policy ever
+  // widened; both outcomes deny identically.
   | 'deactivated'
   | 'password_setup'
   | 'active'
-  | 'unconfigured';
+  | 'unconfigured'; // the build has no Supabase URL or anon key
 
 export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi;
 
@@ -116,6 +122,9 @@ export function SessionProvider({
       }
       setState(inviteMode ? 'password_setup' : 'active');
     } catch {
+      // A profile that cannot be read is treated as no access rather than as a
+      // transient error: the safe reading of "the database would not tell me
+      // who you are" is that you are not staff.
       setProfile(null);
       setState('no_profile');
     }
@@ -133,6 +142,8 @@ export function SessionProvider({
     setError(null);
     const result = await client.auth.signInWithPassword({ email, password });
     if (result.error) {
+      // Deliberately generic: distinguishing "no such account" from "wrong
+      // password" tells an attacker which addresses are staff addresses.
       setError('That email address and password did not match.');
       throw new Error('sign in failed');
     }
@@ -158,12 +169,16 @@ export function SessionProvider({
       throw new Error('Choose a password between 12 and 128 characters.');
     }
 
+    // Password mutation is intentionally kept in the Auth-only session layer.
+    // It is not added to the general CRM data client used by pages/workflows.
     const auth = client.auth as PasswordUpdateAuth;
     const updated = await auth.updateUser({ password });
     if (updated.error) {
       throw new Error('Could not set that password. Choose a stronger password and try again.');
     }
 
+    // End the invitation-derived session. The next access must prove the new
+    // password through the ordinary signInWithPassword path.
     const signedOut = await client.auth.signOut();
     if (signedOut.error) {
       throw new Error('The password was saved, but the invitation session could not be closed. Try again before continuing.');
