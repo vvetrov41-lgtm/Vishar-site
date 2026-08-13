@@ -162,6 +162,86 @@ jobs:
         if: ${{ inputs.deploy }}
         run: npm ci
 
+      - name: Configure production Supabase Auth URLs
+        if: ${{ inputs.deploy }}
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+          CRM_ORIGIN: ${{ vars.CRM_PRODUCTION_ORIGIN }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CRM_ORIGIN" != 'https://crm.vishartattoo.com' ]; then
+            echo 'CRM_PRODUCTION_ORIGIN must be the exact private CRM production origin.' >&2
+            exit 1
+          fi
+
+          if ! [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
+            echo 'CRM_PRODUCTION_SUPABASE_PROJECT_REF is missing or malformed.' >&2
+            exit 1
+          fi
+
+          if [ "$PROJECT_REF" = 'gwaliusblwrzisrwnsvs' ]; then
+            echo 'Refusing to target retained staging Supabase.' >&2
+            exit 1
+          fi
+
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo 'CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN is not configured.' >&2
+            exit 1
+          fi
+
+          api="https://api.supabase.com/v1/projects/${PROJECT_REF}/config/auth"
+          current="$(curl -fsS \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H 'Accept: application/json' \
+            "$api")"
+
+          payload="$(CURRENT_AUTH_CONFIG="$current" node <<'NODE'
+          const current = JSON.parse(process.env.CURRENT_AUTH_CONFIG || '{}');
+          const crmOrigin = 'https://crm.vishartattoo.com';
+          const required = [crmOrigin, `${crmOrigin}/`, `${crmOrigin}/**`];
+          const existing = String(current.uri_allow_list || '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean);
+          const uri_allow_list = Array.from(new Set([...existing, ...required])).join(',');
+          process.stdout.write(JSON.stringify({
+            site_url: crmOrigin,
+            uri_allow_list,
+          }));
+          NODE
+          )"
+
+          curl -fsS -X PATCH "$api" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            --data "$payload" >/dev/null
+
+          after="$(curl -fsS \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H 'Accept: application/json' \
+            "$api")"
+
+          AUTH_AFTER="$after" node <<'NODE'
+          const after = JSON.parse(process.env.AUTH_AFTER || '{}');
+          const crmOrigin = 'https://crm.vishartattoo.com';
+          if (after.site_url !== crmOrigin) {
+            throw new Error('Production Auth site_url did not update to the private CRM origin');
+          }
+          const allow = String(after.uri_allow_list || '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean);
+          for (const expected of [crmOrigin, `${crmOrigin}/`, `${crmOrigin}/**`]) {
+            if (!allow.includes(expected)) {
+              throw new Error(`Production Auth redirect allow-list is missing ${expected}`);
+            }
+          }
+          NODE
+
       - name: Deploy only admin/dist to dedicated CRM Pages project
         if: ${{ inputs.deploy }}
         env:
@@ -188,6 +268,7 @@ jobs:
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Source build scope: `admin/` only'
             echo '- Upload scope: `admin/dist` only'
+            echo '- Production Auth site URL target: `https://crm.vishartattoo.com`'
             echo '- Calendar connector in this build: disabled'
             echo '- Public site / booking Worker deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"
