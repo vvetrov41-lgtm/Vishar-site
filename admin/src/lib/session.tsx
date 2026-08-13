@@ -29,7 +29,7 @@ import {
 } from './oauth-consent-api';
 import { createPaymentApi, type PaymentApi } from './payment-api';
 import { clearStaffInviteUrl } from './supabase';
-import type { Profile } from './types';
+import type { ArtistMembership, Profile } from './types';
 
 export type AccessState =
   | 'loading'
@@ -55,6 +55,7 @@ type PasswordUpdateAuth = CrmClient['auth'] & {
 export interface SessionValue {
   state: AccessState;
   profile: Profile | null;
+  memberships: ArtistMembership[];
   api: CrmApi | null;
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
@@ -78,6 +79,7 @@ export function SessionProvider({
 }) {
   const [state, setState] = useState<AccessState>(client ? 'loading' : 'unconfigured');
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [memberships, setMemberships] = useState<ArtistMembership[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [inviteMode, setInviteMode] = useState(staffInviteMode);
 
@@ -96,6 +98,7 @@ export function SessionProvider({
 
   const load = useCallback(async () => {
     if (!client || !api) {
+      setMemberships([]);
       setState('unconfigured');
       return;
     }
@@ -104,6 +107,7 @@ export function SessionProvider({
     const userId = data?.session?.user?.id;
     if (!userId) {
       setProfile(null);
+      setMemberships([]);
       setState('signed_out');
       return;
     }
@@ -112,20 +116,35 @@ export function SessionProvider({
       const found = await api.currentProfile(userId);
       if (!found) {
         setProfile(null);
+        setMemberships([]);
         setState('no_profile');
         return;
       }
       setProfile(found);
       if (!found.is_active) {
+        setMemberships([]);
         setState('deactivated');
         return;
       }
+
+      try {
+        const teamMemberships = await api.listTeamMemberships();
+        setMemberships(teamMemberships.filter(
+          (membership) => membership.profile_id === found.id && membership.is_active
+        ));
+      } catch {
+        // Membership flags only shape the visible navigation. If this read ever
+        // fails, hide scoped affordances rather than widening access.
+        setMemberships([]);
+      }
+
       setState(inviteMode ? 'password_setup' : 'active');
     } catch {
       // A profile that cannot be read is treated as no access rather than as a
       // transient error: the safe reading of "the database would not tell me
       // who you are" is that you are not staff.
       setProfile(null);
+      setMemberships([]);
       setState('no_profile');
     }
   }, [client, api, inviteMode]);
@@ -158,6 +177,7 @@ export function SessionProvider({
       setInviteMode(false);
     }
     setProfile(null);
+    setMemberships([]);
     setState('signed_out');
   }, [client, inviteMode]);
 
@@ -188,6 +208,7 @@ export function SessionProvider({
     setInviteMode(false);
     setError(null);
     setProfile(null);
+    setMemberships([]);
     setState('signed_out');
   }, [client, inviteMode, profile, state]);
 
@@ -195,6 +216,7 @@ export function SessionProvider({
     () => ({
       state,
       profile,
+      memberships,
       api,
       error,
       signIn,
@@ -202,7 +224,7 @@ export function SessionProvider({
       completePasswordSetup,
       refresh: load,
     }),
-    [state, profile, api, error, signIn, signOut, completePasswordSetup, load]
+    [state, profile, memberships, api, error, signIn, signOut, completePasswordSetup, load]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
@@ -210,7 +232,7 @@ export function SessionProvider({
 
 export function useSession(): SessionValue {
   const value = useContext(SessionContext);
-  if (!value) throw new Error('useSession must be used inside a SessionProvider');
+  if (!value) throw new Error('useSession must be used inside SessionProvider');
   return value;
 }
 
