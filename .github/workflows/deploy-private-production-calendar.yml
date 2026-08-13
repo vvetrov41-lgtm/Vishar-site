@@ -198,7 +198,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          secrets_json="$(npx wrangler secret list --name "$WORKER_NAME" --format json)"
+          # --config is explicit so this reads the Calendar Worker's own
+          # configuration rather than falling back to the repository root
+          # wrangler.toml, which belongs to the public site Worker.
+          secrets_json="$(npx wrangler secret list --config wrangler.calendar.production.toml --name "$WORKER_NAME" --format json)"
           SECRET_LIST="$secrets_json" node <<'NODE'
           const values = JSON.parse(process.env.SECRET_LIST || '[]');
           const names = new Set(values.map((entry) => entry?.name).filter(Boolean));
