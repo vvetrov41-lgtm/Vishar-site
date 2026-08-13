@@ -7,6 +7,9 @@ const expectIncludes = (text, needle, label) => {
 const expectExcludes = (text, needle, label) => {
   if (text.includes(needle)) throw new Error(`${label}: forbidden ${needle}`);
 };
+const expectLineAbsent = (text, directive, label) => {
+  if (text.split('\n').includes(directive)) throw new Error(`${label}: forbidden directive ${directive}`);
+};
 
 const crm = read('.github/workflows/deploy-private-production-crm.yml');
 const database = read('.github/workflows/deploy-private-production-database.yml');
@@ -76,8 +79,8 @@ expectIncludes(teamProductionConfig, 'zone_name = "vishartattoo.com"', 'Team adm
 expectIncludes(teamProductionConfig, 'custom_domain = true', 'Team admin production config');
 expectIncludes(teamProductionConfig, 'enabled = true', 'Team admin production config');
 expectIncludes(teamProductionConfig, 'previews_enabled = false', 'Team admin production config');
-expectExcludes(teamProductionConfig, 'enabled = false', 'Team admin production config');
-expectExcludes(teamProductionConfig, 'previews_enabled = true', 'Team admin production config');
+expectLineAbsent(teamProductionConfig, 'enabled = false', 'Team admin production config');
+expectLineAbsent(teamProductionConfig, 'previews_enabled = true', 'Team admin production config');
 expectExcludes(teamProductionConfig, 'pattern = "*', 'Team admin production config');
 expectExcludes(teamProductionConfig, 'crm.vishartattoo.com', 'Team admin production config');
 expectExcludes(teamProductionConfig, 'vishartattoo.com/*', 'Team admin production config');
