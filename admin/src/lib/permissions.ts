@@ -12,7 +12,7 @@
 // refuses the operation regardless. Conversely, adding a capability here does
 // not grant it - the corresponding migration has to grant it too.
 
-import type { CrmRole, EnquiryStatus, StatusTransition } from './types';
+import type { ArtistMembership, CrmRole, EnquiryStatus, StatusTransition } from './types';
 
 export type Capability =
   | 'viewClients'
@@ -44,12 +44,9 @@ const OWNER: Capability[] = [
   'viewClients',
   'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
   'viewProjects', 'manageProjects',
-  'viewSessions', 'manageSessions',
-  'viewFinance', 'manageFinance',
-  'viewNotes', 'createNotes',
-  'viewFollowUps', 'manageFollowUps',
-  'createEmailDraft', 'approveEmail',
-  'viewActivity', 'viewIntegrationJobs', 'manageIntegrations',
+  'viewSessions', 'manageSessions', 'viewFinance', 'manageFinance',
+  'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
+  'createEmailDraft', 'approveEmail', 'viewActivity', 'viewIntegrationJobs', 'manageIntegrations',
   'manageUsers', 'manageSettings',
 ];
 
@@ -58,13 +55,12 @@ const BOOKING_MANAGER: Capability[] = [
   'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
   'viewProjects', 'manageProjects',
   'viewSessions', 'manageSessions',
-  'viewNotes', 'createNotes',
-  'viewFollowUps', 'manageFollowUps',
+  'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft',
   'viewActivity', 'manageIntegrations',
   // The frontend can only express the coarse global role. The database narrows
-  // Calendar Connections to memberships whose can_manage_integrations is true.
-  // Deliberately absent: viewFinance, manageFinance, approveEmail,
+  // finance and Calendar Connections to memberships whose capability flags are
+  // true. Deliberately absent: viewFinance, manageFinance, approveEmail,
   // viewIntegrationJobs, manageUsers, manageSettings.
 ];
 
@@ -84,6 +80,11 @@ const CAPABILITIES: Record<CrmRole, ReadonlySet<Capability>> = {
   read_only: new Set(READ_ONLY),
 };
 
+type ScopedMembership = Pick<
+  ArtistMembership,
+  'is_active' | 'can_view_finance' | 'can_manage_finance' | 'can_manage_integrations'
+>;
+
 /**
  * `role` is null when there is no active profile - a signed-in account that was
  * never provisioned, or one that has been deactivated. Both get nothing.
@@ -91,6 +92,40 @@ const CAPABILITIES: Record<CrmRole, ReadonlySet<Capability>> = {
 export function can(role: CrmRole | null | undefined, capability: Capability): boolean {
   if (!role) return false;
   return CAPABILITIES[role].has(capability);
+}
+
+/**
+ * UI affordances that depend on per-artist membership flags must use this
+ * helper. The database/RLS/RPC layer remains authoritative: a forged browser
+ * flag still cannot widen access.
+ */
+export function canAccess(
+  role: CrmRole | null | undefined,
+  capability: Capability,
+  memberships: ScopedMembership[] = []
+): boolean {
+  if (!role) return false;
+  if (role === 'owner') return can(role, capability);
+
+  if (capability === 'viewFinance') {
+    return role !== 'read_only' && memberships.some(
+      (membership) => membership.is_active && (membership.can_view_finance || membership.can_manage_finance)
+    );
+  }
+
+  if (capability === 'manageFinance') {
+    return role !== 'read_only' && memberships.some(
+      (membership) => membership.is_active && membership.can_manage_finance
+    );
+  }
+
+  if (capability === 'manageIntegrations') {
+    return can(role, capability) && memberships.some(
+      (membership) => membership.is_active && membership.can_manage_integrations
+    );
+  }
+
+  return can(role, capability);
 }
 
 export function capabilitiesFor(role: CrmRole | null | undefined): Capability[] {
@@ -153,6 +188,9 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/activity', label: 'Activity', capability: 'viewActivity' },
 ];
 
-export function navItemsFor(role: CrmRole | null | undefined): NavItem[] {
-  return NAV_ITEMS.filter((item) => can(role, item.capability));
+export function navItemsFor(
+  role: CrmRole | null | undefined,
+  memberships: ScopedMembership[] = []
+): NavItem[] {
+  return NAV_ITEMS.filter((item) => canAccess(role, item.capability, memberships));
 }
