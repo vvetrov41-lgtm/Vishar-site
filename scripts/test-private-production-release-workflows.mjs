@@ -74,6 +74,10 @@ expectIncludes(teamProductionConfig, 'routes = [', 'Team admin production config
 expectIncludes(teamProductionConfig, 'pattern = "team.vishartattoo.com"', 'Team admin production config');
 expectIncludes(teamProductionConfig, 'zone_name = "vishartattoo.com"', 'Team admin production config');
 expectIncludes(teamProductionConfig, 'custom_domain = true', 'Team admin production config');
+expectIncludes(teamProductionConfig, 'enabled = true', 'Team admin production config');
+expectIncludes(teamProductionConfig, 'previews_enabled = false', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'enabled = false', 'Team admin production config');
+expectExcludes(teamProductionConfig, 'previews_enabled = true', 'Team admin production config');
 expectExcludes(teamProductionConfig, 'pattern = "*', 'Team admin production config');
 expectExcludes(teamProductionConfig, 'crm.vishartattoo.com', 'Team admin production config');
 expectExcludes(teamProductionConfig, 'vishartattoo.com/*', 'Team admin production config');
