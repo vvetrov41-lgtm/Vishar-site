@@ -1,9 +1,9 @@
 // Dedicated Team & Access administration boundary.
 //
-// This Worker exposes one exact operation. It is not a generic Supabase proxy:
+// This Worker exposes one narrow operation. It is not a generic Supabase proxy:
 // an authenticated owner JWT prepares an idempotent database request, the
-// Worker calls Supabase Auth Admin with its server-only secret, and the same
-// owner JWT atomically finalises the inactive profile plus artist memberships.
+// Worker calls Supabase Auth with its server-only secret, and the same owner
+// JWT atomically finalises the inactive profile plus artist memberships.
 
 const INVITE_PATH = '/v1/staff/invite';
 const INVITE_REDIRECT_SEARCH = '?staff_invite=1';
@@ -275,7 +275,7 @@ async function rpc(fetcher, config, bearer, name, body) {
         authorization: bearer,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body ?? {}),
     });
   } catch {
     throw new TeamAdminError('database_unavailable', 502);
@@ -308,6 +308,20 @@ function validatedState(value) {
   return value;
 }
 
+function validatedExistingStaffProfile(value, email) {
+  if (!value || typeof value !== 'object') return null;
+  const id = String(value.id || '');
+  const role = String(value.role || '');
+  const profileEmail = String(value.email || '').trim().toLowerCase();
+  if (
+    profileEmail !== email
+    || !UUID_PATTERN.test(id)
+    || !ROLE_VALUES.has(role)
+    || value.is_active !== true
+  ) return null;
+  return { profile_id: id, email: profileEmail, role, is_active: true, idempotent_replay: false };
+}
+
 async function sendAuthInvite(fetcher, config, email) {
   const url = new URL('/auth/v1/invite', config.databaseOrigin);
   url.searchParams.set('redirect_to', config.inviteRedirect);
@@ -329,6 +343,41 @@ async function sendAuthInvite(fetcher, config, email) {
   }
 }
 
+async function sendAuthRecovery(fetcher, config, email) {
+  const url = new URL('/auth/v1/recover', config.databaseOrigin);
+  url.searchParams.set('redirect_to', config.inviteRedirect);
+  try {
+    const response = await fetcher(url.toString(), {
+      method: 'POST',
+      headers: {
+        apikey: config.secretKey,
+        authorization: `Bearer ${config.secretKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ email }),
+    });
+    // The Auth response may contain provider details. Discard it completely.
+    await response.arrayBuffer();
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function recoverExistingStaff(fetcher, config, bearer, email) {
+  const profiles = await rpc(fetcher, config, bearer, 'list_profiles', {});
+  if (!Array.isArray(profiles)) throw new TeamAdminError('invalid_database_response', 502);
+
+  const profile = profiles
+    .map((value) => validatedExistingStaffProfile(value, email))
+    .find(Boolean);
+  if (!profile) return null;
+
+  const deliverySucceeded = await sendAuthRecovery(fetcher, config, profile.email);
+  if (!deliverySucceeded) throw new TeamAdminError('existing_staff_recovery_not_sent', 502);
+  return profile;
+}
+
 function publicResult(value, delivery) {
   const profileId = String(value.profile_id || '');
   if (
@@ -344,6 +393,23 @@ function publicResult(value, delivery) {
     is_active: true,
     idempotent_replay: value.idempotent_replay === true,
     delivery,
+  };
+}
+
+function publicExistingStaffResult(value) {
+  const profileId = String(value.profile_id || '');
+  if (
+    !UUID_PATTERN.test(profileId)
+    || !ROLE_VALUES.has(String(value.role || ''))
+    || value.is_active !== true
+  ) throw new TeamAdminError('invalid_database_response', 502);
+
+  return {
+    profile_id: profileId,
+    role: value.role,
+    is_active: true,
+    idempotent_replay: false,
+    delivery: 'existing_account',
   };
 }
 
@@ -369,13 +435,22 @@ export async function handleTeamAdminRequest(request, env, { fetcher = fetch } =
 
   try {
     const invite = validateRequest(await boundedJson(request));
-    const prepared = validatedState(await rpc(fetcher, config, bearer, 'begin_staff_invite', {
-      p_idempotency_key: invite.idempotency_key,
-      p_email: invite.email,
-      p_display_name: invite.display_name,
-      p_role: invite.role,
-      p_memberships: invite.memberships,
-    }));
+    let prepared;
+    try {
+      prepared = validatedState(await rpc(fetcher, config, bearer, 'begin_staff_invite', {
+        p_idempotency_key: invite.idempotency_key,
+        p_email: invite.email,
+        p_display_name: invite.display_name,
+        p_role: invite.role,
+        p_memberships: invite.memberships,
+      }));
+    } catch (error) {
+      if (error instanceof TeamAdminError && error.code === 'database_refused_invite') {
+        const recovered = await recoverExistingStaff(fetcher, config, bearer, invite.email);
+        if (recovered) return json(publicExistingStaffResult(recovered), 200, requestOrigin);
+      }
+      throw error;
+    }
 
     if (prepared.status === 'provisioned') {
       return json(publicResult(prepared, 'not_repeated'), 200, requestOrigin);
