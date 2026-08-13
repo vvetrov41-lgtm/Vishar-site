@@ -128,10 +128,20 @@ export function SessionProvider({
       }
 
       try {
-        const teamMemberships = await api.listTeamMemberships();
-        setMemberships(teamMemberships.filter(
-          (membership) => membership.profile_id === found.id && membership.is_active
-        ));
+        // Not api.listTeamMemberships(): that calls list_team_memberships(),
+        // an owner-only RPC that raises for every other role. A booking
+        // manager's own scoped capabilities are readable directly, without
+        // any RPC, under the existing `artist_memberships` RLS policy
+        // (`profile_id = auth.uid() AND is_active_user()`) - the `.eq`
+        // filters here mirror that policy rather than substitute for it, so
+        // this reads exactly the caller's own active memberships either way.
+        const { data, error } = await client
+          .from('artist_memberships')
+          .select('profile_id, artist_id, access_level, can_view_finance, can_manage_finance, can_manage_sessions, can_manage_integrations, is_active')
+          .eq('profile_id', found.id)
+          .eq('is_active', true);
+        if (error) throw error;
+        setMemberships((data ?? []) as ArtistMembership[]);
       } catch {
         // Membership flags only shape the visible navigation. If this read ever
         // fails, hide scoped affordances rather than widening access.

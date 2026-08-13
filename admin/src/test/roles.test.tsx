@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
-import { renderWithSession, PROJECT_ID, ENQUIRY_ID } from './fixtures';
+import { renderWithSession, MANAGER_ID, PROJECT_ID, ENQUIRY_ID, VLADIMIR_ARTIST_ID } from './fixtures';
 
 describe('access gate', () => {
   it('shows the sign-in form when signed out', async () => {
@@ -52,6 +52,72 @@ describe('navigation by role', () => {
     expect((await screen.findAllByRole('link', { name: 'Clients' })).length).toBeGreaterThan(0);
     expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument();
+  });
+
+  it('hides Payments and Calendar from a booking manager with no membership capability flags', async () => {
+    renderWithSession(<App />, { role: 'booking_manager' });
+    expect((await screen.findAllByRole('link', { name: 'Enquiries' })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'Payments' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Calendar' })).not.toBeInTheDocument();
+  });
+
+  it('shows Payments to a booking manager whose membership grants can_manage_finance, but not Calendar', async () => {
+    // Mirrors Kristina's real production membership: finance granted,
+    // integrations not - the exact combination the scoped-membership read
+    // must distinguish, which the coarse global role alone cannot.
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      membershipOverrides: [{
+        profile_id: MANAGER_ID,
+        artist_id: VLADIMIR_ARTIST_ID,
+        access_level: 'manager',
+        can_view_finance: true,
+        can_manage_finance: true,
+        can_manage_sessions: true,
+        can_manage_integrations: false,
+        is_active: true,
+      }],
+    });
+    expect(await screen.findByRole('link', { name: 'Payments' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Calendar' })).not.toBeInTheDocument();
+  });
+
+  it('shows Calendar to a booking manager whose membership grants can_manage_integrations', async () => {
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      membershipOverrides: [{
+        profile_id: MANAGER_ID,
+        artist_id: VLADIMIR_ARTIST_ID,
+        access_level: 'manager',
+        can_view_finance: false,
+        can_manage_finance: false,
+        can_manage_sessions: true,
+        can_manage_integrations: true,
+        is_active: true,
+      }],
+    });
+    expect(await screen.findByRole('link', { name: 'Calendar' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Payments' })).not.toBeInTheDocument();
+  });
+
+  it('hides Payments when the artist_memberships read fails, rather than widening access', async () => {
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      failTable: 'artist_memberships',
+      membershipOverrides: [{
+        profile_id: MANAGER_ID,
+        artist_id: VLADIMIR_ARTIST_ID,
+        access_level: 'manager',
+        can_view_finance: true,
+        can_manage_finance: true,
+        can_manage_sessions: true,
+        can_manage_integrations: true,
+        is_active: true,
+      }],
+    });
+    expect((await screen.findAllByRole('link', { name: 'Enquiries' })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'Payments' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Calendar' })).not.toBeInTheDocument();
   });
 });
 

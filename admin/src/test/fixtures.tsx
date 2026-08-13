@@ -11,7 +11,7 @@ import type { ReactElement } from 'react';
 import type { CrmClient } from '../lib/api';
 import { RouterProvider } from '../lib/router';
 import { SessionProvider } from '../lib/session';
-import type { CrmRole, EnquiryStatus } from '../lib/types';
+import type { ArtistMembership, CrmRole, EnquiryStatus } from '../lib/types';
 
 export const VLADIMIR_ARTIST_ID = 'a1111111-1111-4111-8111-111111111111';
 export const KRISTINA_ARTIST_ID = 'a2222222-2222-4222-8222-222222222222';
@@ -196,6 +196,12 @@ export interface FakeClientOptions {
   enquiryStatus?: EnquiryStatus;
   /** Artist identities returned by list_accessible_artists(). */
   accessibleArtistIds?: string[];
+  /**
+   * Replaces the pool `artist_memberships` is filtered from, for tests that
+   * need a specific capability combination (e.g. can_manage_finance without
+   * can_manage_integrations). Defaults to the shared `MEMBERSHIPS` fixture.
+   */
+  membershipOverrides?: ArtistMembership[];
   teamInviteUrl?: string;
 }
 
@@ -270,8 +276,27 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     ? ARTISTS.map((artist) => artist.id)
     : [VLADIMIR_ARTIST_ID]);
 
+  /**
+   * Mirrors the real `artist_memberships` RLS policy
+   * (`profile_id = auth.uid() AND is_active_user()`), not the RPC used
+   * elsewhere: `session.tsx` reads its own scoped capabilities through this
+   * table directly, without any RPC, so the fake must model it directly too.
+   */
+  function artistMembershipsResult() {
+    if (options.failTable === 'artist_memberships') {
+      return { data: null, error: { code: 'PGRST000', message: 'boom' } };
+    }
+    const pool = options.membershipOverrides ?? MEMBERSHIPS;
+    return {
+      data: pool.filter((membership) => membership.profile_id === profile?.id && membership.is_active),
+      error: null,
+    };
+  }
+
   function builder(table: string): any {
-    const result = tableResult(table, effectiveRole, options.failTable, options.enquiryStatus);
+    const result = table === 'artist_memberships'
+      ? artistMembershipsResult()
+      : tableResult(table, effectiveRole, options.failTable, options.enquiryStatus);
     const chain: any = {
       select: () => chain,
       eq: (...args: unknown[]) => {
