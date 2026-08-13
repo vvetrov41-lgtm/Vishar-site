@@ -45,10 +45,10 @@ type OverflowGroupId = 'operations' | 'finance' | 'administration';
 const OVERFLOW_GROUP_ORDER: OverflowGroupId[] = ['operations', 'finance', 'administration'];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { profile, signOut } = useSession();
+  const { profile, memberships, signOut } = useSession();
   const { path } = useRouter();
   const { t, label, language } = useLanguage();
-  const items = navItemsFor(profile?.role);
+  const items = navItemsFor(profile?.role, memberships);
   const {
     artists,
     selectedArtistId,
