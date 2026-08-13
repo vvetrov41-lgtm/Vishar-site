@@ -1,0 +1,49 @@
+name = "vishar-calendar-staging"
+main = "workers/calendar-oauth.js"
+compatibility_date = "2026-05-25"
+workers_dev = false
+routes = [
+  { pattern = "calendar-staging.vishartattoo.com", custom_domain = true }
+]
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "CALENDAR_OAUTH_STATE"
+id = "dd43224461504e898addeba5b7915142"
+
+[[kv_namespaces]]
+binding = "CALENDAR_OAUTH_TOKENS"
+id = "93302bc4f35242c38358a16fcd4ab9a2"
+
+[vars]
+VISHAR_ENVIRONMENT = "staging"
+GOOGLE_OAUTH_REDIRECT_URI = "https://calendar-staging.vishartattoo.com/oauth/google/callback"
+CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/#/integrations/calendar"
+CRM_APPOINTMENTS_URL = "https://vishar-crm-staging.pages.dev/#/appointments"
+CALENDAR_ACCESS_TEAM_DOMAIN = "https://vishar-site-pages.cloudflareaccess.com"
+CALENDAR_ACCESS_AUD = "2a0569d2cc1acb785ccf190585be7ca9cad70fe6db7042a8094bf39160a26013"
+CALENDAR_OWNER_EMAILS = "vvetrov41@gmail.com"
+VLADIMIR_ARTIST_ID = "a1111111-1111-4111-8111-111111111111"
+VLADIMIR_GOOGLE_EMAIL = "vvetrov41@gmail.com"
+KRISTINA_ARTIST_ID = "a2222222-2222-4222-8222-222222222222"
+KRISTINA_GOOGLE_EMAIL = "tinaakaten@gmail.com"
+SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"
+CALENDAR_DRAIN_ENABLED = "true"
+
+# The retained staging Worker drains at most the code-level default of 10 jobs
+# per scheduled invocation. Database SKIP LOCKED leasing prevents duplicate work
+# if scheduled invocations overlap, and failed jobs retain the existing backoff.
+# Production configuration is not changed by this staging-only file.
+
+# Required encrypted secrets / environment bindings:
+# GOOGLE_OAUTH_CLIENT_ID
+# GOOGLE_OAUTH_CLIENT_SECRET
+# CALENDAR_TOKEN_ENCRYPTION_KEY (32 random bytes, base64url encoded)
+# Exactly one of SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
+#
+# Access identifiers, owner/artist routing metadata, expected account labels and
+# the Supabase project URL above are non-secret staging configuration.
+# CALENDAR_OAUTH_STATE stores short-lived PKCE, OAuth state and disconnect nonce records.
+# CALENDAR_OAUTH_TOKENS stores AES-GCM encrypted refresh-token envelopes.

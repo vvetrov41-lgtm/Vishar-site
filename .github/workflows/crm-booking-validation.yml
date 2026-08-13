@@ -1,0 +1,152 @@
+name: CRM and booking validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-booking-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site-and-worker:
+    name: Public site and Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Validate public site
+        run: npm run validate:site
+
+      - name: Test booking flow
+        run: npm run test:booking
+
+      - name: Test Worker modules
+        run: npm run test:worker
+
+      - name: Validate Calendar staging configuration
+        run: |
+          npm run validate:calendar-staging
+          npm run validate:calendar-staging:deploy-ready
+
+      - name: Validate Calendar production configuration
+        run: |
+          npm run validate:calendar-production
+          npm run validate:calendar-production:deploy-ready
+
+      - name: Validate PR181 dormant staging boundary
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 181
+        run: bash scripts/validate-pr181-staging-source.sh
+
+      - name: Compile Worker with Wrangler
+        run: npm run check:worker-bundle
+
+      - name: Compile disabled Telegram drain Worker with Wrangler
+        run: npm run check:telegram-drain-bundle
+
+      - name: Compile disabled Team admin Worker with Wrangler
+        run: npm run check:team-admin-bundle
+
+      - name: Compile dormant payment redirect Worker with Wrangler
+        run: npm run check:payment-redirect-bundle
+
+      - name: Compile dormant Monzo API Worker with Wrangler
+        run: npm run check:monzo-api-bundle
+
+      - name: Compile inert production Calendar Worker with Wrangler
+        run: npm run check:calendar-production-bundle
+
+      - name: Test private production release workflow boundaries
+        run: node scripts/test-private-production-release-workflows.mjs
+
+      - name: Scan repository for committed secrets
+        run: npm run scan:secrets
+
+  admin:
+    name: Private CRM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: admin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify private CRM artifact contains no staging endpoints or privileged credentials
+        working-directory: .
+        run: node scripts/check-private-crm-artifact.mjs admin/dist
+
+  supabase:
+    name: Supabase migrations and pgTAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Start local Supabase stack
+        run: supabase start
+
+      - name: Reset canonical test database without development seed
+        run: supabase db reset --local --no-seed
+
+      - name: Run pgTAP suite
+        run: supabase test db
+
+      - name: Lint PostgreSQL functions
+        run: supabase db lint --local --schema public,crm_private --level error --fail-on error
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop --no-backup

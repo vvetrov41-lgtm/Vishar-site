@@ -1,0 +1,24 @@
+.nav-sheet-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.nav-sheet-group {
+  display: grid;
+  gap: 7px;
+}
+
+.nav-sheet-group + .nav-sheet-group {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.nav-sheet-group h3 {
+  margin: 0 2px;
+  color: var(--faint);
+  font-size: 0.7rem;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

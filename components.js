@@ -7,23 +7,27 @@ Single source of truth for nav, footer, mobile CTA
 'use strict';
 
 /* ── Config ── */
-const BOOKING_URL = 'https://shorturl.at/orgVK';
-// Single source of truth for availability. Change only this line; HTML uses a neutral fallback.\nconst BOOKING_WINDOW = 'Next availability: December 2026';
+const BOOKING_URL = '/booking/';
+// Single source of truth for availability. Change only this line; HTML uses a neutral fallback.
+const BOOKING_WINDOW = 'London bookings now open';
 const EMAIL = 'info@vishartattoo.com';
 const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
 const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
 
 // Replace with the real GA4 measurement ID when analytics goes live — until then this is a harmless placeholder.
 const GA_MEASUREMENT_ID = 'G-XXXXXXXXXX';
-const CONSENT_KEY = 'vishar-cookie-consent';
+// Versioned so any choice collected while analytics was only a placeholder is
+// never treated as consent for a later, materially configured integration.
+const CONSENT_KEY = 'vishar-cookie-consent-v2';
 
 const NAV_LINKS = [
 { id: 'home',           label: 'Home',           href: '/' },
 { id: 'colour-realism', label: 'Colour Realism', href: '/colour-realism-tattoo-manchester/' },
 { id: 'black-grey',     label: 'Black & Grey',   href: '/black-and-grey-realism-manchester/' },
 { id: 'cover-up',       label: 'Cover-ups',      href: '/cover-up-tattoo-manchester/' },
+{ id: 'booking',        label: 'Book a Tattoo',  href: '/booking/' },
 { id: 'about',          label: 'About',           href: '/about/' },
-{ id: 'book',           label: 'Book',            href: '/book/' },
+{ id: 'book',           label: 'The Book',        href: '/book/' },
 { id: 'aftercare',      label: 'Aftercare',       href: '/aftercare/' },
 { id: 'faq',            label: 'FAQ',              href: '/faq/' },
 { id: 'ai-tools',       label: 'Studio Tools',    href: '/ai-tools/' }
@@ -147,7 +151,7 @@ el.innerHTML = `
         <div class="mb-5 flex items-center justify-center gap-1" role="group" aria-label="Social media and email">
           ${mobileSocialLinks}
         </div>
-        <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
+        <a href="${BOOKING_URL}"
            class="block w-full text-center py-3 bg-white text-black rounded-full font-semibold text-base"
            onclick="toggleMenu()">Start an inquiry</a>
       </div>
@@ -180,8 +184,8 @@ el.innerHTML = `
       <div class="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
         <div>
           <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
-          <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>Manchester &amp; Salford</p>
-          <p class="text-sm text-white/60 leading-relaxed mt-3">Studio: No Regrets Studios, UNIT 73 Yorkshire St, Salford M3 5EG<br>By appointment only · Bookings via studio form</p>
+          <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>London enquiries now open</p>
+          <p class="text-sm text-white/60 leading-relaxed mt-3">Private studio details are confirmed with each appointment.<br>By appointment only · No walk-ins</p>
           <a href="mailto:${EMAIL}" class="text-sm text-white/60 hover:text-white mt-3 inline-block transition-colors">${EMAIL}</a>
         </div>
         <div>
@@ -203,7 +207,7 @@ el.innerHTML = `
         </div>
         <div class="flex items-center gap-6">
           <a href="/privacy/" class="text-xs text-white/60 hover:text-white transition-colors">Privacy &amp; Cookies</a>
-          <a href="${BOOKING_URL}" target="_blank" rel="noopener noreferrer"
+          <a href="${BOOKING_URL}"
              class="text-xs text-white/60 hover:text-white transition-colors">
             Start an inquiry →
           </a>
@@ -435,8 +439,12 @@ window.addEventListener('scroll', function () {
 }
 
 /* ── Analytics (GA4, consent-gated) ── */
+function analyticsConfigured() {
+return GA_MEASUREMENT_ID.indexOf('G-XXXX') !== 0;
+}
+
 function loadAnalytics() {
-if (GA_MEASUREMENT_ID.indexOf('G-XXXX') === 0) return; // placeholder — no-op until a real ID is set
+if (!analyticsConfigured()) return; // placeholder — no-op until a real ID is set
 if (document.getElementById('ga4-script')) return; // already loaded
 
 window.dataLayer = window.dataLayer || [];
@@ -461,6 +469,9 @@ try { localStorage.setItem(CONSENT_KEY, value); } catch (e) { /* private browsin
 
 /* ── Cookie consent banner ── */
 function buildConsentBanner() {
+// Do not ask for a choice when there is no analytics processing to consent to.
+// Enabling a real measurement ID requires updating the privacy notice first.
+if (!analyticsConfigured()) return;
 const stored = getConsent();
 if (stored === 'granted') { loadAnalytics(); return; }
 if (stored === 'denied') return;
@@ -492,6 +503,7 @@ banner.querySelector('#cookie-decline').addEventListener('click', function () {
 
 /* Re-open the banner from the privacy page ("Manage cookie preferences"). */
 window.visharManageCookies = function () {
+if (!analyticsConfigured()) return;
 try { localStorage.removeItem(CONSENT_KEY); } catch (e) {}
 const existing = document.getElementById('cookie-consent');
 if (existing) existing.remove();
@@ -511,14 +523,14 @@ if (hero) {
 
   const heroFlexRows = Array.from(hero.querySelectorAll('.flex'));
   const ctaRow = heroFlexRows.find(function (el) {
-    return el.querySelector('a[href="https://shorturl.at/orgVK"]') && el.querySelector('a[href="#portfolio"]');
+    return el.querySelector('a[href="' + BOOKING_URL + '"]') && el.querySelector('a[href="#portfolio"]');
   });
   if (ctaRow) ctaRow.classList.add('homepage-hero-cta-row');
 }
 
 const processTexts = [
   'You send your idea',
-  'A tattoo consultant gets back to you',
+  'I review the project',
   'We meet for a consultation',
   'You choose whether to book'
 ];

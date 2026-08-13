@@ -1,0 +1,64 @@
+.consequential-dialog {
+  width: min(430px, calc(100vw - 32px));
+  max-height: min(80vh, 620px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  background: var(--surface-overlay);
+  color: var(--text);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.62);
+}
+
+.consequential-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(3px);
+}
+
+.consequential-dialog-content {
+  padding: 20px;
+}
+
+.consequential-dialog h2 {
+  margin: 0;
+  font-size: 1.12rem;
+  line-height: 1.25;
+}
+
+.consequential-dialog p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.consequential-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.consequential-dialog-actions button {
+  width: 100%;
+}
+
+.consequential-dialog-confirm.danger {
+  border-color: rgba(255, 107, 107, 0.48);
+  background: rgba(255, 107, 107, 0.14);
+  color: var(--danger);
+}
+
+@media (min-width: 480px) {
+  .consequential-dialog-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .consequential-dialog-cancel {
+    order: 1;
+  }
+
+  .consequential-dialog-confirm {
+    order: 2;
+  }
+}

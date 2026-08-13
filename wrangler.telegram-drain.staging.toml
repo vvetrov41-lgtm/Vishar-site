@@ -1,0 +1,18 @@
+name = "vishar-telegram-drain-staging"
+main = "workers/telegram-drain-worker.js"
+compatibility_date = "2026-05-25"
+workers_dev = false
+
+# Deliberately no routes and no [triggers] block. A later, separately approved
+# activation must deploy the dedicated Worker, add its encrypted bindings and
+# create a schedule through a guarded activation path.
+
+[vars]
+VISHAR_ENVIRONMENT = "staging"
+SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"
+TELEGRAM_DRAIN_ENABLED = "false"
+
+# Required encrypted bindings for a future staging activation:
+# Exactly one of SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
+# ARTIST_TELEGRAM_VLADIMIR_HSTAGING
+# ARTIST_TELEGRAM_KRISTINA_HSTAGING
