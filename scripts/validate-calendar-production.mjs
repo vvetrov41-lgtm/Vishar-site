@@ -198,6 +198,7 @@ if (deployReady) {
     ['npm run check:calendar-production-bundle', 'the workflow must compile the Worker before deploying'],
     ['npm run scan:secrets', 'the workflow must scan for committed secrets'],
     ['node scripts/test-calendar-rate-limit.mjs', 'the workflow must test the isolated rate limiter'],
+    ['node scripts/test-calendar-production-config.mjs', 'the workflow must exercise the deploy-config generator, not merely grep it'],
     ['secret list --config wrangler.calendar.production.toml', 'the secret preflight must target the Calendar production config, not the root site config'],
     ['node scripts/generate-calendar-production-deploy-config.mjs', 'the workflow must build the deploy config through the tracked generator'],
     ['--dry-run', 'the workflow must compile the generated config before a live deploy'],

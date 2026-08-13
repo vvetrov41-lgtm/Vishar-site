@@ -84,6 +84,14 @@ The Workers binding avoids all of that:
   within the account. It is not a Cloudflare object identifier, so nothing has to
   be provisioned and the value can live in tracked configuration.
 
+`namespace_id` is **account-wide**: two Workers that declare the same integer
+share one set of counters. `1001` was therefore verified free before it was
+chosen — all ten Workers in the account were read successfully and none declares
+a rate limiter, and no tracked Wrangler configuration in this repository
+declares `[[ratelimits]]` or any `namespace_id`. Any future limiter added to
+another Worker must pick a different integer, and the same check must be
+repeated rather than assumed.
+
 The trade-off is accepted deliberately: the binding is documented as permissive,
 eventually consistent and counted per Cloudflare location, so it is a guard
 against runaway automation rather than an accounting mechanism. That is the

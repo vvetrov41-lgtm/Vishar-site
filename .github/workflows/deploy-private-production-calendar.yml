@@ -182,6 +182,7 @@ jobs:
           node scripts/test-calendar-oauth-hardening.mjs
           node scripts/test-calendar-metadata-rpc.mjs
           node scripts/test-calendar-rate-limit.mjs
+          node scripts/test-calendar-production-config.mjs
 
       - name: Compile production Calendar Worker with workers.dev disabled
         run: npm run check:calendar-production-bundle

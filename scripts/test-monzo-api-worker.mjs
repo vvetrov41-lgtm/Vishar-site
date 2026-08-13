@@ -182,14 +182,7 @@ await test('Monzo token custody encrypts credentials and detects tampering', asy
   );
 
   const parsed = JSON.parse(envelope);
-  // Tamper with a decoded byte rather than a base64 character. The ciphertext
-  // encodes to a length whose final base64url character carries padding bits,
-  // so substituting that character left the decoded bytes unchanged roughly one
-  // run in fifteen — AES-GCM then decrypted successfully and this assertion
-  // failed spuriously. Flipping a real byte always changes the ciphertext.
-  const ciphertext = Buffer.from(parsed.data, 'base64url');
-  ciphertext[0] ^= 0xff;
-  parsed.data = ciphertext.toString('base64url');
+  parsed.data = `${parsed.data.slice(0, -1)}${parsed.data.endsWith('A') ? 'B' : 'A'}`;
   await assert.rejects(
     decryptMonzoTokenRecord(JSON.stringify(parsed), env.MONZO_TOKEN_ENCRYPTION_KEY),
     (error) => error instanceof MonzoTokenError && error.code === 'monzo_token_invalid',

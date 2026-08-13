@@ -123,6 +123,7 @@ expectExcludes(team, 'not performed by this workflow', 'Team admin');
 expectIncludes(calendar, "'DEPLOY_PRIVATE_CRM_CALENDAR'", 'Calendar connector');
 expectIncludes(calendar, 'CRM_PRODUCTION_CALENDAR_DEPLOY_ENABLED', 'Calendar connector');
 expectIncludes(calendar, 'node scripts/generate-calendar-production-deploy-config.mjs', 'Calendar connector');
+expectIncludes(calendar, 'node scripts/test-calendar-production-config.mjs', 'Calendar connector');
 expectIncludes(calendar, 'npm run validate:calendar-production', 'Calendar connector');
 expectIncludes(calendar, 'npm run check:calendar-production-bundle', 'Calendar connector');
 expectIncludes(calendar, 'wrangler secret list', 'Calendar connector');
