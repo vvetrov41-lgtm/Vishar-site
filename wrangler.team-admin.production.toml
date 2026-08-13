@@ -5,7 +5,13 @@ workers_dev = false
 preview_urls = false
 
 routes = [
-  { pattern = "team.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true }
+  {
+    pattern = "team.vishartattoo.com"
+    zone_name = "vishartattoo.com"
+    custom_domain = true
+    enabled = true
+    previews_enabled = false
+  }
 ]
 
 # Dedicated production configuration for the narrow Team admin Worker.
@@ -19,12 +25,12 @@ routes = [
 #
 # The Worker's production Custom Domain (team.vishartattoo.com) was
 # provisioned once, outside this workflow, directly against the Cloudflare
-# dashboard. That created a second permanent `--strict` conflict: the
-# deployed Worker carries the route, but this file declared none, so every
-# deploy read as "delete the production route" and aborted. The route is
-# declared here, matching the pre-provisioned Custom Domain exactly, so
-# `--strict` stays enabled and a future accidental route change is still
-# caught instead of silently applied.
+# dashboard. That created route-level `--strict` conflicts: the deployed Worker
+# carries the route plus dashboard-owned route flags, so omitting either the
+# route or its flags made every deploy read as "change the production route"
+# and abort. The route and its flags are declared here, matching the
+# pre-provisioned Custom Domain exactly, so `--strict` stays enabled and a
+# future accidental route change is still caught instead of silently applied.
 #
 # Deliberately no environment values. The deployment must supply
 # CRM_ALLOWED_ORIGIN, CRM_INVITE_REDIRECT_URL, SUPABASE_URL and
