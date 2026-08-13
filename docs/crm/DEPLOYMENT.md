@@ -22,7 +22,7 @@ notification channel is shared between them.
 | Worker | `wrangler dev` with mocked providers | `tattooai-preview` on `intake-staging.vishartattoo.com` | top-level `tattooai` (`wrangler deploy --env=""`) |
 | Telegram | mocked, no network call | separate staging bot/private chat | owner's real chat |
 | Email | interface only, no provider | disconnected | disconnected until separately approved |
-| Calendar | interface only | disconnected | disconnected until separately approved |
+| Calendar | interface only | connected on `calendar-staging.vishartattoo.com`, drain enabled | dedicated `vishar-calendar-production` Worker on `calendar.vishartattoo.com`, deployed inert: drain disabled and no cron trigger. Separate Google Cloud project. Not exposed in the CRM build until separately approved |
 | CRM app | `npm run dev` | owner-only `vishar-crm-staging` Pages project | `admin.vishartattoo.com` or other approved host, not created |
 | Booking app | local static page | owner-only `vishar-booking-staging` Pages project | public site after production approval |
 | Data | fabricated fixtures from `supabase/seed.sql` | clearly marked synthetic data only | real client data |
@@ -152,6 +152,13 @@ Gate 11 Production migration and deployment
         ↓
 Gate 12 Post-deploy verification
         see OWNER_SETUP.md
+        ↓
+Gate 13 Production Calendar connector  ← MANUAL, separate again
+        separate Google Cloud production project in "In production" status
+        dedicated production KV namespaces and Access application
+        protected deploy-private-production-calendar workflow
+        deployed inert: CALENDAR_DRAIN_ENABLED=false and no cron trigger
+        see google-calendar-production-runbook.md and adr/0006
 ```
 
 A green staging run does not authorise Gates 10–12. Merge, ready-for-review and

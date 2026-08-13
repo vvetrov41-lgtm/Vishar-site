@@ -14,6 +14,7 @@ const expectLineAbsent = (text, directive, label) => {
 const crm = read('.github/workflows/deploy-private-production-crm.yml');
 const database = read('.github/workflows/deploy-private-production-database.yml');
 const team = read('.github/workflows/deploy-private-production-team-admin.yml');
+const calendar = read('.github/workflows/deploy-private-production-calendar.yml');
 const teamConfig = read('wrangler.team-admin.toml');
 
 // Assertions about a TOML file must describe its directives, not its prose.
@@ -30,6 +31,7 @@ for (const [label, text] of [
   ['CRM Pages', crm],
   ['production database', database],
   ['Team admin', team],
+  ['Calendar connector', calendar],
 ]) {
   expectIncludes(text, 'environment: crm-production', label);
   expectIncludes(text, 'release/private-crm-rc*', label);
@@ -111,5 +113,53 @@ expectExcludes(team, 'supabase db push', 'Team admin');
 expectIncludes(team, 'team.vishartattoo.com', 'Team admin');
 expectIncludes(team, 'pre-provisioned', 'Team admin');
 expectExcludes(team, 'not performed by this workflow', 'Team admin');
+
+// The Calendar connector is the only production Worker whose deployable
+// configuration is generated rather than tracked, because the KV namespace ids
+// and the Access audience name objects that do not exist yet. The boundary that
+// matters here is that the generation is the *only* difference: it must still
+// deploy one Worker, from the tracked entrypoint, with no cron, no drain and no
+// reach into any other production surface.
+expectIncludes(calendar, "'DEPLOY_PRIVATE_CRM_CALENDAR'", 'Calendar connector');
+expectIncludes(calendar, 'CRM_PRODUCTION_CALENDAR_DEPLOY_ENABLED', 'Calendar connector');
+expectIncludes(calendar, 'node scripts/generate-calendar-production-deploy-config.mjs', 'Calendar connector');
+expectIncludes(calendar, 'npm run validate:calendar-production', 'Calendar connector');
+expectIncludes(calendar, 'npm run check:calendar-production-bundle', 'Calendar connector');
+expectIncludes(calendar, 'wrangler secret list', 'Calendar connector');
+expectIncludes(calendar, '--strict', 'Calendar connector');
+expectIncludes(calendar, '--dry-run', 'Calendar connector');
+expectExcludes(calendar, 'wrangler pages deploy', 'Calendar connector');
+expectExcludes(calendar, 'supabase db push', 'Calendar connector');
+expectExcludes(calendar, 'wrangler secret put', 'Calendar connector');
+expectExcludes(calendar, 'wrangler secret bulk', 'Calendar connector');
+expectExcludes(calendar, 'wrangler.team-admin', 'Calendar connector');
+expectExcludes(calendar, 'wrangler.telegram', 'Calendar connector');
+expectExcludes(calendar, 'wrangler.calendar.staging.toml', 'Calendar connector');
+expectExcludes(calendar, 'rulesets', 'Calendar connector');
+
+// The production Calendar configuration is only safe while it stays inert and
+// carries no retained-staging identifier.
+const calendarProductionConfig = directivesOf(read('wrangler.calendar.production.toml'));
+expectIncludes(calendarProductionConfig, 'name = "vishar-calendar-production"', 'Calendar production config');
+expectIncludes(calendarProductionConfig, 'main = "workers/calendar-oauth.js"', 'Calendar production config');
+expectIncludes(calendarProductionConfig, 'workers_dev = false', 'Calendar production config');
+expectIncludes(calendarProductionConfig, 'preview_urls = false', 'Calendar production config');
+expectIncludes(calendarProductionConfig, 'CALENDAR_DRAIN_ENABLED = "false"', 'Calendar production config');
+expectIncludes(calendarProductionConfig, 'pattern = "calendar.vishartattoo.com"', 'Calendar production config');
+expectIncludes(calendarProductionConfig, '[[ratelimits]]', 'Calendar production config');
+expectLineAbsent(calendarProductionConfig, '[triggers]', 'Calendar production config');
+expectExcludes(calendarProductionConfig, 'crons', 'Calendar production config');
+expectExcludes(calendarProductionConfig, 'workers_dev = true', 'Calendar production config');
+expectExcludes(calendarProductionConfig, 'preview_urls = true', 'Calendar production config');
+expectExcludes(calendarProductionConfig, 'CALENDAR_DRAIN_ENABLED = "true"', 'Calendar production config');
+expectExcludes(calendarProductionConfig, 'gwaliusblwrzisrwnsvs', 'Calendar production config');
+expectExcludes(calendarProductionConfig, 'calendar-staging', 'Calendar production config');
+expectExcludes(calendarProductionConfig, 'pages.dev', 'Calendar production config');
+expectExcludes(calendarProductionConfig, 'dd43224461504e898addeba5b7915142', 'Calendar production config');
+expectExcludes(calendarProductionConfig, '93302bc4f35242c38358a16fcd4ab9a2', 'Calendar production config');
+
+// Retained staging keeps the controls it already has. A rate limiter binding
+// appearing there would be an unrequested change to a live environment.
+expectExcludes(read('wrangler.calendar.staging.toml'), '[[ratelimits]]', 'Calendar staging config');
 
 console.log('Private production release workflow boundaries: passed');

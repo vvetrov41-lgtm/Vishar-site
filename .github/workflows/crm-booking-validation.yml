@@ -50,6 +50,11 @@ jobs:
           npm run validate:calendar-staging
           npm run validate:calendar-staging:deploy-ready
 
+      - name: Validate Calendar production configuration
+        run: |
+          npm run validate:calendar-production
+          npm run validate:calendar-production:deploy-ready
+
       - name: Validate PR181 dormant staging boundary
         if: github.event_name == 'pull_request' && github.event.pull_request.number == 181
         run: bash scripts/validate-pr181-staging-source.sh
@@ -68,6 +73,9 @@ jobs:
 
       - name: Compile dormant Monzo API Worker with Wrangler
         run: npm run check:monzo-api-bundle
+
+      - name: Compile inert production Calendar Worker with Wrangler
+        run: npm run check:calendar-production-bundle
 
       - name: Test private production release workflow boundaries
         run: node scripts/test-private-production-release-workflows.mjs

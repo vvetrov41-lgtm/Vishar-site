@@ -1,0 +1,296 @@
+name: Deploy private production Calendar connector
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation. Leave false for validation-only runs.
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-calendar
+  cancel-in-progress: false
+
+jobs:
+  calendar:
+    name: Private CRM Calendar production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: ${{ vars.CRM_PRODUCTION_CALENDAR_WORKER }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      CALENDAR_ACCESS_AUD: ${{ vars.CRM_PRODUCTION_CALENDAR_ACCESS_AUD }}
+      CALENDAR_KV_STATE_ID: ${{ vars.CRM_PRODUCTION_CALENDAR_KV_STATE_ID }}
+      CALENDAR_KV_TOKENS_ID: ${{ vars.CRM_PRODUCTION_CALENDAR_KV_TOKENS_ID }}
+
+    steps:
+      - name: Verify exact release branch and explicit production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_CALENDAR_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *)
+              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          fi
+
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            if [ "$DEPLOY_ENABLED" != 'true' ]; then
+              echo 'CRM_PRODUCTION_CALENDAR_DEPLOY_ENABLED is not explicitly enabled.' >&2
+              exit 1
+            fi
+            if [ "$APPROVAL_PHRASE" != 'DEPLOY_PRIVATE_CRM_CALENDAR' ]; then
+              echo 'The exact Calendar production approval phrase is required for deploy=true.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Verify production-only Calendar configuration inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export RETAINED_STAGING_SUPABASE_URL='https://gwaliusblwrzisrwnsvs.supabase.co'
+          export RETAINED_STAGING_SUPABASE_REF='gwaliusblwrzisrwnsvs'
+          export RETAINED_STAGING_ACCESS_AUD='2a0569d2cc1acb785ccf190585be7ca9cad70fe6db7042a8094bf39160a26013'
+          export RETAINED_STAGING_KV_STATE_ID='dd43224461504e898addeba5b7915142'
+          export RETAINED_STAGING_KV_TOKENS_ID='93302bc4f35242c38358a16fcd4ab9a2'
+
+          node <<'NODE'
+          const required = [
+            'WORKER_NAME',
+            'SUPABASE_URL',
+            'CALENDAR_ACCESS_AUD',
+            'CALENDAR_KV_STATE_ID',
+            'CALENDAR_KV_TOKENS_ID',
+          ];
+          for (const name of required) {
+            if (!process.env[name]) throw new Error(`${name} is not configured`);
+          }
+
+          if (!/^vishar-calendar-production(?:-[a-z0-9-]+)?$/.test(process.env.WORKER_NAME)) {
+            throw new Error('CRM_PRODUCTION_CALENDAR_WORKER must be a dedicated production Worker name');
+          }
+
+          const supabase = new URL(process.env.SUPABASE_URL);
+          if (
+            supabase.protocol !== 'https:'
+            || !/^[a-z0-9]{20}\.supabase\.co$/.test(supabase.hostname)
+            || supabase.pathname !== '/'
+            || supabase.search
+            || supabase.hash
+            || supabase.origin !== process.env.SUPABASE_URL
+            || process.env.SUPABASE_URL === process.env.RETAINED_STAGING_SUPABASE_URL
+            || supabase.hostname.startsWith(`${process.env.RETAINED_STAGING_SUPABASE_REF}.`)
+          ) throw new Error('CRM_PRODUCTION_SUPABASE_URL must be a non-staging hosted project root');
+
+          const aud = process.env.CALENDAR_ACCESS_AUD.trim();
+          if (!/^[0-9a-f]{64}$/.test(aud)) {
+            throw new Error('CRM_PRODUCTION_CALENDAR_ACCESS_AUD must be a 64-character Access audience tag');
+          }
+          if (aud === process.env.RETAINED_STAGING_ACCESS_AUD) {
+            throw new Error('Refusing to reuse the retained staging Calendar Access audience');
+          }
+
+          const kv = {
+            CALENDAR_KV_STATE_ID: process.env.CALENDAR_KV_STATE_ID.trim(),
+            CALENDAR_KV_TOKENS_ID: process.env.CALENDAR_KV_TOKENS_ID.trim(),
+          };
+          const stagingKv = new Set([
+            process.env.RETAINED_STAGING_KV_STATE_ID,
+            process.env.RETAINED_STAGING_KV_TOKENS_ID,
+          ]);
+          for (const [name, value] of Object.entries(kv)) {
+            if (!/^[0-9a-f]{32}$/.test(value)) {
+              throw new Error(`${name} must be a 32-character KV namespace id`);
+            }
+            if (stagingKv.has(value)) {
+              throw new Error(`Refusing to bind the retained staging Calendar KV namespace via ${name}`);
+            }
+          }
+          if (kv.CALENDAR_KV_STATE_ID === kv.CALENDAR_KV_TOKENS_ID) {
+            throw new Error('PKCE state and encrypted token envelopes must not share one KV namespace');
+          }
+          NODE
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+
+      - name: Verify checkout SHA
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
+      - name: Audit root dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Validate production Calendar configuration
+        run: |
+          npm run validate:calendar-production
+          npm run validate:calendar-production:deploy-ready
+
+      - name: Test Calendar Worker boundaries
+        run: |
+          node scripts/test-calendar-worker.mjs
+          node scripts/test-calendar-availability-worker.mjs
+          node scripts/test-calendar-cancelled-event-recovery.mjs
+          node scripts/test-calendar-scheduler.mjs
+          node scripts/test-calendar-oauth-hardening.mjs
+          node scripts/test-calendar-metadata-rpc.mjs
+          node scripts/test-calendar-rate-limit.mjs
+
+      - name: Compile production Calendar Worker with workers.dev disabled
+        run: npm run check:calendar-production-bundle
+
+      - name: Scan repository for committed secrets
+        run: npm run scan:secrets
+
+      - name: Verify pre-provisioned Worker secret boundary
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          secrets_json="$(npx wrangler secret list --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const names = new Set(values.map((entry) => entry?.name).filter(Boolean));
+          const expected = [
+            'GOOGLE_OAUTH_CLIENT_ID',
+            'GOOGLE_OAUTH_CLIENT_SECRET',
+            'CALENDAR_TOKEN_ENCRYPTION_KEY',
+            'SUPABASE_SECRET_KEY',
+          ];
+          const missing = expected.filter((name) => !names.has(name));
+          if (missing.length) {
+            throw new Error(`Pre-provisioned production Worker is missing ${missing.join(', ')}`);
+          }
+          NODE
+
+      - name: Generate and deploy only the Calendar connector Worker
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deploy_config="$GITHUB_WORKSPACE/.wrangler.calendar.production.deploy.toml"
+          export deploy_config
+          trap 'rm -f "$deploy_config"' EXIT
+
+          node scripts/generate-calendar-production-deploy-config.mjs "$deploy_config"
+
+          # Compile the generated artefact before anything touches the account.
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/calendar-production-wrangler.log \
+          WRANGLER_SEND_METRICS=false \
+            npx wrangler deploy \
+              --config "$deploy_config" \
+              --name "$WORKER_NAME" \
+              --dry-run \
+              --outdir .wrangler/calendar-production-generated
+
+          # Deliberately no --keep-vars. Every variable is declared in the
+          # generated config, so Wrangler owns the complete set and any
+          # out-of-band drift of CALENDAR_DRAIN_ENABLED is corrected on deploy.
+          # Encrypted secrets live in a separate store and are unaffected.
+          npx wrangler deploy \
+            --config "$deploy_config" \
+            --name "$WORKER_NAME" \
+            --strict
+
+          rm -f "$deploy_config"
+          trap - EXIT
+
+      - name: Verify Cloudflare Access gates the production Calendar hostname
+        if: ${{ inputs.deploy }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 https://calendar.vishartattoo.com/health || true)"
+            echo "HTTP_AFTER_DEPLOY=$status"
+            case "$status" in
+              302|303|307|401|403)
+                exit 0
+                ;;
+              200)
+                echo 'Access is not gating the production Calendar hostname.' >&2
+                exit 1
+                ;;
+            esac
+            sleep 6
+          done
+          echo 'Production Calendar hostname did not return an Access response.' >&2
+          exit 1
+
+      - name: Production Calendar boundary summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+        run: |
+          {
+            echo '### Private CRM Calendar production gate'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo '- Worker source: `workers/calendar-oauth.js` only'
+            echo '- Wrangler config: generated from `wrangler.calendar.production.toml` with `workers_dev=false` and `preview_urls=false`'
+            echo '- Scheduled drain: `CALENDAR_DRAIN_ENABLED=false` and no cron trigger declared'
+            echo '- Rate limiting: isolated Worker `CALENDAR_RATE_LIMIT` binding; no zone WAF or rate-limiting rule is read or written'
+            echo '- Route: `calendar.vishartattoo.com` Custom Domain provisioned outside this workflow; the generated config declares none'
+            echo '- Required pre-existing secrets: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `CALENDAR_TOKEN_ENCRYPTION_KEY`, `SUPABASE_SECRET_KEY`'
+            echo '- Retained staging Supabase, Calendar KV namespaces, Access audience and hostname: explicitly refused'
+            echo '- Pages / database / Telegram / GPT / booking deploy commands: none'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -64,6 +64,53 @@ async function sha256Base64Url(value) {
   return base64Url(new Uint8Array(digest));
 }
 
+/**
+ * Rate-limit route classes are a closed enumeration on purpose. Deriving the
+ * bucket from the raw pathname would let a caller mint an unlimited number of
+ * buckets by rotating unmatched paths, so everything the router does not
+ * recognise shares the single `other` bucket.
+ */
+function rateLimitRouteClass(pathname) {
+  if (pathname === '/health') return 'health';
+  if (/^\/oauth\/google\/start\/(vladimir|kristina)$/.test(pathname)) return 'oauth_start';
+  if (pathname === '/oauth/google/callback') return 'oauth_callback';
+  if (/^\/oauth\/google\/disconnect\/(vladimir|kristina)$/.test(pathname)) return 'oauth_disconnect';
+  return 'other';
+}
+
+/**
+ * The actor is the Access session, not the client address. Cloudflare's own
+ * guidance is that addresses are shared, and this Worker is only reachable
+ * behind an owner-only Access application, so the session is both the narrower
+ * and the more meaningful identity.
+ *
+ * The raw assertion is hashed rather than parsed: an unverified JWT payload is
+ * attacker-controlled, so keying on a claim inside it would let a caller rotate
+ * the bucket. Hashing the whole token means a new bucket requires a genuinely
+ * new Access session. Requests arriving without an assertion — which Access
+ * should already have stopped — collapse onto one bucket per address.
+ */
+async function rateLimitActor(request) {
+  const assertion = request?.headers?.get('Cf-Access-Jwt-Assertion') || '';
+  if (assertion) return `access:${await sha256Base64Url(assertion)}`;
+  return `edge:${request?.headers?.get('CF-Connecting-IP') || 'unknown'}`;
+}
+
+/**
+ * Enforced only where the binding exists. Retained staging keeps its existing
+ * Access and zone-level controls and declares no binding, so this is inert
+ * there and in unit tests. The production configuration validator asserts the
+ * binding is declared, so production can never silently lose it.
+ */
+async function enforceRateLimit(request, url, env) {
+  const limiter = env?.CALENDAR_RATE_LIMIT;
+  if (!limiter || typeof limiter.limit !== 'function') return null;
+  const key = `${rateLimitRouteClass(url.pathname)}:${await rateLimitActor(request)}`;
+  const { success } = await limiter.limit({ key });
+  if (success) return null;
+  return json({ ok: false, code: 'rate_limited' }, 429);
+}
+
 function artistConfig(alias, env) {
   const configs = {
     vladimir: {
@@ -294,6 +341,8 @@ export default {
   async fetch(request, env) {
     try {
       const url = new URL(request.url);
+      const limited = await enforceRateLimit(request, url, env);
+      if (limited) return limited;
       if (request.method === 'GET' && url.pathname === '/health') {
         return json(calendarReadiness(env));
       }
@@ -326,6 +375,9 @@ export default {
 
 export const __testing = {
   artistConfig,
+  enforceRateLimit,
+  rateLimitActor,
+  rateLimitRouteClass,
   supabaseBackend,
   updateIntegrationMetadata,
   startOAuth,
