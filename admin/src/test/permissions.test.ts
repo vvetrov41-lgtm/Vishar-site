@@ -9,11 +9,27 @@ import { describe, expect, it } from 'vitest';
 import {
   availableTransitions,
   can,
+  canAccess,
   capabilitiesFor,
   navItemsFor,
   type Capability,
 } from '../lib/permissions';
+import type { ArtistMembership } from '../lib/types';
 import { TRANSITIONS } from './fixtures';
+
+function membership(overrides: Partial<ArtistMembership> = {}): ArtistMembership {
+  return {
+    profile_id: 'profile-1',
+    artist_id: 'artist-1',
+    access_level: 'manager',
+    can_view_finance: false,
+    can_manage_finance: false,
+    can_manage_sessions: true,
+    can_manage_integrations: false,
+    is_active: true,
+    ...overrides,
+  };
+}
 
 describe('capabilities', () => {
   it('gives the owner every capability', () => {
@@ -26,9 +42,13 @@ describe('capabilities', () => {
     }
   });
 
-  it('withholds finance from a booking manager', () => {
+  it('withholds finance from a booking manager unless their artist membership grants it', () => {
     expect(can('booking_manager', 'viewFinance')).toBe(false);
     expect(can('booking_manager', 'manageFinance')).toBe(false);
+    expect(canAccess('booking_manager', 'viewFinance')).toBe(false);
+    expect(canAccess('booking_manager', 'manageFinance')).toBe(false);
+    expect(canAccess('booking_manager', 'viewFinance', [membership({ can_view_finance: true })])).toBe(true);
+    expect(canAccess('booking_manager', 'manageFinance', [membership({ can_manage_finance: true })])).toBe(true);
     expect(can('owner', 'viewFinance')).toBe(true);
   });
 
@@ -71,10 +91,12 @@ describe('capabilities', () => {
     expect(can(undefined, 'viewClients')).toBe(false);
   });
 
-  it('keeps the manager out of integration jobs while allowing scoped integration management', () => {
+  it('keeps the manager out of integration jobs while allowing only scoped integration management', () => {
     expect(can('owner', 'viewIntegrationJobs')).toBe(true);
     expect(can('booking_manager', 'viewIntegrationJobs')).toBe(false);
     expect(can('booking_manager', 'manageIntegrations')).toBe(true);
+    expect(canAccess('booking_manager', 'manageIntegrations')).toBe(false);
+    expect(canAccess('booking_manager', 'manageIntegrations', [membership({ can_manage_integrations: true })])).toBe(true);
   });
 });
 
@@ -95,12 +117,28 @@ describe('navigation', () => {
     ]);
   });
 
-  it('hides Users from a booking manager but keeps their working sections', () => {
+  it('hides scoped sections from a booking manager until a membership grants them', () => {
     const paths = navItemsFor('booking_manager').map((item) => item.path);
+    expect(paths).not.toContain('/payments');
+    expect(paths).not.toContain('/integrations');
     expect(paths).not.toContain('/users');
     expect(paths).toContain('/enquiries');
     expect(paths).toContain('/availability');
     expect(paths).toContain('/activity');
+  });
+
+  it('shows Payments for a booking manager with finance membership but keeps Calendar hidden', () => {
+    const paths = navItemsFor('booking_manager', [membership({
+      can_view_finance: true,
+      can_manage_finance: true,
+      can_manage_integrations: false,
+    })]).map((item) => item.path);
+    expect(paths).toContain('/payments');
+    expect(paths).not.toContain('/integrations');
+  });
+
+  it('shows Calendar for a booking manager with integration membership', () => {
+    const paths = navItemsFor('booking_manager', [membership({ can_manage_integrations: true })]).map((item) => item.path);
     expect(paths).toContain('/integrations');
   });
 
