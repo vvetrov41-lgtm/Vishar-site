@@ -6,7 +6,11 @@
 // response header, while the pre-existing AI, lead and waitlist routes keep
 // their original permissive behaviour.
 
-export const PRODUCTION_ORIGINS = ['https://vishartattoo.com', 'https://www.vishartattoo.com'];
+export const PRODUCTION_ORIGINS = [
+  'https://vishartattoo.com',
+  'https://www.vishartattoo.com',
+  'https://booking.vishartattoo.com',
+];
 
 /** 3 files x 4 MB, plus room for the text fields and multipart framing. */
 export const MAX_REQUEST_BYTES = 13 * 1024 * 1024;
