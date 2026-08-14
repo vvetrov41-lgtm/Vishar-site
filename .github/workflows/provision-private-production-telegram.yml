@@ -1,16 +1,9 @@
 name: Provision private production Telegram Worker
 
 on:
-  workflow_dispatch:
-    inputs:
-      approved_workflow_sha:
-        description: Exact HEAD SHA of this provisioning branch
-        required: true
-        type: string
-      approval_phrase:
-        description: Exact phrase required to provision the inert production Worker
-        required: true
-        type: string
+  push:
+    branches:
+      - release/private-crm-rc19-telegram-provisioning
 
 permissions:
   contents: read
@@ -29,25 +22,31 @@ jobs:
       WORKER_NAME: vishar-telegram-drain-production
       SOURCE_SHA: 7cc9a7fc895a76e3d276ad1f57fafd26e947e3e9
       REQUIRED_TELEGRAM_SHA: 314f0359ad083cec4efc7ea389d3111e2d83b755
+      WORKFLOW_PATH: .github/workflows/provision-private-production-telegram.yml
 
     steps:
-      - name: Verify provisioning workflow gate
+      - name: Checkout provisioning branch for gate verification
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify bounded provisioning branch
         shell: bash
-        env:
-          APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
-          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
         run: |
           set -euo pipefail
           [ "$GITHUB_REF_NAME" = 'release/private-crm-rc19-telegram-provisioning' ] || {
-            echo 'Run only from release/private-crm-rc19-telegram-provisioning.' >&2
+            echo 'Unexpected provisioning branch.' >&2
             exit 1
           }
-          [ "$APPROVED_WORKFLOW_SHA" = "$GITHUB_SHA" ] || {
-            echo 'approved_workflow_sha must exactly match the workflow source SHA.' >&2
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          git merge-base --is-ancestor "$SOURCE_SHA" "$GITHUB_SHA"
+          [ "$(git rev-list --count "$SOURCE_SHA..$GITHUB_SHA")" = '2' ] || {
+            echo 'Provisioning branch must remain exactly two commits above RC19.' >&2
             exit 1
           }
-          [ "$APPROVAL_PHRASE" = 'PROVISION_PRIVATE_CRM_TELEGRAM_INERT' ] || {
-            echo 'The exact provisioning approval phrase is required.' >&2
+          changed_files="$(git diff --name-only "$SOURCE_SHA...$GITHUB_SHA")"
+          [ "$changed_files" = "$WORKFLOW_PATH" ] || {
+            echo 'Provisioning branch contains changes outside the one-time workflow.' >&2
             exit 1
           }
 
@@ -241,7 +240,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/telegram-production-provisioning-evidence"
-
           versions_json="$(npx wrangler versions list --name "$WORKER_NAME" --json)"
           deployments_json="$(npx wrangler deployments list --name "$WORKER_NAME" --json)"
 
@@ -293,7 +291,7 @@ jobs:
           {
             echo '### Telegram production inert provisioning'
             echo
-            echo "- Workflow source SHA: \`$GITHUB_SHA\`"
+            echo "- Trigger SHA: \`$GITHUB_SHA\`"
             echo "- Exact deployed source: \`$SOURCE_SHA\`"
             echo '- Worker: `vishar-telegram-drain-production`'
             echo '- `TELEGRAM_DRAIN_ENABLED=false`'
