@@ -1,0 +1,309 @@
+name: Provision private production Telegram Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_workflow_sha:
+        description: Exact HEAD SHA of this provisioning branch
+        required: true
+        type: string
+      approval_phrase:
+        description: Exact phrase required to provision the inert production Worker
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-private-production-telegram
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision inert Telegram production Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-telegram-drain-production
+      SOURCE_SHA: 7cc9a7fc895a76e3d276ad1f57fafd26e947e3e9
+      REQUIRED_TELEGRAM_SHA: 314f0359ad083cec4efc7ea389d3111e2d83b755
+
+    steps:
+      - name: Verify provisioning workflow gate
+        shell: bash
+        env:
+          APPROVED_WORKFLOW_SHA: ${{ inputs.approved_workflow_sha }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc19-telegram-provisioning' ] || {
+            echo 'Run only from release/private-crm-rc19-telegram-provisioning.' >&2
+            exit 1
+          }
+          [ "$APPROVED_WORKFLOW_SHA" = "$GITHUB_SHA" ] || {
+            echo 'approved_workflow_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          }
+          [ "$APPROVAL_PHRASE" = 'PROVISION_PRIVATE_CRM_TELEGRAM_INERT' ] || {
+            echo 'The exact provisioning approval phrase is required.' >&2
+            exit 1
+          }
+
+      - name: Checkout exact validated RC19 source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact source and Telegram ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor "$REQUIRED_TELEGRAM_SHA" "$SOURCE_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
+      - name: Re-run inert production boundaries
+        run: |
+          set -euo pipefail
+          node scripts/test-telegram-drain.mjs
+          node scripts/test-telegram-drain-worker.mjs
+          npm run test:telegram-production
+          npm run check:telegram-production-bundle
+          npm run scan:secrets
+
+      - name: Validate required protected inputs without revealing values
+        shell: bash
+        env:
+          CF_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          PROD_SUPABASE_SECRET: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
+          PROD_VLADIMIR_BINDING: ${{ secrets.CRM_PRODUCTION_TELEGRAM_VLADIMIR_BINDING }}
+          PROD_KRISTINA_BINDING: ${{ secrets.CRM_PRODUCTION_TELEGRAM_KRISTINA_BINDING }}
+        run: |
+          set -euo pipefail
+          for name in CF_TOKEN CF_ACCOUNT PROD_SUPABASE_SECRET PROD_VLADIMIR_BINDING PROD_KRISTINA_BINDING; do
+            [ -n "${!name:-}" ] || {
+              echo "Missing required protected input: $name" >&2
+              exit 1
+            }
+          done
+
+          node <<'NODE'
+          const bindings = [
+            ['Vladimir', process.env.PROD_VLADIMIR_BINDING],
+            ['Kristina', process.env.PROD_KRISTINA_BINDING],
+          ];
+          for (const [artist, raw] of bindings) {
+            let parsed;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              throw new Error(`${artist} Telegram binding is not valid JSON`);
+            }
+            const keys = Object.keys(parsed ?? {}).sort();
+            if (
+              !parsed ||
+              Array.isArray(parsed) ||
+              keys.join(',') !== 'botToken,chatId' ||
+              typeof parsed.botToken !== 'string' ||
+              parsed.botToken.length === 0 ||
+              typeof parsed.chatId !== 'string' ||
+              parsed.chatId.length === 0
+            ) {
+              throw new Error(`${artist} Telegram binding must contain only non-empty botToken and chatId strings`);
+            }
+          }
+          NODE
+
+      - name: Provision exact inert Worker and encrypted bindings
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          PROD_SUPABASE_SECRET: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
+          PROD_VLADIMIR_BINDING: ${{ secrets.CRM_PRODUCTION_TELEGRAM_VLADIMIR_BINDING }}
+          PROD_KRISTINA_BINDING: ${{ secrets.CRM_PRODUCTION_TELEGRAM_KRISTINA_BINDING }}
+        run: |
+          set -euo pipefail
+          secrets_file="$RUNNER_TEMP/telegram-production-secrets.json"
+          trap 'rm -f "$secrets_file"' EXIT
+
+          SECRETS_FILE="$secrets_file" node <<'NODE'
+          const fs = require('fs');
+          fs.writeFileSync(process.env.SECRETS_FILE, JSON.stringify({
+            SUPABASE_SECRET_KEY: process.env.PROD_SUPABASE_SECRET,
+            ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION: process.env.PROD_VLADIMIR_BINDING,
+            ARTIST_TELEGRAM_KRISTINA_HPRODUCTION: process.env.PROD_KRISTINA_BINDING,
+          }), { mode: 0o600 });
+          NODE
+
+          npx wrangler deploy \
+            --config wrangler.telegram-drain.production.toml \
+            --name "$WORKER_NAME" \
+            --secrets-file "$secrets_file" \
+            --strict
+
+          rm -f "$secrets_file"
+          trap - EXIT
+
+      - name: Verify exact secret-name set
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list \
+            --config wrangler.telegram-drain.production.toml \
+            --name "$WORKER_NAME" \
+            --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
+          const expected = [
+            'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
+            'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+            'SUPABASE_SECRET_KEY',
+          ].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Production Telegram Worker secret-name set is not exact; expected ${expected.join(', ')}`);
+          }
+          NODE
+
+      - name: Verify inert Cloudflare exposure and schedule state
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          api_base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+
+          subdomain_json="$(curl --fail-with-body --silent --show-error \
+            "$api_base/workers/scripts/$WORKER_NAME/subdomain" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+
+          schedules_json="$(curl --fail-with-body --silent --show-error \
+            "$api_base/workers/scripts/$WORKER_NAME/schedules" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+
+          domains_json="$(curl --fail-with-body --silent --show-error \
+            "$api_base/workers/domains?service=$WORKER_NAME" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+
+          SUBDOMAIN_JSON="$subdomain_json" \
+          SCHEDULES_JSON="$schedules_json" \
+          DOMAINS_JSON="$domains_json" \
+          WORKER_NAME="$WORKER_NAME" \
+          node <<'NODE'
+          const subdomain = JSON.parse(process.env.SUBDOMAIN_JSON);
+          const schedules = JSON.parse(process.env.SCHEDULES_JSON);
+          const domains = JSON.parse(process.env.DOMAINS_JSON);
+
+          if (
+            subdomain?.success !== true ||
+            subdomain?.result?.enabled !== false ||
+            subdomain?.result?.previews_enabled !== false
+          ) {
+            throw new Error('Worker subdomain or preview URLs are not disabled');
+          }
+
+          const scheduleList = schedules?.result?.schedules;
+          if (schedules?.success !== true || !Array.isArray(scheduleList) || scheduleList.length !== 0) {
+            throw new Error('Inert production Worker must have zero cron schedules');
+          }
+
+          const workerDomains = Array.isArray(domains?.result)
+            ? domains.result.filter((entry) => entry?.service === process.env.WORKER_NAME)
+            : null;
+          if (domains?.success !== true || !Array.isArray(workerDomains) || workerDomains.length !== 0) {
+            throw new Error('Inert production Worker must have zero Custom Domains');
+          }
+          NODE
+
+      - name: Record non-secret inert Worker evidence
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/telegram-production-provisioning-evidence"
+
+          versions_json="$(npx wrangler versions list --name "$WORKER_NAME" --json)"
+          deployments_json="$(npx wrangler deployments list --name "$WORKER_NAME" --json)"
+
+          VERSIONS_JSON="$versions_json" \
+          DEPLOYMENTS_JSON="$deployments_json" \
+          EVIDENCE_DIR="$RUNNER_TEMP/telegram-production-provisioning-evidence" \
+          node <<'NODE'
+          const fs = require('fs');
+          const versions = JSON.parse(process.env.VERSIONS_JSON || '[]');
+          const deployments = JSON.parse(process.env.DEPLOYMENTS_JSON || '[]');
+          if (!Array.isArray(versions) || !versions.length || !versions[0]?.id) {
+            throw new Error('Unable to resolve inert Telegram Worker version id');
+          }
+          fs.writeFileSync(
+            process.env.EVIDENCE_DIR + '/safe-summary.json',
+            JSON.stringify({
+              worker: process.env.WORKER_NAME,
+              source_sha: process.env.SOURCE_SHA,
+              version_id: versions[0].id,
+              deployments_observed: Array.isArray(deployments) ? deployments.length : null,
+              workers_dev: false,
+              preview_urls: false,
+              cron_count: 0,
+              custom_domain_count: 0,
+              telegram_drain_enabled: false,
+              secret_names: [
+                'SUPABASE_SECRET_KEY',
+                'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+                'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
+              ],
+            }, null, 2)
+          );
+          console.log(`TELEGRAM_INERT_WORKER_VERSION=${versions[0].id}`);
+          NODE
+
+      - name: Upload safe provisioning evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-production-inert-${{ env.SOURCE_SHA }}
+          path: ${{ runner.temp }}/telegram-production-provisioning-evidence/safe-summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Provisioning summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Telegram production inert provisioning'
+            echo
+            echo "- Workflow source SHA: \`$GITHUB_SHA\`"
+            echo "- Exact deployed source: \`$SOURCE_SHA\`"
+            echo '- Worker: `vishar-telegram-drain-production`'
+            echo '- `TELEGRAM_DRAIN_ENABLED=false`'
+            echo '- workers.dev disabled'
+            echo '- preview URLs disabled'
+            echo '- zero cron schedules'
+            echo '- zero Custom Domains'
+            echo '- exactly three encrypted Worker secret names are required and verified'
+            echo '- no Supabase mutation'
+            echo '- no retained staging mutation'
+            echo '- no Telegram API call'
+            echo '- Phase 2 routing is intentionally out of scope'
+          } >> "$GITHUB_STEP_SUMMARY"
