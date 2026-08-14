@@ -1,0 +1,74 @@
+name = "vishar-calendar-production"
+main = "workers/calendar-oauth.js"
+compatibility_date = "2026-05-25"
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "calendar.vishartattoo.com", custom_domain = true }
+]
+
+# Deliberately no [triggers] block.
+#
+# The scheduled drain is gated twice: `CALENDAR_DRAIN_ENABLED` below must be the
+# exact string "true" before `scheduled()` does any work, and with no cron
+# declared here the platform never invokes `scheduled()` at all. Enabling the
+# production drain is a separate, separately approved change that must add both.
+
+[[ratelimits]]
+name = "CALENDAR_RATE_LIMIT"
+namespace_id = "1001"
+simple = { limit = 30, period = 60 }
+
+# `namespace_id` is a developer-chosen positive integer that names this limiter
+# within the account. It is not a Cloudflare object identifier and nothing has
+# to be provisioned for it, which is why it can live in tracked configuration
+# while the KV namespace ids and the Access AUD cannot.
+#
+# This limiter is deliberately Worker-local rather than a zone WAF rate-limiting
+# rule. The Cloudflare Free zone allows exactly one WAF rate-limiting rule and
+# that rule already protects unrelated booking, GPT actions and Team admin
+# surfaces; widening it would couple this Worker's protection to theirs and put
+# those surfaces at risk on every future edit. A Workers binding creates no zone
+# rule, so the existing rule and its quota are untouched.
+#
+# 30 requests per 60 seconds is per Access session and per route class. A human
+# OAuth round trip is a handful of requests, so this is generous for the owner
+# and tight against automation. `period` accepts only 10 or 60.
+
+[vars]
+VISHAR_ENVIRONMENT = "production"
+GOOGLE_OAUTH_REDIRECT_URI = "https://calendar.vishartattoo.com/oauth/google/callback"
+CRM_RETURN_URL = "https://crm.vishartattoo.com/#/integrations/calendar"
+CRM_APPOINTMENTS_URL = "https://crm.vishartattoo.com/#/appointments"
+CALENDAR_ACCESS_TEAM_DOMAIN = "https://vishar-site-pages.cloudflareaccess.com"
+CALENDAR_OWNER_EMAILS = "vvetrov41@gmail.com"
+VLADIMIR_ARTIST_ID = "a1111111-1111-4111-8111-111111111111"
+VLADIMIR_GOOGLE_EMAIL = "vvetrov41@gmail.com"
+KRISTINA_ARTIST_ID = "a2222222-2222-4222-8222-222222222222"
+KRISTINA_GOOGLE_EMAIL = "tinaakaten@gmail.com"
+CALENDAR_DRAIN_ENABLED = "false"
+
+# This file is intentionally not directly deployable.
+#
+# Three values cannot be committed because the Cloudflare objects behind them do
+# not exist yet, and inventing placeholder identifiers would produce a config
+# that looks deployable and is not:
+#
+#   SUPABASE_URL          production Supabase project root
+#   CALENDAR_ACCESS_AUD   audience of the production Calendar Access application
+#   [[kv_namespaces]]     CALENDAR_OAUTH_STATE and CALENDAR_OAUTH_TOKENS ids
+#
+# `.github/workflows/deploy-private-production-calendar.yml` appends them from
+# protected `crm-production` environment values, validates every one of them
+# against the retained-staging equivalents, and fails closed when any is missing.
+# It also strips the route array above, because the production Custom Domain is
+# provisioned once outside this workflow and must not be created or altered by a
+# deployment. See `docs/crm/adr/0006-google-calendar-production-rollout.md`.
+#
+# Required encrypted secrets, installed directly on the Worker and never by this
+# repository:
+#   GOOGLE_OAUTH_CLIENT_ID          production Google Cloud project OAuth client
+#   GOOGLE_OAUTH_CLIENT_SECRET
+#   CALENDAR_TOKEN_ENCRYPTION_KEY   32 random bytes, base64url, distinct from staging
+#   SUPABASE_SECRET_KEY             production Supabase service credential

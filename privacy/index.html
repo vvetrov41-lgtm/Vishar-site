@@ -105,35 +105,78 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">What I collect, and why</h2>
             <p>When you use an enquiry form on this site, you may be asked for your name, email, phone or WhatsApp number, Instagram username, preferred reply method, location, tattoo idea, placement, size, preferred timing, cover-up details and reference images. The book waitlist asks only for a name and email address.</p>
-            <p class="mt-4">That information is sent to a private backend I run on Cloudflare, which forwards it to me so I can reply. It's used to respond to you and handle the tattoo request. It is not sold or used for unrelated marketing. It may be processed by the site's technical providers where needed to deliver the message, and if you proceed with booking, may be used where needed to handle the enquiry or booking.</p>
-            <p class="mt-4">Tattoo enquiries and reference images are sent directly to me through a private Cloudflare Worker and my private Telegram chat. Sending a form does not reserve an appointment. If the project proceeds, I will explain the deposit, confirmed studio, dates and booking terms before payment.</p>
+            <p class="mt-4">Alongside what you type, a tattoo enquiry also records the page you sent it from, the page that referred you, and any campaign tags in the link you followed. That is used to understand which pages bring genuine enquiries, and to recognise a repeated submission so the same enquiry isn't created twice.</p>
+            <p class="mt-4">This information is used to respond to you and to handle the tattoo request. It is not sold and is not used for unrelated marketing. Sending a form does not reserve an appointment. If the project proceeds, I will explain the deposit, confirmed studio, dates and booking terms before any payment.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">Lawful bases</h2>
+            <p>I use the information in a tattoo enquiry because it is necessary to take steps you ask me to take before entering into a contract — reviewing the idea, replying, discussing suitability and, if we both decide to proceed, arranging the project and sessions.</p>
+            <p class="mt-4">I rely on legitimate interests for proportionate security, duplicate prevention, operational records and understanding which site pages or campaigns produce genuine enquiries. Those uses help protect the service and manage requests reliably; they do not involve selling the data or unrelated advertising. Where records must be kept for tax, accounting or another legal requirement, the basis is compliance with that legal obligation.</p>
+            <p class="mt-4">Google Analytics is not currently configured. If optional analytics are enabled in future, this notice will be updated first and the analytics will use consent: they will not load unless you accept, and you will be able to withdraw that choice. The booking-form checkbox confirms that you have read this notice; it is not consent used as the basis for handling your enquiry.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">How a tattoo enquiry is handled</h2>
+            <p>A tattoo enquiry is stored, not just forwarded. Here is the whole path it takes:</p>
+            <ul class="mt-4 space-y-3 list-disc pl-5">
+                <li><strong class="text-white/80 font-medium">Cloudflare</strong> hosts this site and runs the private backend that receives the form. It validates and transfers the submission. Cloudflare is not the authoritative enquiry store, although limited technical and security logs may be processed under the service configuration.</li>
+                <li><strong class="text-white/80 font-medium">Supabase</strong> holds the record of the enquiry in a database: your contact details, the project details you described, and the status of the enquiry as I work through it. This is the authoritative record.</li>
+                <li><strong class="text-white/80 font-medium">Supabase Storage</strong> holds your reference images in a private bucket with no permanent public URL. An authorised CRM account opens an image through a short-lived signed link that expires within a minute; that temporary link must be treated as confidential while it is valid.</li>
+                <li><strong class="text-white/80 font-medium">Telegram</strong> receives a short notification telling me a new enquiry has arrived. That notification contains only a reference number and how many images you attached — not your name, contact details or idea.</li>
+            </ul>
+            <p class="mt-4">Important workflow and access changes are written to an internal activity record so there is a reliable history of how a request was handled. That record deliberately holds references and timestamps rather than a second copy of your personal details.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">Who can see your enquiry</h2>
+            <p>Access is limited to me and to anyone I explicitly authorise to help with bookings. Each person has a defined level of access, enforced by the database rather than by the interface: someone helping with bookings can read and progress enquiries but cannot see financial figures, manage accounts or change settings, and a read-only account cannot change anything at all. Removing someone's access takes effect immediately.</p>
+            <p class="mt-4">The CRM issues a temporary image link only to an account permitted to view files. Anyone who obtains that signed link can use it until it expires, so it is not displayed as a copyable link or stored in the CRM. No member of staff can delete the history of what was done with your enquiry.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">Email and calendar</h2>
+            <p>Gmail and Google Calendar are <strong class="text-white/80 font-medium">not connected</strong>. No enquiry data is sent to either, and no calendar entry is created from this site. If that changes, this notice will be updated before it happens.</p>
+            <p class="mt-4">When email is enabled in future, only a small set of clearly defined confirmation messages would ever be sent automatically. Anything personal — an estimate, a quote, offered dates, a decline, or a cover-up discussion — would be written or reviewed by a person before it was sent.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">Automated decisions and AI</h2>
+            <p>No AI system is connected to the private CRM, and no decision about accepting, declining, pricing or scheduling an enquiry is made solely by automated processing. Any future AI assistance would be limited to controlled staff tools and draft content; a person would remain responsible for the decision and personalised communication. This notice will be updated before such processing is enabled.</p>
         </div>
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">Cookies &amp; analytics</h2>
-            <p>No cookies are set when you land on this site. A small banner offers the option to accept optional analytics cookies (Google Analytics) that help me see which pages are useful — they only load if you press Accept. If you press Decline, or close the banner without choosing, nothing is set.</p>
-            <p class="mt-4">Your cookie choice itself is stored in your browser's localStorage, not a cookie, so the banner doesn't keep reappearing.</p>
-            <p class="mt-4">You can change your mind at any time:</p>
-            <button type="button" onclick="visharManageCookies()" class="mt-4 inline-flex rounded-full border border-white/15 px-5 py-2.5 text-sm font-medium text-white/80 transition-colors hover:text-white hover:border-white/30">Manage cookie preferences</button>
+            <p>Google Analytics is not currently configured, so no analytics script or analytics cookie is loaded and no analytics consent banner is shown. The source contains a disabled, consent-gated integration placeholder; a real measurement ID will not be enabled until this notice has been updated to describe the processing actually in force.</p>
         </div>
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">Third parties</h2>
-            <p>This site is hosted on Cloudflare, which provides security and delivery for every visit. Site fonts are self-hosted. Telegram processes enquiry messages and reference images so they can reach me. If you accept analytics cookies, Google Analytics is used to see aggregate page-visit patterns — no analytics runs before that consent.</p>
+            <p>This site is hosted on Cloudflare, which provides security and delivery for every visit and runs the private backend that receives enquiries. Supabase provides the database and the private file storage that hold tattoo enquiries and reference images. Telegram delivers the short arrival notification described above. Site fonts are self-hosted. Google Analytics is not currently connected.</p>
+            <p class="mt-4">These providers receive only the information needed for the service described above. They are not given enquiry data for their own marketing.</p>
+        </div>
+
+        <div>
+            <h2 class="text-2xl font-semibold text-white mb-4">International transfers</h2>
+            <p>Cloud services may process or support data outside the UK, depending on the project region and the provider's support and delivery arrangements. Before this booking system is put into production, I will verify the actual hosting region, provider terms and transfer routes. If UK personal data would be transferred to a country without UK adequacy regulations, that transfer will not be enabled until an appropriate safeguard — such as the UK International Data Transfer Agreement or the UK Addendum to the EU Standard Contractual Clauses — and any required transfer assessment are in place. This notice will then be updated to describe the arrangement actually used.</p>
         </div>
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">How long I keep things</h2>
-            <p>Enquiry messages are kept only for as long as needed to reply and, if you go ahead, arrange the work. If you'd like your enquiry data deleted sooner, email me and I'll remove it.</p>
+            <p>Enquiries and reference images are kept for as long as needed to reply and, if you go ahead, to arrange and complete the work — and afterwards where I need the record, for example to discuss a touch-up or to meet a legal obligation.</p>
+            <p class="mt-4">I have not yet set a fixed retention period, and nothing is deleted automatically. Rather than publish a number I am not actually applying, I will state the period here once it is decided and in force.</p>
+            <p class="mt-4">If you'd like your enquiry data removed sooner, email me. I will assess the request and erase data that no longer needs to be kept, unless a limited part must be retained for a legal obligation or to establish, exercise or defend a legal claim.</p>
         </div>
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">Your rights</h2>
-            <p>Under UK GDPR you can ask to access, correct, or delete the personal data I hold about you. To do so, email <a href="mailto:info@vishartattoo.com" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">info@vishartattoo.com</a>. If you're not satisfied with how a request is handled, you can complain to the UK's Information Commissioner's Office at <a href="https://ico.org.uk" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">ico.org.uk</a>.</p>
+            <p>Under UK GDPR, depending on the circumstances, you can ask for access, correction, erasure, restriction of processing, or data portability, and you can object to processing based on legitimate interests. You can also withdraw analytics consent at any time without affecting processing that took place before withdrawal.</p>
+            <p class="mt-4">To exercise a right, email <a href="mailto:info@vishartattoo.com" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">info@vishartattoo.com</a>. Please include the enquiry reference number if you have it — it makes finding your record quick and avoids asking for more information than necessary to identify you. A request may cover both the enquiry record and its reference images, subject to the legal exceptions described above.</p>
+            <p class="mt-4">You can also complain to the UK's Information Commissioner's Office at <a href="https://ico.org.uk/make-a-complaint/" target="_blank" rel="noopener noreferrer" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">ico.org.uk/make-a-complaint</a>. I would appreciate the chance to address your concern first, but you do not have to contact me before approaching the ICO.</p>
         </div>
 
         <div>
-            <p class="text-sm text-white/30">Last updated: 22 July 2026.</p>
+            <p class="text-sm text-white/30">Last updated: 29 July 2026.</p>
         </div>
 
     </div>

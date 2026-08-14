@@ -1,0 +1,376 @@
+name: PR 185 GPT OAuth relay staging v2
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-oauth-relay-staging-v2
+  cancel-in-progress: false
+
+jobs:
+  deploy-oauth-relay-v2:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DEPLOY_PR185_GPT_OAUTH_RELAY_STAGING_V2 -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      TARGET_ZONE: vishartattoo.com
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+      WORKER_NAME: vishar-gpt-actions-staging
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ZONE_WAF_WRITE_TOKEN: ${{ secrets.CLOUDFLARE_ZONE_WAF_WRITE_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- DEPLOY_PR185_GPT_OAUTH_RELAY_STAGING_V2 -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify staging-only source and encrypted configuration names
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx 'name = "vishar-gpt-actions-staging"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'main = "workers/gpt-actions-staging.js"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'workers_dev = false' wrangler.gpt-actions.staging.toml
+          grep -Fx 'GPT_ACTIONS_ENABLED = "false"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'GPT_OAUTH_RELAY_ENABLED = "false"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"' wrangler.gpt-actions.staging.toml
+          grep -Fq "const RETAINED_STAGING_SUPABASE_ORIGIN = 'https://gwaliusblwrzisrwnsvs.supabase.co';" workers/gpt-actions-staging.js
+          ! grep -Eq 'service_role|SUPABASE_SECRET|SUPABASE_SERVICE|sb_secret_' workers/gpt-actions-staging.js wrangler.gpt-actions.staging.toml
+          ! grep -Eq '(^|[[:space:]])routes[[:space:]]*=|custom_domain[[:space:]]*=' wrangler.gpt-actions.staging.toml
+          for name in STAGING_SUPABASE_URL STAGING_SUPABASE_PUBLISHABLE_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_EDGE_READ_TOKEN CLOUDFLARE_ZONE_WAF_WRITE_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing staging configuration name: $name" >&2; exit 1; }
+          done
+          [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ]
+          case "$STAGING_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) echo 'Staging browser key is not publishable.' >&2; exit 1 ;; esac
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run relay and Worker tests
+        run: npm run test:worker
+
+      - name: Inspect exact Free-plan edge boundary before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          lookup_auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          zone_json="$RUNNER_TEMP/zone.json"
+          dns_json="$RUNNER_TEMP/dns.json"
+          routes_json="$RUNNER_TEMP/routes.json"
+          domains_json="$RUNNER_TEMP/domains.json"
+          waf_json="$RUNNER_TEMP/waf.json"
+          rate_json="$RUNNER_TEMP/rate.json"
+          access_json="$RUNNER_TEMP/access.json"
+
+          curl --fail --silent --show-error "${lookup_auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
+          zone_id="$(jq -r --arg name "$TARGET_ZONE" '[.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end' "$zone_json")"
+          [ -n "$zone_id" ] || { echo 'Exact Cloudflare zone not resolved.' >&2; exit 1; }
+          plan_legacy_id="$(jq -r --arg name "$TARGET_ZONE" '[.result[] | select(.name == $name)] | .[0].plan.legacy_id // "unknown"' "$zone_json")"
+          plan_name="$(jq -r --arg name "$TARGET_ZONE" '[.result[] | select(.name == $name)] | .[0].plan.name // "unknown"' "$zone_json" | tr '\n\r=' '   ')"
+          [ "$plan_legacy_id" = free ] || { echo "Unexpected Cloudflare plan '$plan_legacy_id'; refusing Free-plan-specific mutation." >&2; exit 1; }
+          printf '%s' "$zone_id" > "$RUNNER_TEMP/zone-id"
+
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=$TARGET_HOST&per_page=100" > "$dns_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes" > "$routes_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > "$domains_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$waf_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" > "$rate_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/apps" > "$access_json"
+
+          dns_target="$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.name == $host)] | length' "$dns_json")"
+          worker_routes="$(jq --arg worker "$WORKER_NAME" '[.result[]? | select((.script // "") == $worker)] | length' "$routes_json")"
+          target_routes="$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.pattern // "") | contains($host))] | length' "$routes_json")"
+          target_domains="$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.hostname == $host)] | length' "$domains_json")"
+          waf_target="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$waf_json")"
+          access_target="$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.domain // "") == $host or (.domain // "") == ($host + "/*"))] | length' "$access_json")"
+          rate_total="$(jq '[.result.rules[]?] | length' "$rate_json")"
+          rate_target="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$rate_json")"
+
+          original_rate_expression='(http.request.uri.path eq "/__vishar-staging-intake-2026")'
+          exact_booking_rate="$(jq --arg expression "$original_rate_expression" '[.result.rules[]? | select(.description == "staging-booking-rate-limit" and (.enabled // true) == true and .action == "block" and .expression == $expression and .ratelimit.period == 10 and .ratelimit.requests_per_period == 5 and .ratelimit.mitigation_timeout == 10 and ((.ratelimit.characteristics | sort) == (["cf.colo.id","ip.src"] | sort)))] | length' "$rate_json")"
+          rate_ruleset_id="$(jq -r '.result.id // empty' "$rate_json")"
+          booking_rate_rule_id="$(jq -r --arg expression "$original_rate_expression" '.result.rules[]? | select(.description == "staging-booking-rate-limit" and .expression == $expression) | .id' "$rate_json")"
+
+          [ "$dns_target" = 0 ] || { echo 'Target DNS record already exists.' >&2; exit 1; }
+          [ "$worker_routes" = 0 ] || { echo 'Worker already has route bindings.' >&2; exit 1; }
+          [ "$target_routes" = 0 ] || { echo 'Target host already appears in a Worker route.' >&2; exit 1; }
+          [ "$target_domains" = 0 ] || { echo 'Target host already has a custom domain.' >&2; exit 1; }
+          [ "$waf_target" = 0 ] || { echo 'Target WAF rule already exists.' >&2; exit 1; }
+          [ "$access_target" = 0 ] || { echo 'Cloudflare Access app exists for target host.' >&2; exit 1; }
+          [ "$rate_total" = 1 ] || { echo "Free plan expected exactly one existing rate-limit rule; found $rate_total." >&2; exit 1; }
+          [ "$rate_target" = 0 ] || { echo 'Target host already appears in rate-limit expression.' >&2; exit 1; }
+          [ "$exact_booking_rate" = 1 ] || { echo 'Existing staging booking rate-limit rule no longer matches the verified 5 requests / 10s boundary.' >&2; exit 1; }
+          [ -n "$rate_ruleset_id" ]
+          [ -n "$booking_rate_rule_id" ]
+
+          jq -r '.result.id' "$waf_json" > "$RUNNER_TEMP/waf-ruleset-id"
+          printf '%s' "$rate_ruleset_id" > "$RUNNER_TEMP/rate-ruleset-id"
+          printf '%s' "$booking_rate_rule_id" > "$RUNNER_TEMP/booking-rate-rule-id"
+          test -s "$RUNNER_TEMP/waf-ruleset-id"
+
+          cat > "$RUNNER_TEMP/relay-v2-evidence.txt" <<EOF
+          exact_sha=$APPROVED_SHA
+          target_zone=$TARGET_ZONE
+          target_host=$TARGET_HOST
+          zone_plan_name=$plan_name
+          zone_plan_legacy_id=$plan_legacy_id
+          pre_target_dns_record_count=$dns_target
+          pre_worker_route_binding_count=$worker_routes
+          pre_target_route_count=$target_routes
+          pre_target_custom_domain_count=$target_domains
+          pre_target_waf_rule_count=$waf_target
+          pre_rate_limit_total_rule_count=$rate_total
+          pre_target_rate_rule_count=$rate_target
+          pre_exact_booking_rate_rule_count=$exact_booking_rate
+          pre_target_access_app_count=$access_target
+          production_targeted=false
+          EOF
+
+      - name: Deploy protected staging OAuth relay with shared Free-plan rate rule
+        shell: bash
+        run: |
+          set -euo pipefail
+          zone_id="$(cat "$RUNNER_TEMP/zone-id")"
+          waf_ruleset_id="$(cat "$RUNNER_TEMP/waf-ruleset-id")"
+          rate_ruleset_id="$(cat "$RUNNER_TEMP/rate-ruleset-id")"
+          booking_rate_rule_id="$(cat "$RUNNER_TEMP/booking-rate-rule-id")"
+          write_auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          waf_write_auth=(-H "Authorization: Bearer $CLOUDFLARE_ZONE_WAF_WRITE_TOKEN" -H 'Content-Type: application/json')
+          edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          waf_rule_id=''
+          domain_id=''
+          domain_changed=false
+          worker_changed=false
+          rate_changed=false
+          complete=false
+
+          original_rate_expression='(http.request.uri.path eq "/__vishar-staging-intake-2026")'
+          combined_rate_expression='((http.request.uri.path eq "/__vishar-staging-intake-2026") or (http.host eq "gpt-actions-staging.vishartattoo.com" and (http.request.uri.path eq "/oauth/authorize" or http.request.uri.path eq "/oauth/authorize/" or http.request.uri.path eq "/oauth/token" or http.request.uri.path eq "/oauth/token/")))'
+          jq -n --arg expression "$original_rate_expression" '{description:"staging-booking-rate-limit",expression:$expression,action:"block",enabled:true,ratelimit:{characteristics:["ip.src","cf.colo.id"],period:10,requests_per_period:5,mitigation_timeout:10}}' > "$RUNNER_TEMP/rate-original.json"
+          jq -n --arg expression "$combined_rate_expression" '{description:"staging-booking-rate-limit",expression:$expression,action:"block",enabled:true,ratelimit:{characteristics:["ip.src","cf.colo.id"],period:10,requests_per_period:5,mitigation_timeout:10}}' > "$RUNNER_TEMP/rate-combined.json"
+
+          rollback() {
+            original_status=$?
+            if [ "$complete" = true ]; then return "$original_status"; fi
+            set +e
+            printf 'rollback_attempted=true\n' >> "$RUNNER_TEMP/relay-v2-evidence.txt"
+
+            if [ "$domain_changed" = true ]; then
+              if [ -z "$domain_id" ]; then
+                curl --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > "$RUNNER_TEMP/rollback-domains.json"
+                domain_id="$(jq -r --arg host "$TARGET_HOST" --arg service "$WORKER_NAME" '[.result[]? | select(.hostname == $host and .service == $service)] | if length == 1 then .[0].id else empty end' "$RUNNER_TEMP/rollback-domains.json")"
+              fi
+              domain_delete_status=not_found
+              if [ -n "$domain_id" ]; then
+                domain_delete_status="$(curl --silent --show-error -o "$RUNNER_TEMP/domain-delete.json" -w '%{http_code}' "${write_auth[@]}" -X DELETE "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains/$domain_id" || true)"
+              fi
+              printf 'rollback_domain_delete_status=%s\n' "$domain_delete_status" >> "$RUNNER_TEMP/relay-v2-evidence.txt"
+            fi
+
+            if [ "$worker_changed" = true ]; then
+              npx wrangler deploy --config wrangler.gpt-actions.staging.toml \
+                --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+                --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
+                --var GPT_ACTIONS_ENABLED:false \
+                --var GPT_OAUTH_RELAY_ENABLED:false > "$RUNNER_TEMP/worker-rollback.log" 2>&1
+              printf 'rollback_worker_disable_status=%s\n' "$?" >> "$RUNNER_TEMP/relay-v2-evidence.txt"
+            fi
+
+            if [ "$rate_changed" = true ]; then
+              rate_restore_status="$(curl --silent --show-error -o "$RUNNER_TEMP/rate-restore.json" -w '%{http_code}' "${waf_write_auth[@]}" -X PATCH \
+                --data-binary @"$RUNNER_TEMP/rate-original.json" \
+                "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$rate_ruleset_id/rules/$booking_rate_rule_id" || true)"
+              printf 'rollback_rate_restore_status=%s\n' "$rate_restore_status" >> "$RUNNER_TEMP/relay-v2-evidence.txt"
+            fi
+
+            if [ -n "$waf_rule_id" ]; then
+              waf_delete_status="$(curl --silent --show-error -o "$RUNNER_TEMP/waf-delete.json" -w '%{http_code}' "${waf_write_auth[@]}" -X DELETE \
+                "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$waf_ruleset_id/rules/$waf_rule_id" || true)"
+              printf 'rollback_waf_delete_status=%s\n' "$waf_delete_status" >> "$RUNNER_TEMP/relay-v2-evidence.txt"
+            fi
+
+            curl --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > "$RUNNER_TEMP/rollback-domains-after.json"
+            curl --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$RUNNER_TEMP/rollback-waf-after.json"
+            curl --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" > "$RUNNER_TEMP/rollback-rate-after.json"
+            rollback_domains="$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.hostname == $host)] | length' "$RUNNER_TEMP/rollback-domains-after.json" 2>/dev/null || echo unknown)"
+            rollback_waf="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$RUNNER_TEMP/rollback-waf-after.json" 2>/dev/null || echo unknown)"
+            rollback_rate_target="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$RUNNER_TEMP/rollback-rate-after.json" 2>/dev/null || echo unknown)"
+            rollback_rate_original="$(jq --arg expression "$original_rate_expression" '[.result.rules[]? | select(.description == "staging-booking-rate-limit" and .expression == $expression and .ratelimit.period == 10 and .ratelimit.requests_per_period == 5 and .ratelimit.mitigation_timeout == 10)] | length' "$RUNNER_TEMP/rollback-rate-after.json" 2>/dev/null || echo unknown)"
+            printf 'rollback_post_target_custom_domain_count=%s\nrollback_post_target_waf_rule_count=%s\nrollback_post_target_rate_rule_count=%s\nrollback_post_original_booking_rate_rule_count=%s\n' \
+              "$rollback_domains" "$rollback_waf" "$rollback_rate_target" "$rollback_rate_original" >> "$RUNNER_TEMP/relay-v2-evidence.txt"
+            return "$original_status"
+          }
+          trap rollback EXIT
+
+          waf_expression='(http.host eq "gpt-actions-staging.vishartattoo.com" and not ((http.request.method eq "GET" and (http.request.uri.path eq "/oauth/authorize" or http.request.uri.path eq "/oauth/authorize/" or http.request.uri.path eq "/privacy" or http.request.uri.path eq "/privacy/")) or (http.request.method eq "HEAD" and (http.request.uri.path eq "/privacy" or http.request.uri.path eq "/privacy/")) or (http.request.method eq "POST" and (http.request.uri.path eq "/oauth/token" or http.request.uri.path eq "/oauth/token/"))))'
+          jq -n --arg expression "$waf_expression" '{description:"Vishar GPT OAuth staging path boundary",expression:$expression,action:"block",enabled:true}' > "$RUNNER_TEMP/waf-create.json"
+          waf_status="$(curl --silent --show-error -o "$RUNNER_TEMP/waf-create-response.json" -w '%{http_code}' "${waf_write_auth[@]}" -X POST \
+            --data-binary @"$RUNNER_TEMP/waf-create.json" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$waf_ruleset_id/rules" || true)"
+          [ "$waf_status" = 200 ] || { echo "Unable to create staging WAF rule, HTTP $waf_status." >&2; exit 1; }
+          waf_rule_id="$(jq -r '.result.id // empty' "$RUNNER_TEMP/waf-create-response.json")"
+          [ -n "$waf_rule_id" ] || { echo 'WAF mutation returned no rule ID.' >&2; exit 1; }
+
+          rate_patch_status="$(curl --silent --show-error -o "$RUNNER_TEMP/rate-patch-response.json" -w '%{http_code}' "${waf_write_auth[@]}" -X PATCH \
+            --data-binary @"$RUNNER_TEMP/rate-combined.json" \
+            "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/$rate_ruleset_id/rules/$booking_rate_rule_id" || true)"
+          if [ "$rate_patch_status" != 200 ]; then
+            rate_errors="$(jq -r '[.errors[]? | ((.code // "unknown")|tostring) + ":" + (.message // "unknown")] | if length == 0 then "none" else join(" | ") end' "$RUNNER_TEMP/rate-patch-response.json" 2>/dev/null | tr '\n\r=' '   ')"
+            printf 'rate_patch_status=%s\nrate_patch_errors=%s\n' "$rate_patch_status" "$rate_errors" >> "$RUNNER_TEMP/relay-v2-evidence.txt"
+            echo "Unable to extend existing staging rate-limit rule, HTTP $rate_patch_status: $rate_errors" >&2
+            exit 1
+          fi
+          rate_changed=true
+          printf 'rate_patch_status=200\nshared_rate_limit_period=10\nshared_rate_limit_requests=5\nshared_rate_limit_mitigation=10\n' >> "$RUNNER_TEMP/relay-v2-evidence.txt"
+
+          dry_run_dir="$RUNNER_TEMP/gpt-oauth-relay-v2-dry-run"
+          npx wrangler deploy --config wrangler.gpt-actions.staging.toml --dry-run --outdir "$dry_run_dir" \
+            --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
+            --var GPT_ACTIONS_ENABLED:false \
+            --var GPT_OAUTH_RELAY_ENABLED:true >/dev/null
+
+          npx wrangler deploy --config wrangler.gpt-actions.staging.toml \
+            --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
+            --var GPT_ACTIONS_ENABLED:false \
+            --var GPT_OAUTH_RELAY_ENABLED:true
+          worker_changed=true
+
+          jq -n --arg host "$TARGET_HOST" --arg service "$WORKER_NAME" --arg zone_id "$zone_id" --arg zone_name "$TARGET_ZONE" \
+            '{hostname:$host,service:$service,zone_id:$zone_id,zone_name:$zone_name}' > "$RUNNER_TEMP/domain-create.json"
+          domain_status="$(curl --silent --show-error -o "$RUNNER_TEMP/domain-create-response.json" -w '%{http_code}' "${write_auth[@]}" -X PUT \
+            --data-binary @"$RUNNER_TEMP/domain-create.json" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" || true)"
+          [ "$domain_status" = 200 ] || { echo "Unable to attach staging Worker custom domain, HTTP $domain_status." >&2; exit 1; }
+          domain_changed=true
+          domain_id="$(jq -r '.result.id // empty' "$RUNNER_TEMP/domain-create-response.json")"
+
+          ready=false
+          for attempt in $(seq 1 36); do
+            if curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > "$RUNNER_TEMP/domains-after.json"; then
+              count="$(jq --arg host "$TARGET_HOST" --arg service "$WORKER_NAME" '[.result[]? | select(.hostname == $host and .service == $service)] | length' "$RUNNER_TEMP/domains-after.json")"
+              if [ "$count" = 1 ]; then ready=true; break; fi
+            fi
+            sleep 5
+          done
+          [ "$ready" = true ] || { echo 'Custom domain did not become visible through read API.' >&2; exit 1; }
+
+          privacy_status='000'
+          for attempt in $(seq 1 36); do
+            privacy_status="$(curl --silent --show-error --max-time 10 -o "$RUNNER_TEMP/privacy.html" -w '%{http_code}' "https://$TARGET_HOST/privacy" || true)"
+            [ "$privacy_status" = 200 ] && break
+            sleep 5
+          done
+          [ "$privacy_status" = 200 ] || { echo "Privacy endpoint not ready, HTTP $privacy_status." >&2; exit 1; }
+
+          authorize_status="$(curl --silent --show-error --max-time 10 --max-redirs 0 -D "$RUNNER_TEMP/authorize-headers.txt" -o /dev/null -w '%{http_code}' \
+            "https://$TARGET_HOST/oauth/authorize?client_id=synthetic-client&redirect_uri=https%3A%2F%2Fexample.invalid%2Fcallback&state=synthetic-state&code_challenge=synthetic-challenge&code_challenge_method=S256" || true)"
+          [ "$authorize_status" = 302 ] || { echo "OAuth authorize relay did not return 302, HTTP $authorize_status." >&2; exit 1; }
+          grep -Fqi 'location: https://gwaliusblwrzisrwnsvs.supabase.co/auth/v1/oauth/authorize?' "$RUNNER_TEMP/authorize-headers.txt"
+
+          token_guard_status="$(curl --silent --show-error --max-time 10 -o "$RUNNER_TEMP/token-guard.json" -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "https://$TARGET_HOST/oauth/token" || true)"
+          [ "$token_guard_status" = 415 ] || { echo "OAuth token content-type guard failed, HTTP $token_guard_status." >&2; exit 1; }
+
+          action_status="$(curl --silent --show-error --max-time 10 -o "$RUNNER_TEMP/action-disabled.json" -w '%{http_code}' \
+            "https://$TARGET_HOST/v1/appointments?from=2026-08-10T00%3A00%3A00Z&to=2026-08-11T00%3A00%3A00Z" || true)"
+          [ "$action_status" = 403 ] || { echo "WAF must block disabled appointment action paths, HTTP $action_status." >&2; exit 1; }
+
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes" > "$RUNNER_TEMP/routes-final.json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > "$RUNNER_TEMP/domains-final.json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$RUNNER_TEMP/waf-final.json"
+          curl --fail --silent --show-error "${edge_auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" > "$RUNNER_TEMP/rate-final.json"
+          final_routes="$(jq --arg worker "$WORKER_NAME" '[.result[]? | select((.script // "") == $worker)] | length' "$RUNNER_TEMP/routes-final.json")"
+          final_domains="$(jq --arg host "$TARGET_HOST" --arg service "$WORKER_NAME" '[.result[]? | select(.hostname == $host and .service == $service)] | length' "$RUNNER_TEMP/domains-final.json")"
+          final_waf="$(jq --arg host "$TARGET_HOST" '[.result.rules[]? | select((.expression // "") | contains($host))] | length' "$RUNNER_TEMP/waf-final.json")"
+          final_rate_total="$(jq '[.result.rules[]?] | length' "$RUNNER_TEMP/rate-final.json")"
+          final_rate_target="$(jq --arg expression "$combined_rate_expression" '[.result.rules[]? | select(.description == "staging-booking-rate-limit" and .expression == $expression and .ratelimit.period == 10 and .ratelimit.requests_per_period == 5 and .ratelimit.mitigation_timeout == 10)] | length' "$RUNNER_TEMP/rate-final.json")"
+          [ "$final_routes" = 0 ]
+          [ "$final_domains" = 1 ]
+          [ "$final_waf" = 1 ]
+          [ "$final_rate_total" = 1 ]
+          [ "$final_rate_target" = 1 ]
+
+          cat >> "$RUNNER_TEMP/relay-v2-evidence.txt" <<EOF
+          oauth_relay_enabled=true
+          gpt_actions_enabled=false
+          post_worker_route_binding_count=$final_routes
+          post_target_custom_domain_count=$final_domains
+          post_target_waf_rule_count=$final_waf
+          post_rate_limit_total_rule_count=$final_rate_total
+          post_combined_shared_rate_rule_count=$final_rate_target
+          privacy_status=$privacy_status
+          authorize_status=$authorize_status
+          token_content_type_guard_status=$token_guard_status
+          disabled_action_waf_status=$action_status
+          cloudflare_mutated=true
+          production_targeted=false
+          EOF
+
+          complete=true
+          trap - EXIT
+
+      - name: Upload safe relay v2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-oauth-relay-staging-v2-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/relay-v2-evidence.txt
+          if-no-files-found: warn
+          retention-days: 30

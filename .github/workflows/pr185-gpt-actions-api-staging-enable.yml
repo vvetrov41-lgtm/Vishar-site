@@ -1,0 +1,106 @@
+name: PR 185 GPT Actions API staging enable
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-actions-api-staging-enable
+  cancel-in-progress: false
+
+jobs:
+  enable-actions-api:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- ENABLE_PR185_GPT_ACTIONS_API_STAGING -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      TARGET_ZONE: vishartattoo.com
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+      WORKER_NAME: vishar-gpt-actions-staging
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ZONE_WAF_WRITE_TOKEN: ${{ secrets.CLOUDFLARE_ZONE_WAF_WRITE_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- ENABLE_PR185_GPT_ACTIONS_API_STAGING -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate guarded enablement source and Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/pr185-gpt-actions-api-staging-enable.sh
+          npm run validate:gpt-actions
+          npm run test:worker
+
+      - name: Enable protected staging Action API
+        shell: bash
+        run: bash scripts/pr185-gpt-actions-api-staging-enable.sh
+
+      - name: Upload safe Action API evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-actions-api-staging-enable-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/gpt-actions-api-enable-evidence.txt
+          if-no-files-found: warn
+          retention-days: 30
