@@ -145,6 +145,8 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       fileCount: manifests.length,
     });
 
+    // A completed replay is finished business: return the original reference
+    // without re-uploading anything.
     if (intake.replayed && intake.intake_state === 'complete') {
       logger.info('enquiry.replayed', {
         route: 'enquiries',
@@ -156,6 +158,7 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       return jsonResponse({ ok: true, reference: referenceNumber, replayed: true }, 200, cors);
     }
 
+    // ---- Upload the objects -------------------------------------------------
     const cleanupPaths = new Set();
     let finalization;
 
@@ -164,6 +167,8 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
         const manifest = manifests[index];
         const file = files[index];
 
+        // A replay that already stored this object skips it. Re-uploading would
+        // be harmless but pointless.
         if (manifest.upload_state === 'ready') {
           continue;
         }
@@ -180,6 +185,11 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
             p_checksum: file.checksum,
           });
         } catch (markError) {
+          // A 4xx is a definitive database rejection: the manifest transaction
+          // did not commit, so this object is safe to compensate. A 5xx or
+          // network loss is ambiguous — Postgres may already have marked it
+          // ready. Retain the object in that case; an exact retry either skips
+          // the ready pair or safely upserts the same checked bytes.
           if (
             markError instanceof SupabaseError
             && markError.status >= 400
@@ -203,6 +213,9 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
 
       finalization = await supabase.rpc('finalize_enquiry_intake', { p_enquiry_id: enquiryId });
     } catch (uploadError) {
+      // Compensating cleanup, then a safe operational failure. The enquiry row
+      // survives so the same idempotency key can resume it, and reconciliation
+      // can find it, but it does not appear in the normal new-enquiry queue.
       let cleanedUp = 0;
       for (const path of cleanupPaths) {
         if (await storage.remove(path)) cleanedUp += 1;
@@ -218,6 +231,8 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
           p_error_code: errorCode,
         });
       } catch {
+        // Recording the failure is itself best-effort; the enquiry is already
+        // outside the queue because intake never completed.
       }
 
       logger.error('enquiry.intake_failed', {
@@ -238,6 +253,11 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       );
     }
 
+    // ---- Notify, after the point of no return -------------------------------
+    // Everything below this line is best-effort. The enquiry is already durable
+    // and the outbox row created during finalisation preserves the provider
+    // outcome for the future drain, so nothing here can turn a saved enquiry
+    // into a failed submission.
     const outboxId = finalization?.outbox_id;
     let notification = { delivered: false, errorCode: 'outbox_route_missing' };
     if (outboxId) {
@@ -262,6 +282,9 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
           p_error_code: notification.delivered ? null : notification.errorCode,
         });
       } catch {
+        // The durable job remains pending/failed for the planned drain. A provider
+        // may have accepted the message before this acknowledgement failed, so
+        // delivery is explicitly at-least-once.
         logger.warn('enquiry.notification_outcome_unrecorded', {
           route: 'enquiries',
           enquiryId,
