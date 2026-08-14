@@ -9,6 +9,9 @@
  * This script injects those values from already-validated environment
  * configuration and preserves the one exact pre-provisioned Custom Domain so
  * `wrangler deploy --strict` compares, rather than deletes, that remote route.
+ * Cloudflare's remote Custom Domain representation also carries canonical
+ * metadata (`zone_name`, `enabled`, `previews_enabled`), so the generated-only
+ * route is normalized to that exact representation before the strict deploy.
  * It then re-asserts every safety property on the generated artefact itself so
  * malformed input cannot smuggle a cron trigger, enabled drain, public exposure
  * or staging binding past canonical-config validation.
@@ -27,6 +30,9 @@ const RETAINED_STAGING = {
 };
 
 const PRODUCTION_CALENDAR_HOST = 'calendar.vishartattoo.com';
+const PRODUCTION_CALENDAR_ZONE = 'vishartattoo.com';
+const TRACKED_ROUTE = `  { pattern = "${PRODUCTION_CALENDAR_HOST}", custom_domain = true }`;
+const DEPLOY_ROUTE = `  { pattern = "${PRODUCTION_CALENDAR_HOST}", zone_name = "${PRODUCTION_CALENDAR_ZONE}", custom_domain = true, enabled = true, previews_enabled = false }`;
 
 const fail = (message) => {
   throw new Error(message);
@@ -91,9 +97,11 @@ export function readInputs(env = process.env) {
 /**
  * The production Custom Domain was provisioned before the real runtime. With
  * `wrangler deploy --strict`, omitting `routes` is interpreted as a request to
- * remove that remote domain, so the generated deploy config must carry the
- * exact same single Custom Domain declaration. Any different/multiple route is
- * rejected before a live deployment can start.
+ * remove that remote domain. Cloudflare also returns three canonical metadata
+ * fields for an existing Custom Domain. The tracked config intentionally keeps
+ * the human-reviewable minimal declaration; only the generated deploy artefact
+ * is expanded to the exact remote representation. Any different/multiple route
+ * is rejected before a live deployment can start.
  */
 export function preserveExactRoute(source) {
   const arrays = [...source.matchAll(/^routes\s*=\s*\[\s*\n([\s\S]*?)^\]\s*$/gm)];
@@ -106,14 +114,17 @@ export function preserveExactRoute(source) {
     fail('Generated deploy config must preserve exactly one production Custom Domain route');
   }
 
-  const expected = new RegExp(
-    `^\\{\\s*pattern\\s*=\\s*"${PRODUCTION_CALENDAR_HOST.replaceAll('.', '\\.') }"\\s*,\\s*custom_domain\\s*=\\s*true\\s*\\}$`,
-  );
-  if (!expected.test(entries[0].trim())) {
+  if (entries[0].trim() !== TRACKED_ROUTE.trim()) {
     fail('Generated deploy config lost the exact production Custom Domain');
   }
 
-  return `${source.trimEnd()}\n`;
+  const normalized = source.replace(TRACKED_ROUTE, DEPLOY_ROUTE);
+  if (normalized === source || (normalized.match(new RegExp(PRODUCTION_CALENDAR_HOST.replaceAll('.', '\\.'), 'g')) || []).length !== 2) {
+    // The hostname appears once in the route and once in the OAuth redirect URI.
+    fail('Generated deploy config could not normalize the production Custom Domain metadata');
+  }
+
+  return `${normalized.trimEnd()}\n`;
 }
 
 export function buildDeployConfig(canonical, inputs) {
@@ -149,8 +160,10 @@ id = "${inputs.kvTokensId}"
     .filter(Boolean)
     .join('\n');
 
-  const routeMatches = [...active.matchAll(/\{\s*pattern\s*=\s*"([^"]+)"\s*,\s*custom_domain\s*=\s*true\s*\}/g)];
-  if (routeMatches.length !== 1 || routeMatches[0][1] !== PRODUCTION_CALENDAR_HOST) {
+  const routeLines = active
+    .split('\n')
+    .filter((line) => line.includes('pattern = "calendar.vishartattoo.com"'));
+  if (routeLines.length !== 1 || routeLines[0] !== DEPLOY_ROUTE.trim()) {
     fail('Generated deploy config lost the exact production Custom Domain');
   }
   if (!/^CALENDAR_DRAIN_ENABLED\s*=\s*"false"$/m.test(active)) {
