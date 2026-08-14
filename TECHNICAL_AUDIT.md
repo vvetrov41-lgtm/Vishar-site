@@ -1,3 +1,449 @@
+## 2026-07-29 — PR #176 CRM and durable booking infrastructure
+
+### First GitHub CI follow-up
+
+The first GitHub Actions run against
+`bf9da3215031d3f8800dfc41701dcaabd16e7c66` found two CI-only failures:
+
+- Static Validation completed the site checks but pytest collection could not
+  import `geo_agent`. The checkout root (for the project GSC tools) and the
+  canonical `.geo-topic-agent-runtime` directory (for `geo_topic_agent`) are
+  now both set explicitly on `PYTHONPATH`, and the workflow invokes pytest
+  through the selected Python interpreter with `python -m pytest`.
+- A clean Supabase stack applied migrations `0001` through `0007`, then the
+  normal migration role was not permitted to run
+  `ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY` in
+  `0008_storage.sql`. The redundant RLS-enable statements for the
+  Supabase-managed `storage.objects` and `storage.buckets` tables were removed;
+  the private `crm-files` bucket and every CRM Storage policy remain unchanged.
+
+The deprecated `[inbucket]` local mail-catcher section was also renamed to the
+current `[local_smtp]` section without changing its enabled state or port.
+Clean Supabase runtime validation, including pgTAP, remains pending until the
+next GitHub CI run.
+
+Local follow-up validation passed for the static site (29 checks), booking flow
+(61 tests), Worker modules (77 tests), CRM (67 tests), CRM typecheck/build,
+the full Python suite from a clean exported checkout (16 tests), secret scan,
+Git whitespace, seven workflow YAML files and all 19 SQL files (1,028
+statements). The clean checkout imported both the project `geo_agent` tools and
+the canonical `geo_topic_agent` runtime package. Docker, Supabase CLI and
+PostgreSQL server binaries remain unavailable locally, so `npm run test:db`
+stopped before database startup and pgTAP was not run locally.
+
+### Second GitHub CI follow-up
+
+The second GitHub Actions run against
+`9e4a3e0b11b1c81bb96748340938990c60cca0e8` passed Static Validation,
+Private CRM, and Public site and Worker. The pinned Supabase CLI `2.110.0`
+started the clean local stack successfully and applied migrations `0001`
+through `0010`. The remaining database job failure was the real
+`supabase test db` run; `supabase db lint` was skipped after that failure.
+
+The pgTAP log exposed these harness and behaviour mismatches:
+
+- `010_schema_constraints.sql` and `030_intake.sql` saw the fabricated local
+  seed's client, enquiry and file manifest in addition to their own fixtures.
+- `040_workflow.sql` expected a duplicate-key error for a conversion retry, but
+  the function returned the earlier workflow error `42501`; the manager outbox
+  assertion also ran as the privileged `postgres` role because its helper
+  changed JWT claims only.
+- `050_rls_roles.sql` saw seed profiles/records in its exact-count assertions,
+  expected anonymous Storage SELECT to lack an ACL even though the managed
+  table grants it, and reached the append-only trigger while the intended first
+  layer was supposed to test the authenticated ACL/RLS boundary.
+- `060_storage.sql` likewise expected an anonymous ACL error and attempted
+  direct SQL deletion from `storage.objects`, which correctly triggered
+  Supabase Storage's `storage.protect_delete()` protection.
+- `070_bootstrap_retention.sql` began with the three seeded profiles, so it
+  could not prove a genuine zero-profile first-owner bootstrap.
+- `supabase test db` recursively discovered
+  `supabase/tests/_shim/00_supabase_shim.sql` and tried to install the
+  plain-PostgreSQL compatibility schema on real Supabase.
+
+The focused correction keeps the fabricated seed available for deliberate
+local UI development while making the canonical CI path:
+
+```text
+supabase start
+supabase db reset --local --no-seed
+supabase test db
+```
+
+The plain-PostgreSQL shim now lives at
+`scripts/test-support/supabase-shim.sql`, outside canonical test discovery.
+The fallback runner and documentation point to that location. ACL/RLS pgTAP
+assertions pair the appropriate `anon`, `authenticated`, or `service_role`
+database role with matching JWT claims. The activity-log ACL/RLS layer and
+privileged append-only-trigger layer are separate again.
+
+Storage assertions now test effective row visibility, including zero rows for
+anonymous callers and no visibility for forged keys, without assuming the
+absence of a managed-table SELECT grant. They inspect the delete policy and its
+owner/backend predicates without issuing direct SQL `DELETE`; real owner and
+backend deletion remains an explicit staging test through the Storage API, and
+`storage.protect_delete()` is not disabled or bypassed.
+
+Migration `0011_conversion_idempotency.sql` gives conversion retries a stable
+contract: an exact retry returns the existing project id with
+`replayed = true` and creates no project or activity duplicate; a retry with
+changed title or description fails with SQLSTATE `22023`. The CRM already
+consumes the returned `project_id`, so the additional replay field is backward
+compatible.
+
+Local validation for this follow-up:
+
+| Check | Result |
+| --- | --- |
+| Public static site validation | **29 passed**, 0 warnings, 0 failures |
+| Booking flow tests | **61 passed** |
+| Worker module tests | **77 passed** |
+| CRM Vitest suite | **67 passed** across 4 files |
+| CRM TypeScript check and production build | Passed; 91 modules transformed |
+| Full Python suite from a clean exported checkout | **16 passed** with both repository root and `.geo-topic-agent-runtime` on `PYTHONPATH` |
+| Repository secret scan | 293 text files, 13 credential patterns, no value found |
+| Root and CRM dependency audits | 0 vulnerabilities |
+| PostgreSQL syntax parse | 20 SQL files / 1,082 statements accepted |
+| GitHub Actions YAML parse | 7 workflow files accepted |
+| Worker production dry-run bundle | Compiled; no deploy |
+| Vendored 3D libraries and fonts | Every pinned SHA-256 matched |
+| Shell syntax and Git whitespace | Passed |
+
+The preview Worker bundle also compiled and emitted Wrangler's `--dry-run`
+result, but the local wrapper process remained open after that output and was
+stopped manually; nothing was deployed.
+
+`npm run test:db` was attempted and stopped before database startup because
+PostgreSQL server binaries are not installed. Docker and Supabase CLI are also
+unavailable locally. Canonical pgTAP and `supabase db lint` therefore remain
+pending until the next GitHub CI run; no local pgTAP pass is claimed.
+
+### Third GitHub CI follow-up
+
+The third GitHub Actions run against
+`088e7e6be22f33bd22a58becfdd6af709bc2eaa5` passed Static Validation,
+Public site and Worker, Private CRM, clean Supabase startup and migrations, and
+the clean database reset without the optional development seed. Six of seven
+canonical pgTAP files passed. The run executed 469 assertions; only assertions
+98–100 in `050_rls_roles.sql` failed, and `supabase db lint` was consequently
+skipped.
+
+Those three post-migration probes created a new function in `public` and proved
+that `anon`, `authenticated` and `service_role` could still execute it through
+PostgreSQL's implicit `PUBLIC` privilege. This was a genuine database boundary
+defect: the Supabase CLI's default-privilege setup removes direct function
+grants to those three API roles, but does not remove the built-in function
+`EXECUTE` grant to `PUBLIC`, of which every role is a member.
+
+Inspection of the pinned Supabase CLI `2.110.0` path used by CI confirmed that
+local migrations and `supabase test db` connect as the `postgres` role. The
+earlier statement was owner-relative but schema-specific. PostgreSQL's
+built-in function `EXECUTE` for `PUBLIC` is a global default; a schema-specific
+`REVOKE` cannot subtract a global default privilege. Forward-only migration
+`0012_default_function_acl.sql` now:
+
+- removes inherited `PUBLIC` execution from existing functions in `public` and
+  `crm_private`, without removing deliberate role-specific grants;
+- globally revokes future function execution from `PUBLIC`, `anon`,
+  `authenticated` and `service_role` for the `postgres` owner;
+- separately removes any schema-specific direct API-role function defaults in
+  `public` and `crm_private`; and
+- grants nothing back.
+
+The pgTAP probe remains in place and now checks the effective owner and the
+global plus relevant schema-specific `pg_default_acl` rows. A second probe
+proves future `crm_private` functions are also closed. An exact
+effective-privilege allow-list verifies every intentionally callable
+Worker/CRM RPC and the small set of policy helpers, while rejecting any
+unexpected callable function in either schema. The plain-PostgreSQL fallback
+runner now names its constrained migration role `postgres` too, so
+owner-scoped default ACL assertions target the same role name without
+weakening its stricter `NOSUPERUSER NOBYPASSRLS` behaviour.
+
+Local validation for this follow-up:
+
+| Check | Result |
+| --- | --- |
+| Public static site validation | **29 passed**, 0 warnings, 0 failures |
+| Booking flow tests | **61 passed** |
+| Worker module tests | **77 passed** |
+| CRM Vitest suite | **67 passed** across 4 files |
+| CRM TypeScript check and production build | Passed; 91 modules transformed |
+| Full Python suite | **16 passed** with both repository root and `.geo-topic-agent-runtime` on `PYTHONPATH` |
+| Repository secret scan | 294 text files, 13 credential patterns, no value found |
+| Root and CRM dependency audits | 0 vulnerabilities |
+| PostgreSQL syntax parse | 21 SQL files / 1,100 statements accepted |
+| GitHub Actions YAML parse | 7 workflow files accepted |
+| Worker production dry-run bundle | Compiled; no deploy |
+| Vendored 3D libraries and fonts | Every pinned SHA-256 matched |
+| Shell syntax, JavaScript syntax and Git whitespace | Passed |
+
+The Wrangler dry-run emitted a successful bundle result, but its local wrapper
+again remained open afterward and was stopped manually; no deployment was
+attempted. `npm run test:db` stopped before database startup because PostgreSQL
+server binaries are not installed.
+
+Canonical pgTAP and `supabase db lint` remain pending until the next GitHub CI
+run. They are not reported as locally passed because Docker, Supabase CLI and
+PostgreSQL server binaries remain unavailable in the audit environment.
+
+### Fourth GitHub CI follow-up
+
+The fourth GitHub Actions run against
+`1a43247d896adf9f75486e89065f962ab3c2ebd7` passed Static Validation,
+Public site and Worker, Private CRM, clean Supabase startup/reset, and every
+migration through `0012_default_function_acl.sql`. This confirms that the
+production default-function ACL migration applies cleanly and closes newly
+created `public` and `crm_private` functions as intended.
+
+The canonical pgTAP run then stopped in the test harness: migration `0012`
+correctly removes the previous implicit `PUBLIC EXECUTE` privilege from future
+functions owned by the migration/test role, including temporary `pg_temp`
+helpers created during the test session. Assertions in `010`, `020` and `030`
+completed, but later files could not invoke helpers after switching to the API
+role they were exercising:
+
+- `040_workflow.sql`: `act_as_worker()` was not executable by `service_role`;
+- `050_rls_roles.sql`: `claims(text)` was not executable by the tested API
+  roles;
+- `060_storage.sql`: `claims(text)` had the same test-harness restriction; and
+- `070_bootstrap_retention.sql`: `claims(text)` was not executable after its
+  role transition.
+
+This follow-up changes only canonical test helpers. It grants:
+
+- `pg_temp.act_as(uuid)` to `authenticated`;
+- `pg_temp.act_as_worker()` to `service_role`;
+- `pg_temp.claims(text)` in `050_rls_roles.sql` and `060_storage.sql` to
+  `anon`, `authenticated` and `service_role`; and
+- `pg_temp.claims(text)` in `070_bootstrap_retention.sql` to `authenticated`
+  and `service_role`.
+
+No helper is granted to `PUBLIC`. The remaining temporary functions,
+`pg_temp.files(integer)` and `pg_temp.enquiry_meta()` in `030_intake.sql`, run
+only as the privileged fixture/test owner and need no API-role grant. The
+production migration, production ACLs, RLS, Storage policies, application code
+and the probes proving future functions closed by default are unchanged.
+
+Local validation for this follow-up:
+
+| Check | Result |
+| --- | --- |
+| Public static site validation | **29 passed**, 0 warnings, 0 failures |
+| Booking flow tests | **61 passed** |
+| Worker module tests | **77 passed** |
+| CRM Vitest suite | **67 passed** across 4 files |
+| CRM TypeScript check and production build | Passed; 91 modules transformed |
+| Full Python suite | **16 passed** with both repository root and `.geo-topic-agent-runtime` on `PYTHONPATH` |
+| Repository secret scan | 300 text files, 13 credential patterns, no value found |
+| Root and CRM dependency audits | 0 vulnerabilities |
+| PostgreSQL syntax parse | 21 SQL files / 1,105 statements accepted |
+| GitHub Actions YAML parse | 7 workflow files accepted |
+| Worker production dry-run bundle | Compiled; no deploy |
+| Vendored 3D libraries and fonts | Every pinned SHA-256 matched |
+| Shell syntax, JavaScript syntax and Git whitespace | Passed |
+
+The Wrangler dry-run emitted a successful bundle result, but its local wrapper
+remained open afterward and was stopped manually; no deployment was attempted.
+`npm run test:db` stopped before database startup because PostgreSQL server
+binaries are not installed.
+
+`supabase db lint` remains pending because the fourth CI workflow correctly
+skipped it after pgTAP stopped. Canonical pgTAP and lint must be rerun in
+GitHub CI; they are not claimed as locally passed while Docker, Supabase CLI
+and PostgreSQL server binaries are unavailable.
+
+### Audit scope and verdict
+
+This review covers the six implementation commits in draft stacked PR #176,
+`claude/vishar-crm-booking-infra-c188bx`, at its original head
+`8440966b9d19af85ae33555979e29696658d535c`. The reviewed base is the draft
+London transition branch at
+`2c393269e725f678e10f84886a210da11f012dcc`.
+
+The original PR scope was confirmed as 90 changed files, 17,333 additions and
+307 deletions. The commits were reviewed in their intended order:
+
+1. architecture and implementation boundaries;
+2. Supabase schema, functions, grants and RLS;
+3. durable Worker intake and private Storage;
+4. privacy notice;
+5. authenticated CRM;
+6. email, Calendar and AI boundaries.
+
+The resulting local audit patch series is:
+
+| Commit | Purpose |
+| --- | --- |
+| `f942f7b` | Harden PostgreSQL grants, RLS, owner invariants and durable intake semantics |
+| `b694cd2` | Harden the Worker intake, retry, Storage acknowledgement and environment boundaries |
+| `259c6bf` | Align CRM browser configuration, queries, permissions and private-file handling |
+| `1ab711b` | Align privacy disclosures, documentation and disconnected integration boundaries |
+| `881e776` | Add reproducible CI and guarded production deployment checks |
+
+**Release verdict: do not merge or deploy this stack yet.** The audit patch
+series closes the code-level critical and high-risk defects found in the review,
+but it cannot prove hosted Supabase Auth/JWT, PostgREST, Storage, signed URL or
+Cloudflare runtime behaviour. A clean real-Supabase CI run and an isolated
+staging exercise remain mandatory release gates.
+
+No hosted database, Supabase project, Cloudflare Worker, Cloudflare Pages
+project, DNS record, secret, OAuth provider, email, Calendar event or production
+traffic was created, changed or accessed during this audit.
+
+### Findings addressed by the audit patch series
+
+| Severity | Finding at original PR head | Resolution in the audit patch |
+| --- | --- | --- |
+| Critical | PostgreSQL's default function/table privileges left more API surface than the documented controlled-RPC model allowed. A backend key also retained broad direct table access. | Default privileges are closed explicitly, all sensitive function overloads are revoked before exact grants, CRM views have explicit ACLs, and the backend role is limited to the small intake/outbox RPC set rather than direct business-table access. |
+| High | Idempotency identified only the request key. A retry could change the visitor, metadata or file set, and concurrent client matching/intakes were not serialised safely. | Intake now stores and checks a canonical request fingerprint, uses advisory locks, treats changed replays as conflicts, and preserves deterministic exact-retry behaviour. Tests cover mutation and conflict cases. |
+| High | Contact details lived only on the mutable client record. Matching could attach a later enquiry to an existing client while losing what that visitor actually submitted. | Every enquiry stores an immutable submitted-contact snapshot. Email/phone disagreement is flagged for staff review, and name alone is never an automatic match key. |
+| High | Compensating deletion could remove a Storage object after an ambiguous network/5xx response even when the database had committed its ready manifest. | The Worker deletes only after a definite non-retryable 4xx acknowledgement rejection. Ambiguous acknowledgement failures retain the canonical object so an exact retry can reconcile safely. |
+| High | Production accepted arbitrary `*.vishar-site.pages.dev` origins and preview could fall back to production origins. This mixed trust boundaries between environments. | A configured origin list is now an exact replacement list, remote entries must be exact HTTPS origins, invalid lists fail closed, and preview has a distinct environment marker that refuses a missing allow-list. Production fallback contains only the two intended public origins. |
+| High | Failed intakes were omitted from `list_incomplete_intakes`, so a durable visitor record could become invisible to both the CRM working queue and reconciliation if the visitor stopped retrying. | Reconciliation now includes `pending`, `files_pending` and `failed` records. Failed rows stay available until an exact retry completes them or an operator resolves them. |
+| High | Finance views and failed-outbox reads could silently return empty data on permission/schema failures, making a broken production configuration look like a legitimate zero balance/zero failure state. | View ownership and grants match the role model, finance stays owner-only, and CRM query failures are surfaced as safe operator errors rather than converted to empty results. |
+| High | The Worker accepted an arbitrary `SUPABASE_URL`, so a configuration typo or hostile value could receive a privileged backend key. | The Worker accepts only a root `https://<project-ref>.supabase.co` URL, validates new `sb_secret_` and legacy service-role key handling separately, and never sends a new secret key in an unnecessary bearer header. |
+| High | The CRM could be built against an arbitrary URL and its privileged-key check depended mainly on an environment-variable name. | Browser config validates the real key value, rejects `sb_secret_` and service-role JWTs, accepts only a hosted Supabase project root in builds, and allows the standard loopback Supabase URL only in Vite development mode. |
+| Medium | Owner bootstrap and last-owner/profile changes had ACL and concurrency gaps. | Bootstrap is a narrowly granted, one-time controlled RPC; owner/profile mutations use locks and enforce the active-owner invariant at the database boundary. No owner identity is hard-coded. |
+| Medium | Activity/outbox metadata filtering covered only shallow keys and `enquiry.created` risked copying visitor fields into an append-only secondary store. | Forbidden keys are checked recursively and creation activity contains only bounded operational identifiers/flags rather than a second copy of the enquiry. |
+| Medium | Booking file-manifest acknowledgement did not verify that the database returned the exact ordered MIME, extension, size and checksum set the Worker had validated. | The Worker compares every returned manifest to the validated browser submission before uploading any object. |
+| Medium | Booking request limits depended on `Content-Length`, which is absent or untrustworthy for chunked requests. | Multipart bodies are read through a hard 13 MiB streaming bound before `formData()` parsing; per-field, per-file, MIME, extension and magic-byte limits remain in force. |
+| Medium | Storage policies allowed booking managers to write `ready` objects directly, weakening the manifest/finalisation protocol. | Staff uploads are restricted to non-ready canonical manifests; only the owner/trusted backend repair path can write an object already marked ready. |
+| Medium | The privacy page described active consent-gated analytics while the repository contained only the disabled `G-XXXXXXXXXX` placeholder. | Analytics, the banner and preference control are all runtime-disabled while the placeholder is present; the consent storage key is versioned so a placeholder-era choice cannot authorise a later integration; static validation now checks runtime/notice alignment. |
+| Medium | Privacy wording overstated permanent secrecy of signed URLs, unconditional erasure, Cloudflare non-processing and already-operational integrations. | The notice now describes temporary-link bearer risk, limited technical processing, conditional statutory rights, disabled analytics and disconnected AI/email/Calendar boundaries without claiming legal compliance. |
+| Medium | Seed data omitted the privacy acknowledgement/version required by real intake and could appear in the live working queue. | Seed input uses the current acknowledgement/version and is deliberately incomplete so it is never mistaken for a real staff-ready enquiry. |
+| Medium | The CRM advertised client-contact editing even though no controlled write RPC existed. | The false capability was removed. Submitted contact snapshots and any mismatch are visible, but mutation is not promised until a safe workflow is designed. |
+| Medium | Production Worker deploy could target Wrangler's environment-derived name ambiguously and exposed Cloudflare credentials to the whole job. | Deployment is manual, main-only, requires two exact confirmations plus the protected `production` GitHub environment, uses the explicit top-level environment, keeps dashboard variables, and scopes credentials to the deploy step. |
+| Medium | There was no complete reproducible PR workflow for the new stack. | CI now uses locked installs and runs site validation, booking tests, Worker tests/bundle, secret scan, CRM audit/test/typecheck/build and a pinned clean Supabase/pgTAP/lint job. |
+
+The privilege changes follow Supabase's guidance that exposed schemas, default
+privileges and function execution grants must be treated as API security
+controls, not merely as application conventions:
+<https://supabase.com/docs/guides/api/securing-your-api>.
+
+### Local validation after the audit fixes
+
+| Check | Result |
+| --- | --- |
+| Public static site validation | **29 passed**, 0 warnings, 0 failures |
+| Booking flow tests | **61 passed** |
+| Worker module tests | **77 passed** |
+| CRM Vitest suite | **67 passed** across 4 files |
+| CRM TypeScript check | Passed |
+| CRM Vite production build | Passed; 91 modules transformed |
+| Root dependency audit | 0 vulnerabilities |
+| CRM dependency audit | 0 vulnerabilities |
+| Repository secret scan | 292 text files, 13 credential patterns, no value found |
+| PostgreSQL syntax parse | 19 SQL files / 1,028 statements accepted by the PostgreSQL parser |
+| Wrangler production bundle | Compiled in `--dry-run`; no deploy |
+| Wrangler preview bundle | Compiled in `--dry-run`; no deploy |
+| GitHub Actions YAML parse | 7 workflow files accepted |
+| Git whitespace check | Passed |
+
+The exact successful commands were:
+
+```text
+npm run validate:site
+npm run test:booking
+npm run test:worker
+npm run scan:secrets
+npm audit --audit-level=moderate
+npm run check:worker-bundle
+npx wrangler deploy --env preview --dry-run --outdir .wrangler/dry-run-preview
+
+cd admin
+npm test -- --run
+npm run typecheck
+npm run build
+npm audit --audit-level=high
+
+git diff --check
+```
+
+The SQL parser check used `pgsql-parser` 18.1.1 from a temporary directory and
+did not add it to the repository. It parsed the Supabase compatibility shim,
+all ten migrations, the seed and all seven pgTAP files.
+
+### Database validation limitation
+
+`npm run test:db` was attempted after the final SQL edits and failed before
+starting a database:
+
+```text
+FAIL: PostgreSQL server binaries not found at /usr/lib/postgresql/16/bin
+      Set PG_BIN, or run the canonical suite with: supabase test db
+```
+
+Neither Docker, Supabase CLI nor PostgreSQL server binaries are available in
+this audit environment. SQL parsing proves grammar only; it does **not** prove
+extension availability, migration order side effects, RLS runtime behaviour,
+JWT claims, PostgREST exposure, Storage policy behaviour or signed URLs.
+
+The new GitHub Actions workflow therefore pins Supabase CLI and runs a clean
+local stack with `supabase test db` plus `supabase db lint`. Supabase documents
+those as the canonical local database test and lint paths:
+<https://supabase.com/docs/guides/local-development/cli/testing-and-linting>.
+That CI job must pass on the resulting commits before staging.
+
+### Mandatory staging and owner gates
+
+The following are open release gates, not implementation claims:
+
+1. Apply all migrations to a new UK/EU staging Supabase project and verify them
+   from an empty database.
+2. Exercise real Supabase Auth users for owner, booking manager, read-only and
+   disabled profiles through PostgREST, including direct unauthorised requests
+   that bypass the CRM UI.
+3. Verify private bucket MIME/size enforcement, every Storage policy, signed URL
+   expiry and bearer-link behaviour through the real Storage API.
+4. Run Worker end-to-end tests for one, two and three images, exact duplicate
+   retry, changed-payload retry, connection loss, partial upload failure,
+   ambiguous manifest acknowledgement, finalisation retry and Telegram failure.
+5. Configure an exact preview Pages origin and verify that production and
+   preview reject each other's origins.
+6. Confirm the protected GitHub `production` environment actually has required
+   reviewers, main-only deployment rules and a least-privilege Cloudflare token.
+7. Implement and operate an outbox drain before claiming automatic retries.
+   Current inline Telegram delivery records a durable retryable job, but no
+   scheduler consumes it.
+8. Implement an orphan-object sweep before claiming automatic Storage cleanup.
+   Ambiguous objects are intentionally retained rather than risking data loss.
+9. Decide and implement staff provisioning/deactivation operations. The CRM
+   lists users but deliberately has no browser-side admin/service key.
+10. Decide the retention period and legal holds, enable the setting only after
+    approval, and implement/test the scheduled retention job. Retention remains
+    disabled and no automatic deletion runs.
+11. Keep Gmail, Google Calendar and AI disconnected until provider-specific
+    OAuth, dedupe, approval, audit and error-recovery flows pass separate review.
+12. Add infrastructure-level rate limiting and/or Turnstile for public write
+    routes. Application request/file limits do not replace abuse controls.
+13. Confirm the actual controller identity, provider contracts/DPA, region,
+    support/transfer routes, lawful-basis assessment, legitimate-interests
+    assessment and any special-category-data handling with the owner and
+    appropriate legal review. The repository cannot establish these facts.
+14. Confirm the final booking-manager/read-only file access policy, production
+    and staging domains, sender identity, Calendar account and canonical
+    confirmed-session status.
+
+The privacy wording was checked against current ICO explanations of
+pre-contractual steps, the legitimate-interests test, erasure exceptions,
+international-transfer safeguards and the right to be informed. This is
+technical consistency review, not legal advice or a compliance certification:
+
+- <https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/lawful-basis/a-guide-to-lawful-basis/contract/>
+- <https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/lawful-basis/legitimate-interests/what-is-the-legitimate-interests-basis/>
+- <https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/individual-rights/individual-rights/right-to-erasure/>
+- <https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/international-transfers/appropriate-safeguards/what-are-the-rules-on-appropriate-safeguards/>
+- <https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/individual-rights/individual-rights/right-to-be-informed/>
+
+### Recommended next decision
+
+Review the small audit commits, run the new CI including its clean Supabase job,
+and keep both PR #174 and PR #176 in draft. If CI is green, create isolated
+staging infrastructure and complete the mandatory gates above. Only after that
+evidence exists should PR #174 be merged first, PR #176 be rebased onto the
+updated `main`, and any production migration/deploy be authorised separately.
+
 ## 2026-05-06 — Hero/LCP WebP patch
 
 Hero/LCP WebP patch implemented: hero.webp is preloaded and served via <picture>, with hero.jpg retained as fallback.
