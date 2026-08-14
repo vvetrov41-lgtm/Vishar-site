@@ -31,13 +31,14 @@ Each artist binding is the JSON credential envelope expected by `resolveProvider
 1. Fresh-check product/RC exact heads, ancestry and normal exact-head CI.
 2. Verify production migration history includes `0035` and `0036`, effective ACL is service-role-only, and the production Telegram outbox contains no unexpected eligible rows.
 3. Verify the retained staging cutoff and historical rows are unchanged.
-4. Pre-provision the dedicated production Worker in an inert state and add only the three required encrypted secret names/values. Do not create a cron yet.
-5. Run the guarded Telegram production workflow validation against the exact RC SHA.
-6. Deploy the generated config: it enables `TELEGRAM_DRAIN_ENABLED=true` and adds exactly one five-minute cron. The tracked template remains inert.
-7. Verify the deployed Worker version, no routes, workers.dev disabled, preview URLs disabled, exact cron and exact secret-name set.
-8. Create or enable the two production `artist_integrations` Telegram rows using the integration keys above. Re-check that their `configuration` contains no credential-shaped keys or values.
-9. Re-check production outbox counts immediately. No existing row may have changed as a side effect of rollout.
-10. Re-check retained staging. The seven historical Vladimir failures and prior #189/#190 targets must remain unchanged.
+4. Pre-provision the dedicated production Worker in an inert state and add only the three required encrypted secret names/values. Keep `TELEGRAM_DRAIN_ENABLED=false` and do not create a cron yet.
+5. Verify the inert Worker has no public route or Custom Domain, workers.dev and preview URLs are disabled, and the exact secret-name set is present. Do not read secret values.
+6. Create or enable the two production `artist_integrations` Telegram rows using the integration keys above while the dedicated drain is still inert. Re-check that their `configuration` contains no credential-shaped keys or values.
+7. Re-check production Telegram outbox counts immediately before activation. No existing row may have changed as a side effect of route setup.
+8. Run the guarded Telegram production workflow validation against the exact RC SHA, then deploy the generated config. It changes only the drain activation boundary: `TELEGRAM_DRAIN_ENABLED=true` and exactly one `*/5 * * * *` cron. The tracked template remains inert.
+9. Verify the deployed Worker version, no public route or Custom Domain, workers.dev disabled, preview URLs disabled, exact cron, exact secret-name set and both enabled artist-scoped production routes.
+10. Re-check production outbox counts immediately after activation. No pre-existing row may have been claimed or mutated by rollout.
+11. Re-check retained staging. The seven historical Vladimir failures and prior #189/#190 targets must remain unchanged.
 
 Do not send a synthetic production Telegram message. The first new genuine production enquiry/notification after activation is the production delivery E2E evidence.
 
