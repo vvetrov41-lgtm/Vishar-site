@@ -1,0 +1,198 @@
+name: PR 185 GPT Worker runtime inspection
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-worker-runtime-inspection
+  cancel-in-progress: false
+
+jobs:
+  inspect-worker-runtime:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- INSPECT_PR185_GPT_WORKER_RUNTIME -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      WORKER_NAME: vishar-gpt-actions-staging
+      FAILED_RELAY_VERSION: e25e071f-3d0d-47f6-8595-86b33091e9d8
+      EXPECTED_SUPABASE_URL: https://gwaliusblwrzisrwnsvs.supabase.co
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- INSPECT_PR185_GPT_WORKER_RUNTIME -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Inspect Worker deployments and safe version bindings without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          deployments="$RUNNER_TEMP/deployments.json"
+          versions="$RUNNER_TEMP/versions.json"
+          failed="$RUNNER_TEMP/failed-version.json"
+          active="$RUNNER_TEMP/active-version.json"
+          subdomain="$RUNNER_TEMP/subdomain.json"
+          safe="$RUNNER_TEMP/worker-runtime-evidence.txt"
+
+          deployments_status="$(curl --silent --show-error -o "$deployments" -w '%{http_code}' "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/deployments" || true)"
+          versions_status="$(curl --silent --show-error -o "$versions" -w '%{http_code}' "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions" || true)"
+          failed_status="$(curl --silent --show-error -o "$failed" -w '%{http_code}' "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions/$FAILED_RELAY_VERSION" || true)"
+          subdomain_status="$(curl --silent --show-error -o "$subdomain" -w '%{http_code}' "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/subdomain" || true)"
+          [ "$deployments_status" = 200 ]
+          [ "$versions_status" = 200 ]
+          [ "$failed_status" = 200 ]
+          [ "$subdomain_status" = 200 ]
+
+          active_version_id="$(jq -r '.result.deployments[0].versions | map(select(.percentage == 100)) | if length == 1 then .[0].version_id else empty end' "$deployments")"
+          [ -n "$active_version_id" ] || { echo 'Unable to resolve one 100% active Worker version.' >&2; exit 1; }
+          active_status="$(curl --silent --show-error -o "$active" -w '%{http_code}' "${auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions/$active_version_id" || true)"
+          [ "$active_status" = 200 ]
+
+          failed_present="$(jq --arg id "$FAILED_RELAY_VERSION" '[.result.items[]? | select(.id == $id)] | length' "$versions")"
+          latest_version_id="$(jq -r '.result.items[0].id // empty' "$versions")"
+          active_deployment_id="$(jq -r '.result.deployments[0].id // empty' "$deployments")"
+          active_deployment_created_on="$(jq -r '.result.deployments[0].created_on // "unknown"' "$deployments")"
+          deployment_count="$(jq '[.result.deployments[]?] | length' "$deployments")"
+          failed_relay_deployment_count="$(jq --arg id "$FAILED_RELAY_VERSION" '[.result.deployments[]? | select(any(.versions[]?; .version_id == $id and (.percentage // 0) > 0))] | length' "$deployments")"
+          failed_relay_100pct_deployment_count="$(jq --arg id "$FAILED_RELAY_VERSION" '[.result.deployments[]? | select(any(.versions[]?; .version_id == $id and .percentage == 100))] | length' "$deployments")"
+          deployment_history="$(jq -c '[.result.deployments[]? | {id:(.id // ""),created_on:(.created_on // ""),versions:[.versions[]? | {version_id:(.version_id // ""),percentage:(.percentage // 0)}]}]' "$deployments" | tr '\n\r=' '   ')"
+          failed_version_created_on="$(jq -jr '.result.metadata.created_on // .result.created_on // "unknown"' "$failed")"
+          active_version_created_on="$(jq -jr '.result.metadata.created_on // .result.created_on // "unknown"' "$active")"
+
+          safe_binding() {
+            local file="$1" name="$2"
+            jq -jr --arg name "$name" '
+              [.result.resources.bindings[]? | select(.name == $name)]
+              | if length == 1 then
+                  if .[0].type == "plain_text" then ((.[0].text // "") | tostring)
+                  else "non_plain_text"
+                  end
+                else "missing"
+                end
+            ' "$file"
+          }
+          binding_type() {
+            local file="$1" name="$2"
+            jq -jr --arg name "$name" '[.result.resources.bindings[]? | select(.name == $name)] | if length == 1 then .[0].type else "missing" end' "$file"
+          }
+
+          failed_actions="$(safe_binding "$failed" GPT_ACTIONS_ENABLED)"
+          failed_relay="$(safe_binding "$failed" GPT_OAUTH_RELAY_ENABLED)"
+          failed_supabase="$(safe_binding "$failed" SUPABASE_URL)"
+          failed_publishable_type="$(binding_type "$failed" SUPABASE_PUBLISHABLE_KEY)"
+          active_actions="$(safe_binding "$active" GPT_ACTIONS_ENABLED)"
+          active_relay="$(safe_binding "$active" GPT_OAUTH_RELAY_ENABLED)"
+          active_supabase="$(safe_binding "$active" SUPABASE_URL)"
+          active_publishable_type="$(binding_type "$active" SUPABASE_PUBLISHABLE_KEY)"
+
+          failed_supabase_matches=false
+          active_supabase_matches=false
+          [ "$failed_supabase" = "$EXPECTED_SUPABASE_URL" ] && failed_supabase_matches=true
+          [ "$active_supabase" = "$EXPECTED_SUPABASE_URL" ] && active_supabase_matches=true
+
+          failed_default_export_state="$(jq -jr '.result.resources.script_runtime.exports.default.state // "unknown"' "$failed")"
+          active_default_export_state="$(jq -jr '.result.resources.script_runtime.exports.default.state // "unknown"' "$active")"
+          workers_dev_enabled="$(jq -jr '.result.enabled // "unknown"' "$subdomain")"
+          previews_enabled="$(jq -jr '.result.previews_enabled // "unknown"' "$subdomain")"
+
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          worker=$WORKER_NAME
+          deployments_read_status=$deployments_status
+          versions_read_status=$versions_status
+          failed_version_read_status=$failed_status
+          active_version_read_status=$active_status
+          subdomain_read_status=$subdomain_status
+          deployment_count=$deployment_count
+          active_deployment_id=$active_deployment_id
+          active_deployment_created_on=$active_deployment_created_on
+          active_version_id=$active_version_id
+          active_version_created_on=$active_version_created_on
+          latest_version_id=$latest_version_id
+          failed_relay_version_id=$FAILED_RELAY_VERSION
+          failed_relay_version_created_on=$failed_version_created_on
+          failed_relay_version_present_count=$failed_present
+          failed_relay_deployment_count=$failed_relay_deployment_count
+          failed_relay_100pct_deployment_count=$failed_relay_100pct_deployment_count
+          deployment_history=$deployment_history
+          failed_GPT_ACTIONS_ENABLED=$failed_actions
+          failed_GPT_OAUTH_RELAY_ENABLED=$failed_relay
+          failed_SUPABASE_URL_matches_expected=$failed_supabase_matches
+          failed_SUPABASE_PUBLISHABLE_KEY_binding_type=$failed_publishable_type
+          failed_default_export_state=$failed_default_export_state
+          active_GPT_ACTIONS_ENABLED=$active_actions
+          active_GPT_OAUTH_RELAY_ENABLED=$active_relay
+          active_SUPABASE_URL_matches_expected=$active_supabase_matches
+          active_SUPABASE_PUBLISHABLE_KEY_binding_type=$active_publishable_type
+          active_default_export_state=$active_default_export_state
+          workers_dev_enabled=$workers_dev_enabled
+          previews_enabled=$previews_enabled
+          cloudflare_mutated=false
+          production_targeted=false
+          EOF
+          cat "$safe"
+
+      - name: Upload safe Worker runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-worker-runtime-inspection-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/worker-runtime-evidence.txt
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,69 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = path.resolve(process.argv[2] ?? 'admin/dist');
+
+const bannedText = [
+  'calendar-staging.vishartattoo.com',
+  'intake-staging.vishartattoo.com',
+  'vishar-crm-staging.pages.dev',
+  'vishar-booking-staging.pages.dev',
+  'tattooai-preview',
+];
+
+const credentialPatterns = [
+  {
+    name: 'Supabase secret-key-shaped value',
+    pattern: /sb_secret_[A-Za-z0-9_-]{20,}/g,
+  },
+  {
+    name: 'JWT-shaped value',
+    pattern: /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}/g,
+  },
+];
+
+if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+  throw new Error(`CRM artifact directory does not exist: ${root}`);
+}
+
+const files = [];
+const walk = (directory) => {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) walk(full);
+    else if (entry.isFile()) files.push(full);
+  }
+};
+walk(root);
+
+if (files.length === 0) {
+  throw new Error(`CRM artifact directory is empty: ${root}`);
+}
+
+const findings = [];
+for (const file of files) {
+  const buffer = fs.readFileSync(file);
+  if (buffer.includes(0)) continue;
+
+  const content = buffer.toString('utf8');
+  for (const marker of bannedText) {
+    if (content.includes(marker)) {
+      findings.push(`${path.relative(root, file)} contains banned staging marker ${marker}`);
+    }
+  }
+
+  for (const { name, pattern } of credentialPatterns) {
+    pattern.lastIndex = 0;
+    if (pattern.test(content)) {
+      findings.push(`${path.relative(root, file)} contains a ${name}`);
+    }
+  }
+}
+
+if (findings.length > 0) {
+  console.error('Private CRM artifact safety scan failed:');
+  for (const finding of findings) console.error(`- ${finding}`);
+  process.exit(1);
+}
+
+console.log(`Private CRM artifact safety scan passed for ${files.length} files.`);

@@ -172,8 +172,8 @@ jobs:
       - name: Test Team admin boundary
         run: node scripts/test-team-admin-worker.mjs
 
-      - name: Compile Team admin Worker with workers.dev disabled
-        run: npm run check:team-admin-bundle
+      - name: Compile production Team admin Worker with workers.dev disabled
+        run: npm run check:team-admin-production-bundle
 
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
@@ -187,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          secrets_json="$(npx wrangler secret list --config wrangler.team-admin.toml --name "$WORKER_NAME" --format json)"
+          secrets_json="$(npx wrangler secret list --config wrangler.team-admin.production.toml --name "$WORKER_NAME" --format json)"
           SECRET_LIST="$secrets_json" node <<'NODE'
           const values = JSON.parse(process.env.SECRET_LIST || '[]');
           const names = new Set(values.map((entry) => entry?.name).filter(Boolean));
@@ -206,7 +206,7 @@ jobs:
           set -euo pipefail
 
           npx wrangler deploy \
-            --config wrangler.team-admin.toml \
+            --config wrangler.team-admin.production.toml \
             --name "$WORKER_NAME" \
             --strict \
             --keep-vars \
@@ -228,8 +228,8 @@ jobs:
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Worker source: `workers/team-admin.js` only'
-            echo '- Wrangler config: `wrangler.team-admin.toml` with `workers_dev=false`'
-            echo '- Route/custom domain provisioning: not performed by this workflow'
+            echo '- Wrangler config: `wrangler.team-admin.production.toml` with `workers_dev=false` and `preview_urls=false`'
+            echo '- Route: `team.vishartattoo.com` Custom Domain declared in `wrangler.team-admin.production.toml`, matching the pre-provisioned route; this workflow does not create, remove or change it'
             echo '- Required pre-existing secret: `SUPABASE_SECRET_KEY`'
             echo '- Calendar / Telegram / GPT / booking Worker deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"

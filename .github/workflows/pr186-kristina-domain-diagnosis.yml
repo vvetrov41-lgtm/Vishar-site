@@ -1,0 +1,182 @@
+name: PR 186 Kristina retained intake domain diagnosis
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr186-kristina-domain-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: >-
+      github.event.pull_request.number == 186 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DIAGNOSE_PR186_KRISTINA_DOMAIN -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      WORKER_NAME: tattooai-preview
+      WORKER_URL: https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026
+      INTAKE_HOST: intake-staging.vishartattoo.com
+      INTAKE_PATH: /__vishar-staging-intake-2026
+      VLADIMIR_ORIGIN: https://vishar-booking-staging.pages.dev
+      KRISTINA_ORIGIN: https://agent-kristina-booking-crm-setup-kisa.vvetrov41.workers.dev
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed exact PR and stack guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 186
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.ref == "agent/kristina-crm-intake-staging"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains("<!-- DIAGNOSE_PR186_KRISTINA_DOMAIN -->"))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify current stack and green normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/185" > "$RUNNER_TEMP/pr185.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/186" > "$RUNNER_TEMP/pr186.json"
+          base_sha="$(jq -r '.head.sha' "$RUNNER_TEMP/pr185.json")"
+          jq -e '.state == "open" and .draft == true and .merged == false and .head.ref == "agent/gpt-appointment-actions"' "$RUNNER_TEMP/pr185.json" >/dev/null
+          jq -e --arg sha "$APPROVED_SHA" --arg base "$base_sha" '
+            .state == "open" and .draft == true and .merged == false
+            and .base.ref == "agent/gpt-appointment-actions"
+            and .base.sha == $base
+            and .head.ref == "agent/kristina-crm-intake-staging"
+            and .head.sha == $sha
+          ' "$RUNNER_TEMP/pr186.json" >/dev/null
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Read domain mapping and edge facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_EDGE_READ_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing encrypted configuration name: $name" >&2; exit 1; }
+          done
+
+          api='https://api.cloudflare.com/client/v4'
+          deploy_auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          evidence="$RUNNER_TEMP/pr186-domain-diagnosis"
+          mkdir -p "$evidence"
+
+          curl --fail-with-body --silent --show-error "${deploy_auth[@]}" \
+            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains?hostname=$INTAKE_HOST" > "$RUNNER_TEMP/domains.json"
+          jq -e '.success == true' "$RUNNER_TEMP/domains.json" >/dev/null
+
+          curl --fail-with-body --silent --show-error "${deploy_auth[@]}" \
+            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/deployments" > "$RUNNER_TEMP/deployments.json"
+          jq -e '.success == true' "$RUNNER_TEMP/deployments.json" >/dev/null
+          active_version="$(jq -r '(.result.deployments // .result)[0].versions[]? | select(.percentage == 100) | .version_id' "$RUNNER_TEMP/deployments.json" | head -n1)"
+
+          curl --fail-with-body --silent --show-error "${edge_auth[@]}" \
+            "$api/zones?name=vishartattoo.com" > "$RUNNER_TEMP/zone.json"
+          jq -e '.success == true and (.result | length == 1)' "$RUNNER_TEMP/zone.json" >/dev/null
+          zone_id="$(jq -r '.result[0].id' "$RUNNER_TEMP/zone.json")"
+          curl --fail-with-body --silent --show-error "${edge_auth[@]}" \
+            "$api/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$RUNNER_TEMP/waf.json"
+          curl --fail-with-body --silent --show-error "${edge_auth[@]}" \
+            "$api/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" > "$RUNNER_TEMP/rate.json"
+
+          current_http="$(curl --silent --show-error --output "$RUNNER_TEMP/current-kristina-body" --dump-header "$RUNNER_TEMP/current-kristina-headers" --write-out '%{http_code}' \
+            -X OPTIONS -H "Origin: $KRISTINA_ORIGIN" -H 'Access-Control-Request-Method: POST' "$WORKER_URL")"
+          current_json_code="$(jq -r '.code // empty' "$RUNNER_TEMP/current-kristina-body" 2>/dev/null || true)"
+          current_content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {sub(/\r$/,""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$RUNNER_TEMP/current-kristina-headers")"
+
+          jq --arg intake "$INTAKE_HOST" --arg vhost "vishar-booking-staging.pages.dev" --arg khost "agent-kristina-booking-crm-setup-kisa.vvetrov41.workers.dev" '
+            [.result.rules[]? | select(.enabled == true) | {
+              id,
+              action,
+              intake_host: ((.expression // "") | contains($intake)),
+              vladimir_host: ((.expression // "") | contains($vhost)),
+              kristina_host: ((.expression // "") | contains($khost)),
+              referer_token: (((.expression // "") | ascii_downcase) | contains("referer")),
+              headers_raw_token: (((.expression // "") | ascii_downcase) | contains("headers.raw")),
+              origin_token: (((.expression // "") | ascii_downcase) | contains("origin"))
+            }]
+          ' "$RUNNER_TEMP/waf.json" > "$RUNNER_TEMP/waf-facts.json"
+
+          jq --arg intake "$INTAKE_HOST" --arg vhost "vishar-booking-staging.pages.dev" --arg khost "agent-kristina-booking-crm-setup-kisa.vvetrov41.workers.dev" '
+            [.result.rules[]? | select(.enabled == true) | {
+              id,
+              action,
+              intake_host: ((.expression // "") | contains($intake)),
+              vladimir_host: ((.expression // "") | contains($vhost)),
+              kristina_host: ((.expression // "") | contains($khost)),
+              referer_token: (((.expression // "") | ascii_downcase) | contains("referer")),
+              headers_raw_token: (((.expression // "") | ascii_downcase) | contains("headers.raw")),
+              origin_token: (((.expression // "") | ascii_downcase) | contains("origin"))
+            }]
+          ' "$RUNNER_TEMP/rate.json" > "$RUNNER_TEMP/rate-facts.json"
+
+          jq -n \
+            --arg exact_head "$APPROVED_SHA" \
+            --arg active_version "$active_version" \
+            --arg expected_worker "$WORKER_NAME" \
+            --argjson domain_count "$(jq '.result | length' "$RUNNER_TEMP/domains.json")" \
+            --arg domain_service "$(jq -r '.result[0].service // ""' "$RUNNER_TEMP/domains.json")" \
+            --arg domain_environment "$(jq -r '.result[0].environment // ""' "$RUNNER_TEMP/domains.json")" \
+            --argjson service_matches "$(jq --arg worker "$WORKER_NAME" '(.result | length == 1) and (.result[0].service == $worker)' "$RUNNER_TEMP/domains.json")" \
+            --arg current_http "$current_http" \
+            --arg current_json_code "$current_json_code" \
+            --arg current_content_type "$current_content_type" \
+            --slurpfile waf "$RUNNER_TEMP/waf-facts.json" \
+            --slurpfile rate "$RUNNER_TEMP/rate-facts.json" \
+            '{
+              exact_head:$exact_head,
+              custom_domain:{count:$domain_count, service:$domain_service, environment:$domain_environment, expected_worker:$expected_worker, service_matches:$service_matches},
+              expected_worker_active_version:$active_version,
+              current_rolled_back_kristina_probe:{http_status:$current_http, json_code:$current_json_code, content_type:$current_content_type},
+              waf:$waf[0],
+              rate_limit:$rate[0],
+              mutation_performed:false,
+              production_targeted:false
+            }' > "$evidence/diagnosis.json"
+          cat "$evidence/diagnosis.json"
+
+      - name: Upload safe diagnosis evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr186-kristina-domain-diagnosis-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr186-domain-diagnosis/diagnosis.json
+          if-no-files-found: error
+          retention-days: 30

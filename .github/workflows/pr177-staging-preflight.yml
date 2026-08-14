@@ -1,0 +1,209 @@
+name: PR 177 staging preflight
+
+on:
+  push:
+    branches:
+      - agent/multi-artist-payments-foundation
+    paths:
+      - .github/workflows/pr177-staging-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr177-staging-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact PR 177 commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify authorised commit ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "agent/multi-artist-payments-foundation"
+          git merge-base --is-ancestor 0e6b1c2cc4dc8e51d75c7c4df77e483207196b93 "$GITHUB_SHA"
+
+      - name: Verify Cloudflare and application staging credentials
+        id: credentials
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID STAGING_SUPABASE_URL STAGING_SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            joined="$(IFS=,; echo "${missing[*]}")"
+            echo "missing_names=$joined" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "missing_names=none" >> "$GITHUB_OUTPUT"
+
+      - name: Check linked database credential availability
+        id: database_credentials
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || missing+=(SUPABASE_ACCESS_TOKEN)
+          [ -n "$STAGING_SUPABASE_DB_PASSWORD" ] || missing+=(STAGING_SUPABASE_DB_PASSWORD)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            joined="$(IFS=,; echo "${missing[*]}")"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "missing_names=$joined" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "missing_names=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Prepare preview-only Wrangler config
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp wrangler.toml wrangler.preview.toml
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('wrangler.preview.toml')
+          text = path.read_text()
+          old = 'main = "workers/tattooai.js"'
+          new = 'main = "workers/preview.js"'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one Worker entrypoint')
+          path.write_text(text.replace(old, new))
+          PY
+
+      - name: Snapshot Worker and Pages deployments
+        id: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -uo pipefail
+          set +e
+          npx wrangler deployments list --config wrangler.preview.toml --env preview --json > worker-deployments.json 2> worker-deployments.err
+          worker_status=$?
+          npx wrangler secret list --config wrangler.preview.toml --env preview --json > worker-secrets.json 2> worker-secrets.err
+          secrets_status=$?
+          npx wrangler pages deployment list --project-name vishar-booking-staging --environment production --json > booking-pages.json 2> booking-pages.err
+          booking_status=$?
+          npx wrangler pages deployment list --project-name vishar-crm-staging --environment production --json > crm-pages.json 2> crm-pages.err
+          crm_status=$?
+          set -e
+          echo "command_status=worker:$worker_status,secrets:$secrets_status,booking:$booking_status,crm:$crm_status" >> "$GITHUB_OUTPUT"
+          if [ "$worker_status" -eq 0 ]; then
+            echo "worker=$(jq -c '[.. | objects | select(has("id")) | {id,created_on,source}] | .[0] // {}' worker-deployments.json)" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$secrets_status" -eq 0 ]; then
+            echo "bindings=$(jq -c '[.. | objects | .name? // empty] | unique | sort' worker-secrets.json)" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$booking_status" -eq 0 ]; then
+            echo "booking=$(jq -c '[.. | objects | select(has("id")) | {id,environment,created_on,project_name}] | .[0] // {}' booking-pages.json)" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$crm_status" -eq 0 ]; then
+            echo "crm=$(jq -c '[.. | objects | select(has("id")) | {id,environment,created_on,project_name}] | .[0] // {}' crm-pages.json)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Snapshot Access, WAF, rate limit and Worker subdomain
+        if: always() && steps.credentials.outcome == 'success'
+        id: edge
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          zone_status="$(curl -sS -o zone.json -w '%{http_code}' "${auth[@]}" "$api/zones?name=vishartattoo.com")"
+          zone_id="$(jq -r '.result[0].id // empty' zone.json 2>/dev/null || true)"
+          echo "zone_status=$zone_status" >> "$GITHUB_OUTPUT"
+          if [ "$zone_status" = 200 ] && [ -n "$zone_id" ]; then
+            access_status="$(curl -sS -o access.json -w '%{http_code}' "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/access/apps")"
+            waf_status="$(curl -sS -o waf.json -w '%{http_code}' "${auth[@]}" "$api/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint")"
+            rate_status="$(curl -sS -o rate.json -w '%{http_code}' "${auth[@]}" "$api/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint")"
+          else
+            access_status=skipped
+            waf_status=skipped
+            rate_status=skipped
+          fi
+          subdomain_status="$(curl -sS -o subdomain.json -w '%{http_code}' "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/services/tattooai-preview/environments/production/subdomain")"
+          echo "api_status=zone:$zone_status,access:$access_status,waf:$waf_status,rate:$rate_status,subdomain:$subdomain_status" >> "$GITHUB_OUTPUT"
+
+          if [ "$access_status" = 200 ]; then
+            echo "access=$(jq -c '[.result[] | select(.domain == "vishar-booking-staging.pages.dev" or .domain == "vishar-crm-staging.pages.dev") | {name,domain,type}] | sort_by(.domain)' access.json)" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$waf_status" = 200 ]; then
+            echo "waf=$(jq -c '[.result.rules[]? | select((.expression // "") | contains("intake-staging.vishartattoo.com")) | {action,enabled,expression}]' waf.json)" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$rate_status" = 200 ]; then
+            echo "rate_limit=$(jq -c '[.result.rules[]? | select((.expression // "") | contains("intake-staging.vishartattoo.com")) | {action,enabled,expression}]' rate.json)" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$subdomain_status" = 200 ]; then
+            echo "subdomain=$(jq -c '{workers_dev_enabled:(.result.enabled // null),previews_enabled:(.result.previews_enabled // null)}' subdomain.json)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record safe preflight result on PR 177
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          JOB_STATUS: ${{ job.status }}
+          CREDENTIAL_STATUS: ${{ steps.credentials.outcome }}
+          MISSING_NAMES: ${{ steps.credentials.outputs.missing_names }}
+          DB_AVAILABLE: ${{ steps.database_credentials.outputs.available }}
+          DB_MISSING: ${{ steps.database_credentials.outputs.missing_names }}
+          CLOUDFLARE_STATUS: ${{ steps.cloudflare.outcome }}
+          CLOUDFLARE_COMMANDS: ${{ steps.cloudflare.outputs.command_status }}
+          WORKER: ${{ steps.cloudflare.outputs.worker }}
+          BINDINGS: ${{ steps.cloudflare.outputs.bindings }}
+          BOOKING: ${{ steps.cloudflare.outputs.booking }}
+          CRM: ${{ steps.cloudflare.outputs.crm }}
+          EDGE_STATUS: ${{ steps.edge.outcome }}
+          EDGE_API_STATUS: ${{ steps.edge.outputs.api_status }}
+          ACCESS: ${{ steps.edge.outputs.access }}
+          WAF: ${{ steps.edge.outputs.waf }}
+          RATE_LIMIT: ${{ steps.edge.outputs.rate_limit }}
+          SUBDOMAIN: ${{ steps.edge.outputs.subdomain }}
+        run: |
+          gh pr comment 177 --repo "$GH_REPO" --body "<!-- pr177-staging-preflight -->
+          ### PR #177 retained staging preflight
+
+          - Exact commit: \`$GITHUB_SHA\`
+          - Job: **$JOB_STATUS**
+          - Cloudflare/application credential presence: \`$CREDENTIAL_STATUS\` (missing: \`${MISSING_NAMES:-unknown}\`)
+          - Linked database credentials available: \`${DB_AVAILABLE:-unknown}\` (missing: \`${DB_MISSING:-unknown}\`)
+          - Worker/Pages snapshot: \`$CLOUDFLARE_STATUS\` (commands: \`${CLOUDFLARE_COMMANDS:-unknown}\`)
+          - Worker deployment: \`${WORKER:-unavailable}\`
+          - Worker encrypted binding names: \`${BINDINGS:-unavailable}\`
+          - Booking Pages deployment: \`${BOOKING:-unavailable}\`
+          - CRM Pages deployment: \`${CRM:-unavailable}\`
+          - Edge-control snapshot: \`$EDGE_STATUS\` (API: \`${EDGE_API_STATUS:-unknown}\`)
+          - Access apps: \`${ACCESS:-unavailable}\`
+          - WAF rule: \`${WAF:-unavailable}\`
+          - Rate-limit rule: \`${RATE_LIMIT:-unavailable}\`
+          - workers.dev/preview state: \`${SUBDOMAIN:-unavailable}\`
+
+          No credential or binding value is included."
