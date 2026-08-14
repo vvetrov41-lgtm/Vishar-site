@@ -1,4 +1,4 @@
-name: PR 228 booking host production preflight
+name: PR 228 booking host production stage 1
 
 on:
   pull_request:
@@ -8,12 +8,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr228-booking-host-production-preflight
-  cancel-in-progress: true
+  group: pr228-booking-host-production-stage-1
+  cancel-in-progress: false
 
 jobs:
-  preflight:
-    name: Booking host production read-only preflight
+  deploy_frontend:
+    name: Deploy isolated booking frontend host
     if: >-
       github.event.pull_request.number == 228 &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -26,7 +26,7 @@ jobs:
       EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
     steps:
-      - name: Verify read credentials are available
+      - name: Verify Cloudflare credentials are available
         shell: bash
         run: |
           set -euo pipefail
@@ -55,90 +55,70 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Validate booking host code locally
+      - name: Validate isolated frontend before production mutation
         shell: bash
         run: |
           set -euo pipefail
-          npm run test:worker
-          npx wrangler deploy --config wrangler.booking-host.production.toml --dry-run --outdir .wrangler/booking-host-production-preflight
+          node scripts/test-booking-host-worker.mjs
+          node scripts/test-booking-host-production-config.mjs
+          npx wrangler deploy --config wrangler.booking-host.production.toml --dry-run --outdir .wrangler/booking-host-production-stage-1
           npm run scan:secrets
 
-      - name: Read current tattooai Worker settings without exposing secrets
-        shell: bash
-        run: |
-          set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/tattooai/settings"
-          settings="$(curl --fail-with-body --silent --show-error "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
-          SETTINGS="$settings" node <<'NODE'
-          const payload = JSON.parse(process.env.SETTINGS || '{}');
-          if (!payload.success || !payload.result) throw new Error('Could not read tattooai Worker settings');
-          const bindings = Array.isArray(payload.result.bindings) ? payload.result.bindings : [];
-          const safeNames = new Set([
-            'VISHAR_ENVIRONMENT',
-            'ALLOWED_ORIGINS',
-            'BOOKING_SOURCE_KEY',
-            'BOOKING_FORM_VERSION',
-          ]);
-          const safe = bindings
-            .filter((entry) => entry?.type === 'plain_text' && safeNames.has(entry?.name))
-            .map((entry) => ({ name: entry.name, value: entry.text }));
-          const bindingTypes = bindings.map((entry) => ({ name: entry?.name, type: entry?.type }));
-          console.log('SAFE_PLAIN_BINDINGS=' + JSON.stringify(safe));
-          console.log('BINDING_NAMES_AND_TYPES=' + JSON.stringify(bindingTypes));
-          NODE
-
-      - name: Check whether dedicated Worker already exists
+      - name: Require dedicated Worker to be absent
         shell: bash
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/vishar-booking-host-production/settings"
           status="$(curl --silent --show-error --output /tmp/booking-host-settings.json --write-out '%{http_code}' "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
-          case "$status" in
-            200)
-              echo 'BOOKING_HOST_WORKER_EXISTS=true'
-              ;;
-            404)
-              echo 'BOOKING_HOST_WORKER_EXISTS=false'
-              ;;
-            *)
-              cat /tmp/booking-host-settings.json >&2
-              echo "Unexpected Cloudflare status while checking booking host Worker: $status" >&2
-              exit 1
-              ;;
-          esac
-
-      - name: Probe current public origin boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          status="$(curl --silent --show-error --output /tmp/origin-probe.txt --write-out '%{http_code}' --max-time 15 \
-            -X OPTIONS 'https://tattooai.vvetrov41.workers.dev/' \
-            -H 'Origin: https://booking.vishartattoo.com' \
-            -H 'Access-Control-Request-Method: POST' || true)"
-          echo "NEW_ORIGIN_PREFLIGHT_HTTP=${status:-000}"
-          if [ -f /tmp/origin-probe.txt ]; then
-            head -c 300 /tmp/origin-probe.txt | tr '\n' ' '
-            echo
+          if [ "$status" != '404' ]; then
+            echo "Refusing first deploy because vishar-booking-host-production is no longer absent (HTTP $status)." >&2
+            exit 1
           fi
 
-      - name: Probe dedicated hostname before provisioning
+      - name: Deploy only the dedicated frontend Worker and exact Custom Domain
         shell: bash
         run: |
           set -euo pipefail
-          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 https://booking.vishartattoo.com/ || true)"
-          echo "BOOKING_HOST_HTTP_BEFORE=${status:-000}"
+          npx wrangler deploy --config wrangler.booking-host.production.toml --strict
 
-      - name: Read-only preflight summary
+      - name: Verify dedicated hostname and narrow route surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          root_status=000
+          for attempt in $(seq 1 20); do
+            root_status="$(curl --silent --show-error --output /tmp/booking-root.html --write-out '%{http_code}' --max-time 10 https://booking.vishartattoo.com/ || true)"
+            echo "BOOKING_HOST_ROOT_ATTEMPT_${attempt}=$root_status"
+            if [ "$root_status" = '200' ]; then
+              break
+            fi
+            sleep 3
+          done
+          test "$root_status" = '200'
+          grep -Fq 'https://tattooai.vvetrov41.workers.dev/' /tmp/booking-root.html
+          grep -Fq 'noindex' /tmp/booking-root.html
+
+          privacy_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 https://booking.vishartattoo.com/privacy/)"
+          random_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 https://booking.vishartattoo.com/services/)"
+          post_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 -X POST https://booking.vishartattoo.com/)"
+          echo "PRIVACY_HTTP=$privacy_status"
+          echo "RANDOM_PATH_HTTP=$random_status"
+          echo "FRONTEND_POST_HTTP=$post_status"
+          test "$privacy_status" = '200'
+          test "$random_status" = '404'
+          test "$post_status" = '405'
+
+      - name: Stage 1 summary
         if: always()
         shell: bash
         run: |
           {
-            echo '### Dedicated booking host production preflight'
+            echo '### Dedicated booking host production stage 1'
             echo
             echo "- PR head: \`$EXPECTED_HEAD_SHA\`"
-            echo '- Production mutations: none'
-            echo '- Cloudflare operations: GET only'
-            echo '- Supabase operations: none'
-            echo '- Existing CRM / Calendar deploy commands: none'
-            echo '- Next step: inspect this run before creating any production resource'
+            echo '- Mutation scope: `vishar-booking-host-production` Worker and exact `booking.vishartattoo.com` Custom Domain only'
+            echo '- Worker secrets/bindings: none'
+            echo '- tattooai mutation: none'
+            echo '- Supabase / CRM mutation: none'
+            echo '- Calendar mutation: none'
           } >> "$GITHUB_STEP_SUMMARY"
