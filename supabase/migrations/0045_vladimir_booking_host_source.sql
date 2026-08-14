@@ -1,54 +1,30 @@
 -- 0045_vladimir_booking_host_source.sql
 --
--- Prepare an inert trusted booking source for booking.vishartattoo.com only
--- when the existing Vladimir production source is already present.
+-- Reserved migration boundary for the dedicated production booking host.
 --
--- Fresh/local CRM databases intentionally have no production artist/source
--- bootstrap data, so this migration is a no-op there. The new source is never
--- activated here. Activation remains an explicit production rollout step after
--- the dedicated host and exact Origin boundary have been verified.
+-- Intentionally no schema or data mutation.
+--
+-- `booking.vishartattoo.com` is infrastructure-specific production routing,
+-- not canonical CRM bootstrap data. Creating a `booking_sources` row here would
+-- change the clean database fixture and couple every local/test environment to
+-- one production hostname.
+--
+-- The trusted source `vladimir-booking-host` must instead be provisioned by the
+-- later explicit production rollout after all of these are verified together:
+--
+--   * the dedicated booking frontend Worker and Custom Domain are live;
+--   * the intake Worker exact Origin allow-list includes
+--     https://booking.vishartattoo.com;
+--   * the existing Vladimir artist/source identity is read from production;
+--   * the new source is created inactive first and checked end to end;
+--   * activation is performed only after those checks pass.
+--
+-- Keeping this migration inert preserves the canonical clean CRM database and
+-- makes the current PR incapable of changing production booking-source data by
+-- merely applying repository migrations.
 
 DO $$
-DECLARE
-  v_artist_id uuid;
-  v_existing public.booking_sources%ROWTYPE;
 BEGIN
-  SELECT artist_id
-    INTO v_artist_id
-    FROM public.booking_sources
-   WHERE source_key = 'vladimir-website';
-
-  IF v_artist_id IS NULL THEN
-    RAISE NOTICE 'vladimir-website booking source is absent; skipping production booking host source';
-    RETURN;
-  END IF;
-
-  SELECT *
-    INTO v_existing
-    FROM public.booking_sources
-   WHERE source_key = 'vladimir-booking-host';
-
-  IF FOUND THEN
-    IF v_existing.artist_id <> v_artist_id
-       OR v_existing.allowed_origin IS DISTINCT FROM 'https://booking.vishartattoo.com'
-       OR v_existing.form_version <> 'booking-v1' THEN
-      RAISE EXCEPTION 'existing vladimir-booking-host source does not match the expected trusted route';
-    END IF;
-    RETURN;
-  END IF;
-
-  INSERT INTO public.booking_sources (
-    artist_id,
-    source_key,
-    allowed_origin,
-    form_version,
-    is_active
-  ) VALUES (
-    v_artist_id,
-    'vladimir-booking-host',
-    'https://booking.vishartattoo.com',
-    'booking-v1',
-    false
-  );
+  RAISE NOTICE 'booking host source provisioning is deferred to explicit production rollout';
 END;
 $$;
