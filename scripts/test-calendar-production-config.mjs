@@ -2,16 +2,18 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  activateScheduledDrain,
   buildDeployConfig,
   preserveExactRoute,
   readInputs,
 } from './generate-calendar-production-deploy-config.mjs';
 
 /**
- * The generator is the only thing standing between the tracked, deliberately
- * non-deployable production configuration and a live production Worker. Without
- * behavioural coverage a regression in it would first surface during the actual
- * production deploy, so every guarantee it makes is exercised here.
+ * The generator is the boundary between the tracked inert production template
+ * and the live Worker configuration. This suite proves both halves: the tracked
+ * file remains harmless if deployed directly, while the generated artefact
+ * enables exactly one bounded five-minute scheduled drain and preserves every
+ * production isolation guarantee.
  *
  * The identifiers below are synthetic and structurally valid. They are never
  * real Cloudflare or Supabase objects.
@@ -59,11 +61,14 @@ const directivesOf = (text) => text
   .filter(Boolean)
   .join('\n');
 
-await test('the tracked canonical config is not directly deployable', () => {
+await test('the tracked canonical config remains inert and not directly deployable', () => {
   const active = directivesOf(canonical);
   assert.doesNotMatch(active, /^SUPABASE_URL\s*=/m);
   assert.doesNotMatch(active, /^CALENDAR_ACCESS_AUD\s*=/m);
   assert.doesNotMatch(active, /^\[\[kv_namespaces\]\]$/m);
+  assert.match(active, /^CALENDAR_DRAIN_ENABLED = "false"$/m);
+  assert.doesNotMatch(active, /^\[triggers\]$/m);
+  assert.doesNotMatch(active, /^crons\s*=/m);
 });
 
 await test('the exact pre-provisioned Custom Domain route is normalized for strict deploy', () => {
@@ -119,6 +124,37 @@ await test('the generated deploy route metadata is fixed and cannot be inherited
   );
 });
 
+await test('the generated runtime activates exactly one five-minute drain', () => {
+  const active = directivesOf(generate());
+  assert.match(active, /^CALENDAR_DRAIN_ENABLED = "true"$/m);
+  assert.equal((active.match(/^CALENDAR_DRAIN_ENABLED\s*=/gm) || []).length, 1);
+  assert.equal((active.match(/^\[triggers\]$/gm) || []).length, 1);
+  assert.equal((active.match(/^crons\s*=/gm) || []).length, 1);
+  assert.match(active, /^crons = \["\*\/5 \* \* \* \*"\]$/m);
+  assert.match(active, /^workers_dev = false$/m);
+  assert.match(active, /^preview_urls = false$/m);
+  assert.match(active, /^\[\[ratelimits\]\]$/m);
+  assert.match(active, /^name = "CALENDAR_RATE_LIMIT"$/m);
+});
+
+await test('activation refuses a canonical config that was already enabled or scheduled', () => {
+  assert.throws(
+    () => activateScheduledDrain(
+      canonical.replace('CALENDAR_DRAIN_ENABLED = "false"', 'CALENDAR_DRAIN_ENABLED = "true"'),
+    ),
+    /disabled Calendar drain/,
+  );
+  assert.throws(
+    () => activateScheduledDrain(
+      canonical.replace(
+        '[[ratelimits]]',
+        '[triggers]\ncrons = ["*/5 * * * *"]\n\n[[ratelimits]]',
+      ),
+    ),
+    /no cron trigger/,
+  );
+});
+
 await test('the injected values land inside [vars] and as KV table arrays', () => {
   const active = directivesOf(generate());
   assert.match(active, /^SUPABASE_URL = "https:\/\/vfjexhfdbrjmuxfdvbdx\.supabase\.co"$/m);
@@ -129,22 +165,10 @@ await test('the injected values land inside [vars] and as KV table arrays', () =
   assert.match(active, new RegExp(`^id = "${'b'.repeat(32)}"$`, 'm'));
   assert.match(active, new RegExp(`^id = "${'c'.repeat(32)}"$`, 'm'));
 
-  // `[vars]` must remain the last canonical table before injected KV arrays,
-  // otherwise the bare production values could be captured by another table.
   const tables = [...active.matchAll(/^(\[\[?[^\]]+\]\]?)$/gm)].map((m) => m[1]);
   assert.equal(tables.filter((t) => t === '[vars]').length, 1);
+  assert.ok(tables.indexOf('[triggers]') < tables.indexOf('[[ratelimits]]'));
   assert.ok(tables.indexOf('[vars]') < tables.indexOf('[[kv_namespaces]]'));
-});
-
-await test('the generated runtime stays doubly inert and privately exposed', () => {
-  const active = directivesOf(generate());
-  assert.match(active, /^CALENDAR_DRAIN_ENABLED = "false"$/m);
-  assert.doesNotMatch(active, /^\[triggers\]$/m);
-  assert.doesNotMatch(active, /^crons\s*=/m);
-  assert.match(active, /^workers_dev = false$/m);
-  assert.match(active, /^preview_urls = false$/m);
-  assert.match(active, /^\[\[ratelimits\]\]$/m);
-  assert.match(active, /^name = "CALENDAR_RATE_LIMIT"$/m);
 });
 
 await test('retained staging identifiers are refused, one axis at a time', () => {
@@ -187,7 +211,7 @@ await test('missing or malformed inputs fail closed', () => {
 
 await test('a canonical config whose last table is not [vars] is refused', () => {
   assert.throws(
-    () => generate({}, `${canonical}\n[triggers]\ncrons = ["*/5 * * * *"]\n`),
+    () => generate({}, `${canonical}\n[observability]\nenabled = false\n`),
     /must be the final table in the canonical production config/,
   );
 });
@@ -203,14 +227,14 @@ await test('a canonical config that re-enables exposure is refused', () => {
   );
   assert.throws(
     () => generate({}, canonical.replace('CALENDAR_DRAIN_ENABLED = "false"', 'CALENDAR_DRAIN_ENABLED = "true"')),
-    /lost the disabled Calendar drain/,
+    /disabled Calendar drain/,
   );
 });
 
 await test('a canonical config that drops the isolated limiter is refused', () => {
   assert.throws(
     () => generate({}, canonical.replace('[[ratelimits]]', '[[disabled_ratelimits]]')),
-    /lost the isolated Worker rate limiter/,
+    /exactly one isolated rate limiter|lost the isolated Worker rate limiter/,
   );
 });
 

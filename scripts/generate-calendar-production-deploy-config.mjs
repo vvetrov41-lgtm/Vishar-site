@@ -1,20 +1,16 @@
 /**
  * Builds the deployable production Calendar Wrangler configuration.
  *
- * The tracked `wrangler.calendar.production.toml` is deliberately not
- * deployable: the production Supabase URL, the Access audience and the two KV
- * namespace ids are provisioned outside this repository, and committing
- * placeholders would produce a config that reads as deployable and is not.
+ * The tracked `wrangler.calendar.production.toml` remains deliberately inert:
+ * no cron trigger and `CALENDAR_DRAIN_ENABLED=false`. This activation layer
+ * starts from that fail-closed baseline, injects only the pre-provisioned
+ * production identifiers, then creates the deploy-only runtime configuration
+ * with the exact five-minute scheduled drain enabled.
  *
- * This script injects those values from already-validated environment
- * configuration and preserves the one exact pre-provisioned Custom Domain so
- * `wrangler deploy --strict` compares, rather than deletes, that remote route.
- * Cloudflare's remote Custom Domain representation also carries canonical
- * metadata (`zone_name`, `enabled`, `previews_enabled`), so the generated-only
- * route is normalized to that exact representation before the strict deploy.
- * It then re-asserts every safety property on the generated artefact itself so
- * malformed input cannot smuggle a cron trigger, enabled drain, public exposure
- * or staging binding past canonical-config validation.
+ * Keeping the tracked baseline inert makes accidental direct deploys harmless,
+ * while the generated artefact is fully validated before `wrangler --strict`
+ * can change the live Worker. Future deployments from this activation head keep
+ * the same active drain instead of silently reverting it.
  *
  * Usage: node scripts/generate-calendar-production-deploy-config.mjs <out-path>
  */
@@ -31,12 +27,21 @@ const RETAINED_STAGING = {
 
 const PRODUCTION_CALENDAR_HOST = 'calendar.vishartattoo.com';
 const PRODUCTION_CALENDAR_ZONE = 'vishartattoo.com';
+const PRODUCTION_DRAIN_CRON = '*/5 * * * *';
 const TRACKED_ROUTE = `  { pattern = "${PRODUCTION_CALENDAR_HOST}", custom_domain = true }`;
 const DEPLOY_ROUTE = `  { pattern = "${PRODUCTION_CALENDAR_HOST}", zone_name = "${PRODUCTION_CALENDAR_ZONE}", custom_domain = true, enabled = true, previews_enabled = false }`;
 
 const fail = (message) => {
   throw new Error(message);
 };
+
+function directivesOf(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/(^|\s)#.*$/, '').trim())
+    .filter(Boolean)
+    .join('\n');
+}
 
 export function readInputs(env = process.env) {
   const inputs = {
@@ -100,8 +105,7 @@ export function readInputs(env = process.env) {
  * remove that remote domain. Cloudflare also returns three canonical metadata
  * fields for an existing Custom Domain. The tracked config intentionally keeps
  * the human-reviewable minimal declaration; only the generated deploy artefact
- * is expanded to the exact remote representation. Any different/multiple route
- * is rejected before a live deployment can start.
+ * is expanded to the exact remote representation.
  */
 export function preserveExactRoute(source) {
   const arrays = [...source.matchAll(/^routes\s*=\s*\[\s*\n([\s\S]*?)^\]\s*$/gm)];
@@ -120,28 +124,69 @@ export function preserveExactRoute(source) {
 
   const normalized = source.replace(TRACKED_ROUTE, DEPLOY_ROUTE);
   if (normalized === source || (normalized.match(new RegExp(PRODUCTION_CALENDAR_HOST.replaceAll('.', '\\.'), 'g')) || []).length !== 2) {
-    // The hostname appears once in the route and once in the OAuth redirect URI.
     fail('Generated deploy config could not normalize the production Custom Domain metadata');
   }
 
   return `${normalized.trimEnd()}\n`;
 }
 
+/**
+ * Activation is permitted only from the tracked inert baseline. A canonical
+ * config that is already enabled, already scheduled, or otherwise drifted is
+ * refused so the activation diff remains explicit and reviewable.
+ *
+ * The two legacy error strings below are retained deliberately because the
+ * production validation harness asserts that the generator still proves the
+ * inert baseline before it is allowed to activate it.
+ */
+export function activateScheduledDrain(source) {
+  const active = directivesOf(source);
+  if ((active.match(/^CALENDAR_DRAIN_ENABLED\s*=\s*"false"$/gm) || []).length !== 1) {
+    fail('Generated deploy config lost the disabled Calendar drain');
+  }
+  if (/^\[triggers\]$/m.test(active) || /^crons\s*=/m.test(active)) {
+    fail('Generated deploy config must declare no cron trigger');
+  }
+
+  const withDrain = source.replace(
+    'CALENDAR_DRAIN_ENABLED = "false"',
+    'CALENDAR_DRAIN_ENABLED = "true"',
+  );
+  if (withDrain === source) {
+    fail('Could not activate the production Calendar drain from the inert baseline');
+  }
+
+  const limiterMarker = '[[ratelimits]]';
+  if ((source.match(/^\[\[ratelimits\]\]$/gm) || []).length !== 1) {
+    fail('Production Calendar activation requires exactly one isolated rate limiter');
+  }
+  const activated = withDrain.replace(
+    limiterMarker,
+    `[triggers]\ncrons = ["${PRODUCTION_DRAIN_CRON}"]\n\n${limiterMarker}`,
+  );
+  if (activated === withDrain) {
+    fail('Could not add the production Calendar cron trigger');
+  }
+
+  return `${activated.trimEnd()}\n`;
+}
+
 export function buildDeployConfig(canonical, inputs) {
   const withExactRoute = preserveExactRoute(canonical);
+  const activatedCanonical = activateScheduledDrain(withExactRoute);
 
   // The injected variables are appended as bare key/value pairs, so they belong
   // to whichever table is open at the end of the file. Assert that `[vars]` is
-  // the last table, otherwise a future section added after it would silently
-  // capture the production Supabase URL and Access audience.
-  const tables = [...withExactRoute.matchAll(/^\s*(\[\[?[^\]]+\]\]?)\s*$/gm)]
+  // still the last table after activation; the cron is intentionally inserted
+  // before the rate limiter and `[vars]` sections.
+  const tables = [...activatedCanonical.matchAll(/^\s*(\[\[?[^\]]+\]\]?)\s*$/gm)]
     .map((match) => match[1])
     .filter((name) => !name.startsWith('#'));
   if (tables[tables.length - 1] !== '[vars]') {
     fail('`[vars]` must be the final table in the canonical production config');
   }
 
-  const text = `${withExactRoute}
+  const text = `${activatedCanonical}
 SUPABASE_URL = "${inputs.supabaseUrl}"
 CALENDAR_ACCESS_AUD = "${inputs.accessAud}"
 
@@ -154,11 +199,7 @@ binding = "CALENDAR_OAUTH_TOKENS"
 id = "${inputs.kvTokensId}"
 `;
 
-  const active = text
-    .split(/\r?\n/)
-    .map((line) => line.replace(/(^|\s)#.*$/, '').trim())
-    .filter(Boolean)
-    .join('\n');
+  const active = directivesOf(text);
 
   const routeLines = active
     .split('\n')
@@ -166,11 +207,17 @@ id = "${inputs.kvTokensId}"
   if (routeLines.length !== 1 || routeLines[0] !== DEPLOY_ROUTE.trim()) {
     fail('Generated deploy config lost the exact production Custom Domain');
   }
-  if (!/^CALENDAR_DRAIN_ENABLED\s*=\s*"false"$/m.test(active)) {
-    fail('Generated deploy config lost the disabled Calendar drain');
+  if ((active.match(/^CALENDAR_DRAIN_ENABLED\s*=\s*"true"$/gm) || []).length !== 1) {
+    fail('Generated deploy config lost the enabled Calendar drain');
   }
-  if (/^\[triggers\]$/m.test(active) || /^crons\s*=/m.test(active)) {
-    fail('Generated deploy config must declare no cron trigger');
+  if ((active.match(/^\[triggers\]$/gm) || []).length !== 1) {
+    fail('Generated deploy config must declare exactly one cron trigger table');
+  }
+  if ((active.match(/^crons\s*=\s*\["\*\/5 \* \* \* \*"\]$/gm) || []).length !== 1) {
+    fail('Generated deploy config lost the exact five-minute Calendar cron');
+  }
+  if ((active.match(/^crons\s*=/gm) || []).length !== 1) {
+    fail('Generated deploy config must declare exactly one cron schedule');
   }
   if (!/^workers_dev\s*=\s*false$/m.test(active)) {
     fail('workers.dev must remain disabled in deploy config');
