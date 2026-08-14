@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   buildDeployConfig,
+  preserveExactRoute,
   readInputs,
-  stripRoutes,
 } from './generate-calendar-production-deploy-config.mjs';
 
 /**
@@ -66,12 +66,34 @@ await test('the tracked canonical config is not directly deployable', () => {
   assert.doesNotMatch(active, /^\[\[kv_namespaces\]\]$/m);
 });
 
-await test('the dashboard-owned Custom Domain route is stripped', () => {
-  assert.match(directivesOf(canonical), /pattern\s*=\s*"calendar\.vishartattoo\.com"/);
+await test('the exact pre-provisioned Custom Domain route is preserved', () => {
   const generated = generate();
-  assert.ok(!generated.includes('custom_domain'), 'custom_domain must not survive');
-  assert.doesNotMatch(generated, /^routes\s*=/m, 'no routes array may survive');
-  assert.ok(!generated.includes('calendar.vishartattoo.com\"\n]'), 'route entry must not survive');
+  const active = directivesOf(generated);
+  assert.match(active, /^routes\s*=\s*\[$/m);
+  assert.match(active, /pattern\s*=\s*"calendar\.vishartattoo\.com"/);
+  assert.match(active, /custom_domain\s*=\s*true/);
+  assert.equal(
+    (active.match(/pattern\s*=\s*"calendar\.vishartattoo\.com"/g) || []).length,
+    1,
+  );
+});
+
+await test('route drift fails closed before deploy config generation', () => {
+  const cases = [
+    canonical.replace('calendar.vishartattoo.com', 'calendar-other.vishartattoo.com'),
+    canonical.replace('custom_domain = true', 'custom_domain = false'),
+    canonical.replace(/^routes = \[$/m, 'routes_disabled = ['),
+    canonical.replace(
+      '  { pattern = "calendar.vishartattoo.com", custom_domain = true }',
+      '  { pattern = "calendar.vishartattoo.com", custom_domain = true },\n  { pattern = "calendar-extra.vishartattoo.com", custom_domain = true }',
+    ),
+  ];
+  for (const source of cases) {
+    assert.throws(
+      () => preserveExactRoute(source),
+      /production Custom Domain/,
+    );
+  }
 });
 
 await test('the injected values land inside [vars] and as KV table arrays', () => {
@@ -84,8 +106,8 @@ await test('the injected values land inside [vars] and as KV table arrays', () =
   assert.match(active, new RegExp(`^id = "${'b'.repeat(32)}"$`, 'm'));
   assert.match(active, new RegExp(`^id = "${'c'.repeat(32)}"$`, 'm'));
 
-  // `[vars]` must remain the last table, otherwise the bare key/value pairs
-  // above would be captured by some other table instead.
+  // `[vars]` must remain the last canonical table before injected KV arrays,
+  // otherwise the bare production values could be captured by another table.
   const tables = [...active.matchAll(/^(\[\[?[^\]]+\]\]?)$/gm)].map((m) => m[1]);
   assert.equal(tables.filter((t) => t === '[vars]').length, 1);
   assert.ok(tables.indexOf('[vars]') < tables.indexOf('[[kv_namespaces]]'));
@@ -144,13 +166,6 @@ await test('a canonical config whose last table is not [vars] is refused', () =>
   assert.throws(
     () => generate({}, `${canonical}\n[triggers]\ncrons = ["*/5 * * * *"]\n`),
     /must be the final table in the canonical production config/,
-  );
-});
-
-await test('a canonical config without exactly one routes array is refused', () => {
-  assert.throws(
-    () => stripRoutes(canonical.replace(/^routes = \[$/m, 'routes_disabled = [')),
-    /Expected exactly one top-level routes array/,
   );
 });
 
