@@ -1,0 +1,351 @@
+name: PR 185 GPT actions staging disabled deploy
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-gpt-actions-staging-disabled
+  cancel-in-progress: false
+
+jobs:
+  migrate-and-deploy-disabled-worker:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DEPLOY_PR185_GPT_ACTIONS_STAGING_DISABLED -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      STAGING_PROJECT_REF: gwaliusblwrzisrwnsvs
+      TARGET_ZONE: vishartattoo.com
+      TARGET_HOST: gpt-actions-staging.vishartattoo.com
+      WORKER_NAME: vishar-gpt-actions-staging
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- DEPLOY_PR185_GPT_ACTIONS_STAGING_DISABLED -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify exact retained-staging migration boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f supabase/migrations/0031_appointment_five_minute_step.sql
+          test -f supabase/migrations/0032_gpt_appointment_actions.sql
+          test -f supabase/migrations/0033_gpt_appointment_actions_hardening.sql
+          test -f supabase/migrations/0034_gpt_oauth_consent_guard.sql
+          latest="$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | tail -n 1)"
+          test "$latest" = "0034_gpt_oauth_consent_guard.sql"
+
+      - name: Verify disabled staging Worker boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fx 'name = "vishar-gpt-actions-staging"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'main = "workers/gpt-actions.js"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'workers_dev = false' wrangler.gpt-actions.staging.toml
+          grep -Fx 'GPT_ACTIONS_ENABLED = "false"' wrangler.gpt-actions.staging.toml
+          grep -Fx 'SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"' wrangler.gpt-actions.staging.toml
+          ! grep -Eq '(^|[[:space:]])routes[[:space:]]*=|custom_domain[[:space:]]*=' wrangler.gpt-actions.staging.toml
+          ! grep -Eq 'service_role|secret_key|SUPABASE_SECRET|SUPABASE_SERVICE' wrangler.gpt-actions.staging.toml
+
+      - name: Verify staging-only encrypted configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_DB_PASSWORD STAGING_SUPABASE_URL STAGING_SUPABASE_PUBLISHABLE_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_EDGE_READ_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || {
+              echo "Missing encrypted staging configuration name: $name" >&2
+              exit 1
+            }
+          done
+          [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ]
+          case "$STAGING_SUPABASE_PUBLISHABLE_KEY" in
+            sb_publishable_*) ;;
+            *) echo 'Staging browser key is not publishable' >&2; exit 1 ;;
+          esac
+
+      - name: Verify Worker is non-public before retained-staging mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$TARGET_ZONE" = "vishartattoo.com" ]
+          [ "$TARGET_HOST" = "gpt-actions-staging.vishartattoo.com" ]
+          [ "$WORKER_NAME" = "vishar-gpt-actions-staging" ]
+
+          lookup_auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          safe="$RUNNER_TEMP/edge-boundary.txt"
+          zone_json="$RUNNER_TEMP/deploy-zone.json"
+          routes_json="$RUNNER_TEMP/deploy-routes.json"
+          domains_json="$RUNNER_TEMP/deploy-domains.json"
+          trap 'rm -f "$zone_json" "$routes_json" "$domains_json"' EXIT
+
+          curl --fail --silent --show-error "${lookup_auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
+          zone_id="$(jq -r --arg name "$TARGET_ZONE" '
+            [.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end
+          ' "$zone_json")"
+          [ -n "$zone_id" ] || { echo 'Exact Cloudflare zone could not be resolved.' >&2; exit 1; }
+
+          cf_get() {
+            local url="$1" output="$2"
+            local status
+            status="$(curl --silent --show-error -o "$output" -w '%{http_code}' "${edge_auth[@]}" "$url" || true)"
+            printf '%s' "$status"
+          }
+
+          routes_status="$(cf_get "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes" "$routes_json")"
+          domains_status="$(cf_get "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" "$domains_json")"
+
+          worker_route_bindings=unknown
+          target_host_routes=unknown
+          if [ "$routes_status" = 200 ]; then
+            worker_route_bindings="$(jq --arg worker "$WORKER_NAME" '[.result[]? | select((.script // "") == $worker)] | length' "$routes_json")"
+            target_host_routes="$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.pattern // "") | contains($host))] | length' "$routes_json")"
+          fi
+
+          target_custom_domains=unknown
+          if [ "$domains_status" = 200 ]; then
+            target_custom_domains="$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.hostname == $host)] | length' "$domains_json")"
+          fi
+
+          cat > "$safe" <<EOF
+          exact_sha=$APPROVED_SHA
+          worker=$WORKER_NAME
+          target_host=$TARGET_HOST
+          workers_routes_read_status=$routes_status
+          worker_route_binding_count=$worker_route_bindings
+          target_host_route_count=$target_host_routes
+          workers_domains_read_status=$domains_status
+          target_custom_domain_count=$target_custom_domains
+          verified_non_public=false
+          EOF
+
+          [ "$routes_status" = 200 ] || {
+            echo 'Worker routes are not readable; refusing disabled deploy because a dashboard-managed public route cannot be excluded.' >&2
+            cat "$safe"
+            exit 1
+          }
+          [ "$domains_status" = 200 ] || {
+            echo 'Worker custom domains are not readable; refusing disabled deploy.' >&2
+            cat "$safe"
+            exit 1
+          }
+          [ "$worker_route_bindings" = 0 ] || {
+            echo 'The GPT Actions Worker already has a Worker route; refusing disabled deploy.' >&2
+            cat "$safe"
+            exit 1
+          }
+          [ "$target_host_routes" = 0 ] || {
+            echo 'The planned GPT Actions hostname already appears in a Worker route; refusing disabled deploy.' >&2
+            cat "$safe"
+            exit 1
+          }
+          [ "$target_custom_domains" = 0 ] || {
+            echo 'The planned GPT Actions hostname already has a Worker custom domain; refusing disabled deploy.' >&2
+            cat "$safe"
+            exit 1
+          }
+
+          sed -i 's/verified_non_public=false/verified_non_public=true/' "$safe"
+          cat "$safe"
+          rm -f "$zone_json" "$routes_json" "$domains_json"
+          trap - EXIT
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact retained staging project
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link \
+            --project-ref "$STAGING_PROJECT_REF" \
+            --password "$STAGING_SUPABASE_DB_PASSWORD"
+
+      - name: Verify retained staging already contains migrations 0031 through 0034
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list --linked > "$RUNNER_TEMP/migrations-before.txt" 2>&1
+          sed 's/`//g' "$RUNNER_TEMP/migrations-before.txt" > "$RUNNER_TEMP/migrations-before-normalized.txt"
+          for version in 0031 0032 0033 0034; do
+            grep -Eq "^[[:space:]]*$version[[:space:]]+\|[[:space:]]+$version" "$RUNNER_TEMP/migrations-before-normalized.txt" || {
+              echo "Retained staging is missing migration $version; disabled Worker redeploy will not mutate an unexpected database state." >&2
+              exit 1
+            }
+          done
+
+          supabase db push --linked --dry-run > "$RUNNER_TEMP/db-push-dry-run.txt" 2>&1
+          if grep -Eq '003[1-4]_.*\.sql' "$RUNNER_TEMP/db-push-dry-run.txt"; then
+            echo 'Migrations 0031-0034 unexpectedly appear pending after linked migration verification.' >&2
+            cat "$RUNNER_TEMP/db-push-dry-run.txt" >&2
+            exit 1
+          fi
+
+      - name: Reconfirm migrations without reset or seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase db push --linked
+          supabase migration list --linked > "$RUNNER_TEMP/migrations-after.txt" 2>&1
+          sed 's/`//g' "$RUNNER_TEMP/migrations-after.txt" > "$RUNNER_TEMP/migrations-after-normalized.txt"
+          for version in 0031 0032 0033 0034; do
+            grep -Eq "^[[:space:]]*$version[[:space:]]+\|[[:space:]]+$version" "$RUNNER_TEMP/migrations-after-normalized.txt"
+          done
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Dry-run exact Worker bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dry_run_dir="$RUNNER_TEMP/gpt-actions-dry-run"
+          rm -rf "$dry_run_dir"
+          npx wrangler deploy \
+            --config wrangler.gpt-actions.staging.toml \
+            --dry-run \
+            --outdir "$dry_run_dir" \
+            --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
+            --var GPT_ACTIONS_ENABLED:false
+
+      - name: Deploy disabled retained-staging Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy \
+            --config wrangler.gpt-actions.staging.toml \
+            --var SUPABASE_URL:"$STAGING_SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$STAGING_SUPABASE_PUBLISHABLE_KEY" \
+            --var GPT_ACTIONS_ENABLED:false
+
+      - name: Reconfirm Worker remains non-public after deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          lookup_auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          zone_json="$RUNNER_TEMP/post-zone.json"
+          routes_json="$RUNNER_TEMP/post-routes.json"
+          domains_json="$RUNNER_TEMP/post-domains.json"
+          trap 'rm -f "$zone_json" "$routes_json" "$domains_json"' EXIT
+
+          curl --fail --silent --show-error "${lookup_auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones?name=$TARGET_ZONE" > "$zone_json"
+          zone_id="$(jq -r --arg name "$TARGET_ZONE" '[.result[] | select(.name == $name)] | if length == 1 then .[0].id else empty end' "$zone_json")"
+          [ -n "$zone_id" ]
+          curl --fail --silent --show-error "${edge_auth[@]}" \
+            "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes" > "$routes_json"
+          curl --fail --silent --show-error "${edge_auth[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" > "$domains_json"
+
+          test "$(jq --arg worker "$WORKER_NAME" '[.result[]? | select((.script // "") == $worker)] | length' "$routes_json")" = 0
+          test "$(jq --arg host "$TARGET_HOST" '[.result[]? | select((.pattern // "") | contains($host))] | length' "$routes_json")" = 0
+          test "$(jq --arg host "$TARGET_HOST" '[.result[]? | select(.hostname == $host)] | length' "$domains_json")" = 0
+
+          cat >> "$RUNNER_TEMP/edge-boundary.txt" <<EOF
+          post_deploy_worker_route_binding_count=0
+          post_deploy_target_host_route_count=0
+          post_deploy_target_custom_domain_count=0
+          post_deploy_verified_non_public=true
+          EOF
+
+          rm -f "$zone_json" "$routes_json" "$domains_json"
+          trap - EXIT
+
+      - name: Record safe deployment evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deployments list --config wrangler.gpt-actions.staging.toml > "$RUNNER_TEMP/deployments.txt"
+          test -s "$RUNNER_TEMP/deployments.txt"
+          cat > "$RUNNER_TEMP/boundary.txt" <<EOF
+          exact_sha=$APPROVED_SHA
+          project_ref=$STAGING_PROJECT_REF
+          latest_migration=0034
+          worker=vishar-gpt-actions-staging
+          workers_dev=false
+          public_route=false
+          gpt_actions_enabled=false
+          production_targeted=false
+          EOF
+
+      - name: Upload safe deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-gpt-actions-disabled-${{ env.APPROVED_SHA }}
+          path: |
+            ${{ runner.temp }}/edge-boundary.txt
+            ${{ runner.temp }}/migrations-before.txt
+            ${{ runner.temp }}/db-push-dry-run.txt
+            ${{ runner.temp }}/migrations-after.txt
+            ${{ runner.temp }}/deployments.txt
+            ${{ runner.temp }}/boundary.txt
+          if-no-files-found: warn
+          retention-days: 30

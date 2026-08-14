@@ -1,0 +1,134 @@
+name: PR 186 Kristina retained intake staging v5
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr186-kristina-retained-intake-staging-v5
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-verify:
+    if: >-
+      github.event.pull_request.number == 186 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DEPLOY_PR186_KRISTINA_INTAKE_STAGING_V5 -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      PROJECT_REF: gwaliusblwrzisrwnsvs
+      WORKER_NAME: tattooai-preview
+      WORKER_URL: https://intake-staging.vishartattoo.com/__vishar-staging-intake-2026
+      VLADIMIR_ORIGIN: https://vishar-booking-staging.pages.dev
+      KRISTINA_ORIGIN: https://agent-kristina-booking-crm-setup-kisa.vvetrov41.workers.dev
+      VLADIMIR_ID: a1111111-1111-4111-8111-111111111111
+      KRISTINA_ID: a2222222-2222-4222-8222-222222222222
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed exact PR and stack guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 186
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.ref == "agent/kristina-crm-intake-staging"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains("<!-- DEPLOY_PR186_KRISTINA_INTAKE_STAGING_V5 -->"))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head, current base and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/185" > "$RUNNER_TEMP/pr185.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/186" > "$RUNNER_TEMP/pr186.json"
+          base_sha="$(jq -r '.head.sha' "$RUNNER_TEMP/pr185.json")"
+
+          jq -e '
+            .state == "open" and .draft == true and .merged == false
+            and .head.ref == "agent/gpt-appointment-actions"
+          ' "$RUNNER_TEMP/pr185.json" >/dev/null
+          jq -e --arg sha "$APPROVED_SHA" --arg base "$base_sha" '
+            .state == "open" and .draft == true and .merged == false
+            and .base.ref == "agent/gpt-appointment-actions"
+            and .base.sha == $base
+            and .head.ref == "agent/kristina-crm-intake-staging"
+            and .head.sha == $sha
+          ' "$RUNNER_TEMP/pr186.json" >/dev/null
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify staging-only encrypted configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_URL CLOUDFLARE_API_TOKEN CLOUDFLARE_EDGE_READ_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || {
+              echo "Missing encrypted staging configuration name: $name" >&2
+              exit 1
+            }
+          done
+          [ "$STAGING_SUPABASE_URL" = "https://gwaliusblwrzisrwnsvs.supabase.co" ] || {
+            echo 'STAGING_SUPABASE_URL is not the retained staging project.' >&2
+            exit 1
+          }
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run token-separated guarded staging validation
+        shell: bash
+        run: bash scripts/pr186-kristina-intake-staging-v5.sh
+
+      - name: Upload safe retained-staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr186-kristina-intake-staging-v5-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr186-v4-evidence
+          if-no-files-found: warn
+          retention-days: 30

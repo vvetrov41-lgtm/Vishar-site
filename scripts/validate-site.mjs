@@ -151,11 +151,17 @@ async function pathExists(filePath) {
   }
 }
 
+// Directories that are not part of the public static site. `admin/` is the
+// private CRM application: it has its own build, is hosted separately, is never
+// indexed, and must not be checked as though it were a public page.
+const NON_SITE_DIRECTORIES = new Set(['.git', 'node_modules', 'admin']);
+
 async function listFiles(dir, predicate = () => true) {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
 
   for (const entry of entries) {
+    if (dir === rootDir && NON_SITE_DIRECTORIES.has(entry.name)) continue;
     if (entry.name === '.git' || entry.name === 'node_modules') continue;
     const entryPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
@@ -366,6 +372,9 @@ function isBrowserRuntimeFile(filePath) {
   const fileRel = rel(filePath);
   if (fileRel.startsWith('scripts/')) return false;
   if (fileRel.startsWith('workers/')) return false;
+  // The private CRM application is a separate build with its own bundler and
+  // its own checks; it is not part of the public site runtime.
+  if (fileRel.startsWith('admin/')) return false;
   if (fileRel.endsWith('.config.js')) return false;
   return true;
 }
@@ -468,6 +477,41 @@ async function checkBookingWindowRuntime() {
   }
 
   pass(`components.js executes BOOKING_WINDOW and populateBookingWindow() renders "${marker.textContent}".`);
+}
+
+async function checkAnalyticsDisclosureMatchesRuntime() {
+  const components = await readFile(path.join(rootDir, 'components.js'), 'utf8');
+  const privacy = await readFile(path.join(rootDir, 'privacy/index.html'), 'utf8');
+  const idMatch = /const GA_MEASUREMENT_ID\s*=\s*['"]([^'"]+)['"]/.exec(components);
+
+  if (!idMatch) {
+    fail('components.js has no explicit GA_MEASUREMENT_ID configuration.');
+    return;
+  }
+
+  const configured = !idMatch[1].startsWith('G-XXXX');
+  if (!configured) {
+    const guards = components.match(/if\s*\(!analyticsConfigured\(\)\)\s*return;/g) || [];
+    if (guards.length < 3) {
+      fail('Analytics is a placeholder but load, banner and preference management are not all guarded.');
+    }
+    if (!privacy.includes('Google Analytics is not currently configured')) {
+      fail('privacy/index.html does not disclose that the placeholder analytics integration is disabled.');
+    }
+    if (privacy.includes('onclick="visharManageCookies()"')) {
+      fail('privacy/index.html offers cookie management even though analytics is not configured.');
+    }
+    pass('Analytics placeholder is runtime-disabled and the privacy notice describes that actual state.');
+    return;
+  }
+
+  if (privacy.includes('Google Analytics is not currently configured')) {
+    fail('A real GA measurement ID is configured but the privacy notice still says analytics is disconnected.');
+  }
+  if (!privacy.includes('visharManageCookies')) {
+    fail('Analytics is configured but the privacy page has no preference-management control.');
+  }
+  pass('Configured analytics and the privacy preference disclosure are aligned.');
 }
 
 async function checkNoRuntimeCdnjsReferences() {
@@ -1320,6 +1364,7 @@ async function main() {
   await checkHtmlRuntimeStrings(htmlFiles);
   await checkBookingWindowSingleSource(htmlFiles);
   await checkBookingWindowRuntime();
+  await checkAnalyticsDisclosureMatchesRuntime();
   await checkNoRuntimeCdnjsReferences();
   await checkVendor3DLibraries();
   await checkHomepageReferencesLocalVendorPaths();

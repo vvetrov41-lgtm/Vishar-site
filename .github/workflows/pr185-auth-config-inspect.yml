@@ -1,0 +1,132 @@
+name: PR 185 inspect staging Auth OAuth config
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr185-auth-config-inspect
+  cancel-in-progress: false
+
+jobs:
+  inspect-auth-config:
+    if: >-
+      github.event.pull_request.number == 185 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- INSPECT_PR185_STAGING_AUTH_CONFIG -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      STAGING_PROJECT_REF: gwaliusblwrzisrwnsvs
+      STAGING_SITE_URL: https://vishar-crm-staging.pages.dev
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and (.pull_request.body | contains("<!-- INSPECT_PR185_STAGING_AUTH_CONFIG -->"))
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 185
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/appointment-five-minute-step"
+            and .pull_request.head.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify retained staging Auth config and OAuth discovery read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ "$STAGING_PROJECT_REF" = "gwaliusblwrzisrwnsvs" ]
+
+          raw="$RUNNER_TEMP/auth-config.json"
+          discovery="$RUNNER_TEMP/oauth-discovery.json"
+          safe="$RUNNER_TEMP/auth-config-safe.txt"
+          trap 'rm -f "$raw" "$discovery"' EXIT
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$STAGING_PROJECT_REF/config/auth" \
+            > "$raw"
+
+          jq -e --arg site "$STAGING_SITE_URL" '
+            type == "object"
+            and .site_url == $site
+            and .oauth_server_enabled == true
+            and .oauth_server_authorization_path == "/oauth/consent"
+            and .oauth_server_allow_dynamic_registration == false
+          ' "$raw" >/dev/null
+
+          curl --fail --silent --show-error \
+            "https://$STAGING_PROJECT_REF.supabase.co/auth/v1/.well-known/oauth-authorization-server" \
+            > "$discovery"
+
+          jq -e --arg base "https://$STAGING_PROJECT_REF.supabase.co/auth/v1" '
+            type == "object"
+            and .authorization_endpoint == ($base + "/oauth/authorize")
+            and .token_endpoint == ($base + "/oauth/token")
+          ' "$discovery" >/dev/null
+
+          cat > "$safe" <<EOF
+          project_ref=$STAGING_PROJECT_REF
+          site_url=$STAGING_SITE_URL
+          oauth_server_enabled=true
+          oauth_server_authorization_path=/oauth/consent
+          oauth_server_allow_dynamic_registration=false
+          discovery_path=/auth/v1/.well-known/oauth-authorization-server
+          discovery_verified=true
+          auth_config_mutated=false
+          oauth_clients_created=false
+          production_targeted=false
+          EOF
+
+          cat "$safe"
+          rm -f "$raw" "$discovery"
+          trap - EXIT
+
+      - name: Upload safe inspection evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr185-auth-config-inspect-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/auth-config-safe.txt
+          if-no-files-found: warn
+          retention-days: 30
