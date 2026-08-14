@@ -66,15 +66,23 @@ await test('the tracked canonical config is not directly deployable', () => {
   assert.doesNotMatch(active, /^\[\[kv_namespaces\]\]$/m);
 });
 
-await test('the exact pre-provisioned Custom Domain route is preserved', () => {
+await test('the exact pre-provisioned Custom Domain route is normalized for strict deploy', () => {
   const generated = generate();
   const active = directivesOf(generated);
   assert.match(active, /^routes\s*=\s*\[$/m);
   assert.match(active, /pattern\s*=\s*"calendar\.vishartattoo\.com"/);
+  assert.match(active, /zone_name\s*=\s*"vishartattoo\.com"/);
   assert.match(active, /custom_domain\s*=\s*true/);
+  assert.match(active, /enabled\s*=\s*true/);
+  assert.match(active, /previews_enabled\s*=\s*false/);
   assert.equal(
     (active.match(/pattern\s*=\s*"calendar\.vishartattoo\.com"/g) || []).length,
     1,
+  );
+  assert.doesNotMatch(
+    active,
+    /\{\s*pattern\s*=\s*"calendar\.vishartattoo\.com"\s*,\s*custom_domain\s*=\s*true\s*\}/,
+    'the deploy artefact must not retain the metadata-incomplete route form',
   );
 });
 
@@ -94,6 +102,21 @@ await test('route drift fails closed before deploy config generation', () => {
       /production Custom Domain/,
     );
   }
+});
+
+await test('the generated deploy route metadata is fixed and cannot be inherited from tracked drift', () => {
+  const generated = generate();
+  const routeLine = directivesOf(generated)
+    .split('\n')
+    .find((line) => line.includes('pattern = "calendar.vishartattoo.com"'));
+  assert.equal(
+    routeLine,
+    '{ pattern = "calendar.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }',
+  );
+  assert.throws(
+    () => preserveExactRoute(canonical.replace('custom_domain = true', 'custom_domain = true, enabled = false')),
+    /production Custom Domain/,
+  );
 });
 
 await test('the injected values land inside [vars] and as KV table arrays', () => {
