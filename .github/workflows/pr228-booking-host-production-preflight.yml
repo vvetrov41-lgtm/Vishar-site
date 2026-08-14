@@ -1,4 +1,4 @@
-name: PR 228 booking host production stage 1
+name: PR 228 booking host production verification
 
 on:
   pull_request:
@@ -8,12 +8,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr228-booking-host-production-stage-1
-  cancel-in-progress: false
+  group: pr228-booking-host-production-verification
+  cancel-in-progress: true
 
 jobs:
-  attach_domain:
-    name: Attach isolated booking Custom Domain
+  verify:
+    name: Verify dedicated booking host
     if: >-
       github.event.pull_request.number == 228 &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -21,23 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       BOOKING_HOST: booking.vishartattoo.com
-      BOOKING_WORKER: vishar-booking-host-production
-      ZONE_ID: e53906d3351e619ff2ff209a0bb0259b
-      ZONE_NAME: vishartattoo.com
 
     steps:
-      - name: Verify Cloudflare credentials are available
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$CLOUDFLARE_API_TOKEN"
-          test -n "$CLOUDFLARE_ACCOUNT_ID"
-          test "${#CLOUDFLARE_ACCOUNT_ID}" -eq 32
-
       - name: Checkout exact PR head
         uses: actions/checkout@v4
         with:
@@ -65,93 +52,39 @@ jobs:
           set -euo pipefail
           node scripts/test-booking-host-worker.mjs
           node scripts/test-booking-host-production-config.mjs
-          npx wrangler deploy --config wrangler.booking-host.production.toml --dry-run --outdir .wrangler/booking-host-production-domain-attach
+          npx wrangler deploy --config wrangler.booking-host.production.toml --dry-run --outdir .wrangler/booking-host-production-verification
           npm run scan:secrets
 
-      - name: Require uploaded dedicated Worker with no bindings
+      - name: Verify live dedicated hostname and narrow route surface
         shell: bash
         run: |
           set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${BOOKING_WORKER}/settings"
-          settings="$(curl --fail-with-body --silent --show-error "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
-          SETTINGS="$settings" node <<'NODE'
-          const payload = JSON.parse(process.env.SETTINGS || '{}');
-          if (!payload.success || !payload.result) throw new Error('Dedicated booking Worker settings are unavailable');
-          const bindings = Array.isArray(payload.result.bindings) ? payload.result.bindings : [];
-          if (bindings.length !== 0) throw new Error('Dedicated booking Worker unexpectedly has bindings');
-          console.log('BOOKING_WORKER_BINDINGS=0');
-          NODE
-
-      - name: Require Custom Domain to be absent
-        shell: bash
-        run: |
-          set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains"
-          domains="$(curl --fail-with-body --silent --show-error "$api" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
-          DOMAINS="$domains" BOOKING_HOST="$BOOKING_HOST" node <<'NODE'
-          const payload = JSON.parse(process.env.DOMAINS || '{}');
-          if (!payload.success || !Array.isArray(payload.result)) throw new Error('Workers Domains list is unavailable');
-          const matches = payload.result.filter((entry) => entry?.hostname === process.env.BOOKING_HOST);
-          if (matches.length !== 0) throw new Error('Refusing attach because booking Custom Domain already exists');
-          console.log('BOOKING_CUSTOM_DOMAIN_EXISTS=false');
-          NODE
-
-      - name: Attach exact Custom Domain through Workers Domains API
-        shell: bash
-        run: |
-          set -euo pipefail
-          body="$(node -e 'process.stdout.write(JSON.stringify({hostname:process.env.BOOKING_HOST,service:process.env.BOOKING_WORKER,zone_id:process.env.ZONE_ID,zone_name:process.env.ZONE_NAME}))')"
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains"
-          result="$(curl --fail-with-body --silent --show-error -X PUT "$api" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H 'Content-Type: application/json' \
-            --data "$body")"
-          RESULT="$result" BOOKING_HOST="$BOOKING_HOST" BOOKING_WORKER="$BOOKING_WORKER" node <<'NODE'
-          const payload = JSON.parse(process.env.RESULT || '{}');
-          if (!payload.success || !payload.result) throw new Error('Custom Domain attach failed');
-          if (payload.result.hostname !== process.env.BOOKING_HOST) throw new Error('Attached hostname mismatch');
-          if (payload.result.service !== process.env.BOOKING_WORKER) throw new Error('Attached Worker mismatch');
-          console.log('BOOKING_CUSTOM_DOMAIN_ATTACHED=true');
-          NODE
-
-      - name: Verify dedicated hostname and narrow route surface
-        shell: bash
-        run: |
-          set -euo pipefail
-          root_status=000
-          for attempt in $(seq 1 20); do
-            root_status="$(curl --silent --show-error --output /tmp/booking-root.html --write-out '%{http_code}' --max-time 10 "https://${BOOKING_HOST}/" || true)"
-            echo "BOOKING_HOST_ROOT_ATTEMPT_${attempt}=$root_status"
-            if [ "$root_status" = '200' ]; then
-              break
-            fi
-            sleep 3
-          done
-          test "$root_status" = '200'
-          grep -Fq 'https://tattooai.vvetrov41.workers.dev/' /tmp/booking-root.html
-          grep -Fq 'noindex' /tmp/booking-root.html
-
+          root_status="$(curl --silent --show-error --output /tmp/booking-root.html --write-out '%{http_code}' --max-time 10 "https://${BOOKING_HOST}/")"
           privacy_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "https://${BOOKING_HOST}/privacy/")"
           random_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "https://${BOOKING_HOST}/services/")"
           post_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 -X POST "https://${BOOKING_HOST}/")"
+
+          echo "BOOKING_ROOT_HTTP=$root_status"
           echo "PRIVACY_HTTP=$privacy_status"
           echo "RANDOM_PATH_HTTP=$random_status"
           echo "FRONTEND_POST_HTTP=$post_status"
+
+          test "$root_status" = '200'
           test "$privacy_status" = '200'
           test "$random_status" = '404'
           test "$post_status" = '405'
+          grep -Fq 'https://tattooai.vvetrov41.workers.dev/' /tmp/booking-root.html
+          grep -Fq 'noindex' /tmp/booking-root.html
 
-      - name: Stage 1 summary
+      - name: Verification summary
         if: always()
         shell: bash
         run: |
           {
-            echo '### Dedicated booking host production stage 1'
+            echo '### Dedicated booking host verification'
             echo
             echo "- PR head: \`$EXPECTED_HEAD_SHA\`"
-            echo '- Worker: existing isolated `vishar-booking-host-production`, no bindings'
-            echo '- Domain mutation: exact `booking.vishartattoo.com` attachment only through Workers Domains API'
-            echo '- tattooai mutation: none'
-            echo '- Supabase / CRM mutation: none'
-            echo '- Calendar mutation: none'
+            echo '- Production mutations: none'
+            echo '- Cloudflare credentials: none'
+            echo '- Supabase / CRM mutations: none'
           } >> "$GITHUB_STEP_SUMMARY"
