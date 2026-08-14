@@ -1,0 +1,235 @@
+name: PR 186 Kristina intake edge diagnosis
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr186-kristina-intake-edge-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: >-
+      github.event.pull_request.number == 186 &&
+      github.event.pull_request.draft == true &&
+      contains(github.event.pull_request.body, '<!-- DIAGNOSE_PR186_KRISTINA_EDGE -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      WORKER_NAME: tattooai-preview
+      PRIOR_VERSION: 6231bd44-3d89-425e-b4c8-92d5f6b03dba
+      CANDIDATE_VERSION: 054ee809-919e-42b8-815d-778ddb652ba5
+      VLADIMIR_ORIGIN: https://vishar-booking-staging.pages.dev
+      KRISTINA_ORIGIN: https://agent-kristina-booking-crm-setup-kisa.vvetrov41.workers.dev
+      INTAKE_HOST: intake-staging.vishartattoo.com
+      INTAKE_PATH: /__vishar-staging-intake-2026
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EDGE_READ_TOKEN: ${{ secrets.CLOUDFLARE_EDGE_READ_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Fail-closed exact PR and stack guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 186
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "agent/gpt-appointment-actions"
+            and .pull_request.head.ref == "agent/kristina-crm-intake-staging"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains("<!-- DIAGNOSE_PR186_KRISTINA_EDGE -->"))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 1
+
+      - name: Verify current stack and green normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/185" > "$RUNNER_TEMP/pr185.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/186" > "$RUNNER_TEMP/pr186.json"
+          base_sha="$(jq -r '.head.sha' "$RUNNER_TEMP/pr185.json")"
+          jq -e '.state == "open" and .draft == true and .merged == false and .head.ref == "agent/gpt-appointment-actions"' "$RUNNER_TEMP/pr185.json" >/dev/null
+          jq -e --arg sha "$APPROVED_SHA" --arg base "$base_sha" '
+            .state == "open" and .draft == true and .merged == false
+            and .base.ref == "agent/gpt-appointment-actions"
+            and .base.sha == $base
+            and .head.ref == "agent/kristina-crm-intake-staging"
+            and .head.sha == $sha
+          ' "$RUNNER_TEMP/pr186.json" >/dev/null
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "Static Validation" "CRM and booking validation"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Verify read-only token presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_EDGE_READ_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing encrypted configuration name: $name" >&2; exit 1; }
+          done
+
+      - name: Diagnose active version, candidate bindings and edge rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          deploy_auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          edge_auth=(-H "Authorization: Bearer $CLOUDFLARE_EDGE_READ_TOKEN" -H 'Content-Type: application/json')
+          evidence="$RUNNER_TEMP/pr186-edge-diagnosis"
+          mkdir -p "$evidence"
+
+          curl --fail-with-body --silent --show-error "${deploy_auth[@]}" \
+            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/deployments" > "$RUNNER_TEMP/deployments.json"
+          jq -e '.success == true' "$RUNNER_TEMP/deployments.json" >/dev/null
+          active_version="$(jq -r '(.result.deployments // .result)[0].versions[]? | select(.percentage == 100) | .version_id' "$RUNNER_TEMP/deployments.json" | head -n1)"
+          [[ "$active_version" =~ ^[0-9a-f-]{36}$ ]]
+
+          for version in "$PRIOR_VERSION" "$CANDIDATE_VERSION"; do
+            curl --fail-with-body --silent --show-error "${deploy_auth[@]}" \
+              "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions/$version" \
+              > "$RUNNER_TEMP/version-$version.json"
+            jq -e '.success == true and .result.id != null' "$RUNNER_TEMP/version-$version.json" >/dev/null
+          done
+
+          candidate="$RUNNER_TEMP/version-$CANDIDATE_VERSION.json"
+          prior="$RUNNER_TEMP/version-$PRIOR_VERSION.json"
+
+          candidate_allowed="$(jq -r '[.result.resources.bindings[]? | select(.name == "ALLOWED_ORIGINS" and .type == "plain_text") | .text][0] // ""' "$candidate")"
+          candidate_env="$(jq -r '[.result.resources.bindings[]? | select(.name == "VISHAR_ENVIRONMENT" and .type == "plain_text") | .text][0] // ""' "$candidate")"
+          candidate_supabase="$(jq -r '[.result.resources.bindings[]? | select(.name == "SUPABASE_URL" and .type == "plain_text") | .text][0] // ""' "$candidate")"
+          expected_allowed="$VLADIMIR_ORIGIN,$KRISTINA_ORIGIN"
+
+          prior_allowed="$(jq -r '[.result.resources.bindings[]? | select(.name == "ALLOWED_ORIGINS" and .type == "plain_text") | .text][0] // ""' "$prior")"
+
+          curl --fail-with-body --silent --show-error "${edge_auth[@]}" \
+            "$api/zones?name=vishartattoo.com" > "$RUNNER_TEMP/zone.json"
+          jq -e '.success == true and (.result | length == 1)' "$RUNNER_TEMP/zone.json" >/dev/null
+          zone_id="$(jq -r '.result[0].id' "$RUNNER_TEMP/zone.json")"
+
+          curl --fail-with-body --silent --show-error "${edge_auth[@]}" \
+            "$api/zones/$zone_id/rulesets/phases/http_request_firewall_custom/entrypoint" > "$RUNNER_TEMP/waf.json"
+          curl --fail-with-body --silent --show-error "${edge_auth[@]}" \
+            "$api/zones/$zone_id/rulesets/phases/http_ratelimit/entrypoint" > "$RUNNER_TEMP/rate.json"
+          jq -e '.success == true' "$RUNNER_TEMP/waf.json" >/dev/null
+          jq -e '.success == true' "$RUNNER_TEMP/rate.json" >/dev/null
+
+          jq --arg host "$INTAKE_HOST" --arg path "$INTAKE_PATH" --arg vorig "$VLADIMIR_ORIGIN" --arg korig "$KRISTINA_ORIGIN" '
+            [.result.rules[]? | select(.enabled == true) | {
+              id,
+              action,
+              expression_sha256: ((.expression // "") | @base64),
+              references_intake_host: ((.expression // "") | contains($host)),
+              references_intake_path: ((.expression // "") | contains($path)),
+              references_origin_header: (((.expression // "") | ascii_downcase) | contains("origin")),
+              references_vladimir_origin: ((.expression // "") | contains($vorig)),
+              references_kristina_origin: ((.expression // "") | contains($korig)),
+              references_options: (((.expression // "") | ascii_downcase) | contains("options")),
+              references_post: (((.expression // "") | ascii_downcase) | contains("post"))
+            }]
+          ' "$RUNNER_TEMP/waf.json" > "$RUNNER_TEMP/waf-facts-raw.json"
+
+          jq --arg host "$INTAKE_HOST" --arg path "$INTAKE_PATH" --arg vorig "$VLADIMIR_ORIGIN" --arg korig "$KRISTINA_ORIGIN" '
+            [.result.rules[]? | select(.enabled == true) | {
+              id,
+              action,
+              references_intake_host: ((.expression // "") | contains($host)),
+              references_intake_path: ((.expression // "") | contains($path)),
+              references_origin_header: (((.expression // "") | ascii_downcase) | contains("origin")),
+              references_vladimir_origin: ((.expression // "") | contains($vorig)),
+              references_kristina_origin: ((.expression // "") | contains($korig)),
+              references_options: (((.expression // "") | ascii_downcase) | contains("options")),
+              references_post: (((.expression // "") | ascii_downcase) | contains("post"))
+            }]
+          ' "$RUNNER_TEMP/rate.json" > "$RUNNER_TEMP/rate-facts.json"
+
+          # Replace the temporary base64 expression surrogate with a real SHA-256
+          # without ever writing the raw WAF expressions to the artifact.
+          jq -c '.[]' "$RUNNER_TEMP/waf.json" >/dev/null 2>&1 || true
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          t = Path(os.environ['RUNNER_TEMP'])
+          raw = json.loads((t / 'waf.json').read_text())
+          facts = json.loads((t / 'waf-facts-raw.json').read_text())
+          rules = [r for r in raw.get('result', {}).get('rules', []) if r.get('enabled') is True]
+          by_id = {r.get('id'): r for r in rules}
+          for fact in facts:
+              expr = (by_id.get(fact.get('id')) or {}).get('expression') or ''
+              fact['expression_sha256'] = hashlib.sha256(expr.encode()).hexdigest()
+          (t / 'waf-facts.json').write_text(json.dumps(facts, indent=2) + '\n')
+          PY
+
+          jq -n \
+            --arg exact_head "$APPROVED_SHA" \
+            --arg active_version "$active_version" \
+            --arg prior_version "$PRIOR_VERSION" \
+            --arg candidate_version "$CANDIDATE_VERSION" \
+            --argjson active_is_prior "$([ "$active_version" = "$PRIOR_VERSION" ] && echo true || echo false)" \
+            --argjson candidate_allowed_exact "$([ "$candidate_allowed" = "$expected_allowed" ] && echo true || echo false)" \
+            --argjson candidate_has_vladimir "$([[ ",$candidate_allowed," == *",$VLADIMIR_ORIGIN,"* ]] && echo true || echo false)" \
+            --argjson candidate_has_kristina "$([[ ",$candidate_allowed," == *",$KRISTINA_ORIGIN,"* ]] && echo true || echo false)" \
+            --argjson candidate_preview_env "$([ "$candidate_env" = preview ] && echo true || echo false)" \
+            --argjson candidate_staging_supabase "$([ "$candidate_supabase" = 'https://gwaliusblwrzisrwnsvs.supabase.co' ] && echo true || echo false)" \
+            --argjson candidate_scalar_source_present "$(jq '[.result.resources.bindings[]? | select(.name == "BOOKING_SOURCE_KEY" and .type == "plain_text")] | length > 0' "$candidate")" \
+            --argjson candidate_scalar_form_version_present "$(jq '[.result.resources.bindings[]? | select(.name == "BOOKING_FORM_VERSION" and .type == "plain_text")] | length > 0' "$candidate")" \
+            --argjson prior_allowed_vladimir_only "$([ "$prior_allowed" = "$VLADIMIR_ORIGIN" ] && echo true || echo false)" \
+            --slurpfile waf "$RUNNER_TEMP/waf-facts.json" \
+            --slurpfile rate "$RUNNER_TEMP/rate-facts.json" \
+            '{
+              exact_head:$exact_head,
+              active_version:$active_version,
+              prior_version:$prior_version,
+              candidate_version:$candidate_version,
+              active_is_prior:$active_is_prior,
+              candidate:{
+                allowed_origins_exact:$candidate_allowed_exact,
+                includes_vladimir_origin:$candidate_has_vladimir,
+                includes_kristina_origin:$candidate_has_kristina,
+                preview_environment:$candidate_preview_env,
+                retained_staging_supabase:$candidate_staging_supabase,
+                scalar_booking_source_present:$candidate_scalar_source_present,
+                scalar_form_version_present:$candidate_scalar_form_version_present
+              },
+              prior:{allowed_origins_vladimir_only:$prior_allowed_vladimir_only},
+              waf:$waf[0],
+              rate_limit:$rate[0],
+              mutation_performed:false,
+              production_targeted:false
+            }' > "$evidence/diagnosis.json"
+
+          cat "$evidence/diagnosis.json"
+
+      - name: Upload safe diagnosis evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr186-kristina-edge-diagnosis-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/pr186-edge-diagnosis/diagnosis.json
+          if-no-files-found: error
+          retention-days: 30

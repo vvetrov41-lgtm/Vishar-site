@@ -1,0 +1,363 @@
+name: PR 201 Calendar Time Off retained staging
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr201-calendar-time-off-retained-staging
+  cancel-in-progress: false
+
+jobs:
+  migrate-deploy-verify:
+    name: Forward-migrate retained staging and deploy Calendar Worker
+    if: >-
+      github.event.action == 'edited' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.number == 201 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'agent/artist-availability-time-off' &&
+      github.event.pull_request.head.ref == 'agent/calendar-time-off-projection' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, format('<!-- RUN_PR201_CALENDAR_TIME_OFF_STAGING:{0} -->', github.event.pull_request.head.sha))
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_BASE_SHA: 4b3001d43c1e335b1ee2f6752e0dc0b40263c3d2
+      EXPECTED_BASE_BRANCH: agent/artist-availability-time-off
+      EXPECTED_HEAD_BRANCH: agent/calendar-time-off-projection
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      CALENDAR_TOKEN_ENCRYPTION_KEY: ${{ secrets.CALENDAR_TOKEN_ENCRYPTION_KEY }}
+      PRODUCTION_TARGETED: 'false'
+
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          marker="<!-- RUN_PR201_CALENDAR_TIME_OFF_STAGING:${APPROVED_SHA} -->"
+          jq -e \
+            --arg sha "$APPROVED_SHA" \
+            --arg base_sha "$EXPECTED_BASE_SHA" \
+            --arg base "$EXPECTED_BASE_BRANCH" \
+            --arg head "$EXPECTED_HEAD_BRANCH" \
+            --arg marker "$marker" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 201
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == $base
+            and .pull_request.base.sha == $base_sha
+            and .pull_request.head.ref == $head
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains($marker))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact stack, diff and successful normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "${EXPECTED_BASE_SHA}^{commit}")" = "$EXPECTED_BASE_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$APPROVED_SHA"
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/200" > "$RUNNER_TEMP/pr200.json"
+          jq -e --arg sha "$EXPECTED_BASE_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .number == 200
+            and .state == "open"
+            and .draft == true
+            and .merged == false
+            and .head.ref == "agent/artist-availability-time-off"
+            and .head.sha == $sha
+            and .head.repo.full_name == $repo
+          ' "$RUNNER_TEMP/pr200.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$EXPECTED_BASE_SHA...$APPROVED_SHA" > "$RUNNER_TEMP/compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              ".github/workflows/pr201-calendar-time-off-staging.yml",
+              "package.json",
+              "scripts/pr201-calendar-time-off-staging.sh",
+              "scripts/test-calendar-availability-worker.mjs",
+              "scripts/test-worker-modules.mjs",
+              "supabase/migrations/0040_calendar_availability_outbox_kinds.sql",
+              "supabase/migrations/0041_calendar_availability_projection.sql",
+              "supabase/tests/010_schema_constraints.sql",
+              "supabase/tests/050_rls_roles.sql",
+              "supabase/tests/195_calendar_availability_projection.sql",
+              "workers/calendar-oauth.js",
+              "workers/lib/calendar-availability-drain.js",
+              "workers/lib/google-calendar-availability.js",
+              "workers/lib/supabase.js"
+            ] | sort)
+          ' "$RUNNER_TEMP/compare.json" >/dev/null
+
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {id,name,event,status,conclusion,head_sha,html_url}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+
+          jq -n --slurpfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
+            ["Static Validation", "CRM and booking validation"] as $required
+            | reduce $required[] as $name ({};
+                ($runs[0] | map(select(
+                  .name == $name
+                  and .event == "pull_request"
+                  and .head_sha == $sha
+                  and .status == "completed"
+                  and .conclusion == "success"
+                )) | sort_by(.id) | last) as $run
+                | if $run == null then error("missing exact-head normal CI: " + $name)
+                  else .[$name] = $run end
+              )
+          ' > "$RUNNER_TEMP/normal-ci-runs.json"
+
+          crm_run_id="$(jq -r '.["CRM and booking validation"].id' "$RUNNER_TEMP/normal-ci-runs.json")"
+          [[ "$crm_run_id" =~ ^[1-9][0-9]*$ ]]
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$crm_run_id/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | {id,name,status,conclusion}' \
+            | jq -s . > "$RUNNER_TEMP/normal-ci-jobs.json"
+          for job in "Public site and Worker" "Private CRM" "Supabase migrations and pgTAP"; do
+            jq -e --arg name "$job" '
+              [.[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length == 1
+            ' "$RUNNER_TEMP/normal-ci-jobs.json" >/dev/null
+          done
+
+      - name: Verify isolated Calendar staging configuration and encrypted config names
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/validate-calendar-staging.mjs --deploy-ready
+          grep -Fx 'name = "vishar-calendar-staging"' wrangler.calendar.staging.toml
+          grep -Fx 'workers_dev = false' wrangler.calendar.staging.toml
+          grep -Fx '[triggers]' wrangler.calendar.staging.toml
+          grep -Fx 'crons = ["*/5 * * * *"]' wrangler.calendar.staging.toml
+          grep -Fx 'CALENDAR_DRAIN_ENABLED = "true"' wrangler.calendar.staging.toml
+          grep -Fx 'SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"' wrangler.calendar.staging.toml
+          grep -F 'calendar-staging.vishartattoo.com' wrangler.calendar.staging.toml
+          test "$(grep -c '^\[\[kv_namespaces\]\]$' wrangler.calendar.staging.toml)" = "2"
+          ! grep -E 'tattooai-preview|intake-staging|vishar-booking-staging' wrangler.calendar.staging.toml
+
+          missing=()
+          for name in \
+            SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_DB_PASSWORD SUPABASE_SECRET_KEY \
+            CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID GOOGLE_OAUTH_CLIENT_ID \
+            GOOGLE_OAUTH_CLIENT_SECRET CALENDAR_TOKEN_ENCRYPTION_KEY; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+          [ "${#missing[@]}" -eq 0 ] || {
+            printf 'Missing encrypted staging configuration names: %s\n' "$(IFS=,; echo "${missing[*]}")" >&2
+            exit 1
+          }
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.111.0
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Recheck exact-head code before hosted mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/pr201-calendar-time-off-staging.sh
+          npm run test:worker
+          npm run scan:secrets
+          npx wrangler deploy --config wrangler.calendar.staging.toml --dry-run --outdir "$RUNNER_TEMP/pr201-preflight-worker"
+
+      - name: Forward-migrate retained staging 0037 through 0041
+        shell: bash
+        run: bash scripts/pr201-calendar-time-off-staging.sh
+
+      - name: Deploy exact Calendar staging Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_file="$RUNNER_TEMP/calendar-worker-secrets.json"
+          deploy_config="$GITHUB_WORKSPACE/.wrangler.calendar.pr201.deploy.toml"
+          dry_run_dir="$RUNNER_TEMP/calendar-worker-pr201-dry-run"
+          deploy_log="$RUNNER_TEMP/calendar-worker-pr201-deploy.log"
+          export secrets_file deploy_config
+          cleanup() {
+            rm -f "$secrets_file" "$deploy_config"
+            rm -rf "$dry_run_dir"
+          }
+          trap cleanup EXIT
+
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          client_id = os.environ['GOOGLE_OAUTH_CLIENT_ID'].strip()
+          if not client_id.endswith('.apps.googleusercontent.com'):
+              raise SystemExit('GOOGLE_OAUTH_CLIENT_ID has an unexpected format')
+
+          raw_key = os.environ['CALENDAR_TOKEN_ENCRYPTION_KEY'].strip()
+          if not re.fullmatch(r'[A-Za-z0-9_-]+={0,2}', raw_key):
+              raise SystemExit('CALENDAR_TOKEN_ENCRYPTION_KEY is not base64url')
+          padded = raw_key + '=' * (-len(raw_key) % 4)
+          try:
+              decoded = base64.urlsafe_b64decode(padded)
+          except Exception as exc:
+              raise SystemExit('CALENDAR_TOKEN_ENCRYPTION_KEY is not valid base64url') from exc
+          if len(decoded) != 32:
+              raise SystemExit('CALENDAR_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes')
+
+          payload = {
+              'GOOGLE_OAUTH_CLIENT_ID': client_id,
+              'GOOGLE_OAUTH_CLIENT_SECRET': os.environ['GOOGLE_OAUTH_CLIENT_SECRET'],
+              'CALENDAR_TOKEN_ENCRYPTION_KEY': raw_key,
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+          }
+          secrets_path = Path(os.environ['secrets_file'])
+          secrets_path.write_text(json.dumps(payload), encoding='utf-8')
+          secrets_path.chmod(0o600)
+
+          source = Path('wrangler.calendar.staging.toml').read_text(encoding='utf-8').splitlines()
+          output = []
+          skipping_routes = False
+          removed_routes = False
+          for line in source:
+              if not skipping_routes and re.match(r'^routes\s*=\s*\[\s*$', line):
+                  skipping_routes = True
+                  removed_routes = True
+                  continue
+              if skipping_routes:
+                  if line.strip() == ']':
+                      skipping_routes = False
+                  continue
+              output.append(line)
+          if skipping_routes or not removed_routes:
+              raise SystemExit('Expected one top-level routes array')
+          deploy_text = '\n'.join(output).rstrip() + '\n'
+          if 'custom_domain' in deploy_text or re.search(r'^routes\s*=', deploy_text, re.M):
+              raise SystemExit('Dashboard-managed routes were not removed')
+          if not re.search(r'^\[triggers\]\ncrons\s*=\s*\["\*/5 \* \* \* \*"\]$', deploy_text, re.M):
+              raise SystemExit('Expected exact retained-staging cron')
+          Path(os.environ['deploy_config']).write_text(deploy_text, encoding='utf-8')
+          PY
+
+          npx wrangler deploy \
+            --config "$deploy_config" \
+            --dry-run \
+            --outdir "$dry_run_dir"
+
+          npx wrangler deploy \
+            --config "$deploy_config" \
+            --keep-vars \
+            --secrets-file "$secrets_file" 2>&1 | tee "$deploy_log"
+
+          version_id="$(sed -n 's/^Current Version ID: //p' "$deploy_log" | tail -1)"
+          [[ "$version_id" =~ ^[0-9a-f-]{36}$ ]]
+          printf '%s\n' "$version_id" > "$RUNNER_TEMP/pr201-calendar-time-off-staging/calendar-worker-version.txt"
+
+      - name: Verify retained staging after deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$RUNNER_TEMP/calendar-schedules.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/vishar-calendar-staging/schedules" \
+            > "$response"
+          jq -e '
+            def deployed_crons:
+              if (.result | type) == "array" then [.result[] | .cron]
+              elif (.result.schedules | type) == "array" then [.result.schedules[] | .cron]
+              else []
+              end;
+            .success == true and deployed_crons == ["*/5 * * * *"]
+          ' "$response" >/dev/null
+          echo 'CALENDAR_CRON_VERIFIED=*/5 * * * *'
+
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 https://calendar-staging.vishartattoo.com/health || true)"
+            case "$status" in
+              302|303|307|401|403)
+                echo "CALENDAR_ACCESS_GATED_HTTP=$status"
+                printf '%s\n' "$status" > "$RUNNER_TEMP/pr201-calendar-time-off-staging/calendar-access-http.txt"
+                break
+                ;;
+              200)
+                echo 'Access is not gating the Calendar staging hostname.' >&2
+                exit 1
+                ;;
+            esac
+            [ "$attempt" -lt 20 ] || {
+              echo 'Calendar staging hostname did not return an Access response.' >&2
+              exit 1
+            }
+            sleep 6
+          done
+
+          npm run scan:secrets
+          jq -n \
+            --arg sha "$APPROVED_SHA" \
+            --arg version "$(cat "$RUNNER_TEMP/pr201-calendar-time-off-staging/calendar-worker-version.txt")" \
+            --arg access_http "$(cat "$RUNNER_TEMP/pr201-calendar-time-off-staging/calendar-access-http.txt")" \
+            '{head_sha:$sha,worker:"vishar-calendar-staging",worker_version:$version,cron:"*/5 * * * *",access_http:$access_http,production_targeted:false}' \
+            > "$RUNNER_TEMP/pr201-calendar-time-off-staging/deploy-summary.json"
+
+      - name: Upload safe staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr201-calendar-time-off-staging-${{ env.APPROVED_SHA }}
+          path: |
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/project-safe.json
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/migrations-before.txt
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/migrations-after.txt
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/post-checks.json
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/summary.json
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/hosted-lint.txt
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/final-secret-scan.txt
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/calendar-worker-version.txt
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/calendar-access-http.txt
+            ${{ runner.temp }}/pr201-calendar-time-off-staging/deploy-summary.json
+          if-no-files-found: warn
+          retention-days: 30
