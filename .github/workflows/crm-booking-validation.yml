@@ -45,6 +45,9 @@ jobs:
       - name: Test Worker modules
         run: npm run test:worker
 
+      - name: Validate Telegram production configuration
+        run: npm run test:telegram-production
+
       - name: Validate Calendar staging configuration
         run: |
           npm run validate:calendar-staging
@@ -64,6 +67,9 @@ jobs:
 
       - name: Compile disabled Telegram drain Worker with Wrangler
         run: npm run check:telegram-drain-bundle
+
+      - name: Compile inert production Telegram drain Worker with Wrangler
+        run: npm run check:telegram-production-bundle
 
       - name: Compile disabled Team admin Worker with Wrangler
         run: npm run check:team-admin-bundle
