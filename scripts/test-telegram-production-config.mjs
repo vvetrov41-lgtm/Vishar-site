@@ -69,8 +69,13 @@ for (const needle of [
   '--strict',
   'wrangler deployments list',
   'wrangler versions list',
+  'WRANGLER_OUTPUT_FILE_PATH="$deploy_output"',
+  "entry?.type === 'deploy'",
+  "version_source: 'wrangler_deploy_event'",
+  'versions.some((entry) => entry?.id === deployedVersionId)',
 ]) expectIncludes(workflow, needle, 'production workflow');
 for (const needle of [
+  'versions[0].id',
   'wrangler secret put',
   'wrangler secret bulk',
   'wrangler pages deploy',
