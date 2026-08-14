@@ -1,0 +1,230 @@
+name: RC18 Telegram production control-plane inspection
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: telegram-production-rc18-control-plane
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Read-only Telegram production control plane
+    if: >-
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'validation/telegram-production-rc18-control-plane' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, '<!-- INSPECT_TELEGRAM_PRODUCTION_RC18:ad872138cfe0eca29e69cfeda4cb8eb4287747ee -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      APPROVED_RC_SHA: ad872138cfe0eca29e69cfeda4cb8eb4287747ee
+      EXPECTED_MAIN_SHA: a2f7078db4050b8f2985cb991a45ebae1b4512b1
+      WORKER_NAME: vishar-telegram-drain-production
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      PROD_SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      PROD_SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      VLADIMIR_BOT_TOKEN: ${{ secrets.CRM_PRODUCTION_TELEGRAM_VLADIMIR_BOT_TOKEN }}
+      VLADIMIR_CHAT_ID: ${{ secrets.CRM_PRODUCTION_TELEGRAM_VLADIMIR_CHAT_ID }}
+      KRISTINA_BOT_TOKEN: ${{ secrets.CRM_PRODUCTION_TELEGRAM_KRISTINA_BOT_TOKEN }}
+      KRISTINA_CHAT_ID: ${{ secrets.CRM_PRODUCTION_TELEGRAM_KRISTINA_CHAT_ID }}
+
+    steps:
+      - name: Verify validation harness event
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          marker="<!-- INSPECT_TELEGRAM_PRODUCTION_RC18:${APPROVED_RC_SHA} -->"
+          jq -e \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg marker "$marker" \
+            --arg main_sha "$EXPECTED_MAIN_SHA" '
+            .sender.login == "vvetrov41-lgtm"
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "main"
+            and .pull_request.base.sha == $main_sha
+            and .pull_request.head.ref == "validation/telegram-production-rc18-control-plane"
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains($marker))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files?per_page=100" \
+            --jq '[.[].filename] | sort' > "$RUNNER_TEMP/changed-files.json"
+          jq -e '. == [".github/workflows/telegram-production-rc18-control-plane.yml"]' \
+            "$RUNNER_TEMP/changed-files.json" >/dev/null
+
+      - name: Checkout exact RC18 source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_RC_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact RC18 and ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_RC_SHA" ]
+          [ "$(git rev-parse HEAD^{tree})" = 'e84cd2c05ab5c1a434cc89e61fe0062387fbb199' ]
+          [ "$(git rev-parse HEAD^1)" = "$EXPECTED_MAIN_SHA" ]
+          [ "$(git rev-parse HEAD^2)" = '61aa639e6d2b55bcc19028f4007666651fa49ec7' ]
+          git merge-base --is-ancestor 314f0359ad083cec4efc7ea389d3111e2d83b755 "$APPROVED_RC_SHA"
+          [ -z "$(git status --short)" ]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact locked dependencies
+        run: npm ci
+
+      - name: Revalidate production Telegram source without mutation
+        run: |
+          npm run test:telegram-production
+          node scripts/test-telegram-drain.mjs
+          node scripts/test-telegram-drain-worker.mjs
+          npm run check:telegram-production-bundle
+          npm run scan:secrets
+
+      - name: Verify read-only production credentials are configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID PROD_SUPABASE_ACCESS_TOKEN PROD_SUPABASE_PROJECT_REF; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+          [ "${#missing[@]}" -eq 0 ] || {
+            printf 'Missing read-only production configuration names: %s\n' "$(IFS=,; echo "${missing[*]}")" >&2
+            exit 1
+          }
+          [ "$PROD_SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+
+      - name: Inspect Worker state and secret names only
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/telegram-production-control-plane"
+          mkdir -p "$evidence"
+
+          set +e
+          npx wrangler versions list --name "$WORKER_NAME" --json > "$evidence/versions.raw.json" 2> "$evidence/versions.err"
+          versions_status=$?
+          set -e
+
+          if [ "$versions_status" -ne 0 ]; then
+            node - "$evidence/safe-summary.json" <<'NODE'
+          const fs = require('fs');
+          const out = process.argv[2];
+          fs.writeFileSync(out, JSON.stringify({
+            worker: process.env.WORKER_NAME,
+            exists: false,
+            worker_secret_names: [],
+            cron: [],
+            workers_dev: null,
+            preview_urls: null,
+            custom_domains: [],
+          }, null, 2));
+          NODE
+          else
+            npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$WORKER_NAME" --format json > "$evidence/secrets.raw.json"
+            npx wrangler deployments list --name "$WORKER_NAME" --json > "$evidence/deployments.raw.json"
+
+            api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "$api/workers/scripts/${WORKER_NAME}/subdomain" > "$evidence/subdomain.raw.json"
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "$api/workers/scripts/${WORKER_NAME}/schedules" > "$evidence/schedules.raw.json"
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "$api/workers/domains?service=${WORKER_NAME}" > "$evidence/domains.raw.json"
+
+            node - "$evidence" <<'NODE'
+          const fs = require('fs');
+          const root = process.argv[2];
+          const read = (name) => JSON.parse(fs.readFileSync(`${root}/${name}`, 'utf8'));
+          const versions = read('versions.raw.json');
+          const secrets = read('secrets.raw.json');
+          const subdomain = read('subdomain.raw.json');
+          const schedules = read('schedules.raw.json');
+          const domains = read('domains.raw.json');
+          const secretNames = Array.isArray(secrets)
+            ? secrets.map((x) => x?.name).filter(Boolean).sort()
+            : [];
+          const cron = (schedules?.result?.schedules || []).map((x) => x?.cron).filter(Boolean).sort();
+          const customDomains = (domains?.result || [])
+            .filter((x) => x?.service === process.env.WORKER_NAME)
+            .map((x) => x?.hostname).filter(Boolean).sort();
+          const latestVersion = Array.isArray(versions) && versions.length ? versions[0]?.id || null : null;
+          fs.writeFileSync(`${root}/safe-summary.json`, JSON.stringify({
+            worker: process.env.WORKER_NAME,
+            exists: true,
+            latest_version_id: latestVersion,
+            worker_secret_names: secretNames,
+            cron,
+            workers_dev: subdomain?.result?.enabled ?? null,
+            preview_urls: subdomain?.result?.previews_enabled ?? null,
+            custom_domains: customDomains,
+          }, null, 2));
+          NODE
+          fi
+
+          node - "$evidence/safe-summary.json" <<'NODE'
+          const fs = require('fs');
+          const file = process.argv[2];
+          const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const secretInputs = {
+            CRM_PRODUCTION_TELEGRAM_VLADIMIR_BOT_TOKEN: Boolean(process.env.VLADIMIR_BOT_TOKEN),
+            CRM_PRODUCTION_TELEGRAM_VLADIMIR_CHAT_ID: Boolean(process.env.VLADIMIR_CHAT_ID),
+            CRM_PRODUCTION_TELEGRAM_KRISTINA_BOT_TOKEN: Boolean(process.env.KRISTINA_BOT_TOKEN),
+            CRM_PRODUCTION_TELEGRAM_KRISTINA_CHAT_ID: Boolean(process.env.KRISTINA_CHAT_ID),
+          };
+          state.secure_input_names_present = Object.entries(secretInputs)
+            .filter(([, present]) => present).map(([name]) => name).sort();
+          state.secure_input_names_missing = Object.entries(secretInputs)
+            .filter(([, present]) => !present).map(([name]) => name).sort();
+          fs.writeFileSync(file, JSON.stringify(state, null, 2));
+          console.log(JSON.stringify(state, null, 2));
+          NODE
+
+          rm -f "$evidence"/*.raw.json "$evidence"/*.err
+
+      - name: Upload safe read-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-production-control-plane-${{ env.APPROVED_RC_SHA }}
+          path: ${{ runner.temp }}/telegram-production-control-plane/safe-summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Read-only boundary summary
+        if: always()
+        run: |
+          {
+            echo '### RC18 Telegram production control-plane inspection'
+            echo
+            echo "- RC source: \`$APPROVED_RC_SHA\`"
+            echo '- Production mutations: none'
+            echo '- Secret values: never printed or uploaded'
+            echo '- Retained staging: not accessed'
+            echo '- Cloudflare operations: Worker versions/deployments/secret names, workers.dev/preview flags, cron and Custom Domains reads only'
+          } >> "$GITHUB_STEP_SUMMARY"
