@@ -243,9 +243,10 @@ jobs:
               --dry-run \
               --outdir .wrangler/calendar-production-generated
 
-          # Deliberately no --keep-vars. Every variable is declared in the
-          # generated config, so Wrangler owns the complete set and any
-          # out-of-band drift of CALENDAR_DRAIN_ENABLED is corrected on deploy.
+          # Deliberately no --keep-vars. Every variable and the exact existing
+          # Custom Domain are declared in the generated config, so --strict
+          # compares the complete intended production Worker configuration and
+          # aborts on route or variable drift before upload.
           # Encrypted secrets live in a separate store and are unaffected.
           npx wrangler deploy \
             --config "$deploy_config" \
@@ -293,7 +294,7 @@ jobs:
             echo '- Wrangler config: generated from `wrangler.calendar.production.toml` with `workers_dev=false` and `preview_urls=false`'
             echo '- Scheduled drain: `CALENDAR_DRAIN_ENABLED=false` and no cron trigger declared'
             echo '- Rate limiting: isolated Worker `CALENDAR_RATE_LIMIT` binding; no zone WAF or rate-limiting rule is read or written'
-            echo '- Route: `calendar.vishartattoo.com` Custom Domain provisioned outside this workflow; the generated config declares none'
+            echo '- Route: exact pre-provisioned `calendar.vishartattoo.com` Custom Domain is preserved in the generated config and verified by `--strict`'
             echo '- Required pre-existing secrets: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `CALENDAR_TOKEN_ENCRYPTION_KEY`, `SUPABASE_SECRET_KEY`'
             echo '- Retained staging Supabase, Calendar KV namespaces, Access audience and hostname: explicitly refused'
             echo '- Pages / database / Telegram / GPT / booking deploy commands: none'
