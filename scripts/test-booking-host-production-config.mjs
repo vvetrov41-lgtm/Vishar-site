@@ -14,13 +14,14 @@ assert.match(activeConfig, /^name = "vishar-booking-host-production"$/m);
 assert.match(activeConfig, /^main = "workers\/booking-host\.js"$/m);
 assert.match(activeConfig, /^workers_dev = false$/m);
 assert.match(activeConfig, /^preview_urls = false$/m);
-assert.match(activeConfig, /pattern = "booking\.vishartattoo\.com"/);
-assert.match(activeConfig, /custom_domain = true/);
-assert.equal((activeConfig.match(/pattern = /g) || []).length, 1);
-assert.doesNotMatch(activeConfig, /\*\.vishartattoo\.com/);
+assert.doesNotMatch(activeConfig, /^routes\s*=/m);
+assert.doesNotMatch(activeConfig, /pattern\s*=/);
+assert.doesNotMatch(activeConfig, /custom_domain\s*=/);
 assert.doesNotMatch(activeConfig, /^\[vars\]$/m);
 assert.doesNotMatch(activeConfig, /SUPABASE|TELEGRAM|MONZO|GOOGLE_OAUTH|SECRET|TOKEN|KV/i);
 
+assert.match(config, /booking\.vishartattoo\.com/);
+assert.match(config, /Workers Domains API/);
 assert.match(worker, /https:\/\/vishartattoo\.com/);
 assert.match(worker, /https:\/\/tattooai\.vvetrov41\.workers\.dev\//);
 assert.doesNotMatch(worker, /SUPABASE_SECRET_KEY|TELEGRAM_BOT_TOKEN|MONZO_CLIENT_SECRET|GOOGLE_OAUTH_CLIENT_SECRET/);
