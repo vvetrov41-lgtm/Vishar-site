@@ -4,14 +4,12 @@ compatibility_date = "2026-05-25"
 workers_dev = false
 preview_urls = false
 
-routes = [
-  { pattern = "booking.vishartattoo.com", custom_domain = true }
-]
-
 # Frontend-only Worker. It carries no Supabase, CRM, Telegram, Calendar, payment
 # or provider credentials. It proxies only the public booking/privacy HTML and
 # the CSS/font/favicon assets required to render those pages.
 #
-# Do not deploy this config until PR validation is green and the backend exact
-# Origin/source route for https://booking.vishartattoo.com has been prepared.
-# Creating/attaching the Custom Domain is a separate production mutation.
+# The production Custom Domain is intentionally NOT declared as a Wrangler
+# route. It is provisioned once through the account-level Workers Domains API:
+#   booking.vishartattoo.com -> vishar-booking-host-production
+# This keeps ordinary Worker code deploys independent from Zone Workers Routes
+# permissions and prevents a code update from mutating DNS/domain routing.
