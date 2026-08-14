@@ -5,11 +5,12 @@ workers_dev = false
 preview_urls = false
 
 # Frontend-only Worker. It carries no Supabase, CRM, Telegram, Calendar, payment
-# or provider credentials. It proxies only the public booking/privacy HTML and
-# the CSS/font/favicon assets required to render those pages.
+# or provider credentials. It serves the dedicated booking hostname, proxies only
+# the public booking/privacy HTML and required static assets, and relays tattoo
+# enquiries server-to-server to the existing legacy tattooai intake.
 #
 # The production Custom Domain is intentionally NOT declared as a Wrangler
-# route. It is provisioned once through the account-level Workers Domains API:
+# route. It was provisioned once through the account-level Workers Domains API:
 #   booking.vishartattoo.com -> vishar-booking-host-production
 # This keeps ordinary Worker code deploys independent from Zone Workers Routes
 # permissions and prevents a code update from mutating DNS/domain routing.
