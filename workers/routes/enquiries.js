@@ -28,7 +28,7 @@ import { parseEnquiryFields, parseEnquiryFiles } from '../lib/validation.js';
 import { createSupabaseClient, SupabaseError, toRequestError } from '../lib/supabase.js';
 import { createStorageClient } from '../lib/storage.js';
 import { buildEnquiryNotification, sendNotification } from '../lib/telegram.js';
-import { readTrustedBookingConfig } from '../lib/provider-routing.js';
+import { readTrustedBookingConfigForOrigin } from '../lib/production-booking-routing.js';
 
 export async function handleEnquiryIntake(request, env, { cors, logger, fetchImpl = fetch }) {
   const startedAt = Date.now();
@@ -43,7 +43,7 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       throw new RequestError('origin_not_allowed', 'This request could not be accepted.', 403);
     }
 
-    const bookingConfig = readTrustedBookingConfig(env);
+    const bookingConfig = readTrustedBookingConfigForOrigin(env, origin);
 
     let form;
     try {
