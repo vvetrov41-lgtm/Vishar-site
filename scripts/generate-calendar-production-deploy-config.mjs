@@ -3,15 +3,15 @@
  *
  * The tracked `wrangler.calendar.production.toml` is deliberately not
  * deployable: the production Supabase URL, the Access audience and the two KV
- * namespace ids name Cloudflare and Supabase objects that are provisioned
- * outside this repository, and committing placeholders would produce a config
- * that reads as deployable and is not.
+ * namespace ids are provisioned outside this repository, and committing
+ * placeholders would produce a config that reads as deployable and is not.
  *
  * This script injects those values from already-validated environment
- * configuration and strips the dashboard-owned Custom Domain route, then
- * re-asserts every safety property on the generated artefact itself so that a
- * malformed input cannot smuggle a cron trigger, an enabled drain, public
- * exposure or a missing rate limiter past the canonical-config validation.
+ * configuration and preserves the one exact pre-provisioned Custom Domain so
+ * `wrangler deploy --strict` compares, rather than deletes, that remote route.
+ * It then re-asserts every safety property on the generated artefact itself so
+ * malformed input cannot smuggle a cron trigger, enabled drain, public exposure
+ * or staging binding past canonical-config validation.
  *
  * Usage: node scripts/generate-calendar-production-deploy-config.mjs <out-path>
  */
@@ -25,6 +25,8 @@ const RETAINED_STAGING = {
   kvStateId: 'dd43224461504e898addeba5b7915142',
   kvTokensId: '93302bc4f35242c38358a16fcd4ab9a2',
 };
+
+const PRODUCTION_CALENDAR_HOST = 'calendar.vishartattoo.com';
 
 const fail = (message) => {
   throw new Error(message);
@@ -87,52 +89,48 @@ export function readInputs(env = process.env) {
 }
 
 /**
- * The production Custom Domain is provisioned once, outside the deployment.
- * `--strict` compares routes, so leaving the declared route in the deploy
- * config would read as "change the production route" on a domain the workflow
- * must never create or alter.
+ * The production Custom Domain was provisioned before the real runtime. With
+ * `wrangler deploy --strict`, omitting `routes` is interpreted as a request to
+ * remove that remote domain, so the generated deploy config must carry the
+ * exact same single Custom Domain declaration. Any different/multiple route is
+ * rejected before a live deployment can start.
  */
-export function stripRoutes(source) {
-  const output = [];
-  let skipping = false;
-  let removed = false;
-  for (const line of source.split(/\r?\n/)) {
-    if (!skipping && /^routes\s*=\s*\[\s*$/.test(line)) {
-      skipping = true;
-      removed = true;
-      continue;
-    }
-    if (skipping) {
-      if (line.trim() === ']') skipping = false;
-      continue;
-    }
-    output.push(line);
+export function preserveExactRoute(source) {
+  const arrays = [...source.matchAll(/^routes\s*=\s*\[\s*\n([\s\S]*?)^\]\s*$/gm)];
+  if (arrays.length !== 1) {
+    fail('Generated deploy config must preserve exactly one production Custom Domain route array');
   }
-  if (skipping || !removed) {
-    fail('Expected exactly one top-level routes array in the canonical production config');
+
+  const entries = arrays[0][1].match(/\{[^}]*\}/g) || [];
+  if (entries.length !== 1) {
+    fail('Generated deploy config must preserve exactly one production Custom Domain route');
   }
-  const text = `${output.join('\n').trimEnd()}\n`;
-  if (text.includes('custom_domain') || /^routes\s*=/m.test(text)) {
-    fail('Dashboard-managed routes were not removed from deploy config');
+
+  const expected = new RegExp(
+    `^\\{\\s*pattern\\s*=\\s*"${PRODUCTION_CALENDAR_HOST.replaceAll('.', '\\.') }"\\s*,\\s*custom_domain\\s*=\\s*true\\s*\\}$`,
+  );
+  if (!expected.test(entries[0].trim())) {
+    fail('Generated deploy config lost the exact production Custom Domain');
   }
-  return text;
+
+  return `${source.trimEnd()}\n`;
 }
 
 export function buildDeployConfig(canonical, inputs) {
-  const withoutRoutes = stripRoutes(canonical);
+  const withExactRoute = preserveExactRoute(canonical);
 
   // The injected variables are appended as bare key/value pairs, so they belong
   // to whichever table is open at the end of the file. Assert that `[vars]` is
   // the last table, otherwise a future section added after it would silently
   // capture the production Supabase URL and Access audience.
-  const tables = [...withoutRoutes.matchAll(/^\s*(\[\[?[^\]]+\]\]?)\s*$/gm)]
+  const tables = [...withExactRoute.matchAll(/^\s*(\[\[?[^\]]+\]\]?)\s*$/gm)]
     .map((match) => match[1])
     .filter((name) => !name.startsWith('#'));
   if (tables[tables.length - 1] !== '[vars]') {
     fail('`[vars]` must be the final table in the canonical production config');
   }
 
-  const text = `${withoutRoutes}
+  const text = `${withExactRoute}
 SUPABASE_URL = "${inputs.supabaseUrl}"
 CALENDAR_ACCESS_AUD = "${inputs.accessAud}"
 
@@ -151,6 +149,10 @@ id = "${inputs.kvTokensId}"
     .filter(Boolean)
     .join('\n');
 
+  const routeMatches = [...active.matchAll(/\{\s*pattern\s*=\s*"([^"]+)"\s*,\s*custom_domain\s*=\s*true\s*\}/g)];
+  if (routeMatches.length !== 1 || routeMatches[0][1] !== PRODUCTION_CALENDAR_HOST) {
+    fail('Generated deploy config lost the exact production Custom Domain');
+  }
   if (!/^CALENDAR_DRAIN_ENABLED\s*=\s*"false"$/m.test(active)) {
     fail('Generated deploy config lost the disabled Calendar drain');
   }
