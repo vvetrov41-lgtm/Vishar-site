@@ -261,7 +261,7 @@ if (deployReady) {
   // The generator, not the workflow, owns the fail-closed guarantees. Assert
   // them where they actually live.
   const requiredGeneratorGuards = [
-    ['Dashboard-managed routes were not removed from deploy config', 'the generator must fail closed if the dashboard-owned route survives'],
+    ['Generated deploy config lost the exact production Custom Domain', 'the generator must preserve and re-check the exact pre-provisioned Custom Domain'],
     ['Generated deploy config lost the disabled Calendar drain', 'the generator must re-check the disabled drain after injection'],
     ['Generated deploy config must declare no cron trigger', 'the generator must re-check that no cron trigger is introduced'],
     ['Generated deploy config lost the isolated Worker rate limiter', 'the generator must re-check the rate limiter binding'],
