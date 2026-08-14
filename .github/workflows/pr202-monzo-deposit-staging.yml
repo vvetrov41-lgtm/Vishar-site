@@ -1,0 +1,230 @@
+name: PR 202 Monzo deposit retained staging
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr202-monzo-deposit-retained-staging
+  cancel-in-progress: false
+
+jobs:
+  migrate-and-verify:
+    name: Forward-migrate retained staging and validate synthetic payments
+    if: >-
+      github.event.action == 'edited' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.number == 202 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'agent/calendar-time-off-projection' &&
+      github.event.pull_request.head.ref == 'agent/monzo-easy-bank-transfer-deposits' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, format('<!-- RUN_PR202_MONZO_DEPOSIT_STAGING:{0} -->', github.event.pull_request.head.sha))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_BASE_SHA: fc8296587cb043bc9d3fadd8850071b0b448791f
+      EXPECTED_BASE_BRANCH: agent/calendar-time-off-projection
+      EXPECTED_HEAD_BRANCH: agent/monzo-easy-bank-transfer-deposits
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      STAGING_SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
+      PRODUCTION_TARGETED: 'false'
+
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          marker="<!-- RUN_PR202_MONZO_DEPOSIT_STAGING:${APPROVED_SHA} -->"
+          jq -e \
+            --arg sha "$APPROVED_SHA" \
+            --arg base_sha "$EXPECTED_BASE_SHA" \
+            --arg base "$EXPECTED_BASE_BRANCH" \
+            --arg head "$EXPECTED_HEAD_BRANCH" \
+            --arg marker "$marker" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.number == 202
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == $base
+            and .pull_request.base.sha == $base_sha
+            and .pull_request.head.ref == $head
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains($marker))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact stack, diff and successful normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "${EXPECTED_BASE_SHA}^{commit}")" = "$EXPECTED_BASE_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$APPROVED_SHA"
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/201" > "$RUNNER_TEMP/pr201.json"
+          jq -e --arg sha "$EXPECTED_BASE_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .number == 201
+            and .state == "open"
+            and .draft == true
+            and .merged == false
+            and .head.ref == "agent/calendar-time-off-projection"
+            and .head.sha == $sha
+            and .head.repo.full_name == $repo
+          ' "$RUNNER_TEMP/pr201.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$EXPECTED_BASE_SHA...$APPROVED_SHA" > "$RUNNER_TEMP/compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              ".github/workflows/crm-booking-validation.yml",
+              ".github/workflows/pr202-monzo-deposit-staging.yml",
+              "admin/src/App.tsx",
+              "admin/src/lib/payment-api.ts",
+              "admin/src/lib/permissions.ts",
+              "admin/src/lib/session.tsx",
+              "admin/src/pages/PaymentsPage.tsx",
+              "admin/src/test/permissions.test.ts",
+              "package.json",
+              "scripts/pr202-monzo-deposit-staging.sh",
+              "scripts/test-payment-redirect-worker.mjs",
+              "supabase/migrations/0042_monzo_easy_bank_transfer_deposits.sql",
+              "supabase/migrations/0043_monzo_reconciliation_guard.sql",
+              "supabase/migrations/0044_monzo_payment_url_validator.sql",
+              "supabase/tests/050_rls_roles.sql",
+              "supabase/tests/196_monzo_easy_bank_transfer_deposits.sql",
+              "workers/lib/payment-supabase.js",
+              "workers/payment-redirect.js",
+              "wrangler.payment-redirect.toml"
+            ] | sort)
+          ' "$RUNNER_TEMP/compare.json" >/dev/null
+
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {id,name,event,status,conclusion,head_sha,html_url}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+
+          jq -n --slurpfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
+            ["Static Validation", "CRM and booking validation"] as $required
+            | reduce $required[] as $name ({};
+                ($runs[0] | map(select(
+                  .name == $name
+                  and .event == "pull_request"
+                  and .head_sha == $sha
+                  and .status == "completed"
+                  and .conclusion == "success"
+                )) | sort_by(.id) | last) as $run
+                | if $run == null then error("missing exact-head normal CI: " + $name)
+                  else .[$name] = $run end
+              )
+          ' > "$RUNNER_TEMP/normal-ci-runs.json"
+
+          crm_run_id="$(jq -r '.["CRM and booking validation"].id' "$RUNNER_TEMP/normal-ci-runs.json")"
+          [[ "$crm_run_id" =~ ^[1-9][0-9]*$ ]]
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$crm_run_id/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | {id,name,status,conclusion}' \
+            | jq -s . > "$RUNNER_TEMP/normal-ci-jobs.json"
+          for job in "Public site and Worker" "Private CRM" "Supabase migrations and pgTAP"; do
+            jq -e --arg name "$job" '
+              [.[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length == 1
+            ' "$RUNNER_TEMP/normal-ci-jobs.json" >/dev/null
+          done
+
+      - name: Verify encrypted staging configuration names
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in SUPABASE_ACCESS_TOKEN STAGING_SUPABASE_DB_PASSWORD; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+          [ "${#missing[@]}" -eq 0 ] || {
+            printf 'Missing encrypted staging configuration names: %s\n' "$(IFS=,; echo "${missing[*]}")" >&2
+            exit 1
+          }
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Recheck exact-head payment code before hosted mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/pr202-monzo-deposit-staging.sh
+          node scripts/test-payment-redirect-worker.mjs
+          npm run check:payment-redirect-bundle
+          npm run scan:secrets
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Forward-migrate retained staging 0042 through 0044 and run rolled-back synthetic E2E
+        shell: bash
+        run: bash scripts/pr202-monzo-deposit-staging.sh
+
+      - name: Publish safe validation summary
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq . "$RUNNER_TEMP/pr202-monzo-deposit-staging/summary.json"
+          {
+            echo '### PR #202 retained staging validation'
+            echo '```json'
+            jq . "$RUNNER_TEMP/pr202-monzo-deposit-staging/summary.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload non-sensitive validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr202-monzo-deposit-staging-${{ env.APPROVED_SHA }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/project-safe.json
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/migrations-before.txt
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/migrations-after.txt
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/migration-dry-run.txt
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/security-checks.json
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/synthetic-e2e.json
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/rollback-checks.json
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/hosted-lint.txt
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/final-secret-scan.txt
+            ${{ runner.temp }}/pr202-monzo-deposit-staging/summary.json
