@@ -13,6 +13,7 @@ import {
   buildDisconnectStateRecord,
   buildOAuthStateRecord,
   calendarReadiness,
+  canManageCalendarAlias,
   consumeDisconnectState,
   consumeOAuthState,
   disconnectConfirmationPage,
@@ -20,7 +21,7 @@ import {
   disconnectReturnUrl,
   validateGoogleAccount,
   validateTokenExchange,
-  verifiedOwnerEmail,
+  verifiedCalendarActorEmail,
 } from './lib/calendar-oauth-security.js';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -79,10 +80,10 @@ function rateLimitRouteClass(pathname) {
 }
 
 /**
- * The actor is the Access session, not the client address. Cloudflare's own
- * guidance is that addresses are shared, and this Worker is only reachable
- * behind an owner-only Access application, so the session is both the narrower
- * and the more meaningful identity.
+ * The actor is the Access session, not the client address. Addresses can be
+ * shared, while a signed Access assertion identifies the narrower CRM actor.
+ * The Worker then applies owner-or-self artist routing and the authoritative
+ * CRM membership capability before OAuth or disconnect actions are allowed.
  *
  * The raw assertion is hashed rather than parsed: an unverified JWT payload is
  * attacker-controlled, so keying on a claim inside it would let a caller rotate
@@ -140,6 +141,28 @@ function supabaseBackend(env) {
     : { apikey: legacyKey, Authorization: `Bearer ${legacyKey}` };
 }
 
+async function authorizeCalendarActor(config, actorEmail, env, fetchImpl = fetch) {
+  const url = `${env.SUPABASE_URL}/rest/v1/rpc/authorize_calendar_actor`;
+  const response = await fetchImpl(url, {
+    method: 'POST',
+    headers: {
+      ...supabaseBackend(env),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      p_actor_email: actorEmail,
+      p_artist_id: config.artistId,
+    }),
+  });
+  const allowed = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new OAuthSecurityError('calendar_actor_authorization_failed', 502);
+  }
+  if (allowed !== true) {
+    throw new OAuthSecurityError('calendar_artist_access_denied', 403);
+  }
+}
+
 async function updateIntegrationMetadata(config, accountEmail, enabled, env, fetchImpl = fetch) {
   const url = `${env.SUPABASE_URL}/rest/v1/rpc/set_calendar_connection_metadata`;
   const response = await fetchImpl(url, {
@@ -158,16 +181,24 @@ async function updateIntegrationMetadata(config, accountEmail, enabled, env, fet
   if (!response.ok) throw new OAuthSecurityError('calendar_metadata_update_failed', 502);
 }
 
+function assertCalendarActorRoute(actorEmail, alias, env) {
+  if (!canManageCalendarAlias(actorEmail, alias, env)) {
+    throw new OAuthSecurityError('calendar_artist_access_denied', 403);
+  }
+}
+
 async function startOAuth(request, alias, env, fetchImpl = fetch) {
-  const ownerEmail = await verifiedOwnerEmail(request, env, fetchImpl);
+  const actorEmail = await verifiedCalendarActorEmail(request, env, fetchImpl);
   const config = artistConfig(alias, env);
   if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);
+  assertCalendarActorRoute(actorEmail, alias, env);
   assertOAuthStartConfiguration(env);
+  await authorizeCalendarActor(config, actorEmail, env, fetchImpl);
 
   const state = randomToken();
   const verifier = randomToken(64);
   const challenge = await sha256Base64Url(verifier);
-  const stateRecord = buildOAuthStateRecord(alias, verifier, ownerEmail);
+  const stateRecord = buildOAuthStateRecord(alias, verifier, actorEmail);
   await env.CALENDAR_OAUTH_STATE.put(`state:${state}`, JSON.stringify(stateRecord), {
     expirationTtl: STATE_TTL_SECONDS,
   });
@@ -188,7 +219,7 @@ async function startOAuth(request, alias, env, fetchImpl = fetch) {
 }
 
 async function callback(request, env, fetchImpl = fetch) {
-  const ownerEmail = await verifiedOwnerEmail(request, env, fetchImpl);
+  const actorEmail = await verifiedCalendarActorEmail(request, env, fetchImpl);
   assertOAuthCallbackConfiguration(env);
   const url = new URL(request.url);
   const state = url.searchParams.get('state');
@@ -196,12 +227,14 @@ async function callback(request, env, fetchImpl = fetch) {
   const oauthError = url.searchParams.get('error');
   if (!state) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);
 
-  const stored = await consumeOAuthState(env.CALENDAR_OAUTH_STATE, state, ownerEmail);
+  const stored = await consumeOAuthState(env.CALENDAR_OAUTH_STATE, state, actorEmail);
   if (oauthError) return json({ ok: false, code: 'google_authorisation_denied' }, 400);
   if (!code) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);
 
   const config = artistConfig(stored.alias, env);
   if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 400);
+  assertCalendarActorRoute(actorEmail, stored.alias, env);
+  await authorizeCalendarActor(config, actorEmail, env, fetchImpl);
 
   const tokenResponse = await fetchImpl(GOOGLE_TOKEN_URL, {
     method: 'POST',
@@ -258,16 +291,18 @@ async function callback(request, env, fetchImpl = fetch) {
 }
 
 async function disconnect(request, alias, env, fetchImpl = fetch) {
-  const ownerEmail = await verifiedOwnerEmail(request, env, fetchImpl);
+  const actorEmail = await verifiedCalendarActorEmail(request, env, fetchImpl);
   const config = artistConfig(alias, env);
   if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);
+  assertCalendarActorRoute(actorEmail, alias, env);
   assertDisconnectConfiguration(env);
+  await authorizeCalendarActor(config, actorEmail, env, fetchImpl);
 
   if (request.method === 'GET') {
     const disconnectToken = randomToken();
     await env.CALENDAR_OAUTH_STATE.put(
       `disconnect:${disconnectToken}`,
-      JSON.stringify(buildDisconnectStateRecord(alias, ownerEmail)),
+      JSON.stringify(buildDisconnectStateRecord(alias, actorEmail)),
       { expirationTtl: DISCONNECT_TTL_SECONDS },
     );
     const returnUrl = env.CRM_RETURN_URL
@@ -283,7 +318,7 @@ async function disconnect(request, alias, env, fetchImpl = fetch) {
     env.CALENDAR_OAUTH_STATE,
     alias,
     disconnectToken,
-    ownerEmail,
+    actorEmail,
   );
 
   const tokenKey = `artist:${config.artistId}`;
@@ -375,6 +410,8 @@ export default {
 
 export const __testing = {
   artistConfig,
+  assertCalendarActorRoute,
+  authorizeCalendarActor,
   enforceRateLimit,
   rateLimitActor,
   rateLimitRouteClass,

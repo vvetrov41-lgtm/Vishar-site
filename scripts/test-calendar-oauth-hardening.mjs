@@ -4,7 +4,9 @@ import {
   accessEmail,
   buildDisconnectStateRecord,
   buildOAuthStateRecord,
+  calendarActorEmails,
   calendarReadiness,
+  canManageCalendarAlias,
   consumeDisconnectState,
   consumeOAuthState,
   disconnectConfirmationPage,
@@ -14,6 +16,7 @@ import {
   requireOwnerAccess,
   validateGoogleAccount,
   validateTokenExchange,
+  verifiedCalendarActorEmail,
   verifiedOwnerEmail,
   __testing as securityTesting,
 } from '../workers/lib/calendar-oauth-security.js';
@@ -96,6 +99,19 @@ const certFetch = async (url) => {
   return Response.json({ keys: [publicJwk] });
 };
 
+const authorizedActorFetch = async (url, options = {}) => {
+  const value = String(url);
+  if (value.endsWith('/cdn-cgi/access/certs')) return certFetch(url);
+  if (value === 'https://example.supabase.co/rest/v1/rpc/authorize_calendar_actor') {
+    const body = JSON.parse(String(options.body || '{}'));
+    return Response.json(
+      body.p_actor_email === 'tinaakaten@gmail.com'
+      && body.p_artist_id === 'artist-kristina',
+    );
+  }
+  throw new Error(`unexpected test fetch: ${value}`);
+};
+
 function requestWithToken(token, email = 'vvetrov41@gmail.com', url = 'https://calendar-staging.vishartattoo.com/') {
   return new Request(url, {
     headers: {
@@ -106,12 +122,111 @@ function requestWithToken(token, email = 'vvetrov41@gmail.com', url = 'https://c
 }
 
 const ownerRequest = requestWithToken(await accessToken(), ' Vvetrov41@Gmail.com ');
+const kristinaToken = await accessToken({ email: 'tinaakaten@gmail.com' });
+const kristinaRequest = requestWithToken(kristinaToken, ' tinaakaten@gmail.com ');
 
 await test('Cloudflare Access owner identity requires a valid signed JWT', async () => {
   assert.equal(accessEmail(ownerRequest), 'vvetrov41@gmail.com');
+  assert.equal(await verifiedCalendarActorEmail(ownerRequest, env, certFetch), 'vvetrov41@gmail.com');
   assert.equal(await verifiedOwnerEmail(ownerRequest, env, certFetch), 'vvetrov41@gmail.com');
   assert.equal(await requireOwnerAccess(ownerRequest, env, certFetch), true);
   assert.equal(await requireOwnerAccess(new Request(ownerRequest.url), env, certFetch), false);
+});
+
+await test('signed artist Access identity is allowed only for its own Calendar alias while owner keeps override', async () => {
+  assert.deepEqual(
+    calendarActorEmails(env).sort(),
+    ['tinaakaten@gmail.com', 'vvetrov41@gmail.com'],
+  );
+  assert.equal(
+    await verifiedCalendarActorEmail(kristinaRequest, env, certFetch),
+    'tinaakaten@gmail.com',
+  );
+  await assert.rejects(
+    verifiedOwnerEmail(kristinaRequest, env, certFetch),
+    (error) => error instanceof OAuthSecurityError
+      && error.code === 'owner_access_required'
+      && error.status === 403,
+  );
+  assert.equal(canManageCalendarAlias('tinaakaten@gmail.com', 'kristina', env), true);
+  assert.equal(canManageCalendarAlias('tinaakaten@gmail.com', 'vladimir', env), false);
+  assert.equal(canManageCalendarAlias('vvetrov41@gmail.com', 'vladimir', env), true);
+  assert.equal(canManageCalendarAlias('vvetrov41@gmail.com', 'kristina', env), true);
+});
+
+await test('a valid Access session outside the closed owner/artist allow-list is rejected', async () => {
+  const otherToken = await accessToken({ email: 'other@example.com' });
+  const otherRequest = requestWithToken(otherToken, 'other@example.com');
+  await assert.rejects(
+    verifiedCalendarActorEmail(otherRequest, env, certFetch),
+    (error) => error instanceof OAuthSecurityError
+      && error.code === 'owner_access_required'
+      && error.status === 403,
+  );
+});
+
+await test('artist self-service start requires both own alias and current CRM capability', async () => {
+  const writes = new Map();
+  const scopedEnv = {
+    ...env,
+    CALENDAR_OAUTH_STATE: {
+      put: async (key, value) => { writes.set(key, value); },
+    },
+  };
+  const ownStartRequest = requestWithToken(
+    kristinaToken,
+    'tinaakaten@gmail.com',
+    'https://calendar-staging.vishartattoo.com/oauth/google/start/kristina',
+  );
+  const response = await workerTesting.startOAuth(
+    ownStartRequest,
+    'kristina',
+    scopedEnv,
+    authorizedActorFetch,
+  );
+  assert.equal(response.status, 302);
+  assert.match(response.headers.get('location') || '', /accounts\.google\.com\/o\/oauth2\/v2\/auth/);
+  assert.equal(writes.size, 1);
+
+  const crossArtistRequest = requestWithToken(
+    kristinaToken,
+    'tinaakaten@gmail.com',
+    'https://calendar-staging.vishartattoo.com/oauth/google/start/vladimir',
+  );
+  await assert.rejects(
+    workerTesting.startOAuth(crossArtistRequest, 'vladimir', scopedEnv, authorizedActorFetch),
+    (error) => error instanceof OAuthSecurityError
+      && error.code === 'calendar_artist_access_denied'
+      && error.status === 403,
+  );
+
+  await assert.rejects(
+    workerTesting.authorizeCalendarActor(
+      workerTesting.artistConfig('kristina', env),
+      'tinaakaten@gmail.com',
+      env,
+      async (url) => String(url).endsWith('/authorize_calendar_actor')
+        ? Response.json(false)
+        : certFetch(url),
+    ),
+    (error) => error instanceof OAuthSecurityError
+      && error.code === 'calendar_artist_access_denied'
+      && error.status === 403,
+  );
+});
+
+await test('CRM Calendar authorization backend errors fail closed without starting OAuth', async () => {
+  await assert.rejects(
+    workerTesting.authorizeCalendarActor(
+      workerTesting.artistConfig('kristina', env),
+      'tinaakaten@gmail.com',
+      env,
+      async () => Response.json({ error: 'unavailable' }, { status: 503 }),
+    ),
+    (error) => error instanceof OAuthSecurityError
+      && error.code === 'calendar_actor_authorization_failed'
+      && error.status === 502,
+  );
 });
 
 await test('Access JWT rejects the wrong application audience', async () => {
@@ -124,15 +239,15 @@ await test('Access JWT rejects the wrong application audience', async () => {
   );
 });
 
-await test('Access JWT and forwarded email must identify the same owner', async () => {
+await test('Access JWT and forwarded email must identify the same actor', async () => {
   const mismatch = requestWithToken(await accessToken(), 'other@example.com');
   await assert.rejects(
-    verifiedOwnerEmail(mismatch, env, certFetch),
+    verifiedCalendarActorEmail(mismatch, env, certFetch),
     (error) => error.code === 'owner_access_required',
   );
 });
 
-await test('OAuth state is bound to the verified owner and consumed once', async () => {
+await test('OAuth state is bound to the verified actor and consumed once', async () => {
   const store = new Map();
   const namespace = {
     get: async (key) => store.has(key) ? JSON.parse(store.get(key)) : null,
@@ -150,14 +265,14 @@ await test('OAuth state is bound to the verified owner and consumed once', async
   );
 });
 
-await test('OAuth state cannot be completed by a different verified owner', async () => {
-  const record = buildOAuthStateRecord('kristina', 'k'.repeat(64), 'vvetrov41@gmail.com');
+await test('OAuth state cannot be completed by a different verified actor', async () => {
+  const record = buildOAuthStateRecord('kristina', 'k'.repeat(64), 'tinaakaten@gmail.com');
   const namespace = {
     get: async () => record,
     delete: async () => {},
   };
   await assert.rejects(
-    consumeOAuthState(namespace, 'state', 'other@example.com'),
+    consumeOAuthState(namespace, 'state', 'vvetrov41@gmail.com'),
     (error) => error.code === 'oauth_state_invalid_or_expired',
   );
 });
@@ -239,7 +354,7 @@ await test('disconnect POST rejects a static cross-site payload without a nonce'
   assert.equal(await disconnectConfirmationToken(staticPayload), '');
 });
 
-await test('disconnect nonce is verified-owner-bound, artist-bound and single-use', async () => {
+await test('disconnect nonce is verified-actor-bound, artist-bound and single-use', async () => {
   const token = 'n'.repeat(64);
   const store = new Map();
   const namespace = {
@@ -248,23 +363,23 @@ await test('disconnect nonce is verified-owner-bound, artist-bound and single-us
   };
   store.set(
     `disconnect:${token}`,
-    JSON.stringify(buildDisconnectStateRecord('vladimir', 'vvetrov41@gmail.com')),
+    JSON.stringify(buildDisconnectStateRecord('kristina', 'tinaakaten@gmail.com')),
   );
   assert.equal(
-    (await consumeDisconnectState(namespace, 'vladimir', token, 'vvetrov41@gmail.com')).alias,
-    'vladimir',
+    (await consumeDisconnectState(namespace, 'kristina', token, 'tinaakaten@gmail.com')).alias,
+    'kristina',
   );
   await assert.rejects(
-    consumeDisconnectState(namespace, 'vladimir', token, 'vvetrov41@gmail.com'),
+    consumeDisconnectState(namespace, 'kristina', token, 'tinaakaten@gmail.com'),
     (error) => error.code === 'disconnect_confirmation_invalid_or_expired',
   );
 
   store.set(
     `disconnect:${token}`,
-    JSON.stringify(buildDisconnectStateRecord('vladimir', 'vvetrov41@gmail.com')),
+    JSON.stringify(buildDisconnectStateRecord('kristina', 'tinaakaten@gmail.com')),
   );
   await assert.rejects(
-    consumeDisconnectState(namespace, 'kristina', token, 'vvetrov41@gmail.com'),
+    consumeDisconnectState(namespace, 'vladimir', token, 'tinaakaten@gmail.com'),
     (error) => error.code === 'disconnect_confirmation_invalid_or_expired',
   );
 });

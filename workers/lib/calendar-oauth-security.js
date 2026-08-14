@@ -30,6 +30,24 @@ export function ownerEmails(env) {
     .filter(Boolean);
 }
 
+export function calendarActorEmails(env) {
+  return [...new Set([
+    ...ownerEmails(env),
+    normalizeEmail(env?.VLADIMIR_GOOGLE_EMAIL),
+    normalizeEmail(env?.KRISTINA_GOOGLE_EMAIL),
+  ].filter(Boolean))];
+}
+
+export function canManageCalendarAlias(actorEmail, alias, env) {
+  const email = normalizeEmail(actorEmail);
+  if (!email || !ALIASES.has(alias)) return false;
+  if (ownerEmails(env).includes(email)) return true;
+  const expected = alias === 'vladimir'
+    ? normalizeEmail(env?.VLADIMIR_GOOGLE_EMAIL)
+    : normalizeEmail(env?.KRISTINA_GOOGLE_EMAIL);
+  return Boolean(expected && email === expected);
+}
+
 function normalizeTeamDomain(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -115,7 +133,7 @@ async function accessSigningKey(teamDomain, kid, fetchImpl) {
   }
 }
 
-export async function verifiedOwnerEmail(request, env, fetchImpl = fetch) {
+export async function verifiedCalendarActorEmail(request, env, fetchImpl = fetch) {
   const teamDomain = normalizeTeamDomain(env?.CALENDAR_ACCESS_TEAM_DOMAIN);
   const audience = String(env?.CALENDAR_ACCESS_AUD || '').trim();
   const token = request?.headers?.get('Cf-Access-Jwt-Assertion') || '';
@@ -155,8 +173,16 @@ export async function verifiedOwnerEmail(request, env, fetchImpl = fetch) {
     || (Number.isFinite(payload?.nbf) && payload.nbf > now)
     || !email
     || (forwardedEmail && forwardedEmail !== email)
-    || !ownerEmails(env).includes(email)
+    || !calendarActorEmails(env).includes(email)
   ) {
+    throw new OAuthSecurityError('owner_access_required', 403);
+  }
+  return email;
+}
+
+export async function verifiedOwnerEmail(request, env, fetchImpl = fetch) {
+  const email = await verifiedCalendarActorEmail(request, env, fetchImpl);
+  if (!ownerEmails(env).includes(email)) {
     throw new OAuthSecurityError('owner_access_required', 403);
   }
   return email;
@@ -343,7 +369,7 @@ function escapeHtml(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
 
