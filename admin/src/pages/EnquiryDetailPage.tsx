@@ -200,37 +200,37 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </Section>
       ) : null}
 
-      <Section title={t('enquiry.contactSubmitted')}>
-        <dl className="definition">
-          <dt>{t('enquiry.name')}</dt><dd>{enquiry.submitted_full_name ?? client?.full_name ?? '—'}</dd>
-          <dt>{t('enquiry.email')}</dt><dd>{enquiry.submitted_email ?? client?.email ?? '—'}</dd>
-          <dt>{t('enquiry.phone')}</dt><dd>{enquiry.submitted_phone ?? '—'}</dd>
-          <dt>{t('enquiry.instagram')}</dt><dd>{enquiry.submitted_instagram ?? '—'}</dd>
-          <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(enquiry.submitted_preferred_contact, language)}</dd>
-          <dt>{t('enquiry.travellingFrom')}</dt><dd>{enquiry.submitted_travelling_from ?? '—'}</dd>
-        </dl>
+      <Section title={t('enquiry.currentClient')}>
         {client ? (
-          <div className="actions">
-            <Link to={`/clients/${client.id}`} className="badge">{t('enquiry.openCurrentClient')}</Link>
-          </div>
-        ) : null}
-      </Section>
+          <>
+            <dl className="definition">
+              <dt>{t('enquiry.name')}</dt><dd>{client.full_name}</dd>
+              <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
+              <dt>{t('enquiry.phone')}</dt><dd>{client.phone ?? '—'}</dd>
+              <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
+              <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
+              <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
+            </dl>
+            <div className="actions">
+              <Link to={`/clients/${client.id}`} className="badge">{t('enquiry.openClient')}</Link>
+            </div>
+          </>
+        ) : (
+          <EmptyState title={t('enquiry.clientUnavailable')} />
+        )}
 
-      {client && contactDiffers ? (
-        <Section title={t('enquiry.currentClient')}>
+        <details className="submitted-snapshot">
+          <summary>{t('enquiry.contactSubmitted')}</summary>
           <dl className="definition">
-            <dt>{t('enquiry.name')}</dt><dd>{client.full_name}</dd>
-            <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
-            <dt>{t('enquiry.phone')}</dt><dd>{client.phone ?? '—'}</dd>
-            <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
-            <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
-            <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
+            <dt>{t('enquiry.name')}</dt><dd>{enquiry.submitted_full_name ?? '—'}</dd>
+            <dt>{t('enquiry.email')}</dt><dd>{enquiry.submitted_email ?? '—'}</dd>
+            <dt>{t('enquiry.phone')}</dt><dd>{enquiry.submitted_phone ?? '—'}</dd>
+            <dt>{t('enquiry.instagram')}</dt><dd>{enquiry.submitted_instagram ?? '—'}</dd>
+            <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(enquiry.submitted_preferred_contact, language)}</dd>
+            <dt>{t('enquiry.travellingFrom')}</dt><dd>{enquiry.submitted_travelling_from ?? '—'}</dd>
           </dl>
-          <div className="actions">
-            <Link to={`/clients/${client.id}`} className="badge">{t('enquiry.openClient')}</Link>
-          </div>
-        </Section>
-      ) : null}
+        </details>
+      </Section>
 
       <Section title={t('enquiry.project')}>
         <dl className="definition">
@@ -250,7 +250,16 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
             <EmptyState title={t('enquiry.noReferenceImages')} />
           ) : (
             <div className="thumbs">
-              {files.filter((file) => file.upload_state === 'ready').map((file) => <SignedImage key={file.id} file={file} />)}
+              {files.filter((file) => file.upload_state === 'ready').map((file) => (
+                <SignedImage
+                  key={file.id}
+                  file={file}
+                  removeDisabled={busy}
+                  onRemove={can(role, 'removeEnquiryFiles')
+                    ? () => { void run(() => api.removeEnquiryReference(file)); }
+                    : undefined}
+                />
+              ))}
             </div>
           )}
           <EnquiryReferenceActions enquiryId={enquiry.id} files={files} role={role} api={api} language={language} onChanged={reload} />

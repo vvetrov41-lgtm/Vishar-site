@@ -396,6 +396,48 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 .thumbs img { width: 100%; border-radius: 10px; border: 1px solid var(--border); display: block; }
+.reference-thumb { position: relative; min-width: 0; }
+.reference-preview {
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 4 / 5;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.reference-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 0;
+  border-radius: 0;
+}
+.reference-thumb-remove {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  min-height: 32px;
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  background: rgba(0, 0, 0, 0.76);
+}
+.submitted-snapshot {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.submitted-snapshot summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.submitted-snapshot .definition { margin-top: 10px; }
 
 .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .timeline li { border-left: 2px solid var(--border); padding-left: 12px; }
