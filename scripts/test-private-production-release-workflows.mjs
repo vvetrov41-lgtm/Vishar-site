@@ -15,6 +15,7 @@ const crm = read('.github/workflows/deploy-private-production-crm.yml');
 const database = read('.github/workflows/deploy-private-production-database.yml');
 const team = read('.github/workflows/deploy-private-production-team-admin.yml');
 const calendar = read('.github/workflows/deploy-private-production-calendar.yml');
+const whatsapp = read('.github/workflows/deploy-private-production-whatsapp.yml');
 const teamConfig = read('wrangler.team-admin.toml');
 
 // Assertions about a TOML file must describe its directives, not its prose.
@@ -32,6 +33,7 @@ for (const [label, text] of [
   ['production database', database],
   ['Team admin', team],
   ['Calendar connector', calendar],
+  ['WhatsApp drain', whatsapp],
 ]) {
   expectIncludes(text, 'environment: crm-production', label);
   expectIncludes(text, 'release/private-crm-rc*', label);

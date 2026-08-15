@@ -516,6 +516,11 @@ insert into expected_function_acl values
   ('public.finalize_enquiry_intake(uuid)', false, false, true),
   ('public.fail_enquiry_intake(uuid,text)', false, false, true),
   ('public.record_outbox_attempt(uuid,boolean,text)', false, false, true),
+  ('public.record_whatsapp_inbound_message(uuid,text,text,text,timestamptz,text,text)', false, false, true),
+  ('public.record_whatsapp_message_status(uuid,text,text,text,timestamptz)', false, false, true),
+  ('public.claim_whatsapp_outbox(text,integer,integer)', false, false, true),
+  ('public.claim_whatsapp_outbox_by_id(uuid,text,integer)', false, false, true),
+  ('public.record_whatsapp_outbox_result(uuid,text,boolean,text,text)', false, false, true),
   ('public.claim_telegram_outbox(text,integer,integer)', false, false, true),
   ('public.claim_telegram_outbox_by_id(uuid,text,integer)', false, false, true),
   ('public.record_telegram_outbox_result(uuid,text,boolean,text)', false, false, true),
@@ -584,6 +589,7 @@ insert into expected_function_acl values
   ('public.configure_monzo_easy_bank_transfer(uuid,text,boolean)', false, true, false),
   ('public.get_monzo_easy_bank_transfer_settings(uuid)', false, true, false),
   ('public.request_session_deposit(uuid,uuid,text)', false, true, false),
+  ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
