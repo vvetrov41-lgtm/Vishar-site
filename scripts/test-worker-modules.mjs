@@ -321,7 +321,10 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'record_calendar_outbox_result',
     'record_outbox_attempt',
     'record_telegram_outbox_result',
+    'record_whatsapp_echo_message',
+    'record_whatsapp_inbound_message',
     'record_whatsapp_outbox_result',
+    'record_whatsapp_status_update',
     'resolve_outbox_route',
   ]);
 });

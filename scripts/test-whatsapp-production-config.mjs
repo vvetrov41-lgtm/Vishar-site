@@ -84,6 +84,31 @@ try {
 }
 
 // ---------------------------------------------------------------------------
+// The public webhook Worker is inert and has no route
+// ---------------------------------------------------------------------------
+
+const webhook = directivesOf(read('wrangler.whatsapp-webhook.production.toml'));
+expectIncludes(webhook, 'name = "vishar-whatsapp-webhook-production"', 'webhook config');
+expectIncludes(webhook, 'main = "workers/whatsapp-webhook-worker.js"', 'webhook config');
+expectIncludes(webhook, 'workers_dev = false', 'webhook config');
+expectIncludes(webhook, 'preview_urls = false', 'webhook config');
+expectIncludes(webhook, 'WHATSAPP_WEBHOOK_ENABLED = "false"', 'webhook config');
+expectIncludes(webhook, 'WHATSAPP_INTEGRATION_KEYS = "vladimir-production,kristina-production"', 'webhook config');
+// The endpoint must not be reachable until activation adds a route explicitly.
+expectExcludes(webhook, 'routes', 'webhook config');
+expectExcludes(webhook, '[triggers]', 'webhook config');
+expectExcludes(webhook, 'workers_dev = true', 'webhook config');
+// No credential and no global binding may ever appear in tracked configuration.
+expectExcludes(webhook, 'WHATSAPP_VERIFY_TOKEN =', 'webhook config');
+expectExcludes(webhook, 'WHATSAPP_APP_SECRET', 'webhook config');
+expectExcludes(webhook, 'WHATSAPP_ACCESS_TOKEN', 'webhook config');
+
+const webhookWorker = read('workers/whatsapp-webhook-worker.js');
+expectIncludes(webhookWorker, "env?.WHATSAPP_WEBHOOK_ENABLED !== 'true'", 'webhook Worker');
+// A server-to-server callback offers no browser surface.
+expectExcludes(webhookWorker, 'Access-Control-Allow-Origin', 'webhook Worker');
+
+// ---------------------------------------------------------------------------
 // The guarded workflow keeps its boundaries
 // ---------------------------------------------------------------------------
 

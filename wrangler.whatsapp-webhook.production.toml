@@ -1,0 +1,31 @@
+name = "vishar-whatsapp-webhook-production"
+main = "workers/whatsapp-webhook-worker.js"
+compatibility_date = "2026-05-25"
+workers_dev = false
+preview_urls = false
+
+# Meta must be able to reach this endpoint, so Cloudflare Access cannot sit in
+# front of it. The tracked template is deliberately inert: the Worker answers
+# 503 on every request while WHATSAPP_WEBHOOK_ENABLED is not exactly "true",
+# and no route or Custom Domain is declared here. Both are added only by the
+# separately approved activation, alongside the zone rate-limit rule.
+
+[vars]
+VISHAR_ENVIRONMENT = "production"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
+WHATSAPP_WEBHOOK_ENABLED = "false"
+WHATSAPP_INTEGRATION_KEYS = "vladimir-production,kristina-production"
+
+# Required encrypted production Worker secrets are deliberately absent here:
+#   SUPABASE_SECRET_KEY
+#   WHATSAPP_VERIFY_TOKEN
+#   ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION
+#   ARTIST_WHATSAPP_KRISTINA_HPRODUCTION
+#
+# The two ARTIST_* names are derived deterministically from the integration
+# keys above. Each envelope carries only that artist's own Meta phone number
+# id, access token and app secret, which is what makes inbound routing
+# artist-specific: a delivery naming a phone number id with no matching binding
+# resolves to no artist and is dropped.
+#
+# There is no global provider binding on this Worker.

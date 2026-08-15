@@ -89,6 +89,9 @@ jobs:
       - name: Compile inert production WhatsApp drain Worker with Wrangler
         run: npm run check:whatsapp-production-bundle
 
+      - name: Compile inert production WhatsApp webhook Worker with Wrangler
+        run: npm run check:whatsapp-webhook-bundle
+
       - name: Test private production release workflow boundaries
         run: node scripts/test-private-production-release-workflows.mjs
 

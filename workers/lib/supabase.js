@@ -34,6 +34,9 @@ export const ALLOWED_RPCS = new Set([
   'claim_whatsapp_outbox',
   'claim_whatsapp_outbox_by_id',
   'record_whatsapp_outbox_result',
+  'record_whatsapp_inbound_message',
+  'record_whatsapp_echo_message',
+  'record_whatsapp_status_update',
 ]);
 
 export class SupabaseError extends Error {
