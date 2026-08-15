@@ -1,0 +1,9 @@
+name = "vishar-team-admin"
+main = "workers/team-admin.js"
+compatibility_date = "2026-05-25"
+workers_dev = false
+
+# Intentionally no routes and no environment values. A future staging or
+# production deployment must be separately reviewed and must provide:
+# CRM_ALLOWED_ORIGIN, CRM_INVITE_REDIRECT_URL, SUPABASE_URL,
+# SUPABASE_PUBLISHABLE_KEY, and encrypted SUPABASE_SECRET_KEY.

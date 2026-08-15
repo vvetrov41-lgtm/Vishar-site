@@ -1,0 +1,6 @@
+{
+  "//": "Marks workers/ as ES modules so Node can import the Worker entry point directly in tests. Wrangler already treats the entry point as an ES module; this only affects Node's resolution and deliberately does not change the repository root, where tailwind.config.js is still CommonJS.",
+  "name": "vishar-workers",
+  "private": true,
+  "type": "module"
+}

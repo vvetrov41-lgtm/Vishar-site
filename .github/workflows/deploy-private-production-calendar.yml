@@ -67,8 +67,12 @@ jobs:
               echo 'CRM_PRODUCTION_CALENDAR_DEPLOY_ENABLED is not explicitly enabled.' >&2
               exit 1
             fi
-            if [ "$APPROVAL_PHRASE" != 'DEPLOY_PRIVATE_CRM_CALENDAR' ]; then
-              echo 'The exact Calendar production approval phrase is required for deploy=true.' >&2
+            if [ "$APPROVAL_PHRASE" = 'DEPLOY_PRIVATE_CRM_CALENDAR' ]; then
+              echo 'The initial Calendar deployment phrase is intentionally rejected for scheduled-drain activation.' >&2
+              exit 1
+            fi
+            if [ "$APPROVAL_PHRASE" != 'ENABLE_PRIVATE_CRM_CALENDAR_DRAIN' ]; then
+              echo 'The exact Calendar scheduled-drain approval phrase is required for deploy=true.' >&2
               exit 1
             fi
           fi
@@ -199,9 +203,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # --config is explicit so this reads the Calendar Worker's own
-          # configuration rather than falling back to the repository root
-          # wrangler.toml, which belongs to the public site Worker.
           secrets_json="$(npx wrangler secret list --config wrangler.calendar.production.toml --name "$WORKER_NAME" --format json)"
           SECRET_LIST="$secrets_json" node <<'NODE'
           const values = JSON.parse(process.env.SECRET_LIST || '[]');
@@ -232,8 +233,9 @@ jobs:
           trap 'rm -f "$deploy_config"' EXIT
 
           node scripts/generate-calendar-production-deploy-config.mjs "$deploy_config"
+          grep -Fq 'CALENDAR_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
 
-          # Compile the generated artefact before anything touches the account.
           XDG_CONFIG_HOME=.wrangler/config \
           WRANGLER_LOG_PATH=.wrangler/calendar-production-wrangler.log \
           WRANGLER_SEND_METRICS=false \
@@ -243,10 +245,9 @@ jobs:
               --dry-run \
               --outdir .wrangler/calendar-production-generated
 
-          # Deliberately no --keep-vars. Every variable is declared in the
-          # generated config, so Wrangler owns the complete set and any
-          # out-of-band drift of CALENDAR_DRAIN_ENABLED is corrected on deploy.
-          # Encrypted secrets live in a separate store and are unaffected.
+          # Deliberately no --keep-vars. Every variable, trigger and the exact
+          # existing Custom Domain are declared in the generated config, so
+          # --strict compares the complete intended production Worker state.
           npx wrangler deploy \
             --config "$deploy_config" \
             --name "$WORKER_NAME" \
@@ -290,10 +291,11 @@ jobs:
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Worker source: `workers/calendar-oauth.js` only'
-            echo '- Wrangler config: generated from `wrangler.calendar.production.toml` with `workers_dev=false` and `preview_urls=false`'
-            echo '- Scheduled drain: `CALENDAR_DRAIN_ENABLED=false` and no cron trigger declared'
+            echo '- Tracked production template: inert (`CALENDAR_DRAIN_ENABLED=false`, no cron)'
+            echo '- Generated deploy runtime: `CALENDAR_DRAIN_ENABLED=true`, exact cron `*/5 * * * *`'
+            echo '- Scheduled drain batch bound: Worker default 10, hard maximum 20 jobs per queue per invocation'
             echo '- Rate limiting: isolated Worker `CALENDAR_RATE_LIMIT` binding; no zone WAF or rate-limiting rule is read or written'
-            echo '- Route: `calendar.vishartattoo.com` Custom Domain provisioned outside this workflow; the generated config declares none'
+            echo '- Route: exact pre-provisioned `calendar.vishartattoo.com` Custom Domain is preserved in the generated config and verified by `--strict`'
             echo '- Required pre-existing secrets: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `CALENDAR_TOKEN_ENCRYPTION_KEY`, `SUPABASE_SECRET_KEY`'
             echo '- Retained staging Supabase, Calendar KV namespaces, Access audience and hostname: explicitly refused'
             echo '- Pages / database / Telegram / GPT / booking deploy commands: none'
