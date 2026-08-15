@@ -29,13 +29,21 @@ jobs:
       - name: Apply patch
         run: python3 scripts/apply-crm-enquiry-detail-ux.py
 
-      - name: Validate private CRM
+      - name: Install private CRM dependencies
         working-directory: admin
-        run: |
-          npm ci
-          npm test
-          npm run typecheck
-          npm run build
+        run: npm ci
+
+      - name: Test private CRM
+        working-directory: admin
+        run: npm test
+
+      - name: Typecheck private CRM
+        working-directory: admin
+        run: npm run typecheck
+
+      - name: Build private CRM
+        working-directory: admin
+        run: npm run build
 
       - name: Remove temporary harness and commit
         shell: bash
