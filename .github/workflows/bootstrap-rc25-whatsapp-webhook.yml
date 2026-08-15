@@ -1,0 +1,134 @@
+name: Bootstrap RC25 WhatsApp production webhook
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc25-whatsapp-webhook-operator
+    paths:
+      - .github/workflows/bootstrap-rc25-whatsapp-webhook.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-rc25-whatsapp-production-webhook
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Bootstrap fail-closed WhatsApp webhook
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      RELEASE_SHA: 2729bf08ed206a0d6d42f6d055ded8489d0858e4
+      WORKER_NAME: vishar-whatsapp-webhook-production
+      WEBHOOK_URL: https://whatsapp.vishartattoo.com/webhook
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact RC25 ancestry and bounded operator diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          changed="$(git diff --name-only "$RELEASE_SHA"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/bootstrap-rc25-whatsapp-webhook.yml' \
+            '.github/workflows/inspect-rc25-whatsapp-production.yml' | sort)"
+          [ "$changed" = "$expected" ] || {
+            echo 'Operator branch contains unexpected changes.' >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+          [ -z "$(git status --short)" ]
+
+      - name: Verify protected Cloudflare credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+
+      - name: Re-run exact webhook security checks
+        run: |
+          node scripts/test-whatsapp-webhook.mjs
+          node scripts/test-whatsapp-webhook-production-config.mjs
+          npm run check:whatsapp-webhook-production-bundle
+          npm run scan:secrets
+
+      - name: Refuse bootstrap if any Worker secret already exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npx wrangler versions list --name "$WORKER_NAME" --json > "$RUNNER_TEMP/versions-before.json" 2>/dev/null; then
+            secrets_json="$(npx wrangler secret list --config wrangler.whatsapp-webhook.production.toml --name "$WORKER_NAME" --format json 2>/dev/null || printf '[]')"
+            count="$(SECRET_LIST="$secrets_json" node -e "const a=JSON.parse(process.env.SECRET_LIST||'[]');process.stdout.write(String(a.length))")"
+            [ "$count" = '0' ] || { echo 'Refusing bootstrap because Worker secrets already exist.' >&2; exit 1; }
+          fi
+
+      - name: Deploy exact fail-closed webhook Worker and Custom Domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy \
+            --config wrangler.whatsapp-webhook.production.toml \
+            --name "$WORKER_NAME" \
+            --strict
+
+      - name: Verify deployed Worker exists and still has zero secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler versions list --name "$WORKER_NAME" --json > "$RUNNER_TEMP/versions-after.json"
+          secrets_json="$(npx wrangler secret list --config wrangler.whatsapp-webhook.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          if (values.length !== 0) throw new Error('Bootstrap must leave Worker with zero encrypted secrets');
+          NODE
+
+      - name: Verify fail-closed public boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          code='000'
+          for attempt in 1 2 3 4 5 6; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 "$WEBHOOK_URL" || true)"
+            [ "$code" = '403' ] && break
+            sleep 5
+          done
+          echo "WEBHOOK_HTTP_WITHOUT_TOKEN=$code"
+          [ "$code" = '403' ] || { echo 'Public webhook is not in the expected fail-closed state.' >&2; exit 1; }
+
+      - name: Safe bootstrap summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC25 WhatsApp fail-closed bootstrap'
+            echo
+            echo '- Release source: `2729bf08ed206a0d6d42f6d055ded8489d0858e4`'
+            echo '- Worker: `vishar-whatsapp-webhook-production`'
+            echo '- Custom Domain: `whatsapp.vishartattoo.com`'
+            echo '- Callback path: `/webhook`'
+            echo '- workers.dev and preview URLs remain disabled'
+            echo '- No Worker secret was written by this workflow'
+            echo '- No Supabase mutation, Meta API call, WABA subscription, drain activation or message send command exists in this workflow'
+          } >> "$GITHUB_STEP_SUMMARY"
