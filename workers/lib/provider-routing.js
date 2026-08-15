@@ -1,7 +1,7 @@
 // Artist-owned provider binding selection.
 import { ConfigurationError } from './http.js';
 
-export const ROUTED_INTEGRATION_TYPES = new Set(['telegram','email','calendar']);
+export const ROUTED_INTEGRATION_TYPES = new Set(['telegram','email','calendar','whatsapp']);
 const SOURCE_KEY=/^[a-z][a-z0-9-]{2,79}$/;
 const INTEGRATION_KEY=/^[a-z][a-z0-9_-]{2,79}$/;
 const PROVIDER=/^[a-z][a-z0-9_-]{1,63}$/;
@@ -22,6 +22,7 @@ export function integrationTypeForOutboxKind(kind){
   if(kind==='telegram_notification')return 'telegram';
   if(kind==='transactional_email'||kind==='approved_email')return 'email';
   if(kind==='calendar_create'||kind==='calendar_update'||kind==='calendar_cancel')return 'calendar';
+  if(kind==='whatsapp_message')return 'whatsapp';
   return null;
 }
 export function bindingNameFor(type,key){

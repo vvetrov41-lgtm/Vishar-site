@@ -17,6 +17,7 @@ export const OUTBOX_KINDS = Object.freeze({
   CALENDAR_UPDATE: 'calendar_update',
   CALENDAR_CANCEL: 'calendar_cancel',
   RECONCILIATION: 'reconciliation',
+  WHATSAPP_MESSAGE: 'whatsapp_message',
 });
 
 export function telegramDedupeKey(enquiryId) {
@@ -29,6 +30,15 @@ export function calendarDedupeKey(action, sessionId, version) {
 
 export function emailDedupeKey(emailMessageId) {
   return `email:approved:${emailMessageId}`;
+}
+
+/**
+ * Must match `public.queue_whatsapp_message` in migration 0047. The key is the
+ * caller's request id, so an interrupted retry collides with the original job
+ * instead of sending the client a second WhatsApp message.
+ */
+export function whatsappDedupeKey(requestId) {
+  return `whatsapp:send:${requestId}`;
 }
 
 /** Bounded exponential backoff with a cap, matching the outbox schema. */
