@@ -13,156 +13,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
-      - name: Guard exact parent
+      - name: Guard temporary-only branch diff
+        shell: bash
         run: |
-          test "$(git rev-parse HEAD^)" = "a9ec37dd5e508ff907e8b2a6d6ae1b884ca5b30e"
+          git merge-base --is-ancestor a9ec37dd5e508ff907e8b2a6d6ae1b884ca5b30e HEAD
+          actual="$(git diff --name-only a9ec37dd5e508ff907e8b2a6d6ae1b884ca5b30e...HEAD | sort)"
+          expected="$(printf '%s\n' '.github/workflows/apply-crm-enquiry-detail-ux.yml' 'scripts/apply-crm-enquiry-detail-ux.py' | sort)"
+          test "$actual" = "$expected"
 
-      - name: Apply UI patch
+      - name: Apply patch
+        run: python3 scripts/apply-crm-enquiry-detail-ux.py
+
+      - name: Validate private CRM
+        working-directory: admin
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          page = Path('admin/src/pages/EnquiryDetailPage.tsx')
-          text = page.read_text()
-          old = '''      <Section title={t('enquiry.contactSubmitted')}>
-        <dl className="definition">
-          <dt>{t('enquiry.name')}</dt><dd>{enquiry.submitted_full_name ?? client?.full_name ?? '—'}</dd>
-          <dt>{t('enquiry.email')}</dt><dd>{enquiry.submitted_email ?? client?.email ?? '—'}</dd>
-          <dt>{t('enquiry.phone')}</dt><dd>{enquiry.submitted_phone ?? '—'}</dd>
-          <dt>{t('enquiry.instagram')}</dt><dd>{enquiry.submitted_instagram ?? '—'}</dd>
-          <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(enquiry.submitted_preferred_contact, language)}</dd>
-          <dt>{t('enquiry.travellingFrom')}</dt><dd>{enquiry.submitted_travelling_from ?? '—'}</dd>
-        </dl>
-        {client ? (
-          <div className="actions">
-            <Link to={`/clients/${client.id}`} className="badge">{t('enquiry.openCurrentClient')}</Link>
-          </div>
-        ) : null}
-      </Section>
-
-      {client && contactDiffers ? (
-        <Section title={t('enquiry.currentClient')}>
-          <dl className="definition">
-            <dt>{t('enquiry.name')}</dt><dd>{client.full_name}</dd>
-            <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
-            <dt>{t('enquiry.phone')}</dt><dd>{client.phone ?? '—'}</dd>
-            <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
-            <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
-            <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
-          </dl>
-          <div className="actions">
-            <Link to={`/clients/${client.id}`} className="badge">{t('enquiry.openClient')}</Link>
-          </div>
-        </Section>
-      ) : null}
-'''
-          new = '''      <Section title={t('enquiry.currentClient')}>
-        {client ? (
-          <>
-            <dl className="definition">
-              <dt>{t('enquiry.name')}</dt><dd>{client.full_name}</dd>
-              <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
-              <dt>{t('enquiry.phone')}</dt><dd>{client.phone ?? '—'}</dd>
-              <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
-              <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
-              <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
-            </dl>
-            <div className="actions">
-              <Link to={`/clients/${client.id}`} className="badge">{t('enquiry.openClient')}</Link>
-            </div>
-          </>
-        ) : (
-          <EmptyState title={t('enquiry.clientUnavailable')} />
-        )}
-
-        <details className="submitted-snapshot">
-          <summary>{t('enquiry.contactSubmitted')}</summary>
-          <dl className="definition">
-            <dt>{t('enquiry.name')}</dt><dd>{enquiry.submitted_full_name ?? '—'}</dd>
-            <dt>{t('enquiry.email')}</dt><dd>{enquiry.submitted_email ?? '—'}</dd>
-            <dt>{t('enquiry.phone')}</dt><dd>{enquiry.submitted_phone ?? '—'}</dd>
-            <dt>{t('enquiry.instagram')}</dt><dd>{enquiry.submitted_instagram ?? '—'}</dd>
-            <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(enquiry.submitted_preferred_contact, language)}</dd>
-            <dt>{t('enquiry.travellingFrom')}</dt><dd>{enquiry.submitted_travelling_from ?? '—'}</dd>
-          </dl>
-        </details>
-      </Section>
-'''
-          assert old in text, 'contact block not found'
-          text = text.replace(old, new, 1)
-
-          old = '''              {files.filter((file) => file.upload_state === 'ready').map((file) => <SignedImage key={file.id} file={file} />)}'''
-          new = '''              {files.filter((file) => file.upload_state === 'ready').map((file) => (
-                <SignedImage
-                  key={file.id}
-                  file={file}
-                  removeDisabled={busy}
-                  onRemove={can(role, 'removeEnquiryFiles')
-                    ? () => { void run(() => api.removeEnquiryReference(file)); }
-                    : undefined}
-                />
-              ))}'''
-          assert old in text, 'reference image map not found'
-          page.write_text(text.replace(old, new, 1))
-
-          Path('admin/src/components/SignedImage.tsx').write_text('''// A private reference image.\n//\n// The signed URL is minted on render and expires within a minute. The compact\n// preview stays inside the CRM; a deliberate click opens the same short-lived\n// URL at its original resolution in a new tab.\n\nimport { useEffect, useState } from 'react';\nimport { useLanguage } from '../lib/i18n';\nimport { useApi } from '../lib/session';\nimport type { EnquiryFile } from '../lib/types';\n\nexport function SignedImage({\n  file,\n  onRemove,\n  removeDisabled = false,\n}: {\n  file: EnquiryFile;\n  onRemove?: () => void;\n  removeDisabled?: boolean;\n}) {\n  const api = useApi();\n  const { t } = useLanguage();\n  const [url, setUrl] = useState<string | null>(null);\n  const [failed, setFailed] = useState(false);\n\n  useEffect(() => {\n    let cancelled = false;\n    setUrl(null);\n    setFailed(false);\n    if (file.upload_state !== 'ready') {\n      return () => { cancelled = true; };\n    }\n    api.signedFileUrl(file.storage_path)\n      .then((signed) => { if (!cancelled) { if (signed) setUrl(signed); else setFailed(true); } })\n      .catch(() => { if (!cancelled) setFailed(true); });\n    return () => { cancelled = true; };\n  }, [api, file.storage_path, file.upload_state]);\n\n  if (file.upload_state !== 'ready') {\n    return <div className="notice warn">{t('image.uploadFailed')}</div>;\n  }\n\n  if (failed) {\n    return <div className="notice">{t('image.openFailed')}</div>;\n  }\n\n  if (!url) {\n    return <div className="notice" role="status">{t('image.opening')}</div>;\n  }\n\n  const filename = file.original_filename ? `: ${file.original_filename}` : '';\n\n  return (\n    <div className="reference-thumb">\n      <button\n        type="button"\n        className="reference-preview"\n        aria-label={t('image.openOriginal', { filename })}\n        title={t('image.openOriginal', { filename })}\n        onClick={() => { window.open(url, '_blank', 'noopener,noreferrer'); }}\n      >\n        <img\n          src={url}\n          alt={t('image.alt', { filename })}\n          loading="lazy"\n          decoding="async"\n        />\n      </button>\n      {onRemove ? (\n        <button\n          type="button"\n          className="reference-thumb-remove danger"\n          disabled={removeDisabled}\n          onClick={onRemove}\n        >\n          {t('image.remove')}\n        </button>\n      ) : null}\n    </div>\n  );\n}\n''')
-
-          actions = Path('admin/src/components/EnquiryReferenceActions.tsx')
-          text = actions.read_text()
-          text = text.replace("  api: Pick<RecordEditApi, 'addEnquiryReference' | 'finalizeEnquiryReference' | 'removeEnquiryReference'>;", "  api: Pick<RecordEditApi, 'addEnquiryReference' | 'finalizeEnquiryReference'>;")
-          text = text.replace("  const canRemove = can(role, 'removeEnquiryFiles');\n", "")
-          text = text.replace("    remove: 'Удалить',\n", "")
-          text = text.replace("    remove: 'Remove',\n", "")
-          text = text.replace("  if (!can(role, 'manageEnquiryFiles') && !canRemove) return null;", "  if (!can(role, 'manageEnquiryFiles')) return null;")
-          remove_fn = '''\n  async function remove(file: EnquiryFile) {\n    setBusy(true);\n    setError(null);\n    try {\n      await api.removeEnquiryReference(file);\n      onChanged();\n    } catch (cause) {\n      setError(cause instanceof Error ? cause.message : copy.failed);\n    } finally {\n      setBusy(false);\n    }\n  }\n'''
-          assert remove_fn in text, 'remove helper not found'
-          text = text.replace(remove_fn, '')
-          old = '''      {files.some((file) => file.upload_state !== 'ready') || canRemove ? (\n        <div className="list" style={{ marginTop: 12 }}>\n          {files.map((file) => (\n            <div className="row" key={file.id}>\n              <div className="title">{file.original_filename ?? `Reference ${file.ordinal + 1}`}</div>\n              <div className="meta">\n                {file.upload_state !== 'ready' && can(role, 'manageEnquiryFiles') ? (\n                  <button type="button" disabled={busy} onClick={() => { void finish(file.id); }}>{copy.retry}</button>\n                ) : null}\n                {file.upload_state === 'ready' && canRemove ? (\n                  <button type="button" disabled={busy} onClick={() => { void remove(file); }}>{copy.remove}</button>\n                ) : null}\n              </div>\n            </div>\n          ))}\n        </div>\n      ) : null}'''
-          new = '''      {files.some((file) => file.upload_state !== 'ready') ? (\n        <div className="list" style={{ marginTop: 12 }}>\n          {files.filter((file) => file.upload_state !== 'ready').map((file) => (\n            <div className="row" key={file.id}>\n              <div className="title">{file.original_filename ?? `Reference ${file.ordinal + 1}`}</div>\n              <div className="meta">\n                <button type="button" disabled={busy} onClick={() => { void finish(file.id); }}>{copy.retry}</button>\n              </div>\n            </div>\n          ))}\n        </div>\n      ) : null}'''
-          assert old in text, 'reference action list not found'
-          actions.write_text(text.replace(old, new, 1))
-
-          i18n = Path('admin/src/lib/i18n.tsx')
-          text = i18n.read_text()
-          text = text.replace("  'enquiry.contactSubmitted': 'Contact submitted with this enquiry',", "  'enquiry.contactSubmitted': 'Submitted enquiry data',")
-          text = text.replace("  'enquiry.currentClient': 'Current client card',", "  'enquiry.currentClient': 'Current client details',")
-          text = text.replace("  'image.alt': 'Reference image submitted with this enquiry{filename}',", "  'image.alt': 'Reference image submitted with this enquiry{filename}',\n  'image.openOriginal': 'Open full-size reference{filename}',\n  'image.remove': 'Remove',")
-          text = text.replace("  'enquiry.contactSubmitted': 'Контакты из этой заявки',", "  'enquiry.contactSubmitted': 'Данные из исходной заявки',")
-          text = text.replace("  'enquiry.currentClient': 'Текущая карточка клиента',", "  'enquiry.currentClient': 'Актуальные данные клиента',")
-          text = text.replace("  'image.alt': 'Референс, отправленный с этой заявкой{filename}',", "  'image.alt': 'Референс, отправленный с этой заявкой{filename}',\n  'image.openOriginal': 'Открыть референс в полном размере{filename}',\n  'image.remove': 'Удалить',")
-          i18n.write_text(text)
-
-          styles = Path('admin/src/styles.css')
-          text = styles.read_text()
-          old = ".thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }\n.thumbs img { width: 100%; border-radius: 10px; border: 1px solid var(--border); display: block; }"
-          new = '''.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }\n.thumbs img { width: 100%; border-radius: 10px; border: 1px solid var(--border); display: block; }\n.reference-thumb { position: relative; min-width: 0; }\n.reference-preview {\n  width: 100%;\n  min-height: 0;\n  aspect-ratio: 4 / 5;\n  display: block;\n  overflow: hidden;\n  padding: 0;\n  border-radius: 10px;\n  background: var(--surface-raised);\n}\n.reference-preview img {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  border: 0;\n  border-radius: 0;\n}\n.reference-thumb-remove {\n  position: absolute;\n  top: 7px;\n  right: 7px;\n  min-height: 32px;\n  padding: 5px 9px;\n  font-size: 0.72rem;\n  background: rgba(0, 0, 0, 0.76);\n}\n.submitted-snapshot {\n  margin-top: 14px;\n  padding-top: 10px;\n  border-top: 1px solid var(--border);\n}\n.submitted-snapshot summary {\n  min-height: var(--tap);\n  display: flex;\n  align-items: center;\n  color: var(--muted);\n  font-size: 0.85rem;\n  font-weight: 600;\n  cursor: pointer;\n}\n.submitted-snapshot .definition { margin-top: 10px; }'''
-          assert old in text, 'thumb styles not found'
-          styles.write_text(text.replace(old, new, 1))
-
-          tests = Path('admin/src/test/record-edit-ui.test.tsx')
-          text = tests.read_text().replace("import { describe, expect, it } from 'vitest';", "import { describe, expect, it, vi } from 'vitest';")
-          insert = '''\n\n  it('keeps the immutable submitted snapshot collapsed inside current client details', async () => {\n    renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });\n\n    expect(await screen.findByText('Current client details')).toBeInTheDocument();\n    const summary = screen.getByText('Submitted enquiry data');\n    const details = summary.closest('details');\n    expect(details).not.toBeNull();\n    expect(details).not.toHaveAttribute('open');\n    fireEvent.click(summary);\n    expect(details).toHaveAttribute('open');\n    expect(screen.getByText('+447700900099')).toBeInTheDocument();\n  });\n\n  it('opens the original signed reference from its compact preview', async () => {\n    const open = vi.spyOn(window, 'open').mockImplementation(() => null);\n    renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });\n\n    const preview = await screen.findByRole('button', { name: 'Open full-size reference: reference-1.jpg' });\n    fireEvent.click(preview);\n    expect(open).toHaveBeenCalledWith(\n      expect.stringContaining('https://storage.example.test/signed/'),\n      '_blank',\n      'noopener,noreferrer'\n    );\n    open.mockRestore();\n  });'''
-          marker = '\n});\n'
-          idx = text.rfind(marker)
-          assert idx != -1, 'test describe end not found'
-          tests.write_text(text[:idx] + insert + text[idx:])
-          PY
-
-      - name: Verify focused CRM UI
-        run: |
-          cd admin
           npm ci
           npm test
           npm run typecheck
           npm run build
 
-      - name: Remove temporary workflow and commit patch
+      - name: Remove temporary harness and commit
+        shell: bash
         run: |
           rm .github/workflows/apply-crm-enquiry-detail-ux.yml
+          rm scripts/apply-crm-enquiry-detail-ux.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
