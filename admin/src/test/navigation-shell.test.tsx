@@ -161,7 +161,7 @@ describe('detail-route continuity', () => {
     renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}` });
 
     const actions = await screen.findByRole('heading', { level: 2, name: 'Enquiry actions' });
-    const contact = screen.getByRole('heading', { level: 2, name: 'Contact submitted with this enquiry' });
+    const contact = screen.getByRole('heading', { level: 2, name: 'Current client details' });
     expect(actions.compareDocumentPosition(contact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

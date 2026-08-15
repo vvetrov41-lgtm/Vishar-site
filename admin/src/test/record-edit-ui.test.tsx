@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { CLIENT_ID, ENQUIRY_ID, renderWithSession } from './fixtures';
 
@@ -63,5 +63,32 @@ describe('CRM record editing UI', () => {
     renderWithSession(<App />, { role: 'read_only', path: `/clients/${CLIENT_ID}` });
     expect(await screen.findByText('Fixture Client')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit client' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the immutable submitted snapshot collapsed inside current client details', async () => {
+    renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });
+
+    expect(await screen.findByText('Current client details')).toBeInTheDocument();
+    const summary = screen.getByText('Submitted enquiry data');
+    const details = summary.closest('details');
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute('open');
+    fireEvent.click(summary);
+    expect(details).toHaveAttribute('open');
+    expect(screen.getByText('+447700900099')).toBeInTheDocument();
+  });
+
+  it('opens the original signed reference from its compact preview', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });
+
+    const preview = await screen.findByRole('button', { name: 'Open full-size reference: reference-1.jpg' });
+    fireEvent.click(preview);
+    expect(open).toHaveBeenCalledWith(
+      expect.stringContaining('https://storage.example.test/signed/'),
+      '_blank',
+      'noopener,noreferrer'
+    );
+    open.mockRestore();
   });
 });
