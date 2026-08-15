@@ -53,11 +53,12 @@ describe('CRM record editing UI', () => {
   });
 
   it('gives read-only staff no edit or file-management affordances', async () => {
-    renderWithSession(<App />, { role: 'read_only', path: `/enquiries/${ENQUIRY_ID}` });
+    const enquiryView = renderWithSession(<App />, { role: 'read_only', path: `/enquiries/${ENQUIRY_ID}` });
 
     expect(await screen.findByText('Colour realism')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit enquiry' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add references' })).not.toBeInTheDocument();
+    enquiryView.unmount();
 
     renderWithSession(<App />, { role: 'read_only', path: `/clients/${CLIENT_ID}` });
     expect(await screen.findByText('Fixture Client')).toBeInTheDocument();
