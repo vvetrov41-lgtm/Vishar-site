@@ -1,0 +1,97 @@
+name: Agent CRM record edit wiring
+
+on:
+  push:
+    branches:
+      - agent/crm-edit-enquiry-client-references
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.event.head_commit.message == 'Apply CRM edit UI patch remotely'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify branch ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'agent/crm-edit-enquiry-client-references' ]
+          git merge-base --is-ancestor 42c4003bc0cb5f3bbb5e804f56a83f7e90d46c12 HEAD
+      - name: Apply exact source edits
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'expected patch anchor missing: {path}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          # UI capabilities only mirror DB enforcement.
+          replace('admin/src/lib/permissions.ts',
+              "  | 'viewClients'\n  | 'viewEnquiries'\n",
+              "  | 'viewClients'\n  | 'editClient'\n  | 'viewEnquiries'\n  | 'editEnquiry'\n  | 'manageEnquiryFiles'\n  | 'removeEnquiryFiles'\n")
+          replace('admin/src/lib/permissions.ts',
+              "  'viewClients',\n  'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',\n",
+              "  'viewClients', 'editClient',\n  'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',\n  'editEnquiry', 'manageEnquiryFiles', 'removeEnquiryFiles',\n")
+          replace('admin/src/lib/permissions.ts',
+              "  'viewClients',\n  'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',\n  'viewProjects', 'manageProjects',\n",
+              "  'viewClients', 'editClient',\n  'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',\n  'editEnquiry', 'manageEnquiryFiles',\n  'viewProjects', 'manageProjects',\n")
+
+          # Compose the narrow record-edit API into the authenticated session.
+          replace('admin/src/lib/session.tsx',
+              "import { createPaymentApi, type PaymentApi } from './payment-api';\n",
+              "import { createPaymentApi, type PaymentApi } from './payment-api';\nimport { createRecordEditApi, type RecordEditApi } from './record-edit-api';\n")
+          replace('admin/src/lib/session.tsx',
+              "export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi;\n",
+              "export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & RecordEditApi;\n")
+          replace('admin/src/lib/session.tsx',
+              "      createManualIntakeApi(client),\n      createPaymentApi(client),\n",
+              "      createManualIntakeApi(client),\n      createPaymentApi(client),\n      createRecordEditApi(client),\n")
+
+          # Client detail edit affordance.
+          replace('admin/src/pages/ClientDetailPage.tsx',
+              "import { ArtistRelationship } from '../components/ArtistRelationship';\n",
+              "import { ArtistRelationship } from '../components/ArtistRelationship';\nimport { ClientEditPanel } from '../components/ClientEditPanel';\n")
+          replace('admin/src/pages/ClientDetailPage.tsx',
+              "        </dl>\n        <p className=\"notice\" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>\n",
+              "        </dl>\n        <ClientEditPanel client={client} role={role} api={api} language={language} onSaved={reload} />\n        <p className=\"notice\" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>\n")
+
+          # Enquiry project editing and post-intake reference management.
+          replace('admin/src/pages/EnquiryDetailPage.tsx',
+              "import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';\n",
+              "import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';\nimport { EnquiryEditPanel } from '../components/EnquiryEditPanel';\nimport { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';\n")
+          replace('admin/src/pages/EnquiryDetailPage.tsx',
+              "        <p style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{enquiry.idea ?? '—'}</p>\n      </Section>\n",
+              "        <p style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{enquiry.idea ?? '—'}</p>\n        <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />\n      </Section>\n")
+          replace('admin/src/pages/EnquiryDetailPage.tsx',
+              "          {files.length === 0 ? (\n            <EmptyState title={t('enquiry.noReferenceImages')} />\n          ) : (\n            <div className=\"thumbs\">\n              {files.map((file) => <SignedImage key={file.id} file={file} />)}\n            </div>\n          )}\n          <p className=\"notice\" style={{ marginTop: 12 }}>{t('enquiry.imageNotice')}</p>\n",
+              "          {files.filter((file) => file.upload_state === 'ready').length === 0 ? (\n            <EmptyState title={t('enquiry.noReferenceImages')} />\n          ) : (\n            <div className=\"thumbs\">\n              {files.filter((file) => file.upload_state === 'ready').map((file) => <SignedImage key={file.id} file={file} />)}\n            </div>\n          )}\n          <EnquiryReferenceActions enquiryId={enquiry.id} files={files} role={role} api={api} language={language} onChanged={reload} />\n          <p className=\"notice\" style={{ marginTop: 12 }}>{t('enquiry.imageNotice')}</p>\n")
+
+          # Global function ACL inventory is closed by default. Add only these
+          # authenticated staff workflows, never anon or service_role.
+          replace('supabase/tests/050_rls_roles.sql',
+              "  ('public.list_accessible_artists()', false, true, false),\n",
+              "  ('public.list_accessible_artists()', false, true, false),\n  ('public.update_client_details(uuid,jsonb)', false, true, false),\n  ('public.update_enquiry_details(uuid,jsonb)', false, true, false),\n  ('public.prepare_enquiry_reference_upload(uuid,text,text,bigint)', false, true, false),\n  ('public.finalize_enquiry_reference_upload(uuid)', false, true, false),\n  ('public.cancel_enquiry_reference_upload(uuid)', false, true, false),\n  ('public.remove_enquiry_reference_manifest(uuid)', false, true, false),\n")
+          PY
+      - name: Commit wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin/src/lib/permissions.ts admin/src/lib/session.tsx \
+            admin/src/pages/ClientDetailPage.tsx admin/src/pages/EnquiryDetailPage.tsx \
+            supabase/tests/050_rls_roles.sql
+          git diff --cached --check
+          git commit -m 'Wire scoped CRM record editing into the UI'
+          git push origin HEAD:agent/crm-edit-enquiry-client-references
