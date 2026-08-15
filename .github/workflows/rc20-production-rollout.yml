@@ -1,0 +1,222 @@
+name: RC20 private CRM production rollout
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc20-production-rollout
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc20-private-crm-production-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    name: RC20 production database and private CRM
+    if: github.event.head_commit.message == 'Add one-time RC20 production rollout harness'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: crm-production
+    env:
+      RC_SHA: 631f9f27ae3e7b03fc477483177060d0631a1a7c
+      RETAINED_STAGING_PROJECT_REF: gwaliusblwrzisrwnsvs
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+      CRM_ORIGIN: ${{ vars.CRM_PRODUCTION_ORIGIN }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+
+    steps:
+      - name: Checkout operator harness
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact one-commit operator boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc20-production-rollout' ]
+          [ "$(git rev-parse HEAD^)" = "$RC_SHA" ]
+          changed="$(git diff --name-only "$RC_SHA" HEAD)"
+          [ "$changed" = '.github/workflows/rc20-production-rollout.yml' ]
+          [ "$(git rev-parse "$RC_SHA^{tree}")" = 'f2d9521c87e76164b43f7cbea562f454e45885c2' ]
+
+      - name: Verify exact production targets and required credentials
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
+            echo 'Production Supabase project ref is missing or malformed.' >&2
+            exit 1
+          fi
+          [ "$PROJECT_REF" != "$RETAINED_STAGING_PROJECT_REF" ]
+          [ "$PROJECT_URL" = "https://${PROJECT_REF}.supabase.co" ]
+          [ "$CRM_ORIGIN" = 'https://crm.vishartattoo.com' ]
+          [ "$VITE_CALENDAR_CONNECTOR_ORIGIN" = 'https://calendar.vishartattoo.com' ]
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          if [ -n "$VITE_TEAM_INVITE_URL" ]; then
+            case "$VITE_TEAM_INVITE_URL" in https://*.vishartattoo.com/v1/staff/invite) ;; *) exit 1 ;; esac
+          fi
+          [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Checkout exact validated RC20 source
+        uses: actions/checkout@v4
+        with:
+          ref: 631f9f27ae3e7b03fc477483177060d0631a1a7c
+          fetch-depth: 0
+
+      - name: Verify exact RC20 checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$RC_SHA" ]
+          [ "$(git rev-parse HEAD^{tree})" = 'f2d9521c87e76164b43f7cbea562f454e45885c2' ]
+          test -z "$(git status --short)"
+          test -f supabase/migrations/0046_whatsapp_enum_values.sql
+          test -f supabase/migrations/0047_whatsapp_conversations.sql
+          test -f supabase/migrations/0048_crm_record_editing_references.sql
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
+      - name: Audit root dependencies and scan committed secrets
+        run: |
+          npm audit --audit-level=moderate
+          npm run scan:secrets
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Revalidate exact database release locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase start
+          trap 'supabase stop --no-backup || true' EXIT
+          supabase db reset --local --no-seed
+          supabase test db
+          supabase db lint --local --schema public,crm_private --level error --fail-on error
+          supabase stop --no-backup
+          trap - EXIT
+
+      - name: Link exact production database and dry-run migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$PROJECT_REF"
+          supabase migration list
+          supabase db push --dry-run
+
+      - name: Apply production migrations 0046 through 0048
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase db push
+          supabase migration list
+
+      - name: Install locked private CRM dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Test, typecheck and build exact private CRM
+        working-directory: admin
+        run: |
+          npm audit --audit-level=moderate
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify exact private CRM artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Configure production Supabase Auth URLs
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.supabase.com/v1/projects/${PROJECT_REF}/config/auth"
+          current="$(curl -fsS -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" -H 'Accept: application/json' "$api")"
+          payload="$(CURRENT_AUTH_CONFIG="$current" node <<'NODE'
+          const current = JSON.parse(process.env.CURRENT_AUTH_CONFIG || '{}');
+          const crmOrigin = 'https://crm.vishartattoo.com';
+          const required = [crmOrigin, `${crmOrigin}/`, `${crmOrigin}/**`];
+          const existing = String(current.uri_allow_list || '').split(',').map((v) => v.trim()).filter(Boolean);
+          process.stdout.write(JSON.stringify({
+            site_url: crmOrigin,
+            uri_allow_list: Array.from(new Set([...existing, ...required])).join(','),
+          }));
+          NODE
+          )"
+          curl -fsS -X PATCH "$api" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            --data "$payload" >/dev/null
+          after="$(curl -fsS -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" -H 'Accept: application/json' "$api")"
+          AUTH_AFTER="$after" node <<'NODE'
+          const after = JSON.parse(process.env.AUTH_AFTER || '{}');
+          const crmOrigin = 'https://crm.vishartattoo.com';
+          if (after.site_url !== crmOrigin) throw new Error('production Auth site_url mismatch');
+          const allow = String(after.uri_allow_list || '').split(',').map((v) => v.trim()).filter(Boolean);
+          for (const expected of [crmOrigin, `${crmOrigin}/`, `${crmOrigin}/**`]) {
+            if (!allow.includes(expected)) throw new Error(`missing Auth redirect ${expected}`);
+          }
+          NODE
+
+      - name: Deploy only admin dist to private production CRM Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx wrangler pages deploy admin/dist
+          --project-name "$CRM_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$RC_SHA"
+          --commit-dirty=false
+
+      - name: Record non-secret rollout evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC20 private CRM production rollout'
+            echo
+            echo "- Validated/deployed RC SHA: \`$RC_SHA\`"
+            echo '- Database migration order: `0046`, `0047`, `0048`'
+            echo '- Database seed/reset on production: none'
+            echo '- Frontend source scope: `admin/` only'
+            echo '- Pages upload scope: `admin/dist` only'
+            echo '- Public site / booking / Telegram / Calendar Worker deploy commands: none'
+            echo '- Retained staging target explicitly refused'
+          } >> "$GITHUB_STEP_SUMMARY"
