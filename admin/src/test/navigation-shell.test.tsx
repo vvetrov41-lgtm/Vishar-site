@@ -68,6 +68,7 @@ describe('responsive navigation shell', () => {
     ]);
     expect(within(administration).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Calendar',
+      'WhatsApp',
       'Users',
     ]);
   });

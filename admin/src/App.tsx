@@ -30,6 +30,7 @@ import { PaymentsPage } from './pages/PaymentsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { UsersPage } from './pages/UsersPage';
+import { WhatsAppConnectionsPage } from './pages/WhatsAppConnectionsPage';
 
 export function App() {
   const { state, signOut } = useSession();
@@ -132,6 +133,8 @@ function Routes() {
     case '/integrations':
     case '/integrations/calendar':
       return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
+    case '/integrations/whatsapp':
+      return <RequireCapability capability="manageIntegrations"><WhatsAppConnectionsPage /></RequireCapability>;
     case '/users':
       return <RequireCapability capability="manageUsers"><UsersPage /></RequireCapability>;
     case '/activity':

@@ -29,6 +29,7 @@ import {
 } from './oauth-consent-api';
 import { createPaymentApi, type PaymentApi } from './payment-api';
 import { createRecordEditApi, type RecordEditApi } from './record-edit-api';
+import { createWhatsAppConnectionsApi, type WhatsAppConnectionsApi } from './whatsapp-connections-api';
 import { clearStaffInviteUrl } from './supabase';
 import type { ArtistMembership, Profile } from './types';
 
@@ -47,7 +48,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & RecordEditApi;
+export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & RecordEditApi & WhatsAppConnectionsApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -95,6 +96,7 @@ export function SessionProvider({
       createManualIntakeApi(client),
       createPaymentApi(client),
       createRecordEditApi(client),
+      createWhatsAppConnectionsApi(client),
     );
   }, [client, teamInviteUrl]);
 
