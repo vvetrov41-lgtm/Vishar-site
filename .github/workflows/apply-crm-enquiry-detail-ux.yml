@@ -23,11 +23,13 @@ jobs:
         run: |
           git merge-base --is-ancestor a9ec37dd5e508ff907e8b2a6d6ae1b884ca5b30e HEAD
           actual="$(git diff --name-only a9ec37dd5e508ff907e8b2a6d6ae1b884ca5b30e...HEAD | sort)"
-          expected="$(printf '%s\n' '.github/workflows/apply-crm-enquiry-detail-ux.yml' 'scripts/apply-crm-enquiry-detail-ux.py' | sort)"
+          expected="$(printf '%s\n' '.github/workflows/apply-crm-enquiry-detail-ux.yml' 'scripts/apply-crm-enquiry-detail-ux.py' 'scripts/fix-navigation-enquiry-ux-test.py' | sort)"
           test "$actual" = "$expected"
 
       - name: Apply patch
-        run: python3 scripts/apply-crm-enquiry-detail-ux.py
+        run: |
+          python3 scripts/apply-crm-enquiry-detail-ux.py
+          python3 scripts/fix-navigation-enquiry-ux-test.py
 
       - name: Install private CRM dependencies
         working-directory: admin
@@ -50,6 +52,7 @@ jobs:
         run: |
           rm .github/workflows/apply-crm-enquiry-detail-ux.yml
           rm scripts/apply-crm-enquiry-detail-ux.py
+          rm scripts/fix-navigation-enquiry-ux-test.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
