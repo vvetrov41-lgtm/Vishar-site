@@ -516,6 +516,8 @@ insert into expected_function_acl values
   ('public.finalize_enquiry_intake(uuid)', false, false, true),
   ('public.fail_enquiry_intake(uuid,text)', false, false, true),
   ('public.record_outbox_attempt(uuid,boolean,text)', false, false, true),
+  ('public.record_whatsapp_inbound_message(uuid,text,text,text,timestamptz,text,text)', false, false, true),
+  ('public.record_whatsapp_message_status(uuid,text,text,text,timestamptz)', false, false, true),
   ('public.claim_whatsapp_outbox(text,integer,integer)', false, false, true),
   ('public.claim_whatsapp_outbox_by_id(uuid,text,integer)', false, false, true),
   ('public.record_whatsapp_outbox_result(uuid,text,boolean,text,text)', false, false, true),
