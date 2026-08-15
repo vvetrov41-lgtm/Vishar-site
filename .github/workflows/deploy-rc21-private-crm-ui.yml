@@ -1,0 +1,143 @@
+name: Deploy RC21 private CRM UI
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc21-production-rollout
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-crm
+  cancel-in-progress: false
+
+jobs:
+  private-crm-ui:
+    name: RC21 private CRM UI production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      RELEASE_SHA: 91362a579b2bb98a915b959b17b5d1eec41c5b23
+      RELEASE_BASE_SHA: 631f9f27ae3e7b03fc477483177060d0631a1a7c
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+
+    steps:
+      - name: Checkout operator head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify operator branch is workflow-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc21-production-rollout'
+          git merge-base --is-ancestor "$RELEASE_SHA" "$GITHUB_SHA"
+          actual="$(git diff --name-only "$RELEASE_SHA"..."$GITHUB_SHA")"
+          test "$actual" = '.github/workflows/deploy-rc21-private-crm-ui.yml'
+
+      - name: Checkout exact validated RC21
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Verify exact source and frontend-only release delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test -z "$(git status --short)"
+          actual="$(git diff --name-only "$RELEASE_BASE_SHA" "$RELEASE_SHA" | sort)"
+          expected="$(printf '%s\n' \
+            'admin/src/components/EnquiryReferenceActions.tsx' \
+            'admin/src/components/SignedImage.tsx' \
+            'admin/src/lib/i18n.tsx' \
+            'admin/src/pages/EnquiryDetailPage.tsx' \
+            'admin/src/styles.css' \
+            'admin/src/test/navigation-shell.test.tsx' \
+            'admin/src/test/record-edit-ui.test.tsx' | sort)"
+          test "$actual" = "$expected"
+          test ! -n "$(git diff --name-only "$RELEASE_BASE_SHA" "$RELEASE_SHA" -- supabase workers public .github package.json package-lock.json)"
+
+      - name: Verify production browser configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$VITE_SUPABASE_URL" in https://*.supabase.co) ;; *) exit 1 ;; esac
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          if [ -n "$VITE_TEAM_INVITE_URL" ]; then
+            case "$VITE_TEAM_INVITE_URL" in https://*.vishartattoo.com/v1/staff/invite) ;; *) exit 1 ;; esac
+          fi
+          test "$VITE_CALENDAR_CONNECTOR_ORIGIN" = 'https://calendar.vishartattoo.com'
+          [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install and audit private CRM dependencies
+        working-directory: admin
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+
+      - name: Revalidate exact private CRM source
+        working-directory: admin
+        run: |
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify private CRM artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Install locked root deployment tooling
+        run: npm ci
+
+      - name: Scan exact release source for committed secrets
+        run: npm run scan:secrets
+
+      - name: Deploy only admin/dist to production CRM Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx wrangler pages deploy admin/dist
+          --project-name "$CRM_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$RELEASE_SHA"
+          --commit-dirty=false
+
+      - name: Record safe rollout summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC21 private CRM UI rollout'
+            echo
+            echo "- Exact release SHA: \`$RELEASE_SHA\`"
+            echo "- Previous deployed RC: \`$RELEASE_BASE_SHA\`"
+            echo '- Release delta: exactly seven `admin/src` UI/test files'
+            echo '- Upload scope: `admin/dist` only'
+            echo '- Database migration commands: none'
+            echo '- Supabase data mutation commands: none'
+            echo '- Public site / booking / Telegram / Calendar / WhatsApp Worker deploy commands: none'
+          } >> "$GITHUB_STEP_SUMMARY"
