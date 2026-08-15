@@ -1,0 +1,48 @@
+name: Verify RC25 WhatsApp public boundary
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc25-whatsapp-webhook-operator
+    paths:
+      - .github/workflows/verify-rc25-whatsapp-public.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify public WhatsApp webhook boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RELEASE_SHA: 2729bf08ed206a0d6d42f6d055ded8489d0858e4
+      WEBHOOK_URL: https://whatsapp.vishartattoo.com/webhook
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify RC25 ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+
+      - name: Probe fail-closed endpoint without any secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          code='000'
+          for attempt in $(seq 1 12); do
+            code="$(curl -sS -o "$RUNNER_TEMP/body" -w '%{http_code}' --connect-timeout 10 --max-time 20 "$WEBHOOK_URL" || true)"
+            echo "attempt=$attempt status=$code"
+            [ "$code" = '403' ] && break
+            sleep 5
+          done
+          [ "$code" = '403' ] || {
+            echo 'Public WhatsApp webhook is not fail-closed yet.' >&2
+            exit 1
+          }
+          test "$(cat "$RUNNER_TEMP/body")" = 'Forbidden'
