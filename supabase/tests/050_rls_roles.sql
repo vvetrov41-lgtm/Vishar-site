@@ -589,6 +589,7 @@ insert into expected_function_acl values
   ('public.configure_monzo_easy_bank_transfer(uuid,text,boolean)', false, true, false),
   ('public.get_monzo_easy_bank_transfer_settings(uuid)', false, true, false),
   ('public.request_session_deposit(uuid,uuid,text)', false, true, false),
+  ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
