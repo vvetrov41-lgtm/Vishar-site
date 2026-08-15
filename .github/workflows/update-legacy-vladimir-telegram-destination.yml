@@ -37,7 +37,7 @@ jobs:
           [ "$GITHUB_REF_NAME" = 'release/private-crm-rc19-legacy-telegram-vladimir-destination' ]
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
           git merge-base --is-ancestor "$SOURCE_SHA" "$GITHUB_SHA"
-          [ "$(git rev-list --count "$SOURCE_SHA..$GITHUB_SHA")" = '1' ]
+          [ "$(git rev-list --count "$SOURCE_SHA..$GITHUB_SHA")" = '2' ]
           [ "$(git diff --name-only "$SOURCE_SHA...$GITHUB_SHA")" = "$WORKFLOW_PATH" ]
 
       - name: Checkout exact current public source
@@ -61,7 +61,8 @@ jobs:
           npm ci
           node --check workers/tattooai.js
           node scripts/test-booking-flow.mjs
-          npm run scan:secrets
+          git show "$SOURCE_SHA:scripts/scan-secrets.mjs" > scripts/scan-secrets.mjs
+          node scripts/scan-secrets.mjs
 
       - name: Validate new Vladimir group destination without revealing it
         shell: bash
