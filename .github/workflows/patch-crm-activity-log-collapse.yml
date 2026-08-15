@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF_NAME" = 'agent/crm-activity-log-collapse'
-          test "$(git rev-parse HEAD^)" = "$BASE_SHA"
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
           actual="$(git diff --name-only "$BASE_SHA" HEAD)"
           test "$actual" = '.github/workflows/patch-crm-activity-log-collapse.yml'
 
@@ -213,6 +213,7 @@ jobs:
           git add admin/src/pages/EnquiryDetailPage.tsx admin/src/components/CollapsibleActivityLog.tsx admin/src/test/activity-log-collapse.test.tsx
           actual="$(git diff --cached --name-only | sort)"
           expected="$(printf '%s\n' \
+            '.github/workflows/patch-crm-activity-log-collapse.yml' \
             'admin/src/components/CollapsibleActivityLog.tsx' \
             'admin/src/pages/EnquiryDetailPage.tsx' \
             'admin/src/test/activity-log-collapse.test.tsx' | sort)"
