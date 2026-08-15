@@ -1,0 +1,145 @@
+name: Update Vladimir Telegram production destination
+
+on:
+  push:
+    branches: [release/private-crm-rc19-telegram-vladimir-destination]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-vladimir-telegram-production-destination
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-telegram-drain-production
+      SOURCE_SHA: 7cc9a7fc895a76e3d276ad1f57fafd26e947e3e9
+      WORKFLOW_PATH: .github/workflows/update-vladimir-telegram-production-destination.yml
+      VLADIMIR_BINDING_NAME: ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Verify bounded operator branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc19-telegram-vladimir-destination' ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          git merge-base --is-ancestor "$SOURCE_SHA" "$GITHUB_SHA"
+          [ "$(git rev-list --count "$SOURCE_SHA..$GITHUB_SHA")" = '1' ]
+          [ "$(git diff --name-only "$SOURCE_SHA...$GITHUB_SHA")" = "$WORKFLOW_PATH" ]
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify exact validated source and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
+          [ -z "$(git status --short)" ]
+          npm ci
+          node scripts/test-telegram-drain.mjs
+          node scripts/test-telegram-drain-worker.mjs
+          npm run test:telegram-production
+          npm run scan:secrets
+
+      - name: Validate new Vladimir group binding without revealing it
+        shell: bash
+        env:
+          PROD_VLADIMIR_BINDING: ${{ secrets.CRM_PRODUCTION_TELEGRAM_VLADIMIR_BINDING }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const raw = process.env.PROD_VLADIMIR_BINDING || '';
+          if (!raw) throw new Error('Vladimir Telegram binding is missing');
+          let v;
+          try { v = JSON.parse(raw); } catch { throw new Error('Vladimir Telegram binding is not valid JSON'); }
+          if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid Vladimir binding object');
+          if (JSON.stringify(Object.keys(v).sort()) !== JSON.stringify(['botToken','chatId'])) throw new Error('Binding must contain exactly botToken and chatId');
+          if (typeof v.botToken !== 'string' || !v.botToken.trim()) throw new Error('Vladimir botToken is missing');
+          if (!/^-[0-9]+$/.test(String(v.chatId ?? '').trim())) throw new Error('Vladimir chatId must be a negative Telegram group id');
+          NODE
+
+      - name: Verify active Worker boundary before update
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const actual = JSON.parse(process.env.SECRET_LIST || '[]').map(x => x?.name).filter(Boolean).sort();
+          const expected = ['ARTIST_TELEGRAM_KRISTINA_HPRODUCTION','ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION','SUPABASE_SECRET_KEY'].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Worker secret-name set drifted');
+          NODE
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          sub="$(curl -fsS "$api/workers/scripts/$WORKER_NAME/subdomain" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          sched="$(curl -fsS "$api/workers/scripts/$WORKER_NAME/schedules" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          dom="$(curl -fsS "$api/workers/domains?service=$WORKER_NAME" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          SUB="$sub" SCHED="$sched" DOM="$dom" node <<'NODE'
+          const s=JSON.parse(process.env.SUB), c=JSON.parse(process.env.SCHED), d=JSON.parse(process.env.DOM);
+          if (s?.result?.enabled !== false || s?.result?.previews_enabled !== false) throw new Error('Public Worker boundary drifted');
+          const q=c?.result?.schedules;
+          if (!Array.isArray(q) || q.length !== 1 || q[0]?.cron !== '*/5 * * * *') throw new Error('Expected one five-minute cron');
+          const wd=Array.isArray(d?.result) ? d.result.filter(x => x?.service === process.env.WORKER_NAME) : null;
+          if (!Array.isArray(wd) || wd.length !== 0) throw new Error('Expected zero Custom Domains');
+          NODE
+
+      - name: Update only Vladimir encrypted Worker binding
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          PROD_VLADIMIR_BINDING: ${{ secrets.CRM_PRODUCTION_TELEGRAM_VLADIMIR_BINDING }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PROD_VLADIMIR_BINDING" | npx wrangler secret put "$VLADIMIR_BINDING_NAME" --name "$WORKER_NAME"
+
+      - name: Verify boundaries after update
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const actual = JSON.parse(process.env.SECRET_LIST || '[]').map(x => x?.name).filter(Boolean).sort();
+          const expected = ['ARTIST_TELEGRAM_KRISTINA_HPRODUCTION','ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION','SUPABASE_SECRET_KEY'].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Secret-name set changed unexpectedly');
+          NODE
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          sub="$(curl -fsS "$api/workers/scripts/$WORKER_NAME/subdomain" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          sched="$(curl -fsS "$api/workers/scripts/$WORKER_NAME/schedules" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          dom="$(curl -fsS "$api/workers/domains?service=$WORKER_NAME" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          SUB="$sub" SCHED="$sched" DOM="$dom" node <<'NODE'
+          const s=JSON.parse(process.env.SUB), c=JSON.parse(process.env.SCHED), d=JSON.parse(process.env.DOM);
+          if (s?.result?.enabled !== false || s?.result?.previews_enabled !== false) throw new Error('Public Worker boundary changed');
+          const q=c?.result?.schedules;
+          if (!Array.isArray(q) || q.length !== 1 || q[0]?.cron !== '*/5 * * * *') throw new Error('Cron changed unexpectedly');
+          const wd=Array.isArray(d?.result) ? d.result.filter(x => x?.service === process.env.WORKER_NAME) : null;
+          if (!Array.isArray(wd) || wd.length !== 0) throw new Error('Custom Domain boundary changed');
+          NODE
+
+      - name: Record safe evidence
+        run: |
+          echo 'Vladimir Telegram production destination updated.' >> "$GITHUB_STEP_SUMMARY"
+          echo "Source SHA: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Worker: $WORKER_NAME" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Kristina binding unchanged. No Telegram API message sent. No Supabase mutation.' >> "$GITHUB_STEP_SUMMARY"
