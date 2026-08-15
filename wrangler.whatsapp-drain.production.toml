@@ -1,0 +1,26 @@
+name = "vishar-whatsapp-drain-production"
+main = "workers/whatsapp-drain-worker.js"
+compatibility_date = "2026-05-25"
+workers_dev = false
+preview_urls = false
+
+# Scheduled-only connector: no public route or Custom Domain is required.
+# The tracked template is deliberately inert. The guarded production deploy
+# generates an ephemeral config that changes only WHATSAPP_DRAIN_ENABLED and
+# adds the exact five-minute cron.
+
+[vars]
+VISHAR_ENVIRONMENT = "production"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
+WHATSAPP_DRAIN_ENABLED = "false"
+
+# Required encrypted production Worker secrets are deliberately absent here.
+# The deploy gate verifies the exact secret-name set before enabling the cron:
+#   SUPABASE_SECRET_KEY
+#   ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION
+#   ARTIST_WHATSAPP_KRISTINA_HPRODUCTION
+#
+# The two ARTIST_* names are derived deterministically from integration keys
+# `vladimir-production` and `kristina-production`. Each envelope carries only
+# that artist's own Meta phone number id and access token. There is no global
+# WhatsApp fallback and no shared phone number binding on this Worker.
