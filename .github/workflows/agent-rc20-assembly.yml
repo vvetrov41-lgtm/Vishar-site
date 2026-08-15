@@ -1,0 +1,46 @@
+name: Agent RC20 assembly
+
+on:
+  push:
+    branches:
+      - agent/rc20-assembly-harness
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    if: github.event.head_commit.message == 'Assemble RC20 exact release commit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create exact two-parent RC commit
+        shell: bash
+        env:
+          MAIN_SHA: a2f7078db4050b8f2985cb991a45ebae1b4512b1
+          PRODUCT_SHA: 0d7c6084b44d24a5d90932afe86eea480cdd8509
+          TARGET_BRANCH: release/private-crm-rc20-final
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'agent/rc20-assembly-harness' ]
+          git fetch origin main release/private-crm-rc20 release/private-crm-rc20-final
+          [ "$(git rev-parse origin/main)" = "$MAIN_SHA" ]
+          [ "$(git rev-parse origin/release/private-crm-rc20)" = "$PRODUCT_SHA" ]
+          [ "$(git rev-parse origin/release/private-crm-rc20-final)" = "$MAIN_SHA" ]
+
+          product_tree="$(git rev-parse "$PRODUCT_SHA^{tree}")"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rc_sha="$(printf '%s\n' 'Validate private CRM production RC20 exact tree' | git commit-tree "$product_tree" -p "$MAIN_SHA" -p "$PRODUCT_SHA")"
+
+          [ "$(git rev-parse "$rc_sha^{tree}")" = "$product_tree" ]
+          [ "$(git rev-parse "$rc_sha^1")" = "$MAIN_SHA" ]
+          [ "$(git rev-parse "$rc_sha^2")" = "$PRODUCT_SHA" ]
+
+          git push origin "$rc_sha:refs/heads/$TARGET_BRANCH" \
+            --force-with-lease="refs/heads/$TARGET_BRANCH:$MAIN_SHA"
+          echo "RC_SHA=$rc_sha" >> "$GITHUB_STEP_SUMMARY"
+          echo "PRODUCT_TREE=$product_tree" >> "$GITHUB_STEP_SUMMARY"
