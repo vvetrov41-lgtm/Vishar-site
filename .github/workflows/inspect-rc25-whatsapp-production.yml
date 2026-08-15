@@ -1,0 +1,120 @@
+name: Inspect RC25 WhatsApp production boundary
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc25-whatsapp-webhook-operator
+    paths:
+      - .github/workflows/inspect-rc25-whatsapp-production.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inspect-rc25-whatsapp-production
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Read-only WhatsApp production inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crm-production
+    env:
+      RELEASE_SHA: 2729bf08ed206a0d6d42f6d055ded8489d0858e4
+      WORKER_NAME: vishar-whatsapp-webhook-production
+      WEBHOOK_URL: https://whatsapp.vishartattoo.com/webhook
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact RC25 ancestry and bounded operator diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          changed="$(git diff --name-only "$RELEASE_SHA"...HEAD)"
+          [ "$changed" = '.github/workflows/inspect-rc25-whatsapp-production.yml' ] || {
+            echo 'Operator branch contains unexpected changes.' >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+          [ -z "$(git status --short)" ]
+
+      - name: Verify protected Cloudflare credentials are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo 'Cloudflare API token is not configured in crm-production.' >&2; exit 1; }
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo 'Cloudflare account id is not configured in crm-production.' >&2; exit 1; }
+          echo 'Protected Cloudflare credentials are available (values not printed).'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Inspect Worker and encrypted secret names
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker_exists=false
+          secret_names='[]'
+
+          if npx wrangler versions list --name "$WORKER_NAME" --json > "$RUNNER_TEMP/whatsapp-versions.json" 2> "$RUNNER_TEMP/whatsapp-versions.err"; then
+            worker_exists=true
+            if npx wrangler secret list \
+              --config wrangler.whatsapp-webhook.production.toml \
+              --name "$WORKER_NAME" \
+              --format json > "$RUNNER_TEMP/whatsapp-secrets.json" 2> "$RUNNER_TEMP/whatsapp-secrets.err"; then
+              secret_names="$(node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));console.log(JSON.stringify(a.map(x=>x.name).filter(Boolean).sort()))" "$RUNNER_TEMP/whatsapp-secrets.json")"
+            fi
+          fi
+
+          WORKER_EXISTS="$worker_exists" SECRET_NAMES="$secret_names" node <<'NODE'
+          const actual = JSON.parse(process.env.SECRET_NAMES || '[]');
+          const expected = [
+            'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
+            'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
+            'SUPABASE_SECRET_KEY',
+            'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+          ].sort();
+          const missing = expected.filter((name) => !actual.includes(name));
+          const unexpected = actual.filter((name) => !expected.includes(name));
+          console.log(`WORKER_EXISTS=${process.env.WORKER_EXISTS}`);
+          console.log(`SECRET_NAMES=${JSON.stringify(actual)}`);
+          console.log(`MISSING_SECRET_NAMES=${JSON.stringify(missing)}`);
+          console.log(`UNEXPECTED_SECRET_NAMES=${JSON.stringify(unexpected)}`);
+          NODE
+
+      - name: Probe public hostname without a verification token
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 "$WEBHOOK_URL" || true)"
+          [ -n "$code" ] || code='000'
+          echo "WEBHOOK_HTTP_WITHOUT_TOKEN=$code"
+          echo 'A configured Vishar webhook is expected to return 403 to this unauthenticated GET.'
+
+      - name: Safe inventory summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC25 WhatsApp production inventory'
+            echo
+            echo '- Release SHA checked: `2729bf08ed206a0d6d42f6d055ded8489d0858e4`'
+            echo '- Worker inspected: `vishar-whatsapp-webhook-production`'
+            echo '- Host probed: `https://whatsapp.vishartattoo.com/webhook` without any token'
+            echo '- Only encrypted secret names may be printed, never values'
+            echo '- This workflow contains no deploy, secret put, DNS mutation, database mutation, Meta call or message send command'
+          } >> "$GITHUB_STEP_SUMMARY"
