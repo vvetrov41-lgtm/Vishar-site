@@ -16,7 +16,11 @@ import type { ArtistMembership, CrmRole, EnquiryStatus, StatusTransition } from 
 
 export type Capability =
   | 'viewClients'
+  | 'editClient'
   | 'viewEnquiries'
+  | 'editEnquiry'
+  | 'manageEnquiryFiles'
+  | 'removeEnquiryFiles'
   | 'createEnquiry'
   | 'transitionEnquiry'
   | 'assignEnquiry'
@@ -41,8 +45,9 @@ export type Capability =
   | 'manageSettings';
 
 const OWNER: Capability[] = [
-  'viewClients',
+  'viewClients', 'editClient',
   'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
+  'editEnquiry', 'manageEnquiryFiles', 'removeEnquiryFiles',
   'viewProjects', 'manageProjects',
   'viewSessions', 'manageSessions', 'viewFinance', 'manageFinance',
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
@@ -51,8 +56,9 @@ const OWNER: Capability[] = [
 ];
 
 const BOOKING_MANAGER: Capability[] = [
-  'viewClients',
+  'viewClients', 'editClient',
   'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
+  'editEnquiry', 'manageEnquiryFiles',
   'viewProjects', 'manageProjects',
   'viewSessions', 'manageSessions',
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',

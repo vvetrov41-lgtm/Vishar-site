@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
+import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
+import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { SignedImage } from '../components/SignedImage';
 import { Link, useRouter } from '../lib/router';
@@ -239,17 +241,19 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <dt>{t('enquiry.timing')}</dt><dd>{enquiry.preferred_timing ?? '—'}</dd>
         </dl>
         <p style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{enquiry.idea ?? '—'}</p>
+        <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />
       </Section>
 
       {can(role, 'viewEnquiryFiles') ? (
         <Section title={t('enquiry.referenceImages')}>
-          {files.length === 0 ? (
+          {files.filter((file) => file.upload_state === 'ready').length === 0 ? (
             <EmptyState title={t('enquiry.noReferenceImages')} />
           ) : (
             <div className="thumbs">
-              {files.map((file) => <SignedImage key={file.id} file={file} />)}
+              {files.filter((file) => file.upload_state === 'ready').map((file) => <SignedImage key={file.id} file={file} />)}
             </div>
           )}
+          <EnquiryReferenceActions enquiryId={enquiry.id} files={files} role={role} api={api} language={language} onChanged={reload} />
           <p className="notice" style={{ marginTop: 12 }}>{t('enquiry.imageNotice')}</p>
         </Section>
       ) : null}

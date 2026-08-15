@@ -1,4 +1,5 @@
 import { ArtistRelationship } from '../components/ArtistRelationship';
+import { ClientEditPanel } from '../components/ClientEditPanel';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink } from '../components/DetailContext';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
@@ -66,6 +67,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
           <dd><ArtistRelationship artistIds={artistIds} showEmpty /></dd>
           <dt>{t('client.firstSeen')}</dt><dd>{formatDate(client.created_at, language)}</dd>
         </dl>
+        <ClientEditPanel client={client} role={role} api={api} language={language} onSaved={reload} />
         <p className="notice" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>
       </div>
 
