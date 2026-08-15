@@ -1,0 +1,193 @@
+name: Update legacy Vladimir Telegram destination
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc19-legacy-telegram-vladimir-destination
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-legacy-vladimir-telegram-production-destination
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: tattooai
+      SOURCE_SHA: 7cc9a7fc895a76e3d276ad1f57fafd26e947e3e9
+      PUBLIC_SOURCE_SHA: a2f7078db4050b8f2985cb991a45ebae1b4512b1
+      WORKFLOW_PATH: .github/workflows/update-legacy-vladimir-telegram-destination.yml
+      CHAT_ID_SECRET_NAME: TELEGRAM_CHAT_ID
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify bounded operator branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc19-legacy-telegram-vladimir-destination' ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          git merge-base --is-ancestor "$SOURCE_SHA" "$GITHUB_SHA"
+          [ "$(git rev-list --count "$SOURCE_SHA..$GITHUB_SHA")" = '1' ]
+          [ "$(git diff --name-only "$SOURCE_SHA...$GITHUB_SHA")" = "$WORKFLOW_PATH" ]
+
+      - name: Checkout exact current public source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PUBLIC_SOURCE_SHA }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify public Worker source and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$PUBLIC_SOURCE_SHA" ]
+          [ -z "$(git status --short)" ]
+          npm ci
+          node --check workers/tattooai.js
+          node scripts/test-booking-flow.mjs
+          npm run scan:secrets
+
+      - name: Validate new Vladimir group destination without revealing it
+        shell: bash
+        env:
+          PROD_VLADIMIR_BINDING: ${{ secrets.CRM_PRODUCTION_TELEGRAM_VLADIMIR_BINDING }}
+          CHAT_ID_PATH: ${{ runner.temp }}/legacy-vladimir-chat-id
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const raw = process.env.PROD_VLADIMIR_BINDING || '';
+          if (!raw) throw new Error('Vladimir production binding is missing');
+          let value;
+          try { value = JSON.parse(raw); } catch { throw new Error('Vladimir production binding is not valid JSON'); }
+          if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Vladimir binding object');
+          if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['botToken','chatId'])) {
+            throw new Error('Vladimir binding must contain exactly botToken and chatId');
+          }
+          if (typeof value.botToken !== 'string' || !value.botToken.trim()) throw new Error('Vladimir botToken is missing');
+          const chatId = String(value.chatId ?? '').trim();
+          if (!/^-[0-9]+$/.test(chatId)) throw new Error('Vladimir chatId must be a negative Telegram group id');
+          fs.writeFileSync(process.env.CHAT_ID_PATH, chatId, { mode: 0o600 });
+          NODE
+
+      - name: Capture legacy Worker boundary before update
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          BEFORE_PATH: ${{ runner.temp }}/legacy-worker-before.json
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.toml --name "$WORKER_NAME" --env="" --format json)"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          subdomain_json="$(curl --fail-with-body --silent --show-error "$api/workers/scripts/$WORKER_NAME/subdomain" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          schedules_json="$(curl --fail-with-body --silent --show-error "$api/workers/scripts/$WORKER_NAME/schedules" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          domains_json="$(curl --fail-with-body --silent --show-error "$api/workers/domains?service=$WORKER_NAME" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          SECRET_LIST="$secrets_json" SUBDOMAIN_JSON="$subdomain_json" SCHEDULES_JSON="$schedules_json" DOMAINS_JSON="$domains_json" BEFORE_PATH="$BEFORE_PATH" node <<'NODE'
+          const fs = require('fs');
+          const secrets = JSON.parse(process.env.SECRET_LIST || '[]');
+          const names = secrets.map(x => x?.name).filter(Boolean).sort();
+          if (!names.includes('TELEGRAM_BOT_TOKEN') || !names.includes('TELEGRAM_CHAT_ID')) {
+            throw new Error('Legacy Telegram secret names are missing');
+          }
+          const sub = JSON.parse(process.env.SUBDOMAIN_JSON || '{}');
+          const sched = JSON.parse(process.env.SCHEDULES_JSON || '{}');
+          const domains = JSON.parse(process.env.DOMAINS_JSON || '{}');
+          if (sub?.success !== true || sched?.success !== true || domains?.success !== true) {
+            throw new Error('Unable to read legacy Worker control-plane state');
+          }
+          const schedules = Array.isArray(sched?.result?.schedules)
+            ? sched.result.schedules.map(x => x?.cron).filter(Boolean).sort()
+            : null;
+          const workerDomains = Array.isArray(domains?.result)
+            ? domains.result.filter(x => x?.service === process.env.WORKER_NAME).map(x => x?.hostname || '').sort()
+            : null;
+          if (!Array.isArray(schedules) || !Array.isArray(workerDomains)) throw new Error('Invalid legacy Worker boundary response');
+          fs.writeFileSync(process.env.BEFORE_PATH, JSON.stringify({
+            secret_names: names,
+            workers_dev_enabled: sub?.result?.enabled,
+            previews_enabled: sub?.result?.previews_enabled,
+            schedules,
+            custom_domains: workerDomains,
+          }));
+          NODE
+
+      - name: Update only legacy Telegram chat destination
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          CHAT_ID_PATH: ${{ runner.temp }}/legacy-vladimir-chat-id
+        run: |
+          set -euo pipefail
+          trap 'rm -f "$CHAT_ID_PATH"' EXIT
+          [ -s "$CHAT_ID_PATH" ]
+          npx wrangler secret put "$CHAT_ID_SECRET_NAME" \
+            --config wrangler.toml \
+            --name "$WORKER_NAME" \
+            --env="" < "$CHAT_ID_PATH"
+          rm -f "$CHAT_ID_PATH"
+          trap - EXIT
+
+      - name: Verify legacy Worker boundary after update
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          BEFORE_PATH: ${{ runner.temp }}/legacy-worker-before.json
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.toml --name "$WORKER_NAME" --env="" --format json)"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          subdomain_json="$(curl --fail-with-body --silent --show-error "$api/workers/scripts/$WORKER_NAME/subdomain" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          schedules_json="$(curl --fail-with-body --silent --show-error "$api/workers/scripts/$WORKER_NAME/schedules" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          domains_json="$(curl --fail-with-body --silent --show-error "$api/workers/domains?service=$WORKER_NAME" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          SECRET_LIST="$secrets_json" SUBDOMAIN_JSON="$subdomain_json" SCHEDULES_JSON="$schedules_json" DOMAINS_JSON="$domains_json" BEFORE_PATH="$BEFORE_PATH" node <<'NODE'
+          const fs = require('fs');
+          const before = JSON.parse(fs.readFileSync(process.env.BEFORE_PATH, 'utf8'));
+          const secrets = JSON.parse(process.env.SECRET_LIST || '[]');
+          const names = secrets.map(x => x?.name).filter(Boolean).sort();
+          const sub = JSON.parse(process.env.SUBDOMAIN_JSON || '{}');
+          const sched = JSON.parse(process.env.SCHEDULES_JSON || '{}');
+          const domains = JSON.parse(process.env.DOMAINS_JSON || '{}');
+          if (sub?.success !== true || sched?.success !== true || domains?.success !== true) {
+            throw new Error('Unable to re-read legacy Worker control-plane state');
+          }
+          const after = {
+            secret_names: names,
+            workers_dev_enabled: sub?.result?.enabled,
+            previews_enabled: sub?.result?.previews_enabled,
+            schedules: Array.isArray(sched?.result?.schedules) ? sched.result.schedules.map(x => x?.cron).filter(Boolean).sort() : null,
+            custom_domains: Array.isArray(domains?.result) ? domains.result.filter(x => x?.service === process.env.WORKER_NAME).map(x => x?.hostname || '').sort() : null,
+          };
+          if (JSON.stringify(after) !== JSON.stringify(before)) {
+            throw new Error('Legacy Worker boundary changed outside the existing TELEGRAM_CHAT_ID secret value');
+          }
+          if (!after.secret_names.includes('TELEGRAM_BOT_TOKEN') || !after.secret_names.includes('TELEGRAM_CHAT_ID')) {
+            throw new Error('Legacy Telegram secret-name set is incomplete after update');
+          }
+          NODE
+
+      - name: Record safe evidence
+        shell: bash
+        run: |
+          echo 'Legacy tattooai Vladimir Telegram destination updated.' >> "$GITHUB_STEP_SUMMARY"
+          echo "Public source checked: $PUBLIC_SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Only TELEGRAM_CHAT_ID was replaced. TELEGRAM_BOT_TOKEN was not changed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'No Worker code deploy and no Telegram API message were performed.' >> "$GITHUB_STEP_SUMMARY"
