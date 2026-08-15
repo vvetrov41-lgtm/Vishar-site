@@ -21,6 +21,7 @@ const NAV_KEYS: Record<string, string> = {
   '/projects': 'nav.projects',
   '/appointments': 'nav.sessions',
   '/sessions': 'nav.sessions',
+  '/whatsapp': 'nav.whatsapp',
   '/users': 'nav.users',
   '/activity': 'nav.activity',
 };
@@ -459,6 +460,7 @@ function pageScopeFor(path: string): PageScope {
     || path === '/sessions'
     || path === '/availability'
     || path === '/activity'
+    || path === '/whatsapp'
   ) return 'artist';
   return 'global';
 }
@@ -530,6 +532,8 @@ function NavIcon({ path }: { path: string }) {
       return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /><path d="M8 14h3M8 17h6" /></svg>;
     case '/availability':
       return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /><path d="M8 15h8" /></svg>;
+    case '/whatsapp':
+      return <svg {...common}><path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.7-5.2A8.5 8.5 0 1 1 21 11.5z" /></svg>;
     case '/users':
       return <svg {...common}><circle cx="12" cy="8" r="3" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /><path d="M19 5v4M17 7h4" /></svg>;
     case '/activity':

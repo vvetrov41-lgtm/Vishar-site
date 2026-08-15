@@ -64,6 +64,7 @@ describe('responsive navigation shell', () => {
     expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Projects',
       'Time off',
+      'WhatsApp',
       'Activity',
     ]);
     expect(within(administration).getAllByRole('link').map((link) => link.textContent)).toEqual([
@@ -82,6 +83,7 @@ describe('responsive navigation shell', () => {
     expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Projects',
       'Time off',
+      'WhatsApp',
     ]);
     expect(within(dialog).queryByRole('group', { name: 'Administration' })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('group', { name: 'Finance' })).not.toBeInTheDocument();

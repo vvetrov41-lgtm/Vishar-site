@@ -110,6 +110,7 @@ describe('navigation', () => {
       '/projects',
       '/appointments',
       '/availability',
+      '/whatsapp',
       '/payments',
       '/integrations',
       '/users',
@@ -144,7 +145,7 @@ describe('navigation', () => {
 
   it('leaves read_only with viewing sections only', () => {
     const paths = navItemsFor('read_only').map((item) => item.path);
-    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/appointments', '/availability']);
+    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/appointments', '/availability', '/whatsapp']);
   });
 
   it('shows nothing at all without an active profile', () => {

@@ -12,6 +12,7 @@ later is an adapter and an owner decision — not a redesign.
 | Email (Gmail) | **Not connected** | `workers/lib/email.js` — interface, template rules, draft/approve flow |
 | Calendar (Google) | **Not connected** | `workers/lib/calendar.js` — interface, eligibility and action planner |
 | AI gateway | **Not built** | `workers/lib/ai-tools.js` — the complete tool set and its constraints |
+| WhatsApp (Meta Cloud API) | **Not connected** | `workers/lib/whatsapp.js`, `workers/lib/whatsapp-drain.js`, `workers/lib/whatsapp-webhook.js` — artist-scoped send, drain and webhook; both Workers inert. See ADR 0007. |
 
 Each module returns a `*NotConnectedError` rather than pretending to work. None
 of them can be made to send, create or execute anything by passing a different

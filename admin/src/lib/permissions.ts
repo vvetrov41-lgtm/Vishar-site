@@ -182,6 +182,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
   { path: '/appointments', label: 'Appointments', capability: 'viewSessions' },
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
+  { path: '/whatsapp', label: 'WhatsApp', capability: 'viewClients' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
   { path: '/integrations', label: 'common.calendar', capability: 'manageIntegrations' },
   { path: '/users', label: 'Users', capability: 'manageUsers' },

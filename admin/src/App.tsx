@@ -29,6 +29,7 @@ import { PasswordSetupPage } from './pages/PasswordSetupPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
+import { WhatsappPage } from './pages/WhatsappPage';
 import { UsersPage } from './pages/UsersPage';
 
 export function App() {
@@ -129,6 +130,8 @@ function Routes() {
       return <RequireCapability capability="viewSessions"><AvailabilityPage /></RequireCapability>;
     case '/payments':
       return <RequireCapability capability="manageFinance"><PaymentsPage /></RequireCapability>;
+    case '/whatsapp':
+      return <RequireCapability capability="viewClients"><WhatsappPage /></RequireCapability>;
     case '/integrations':
     case '/integrations/calendar':
       return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
