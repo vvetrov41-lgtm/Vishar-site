@@ -4,11 +4,19 @@ compatibility_date = "2026-05-25"
 workers_dev = false
 preview_urls = false
 
-# Public Meta callback Worker. The tracked config deliberately declares no
-# route or Custom Domain, so repository changes alone cannot expose it.
-# Cloudflare Access must not be placed in front of the future Meta callback;
+routes = [
+  { pattern = "whatsapp.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }
+]
+
+# Public Meta callback Worker. The production Custom Domain must be
+# pre-provisioned once outside the deploy workflow before activation. Keeping
+# the exact route and route flags here lets `wrangler deploy --strict` verify
+# that a release cannot widen, replace or silently delete that public surface.
+#
+# Cloudflare Access must not be placed in front of this Meta callback;
 # authenticity is enforced by Meta's signed webhook contract plus the exact
-# WABA + phone-number route mapping in the Worker.
+# WABA + phone-number route mapping in the Worker. The Worker itself accepts
+# only the exact /webhook path.
 
 [vars]
 VISHAR_ENVIRONMENT = "production"
