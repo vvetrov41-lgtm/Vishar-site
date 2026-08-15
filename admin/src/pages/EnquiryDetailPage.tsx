@@ -4,6 +4,7 @@ import { useAsync } from '../components/AsyncData';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
 import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
+import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
 import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { SignedImage } from '../components/SignedImage';
@@ -231,6 +232,20 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           </dl>
         </details>
       </Section>
+
+      {client ? (
+        <Section title="WhatsApp">
+          <EnquiryWhatsAppPanel
+            api={api}
+            enquiryId={enquiry.id}
+            clientId={client.id}
+            artistId={enquiry.artist_id}
+            phone={client.phone}
+            role={role}
+            language={language}
+          />
+        </Section>
+      ) : null}
 
       <Section title={t('enquiry.project')}>
         <dl className="definition">

@@ -421,7 +421,7 @@ function groupOverflowItems(items: NavItem[]): { id: OverflowGroupId; items: Nav
 
 function overflowGroupFor(path: string): OverflowGroupId {
   if (path === '/finance' || path === '/payments') return 'finance';
-  if (path === '/users' || path === '/integrations' || path === '/settings') return 'administration';
+  if (path === '/users' || path.startsWith('/integrations') || path === '/settings') return 'administration';
   return 'operations';
 }
 
@@ -493,6 +493,7 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
 function isActivePath(itemPath: string, currentPath: string): boolean {
   if (itemPath === '/') return currentPath === '/';
   if (itemPath === '/appointments' && currentPath === '/sessions') return true;
+  if (itemPath === '/integrations') return currentPath === '/integrations' || currentPath === '/integrations/calendar';
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`);
 }
 

@@ -112,6 +112,7 @@ describe('navigation', () => {
       '/availability',
       '/payments',
       '/integrations',
+      '/integrations/whatsapp',
       '/users',
       '/activity',
     ]);
@@ -140,6 +141,7 @@ describe('navigation', () => {
   it('shows Calendar for a booking manager with integration membership', () => {
     const paths = navItemsFor('booking_manager', [membership({ can_manage_integrations: true })]).map((item) => item.path);
     expect(paths).toContain('/integrations');
+    expect(paths).toContain('/integrations/whatsapp');
   });
 
   it('leaves read_only with viewing sections only', () => {

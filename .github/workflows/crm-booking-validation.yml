@@ -48,6 +48,9 @@ jobs:
       - name: Validate Telegram production configuration
         run: npm run test:telegram-production
 
+      - name: Validate WhatsApp production configuration
+        run: npm run test:whatsapp-production
+
       - name: Validate Calendar staging configuration
         run: |
           npm run validate:calendar-staging
@@ -82,6 +85,9 @@ jobs:
 
       - name: Compile inert production Calendar Worker with Wrangler
         run: npm run check:calendar-production-bundle
+
+      - name: Compile inert production WhatsApp drain Worker with Wrangler
+        run: npm run check:whatsapp-production-bundle
 
       - name: Test private production release workflow boundaries
         run: node scripts/test-private-production-release-workflows.mjs

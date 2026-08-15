@@ -459,6 +459,50 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       return unwrap(await client.rpc('complete_follow_up', { p_follow_up_id: id }), 'complete that follow-up');
     },
 
+    // ---- WhatsApp conversations -------------------------------------------
+    async getWhatsAppConversationForClient(clientId: string, artistId: string) {
+      const result = await client
+        .from('whatsapp_conversations')
+        .select('id, artist_id, client_id, integration_key, contact_wa_id, last_message_at')
+        .eq('client_id', clientId)
+        .eq('artist_id', artistId)
+        .maybeSingle();
+      if (result.error) {
+        throw new ApiError(friendlyMessage(result.error, 'load the WhatsApp conversation'), result.error);
+      }
+      return result.data ?? null;
+    },
+
+    async listWhatsAppMessages(conversationId: string) {
+      return unwrap<any[]>(
+        await client
+          .from('whatsapp_messages')
+          .select('id, direction, origin, status, message_type, body, created_at')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true })
+          .limit(200),
+        'load WhatsApp messages'
+      );
+    },
+
+    async ensureWhatsAppConversationForEnquiry(enquiryId: string) {
+      return unwrap(
+        await client.rpc('ensure_whatsapp_conversation_for_enquiry', { p_enquiry_id: enquiryId }),
+        'connect that WhatsApp conversation'
+      );
+    },
+
+    async queueWhatsAppMessage(conversationId: string, body: string, requestId: string) {
+      return unwrap(
+        await client.rpc('queue_whatsapp_message', {
+          p_conversation_id: conversationId,
+          p_body: body,
+          p_request_id: requestId,
+        }),
+        'queue that WhatsApp message'
+      );
+    },
+
     async listEmailMessages(enquiryId: string): Promise<EmailMessage[]> {
       return unwrap<EmailMessage[]>(
         await client

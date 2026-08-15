@@ -1,0 +1,236 @@
+name: Deploy private production WhatsApp webhook
+
+# This workflow never performs Meta onboarding and never provisions secrets.
+# The Worker, its exact Custom Domain and the exact encrypted secret names must
+# already exist before deploy=true is allowed to touch production.
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation. Leave false for validation-only runs.
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-whatsapp-webhook
+  cancel-in-progress: false
+
+jobs:
+  whatsapp-webhook:
+    name: Private CRM WhatsApp webhook production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-whatsapp-webhook-production
+      WEBHOOK_HOSTNAME: whatsapp.vishartattoo.com
+
+    steps:
+      - name: Verify exact release branch and explicit production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_WHATSAPP_WEBHOOK_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *) echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
+          esac
+          [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          }
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            if [ "$DEPLOY_ENABLED" != 'true' ]; then
+              echo 'CRM_PRODUCTION_WHATSAPP_WEBHOOK_DEPLOY_ENABLED is not explicitly enabled.' >&2
+              exit 1
+            fi
+            if [ "$APPROVAL_PHRASE" != 'EXPOSE_PRIVATE_CRM_WHATSAPP_WEBHOOK' ]; then
+              echo 'The exact WhatsApp webhook production approval phrase is required for deploy=true.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout and public surface
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          grep -Fq 'name = "vishar-whatsapp-webhook-production"' wrangler.whatsapp-webhook.production.toml
+          grep -Fq 'pattern = "whatsapp.vishartattoo.com"' wrangler.whatsapp-webhook.production.toml
+          grep -Fq 'zone_name = "vishartattoo.com"' wrangler.whatsapp-webhook.production.toml
+          grep -Fq 'custom_domain = true' wrangler.whatsapp-webhook.production.toml
+          grep -Fq 'enabled = true' wrangler.whatsapp-webhook.production.toml
+          grep -Fq 'previews_enabled = false' wrangler.whatsapp-webhook.production.toml
+          ! grep -Fq 'pattern = "*' wrangler.whatsapp-webhook.production.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and audit locked dependencies
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+
+      - name: Re-run WhatsApp webhook security boundaries
+        run: |
+          node scripts/test-whatsapp-webhook.mjs
+          node scripts/test-whatsapp-webhook-production-config.mjs
+          npm run check:whatsapp-webhook-production-bundle
+          npm run scan:secrets
+
+      - name: Verify exact pre-provisioned production Worker secret names
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.whatsapp-webhook.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
+          const expected = [
+            'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
+            'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
+            'SUPABASE_SECRET_KEY',
+            'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+          ].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Production WhatsApp webhook secret-name set is not exact; expected ${expected.join(', ')}`);
+          }
+          NODE
+
+      - name: Dry-run exact public webhook Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx wrangler deploy
+          --config wrangler.whatsapp-webhook.production.toml
+          --name "$WORKER_NAME"
+          --dry-run
+          --outdir .wrangler/whatsapp-webhook-production-generated
+
+      - name: Deploy only the pre-provisioned public webhook Worker
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy_output="$RUNNER_TEMP/whatsapp-webhook-production-wrangler-output.ndjson"
+          rm -f "$deploy_output"
+          WRANGLER_OUTPUT_FILE_PATH="$deploy_output" \
+            npx wrangler deploy \
+              --config wrangler.whatsapp-webhook.production.toml \
+              --name "$WORKER_NAME" \
+              --strict
+
+      - name: Record active webhook Worker version and safe evidence
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/whatsapp-webhook-production-evidence"
+          npx wrangler versions list --name "$WORKER_NAME" --json > "$RUNNER_TEMP/whatsapp-webhook-production-evidence/versions.json"
+          node <<'NODE'
+          const fs = require('fs');
+          const root = process.env.RUNNER_TEMP + '/whatsapp-webhook-production-evidence';
+          const outputPath = process.env.RUNNER_TEMP + '/whatsapp-webhook-production-wrangler-output.ndjson';
+          const versions = JSON.parse(fs.readFileSync(root + '/versions.json', 'utf8'));
+          const events = fs.readFileSync(outputPath, 'utf8')
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line));
+          const deployEvents = events.filter((entry) => (
+            entry?.type === 'deploy'
+            && entry?.worker_name === process.env.WORKER_NAME
+            && typeof entry?.version_id === 'string'
+            && entry.version_id.length > 0
+          ));
+          if (deployEvents.length !== 1) {
+            throw new Error('Unable to resolve exactly one deployed WhatsApp webhook Worker version from Wrangler structured output');
+          }
+          const versionId = deployEvents[0].version_id;
+          if (!Array.isArray(versions) || !versions.some((entry) => entry?.id === versionId)) {
+            throw new Error('Structured webhook deploy version id is not present in the current Worker version list');
+          }
+          fs.writeFileSync(root + '/safe-summary.json', JSON.stringify({
+            worker: process.env.WORKER_NAME,
+            version_id: versionId,
+            version_source: 'wrangler_deploy_event',
+            hostname: process.env.WEBHOOK_HOSTNAME,
+            callback_path: '/webhook',
+            workers_dev: false,
+            preview_urls: false,
+            secret_names_only: true,
+          }, null, 2));
+          console.log(`WHATSAPP_WEBHOOK_WORKER_VERSION=${versionId}`);
+          NODE
+
+      - name: Upload safe WhatsApp webhook production evidence
+        if: ${{ always() && inputs.deploy }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: whatsapp-webhook-production-${{ inputs.approved_sha }}
+          path: ${{ runner.temp }}/whatsapp-webhook-production-evidence/safe-summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Production WhatsApp webhook boundary summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+        run: |
+          {
+            echo '### Private CRM WhatsApp webhook production gate'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo '- Worker: `vishar-whatsapp-webhook-production` only'
+            echo '- Pre-provisioned Custom Domain: `whatsapp.vishartattoo.com`'
+            echo '- Accepted callback path: `/webhook` only'
+            echo '- workers.dev disabled; preview URLs disabled'
+            echo '- Required secret names: production Supabase backend key, verify token and two artist-scoped WhatsApp bindings'
+            echo '- Global WhatsApp token/phone-number bindings are forbidden'
+            echo '- Secret values are never read or printed; no secret put/bulk command exists here'
+            echo '- Meta actions not performed: no Embedded Signup, phone registration/migration, WABA subscription, billing change or message send'
+            echo '- Database / Pages / Calendar / Telegram / GPT / booking deploy commands: none'
+          } >> "$GITHUB_STEP_SUMMARY"

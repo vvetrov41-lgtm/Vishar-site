@@ -190,6 +190,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
   { path: '/integrations', label: 'common.calendar', capability: 'manageIntegrations' },
+  { path: '/integrations/whatsapp', label: 'WhatsApp', capability: 'manageIntegrations' },
   { path: '/users', label: 'Users', capability: 'manageUsers' },
   { path: '/activity', label: 'Activity', capability: 'viewActivity' },
 ];
