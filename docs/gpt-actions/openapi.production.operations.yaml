@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: Vishar CRM Operations Actions
-  version: 2.1.1-production-operations
+  version: 2.1.2-production-operations
   description: >-
     Operational private OAuth-authenticated CRM actions for one artist. The artist
     is fixed by the OAuth client binding and cannot be selected in a request.
 servers:
-  - url: https://gpt-actions.vishartattoo.com
-    description: Vishar CRM production action edge.
+  - url: https://gpt-operations.vishartattoo.com
+    description: Vishar CRM production operations action edge.
 security:
   - supabaseOAuth: [email]
 paths:
