@@ -373,7 +373,7 @@ async function registerSelectedAccountWebhook(request, alias, env, fetchImpl = f
   );
   const updated = {
     ...record,
-    connectionState: 'connected',
+    connectionState: 'webhook_registered',
     webhookId: webhook.id,
     webhookRegisteredAt: new Date().toISOString(),
   };
@@ -388,7 +388,7 @@ async function registerSelectedAccountWebhook(request, alias, env, fetchImpl = f
   return json({
     ok: true,
     artist: alias,
-    state: 'connected',
+    state: 'webhook_registered',
     account_label: updated.accountLabel || null,
     webhook_registered: true,
     replayed: false,
