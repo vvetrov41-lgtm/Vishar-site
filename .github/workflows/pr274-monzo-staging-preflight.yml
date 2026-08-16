@@ -1,4 +1,4 @@
-name: PR 274 Monzo retained staging preflight
+name: Monzo retained staging preflight operator
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: pr274-monzo-retained-staging-preflight
+  group: monzo-retained-staging-preflight
   cancel-in-progress: false
 
 jobs:
@@ -19,22 +19,22 @@ jobs:
     if: >-
       github.event.action == 'edited' &&
       github.event.sender.login == 'vvetrov41-lgtm' &&
-      github.event.pull_request.number == 274 &&
       github.event.pull_request.state == 'open' &&
       github.event.pull_request.draft == true &&
       github.event.pull_request.merged == false &&
-      github.event.pull_request.base.ref == 'agent/monzo-account-connection-activation' &&
-      github.event.pull_request.head.ref == 'agent/monzo-staging-preflight' &&
+      github.event.pull_request.base.ref == 'agent/monzo-staging-preflight' &&
+      github.event.pull_request.head.ref == 'agent/monzo-staging-preflight-run' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.body, format('<!-- RUN_PR274_MONZO_STAGING_PREFLIGHT:{0} -->', github.event.pull_request.head.sha))
+      contains(github.event.pull_request.body, format('<!-- RUN_MONZO_STAGING_PREFLIGHT:{0} -->', github.event.pull_request.head.sha))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
     env:
       APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
-      EXPECTED_BASE_SHA: f5d37fe54bbbf96d69025d2c2056cd04099b8506
-      EXPECTED_BASE_BRANCH: agent/monzo-account-connection-activation
-      EXPECTED_HEAD_BRANCH: agent/monzo-staging-preflight
+      OPERATOR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PRODUCT_SHA: f5d37fe54bbbf96d69025d2c2056cd04099b8506
+      OPERATOR_BASE_BRANCH: agent/monzo-staging-preflight
+      RUN_HEAD_BRANCH: agent/monzo-staging-preflight-run
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -51,17 +51,17 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          marker="<!-- RUN_PR274_MONZO_STAGING_PREFLIGHT:${APPROVED_SHA} -->"
+          [[ "$OPERATOR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          marker="<!-- RUN_MONZO_STAGING_PREFLIGHT:${APPROVED_SHA} -->"
           jq -e \
             --arg sha "$APPROVED_SHA" \
-            --arg base_sha "$EXPECTED_BASE_SHA" \
-            --arg base "$EXPECTED_BASE_BRANCH" \
-            --arg head "$EXPECTED_HEAD_BRANCH" \
+            --arg base_sha "$OPERATOR_BASE_SHA" \
+            --arg base "$OPERATOR_BASE_BRANCH" \
+            --arg head "$RUN_HEAD_BRANCH" \
             --arg marker "$marker" \
             --arg repo "$GITHUB_REPOSITORY" '
             .action == "edited"
             and .sender.login == "vvetrov41-lgtm"
-            and .pull_request.number == 274
             and .pull_request.state == "open"
             and .pull_request.draft == true
             and .pull_request.merged == false
@@ -74,7 +74,7 @@ jobs:
           ' "$GITHUB_EVENT_PATH" >/dev/null
           [ "$PRODUCTION_TARGETED" = 'false' ]
 
-      - name: Check out exact PR head
+      - name: Check out exact validation head
         uses: actions/checkout@v4
         with:
           ref: ${{ env.APPROVED_SHA }}
@@ -87,12 +87,28 @@ jobs:
         run: |
           set -euo pipefail
           [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
-          [ "$(git rev-parse "${EXPECTED_BASE_SHA}^{commit}")" = "$EXPECTED_BASE_SHA" ]
-          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$APPROVED_SHA"
+          [ "$(git rev-parse "${OPERATOR_BASE_SHA}^{commit}")" = "$OPERATOR_BASE_SHA" ]
+          git merge-base --is-ancestor "$OPERATOR_BASE_SHA" "$APPROVED_SHA"
           [ "$PRODUCTION_TARGETED" = 'false' ]
 
+          gh api "repos/$GITHUB_REPOSITORY/pulls/274" > "$RUNNER_TEMP/pr274.json"
+          jq -e \
+            --arg base_sha "$OPERATOR_BASE_SHA" \
+            --arg product_sha "$PRODUCT_SHA" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .number == 274
+            and .state == "open"
+            and .draft == true
+            and .merged == false
+            and .head.ref == "agent/monzo-staging-preflight"
+            and .head.sha == $base_sha
+            and .base.ref == "agent/monzo-account-connection-activation"
+            and .base.sha == $product_sha
+            and .head.repo.full_name == $repo
+          ' "$RUNNER_TEMP/pr274.json" >/dev/null
+
           gh api "repos/$GITHUB_REPOSITORY/pulls/273" > "$RUNNER_TEMP/pr273.json"
-          jq -e --arg sha "$EXPECTED_BASE_SHA" --arg repo "$GITHUB_REPOSITORY" '
+          jq -e --arg sha "$PRODUCT_SHA" --arg repo "$GITHUB_REPOSITORY" '
             .number == 273
             and .state == "open"
             and .draft == true
@@ -102,12 +118,12 @@ jobs:
             and .head.repo.full_name == $repo
           ' "$RUNNER_TEMP/pr273.json" >/dev/null
 
-          gh api "repos/$GITHUB_REPOSITORY/compare/$EXPECTED_BASE_SHA...$APPROVED_SHA" > "$RUNNER_TEMP/compare.json"
+          gh api "repos/$GITHUB_REPOSITORY/compare/$OPERATOR_BASE_SHA...$APPROVED_SHA" > "$RUNNER_TEMP/compare.json"
           jq -e '
             .status == "ahead"
             and .behind_by == 0
             and ([.files[].filename] | sort) == ([
-              ".github/workflows/pr274-monzo-staging-preflight.yml"
+              "docs/crm/monzo-staging-preflight-run.md"
             ] | sort)
           ' "$RUNNER_TEMP/compare.json" >/dev/null
 
@@ -160,10 +176,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr274-monzo-preflight"
+          evidence="$RUNNER_TEMP/monzo-staging-preflight"
           mkdir -p "$evidence"
 
-          project_raw="$RUNNER_TEMP/pr274-project.json"
+          project_raw="$RUNNER_TEMP/monzo-project.json"
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             "https://api.supabase.com/v1/projects/${STAGING_PROJECT_REF}" > "$project_raw"
@@ -173,8 +189,8 @@ jobs:
           jq '{status,region,database_version:.database.version}' "$project_raw" > "$evidence/supabase-project.json"
           rm -f "$project_raw"
 
-          sql_file="$RUNNER_TEMP/pr274-state.sql"
-          query_file="$RUNNER_TEMP/pr274-query.json"
+          sql_file="$RUNNER_TEMP/monzo-state.sql"
+          query_file="$RUNNER_TEMP/monzo-query.json"
           cat > "$sql_file" <<'SQL'
           select jsonb_build_object(
             'latest_migration', (select max(version) from supabase_migrations.schema_migrations),
@@ -203,7 +219,7 @@ jobs:
           SQL
           jq -Rs '{query:.}' < "$sql_file" > "$query_file"
 
-          raw="$RUNNER_TEMP/pr274-state.json"
+          raw="$RUNNER_TEMP/monzo-state.json"
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             -H 'Content-Type: application/json' \
@@ -223,10 +239,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr274-monzo-preflight"
+          evidence="$RUNNER_TEMP/monzo-staging-preflight"
           auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')
 
-          kv_raw="$RUNNER_TEMP/pr274-kv.json"
+          kv_raw="$RUNNER_TEMP/monzo-kv.json"
           curl --fail-with-body --silent --show-error "${auth[@]}" \
             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces?per_page=100" > "$kv_raw"
           jq -e '.success == true and (.result | type == "array")' "$kv_raw" >/dev/null
@@ -251,7 +267,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$RUNNER_TEMP/pr274-monzo-preflight"
+          evidence="$RUNNER_TEMP/monzo-staging-preflight"
           present() { if [ -n "${!1:-}" ]; then printf true; else printf false; fi; }
           jq -n \
             --argjson monzo_client "$(present MONZO_OAUTH_CLIENT_ID)" \
@@ -263,14 +279,15 @@ jobs:
 
           jq -n \
             --arg sha "$APPROVED_SHA" \
+            --arg base_sha "$OPERATOR_BASE_SHA" \
             --slurpfile supabase "$evidence/supabase-state.json" \
             --slurpfile cloudflare "$evidence/cloudflare-state.json" \
             --slurpfile config "$evidence/protected-config-readiness.json" \
-            '{exact_head:$sha,production_targeted:false,supabase:$supabase[0],cloudflare:$cloudflare[0],protected_configuration:$config[0]}' \
+            '{exact_head:$sha,operator_base:$base_sha,production_targeted:false,supabase:$supabase[0],cloudflare:$cloudflare[0],protected_configuration:$config[0]}' \
             > "$evidence/summary.json"
           jq . "$evidence/summary.json"
           {
-            echo '### PR #274 Monzo retained staging preflight'
+            echo '### Monzo retained staging preflight'
             echo '```json'
             jq . "$evidence/summary.json"
             echo '```'
@@ -280,13 +297,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pr274-monzo-staging-preflight-${{ env.APPROVED_SHA }}
+          name: monzo-staging-preflight-${{ env.APPROVED_SHA }}
           if-no-files-found: warn
           retention-days: 14
           path: |
-            ${{ runner.temp }}/pr274-monzo-preflight/supabase-project.json
-            ${{ runner.temp }}/pr274-monzo-preflight/supabase-state.json
-            ${{ runner.temp }}/pr274-monzo-preflight/cloudflare-monzo-kv-titles.json
-            ${{ runner.temp }}/pr274-monzo-preflight/cloudflare-state.json
-            ${{ runner.temp }}/pr274-monzo-preflight/protected-config-readiness.json
-            ${{ runner.temp }}/pr274-monzo-preflight/summary.json
+            ${{ runner.temp }}/monzo-staging-preflight/supabase-project.json
+            ${{ runner.temp }}/monzo-staging-preflight/supabase-state.json
+            ${{ runner.temp }}/monzo-staging-preflight/cloudflare-monzo-kv-titles.json
+            ${{ runner.temp }}/monzo-staging-preflight/cloudflare-state.json
+            ${{ runner.temp }}/monzo-staging-preflight/protected-config-readiness.json
+            ${{ runner.temp }}/monzo-staging-preflight/summary.json
