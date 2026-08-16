@@ -139,10 +139,10 @@ Full management is a forward-only expansion from production migration `0053`.
 2. Require normal `Static Validation` and `CRM and booking validation` green for that exact SHA, including clean Supabase reset, pgTAP, lint, Worker tests, production bundle and secret scan.
 3. Fresh-check production: migration latest must be `0053`; both production GPT bindings must still point to the intended Vladimir/Kristina production OAuth clients; retained staging must remain separate.
 4. Fast-forward `release/private-crm-rc31-gpt-full-management` to the exact green product SHA. The operator branch must carry no extra commit.
-5. Protected workflow re-verifies product SHA/normal CI, performs a migration dry run, applies only canonical pending migrations `0054` and `0055`, verifies remote `0055`, then deploys the production GPT Worker.
+5. Protected workflow re-verifies product SHA/normal CI, performs a migration dry run, applies only canonical pending migrations `0054`, `0055` and `0056`, verifies remote `0056`, then deploys the production GPT Worker.
 6. The workflow must not call `configure_gpt_full_management` or directly update `crm_private.gpt_action_clients`. New full-management flags must remain false after code/migration deployment.
 7. Verify live `/privacy` = 200, incomplete `/oauth/authorize` = 400 and an Action request without OAuth bearer = 401.
-8. Verify production migration latest `0055`, no RLS/Storage policy changes and no staging changes.
+8. Verify production migration latest `0056`, no RLS/Storage policy changes and no staging changes.
 9. Only after those checks, enable the desired capabilities for each intended production GPT through the owner-audited `configure_gpt_full_management(...)` RPC.
 10. Re-check the two artist bindings, activity log and cross-artist isolation.
 11. Import the immutable exact-SHA production OpenAPI schema into each production Custom GPT.
