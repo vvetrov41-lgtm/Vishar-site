@@ -158,18 +158,35 @@ jobs:
               echo 'Configured GitHub Supabase key was rejected; retrieving a backend secret through the masked Management API handoff.'
               umask 077
               key_file="$RUNNER_TEMP/supabase-api-keys-recovery.json"
-              create_status="$(curl --silent --show-error --output "$key_file" --write-out '%{http_code}' \
-                -X POST \
+              inventory_status="$(curl --silent --show-error --output "$key_file" --write-out '%{http_code}' \
                 -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-                -H 'Content-Type: application/json' \
-                --data '{"type":"secret","name":"tattooai_service","secret_jwt_template":{"role":"service_role"}}' \
                 "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true")"
-              echo "Supabase service-role secret creation HTTP status: $create_status"
-              [ "$create_status" = '201' ] || {
-                echo "Supabase secret creation response: $(jq -r 'if type == "object" then (.message // .error // .code // "unknown") else "non_object" end' "$key_file")" >&2
-                exit 1
-              }
-              secret_key="$(jq -er '(.api_key // .key // .token) | select(type == "string" and startswith("sb_secret_"))' "$key_file")"
+              echo "Supabase key inventory HTTP status: $inventory_status"
+              if [ "$inventory_status" = '200' ]; then
+                echo "Supabase key inventory metadata: $(jq -c '[.[]? | {name,type,disabled,has_api_key:((.api_key // .key // .token) | type == "string" and length > 0)}]' "$key_file")"
+              fi
+              secret_key="$(if [ "$inventory_status" = '200' ]; then jq -er '
+                [.[]?
+                  | select((.disabled // false) == false)
+                  | select(.name == "tattooai_service")
+                  | (.api_key // .key // .token)
+                  | select(type == "string" and startswith("sb_secret_"))]
+                | if length == 1 then .[0] else "" end
+              ' "$key_file"; else printf ''; fi)"
+              if [ -z "$secret_key" ]; then
+                create_status="$(curl --silent --show-error --output "$key_file" --write-out '%{http_code}' \
+                  -X POST \
+                  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+                  -H 'Content-Type: application/json' \
+                  --data '{"type":"secret","name":"tattooai_service_2","secret_jwt_template":{"role":"service_role"}}' \
+                  "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true")"
+                echo "Supabase service-role secret creation HTTP status: $create_status"
+                [ "$create_status" = '201' ] || {
+                  echo "Supabase secret creation response: $(jq -r 'if type == "object" then (.message // .error // .code // "unknown") else "non_object" end' "$key_file")" >&2
+                  exit 1
+                }
+                secret_key="$(jq -er '(.api_key // .key // .token) | select(type == "string" and startswith("sb_secret_"))' "$key_file")"
+              fi
               rm -f "$key_file"
               echo "::add-mask::$secret_key"
               printf '%s' "$secret_key" | npx wrangler secret put SUPABASE_SECRET_KEY --name "$WORKER_NAME"
