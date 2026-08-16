@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const workflow = readFileSync(
+  new URL('../.github/workflows/gpt-production-full-management-rollout.yml', import.meta.url),
+  'utf8',
+);
+
+assert.match(workflow, /release\/private-crm-rc31-gpt-full-management/);
+assert.match(workflow, /environment: crm-production/);
+assert.match(workflow, /PRODUCT_BRANCH: agent\/gpt-full-crm-management/);
+assert.match(workflow, /PROJECT_REF: \$\{\{ vars\.CRM_PRODUCTION_SUPABASE_PROJECT_REF \}\}/);
+assert.match(workflow, /\[ "\$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' \]/);
+assert.match(workflow, /\[ "\$PROJECT_REF" != 'gwaliusblwrzisrwnsvs' \]/);
+assert.match(workflow, /git ls-remote origin "refs\/heads\/\$PRODUCT_BRANCH"/);
+assert.match(workflow, /Static Validation/);
+assert.match(workflow, /CRM and booking validation/);
+assert.match(workflow, /npm run test:gpt-production/);
+assert.match(workflow, /npm run check:gpt-production-bundle/);
+assert.match(workflow, /npm run scan:secrets/);
+assert.match(workflow, /supabase db push --dry-run/);
+assert.match(workflow, /Apply canonical production migrations/);
+assert.match(workflow, /local_version == "0053" && remote_version == "0053"/);
+assert.match(workflow, /local_version == "0054"/);
+assert.match(workflow, /local_version == "0055"/);
+assert.match(workflow, /remote_0054 != "" \|\| remote_0055 != ""/);
+assert.match(workflow, /deployed_0054/);
+assert.match(workflow, /deployed_0055/);
+assert.match(workflow, /GPT_OAUTH_RELAY_ENABLED:true/);
+assert.match(workflow, /GPT_ACTIONS_ENABLED:true/);
+assert.match(workflow, /"\$privacy" = 200/);
+assert.match(workflow, /"\$oauth" = 400/);
+assert.match(workflow, /"\$projects" = 401/);
+assert.match(workflow, /"\$payments" = 401/);
+
+assert.doesNotMatch(workflow, /pull_request|refs\/pull\//);
+assert.doesNotMatch(workflow, /STAGING_SUPABASE_DB_PASSWORD|gwaliusblwrzisrwnsvs\.supabase\.co/);
+assert.doesNotMatch(workflow, /configure_gpt_full_management/,
+  'deployment workflow must not enable owner-controlled full-management capabilities');
+assert.doesNotMatch(workflow, /update\s+crm_private\.gpt_action_clients/i,
+  'deployment workflow must not directly mutate GPT bindings');
+assert.doesNotMatch(workflow, /service_role|SUPABASE_SECRET_KEY|sb_secret_/i);
+
+console.log('GPT full management rollout config tests passed: exact RC31 gate, 0053->0055 migration boundary, capabilities remain default-off.');
