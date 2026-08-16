@@ -1,10 +1,18 @@
 import { ApiError, friendlyMessage, type CrmClient } from './api';
 
+export interface DepositTier {
+  max_minutes: number | null;
+  amount: number;
+  currency: string;
+}
+
 export interface MonzoDepositSettings {
   configured: boolean;
   enabled: boolean;
   payment_url: string | null;
   deposit_amount: number;
+  deposit_policy: 'duration_tiered_v1';
+  deposit_tiers: DepositTier[];
   currency: string;
   default_delivery_channel: 'email';
   email_status: 'provider_not_connected';
@@ -18,6 +26,8 @@ export interface DepositRequestResult {
   public_path: string;
   amount: number;
   currency: string;
+  duration_minutes?: number;
+  tier_max_minutes?: number | null;
   delivery_channel: 'email' | 'copy_link';
   delivery_status: 'queued_provider_not_connected' | 'link_created';
   replayed: boolean;
