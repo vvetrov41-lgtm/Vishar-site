@@ -68,12 +68,11 @@ select is(
   'Monzo setup uses the versioned per-session payment-policy mode'
 );
 select is(
-  (select count(*)::integer
-   from public.artist_payment_policy_session_tiers t
-   join public.artist_payment_policies p on p.id = t.policy_id
-   where p.artist_id = 'a1111111-1111-4111-8111-111111111111' and p.is_active),
+  jsonb_array_length(
+    public.get_monzo_easy_bank_transfer_settings('a1111111-1111-4111-8111-111111111111') -> 'deposit_tiers'
+  ),
   4,
-  'the active policy has exactly four server-owned duration tiers'
+  'the safe settings RPC exposes exactly four non-secret duration tiers'
 );
 
 create temporary table tier_results (
