@@ -36,11 +36,6 @@ jobs:
       EXPECTED_OPERATOR_BRANCH: agent/monzo-staging-activation-operator
       EXPECTED_VALIDATION_BRANCH: agent/monzo-staging-activation-validation
       PRODUCTION_TARGETED: 'false'
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      MONZO_OAUTH_CLIENT_ID: ${{ secrets.MONZO_OAUTH_CLIENT_ID }}
-      MONZO_OAUTH_CLIENT_SECRET: ${{ secrets.MONZO_OAUTH_CLIENT_SECRET }}
-      MONZO_TOKEN_ENCRYPTION_KEY: ${{ secrets.MONZO_TOKEN_ENCRYPTION_KEY }}
 
     steps:
       - name: Fail closed before checkout
@@ -179,15 +174,23 @@ jobs:
       - name: Inspect encrypted configuration names and Cloudflare read capability
         id: inspect
         shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MONZO_OAUTH_CLIENT_ID_PRESENT: ${{ secrets.MONZO_OAUTH_CLIENT_ID != '' }}
+          MONZO_OAUTH_CLIENT_SECRET_PRESENT: ${{ secrets.MONZO_OAUTH_CLIENT_SECRET != '' }}
+          MONZO_TOKEN_ENCRYPTION_KEY_PRESENT: ${{ secrets.MONZO_TOKEN_ENCRYPTION_KEY != '' }}
         run: |
           set -euo pipefail
           evidence="$RUNNER_TEMP/monzo-staging-preflight"
           mkdir -p "$evidence"
 
           missing=()
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID MONZO_OAUTH_CLIENT_ID MONZO_OAUTH_CLIENT_SECRET MONZO_TOKEN_ENCRYPTION_KEY; do
-            [ -n "${!name:-}" ] || missing+=("$name")
-          done
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || missing+=("CLOUDFLARE_API_TOKEN")
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || missing+=("CLOUDFLARE_ACCOUNT_ID")
+          [ "${MONZO_OAUTH_CLIENT_ID_PRESENT:-false}" = 'true' ] || missing+=("MONZO_OAUTH_CLIENT_ID")
+          [ "${MONZO_OAUTH_CLIENT_SECRET_PRESENT:-false}" = 'true' ] || missing+=("MONZO_OAUTH_CLIENT_SECRET")
+          [ "${MONZO_TOKEN_ENCRYPTION_KEY_PRESENT:-false}" = 'true' ] || missing+=("MONZO_TOKEN_ENCRYPTION_KEY")
 
           token_verify_http="not_attempted"
           kv_list_http="not_attempted"
