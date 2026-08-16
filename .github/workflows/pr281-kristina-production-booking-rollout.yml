@@ -115,7 +115,7 @@ jobs:
 
           if [ "$supabase_secret_count" = '0' ]; then
             umask 077
-            secret_key="${SUPABASE_DIRECT_SECRET:-${SUPABASE_LEGACY_SECRET:-}}"
+            secret_key="${SUPABASE_LEGACY_SECRET:-${SUPABASE_DIRECT_SECRET:-}}"
             if [ -z "$secret_key" ]; then
               key_file="$RUNNER_TEMP/supabase-api-keys.json"
               curl --fail-with-body --silent --show-error \
