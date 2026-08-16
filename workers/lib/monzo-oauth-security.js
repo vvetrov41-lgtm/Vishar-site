@@ -136,13 +136,20 @@ export function randomMonzoToken(size = 32) {
   return base64Url(bytes);
 }
 
-export function buildMonzoOAuthState(alias, ownerEmail) {
-  if (!ALIASES.has(alias) || typeof ownerEmail !== 'string' || !ownerEmail.trim()) {
+export function buildMonzoOAuthState(alias, ownerEmail, clientId) {
+  if (
+    !ALIASES.has(alias)
+    || typeof ownerEmail !== 'string'
+    || !ownerEmail.trim()
+    || typeof clientId !== 'string'
+    || !clientId.trim()
+  ) {
     throw new MonzoSecurityError('oauth_state_invalid_or_expired');
   }
   return {
     alias,
     ownerEmail: ownerEmail.trim().toLowerCase(),
+    clientId: clientId.trim(),
     createdAt: new Date().toISOString(),
   };
 }
@@ -156,7 +163,7 @@ export async function storeMonzoOAuthState(namespace, state, record) {
   });
 }
 
-export async function consumeMonzoOAuthState(namespace, state, ownerEmail) {
+export async function consumeMonzoOAuthState(namespace, state, ownerEmail, clientId) {
   if (!namespace || !STATE_PATTERN.test(String(state || ''))) {
     throw new MonzoSecurityError('oauth_state_invalid_or_expired');
   }
@@ -168,6 +175,9 @@ export async function consumeMonzoOAuthState(namespace, state, ownerEmail) {
     || !ALIASES.has(stored.alias)
     || typeof stored.ownerEmail !== 'string'
     || stored.ownerEmail !== String(ownerEmail || '').trim().toLowerCase()
+    || typeof stored.clientId !== 'string'
+    || !stored.clientId
+    || stored.clientId !== String(clientId || '').trim()
   ) {
     throw new MonzoSecurityError('oauth_state_invalid_or_expired');
   }

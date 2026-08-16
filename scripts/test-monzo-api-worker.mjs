@@ -181,8 +181,18 @@ await test('Monzo token custody encrypts credentials and detects tampering', asy
     record,
   );
 
+  // Flip a bit in the middle of the ciphertext rather than in the final
+  // base64url character. The last character of an unpadded base64url string can
+  // carry padding bits that `atob` discards, so mutating it decodes to
+  // identical bytes for some randomly generated envelopes and the AES-GCM tag
+  // still verifies. Mutating an interior byte always changes the plaintext.
   const parsed = JSON.parse(envelope);
-  parsed.data = `${parsed.data.slice(0, -1)}${parsed.data.endsWith('A') ? 'B' : 'A'}`;
+  const tamperIndex = Math.floor(parsed.data.length / 2);
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const original = parsed.data[tamperIndex];
+  const replacement = alphabet[(alphabet.indexOf(original) + 1) % alphabet.length];
+  assert.notEqual(replacement, original);
+  parsed.data = `${parsed.data.slice(0, tamperIndex)}${replacement}${parsed.data.slice(tamperIndex + 1)}`;
   await assert.rejects(
     decryptMonzoTokenRecord(JSON.stringify(parsed), env.MONZO_TOKEN_ENCRYPTION_KEY),
     (error) => error instanceof MonzoTokenError && error.code === 'monzo_token_invalid',
@@ -231,20 +241,67 @@ await test('OAuth start requires verified owner Access and stores one short-live
   assert.ok(!destination.toString().includes(env.MONZO_OAUTH_CLIENT_SECRET));
 });
 
-await test('OAuth state is owner-bound and strictly single-use', async () => {
+await test('OAuth state is owner-bound, client-bound and strictly single-use', async () => {
   const env = makeEnv();
   const state = 's'.repeat(48);
   await storeMonzoOAuthState(
     env.MONZO_OAUTH_STATE,
     state,
-    buildMonzoOAuthState('vladimir', 'owner@example.test'),
+    buildMonzoOAuthState('vladimir', 'owner@example.test', env.MONZO_OAUTH_CLIENT_ID),
   );
   assert.equal(
-    (await consumeMonzoOAuthState(env.MONZO_OAUTH_STATE, state, 'owner@example.test')).alias,
+    (await consumeMonzoOAuthState(
+      env.MONZO_OAUTH_STATE,
+      state,
+      'owner@example.test',
+      env.MONZO_OAUTH_CLIENT_ID,
+    )).alias,
     'vladimir',
   );
   await assert.rejects(
-    consumeMonzoOAuthState(env.MONZO_OAUTH_STATE, state, 'owner@example.test'),
+    consumeMonzoOAuthState(
+      env.MONZO_OAUTH_STATE,
+      state,
+      'owner@example.test',
+      env.MONZO_OAUTH_CLIENT_ID,
+    ),
+    (error) => error instanceof MonzoSecurityError && error.code === 'oauth_state_invalid_or_expired',
+  );
+});
+
+await test('OAuth state minted for another OAuth client cannot be consumed', async () => {
+  const env = makeEnv();
+  const state = 'x'.repeat(48);
+  await storeMonzoOAuthState(
+    env.MONZO_OAUTH_STATE,
+    state,
+    buildMonzoOAuthState('vladimir', 'owner@example.test', 'oauth-client-rotated'),
+  );
+  await assert.rejects(
+    consumeMonzoOAuthState(
+      env.MONZO_OAUTH_STATE,
+      state,
+      'owner@example.test',
+      env.MONZO_OAUTH_CLIENT_ID,
+    ),
+    (error) => error instanceof MonzoSecurityError && error.code === 'oauth_state_invalid_or_expired',
+  );
+});
+
+await test('OAuth state without a bound OAuth client is rejected', async () => {
+  const env = makeEnv();
+  const state = 'y'.repeat(48);
+  await env.MONZO_OAUTH_STATE.put(
+    `state:${state}`,
+    JSON.stringify({ alias: 'vladimir', ownerEmail: 'owner@example.test', createdAt: new Date().toISOString() }),
+  );
+  await assert.rejects(
+    consumeMonzoOAuthState(
+      env.MONZO_OAUTH_STATE,
+      state,
+      'owner@example.test',
+      env.MONZO_OAUTH_CLIENT_ID,
+    ),
     (error) => error instanceof MonzoSecurityError && error.code === 'oauth_state_invalid_or_expired',
   );
 });
@@ -255,7 +312,7 @@ await test('OAuth callback exchanges server-side secret, verifies whoami, encryp
   await storeMonzoOAuthState(
     env.MONZO_OAUTH_STATE,
     state,
-    buildMonzoOAuthState('vladimir', 'owner@example.test'),
+    buildMonzoOAuthState('vladimir', 'owner@example.test', env.MONZO_OAUTH_CLIENT_ID),
   );
   const calls = [];
   const providerFetch = fetchRouter({
@@ -557,7 +614,17 @@ await test('webhook amount is never trusted: authenticated transaction re-fetch 
   }));
 
   let reconciliationBody = null;
+  let whoamiCalls = 0;
   const providerFetch = fetchRouter({
+    'https://api.monzo.com/ping/whoami': async (url, options) => {
+      whoamiCalls += 1;
+      assert.equal(options.headers.Authorization, 'Bearer access-token-synthetic');
+      return Response.json({
+        authenticated: true,
+        client_id: env.MONZO_OAUTH_CLIENT_ID,
+        user_id: 'user_synthetic_1',
+      });
+    },
     'https://api.monzo.com/transactions/tx_verified250': async (url, options) => {
       assert.equal(options.headers.Authorization, 'Bearer access-token-synthetic');
       return Response.json({ transaction });
@@ -594,6 +661,7 @@ await test('webhook amount is never trusted: authenticated transaction re-fetch 
     providerFetch,
   );
   assert.equal(response.status, 202);
+  assert.equal(whoamiCalls, 1);
   assert.equal(reconciliationBody.p_amount, 250);
   assert.equal(reconciliationBody.p_currency, 'GBP');
   assert.equal(reconciliationBody.p_provider_transaction_id, transaction.id);
@@ -601,14 +669,22 @@ await test('webhook amount is never trusted: authenticated transaction re-fetch 
   assert.equal(reconciliationBody.p_provider_event_id, `monzo:transaction.created:${transaction.id}`);
 });
 
-await test('verified debits/non-GBP transactions never reach reconciliation', async () => {
-  for (const transaction of [
+await test('only proven incoming GBP bank credits reach reconciliation', async () => {
+  // Monzo reports top-ups, card refunds/reversals and declines as positive
+  // amounts too. None of them is a client deposit.
+  const rejected = [
     { id: 'tx_debit1', account_id: 'acc_123abc', amount: -25000, currency: 'GBP', created: '2026-08-12T01:01:00.000Z' },
     { id: 'tx_eur1', account_id: 'acc_123abc', amount: 25000, currency: 'EUR', created: '2026-08-12T01:02:00.000Z' },
-  ]) {
+    { id: 'tx_load1', account_id: 'acc_123abc', amount: 25000, currency: 'GBP', created: '2026-08-12T01:04:00.000Z', is_load: true },
+    { id: 'tx_refund1', account_id: 'acc_123abc', amount: 25000, currency: 'GBP', created: '2026-08-12T01:05:00.000Z', is_load: false, merchant: { id: 'merch_1' } },
+    { id: 'tx_declined1', account_id: 'acc_123abc', amount: 25000, currency: 'GBP', created: '2026-08-12T01:06:00.000Z', decline_reason: 'INSUFFICIENT_FUNDS' },
+    { id: 'tx_pot1', account_id: 'acc_123abc', amount: 25000, currency: 'GBP', created: '2026-08-12T01:07:00.000Z', scheme: 'uk_retail_pot' },
+    { id: 'tx_card1', account_id: 'acc_123abc', amount: 25000, currency: 'GBP', created: '2026-08-12T01:08:00.000Z', scheme: 'mastercard' },
+  ];
+  for (const [index, transaction] of rejected.entries()) {
     const env = makeEnv();
     env.MONZO_RECONCILIATION_ENABLED = 'true';
-    const key = transaction.id.includes('debit') ? 'd'.repeat(48) : 'e'.repeat(48);
+    const key = String.fromCharCode(100 + index).repeat(48);
     await saveMonzoTokenRecord(env, tokenRecord({
       connectionState: 'account_selected',
       accountId: 'acc_123abc',
@@ -623,6 +699,11 @@ await test('verified debits/non-GBP transactions never reach reconciliation', as
     }));
     let dbCalled = false;
     const providerFetch = fetchRouter({
+      'https://api.monzo.com/ping/whoami': async () => Response.json({
+        authenticated: true,
+        client_id: env.MONZO_OAUTH_CLIENT_ID,
+        user_id: 'user_synthetic_1',
+      }),
       [`https://api.monzo.com/transactions/${transaction.id}`]: async () => Response.json({ transaction }),
       'https://api.monzo.com/transactions?*': async () => Response.json({ transactions: [transaction] }),
       'https://synthetic-project.supabase.co/rest/v1/rpc/register_monzo_reconciliation_candidate': async () => {

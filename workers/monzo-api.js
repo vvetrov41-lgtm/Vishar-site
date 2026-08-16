@@ -2,6 +2,7 @@ import {
   deleteMonzoWebhook,
   ensureMonzoAccessToken,
   exchangeMonzoAuthorizationCode,
+  isIncomingGbpTransferCredit,
   listMonzoAccounts,
   logoutMonzoAccessToken,
   monzoWhoAmI,
@@ -138,7 +139,11 @@ async function startOAuth(request, alias, env, fetchImpl = fetch) {
   assertMonzoOAuthStartConfiguration(env);
 
   const state = randomMonzoToken();
-  await storeMonzoOAuthState(env.MONZO_OAUTH_STATE, state, buildMonzoOAuthState(alias, ownerEmail));
+  await storeMonzoOAuthState(
+    env.MONZO_OAUTH_STATE,
+    state,
+    buildMonzoOAuthState(alias, ownerEmail, env.MONZO_OAUTH_CLIENT_ID),
+  );
 
   const params = new URLSearchParams({
     client_id: env.MONZO_OAUTH_CLIENT_ID,
@@ -169,7 +174,12 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
   const providerError = url.searchParams.get('error');
   if (!state) throw new MonzoSecurityError('oauth_callback_invalid');
 
-  const stored = await consumeMonzoOAuthState(env.MONZO_OAUTH_STATE, state, ownerEmail);
+  const stored = await consumeMonzoOAuthState(
+    env.MONZO_OAUTH_STATE,
+    state,
+    ownerEmail,
+    env.MONZO_OAUTH_CLIENT_ID,
+  );
   if (providerError) throw new MonzoSecurityError('monzo_authorisation_denied');
   if (!code) throw new MonzoSecurityError('oauth_callback_invalid');
 
@@ -534,6 +544,13 @@ async function handleWebhook(request, webhookKey, env, fetchImpl = fetch) {
   }
 
   const access = await accessFor(env, record, fetchImpl);
+
+  // Monzo does not sign webhook deliveries, so nothing in the request body is
+  // evidence. Prove the credential still belongs to the expected Monzo identity
+  // and OAuth client, then take every transaction fact from an authenticated
+  // server-side refetch bound to the selected account.
+  await monzoWhoAmI(access.accessToken, access.record.clientId, access.record.userId, fetchImpl);
+
   const transaction = await retrieveMonzoTransaction(access.accessToken, hint.transactionId, fetchImpl);
   await verifyTransactionBelongsToAccount(
     access.accessToken,
@@ -542,11 +559,7 @@ async function handleWebhook(request, webhookKey, env, fetchImpl = fetch) {
     fetchImpl,
   );
 
-  if (
-    !Number.isSafeInteger(transaction.amount)
-    || transaction.amount <= 0
-    || String(transaction.currency).toUpperCase() !== 'GBP'
-  ) {
+  if (!isIncomingGbpTransferCredit(transaction)) {
     return json({ ok: true, ignored: true }, 202);
   }
 

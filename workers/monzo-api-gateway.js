@@ -37,11 +37,12 @@ export default {
     const url = new URL(request.url);
     const webhookMatch = request.method === 'POST' && url.pathname.match(WEBHOOK_PATH);
 
-    // Reconciliation is deliberately dormant by default. Requiring the limiter
-    // only when the public reconciliation path is enabled keeps the inert
-    // foundation testable while making a live public webhook fail closed if the
-    // isolated Worker rate-limit binding is missing or unavailable.
-    if (webhookMatch && env?.MONZO_RECONCILIATION_ENABLED === 'true') {
+    // The webhook path is the only publicly reachable surface, so it is rate
+    // limited unconditionally. Production deliberately runs with
+    // MONZO_RECONCILIATION_ENABLED unset, and gating the limiter on that flag
+    // would have left the public path unthrottled in exactly that state.
+    // A missing or unavailable limiter fails closed with 503.
+    if (webhookMatch) {
       const limited = await enforceMonzoWebhookRateLimit(env);
       if (limited) return limited;
     }

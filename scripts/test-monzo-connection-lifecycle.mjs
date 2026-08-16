@@ -141,7 +141,7 @@ await test('same-user reauthorization preserves the selected account, route and 
   const env = makeEnv();
   const previous = await storeConnected(env);
   const state = 's'.repeat(48);
-  await storeMonzoOAuthState(env.MONZO_OAUTH_STATE, state, buildMonzoOAuthState('vladimir', 'owner@example.test'));
+  await storeMonzoOAuthState(env.MONZO_OAUTH_STATE, state, buildMonzoOAuthState('vladimir', 'owner@example.test', env.MONZO_OAUTH_CLIENT_ID));
   const calls = [];
 
   const response = await workerTesting.oauthCallback(
@@ -196,7 +196,7 @@ await test('reauthorization with a different Monzo user is rejected without repl
   const env = makeEnv();
   const previous = await storeConnected(env);
   const state = 'u'.repeat(48);
-  await storeMonzoOAuthState(env.MONZO_OAUTH_STATE, state, buildMonzoOAuthState('vladimir', 'owner@example.test'));
+  await storeMonzoOAuthState(env.MONZO_OAUTH_STATE, state, buildMonzoOAuthState('vladimir', 'owner@example.test', env.MONZO_OAUTH_CLIENT_ID));
   let logoutCalls = 0;
 
   await assert.rejects(

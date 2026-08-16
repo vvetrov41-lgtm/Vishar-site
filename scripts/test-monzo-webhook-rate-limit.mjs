@@ -90,6 +90,9 @@ assert.equal(__testing.WEBHOOK_PATH.test('/webhooks/monzo/short'), false);
   assert.equal(current.MONZO_WEBHOOK_ROUTES.getCalls, 1);
 }
 
+// Production starts with reconciliation disabled, so the public path must stay
+// rate limited in exactly that state: the limiter runs before the dormant
+// reconciliation response and an over-limit caller never reaches the router.
 {
   let limiterCalls = 0;
   const current = env({
@@ -102,9 +105,37 @@ assert.equal(__testing.WEBHOOK_PATH.test('/webhooks/monzo/short'), false);
     },
   });
   const response = await monzoGateway.fetch(webhookRequest('d'.repeat(48)), current);
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { ok: false, code: 'rate_limited' });
+  assert.equal(limiterCalls, 1);
+  assert.equal(current.MONZO_WEBHOOK_ROUTES.getCalls, 0);
+}
+
+{
+  let limiterCalls = 0;
+  const current = env({
+    MONZO_RECONCILIATION_ENABLED: 'false',
+    MONZO_WEBHOOK_RATE_LIMIT: {
+      async limit() {
+        limiterCalls += 1;
+        return { success: true };
+      },
+    },
+  });
+  const response = await monzoGateway.fetch(webhookRequest('e'.repeat(48)), current);
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { ok: false, code: 'reconciliation_disabled' });
-  assert.equal(limiterCalls, 0);
+  assert.equal(limiterCalls, 1);
+  assert.equal(current.MONZO_WEBHOOK_ROUTES.getCalls, 0);
+}
+
+// A missing limiter binding must fail closed even while reconciliation is off,
+// so a dormant deployment can never quietly serve an unthrottled public path.
+{
+  const current = env({ MONZO_RECONCILIATION_ENABLED: 'false' });
+  const response = await monzoGateway.fetch(webhookRequest('f'.repeat(48)), current);
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { ok: false, code: 'webhook_rate_limit_unconfigured' });
   assert.equal(current.MONZO_WEBHOOK_ROUTES.getCalls, 0);
 }
 

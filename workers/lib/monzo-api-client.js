@@ -151,6 +151,17 @@ export async function ensureMonzoAccessToken(env, record, fetchImpl = fetch, now
   }
 }
 
+// Monzo documents 401 for "not authenticated", but the live API answers an
+// invalid or expired bearer token with HTTP 400 and a body carrying
+// `code: "bad_request.invalid_token"`. Treating that as a generic rejection
+// would strand a connection that only needs a refresh or a reauthorisation, so
+// the token-shaped 400 is classified alongside 401.
+function invalidTokenBody(body) {
+  const code = typeof body?.code === 'string' ? body.code : '';
+  const legacy = typeof body?.error === 'string' ? body.error : '';
+  return code.includes('invalid_token') || legacy.includes('invalid_token');
+}
+
 async function authenticatedJson(url, accessToken, fetchImpl, options = {}) {
   const response = await fetchImpl(url, {
     ...options,
@@ -163,6 +174,11 @@ async function authenticatedJson(url, accessToken, fetchImpl, options = {}) {
   const body = await jsonBody(response);
   if (!response.ok) {
     if (response.status === 401) throw new MonzoApiError('monzo_reauthorization_required', 401);
+    if (response.status === 400 && invalidTokenBody(body)) {
+      throw new MonzoApiError('monzo_reauthorization_required', 401);
+    }
+    // Monzo grants an access token no permissions until the account owner
+    // approves the connection in the Monzo app, and reports that as a 403.
     if (response.status === 403) throw new MonzoApiError('monzo_approval_pending', 409);
     if (transientStatus(response.status)) throw new MonzoApiError('monzo_provider_unavailable', 503);
     throw new MonzoApiError('monzo_provider_rejected');
@@ -185,7 +201,10 @@ export async function monzoWhoAmI(accessToken, expectedClientId, expectedUserId,
 export async function listMonzoAccounts(accessToken, fetchImpl = fetch) {
   const body = await authenticatedJson(ACCOUNTS_URL, accessToken, fetchImpl);
   if (!Array.isArray(body?.accounts)) throw new MonzoApiError('monzo_provider_invalid_response');
-  const accounts = body.accounts.map((account) => {
+  // `/accounts` also returns closed and non-retail accounts. They are absent
+  // from the documented schema but present in real responses, and offering a
+  // closed account as a deposit destination would silently fail later.
+  const accounts = body.accounts.filter((account) => account?.closed !== true).map((account) => {
     const id = typeof account?.id === 'string' ? account.id : '';
     const description = typeof account?.description === 'string'
       ? account.description.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 120)
@@ -260,6 +279,34 @@ export async function verifyTransactionBelongsToAccount(
   return transaction;
 }
 
+// Monzo documents that positive amounts are credits, that top-ups carry
+// `is_load: true`, that refunds/reversals/chargebacks are positive amounts with
+// `is_load: false` and a merchant, and that `decline_reason` is present only on
+// declined transactions. `scheme` is undocumented for the Developer API but is
+// the only discriminator between an inbound bank transfer and pot/card
+// movement, so it is allow-listed when the provider supplies it.
+const INBOUND_TRANSFER_SCHEMES = new Set([
+  'payport_faster_payments',
+  'faster_payments',
+  'bacs',
+  'chaps',
+  'sepa',
+  'p2p_payment',
+]);
+
+export function isIncomingGbpTransferCredit(transaction) {
+  if (!transaction || typeof transaction !== 'object') return false;
+  if (!Number.isSafeInteger(transaction.amount) || transaction.amount <= 0) return false;
+  if (String(transaction.currency || '').toUpperCase() !== 'GBP') return false;
+  if (transaction.decline_reason != null && transaction.decline_reason !== '') return false;
+  if (transaction.is_load === true) return false;
+  if (transaction.merchant != null) return false;
+  if (typeof transaction.scheme === 'string' && transaction.scheme) {
+    return INBOUND_TRANSFER_SCHEMES.has(transaction.scheme);
+  }
+  return true;
+}
+
 export async function registerMonzoWebhook(accessToken, accountId, callbackUrl, fetchImpl = fetch) {
   if (!ACCOUNT_ID_PATTERN.test(String(accountId || ''))) throw new MonzoApiError('monzo_account_mismatch', 403);
   const callback = new URL(callbackUrl);
@@ -316,5 +363,7 @@ export const __testing = {
   ACCOUNTS_URL,
   TRANSACTIONS_URL,
   WEBHOOKS_URL,
+  INBOUND_TRANSFER_SCHEMES,
   validateTokenResponse,
+  invalidTokenBody,
 };

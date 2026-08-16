@@ -135,7 +135,7 @@ async function oauthPersistenceFailureFailsClosed() {
   await storeMonzoOAuthState(
     e.MONZO_OAUTH_STATE,
     state,
-    buildMonzoOAuthState('vladimir', 'owner@example.test'),
+    buildMonzoOAuthState('vladimir', 'owner@example.test', e.MONZO_OAUTH_CLIENT_ID),
   );
 
   const originalPut = e.MONZO_OAUTH_TOKENS.put.bind(e.MONZO_OAUTH_TOKENS);
