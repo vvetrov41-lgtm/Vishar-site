@@ -18,6 +18,7 @@
 
 import { getCorsHeaders, isMultipartRequest } from './lib/http.js';
 import { createLogger, newRequestId } from './lib/logging.js';
+import { withTrustedProductionBookingEnv } from './lib/production-booking-routing.js';
 import { handleEnquiryIntake } from './routes/enquiries.js';
 
 export default {
@@ -34,7 +35,25 @@ export default {
     // The durable booking route is the only multipart consumer.
     if (isMultipartRequest(request)) {
       const logger = createLogger(newRequestId());
-      return handleEnquiryIntake(request, env, { cors, logger, fetchImpl: fetch });
+      let bookingEnv = env;
+      if (env?.VISHAR_ENVIRONMENT === 'production') {
+        bookingEnv = withTrustedProductionBookingEnv(env, origin);
+        if (!bookingEnv) {
+          logger.warn('enquiry.origin_rejected', {
+            route: 'enquiries',
+            errorCode: 'origin_not_allowed',
+          });
+          return Response.json(
+            {
+              ok: false,
+              error: 'This request could not be accepted.',
+              code: 'origin_not_allowed',
+            },
+            { status: 403, headers: cors },
+          );
+        }
+      }
+      return handleEnquiryIntake(request, bookingEnv, { cors, logger, fetchImpl: fetch });
     }
 
     const body = await request.clone().json().catch(() => null);
