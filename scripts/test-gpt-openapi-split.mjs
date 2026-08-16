@@ -22,9 +22,13 @@ assert.ok(operationIdsSplit.length <= 30, 'operations ChatGPT-import schema must
 assert.equal(new Set(combined).size, 52, 'split schemas must not duplicate operation IDs');
 assert.deepEqual([...combined].sort(), [...canonical].sort(), 'split schemas must cover the exact canonical 52-operation surface');
 
+assert.match(core, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
+assert.match(operations, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
+assert.doesNotMatch(core, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
+assert.doesNotMatch(operations, /^\s*- url: https:\/\/gpt-actions\.vishartattoo\.com$/m);
+
 for (const [name, schema] of [['core', core], ['operations', operations]]) {
   assert.match(schema, /^openapi: 3\.1\.0$/m, `${name} schema must use OpenAPI 3.1`);
-  assert.match(schema, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
   assert.match(schema, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
   assert.match(schema, /tokenUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/token/);
   assert.doesNotMatch(schema, /gpt-actions-staging|gwaliusblwrzisrwnsvs/);
@@ -62,4 +66,4 @@ assert.ok(operationIdsSplit.includes('recordManualPayment'));
 assert.ok(operationIdsSplit.includes('sendWhatsAppMessage'));
 assert.ok(operationIdsSplit.includes('approveEmailDraft'));
 
-console.log('GPT OpenAPI split tests passed: 26 core + 26 operations, exact 52-operation coverage and ChatGPT-compatible object schemas.');
+console.log('GPT OpenAPI split tests passed: 26 core + 26 operations, distinct action domains, exact 52-operation coverage and ChatGPT-compatible object schemas.');
