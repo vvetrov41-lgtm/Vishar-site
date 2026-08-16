@@ -1,0 +1,573 @@
+name: Monzo staging dormant Worker deploy
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: monzo-staging-worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy dormant Monzo staging Worker
+    if: >-
+      github.event.action == 'edited' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'agent/monzo-staging-worker-deploy-operator' &&
+      github.event.pull_request.head.ref == 'agent/monzo-staging-worker-deploy-validation' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, format('<!-- RUN_MONZO_STAGING_WORKER_DEPLOY:{0} -->', github.event.pull_request.head.sha))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      OPERATOR_SHA: ${{ github.event.pull_request.base.sha }}
+      EXPECTED_PARENT_SHA: 11c00bd00f839fe64fd9dcfffa2188420c2ced6b
+      EXPECTED_OPERATOR_BRANCH: agent/monzo-staging-worker-deploy-operator
+      EXPECTED_VALIDATION_BRANCH: agent/monzo-staging-worker-deploy-validation
+      STAGING_PROJECT_REF: gwaliusblwrzisrwnsvs
+      HOST_DOMAIN: monzo-staging.vishartattoo.com
+      WEBHOOK_DOMAIN: monzo-staging.vishartattoo.com/webhooks/monzo/*
+      WORKER_NAME: vishar-monzo-api-staging
+      PRODUCTION_TARGETED: 'false'
+
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        env:
+          MONZO_OAUTH_CLIENT_ID_PRESENT: ${{ secrets.MONZO_OAUTH_CLIENT_ID != '' }}
+          MONZO_OAUTH_CLIENT_SECRET_PRESENT: ${{ secrets.MONZO_OAUTH_CLIENT_SECRET != '' }}
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$OPERATOR_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          [ "$HOST_DOMAIN" = 'monzo-staging.vishartattoo.com' ]
+          [ "$WEBHOOK_DOMAIN" = 'monzo-staging.vishartattoo.com/webhooks/monzo/*' ]
+          [ "$WORKER_NAME" = 'vishar-monzo-api-staging' ]
+          [ "${MONZO_OAUTH_CLIENT_ID_PRESENT:-false}" = 'false' ] || {
+            echo 'Dormant deploy refuses to run after Monzo OAuth Client ID has been installed.' >&2
+            exit 1
+          }
+          [ "${MONZO_OAUTH_CLIENT_SECRET_PRESENT:-false}" = 'false' ] || {
+            echo 'Dormant deploy refuses to run after Monzo OAuth Client Secret has been installed.' >&2
+            exit 1
+          }
+
+          marker="<!-- RUN_MONZO_STAGING_WORKER_DEPLOY:${APPROVED_SHA} -->"
+          jq -e \
+            --arg sha "$APPROVED_SHA" \
+            --arg operator_sha "$OPERATOR_SHA" \
+            --arg base "$EXPECTED_OPERATOR_BRANCH" \
+            --arg head "$EXPECTED_VALIDATION_BRANCH" \
+            --arg marker "$marker" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == $base
+            and .pull_request.base.sha == $operator_sha
+            and .pull_request.head.ref == $head
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains($marker))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Check out exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact stack, bounded diff and successful normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "${EXPECTED_PARENT_SHA}^{commit}")" = "$EXPECTED_PARENT_SHA" ]
+          [ "$(git rev-parse "${OPERATOR_SHA}^{commit}")" = "$OPERATOR_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_PARENT_SHA" "$OPERATOR_SHA"
+          git merge-base --is-ancestor "$OPERATOR_SHA" "$APPROVED_SHA"
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$EXPECTED_PARENT_SHA...$OPERATOR_SHA" > "$RUNNER_TEMP/operator-compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              ".github/workflows/monzo-staging-worker-deploy.yml"
+            ] | sort)
+          ' "$RUNNER_TEMP/operator-compare.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$OPERATOR_SHA...$APPROVED_SHA" > "$RUNNER_TEMP/validation-compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              "docs/ai/monzo-staging-worker-deploy-validation.md"
+            ] | sort)
+          ' "$RUNNER_TEMP/validation-compare.json" >/dev/null
+
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {id,name,event,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+
+          jq -n --slurpfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
+            ["Static Validation", "CRM and booking validation"] as $required
+            | reduce $required[] as $name ({};
+                ($runs[0] | map(select(
+                  .name == $name
+                  and .event == "pull_request"
+                  and .head_sha == $sha
+                  and .status == "completed"
+                  and .conclusion == "success"
+                )) | sort_by(.id) | last) as $run
+                | if $run == null then error("missing exact-head normal CI: " + $name)
+                  else .[$name] = $run end
+              )
+          ' > "$RUNNER_TEMP/normal-ci-runs.json"
+
+          crm_run_id="$(jq -r '.["CRM and booking validation"].id' "$RUNNER_TEMP/normal-ci-runs.json")"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$crm_run_id/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | {id,name,status,conclusion}' \
+            | jq -s . > "$RUNNER_TEMP/normal-ci-jobs.json"
+          for job in "Public site and Worker" "Private CRM" "Supabase migrations and pgTAP"; do
+            jq -e --arg name "$job" '
+              [.[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length == 1
+            ' "$RUNNER_TEMP/normal-ci-jobs.json" >/dev/null
+          done
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate dormant Monzo product contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run test:monzo-staging
+          npm run validate:monzo-staging
+          npm run check:monzo-staging-bundle
+          npm run scan:secrets
+          grep -Fx 'name = "vishar-monzo-api-staging"' wrangler.monzo-api.staging.toml
+          grep -Fx 'main = "workers/monzo-api-gateway.js"' wrangler.monzo-api.staging.toml
+          grep -Fx 'workers_dev = false' wrangler.monzo-api.staging.toml
+          grep -Fx 'preview_urls = false' wrangler.monzo-api.staging.toml
+          grep -Fx 'MONZO_RECONCILIATION_ENABLED = "false"' wrangler.monzo-api.staging.toml
+          grep -Fx 'MONZO_OAUTH_REDIRECT_URI = "https://monzo-staging.vishartattoo.com/oauth/monzo/callback"' wrangler.monzo-api.staging.toml
+          grep -Fx 'MONZO_WEBHOOK_BASE_URL = "https://monzo-staging.vishartattoo.com"' wrangler.monzo-api.staging.toml
+          grep -Fx 'SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"' wrangler.monzo-api.staging.toml
+          grep -Fx 'name = "MONZO_WEBHOOK_RATE_LIMIT"' wrangler.monzo-api.staging.toml
+          ! grep -Eq '^routes\s*=|^\[\[routes\]\]|^\[\[kv_namespaces\]\]' wrangler.monzo-api.staging.toml
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Fresh-check retained Supabase staging read-only
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${SUPABASE_ACCESS_TOKEN:-}" ]
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          evidence="$RUNNER_TEMP/monzo-staging-worker-deploy"
+          mkdir -p "$evidence"
+
+          project_raw="$RUNNER_TEMP/monzo-project.json"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$STAGING_PROJECT_REF" > "$project_raw"
+          jq -e --arg ref "$STAGING_PROJECT_REF" '
+            .id == $ref and .status == "ACTIVE_HEALTHY" and .region == "eu-west-2"
+          ' "$project_raw" >/dev/null
+
+          sql_file="$RUNNER_TEMP/monzo-deploy-state.sql"
+          query_file="$RUNNER_TEMP/monzo-deploy-query.json"
+          cat > "$sql_file" <<'SQL'
+          select jsonb_build_object(
+            'latest_migration', (select max(version) from supabase_migrations.schema_migrations),
+            'payment_requests', (select count(*)::integer from public.payment_requests),
+            'payment_transactions', (select count(*)::integer from public.payment_transactions),
+            'reconciliation_candidates', (select count(*)::integer from public.payment_reconciliation_candidates),
+            'outbox_pending', (select count(*)::integer from public.integration_outbox where status = 'pending'),
+            'outbox_leased', (select count(*)::integer from public.integration_outbox where status = 'leased'),
+            'candidates_force_rls', (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.payment_reconciliation_candidates'::regclass),
+            'authenticated_reconcile_execute', has_function_privilege('authenticated', 'public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', 'EXECUTE'),
+            'service_reconcile_execute', has_function_privilege('service_role', 'public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', 'EXECUTE')
+          ) as state;
+          SQL
+          jq -Rs '{query:.}' < "$sql_file" > "$query_file"
+          raw="$RUNNER_TEMP/monzo-deploy-state.json"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$query_file" \
+            "https://api.supabase.com/v1/projects/$STAGING_PROJECT_REF/database/query" > "$raw"
+          jq -e 'length == 1 and (.[0].state | type == "object")' "$raw" >/dev/null
+          jq -S '.[0].state' "$raw" > "$evidence/supabase-state.json"
+          jq -e '
+            (.latest_migration | tonumber) >= 44
+            and .candidates_force_rls == true
+            and .authenticated_reconcile_execute == false
+            and .service_reconcile_execute == true
+          ' "$evidence/supabase-state.json" >/dev/null
+          rm -f "$project_raw" "$sql_file" "$query_file" "$raw"
+
+      - name: Verify exact Cloudflare boundary and deploy dormant Worker
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ]
+          [[ "${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[0-9a-f]{32}$ ]]
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+          evidence="$RUNNER_TEMP/monzo-staging-worker-deploy"
+          mkdir -p "$evidence"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+
+          token_http="$(curl --silent --show-error --output "$RUNNER_TEMP/cf-token.json" --write-out '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify || true)"
+          [ "$token_http" = '200' ]
+          jq -e '.success == true and .result.status == "active"' "$RUNNER_TEMP/cf-token.json" >/dev/null
+          rm -f "$RUNNER_TEMP/cf-token.json"
+
+          kv_raw="$RUNNER_TEMP/monzo-kv.json"
+          kv_http="$(curl --silent --show-error --output "$kv_raw" --write-out '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$api/storage/kv/namespaces?per_page=100" || true)"
+          [ "$kv_http" = '200' ]
+          jq -e '.success == true and (.result | type == "array")' "$kv_raw" >/dev/null
+
+          state_title='vishar-monzo-oauth-state-staging'
+          tokens_title='vishar-monzo-oauth-tokens-staging'
+          routes_title='vishar-monzo-webhook-routes-staging'
+          for title in "$state_title" "$tokens_title" "$routes_title"; do
+            [ "$(jq --arg title "$title" '[.result[] | select(.title == $title)] | length' "$kv_raw")" = '1' ] || {
+              printf 'Expected exactly one KV namespace named %s.\n' "$title" >&2
+              exit 1
+            }
+          done
+          state_id="$(jq -r --arg title "$state_title" '.result[] | select(.title == $title) | .id' "$kv_raw")"
+          tokens_id="$(jq -r --arg title "$tokens_title" '.result[] | select(.title == $title) | .id' "$kv_raw")"
+          routes_id="$(jq -r --arg title "$routes_title" '.result[] | select(.title == $title) | .id' "$kv_raw")"
+          for id in "$state_id" "$tokens_id" "$routes_id"; do [[ "$id" =~ ^[0-9a-f]{32}$ ]]; done
+          [ "$state_id" != "$tokens_id" ]
+          [ "$state_id" != "$routes_id" ]
+          [ "$tokens_id" != "$routes_id" ]
+          rm -f "$kv_raw"
+
+          workers_raw="$RUNNER_TEMP/monzo-workers.json"
+          workers_http="$(curl --silent --show-error --output "$workers_raw" --write-out '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$api/workers/scripts" || true)"
+          [ "$workers_http" = '200' ]
+          jq -e '.success == true and (.result | type == "array")' "$workers_raw" >/dev/null
+          if jq -e --arg worker "$WORKER_NAME" '[.result[] | .id // empty] | index($worker) != null' "$workers_raw" >/dev/null; then
+            echo 'Dormant initial deploy refuses to overwrite an existing Monzo staging Worker.' >&2
+            exit 1
+          fi
+          rm -f "$workers_raw"
+
+          apps_raw="$RUNNER_TEMP/monzo-access-apps.json"
+          apps_http="$(curl --silent --show-error --output "$apps_raw" --write-out '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$api/access/apps?per_page=100" || true)"
+          [ "$apps_http" = '200' ]
+          jq -e '.success == true and (.result | type == "array")' "$apps_raw" >/dev/null
+
+          unexpected="$(jq -r --arg host "$HOST_DOMAIN" --arg webhook "$WEBHOOK_DOMAIN" '
+            .result[]
+            | select(
+                ((.domain // "") | startswith("monzo-staging.vishartattoo.com"))
+                and (.domain != $host)
+                and (.domain != $webhook)
+              )
+            | .domain
+          ' "$apps_raw")"
+          [ -z "$unexpected" ] || {
+            echo 'Unexpected Monzo staging Access application exists; refusing deploy.' >&2
+            exit 1
+          }
+
+          jq -e --arg domain "$HOST_DOMAIN" '
+            [.result[] | select((.domain // "") == $domain)] as $apps
+            | ($apps | length) == 1
+            and $apps[0].type == "self_hosted"
+            and $apps[0].name == "Vishar Monzo staging owner access"
+            and (($apps[0].aud // "") | test("^[0-9a-f]{64}$"))
+          ' "$apps_raw" >/dev/null
+          jq -e --arg domain "$WEBHOOK_DOMAIN" '
+            [.result[] | select((.domain // "") == $domain)] as $apps
+            | ($apps | length) == 1
+            and $apps[0].type == "self_hosted"
+            and $apps[0].name == "Vishar Monzo staging public webhook"
+          ' "$apps_raw" >/dev/null
+
+          host_id="$(jq -r --arg domain "$HOST_DOMAIN" '.result[] | select((.domain // "") == $domain) | .id' "$apps_raw")"
+          webhook_id="$(jq -r --arg domain "$WEBHOOK_DOMAIN" '.result[] | select((.domain // "") == $domain) | .id' "$apps_raw")"
+          host_aud="$(jq -r --arg domain "$HOST_DOMAIN" '.result[] | select((.domain // "") == $domain) | .aud' "$apps_raw")"
+          [[ "$host_aud" =~ ^[0-9a-f]{64}$ ]]
+          rm -f "$apps_raw"
+
+          host_policies="$RUNNER_TEMP/monzo-host-policies.json"
+          webhook_policies="$RUNNER_TEMP/monzo-webhook-policies.json"
+          for spec in "host:$host_id:$host_policies" "webhook:$webhook_id:$webhook_policies"; do
+            IFS=: read -r _ app_id file <<< "$spec"
+            http="$(curl --silent --show-error --output "$file" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$api/access/apps/$app_id/policies?per_page=100" || true)"
+            [ "$http" = '200' ]
+            jq -e '.success == true and (.result | type == "array")' "$file" >/dev/null
+          done
+          jq -e '
+            .result as $p
+            | ($p | length) == 1
+            and $p[0].name == "Vishar Monzo staging owner only"
+            and $p[0].decision == "allow"
+            and (($p[0].include // []) | length) == 1
+            and (($p[0].include[0].email.email // "") == "vvetrov41@gmail.com")
+            and (($p[0].exclude // []) | length) == 0
+            and (($p[0].require // []) | length) == 0
+          ' "$host_policies" >/dev/null
+          jq -e '
+            .result as $p
+            | ($p | length) == 1
+            and $p[0].name == "Vishar Monzo staging webhook bypass"
+            and $p[0].decision == "bypass"
+            and (($p[0].include // []) | length) == 1
+            and (($p[0].include[0] | has("everyone")) == true)
+            and (($p[0].exclude // []) | length) == 0
+            and (($p[0].require // []) | length) == 0
+          ' "$webhook_policies" >/dev/null
+          rm -f "$host_policies" "$webhook_policies"
+
+          MONZO_ACCESS_AUD="$host_aud" \
+          MONZO_KV_STATE_ID="$state_id" \
+          MONZO_KV_TOKENS_ID="$tokens_id" \
+          MONZO_KV_WEBHOOK_ROUTES_ID="$routes_id" \
+            npm run validate:monzo-staging:deploy-ready
+
+          deploy_config="$RUNNER_TEMP/wrangler.monzo-api.staging.deploy.toml"
+          secrets_file="$RUNNER_TEMP/monzo-staging-worker-secrets.json"
+          cp wrangler.monzo-api.staging.toml "$deploy_config"
+          cat >> "$deploy_config" <<EOF
+          MONZO_ACCESS_AUD = "$host_aud"
+
+          [[kv_namespaces]]
+          binding = "MONZO_OAUTH_STATE"
+          id = "$state_id"
+
+          [[kv_namespaces]]
+          binding = "MONZO_OAUTH_TOKENS"
+          id = "$tokens_id"
+
+          [[kv_namespaces]]
+          binding = "MONZO_WEBHOOK_ROUTES"
+          id = "$routes_id"
+
+          [[routes]]
+          pattern = "monzo-staging.vishartattoo.com"
+          custom_domain = true
+          EOF
+
+          export secrets_file
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import secrets
+          from pathlib import Path
+
+          key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('ascii').rstrip('=')
+          if len(key) != 43 or '=' in key:
+              raise SystemExit('Generated Monzo encryption key is not canonical base64url')
+          path = Path(os.environ['secrets_file'])
+          path.write_text(json.dumps({'MONZO_TOKEN_ENCRYPTION_KEY': key}), encoding='utf-8')
+          path.chmod(0o600)
+          PY
+          chmod 600 "$deploy_config"
+          trap 'rm -f "$deploy_config" "$secrets_file"' EXIT
+
+          grep -Fx 'workers_dev = false' "$deploy_config"
+          grep -Fx 'preview_urls = false' "$deploy_config"
+          grep -Fx 'MONZO_RECONCILIATION_ENABLED = "false"' "$deploy_config"
+          grep -Fx 'pattern = "monzo-staging.vishartattoo.com"' "$deploy_config"
+          grep -Fx 'custom_domain = true' "$deploy_config"
+          [ "$(grep -c '^\[\[kv_namespaces\]\]$' "$deploy_config")" = '3' ]
+          ! grep -E 'MONZO_OAUTH_CLIENT_ID|MONZO_OAUTH_CLIENT_SECRET|SUPABASE_SECRET_KEY' "$deploy_config"
+
+          npx wrangler deploy \
+            --config "$deploy_config" \
+            --keep-vars \
+            --secrets-file "$secrets_file"
+
+          rm -f "$deploy_config" "$secrets_file"
+          trap - EXIT
+
+          jq -n '{worker_deployed:true,encryption_secret_installed:true,provider_called:false,production_targeted:false}' \
+            > "$evidence/deploy-state.json"
+
+      - name: Verify deployed Worker remains dormant and edge-isolated
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          evidence="$RUNNER_TEMP/monzo-staging-worker-deploy"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+
+          settings="$RUNNER_TEMP/monzo-worker-settings.json"
+          settings_http="$(curl --silent --show-error --output "$settings" --write-out '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$api/workers/scripts/$WORKER_NAME/settings" || true)"
+          [ "$settings_http" = '200' ]
+          jq -e '.success == true and (.result.bindings | type == "array")' "$settings" >/dev/null
+
+          bindings="$RUNNER_TEMP/monzo-binding-names.json"
+          jq -c '[.result.bindings[] | .name // empty] | sort | unique' "$settings" > "$bindings"
+          for required in MONZO_OAUTH_STATE MONZO_OAUTH_TOKENS MONZO_WEBHOOK_ROUTES MONZO_WEBHOOK_RATE_LIMIT MONZO_TOKEN_ENCRYPTION_KEY; do
+            jq -e --arg name "$required" 'index($name) != null' "$bindings" >/dev/null
+          done
+          for forbidden in MONZO_OAUTH_CLIENT_ID MONZO_OAUTH_CLIENT_SECRET SUPABASE_SECRET_KEY; do
+            jq -e --arg name "$forbidden" 'index($name) == null' "$bindings" >/dev/null
+          done
+          rm -f "$settings" "$bindings"
+
+          host_gated=false
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 \
+              "https://$HOST_DOMAIN/health" || true)"
+            case "$status" in
+              302|303|307|401|403)
+                host_gated=true
+                break
+                ;;
+              200)
+                echo 'Owner-only host Access application is not gating /health.' >&2
+                exit 1
+                ;;
+            esac
+            sleep 6
+          done
+          [ "$host_gated" = 'true' ] || {
+            echo 'Monzo staging custom domain did not reach an Access-gated state.' >&2
+            exit 1
+          }
+
+          webhook_key="$(printf 'A%.0s' {1..43})"
+          webhook_ok=false
+          for attempt in $(seq 1 20); do
+            body="$RUNNER_TEMP/monzo-webhook-probe.json"
+            status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' --max-time 10 \
+              -X POST \
+              -H 'Content-Type: application/json' \
+              --data '{}' \
+              "https://$HOST_DOMAIN/webhooks/monzo/$webhook_key" || true)"
+            if [ "$status" = '503' ] && jq -e '.ok == false and .code == "reconciliation_disabled"' "$body" >/dev/null 2>&1; then
+              webhook_ok=true
+              rm -f "$body"
+              break
+            fi
+            rm -f "$body"
+            sleep 6
+          done
+          [ "$webhook_ok" = 'true' ] || {
+            echo 'Exact webhook-path Access Bypass did not reach the dormant Worker response.' >&2
+            exit 1
+          }
+
+          jq -n '{
+            settings_verified:true,
+            oauth_credentials_installed:false,
+            supabase_backend_secret_installed:false,
+            reconciliation_enabled:false,
+            owner_host_access_gated:true,
+            webhook_bypass_reaches_dormant_worker:true,
+            provider_called:false,
+            production_targeted:false,
+            dns_changed:true,
+            waf_changed:false,
+            kv_written:false
+          }' > "$evidence/postdeploy-state.json"
+
+      - name: Publish safe dormant deploy evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/monzo-staging-worker-deploy"
+          mkdir -p "$evidence"
+          worker_deployed=false
+          postdeploy_verified=false
+          [ -f "$evidence/deploy-state.json" ] && worker_deployed=true
+          [ -f "$evidence/postdeploy-state.json" ] && postdeploy_verified=true
+
+          supabase='null'
+          if [ -f "$evidence/supabase-state.json" ]; then
+            supabase="$(cat "$evidence/supabase-state.json")"
+          fi
+
+          jq -n \
+            --arg exact_head "$APPROVED_SHA" \
+            --arg operator_head "$OPERATOR_SHA" \
+            --argjson worker_deployed "$worker_deployed" \
+            --argjson postdeploy_verified "$postdeploy_verified" \
+            --argjson supabase "$supabase" '
+            {
+              exact_head:$exact_head,
+              operator_head:$operator_head,
+              production_targeted:false,
+              provider_called:false,
+              worker_deployed:$worker_deployed,
+              postdeploy_verified:$postdeploy_verified,
+              generated_encryption_secret_installed:$worker_deployed,
+              oauth_credentials_installed:false,
+              supabase_backend_secret_installed:false,
+              reconciliation_enabled:false,
+              custom_domain_dns_expected_from_deploy:$worker_deployed,
+              waf_changed:false,
+              retained_staging_read_only_preflight:$supabase
+            }
+          ' > "$evidence/summary.json"
+
+          {
+            echo '### Dormant Monzo staging Worker deploy'
+            echo '```json'
+            jq . "$evidence/summary.json"
+            echo '```'
+            echo ''
+            echo 'This deploy installs no Monzo OAuth credentials and no Supabase backend secret. Reconciliation remains disabled. The generated AES key is sent only as a Cloudflare Worker secret and is never emitted in this evidence.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload non-sensitive dormant deploy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monzo-staging-worker-deploy-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/monzo-staging-worker-deploy/summary.json
+          if-no-files-found: ignore
+          retention-days: 14
