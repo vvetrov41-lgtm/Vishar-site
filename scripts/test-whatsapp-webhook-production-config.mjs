@@ -65,7 +65,6 @@ for (const required of [
   'whatsapp.vishartattoo.com',
   'wrangler secret list',
   'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
-  'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
   'SUPABASE_SECRET_KEY',
   '--dry-run',
@@ -73,6 +72,7 @@ for (const required of [
   'WRANGLER_OUTPUT_FILE_PATH',
   'wrangler_deploy_event',
   'Pre-provisioned Custom Domain',
+  'Kristina production binding is intentionally absent',
 ]) {
   assert.ok(workflow.includes(required), `production webhook workflow must contain ${JSON.stringify(required)}`);
 }
@@ -88,8 +88,9 @@ for (const forbidden of [
   'wrangler.calendar',
   'wrangler.team-admin',
   'gwaliusblwrzisrwnsvs',
+  'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
 ]) {
   assert.ok(!workflow.includes(forbidden), `production webhook workflow must not contain ${JSON.stringify(forbidden)}`);
 }
 
-console.log('WhatsApp webhook production config tests passed: exact pre-provisioned Custom Domain, signed closed callback surface and guarded workflow-only deployment.');
+console.log('WhatsApp webhook production config tests passed: exact pre-provisioned Custom Domain, Vladimir-only signed closed callback surface and guarded workflow-only deployment.');
