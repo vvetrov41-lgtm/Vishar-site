@@ -1,0 +1,199 @@
+name: Ops RC31 WhatsApp mobile launcher Pages
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc31-whatsapp-mobile-launcher-operator
+    paths:
+      - .github/workflows/ops-rc31-whatsapp-mobile-launcher-pages.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-rc31-whatsapp-mobile-launcher-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy mobile-safe WhatsApp launcher to production CRM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      RELEASE_SHA: 7989b1715c27a7cff2dfb67069a84ff50bdcfb81
+      EXPECTED_PREVIOUS_PAGES_SHA: 0536d5b27118dc9775acf8ca9935e4756f09d49c
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact RC31 ancestry and operator-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc31-whatsapp-mobile-launcher-operator'
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          unexpected="$(git diff --name-only "$RELEASE_SHA"...HEAD | grep -vE '^\.github/workflows/ops-rc31-whatsapp-mobile-launcher-pages\.yml$' || true)"
+          test -z "$unexpected" || { echo 'Unexpected non-operator changes.' >&2; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$CRM_PAGES_PROJECT" = 'vishar-crm-production'
+
+      - name: Fresh production Pages and binding-name preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          project="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "$account/pages/projects/$CRM_PAGES_PROJECT")"
+          PROJECT_JSON="$project" EXPECTED="$EXPECTED_PREVIOUS_PAGES_SHA" node <<'NODE'
+          const doc = JSON.parse(process.env.PROJECT_JSON || '{}');
+          if (doc.success !== true) throw new Error('Cloudflare Pages project lookup failed');
+          const result = doc.result || {};
+          const latest = result.latest_deployment || {};
+          const current = latest?.deployment_trigger?.metadata?.commit_hash || '';
+          if (current !== process.env.EXPECTED) {
+            throw new Error(`Production CRM Pages moved unexpectedly: ${current || 'missing'}`);
+          }
+          const env = result?.deployment_configs?.production?.env_vars || {};
+          const names = Object.keys(env).sort();
+          for (const required of [
+            'META_APP_SECRET',
+            'SUPABASE_PUBLISHABLE_KEY',
+            'CLOUDFLARE_ACCOUNT_ID',
+            'CLOUDFLARE_WORKERS_EDIT_TOKEN',
+          ]) {
+            if (!Object.prototype.hasOwnProperty.call(env, required)) {
+              throw new Error(`Missing production binding: ${required}`);
+            }
+          }
+          console.log(`PAGES_PREVIOUS_COMMIT=${current}`);
+          console.log(`PAGES_PREVIOUS_DEPLOYMENT_ID=${latest.id || 'missing'}`);
+          console.log(`PAGES_PRODUCTION_ENV_NAMES=${names.join(',')}`);
+          NODE
+
+          headers="$(mktemp)"
+          curl --silent --show-error --max-time 20 --output /dev/null --dump-header "$headers" \
+            https://vishar-crm-production.pages.dev/ || true
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$headers")"
+          rm -f "$headers"
+          case "$location" in
+            https://*.cloudflareaccess.com/*) echo 'PAGES_ACCESS_REDIRECT=true' ;;
+            *) echo 'Production CRM Pages is not proven behind Cloudflare Access.' >&2; exit 1 ;;
+          esac
+
+      - name: Checkout exact validated RC31 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact mobile launcher fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test -z "$(git status --short)"
+          grep -Fq 'prepareWhatsAppEmbeddedSignup' admin/src/lib/meta-whatsapp-embedded-signup.ts
+          grep -Fq 'export function launchWhatsAppEmbeddedSignup()' admin/src/lib/meta-whatsapp-embedded-signup.ts
+          ! grep -Fq 'export async function launchWhatsAppEmbeddedSignup()' admin/src/lib/meta-whatsapp-embedded-signup.ts
+          grep -Fq 'const signupPromise = launchWhatsAppEmbeddedSignup();' admin/src/pages/WhatsAppConnectionsPage.tsx
+          grep -Fq "META_WHATSAPP_APP_ID = '894809783179152'" admin/src/lib/meta-whatsapp-embedded-signup.ts
+          grep -Fq "META_WHATSAPP_CONFIG_ID = '1321039629476766'" admin/src/lib/meta-whatsapp-embedded-signup.ts
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Re-run exact release safety checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm audit --audit-level=moderate
+          node scripts/test-whatsapp-production-onboarding.mjs
+          npm run scan:secrets
+          cd admin
+          npm ci
+          npm audit --audit-level=moderate
+          npm test
+          npm run typecheck
+          npm run build
+          test -f dist/index.html
+          test -f dist/_headers
+          test -f functions/api/whatsapp/embedded-signup/provision.js
+          cd ..
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Deploy exact CRM assets and Pages Functions from admin root
+        working-directory: admin
+        shell: bash
+        run: |
+          set -euo pipefail
+          ../node_modules/.bin/wrangler pages deploy dist \
+            --project-name "$CRM_PAGES_PROJECT" \
+            --branch production \
+            --commit-hash "$RELEASE_SHA" \
+            --commit-dirty=false
+
+      - name: Verify deployed production Pages exact SHA and bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          project="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "$account/pages/projects/$CRM_PAGES_PROJECT")"
+          PROJECT_JSON="$project" EXPECTED="$RELEASE_SHA" node <<'NODE'
+          const doc = JSON.parse(process.env.PROJECT_JSON || '{}');
+          if (doc.success !== true) throw new Error('Cloudflare Pages post-deploy lookup failed');
+          const result = doc.result || {};
+          const latest = result.latest_deployment || {};
+          const current = latest?.deployment_trigger?.metadata?.commit_hash || '';
+          if (current !== process.env.EXPECTED) throw new Error(`Unexpected deployed commit: ${current || 'missing'}`);
+          const env = result?.deployment_configs?.production?.env_vars || {};
+          const names = Object.keys(env).sort();
+          for (const required of [
+            'META_APP_SECRET',
+            'SUPABASE_PUBLISHABLE_KEY',
+            'CLOUDFLARE_ACCOUNT_ID',
+            'CLOUDFLARE_WORKERS_EDIT_TOKEN',
+          ]) {
+            if (!Object.prototype.hasOwnProperty.call(env, required)) throw new Error(`Missing post-deploy binding: ${required}`);
+          }
+          console.log(`PAGES_DEPLOYED_COMMIT=${current}`);
+          console.log(`PAGES_DEPLOYMENT_ID=${latest.id || 'missing'}`);
+          console.log(`PAGES_PRODUCTION_ENV_NAMES=${names.join(',')}`);
+          NODE
+
+      - name: Safe production summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC31 mobile-safe WhatsApp launcher production deployment'
+            echo
+            echo "- Exact release SHA: \`$RELEASE_SHA\`"
+            echo "- Expected previous Pages SHA: \`$EXPECTED_PREVIOUS_PAGES_SHA\`"
+            echo '- Target: `vishar-crm-production` only'
+            echo '- Meta SDK is prepared before the user click; `FB.login` stays inside the click gesture'
+            echo '- Production secret values are never printed; only required binding names are checked'
+            echo '- WhatsApp drain remains disabled and unscheduled'
+            echo '- No Supabase migration or database mutation'
+            echo '- Retained staging untouched'
+          } >> "$GITHUB_STEP_SUMMARY"
