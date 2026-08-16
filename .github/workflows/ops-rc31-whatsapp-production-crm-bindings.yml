@@ -1,0 +1,126 @@
+name: Ops RC31 WhatsApp production CRM bindings
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc31-whatsapp-production-crm-operator
+    paths:
+      - .github/workflows/ops-rc31-whatsapp-production-crm-bindings.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-rc31-whatsapp-production-crm-bindings
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision safe WhatsApp Pages bindings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: crm-production
+    env:
+      RELEASE_SHA: 0536d5b27118dc9775acf8ca9935e4756f09d49c
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify bounded operator branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc31-whatsapp-production-crm-operator'
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          unexpected="$(git diff --name-only "$RELEASE_SHA"...HEAD | grep -vE '^\.github/workflows/ops-rc31-whatsapp-production-crm-(pages|bindings)\.yml$' || true)"
+          test -z "$unexpected" || { echo 'Unexpected non-operator changes.' >&2; exit 1; }
+          test "$CRM_PAGES_PROJECT" = 'vishar-crm-production'
+          test -n "$SUPABASE_PUBLISHABLE_KEY"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - name: Verify exact production Pages state and Meta secret name
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          project="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "$account/pages/projects/$CRM_PAGES_PROJECT")"
+          PROJECT_JSON="$project" EXPECTED="$RELEASE_SHA" node <<'NODE'
+          const doc = JSON.parse(process.env.PROJECT_JSON || '{}');
+          if (doc.success !== true) throw new Error('Cloudflare Pages project lookup failed');
+          const result = doc.result || {};
+          const latest = result.latest_deployment || {};
+          const current = latest?.deployment_trigger?.metadata?.commit_hash || '';
+          if (current !== process.env.EXPECTED) throw new Error(`Production CRM Pages moved unexpectedly: ${current || 'missing'}`);
+          const env = result?.deployment_configs?.production?.env_vars || {};
+          const names = Object.keys(env).sort();
+          console.log(`PAGES_DEPLOYED_COMMIT=${current}`);
+          console.log(`PAGES_PRODUCTION_ENV_NAMES=${names.join(',')}`);
+          if (!Object.prototype.hasOwnProperty.call(env, 'META_APP_SECRET')) {
+            throw new Error('META_APP_SECRET is not present in production Pages bindings');
+          }
+          NODE
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Provision safe encrypted Pages bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$SUPABASE_PUBLISHABLE_KEY" | npx --yes wrangler@4.115.0 pages secret put SUPABASE_PUBLISHABLE_KEY --project-name "$CRM_PAGES_PROJECT"
+          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npx --yes wrangler@4.115.0 pages secret put CLOUDFLARE_ACCOUNT_ID --project-name "$CRM_PAGES_PROJECT"
+
+      - name: Verify binding names only
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          project="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "$account/pages/projects/$CRM_PAGES_PROJECT")"
+          PROJECT_JSON="$project" EXPECTED="$RELEASE_SHA" node <<'NODE'
+          const doc = JSON.parse(process.env.PROJECT_JSON || '{}');
+          if (doc.success !== true) throw new Error('Cloudflare Pages project lookup failed');
+          const result = doc.result || {};
+          const current = result?.latest_deployment?.deployment_trigger?.metadata?.commit_hash || '';
+          if (current !== process.env.EXPECTED) throw new Error(`Production CRM Pages moved unexpectedly: ${current || 'missing'}`);
+          const env = result?.deployment_configs?.production?.env_vars || {};
+          const names = Object.keys(env).sort();
+          for (const required of ['META_APP_SECRET', 'SUPABASE_PUBLISHABLE_KEY', 'CLOUDFLARE_ACCOUNT_ID']) {
+            if (!Object.prototype.hasOwnProperty.call(env, required)) throw new Error(`Missing production binding: ${required}`);
+          }
+          if (Object.prototype.hasOwnProperty.call(env, 'CLOUDFLARE_WORKERS_EDIT_TOKEN')) {
+            throw new Error('CLOUDFLARE_WORKERS_EDIT_TOKEN must not be provisioned by this operator');
+          }
+          console.log(`PAGES_PRODUCTION_ENV_NAMES=${names.join(',')}`);
+          console.log('SAFE_BINDINGS_READY=true');
+          NODE
+
+      - name: Safe summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC31 WhatsApp production CRM binding provisioning'
+            echo
+            echo '- Verifies `META_APP_SECRET` by name only; value is never read or printed'
+            echo '- Adds encrypted `SUPABASE_PUBLISHABLE_KEY` and `CLOUDFLARE_ACCOUNT_ID`'
+            echo '- Does not copy the broad GitHub Cloudflare API token into runtime'
+            echo '- Does not provision `CLOUDFLARE_WORKERS_EDIT_TOKEN`'
+            echo '- Does not enable WhatsApp drain or send messages'
+            echo '- Retained staging untouched'
+          } >> "$GITHUB_STEP_SUMMARY"
