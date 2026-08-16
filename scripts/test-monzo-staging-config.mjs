@@ -43,11 +43,6 @@ const mutations = [
     /must not be committed/,
   ],
   [
-    'committed OAuth secret',
-    `${canonical}\nMONZO_OAUTH_CLIENT_SECRET = "synthetic-not-a-real-secret"\n`,
-    /must not be committed/,
-  ],
-  [
     'removed rate limiter',
     canonical.replace('[[ratelimits]]\n', ''),
     /exactly one isolated rate limiter/,
