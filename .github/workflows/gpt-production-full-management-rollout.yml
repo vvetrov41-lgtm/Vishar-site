@@ -1,0 +1,184 @@
+name: GPT production full management rollout
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc31-gpt-full-management
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gpt-production-full-management-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.sha }}
+      PRODUCT_BRANCH: agent/gpt-full-crm-management
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: vishar-gpt-actions-production
+      TARGET_HOST: gpt-actions.vishartattoo.com
+
+    steps:
+      - name: Verify exact release operator and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc31-gpt-full-management' ]
+          [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          [ "$SUPABASE_URL" = "https://${PROJECT_REF}.supabase.co" ]
+          [ "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify operator SHA equals product head and normal CI is green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+          product_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test -n "$product_sha"
+          test "$product_sha" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha,event}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" 'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate exact full GPT production runtime
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm run test:gpt-production
+          npm run validate:gpt-actions
+          npm run check:gpt-production-bundle
+          npm run scan:secrets
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact production Supabase project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Verify production migration state before rollout
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list | tee "$RUNNER_TEMP/migrations-before.txt"
+          awk -F'|' '
+            function clean(value) { gsub(/[`[:space:]]/, "", value); return value }
+            {
+              local_version = clean($1)
+              remote_version = clean($2)
+              if (local_version == "0053" && remote_version == "0053") have_0053 = 1
+              if (local_version == "0054") { have_0054 = 1; remote_0054 = remote_version }
+              if (local_version == "0055") { have_0055 = 1; remote_0055 = remote_version }
+            }
+            END {
+              if (!have_0053 || !have_0054 || !have_0055 || remote_0054 != "" || remote_0055 != "") exit 1
+            }
+          ' "$RUNNER_TEMP/migrations-before.txt"
+
+      - name: Dry-run production migrations
+        run: supabase db push --dry-run
+
+      - name: Apply canonical production migrations
+        run: supabase db push
+
+      - name: Verify migration 0055 is recorded remotely
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list | tee "$RUNNER_TEMP/migrations-after.txt"
+          awk -F'|' '
+            function clean(value) { gsub(/[`[:space:]]/, "", value); return value }
+            {
+              local_version = clean($1)
+              remote_version = clean($2)
+              if (local_version == "0054" && remote_version == "0054") deployed_0054 = 1
+              if (local_version == "0055" && remote_version == "0055") deployed_0055 = 1
+            }
+            END { if (!deployed_0054 || !deployed_0055) exit 1 }
+          ' "$RUNNER_TEMP/migrations-after.txt"
+
+      - name: Deploy full-management production GPT edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var GPT_OAUTH_RELAY_ENABLED:true \
+            --var GPT_ACTIONS_ENABLED:true
+
+      - name: Verify production edge remains OAuth-gated
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/privacy" || true)"
+            oauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/oauth/authorize" || true)"
+            enquiries="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/enquiries" || true)"
+            projects="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/projects" || true)"
+            payments="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/payments/requests" || true)"
+            if [ "$privacy" = 200 ] && [ "$oauth" = 400 ] && [ "$enquiries" = 401 ] && [ "$projects" = 401 ] && [ "$payments" = 401 ]; then exit 0; fi
+            sleep 6
+          done
+          echo 'Production full-management GPT edge did not reach the expected OAuth-gated state.' >&2
+          exit 1
+
+      - name: Assert workflow never enables database capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Ei 'configure_gpt_full_management|update[[:space:]]+crm_private\.gpt_action_clients' .github/workflows/gpt-production-full-management-rollout.yml
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### GPT production full management rollout'
+            echo "- Exact SHA: \`$APPROVED_SHA\`"
+            echo "- Operator branch: \`$GITHUB_REF_NAME\`"
+            echo "- Product branch: \`$PRODUCT_BRANCH\`"
+            echo '- Production migrations: `0054_gpt_full_crm_management`, `0055_gpt_full_crm_completion`'
+            echo '- Worker host: `gpt-actions.vishartattoo.com`'
+            echo '- OAuth and artist routing: unchanged'
+            echo '- Full-management capability mutation: none in this workflow'
+            echo '- New capability defaults: off'
+            echo '- RLS / Storage policy changes: none'
+            echo '- Retained staging targeted: no'
+          } >> "$GITHUB_STEP_SUMMARY"
