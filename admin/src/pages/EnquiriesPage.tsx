@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
+import { ManualReferencePicker } from '../components/ManualReferencePicker';
 import { Link } from '../lib/router';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
@@ -9,6 +10,10 @@ import { can } from '../lib/permissions';
 import type { Enquiry, EnquiryStatus } from '../lib/types';
 import { useArtistScope } from '../lib/artist-scope';
 import { useDebouncedValue } from '../lib/use-debounced-value';
+import {
+  createManualEnquiryWithReferences,
+  ManualReferenceUploadError,
+} from '../lib/manual-enquiry-reference-flow';
 
 const FILTERS: ('' | EnquiryStatus)[] = [
   '',
@@ -68,11 +73,13 @@ export function EnquiriesPage() {
   const mayCreate = can(profile?.role, 'createEnquiry');
 
   const [manual, setManual] = useState<ManualForm>(EMPTY_MANUAL_FORM);
+  const [manualReferences, setManualReferences] = useState<File[]>([]);
   const [manualKey, setManualKey] = useState(() => crypto.randomUUID());
   const [manualAttempted, setManualAttempted] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
   const [manualSuccess, setManualSuccess] = useState<string | null>(null);
+  const [manualCreated, setManualCreated] = useState<{ id: string; reference: string } | null>(null);
 
   const { data, loading, error, reload } = useAsync<Enquiry[]>(
     () => api.listEnquiries({
@@ -87,16 +94,25 @@ export function EnquiriesPage() {
     setManual((current) => ({ ...current, [field]: value }));
     setManualError(null);
     setManualSuccess(null);
+    setManualCreated(null);
     if (manualAttempted) {
       setManualKey(crypto.randomUUID());
       setManualAttempted(false);
     }
   }
 
+  function resetManualAfterCreation() {
+    setManual(EMPTY_MANUAL_FORM);
+    setManualReferences([]);
+    setManualKey(crypto.randomUUID());
+    setManualAttempted(false);
+  }
+
   async function submitManual(event: FormEvent) {
     event.preventDefault();
     setManualError(null);
     setManualSuccess(null);
+    setManualCreated(null);
 
     if (!selectedArtistId) {
       setManualError(copy.chooseArtist);
@@ -114,7 +130,7 @@ export function EnquiriesPage() {
     setManualSaving(true);
     setManualAttempted(true);
     try {
-      const result = await api.createManualEnquiry({
+      const result = await createManualEnquiryWithReferences(api, {
         idempotencyKey: manualKey,
         artistId: selectedArtistId,
         fullName: manual.fullName,
@@ -130,18 +146,26 @@ export function EnquiriesPage() {
         preferredTiming: manual.preferredTiming,
         idea: manual.idea,
         privacyAcknowledged: manual.privacyAcknowledged,
-      });
+      }, manualReferences);
+
       setManualSuccess(
         result.client_conflict
           ? copy.createdConflict.replace('{reference}', result.reference_number)
           : copy.created.replace('{reference}', result.reference_number)
       );
-      setManual(EMPTY_MANUAL_FORM);
-      setManualKey(crypto.randomUUID());
-      setManualAttempted(false);
+      resetManualAfterCreation();
       reload();
     } catch (cause) {
-      setManualError(cause instanceof Error ? cause.message : copy.failed);
+      if (cause instanceof ManualReferenceUploadError) {
+        const reference = cause.enquiry.reference_number;
+        setManualCreated({ id: cause.enquiry.enquiry_id, reference });
+        setManualSuccess(copy.createdPartial.replace('{reference}', reference));
+        setManualError(copy.referencesFailed);
+        resetManualAfterCreation();
+        reload();
+      } else {
+        setManualError(cause instanceof Error ? cause.message : copy.failed);
+      }
     } finally {
       setManualSaving(false);
     }
@@ -264,6 +288,19 @@ export function EnquiriesPage() {
                 onChange={(event) => updateManual('idea', event.target.value)}
               />
             </label>
+
+            <ManualReferencePicker
+              files={manualReferences}
+              onChange={(files) => {
+                setManualReferences(files);
+                setManualError(null);
+                setManualSuccess(null);
+                setManualCreated(null);
+              }}
+              language={language}
+              disabled={manualSaving}
+            />
+
             <label className="checkbox-row">
               <input
                 type="checkbox"
@@ -274,6 +311,13 @@ export function EnquiriesPage() {
             </label>
             {manualError ? <p className="notice warn" role="alert">{manualError}</p> : null}
             {manualSuccess ? <p className="notice ok" role="status">{manualSuccess}</p> : null}
+            {manualCreated ? (
+              <div className="actions">
+                <Link to={`/enquiries/${manualCreated.id}`} className="badge">
+                  {copy.openCreated.replace('{reference}', manualCreated.reference)}
+                </Link>
+              </div>
+            ) : null}
             <div className="actions">
               <button type="submit" disabled={manualSaving || !selectedArtistId}>
                 {manualSaving ? copy.saving : copy.create}
@@ -363,6 +407,9 @@ const MANUAL_COPY: Record<Language, Record<string, string>> = {
     failed: 'Could not create that manual enquiry.',
     created: 'Created {reference}.',
     createdConflict: 'Created {reference}. Contact identifiers matched different client records and require review.',
+    createdPartial: 'Created {reference}.',
+    referencesFailed: 'The enquiry was saved, but not all reference images uploaded. Open the saved enquiry and add the remaining references there.',
+    openCreated: 'Open {reference}',
   },
   ru: {
     newManual: 'Новая ручная заявка',
@@ -388,5 +435,8 @@ const MANUAL_COPY: Record<Language, Record<string, string>> = {
     failed: 'Не удалось создать ручную заявку.',
     created: 'Создана заявка {reference}.',
     createdConflict: 'Создана заявка {reference}. Контактные идентификаторы совпали с разными карточками клиентов и требуют проверки.',
+    createdPartial: 'Создана заявка {reference}.',
+    referencesFailed: 'Заявка сохранена, но загрузились не все референсы. Откройте сохранённую заявку и добавьте оставшиеся изображения там.',
+    openCreated: 'Открыть {reference}',
   },
 };

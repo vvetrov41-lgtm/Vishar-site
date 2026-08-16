@@ -29,7 +29,15 @@ const RouterContext = createContext<RouterValue | null>(null);
 
 function currentPath(): string {
   const hash = window.location.hash.replace(/^#/, '');
-  return hash || '/';
+  if (hash) return hash;
+
+  // Supabase OAuth redirects to an ordinary HTTPS path so the query-string
+  // authorization_id remains available to OAuthConsentPage. Allow only that
+  // one direct path through the otherwise hash-based CRM router.
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (pathname === '/oauth/consent') return '/oauth/consent';
+
+  return '/';
 }
 
 /** Matches `/enquiries/:id` against `/enquiries/abc`. */
