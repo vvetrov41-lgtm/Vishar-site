@@ -47,12 +47,12 @@ declare global {
 export interface WhatsAppEmbeddedSignupResult {
   authorizationCode: string;
   wabaId: string;
-  phoneNumberId: string;
+  phoneNumberId: string | null;
   event: 'FINISH';
 }
 
 export interface EmbeddedSignupMessage {
-  event: 'FINISH' | 'CANCEL' | 'ERROR';
+  event: 'FINISH' | 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' | 'CANCEL' | 'ERROR';
   wabaId: string | null;
   phoneNumberId: string | null;
 }
@@ -79,7 +79,12 @@ export function parseEmbeddedSignupMessage(origin: string, data: unknown): Embed
 
   const record = payload as Record<string, unknown>;
   if (record.type !== 'WA_EMBEDDED_SIGNUP') return null;
-  if (record.event !== 'FINISH' && record.event !== 'CANCEL' && record.event !== 'ERROR') return null;
+  if (
+    record.event !== 'FINISH'
+    && record.event !== 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'
+    && record.event !== 'CANCEL'
+    && record.event !== 'ERROR'
+  ) return null;
 
   const session = record.data && typeof record.data === 'object'
     ? record.data as Record<string, unknown>
@@ -190,9 +195,15 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
     };
 
     const maybeResolve = () => {
-      if (settled || !authorizationCode || finishedSession?.event !== 'FINISH') return;
-      if (!finishedSession.wabaId || !finishedSession.phoneNumberId) {
-        rejectOnce(new Error('Meta finished onboarding without a complete WhatsApp account session.'));
+      const isFinished = finishedSession?.event === 'FINISH'
+        || finishedSession?.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
+      if (settled || !authorizationCode || !isFinished) return;
+      if (!finishedSession?.wabaId) {
+        rejectOnce(new Error('Meta finished onboarding without a WhatsApp Business Account id.'));
+        return;
+      }
+      if (finishedSession.event === 'FINISH' && !finishedSession.phoneNumberId) {
+        rejectOnce(new Error('Meta finished standard onboarding without a phone-number id.'));
         return;
       }
       settled = true;
