@@ -1,10 +1,9 @@
 name: Roll out Kristina production booking recovery
 
 on:
-  pull_request:
+  push:
     branches:
       - release/private-crm-rc25-kristina-booking
-    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -16,10 +15,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy exact Kristina booking recovery
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'ops/run-kristina-production-booking-recovery' &&
-      github.event.pull_request.base.ref == 'release/private-crm-rc25-kristina-booking'
+    if: github.ref == 'refs/heads/release/private-crm-rc25-kristina-booking'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: crm-production
@@ -30,31 +26,28 @@ jobs:
       SUPABASE_URL: https://vfjexhfdbrjmuxfdvbdx.supabase.co
 
     steps:
-      - name: Verify exact same-repository rollout marker
+      - name: Verify exact protected release ref
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [ "$BASE_SHA" != "$HEAD_SHA" ]
-          [ "${{ github.event.pull_request.changed_files }}" = '1' ]
+          [ "$GITHUB_REF" = 'refs/heads/release/private-crm-rc25-kristina-booking' ]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
 
       - name: Checkout exact approved recovery base
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Verify exact checkout and recovery boundary
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          [ "$(git rev-parse HEAD)" = "$BASE_SHA" ]
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
           [ -z "$(git status --short)" ]
           git merge-base --is-ancestor 2729bf08ed206a0d6d42f6d055ded8489d0858e4 HEAD
           test -f workers/lib/production-booking-routing.js
@@ -239,7 +232,7 @@ jobs:
           {
             echo '### Kristina production booking recovery'
             echo
-            echo "- Source SHA: \`${{ github.event.pull_request.base.sha }}\`"
+            echo "- Source SHA: \`${{ github.sha }}\`"
             echo "- Worker: \`$WORKER_NAME\`"
             echo "- Prior version: \`${PRIOR_WORKER_VERSION:-not changed}\`"
             echo "- Deployed version: \`${DEPLOYED_WORKER_VERSION:-not deployed}\`"
