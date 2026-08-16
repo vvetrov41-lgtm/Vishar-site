@@ -135,10 +135,10 @@ jobs:
           echo "::add-mask::$KRISTINA_TELEGRAM_BOT_TOKEN"
           envelope="$RUNNER_TEMP/kristina-telegram-envelope.json"
           umask 077
-          BOT_TOKEN="$KRISTINA_TELEGRAM_BOT_TOKEN" CHAT_ID="$TARGET_CHAT_ID" node <<'NODE' > "$envelope"
+          node <<'NODE' > "$envelope"
           process.stdout.write(JSON.stringify({
-            botToken: process.env.BOT_TOKEN,
-            chatId: process.env.CHAT_ID,
+            botToken: process.env.KRISTINA_TELEGRAM_BOT_TOKEN,
+            chatId: process.env.TARGET_CHAT_ID,
           }));
           NODE
           npx wrangler secret put "$BINDING_NAME"             --config wrangler.telegram-drain.production.toml             --name "$WORKER_NAME" < "$envelope"
@@ -172,11 +172,11 @@ jobs:
           {
             echo '### Kristina production Telegram rebind'
             echo
-            echo "- Worker: `$WORKER_NAME`"
-            echo "- Binding: `$BINDING_NAME` only"
-            echo "- Target chat id: `$TARGET_CHAT_ID`"
-            echo "- Expected bot: `@$EXPECTED_BOT_USERNAME`"
-            echo "- Prior Worker version: `${PRIOR_WORKER_VERSION:-not changed}`"
+            printf -- '- Worker: `%s`\n' "$WORKER_NAME"
+            printf -- '- Binding: `%s` only\n' "$BINDING_NAME"
+            printf -- '- Target chat id: `%s`\n' "$TARGET_CHAT_ID"
+            printf -- '- Expected bot: `@%s`\n' "$EXPECTED_BOT_USERNAME"
+            printf -- '- Prior Worker version: `%s`\n' "${PRIOR_WORKER_VERSION:-not changed}"
             echo '- Staging and Vladimir bindings: not modified'
             echo '- Secret values: never printed or stored in the repository'
           } >> "$GITHUB_STEP_SUMMARY"
