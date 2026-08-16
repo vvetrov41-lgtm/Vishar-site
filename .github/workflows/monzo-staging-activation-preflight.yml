@@ -33,7 +33,6 @@ jobs:
       APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
       OPERATOR_SHA: ${{ github.event.pull_request.base.sha }}
       EXPECTED_PRODUCT_SHA: 505ca4dc29c9b2f40f3388ec0a33d9243b7aa24f
-      EXPECTED_PRODUCT_BRANCH: agent/monzo-crm-launcher
       EXPECTED_OPERATOR_BRANCH: agent/monzo-staging-activation-operator
       EXPECTED_VALIDATION_BRANCH: agent/monzo-staging-activation-validation
       PRODUCTION_TARGETED: 'false'
@@ -168,14 +167,13 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/test-monzo-api-worker.mjs
-          node scripts/test-monzo-api-hardening.mjs
-          node scripts/test-monzo-api-activation.mjs
+          node scripts/test-monzo-account-activation.mjs
           node scripts/test-monzo-connection-lifecycle.mjs
           node scripts/test-monzo-setup-flow.mjs
+          node scripts/test-monzo-api-rollbacks.mjs
+          node scripts/test-monzo-api-client-guards.mjs
           npm run scan:secrets
-          out="$RUNNER_TEMP/monzo-dry-run"
-          mkdir -p "$out"
-          npx wrangler deploy --dry-run --config wrangler.monzo-api.toml --outdir "$out" >/dev/null
+          npm run check:monzo-api-bundle
           [ "$PRODUCTION_TARGETED" = 'false' ]
 
       - name: Inspect encrypted configuration names and Cloudflare read capability
@@ -240,8 +238,6 @@ jobs:
             }
           ' > "$evidence/summary.json"
 
-          # Provider/API bodies can contain account metadata. Keep only HTTP
-          # status codes in evidence and delete raw Cloudflare responses too.
           rm -f "$evidence/token-verify.json" "$evidence/kv-list.json" "$evidence/workers-list.json"
           jq . "$evidence/summary.json"
 
