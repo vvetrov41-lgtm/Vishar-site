@@ -174,7 +174,7 @@ paths:
       x-openai-isConsequential: true
       parameters:
         - {name: block_id, in: path, required: true, schema: {type: string, format: uuid}}
-      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Availability cancellation result}}
 
   /v1/payments/requests:
@@ -215,7 +215,7 @@ paths:
       x-openai-isConsequential: true
       parameters:
         - {name: payment_request_id, in: path, required: true, schema: {type: string, format: uuid}}
-      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Payment request cancellation result}}
 
   /v1/payments/requests/{payment_request_id}/manual-payment:
@@ -258,7 +258,7 @@ paths:
       x-openai-isConsequential: true
       parameters:
         - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
-      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Conversation result}}
 
   /v1/whatsapp/conversations/{conversation_id}/messages:
@@ -328,7 +328,7 @@ paths:
       x-openai-isConsequential: true
       parameters:
         - {name: email_message_id, in: path, required: true, schema: {type: string, format: uuid}}
-      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Approval result}}
 
   /v1/enquiries/{enquiry_id}/files:
