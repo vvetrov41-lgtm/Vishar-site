@@ -1,0 +1,396 @@
+name: Monzo staging Access provisioning
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: monzo-staging-access-provisioning
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision isolated Monzo staging Access boundary
+    if: >-
+      github.event.action == 'edited' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'agent/monzo-staging-access-provisioning-operator' &&
+      github.event.pull_request.head.ref == 'agent/monzo-staging-access-provisioning-validation' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, format('<!-- RUN_MONZO_STAGING_ACCESS_PROVISIONING:{0} -->', github.event.pull_request.head.sha))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      OPERATOR_SHA: ${{ github.event.pull_request.base.sha }}
+      EXPECTED_PRODUCT_SHA: 5fc45508be2bcda2fb573254cdbfb430a57b3cc6
+      EXPECTED_OPERATOR_BRANCH: agent/monzo-staging-access-provisioning-operator
+      EXPECTED_VALIDATION_BRANCH: agent/monzo-staging-access-provisioning-validation
+      PRODUCTION_TARGETED: 'false'
+      HOST_DOMAIN: monzo-staging.vishartattoo.com
+      WEBHOOK_DOMAIN: monzo-staging.vishartattoo.com/webhooks/monzo/*
+
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$OPERATOR_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          [ "$HOST_DOMAIN" = 'monzo-staging.vishartattoo.com' ]
+          [ "$WEBHOOK_DOMAIN" = 'monzo-staging.vishartattoo.com/webhooks/monzo/*' ]
+          marker="<!-- RUN_MONZO_STAGING_ACCESS_PROVISIONING:${APPROVED_SHA} -->"
+          jq -e \
+            --arg sha "$APPROVED_SHA" \
+            --arg operator_sha "$OPERATOR_SHA" \
+            --arg base "$EXPECTED_OPERATOR_BRANCH" \
+            --arg head "$EXPECTED_VALIDATION_BRANCH" \
+            --arg marker "$marker" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == $base
+            and .pull_request.base.sha == $operator_sha
+            and .pull_request.head.ref == $head
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains($marker))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Check out exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact stack, diff and successful normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "${EXPECTED_PRODUCT_SHA}^{commit}")" = "$EXPECTED_PRODUCT_SHA" ]
+          [ "$(git rev-parse "${OPERATOR_SHA}^{commit}")" = "$OPERATOR_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_PRODUCT_SHA" "$OPERATOR_SHA"
+          git merge-base --is-ancestor "$OPERATOR_SHA" "$APPROVED_SHA"
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$EXPECTED_PRODUCT_SHA...$OPERATOR_SHA" > "$RUNNER_TEMP/operator-compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              ".github/workflows/monzo-staging-access-provisioning.yml"
+            ] | sort)
+          ' "$RUNNER_TEMP/operator-compare.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$OPERATOR_SHA...$APPROVED_SHA" > "$RUNNER_TEMP/validation-compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              "docs/ai/monzo-staging-access-provisioning-validation.md"
+            ] | sort)
+          ' "$RUNNER_TEMP/validation-compare.json" >/dev/null
+
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {id,name,event,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+
+          jq -n --slurpfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
+            ["Static Validation", "CRM and booking validation"] as $required
+            | reduce $required[] as $name ({};
+                ($runs[0] | map(select(
+                  .name == $name
+                  and .event == "pull_request"
+                  and .head_sha == $sha
+                  and .status == "completed"
+                  and .conclusion == "success"
+                )) | sort_by(.id) | last) as $run
+                | if $run == null then error("missing exact-head normal CI: " + $name)
+                  else .[$name] = $run end
+              )
+          ' > "$RUNNER_TEMP/normal-ci-runs.json"
+
+          crm_run_id="$(jq -r '.["CRM and booking validation"].id' "$RUNNER_TEMP/normal-ci-runs.json")"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$crm_run_id/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | {id,name,status,conclusion}' \
+            | jq -s . > "$RUNNER_TEMP/normal-ci-jobs.json"
+          for job in "Public site and Worker" "Private CRM" "Supabase migrations and pgTAP"; do
+            jq -e --arg name "$job" '
+              [.[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length == 1
+            ' "$RUNNER_TEMP/normal-ci-jobs.json" >/dev/null
+          done
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate dormant Monzo staging contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run validate:monzo-staging
+          npm run check:monzo-staging-bundle
+          npm run scan:secrets
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Provision exact Access applications atomically
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ]
+          [[ "${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[0-9a-f]{32}$ ]]
+
+          evidence="$RUNNER_TEMP/monzo-staging-access-provisioning"
+          mkdir -p "$evidence"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+
+          list_apps() {
+            local target="$1"
+            local http
+            http="$(curl --silent --show-error --output "$target" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$api/access/apps?per_page=100" || true)"
+            [ "$http" = '200' ] || {
+              printf 'Cloudflare Access app list failed with HTTP %s. Access: Apps and Policies Write is required for this guarded provisioning run.\n' "$http" >&2
+              exit 1
+            }
+            jq -e '.success == true and (.result | type == "array")' "$target" >/dev/null
+          }
+
+          list_policies() {
+            local app_id="$1"
+            local target="$2"
+            local http
+            http="$(curl --silent --show-error --output "$target" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$api/access/apps/$app_id/policies?per_page=100" || true)"
+            [ "$http" = '200' ] || {
+              printf 'Cloudflare Access policy list failed with HTTP %s.\n' "$http" >&2
+              exit 1
+            }
+            jq -e '.success == true and (.result | type == "array")' "$target" >/dev/null
+          }
+
+          verify_host_app() {
+            local apps_file="$1"
+            local app_id
+            app_id="$(jq -r --arg domain "$HOST_DOMAIN" '.result[] | select((.domain // "") == $domain) | .id' "$apps_file")"
+            [ -n "$app_id" ]
+            jq -e --arg domain "$HOST_DOMAIN" '
+              [.result[] | select((.domain // "") == $domain)] | length == 1
+              and ([.result[] | select((.domain // "") == $domain)][0].type == "self_hosted")
+              and (([.result[] | select((.domain // "") == $domain)][0].aud // "") | test("^[0-9a-f]{64}$"))
+            ' "$apps_file" >/dev/null
+            list_policies "$app_id" "$evidence/host-policies.json"
+            jq -e '
+              .result | length == 1
+              and .[0].decision == "allow"
+              and ((.[0].include // []) | length == 1)
+              and ((.[0].include[0].email.email // "") == "vvetrov41@gmail.com")
+              and ((.[0].exclude // []) | length == 0)
+              and ((.[0].require // []) | length == 0)
+            ' "$evidence/host-policies.json" >/dev/null
+          }
+
+          verify_webhook_app() {
+            local apps_file="$1"
+            local app_id
+            app_id="$(jq -r --arg domain "$WEBHOOK_DOMAIN" '.result[] | select((.domain // "") == $domain) | .id' "$apps_file")"
+            [ -n "$app_id" ]
+            jq -e --arg domain "$WEBHOOK_DOMAIN" '
+              [.result[] | select((.domain // "") == $domain)] | length == 1
+              and ([.result[] | select((.domain // "") == $domain)][0].type == "self_hosted")
+            ' "$apps_file" >/dev/null
+            list_policies "$app_id" "$evidence/webhook-policies.json"
+            jq -e '
+              .result | length == 1
+              and .[0].decision == "bypass"
+              and ((.[0].include // []) | length == 1)
+              and ((.[0].include[0].everyone // null) == {})
+              and ((.[0].exclude // []) | length == 0)
+              and ((.[0].require // []) | length == 0)
+            ' "$evidence/webhook-policies.json" >/dev/null
+          }
+
+          list_apps "$evidence/before.json"
+
+          unexpected="$(jq -r --arg host "$HOST_DOMAIN" --arg webhook "$WEBHOOK_DOMAIN" '
+            .result[]
+            | select(
+                ((.domain // "") | startswith("monzo-staging.vishartattoo.com"))
+                and (.domain != $host)
+                and (.domain != $webhook)
+              )
+            | .domain
+          ' "$evidence/before.json")"
+          [ -z "$unexpected" ] || {
+            printf 'Unexpected Monzo staging Access application exists; refusing mutation.\n' >&2
+            exit 1
+          }
+
+          host_count="$(jq --arg domain "$HOST_DOMAIN" '[.result[] | select((.domain // "") == $domain)] | length' "$evidence/before.json")"
+          webhook_count="$(jq --arg domain "$WEBHOOK_DOMAIN" '[.result[] | select((.domain // "") == $domain)] | length' "$evidence/before.json")"
+          [ "$host_count" -le 1 ]
+          [ "$webhook_count" -le 1 ]
+
+          host_disposition=existing
+          webhook_disposition=existing
+
+          if [ "$host_count" -eq 1 ]; then
+            verify_host_app "$evidence/before.json"
+          else
+            host_payload="$(jq -n --arg domain "$HOST_DOMAIN" '{
+              name:"Vishar Monzo staging owner access",
+              type:"self_hosted",
+              domain:$domain,
+              policies:[{
+                name:"Vishar Monzo staging owner only",
+                decision:"allow",
+                precedence:1,
+                include:[{email:{email:"vvetrov41@gmail.com"}}]
+              }]
+            }')"
+            host_http="$(curl --silent --show-error --output "$evidence/host-create.json" --write-out '%{http_code}' \
+              -X POST \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              --data "$host_payload" \
+              "$api/access/apps" || true)"
+            [ "$host_http" = '200' ] || {
+              printf 'Host Access application creation failed with HTTP %s. No deletion or rollback mutation will be attempted.\n' "$host_http" >&2
+              rm -f "$evidence/host-create.json"
+              exit 1
+            }
+            jq -e --arg domain "$HOST_DOMAIN" '.success == true and .result.type == "self_hosted" and .result.domain == $domain' "$evidence/host-create.json" >/dev/null
+            host_disposition=created
+            rm -f "$evidence/host-create.json"
+          fi
+
+          list_apps "$evidence/mid.json"
+          verify_host_app "$evidence/mid.json"
+
+          webhook_count="$(jq --arg domain "$WEBHOOK_DOMAIN" '[.result[] | select((.domain // "") == $domain)] | length' "$evidence/mid.json")"
+          [ "$webhook_count" -le 1 ]
+          if [ "$webhook_count" -eq 1 ]; then
+            verify_webhook_app "$evidence/mid.json"
+          else
+            webhook_payload="$(jq -n --arg domain "$WEBHOOK_DOMAIN" '{
+              name:"Vishar Monzo staging public webhook",
+              type:"self_hosted",
+              domain:$domain,
+              policies:[{
+                name:"Vishar Monzo staging webhook bypass",
+                decision:"bypass",
+                precedence:1,
+                include:[{everyone:{}}]
+              }]
+            }')"
+            webhook_http="$(curl --silent --show-error --output "$evidence/webhook-create.json" --write-out '%{http_code}' \
+              -X POST \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              --data "$webhook_payload" \
+              "$api/access/apps" || true)"
+            [ "$webhook_http" = '200' ] || {
+              printf 'Webhook-path Access application creation failed with HTTP %s. Existing owner-only host application is preserved; no deletion or rollback mutation will be attempted.\n' "$webhook_http" >&2
+              rm -f "$evidence/webhook-create.json"
+              exit 1
+            }
+            jq -e --arg domain "$WEBHOOK_DOMAIN" '.success == true and .result.type == "self_hosted" and .result.domain == $domain' "$evidence/webhook-create.json" >/dev/null
+            webhook_disposition=created
+            rm -f "$evidence/webhook-create.json"
+          fi
+
+          list_apps "$evidence/after.json"
+          verify_host_app "$evidence/after.json"
+          verify_webhook_app "$evidence/after.json"
+
+          host_aud="$(jq -r --arg domain "$HOST_DOMAIN" '.result[] | select((.domain // "") == $domain) | .aud' "$evidence/after.json")"
+          [[ "$host_aud" =~ ^[0-9a-f]{64}$ ]]
+
+          jq -n \
+            --arg exact_head "$APPROVED_SHA" \
+            --arg operator_head "$OPERATOR_SHA" \
+            --arg host_disposition "$host_disposition" \
+            --arg webhook_disposition "$webhook_disposition" \
+            --arg host_aud "$host_aud" '
+            {
+              exact_head: $exact_head,
+              operator_head: $operator_head,
+              production_targeted: false,
+              staging_mutated: ($host_disposition == "created" or $webhook_disposition == "created"),
+              provider_called: false,
+              worker_deployed: false,
+              dns_changed: false,
+              waf_changed: false,
+              access: {
+                host_application: {
+                  exact_domain: true,
+                  type: "self_hosted",
+                  owner_only_allow_verified: true,
+                  aud: $host_aud,
+                  disposition: $host_disposition
+                },
+                webhook_application: {
+                  exact_path: true,
+                  type: "self_hosted",
+                  bypass_everyone_verified: true,
+                  disposition: $webhook_disposition
+                }
+              }
+            }
+          ' > "$evidence/summary.json"
+
+          rm -f "$evidence/before.json" "$evidence/mid.json" "$evidence/after.json" "$evidence/host-policies.json" "$evidence/webhook-policies.json"
+          jq . "$evidence/summary.json"
+
+      - name: Publish safe Access provisioning summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/monzo-staging-access-provisioning/summary.json"
+          if [ -f "$evidence" ]; then
+            {
+              echo '### Monzo staging Access provisioning'
+              echo '```json'
+              jq . "$evidence"
+              echo '```'
+              echo ''
+              echo 'Only the exact owner-only host Access application and exact webhook-path Bypass application may be created. Existing applications are never updated or deleted. No Worker deploy, DNS/WAF change, KV write, provider call, Supabase mutation or production action is implemented.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload non-sensitive Access provisioning evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monzo-staging-access-provisioning-${{ env.APPROVED_SHA }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: ${{ runner.temp }}/monzo-staging-access-provisioning/summary.json
