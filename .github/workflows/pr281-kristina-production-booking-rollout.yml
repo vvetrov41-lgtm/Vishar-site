@@ -169,12 +169,17 @@ jobs:
                 | if length == 1 then .[0] else "" end
               ' "$key_file"; else printf ''; fi)"
               if [ -z "$secret_key" ]; then
-                curl --fail-with-body --silent --show-error \
+                create_status="$(curl --silent --show-error --output "$key_file" --write-out '%{http_code}' \
                   -X POST \
                   -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
                   -H 'Content-Type: application/json' \
-                  --data '{"type":"secret","name":"tattooai-production","secret_jwt_template":{"role":"service_role"}}' \
-                  "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true" > "$key_file"
+                  --data '{"type":"secret","name":"tattooai-production"}' \
+                  "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true")"
+                echo "Supabase secret creation HTTP status: $create_status"
+                [ "$create_status" = '201' ] || {
+                  echo "Supabase secret creation response: $(jq -r 'if type == "object" then (.message // .error // .code // "unknown") else "non_object" end' "$key_file")" >&2
+                  exit 1
+                }
                 secret_key="$(jq -er '(.api_key // .key // .token) | select(type == "string" and startswith("sb_secret_"))' "$key_file")"
               fi
               rm -f "$key_file"
