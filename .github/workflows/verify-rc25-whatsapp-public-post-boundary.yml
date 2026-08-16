@@ -1,0 +1,45 @@
+name: Verify RC25 WhatsApp public POST boundary
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc25-whatsapp-webhook-operator
+    paths:
+      - .github/workflows/verify-rc25-whatsapp-public-post-boundary.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe fail-closed public webhook boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://whatsapp.vishartattoo.com'
+          body='{"object":"whatsapp_business_account","entry":[]}'
+
+          code="$(curl -sS -o /tmp/wrong-path -w '%{http_code}' --connect-timeout 10 --max-time 20 "$base/not-webhook")"
+          [ "$code" = '404' ]
+
+          code="$(curl -sS -o /tmp/bad-content -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST -H 'Content-Type: text/plain' --data "$body" "$base/webhook")"
+          [ "$code" = '415' ]
+
+          code="$(curl -sS -o /tmp/missing-sig -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST -H 'Content-Type: application/json' --data "$body" "$base/webhook")"
+          [ "$code" = '401' ]
+
+          code="$(curl -sS -o /tmp/wrong-sig -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST -H 'Content-Type: application/json' -H 'X-Hub-Signature-256: sha256=0000000000000000000000000000000000000000000000000000000000000000' --data "$body" "$base/webhook")"
+          [ "$code" = '401' ]
+
+          code="$(curl -sS -o /tmp/wrong-method -w '%{http_code}' --connect-timeout 10 --max-time 20 -X PUT "$base/webhook")"
+          [ "$code" = '405' ]
+
+          echo 'PUBLIC_POST_BOUNDARY_FAIL_CLOSED=true'
+          echo 'wrong_path=404'
+          echo 'bad_content_type=415'
+          echo 'missing_signature=401'
+          echo 'wrong_signature=401'
+          echo 'wrong_method=405'
