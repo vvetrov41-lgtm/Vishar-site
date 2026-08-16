@@ -32,7 +32,11 @@ assert.deepEqual(
   const html = await response.text();
   assert.match(html, /synthetic retained-staging data only/);
   assert.match(html, /does not accept an artist identifier from ChatGPT/);
-  assert.match(html, /does not expose client email addresses/);
+  assert.match(html, /specific linked client's contact details/i);
+  assert.match(html, /Bulk client lists remain minimised/);
+  assert.match(html, /Finance and communications are separate owner-controlled capabilities/i);
+  assert.match(html, /Storage paths, checksums and file bytes are not exposed/i);
+  assert.match(html, /arbitrary SQL/i);
   assert.match(html, /OpenAI provides ChatGPT/);
   assert.doesNotMatch(html, /service_role|SUPABASE_SECRET_KEY|sb_secret_/);
 }
