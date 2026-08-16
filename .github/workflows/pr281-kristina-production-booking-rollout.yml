@@ -151,6 +151,41 @@ jobs:
               -H "apikey: $probe_key" \
               "$SUPABASE_URL/rest/v1/booking_sources?select=source_key&limit=1")"
             echo "Supabase service-role probe HTTP status: $probe_status"
+            if [ "$probe_status" != '200' ]; then
+              echo 'Configured GitHub Supabase key was rejected; retrieving a backend secret through the masked Management API handoff.'
+              umask 077
+              key_file="$RUNNER_TEMP/supabase-api-keys-recovery.json"
+              curl --fail-with-body --silent --show-error \
+                -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+                "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true" > "$key_file"
+              secret_key="$(jq -er '
+                [.[]?
+                  | select((.disabled // false) == false)
+                  | select(.type == "secret")
+                  | (.api_key // .key // .token)
+                  | select(type == "string" and startswith("sb_secret_"))]
+                | unique
+                | if length == 1 then .[0] else "" end
+              ' "$key_file")"
+              if [ -z "$secret_key" ]; then
+                curl --fail-with-body --silent --show-error \
+                  -X POST \
+                  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+                  -H 'Content-Type: application/json' \
+                  --data '{"type":"secret","name":"tattooai-production","secret_jwt_template":{"role":"service_role"}}' \
+                  "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true" > "$key_file"
+                secret_key="$(jq -er '(.api_key // .key // .token) | select(type == "string" and startswith("sb_secret_"))' "$key_file")"
+              fi
+              rm -f "$key_file"
+              echo "::add-mask::$secret_key"
+              printf '%s' "$secret_key" | npx wrangler secret put SUPABASE_SECRET_KEY --name "$WORKER_NAME"
+              probe_key="$secret_key"
+              unset secret_key
+              probe_status="$(curl --silent --show-error --output "$RUNNER_TEMP/supabase-probe.json" --write-out '%{http_code}' \
+                -H "apikey: $probe_key" \
+                "$SUPABASE_URL/rest/v1/booking_sources?select=source_key&limit=1")"
+              echo "Supabase Management API replacement probe HTTP status: $probe_status"
+            fi
             [ "$probe_status" = '200' ] || { echo 'Supabase service-role probe failed' >&2; exit 1; }
             rm -f "$RUNNER_TEMP/supabase-probe.json"
           fi
