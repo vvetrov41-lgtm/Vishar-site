@@ -173,33 +173,35 @@ jobs:
           jq '{status,region,database_version:.database.version}' "$project_raw" > "$evidence/supabase-project.json"
           rm -f "$project_raw"
 
+          sql_file="$RUNNER_TEMP/pr274-state.sql"
           query_file="$RUNNER_TEMP/pr274-query.json"
-          jq -n --arg query '
-            select jsonb_build_object(
-              ''latest_migration'', (select max(version) from supabase_migrations.schema_migrations),
-              ''migration_count'', (select count(*)::integer from supabase_migrations.schema_migrations),
-              ''payments'', jsonb_build_object(
-                ''requests'', (select count(*)::integer from public.payment_requests),
-                ''transactions'', (select count(*)::integer from public.payment_transactions),
-                ''policies'', (select count(*)::integer from public.artist_payment_policies),
-                ''integrations'', (select count(*)::integer from public.artist_integrations where integration_type = ''payments''),
-                ''enabled_integrations'', (select count(*)::integer from public.artist_integrations where integration_type = ''payments'' and is_enabled),
-                ''reconciliation_candidates'', (select count(*)::integer from public.payment_reconciliation_candidates)
-              ),
-              ''outbox'', jsonb_build_object(
-                ''total'', (select count(*)::integer from public.integration_outbox),
-                ''pending'', (select count(*)::integer from public.integration_outbox where status = ''pending''),
-                ''leased'', (select count(*)::integer from public.integration_outbox where status = ''leased''),
-                ''failed'', (select count(*)::integer from public.integration_outbox where status = ''failed''),
-                ''dead'', (select count(*)::integer from public.integration_outbox where status = ''dead'')
-              ),
-              ''security'', jsonb_build_object(
-                ''candidates_force_rls'', (select relrowsecurity and relforcerowsecurity from pg_class where oid = ''public.payment_reconciliation_candidates''::regclass),
-                ''authenticated_reconcile_execute'', has_function_privilege(''authenticated'', ''public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)'', ''EXECUTE''),
-                ''service_reconcile_execute'', has_function_privilege(''service_role'', ''public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)'', ''EXECUTE'')
-              )
-            ) as state;
-          ' '{query:$query}' > "$query_file"
+          cat > "$sql_file" <<'SQL'
+          select jsonb_build_object(
+            'latest_migration', (select max(version) from supabase_migrations.schema_migrations),
+            'migration_count', (select count(*)::integer from supabase_migrations.schema_migrations),
+            'payments', jsonb_build_object(
+              'requests', (select count(*)::integer from public.payment_requests),
+              'transactions', (select count(*)::integer from public.payment_transactions),
+              'policies', (select count(*)::integer from public.artist_payment_policies),
+              'integrations', (select count(*)::integer from public.artist_integrations where integration_type = 'payments'),
+              'enabled_integrations', (select count(*)::integer from public.artist_integrations where integration_type = 'payments' and is_enabled),
+              'reconciliation_candidates', (select count(*)::integer from public.payment_reconciliation_candidates)
+            ),
+            'outbox', jsonb_build_object(
+              'total', (select count(*)::integer from public.integration_outbox),
+              'pending', (select count(*)::integer from public.integration_outbox where status = 'pending'),
+              'leased', (select count(*)::integer from public.integration_outbox where status = 'leased'),
+              'failed', (select count(*)::integer from public.integration_outbox where status = 'failed'),
+              'dead', (select count(*)::integer from public.integration_outbox where status = 'dead')
+            ),
+            'security', jsonb_build_object(
+              'candidates_force_rls', (select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.payment_reconciliation_candidates'::regclass),
+              'authenticated_reconcile_execute', has_function_privilege('authenticated', 'public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', 'EXECUTE'),
+              'service_reconcile_execute', has_function_privilege('service_role', 'public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', 'EXECUTE')
+            )
+          ) as state;
+          SQL
+          jq -Rs '{query:.}' < "$sql_file" > "$query_file"
 
           raw="$RUNNER_TEMP/pr274-state.json"
           curl --fail-with-body --silent --show-error \
@@ -215,7 +217,7 @@ jobs:
             and .security.authenticated_reconcile_execute == false
             and .security.service_reconcile_execute == true
           ' "$evidence/supabase-state.json" >/dev/null
-          rm -f "$query_file" "$raw"
+          rm -f "$sql_file" "$query_file" "$raw"
 
       - name: Read Cloudflare staging Monzo footprint
         shell: bash
