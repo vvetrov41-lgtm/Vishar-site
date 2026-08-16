@@ -1,5 +1,5 @@
-export const META_WHATSAPP_APP_ID = '1481226093843982';
-export const META_WHATSAPP_CONFIG_ID = '4468652066715473';
+export const META_WHATSAPP_APP_ID = '894809783179152';
+export const META_WHATSAPP_CONFIG_ID = '1321039629476766';
 
 const FACEBOOK_SDK_URL = 'https://connect.facebook.net/en_US/sdk.js';
 export const FACEBOOK_ALLOWED_MESSAGE_ORIGINS = new Set([
