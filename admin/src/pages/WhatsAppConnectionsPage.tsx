@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useAsync } from '../components/AsyncData';
 import { useLanguage } from '../lib/i18n';
+import { launchWhatsAppEmbeddedSignup } from '../lib/meta-whatsapp-embedded-signup';
 import { Link } from '../lib/router';
 import { useSession } from '../lib/session';
 import type { Artist } from '../lib/types';
@@ -35,6 +36,8 @@ export function WhatsAppConnectionsPage() {
   const { language } = useLanguage();
   const [busyArtistId, setBusyArtistId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [metaBusy, setMetaBusy] = useState(false);
+  const [metaMessage, setMetaMessage] = useState<string | null>(null);
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
 
   const { data, loading, error, reload } = useAsync<ConnectionsData>(async () => {
@@ -72,6 +75,31 @@ export function WhatsAppConnectionsPage() {
     }
   }
 
+  async function startMetaOnboarding() {
+    setMetaBusy(true);
+    setActionError(null);
+    setMetaMessage(null);
+    try {
+      const result = await launchWhatsAppEmbeddedSignup();
+      if (!result.authorizationCode) throw new Error('Meta returned no authorization code.');
+      setMetaMessage(
+        language === 'ru'
+          ? 'Meta onboarding завершён в браузере. Код авторизации не сохранён. Следующий этап - безопасный server-side обмен кода и проверка artist-scoped binding.'
+          : 'Meta onboarding completed in the browser. The authorization code was not persisted. Next: secure server-side code exchange and artist-scoped binding verification.',
+      );
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error
+          ? cause.message
+          : language === 'ru'
+            ? 'Не удалось запустить Meta Embedded Signup.'
+            : 'Could not start Meta Embedded Signup.',
+      );
+    } finally {
+      setMetaBusy(false);
+    }
+  }
+
   if (loading) {
     return <LoadingState label={language === 'ru' ? 'Загрузка WhatsApp…' : 'Loading WhatsApp…'} />;
   }
@@ -102,6 +130,29 @@ export function WhatsAppConnectionsPage() {
           ? `Среда CRM: ${data.environment}. Включайте маршрут только после отдельной проверки Meta и encrypted Worker bindings.`
           : `CRM environment: ${data.environment}. Enable a route only after the Meta account and encrypted Worker bindings have been verified separately.`}
       </div>
+
+      {profile?.role === 'owner' ? (
+        <Section title={language === 'ru' ? 'Подключение существующего WhatsApp Business' : 'Connect an existing WhatsApp Business app'}>
+          <p>
+            {language === 'ru'
+              ? 'Запускает официальный Meta Embedded Signup в режиме WhatsApp Business App onboarding. Номер не выбирается CRM и не мигрируется автоматически.'
+              : 'Launches Meta Embedded Signup in WhatsApp Business App onboarding mode. The CRM does not choose a number or migrate it automatically.'}
+          </p>
+          <div className="actions">
+            <button type="button" className="primary" disabled={metaBusy} onClick={() => { void startMetaOnboarding(); }}>
+              {metaBusy
+                ? (language === 'ru' ? 'Открываю Meta…' : 'Opening Meta…')
+                : (language === 'ru' ? 'Подключить через Meta' : 'Connect with Meta')}
+            </button>
+          </div>
+          <p className="notice" style={{ marginTop: 12 }}>
+            {language === 'ru'
+              ? 'Доступно только owner. Authorization code остаётся только в памяти браузера и не показывается в интерфейсе или логах.'
+              : 'Owner only. The authorization code remains in browser memory and is never displayed or logged.'}
+          </p>
+          {metaMessage ? <div className="notice" role="status">{metaMessage}</div> : null}
+        </Section>
+      ) : null}
 
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 
