@@ -159,6 +159,7 @@ jobs:
           --strict
           --keep-vars
           --var "ALLOWED_ORIGINS:$ALLOWED_ORIGINS"
+          --var "SUPABASE_URL:$SUPABASE_URL"
           --dry-run
           --outdir .wrangler/kristina-production-recovery
 
@@ -177,7 +178,8 @@ jobs:
               --name "$WORKER_NAME" \
               --strict \
               --keep-vars \
-              --var "ALLOWED_ORIGINS:$ALLOWED_ORIGINS"
+              --var "ALLOWED_ORIGINS:$ALLOWED_ORIGINS" \
+              --var "SUPABASE_URL:$SUPABASE_URL"
 
           DEPLOY_OUTPUT="$deploy_output" node <<'NODE'
           const fs = require('fs');
