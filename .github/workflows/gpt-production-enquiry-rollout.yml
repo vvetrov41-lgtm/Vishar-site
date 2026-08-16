@@ -1,0 +1,159 @@
+name: GPT production enquiry read rollout
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc30-gpt-enquiry-reads
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gpt-production-enquiry-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.sha }}
+      PRODUCT_BRANCH: agent/gpt-production-enquiry-reads
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: vishar-gpt-actions-production
+      TARGET_HOST: gpt-actions.vishartattoo.com
+
+    steps:
+      - name: Verify exact release operator and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc30-gpt-enquiry-reads' ]
+          [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          [ "$SUPABASE_URL" = "https://${PROJECT_REF}.supabase.co" ]
+          [ "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify operator SHA equals product head and normal CI is green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+          product_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test -n "$product_sha"
+          test "$product_sha" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha,event}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" 'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate exact GPT production runtime
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm run test:gpt-production
+          npm run validate:gpt-actions
+          npm run check:gpt-production-bundle
+          npm run scan:secrets
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact production Supabase project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Verify production migration state before rollout
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list | tee "$RUNNER_TEMP/migrations-before.txt"
+          grep -Eq '0052' "$RUNNER_TEMP/migrations-before.txt"
+          if grep -Eq '0053[^0-9].*0053' "$RUNNER_TEMP/migrations-before.txt"; then
+            echo 'Migration 0053 already appears remote; refusing an ambiguous rollout.' >&2
+            exit 1
+          fi
+
+      - name: Dry-run production migration
+        run: supabase db push --dry-run
+
+      - name: Apply canonical production migration
+        run: supabase db push
+
+      - name: Verify migration 0053 is recorded remotely
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list | tee "$RUNNER_TEMP/migrations-after.txt"
+          grep -Eq '0053' "$RUNNER_TEMP/migrations-after.txt"
+
+      - name: Deploy enquiry-enabled production GPT edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var GPT_OAUTH_RELAY_ENABLED:true \
+            --var GPT_ACTIONS_ENABLED:true
+
+      - name: Verify production edge remains OAuth-gated
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/privacy" || true)"
+            oauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/oauth/authorize" || true)"
+            appointments="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/appointments?from=2026-08-01T00%3A00%3A00Z&to=2026-09-01T00%3A00%3A00Z" || true)"
+            enquiries="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/enquiries" || true)"
+            if [ "$privacy" = 200 ] && [ "$oauth" = 400 ] && [ "$appointments" = 401 ] && [ "$enquiries" = 401 ]; then exit 0; fi
+            sleep 6
+          done
+          echo 'Production GPT edge did not reach the expected OAuth-gated state.' >&2
+          exit 1
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### GPT production enquiry read rollout'
+            echo "- Exact SHA: \`$APPROVED_SHA\`"
+            echo "- Operator branch: \`$GITHUB_REF_NAME\`"
+            echo "- Product branch: \`$PRODUCT_BRANCH\`"
+            echo '- Production migration target: `0053_gpt_enquiry_reads`'
+            echo '- Worker host: `gpt-actions.vishartattoo.com`'
+            echo '- Enquiry routes: read-only and OAuth-gated'
+            echo '- Enquiry capability mutation: none in this workflow'
+            echo '- RLS / Storage policy changes: none'
+            echo '- Retained staging targeted: no'
+          } >> "$GITHUB_STEP_SUMMARY"
