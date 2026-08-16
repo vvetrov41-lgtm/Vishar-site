@@ -15,7 +15,7 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
     ]);
   });
 
-  it('extracts WABA and phone-number ids only from a FINISH event', () => {
+  it('extracts WABA and phone-number ids from a standard FINISH event', () => {
     expect(parseEmbeddedSignupMessage('https://m.facebook.com', {
       type: 'WA_EMBEDDED_SIGNUP',
       event: 'FINISH',
@@ -24,6 +24,19 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
       event: 'FINISH',
       wabaId: '12345678901',
       phoneNumberId: '10987654321',
+    });
+  });
+
+  it('accepts the WhatsApp Business App coexistence completion with WABA only', () => {
+    expect(parseEmbeddedSignupMessage('https://www.facebook.com', {
+      type: 'WA_EMBEDDED_SIGNUP',
+      event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+      version: 3,
+      data: { waba_id: '12345678901' },
+    })).toEqual({
+      event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+      wabaId: '12345678901',
+      phoneNumberId: null,
     });
   });
 
