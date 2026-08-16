@@ -1,0 +1,124 @@
+name: GPT production operations domain rollout
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc32-gpt-operations-domain
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gpt-production-operations-domain-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.sha }}
+      PRODUCT_BRANCH: agent/gpt-full-crm-management
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: vishar-gpt-actions-production
+      CORE_HOST: gpt-actions.vishartattoo.com
+      OPERATIONS_HOST: gpt-operations.vishartattoo.com
+
+    steps:
+      - name: Verify exact release operator and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc32-gpt-operations-domain' ]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify operator SHA equals product head and normal CI is green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+          product_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test -n "$product_sha"
+          test "$product_sha" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha,event}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" 'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate exact GPT production runtime and domain split
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm run test:gpt-production
+          node scripts/test-gpt-operations-domain.mjs
+          npm run validate:gpt-actions
+          npm run check:gpt-production-bundle
+          npm run scan:secrets
+
+      - name: Deploy existing production GPT Worker on both custom domains
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var GPT_OAUTH_RELAY_ENABLED:true \
+            --var GPT_ACTIONS_ENABLED:true
+
+      - name: Verify both production action domains remain OAuth-gated
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            core_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/privacy" || true)"
+            core_oauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/oauth/authorize" || true)"
+            core_clients="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/v1/clients" || true)"
+            ops_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/privacy" || true)"
+            ops_appointments="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/appointments" || true)"
+            if [ "$core_privacy" = 200 ] && [ "$core_oauth" = 400 ] && [ "$core_clients" = 401 ] && [ "$ops_privacy" = 200 ] && [ "$ops_appointments" = 401 ]; then
+              exit 0
+            fi
+            sleep 6
+          done
+          echo 'Production GPT action domains did not reach the expected OAuth-gated state.' >&2
+          exit 1
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### GPT production operations-domain rollout'
+            echo "- Exact SHA: \`$APPROVED_SHA\`"
+            echo "- Operator branch: \`$GITHUB_REF_NAME\`"
+            echo '- Core Action domain: `gpt-actions.vishartattoo.com`'
+            echo '- Operations Action domain: `gpt-operations.vishartattoo.com`'
+            echo '- OAuth authorization/token origin: unchanged (`gpt-actions.vishartattoo.com`)'
+            echo '- Production DB migrations: none'
+            echo '- GPT binding/capability mutations: none'
+            echo '- Retained staging targeted: no'
+          } >> "$GITHUB_STEP_SUMMARY"
