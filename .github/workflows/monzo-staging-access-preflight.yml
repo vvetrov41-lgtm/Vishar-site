@@ -1,0 +1,333 @@
+name: Monzo staging Access preflight
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: monzo-staging-access-preflight
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Inspect Monzo staging Access boundary
+    if: >-
+      github.event.action == 'edited' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'agent/monzo-staging-access-preflight-operator' &&
+      github.event.pull_request.head.ref == 'agent/monzo-staging-access-preflight-validation' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, format('<!-- RUN_MONZO_STAGING_ACCESS_PREFLIGHT:{0} -->', github.event.pull_request.head.sha))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      OPERATOR_SHA: ${{ github.event.pull_request.base.sha }}
+      EXPECTED_PRODUCT_SHA: 5fc45508be2bcda2fb573254cdbfb430a57b3cc6
+      EXPECTED_OPERATOR_BRANCH: agent/monzo-staging-access-preflight-operator
+      EXPECTED_VALIDATION_BRANCH: agent/monzo-staging-access-preflight-validation
+      PRODUCTION_TARGETED: 'false'
+
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$OPERATOR_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          marker="<!-- RUN_MONZO_STAGING_ACCESS_PREFLIGHT:${APPROVED_SHA} -->"
+          jq -e \
+            --arg sha "$APPROVED_SHA" \
+            --arg operator_sha "$OPERATOR_SHA" \
+            --arg base "$EXPECTED_OPERATOR_BRANCH" \
+            --arg head "$EXPECTED_VALIDATION_BRANCH" \
+            --arg marker "$marker" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == $base
+            and .pull_request.base.sha == $operator_sha
+            and .pull_request.head.ref == $head
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains($marker))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Check out exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact stack, diff and successful normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "${EXPECTED_PRODUCT_SHA}^{commit}")" = "$EXPECTED_PRODUCT_SHA" ]
+          [ "$(git rev-parse "${OPERATOR_SHA}^{commit}")" = "$OPERATOR_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_PRODUCT_SHA" "$OPERATOR_SHA"
+          git merge-base --is-ancestor "$OPERATOR_SHA" "$APPROVED_SHA"
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$EXPECTED_PRODUCT_SHA...$OPERATOR_SHA" > "$RUNNER_TEMP/operator-compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              ".github/workflows/monzo-staging-access-preflight.yml"
+            ] | sort)
+          ' "$RUNNER_TEMP/operator-compare.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$OPERATOR_SHA...$APPROVED_SHA" > "$RUNNER_TEMP/validation-compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              "docs/ai/monzo-staging-access-preflight-validation.md"
+            ] | sort)
+          ' "$RUNNER_TEMP/validation-compare.json" >/dev/null
+
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {id,name,event,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+
+          jq -n --slurpfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
+            ["Static Validation", "CRM and booking validation"] as $required
+            | reduce $required[] as $name ({};
+                ($runs[0] | map(select(
+                  .name == $name
+                  and .event == "pull_request"
+                  and .head_sha == $sha
+                  and .status == "completed"
+                  and .conclusion == "success"
+                )) | sort_by(.id) | last) as $run
+                | if $run == null then error("missing exact-head normal CI: " + $name)
+                  else .[$name] = $run end
+              )
+          ' > "$RUNNER_TEMP/normal-ci-runs.json"
+
+          crm_run_id="$(jq -r '.["CRM and booking validation"].id' "$RUNNER_TEMP/normal-ci-runs.json")"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$crm_run_id/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | {id,name,status,conclusion}' \
+            | jq -s . > "$RUNNER_TEMP/normal-ci-jobs.json"
+          for job in "Public site and Worker" "Private CRM" "Supabase migrations and pgTAP"; do
+            jq -e --arg name "$job" '
+              [.[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length == 1
+            ' "$RUNNER_TEMP/normal-ci-jobs.json" >/dev/null
+          done
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate dormant Monzo staging contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run validate:monzo-staging
+          npm run check:monzo-staging-bundle
+          npm run scan:secrets
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Inspect Access, KV and Worker resources read-only
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MONZO_OAUTH_CLIENT_ID_PRESENT: ${{ secrets.MONZO_OAUTH_CLIENT_ID != '' }}
+          MONZO_OAUTH_CLIENT_SECRET_PRESENT: ${{ secrets.MONZO_OAUTH_CLIENT_SECRET != '' }}
+          MONZO_TOKEN_ENCRYPTION_KEY_PRESENT: ${{ secrets.MONZO_TOKEN_ENCRYPTION_KEY != '' }}
+          SUPABASE_SECRET_KEY_PRESENT: ${{ secrets.SUPABASE_SECRET_KEY != '' }}
+        run: |
+          set -euo pipefail
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          evidence="$RUNNER_TEMP/monzo-staging-access-preflight"
+          mkdir -p "$evidence"
+
+          missing=()
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || missing+=("CLOUDFLARE_API_TOKEN")
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || missing+=("CLOUDFLARE_ACCOUNT_ID")
+          [ "${MONZO_OAUTH_CLIENT_ID_PRESENT:-false}" = 'true' ] || missing+=("MONZO_OAUTH_CLIENT_ID")
+          [ "${MONZO_OAUTH_CLIENT_SECRET_PRESENT:-false}" = 'true' ] || missing+=("MONZO_OAUTH_CLIENT_SECRET")
+          [ "${MONZO_TOKEN_ENCRYPTION_KEY_PRESENT:-false}" = 'true' ] || missing+=("MONZO_TOKEN_ENCRYPTION_KEY")
+          [ "${SUPABASE_SECRET_KEY_PRESENT:-false}" = 'true' ] || missing+=("SUPABASE_SECRET_KEY")
+
+          token_http=not_attempted
+          kv_http=not_attempted
+          workers_http=not_attempted
+          apps_http=not_attempted
+          host_policies_http=not_attempted
+          webhook_policies_http=not_attempted
+          host_app_count=0
+          webhook_app_count=0
+          host_aud_present=false
+          webhook_aud_present=false
+          expected_kv_count=0
+          worker_exists=false
+          host_decisions='[]'
+          webhook_decisions='[]'
+
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            token_http="$(curl --silent --show-error --output "$evidence/token.json" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              https://api.cloudflare.com/client/v4/user/tokens/verify || true)"
+          fi
+
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [[ "${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[0-9a-f]{32}$ ]]; then
+            api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+            kv_http="$(curl --silent --show-error --output "$evidence/kv.json" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$api/storage/kv/namespaces?per_page=100" || true)"
+            workers_http="$(curl --silent --show-error --output "$evidence/workers.json" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$api/workers/scripts" || true)"
+            apps_http="$(curl --silent --show-error --output "$evidence/apps.json" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$api/access/apps?per_page=100" || true)"
+          fi
+
+          if [ "$kv_http" = '200' ]; then
+            jq -e '.success == true and (.result | type == "array")' "$evidence/kv.json" >/dev/null
+            expected_kv_count="$(jq '[.result[] | select((.title // "") as $t | ["vishar-monzo-oauth-state-staging","vishar-monzo-oauth-tokens-staging","vishar-monzo-webhook-routes-staging"] | index($t))] | length' "$evidence/kv.json")"
+          fi
+          if [ "$workers_http" = '200' ]; then
+            jq -e '.success == true and (.result | type == "array")' "$evidence/workers.json" >/dev/null
+            if jq -e '[.result[] | .id // empty] | index("vishar-monzo-api-staging") != null' "$evidence/workers.json" >/dev/null; then
+              worker_exists=true
+            fi
+          fi
+
+          if [ "$apps_http" = '200' ]; then
+            jq -e '.success == true and (.result | type == "array")' "$evidence/apps.json" >/dev/null
+            host_app_count="$(jq '[.result[] | select((.domain // "") == "monzo-staging.vishartattoo.com")] | length' "$evidence/apps.json")"
+            webhook_app_count="$(jq '[.result[] | select((.domain // "") == "monzo-staging.vishartattoo.com/webhooks/monzo/*")] | length' "$evidence/apps.json")"
+
+            if [ "$host_app_count" -eq 1 ]; then
+              host_id="$(jq -r '.result[] | select((.domain // "") == "monzo-staging.vishartattoo.com") | .id' "$evidence/apps.json")"
+              if jq -e '.result[] | select((.domain // "") == "monzo-staging.vishartattoo.com") | (.aud // "") | test("^[0-9a-f]{64}$")' "$evidence/apps.json" >/dev/null; then
+                host_aud_present=true
+              fi
+              host_policies_http="$(curl --silent --show-error --output "$evidence/host-policies.json" --write-out '%{http_code}' \
+                -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                "$api/access/apps/$host_id/policies?per_page=100" || true)"
+              if [ "$host_policies_http" = '200' ]; then
+                jq -e '.success == true and (.result | type == "array")' "$evidence/host-policies.json" >/dev/null
+                host_decisions="$(jq -c '[.result[] | .decision // empty] | sort | unique' "$evidence/host-policies.json")"
+              fi
+            fi
+
+            if [ "$webhook_app_count" -eq 1 ]; then
+              webhook_id="$(jq -r '.result[] | select((.domain // "") == "monzo-staging.vishartattoo.com/webhooks/monzo/*") | .id' "$evidence/apps.json")"
+              if jq -e '.result[] | select((.domain // "") == "monzo-staging.vishartattoo.com/webhooks/monzo/*") | (.aud // "") | test("^[0-9a-f]{64}$")' "$evidence/apps.json" >/dev/null; then
+                webhook_aud_present=true
+              fi
+              webhook_policies_http="$(curl --silent --show-error --output "$evidence/webhook-policies.json" --write-out '%{http_code}' \
+                -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                "$api/access/apps/$webhook_id/policies?per_page=100" || true)"
+              if [ "$webhook_policies_http" = '200' ]; then
+                jq -e '.success == true and (.result | type == "array")' "$evidence/webhook-policies.json" >/dev/null
+                webhook_decisions="$(jq -c '[.result[] | .decision // empty] | sort | unique' "$evidence/webhook-policies.json")"
+              fi
+            fi
+          fi
+
+          jq -n \
+            --arg exact_head "$APPROVED_SHA" \
+            --arg operator_head "$OPERATOR_SHA" \
+            --arg token_http "$token_http" \
+            --arg kv_http "$kv_http" \
+            --arg workers_http "$workers_http" \
+            --arg apps_http "$apps_http" \
+            --arg host_policies_http "$host_policies_http" \
+            --arg webhook_policies_http "$webhook_policies_http" \
+            --argjson host_app_count "$host_app_count" \
+            --argjson webhook_app_count "$webhook_app_count" \
+            --argjson host_aud_present "$host_aud_present" \
+            --argjson webhook_aud_present "$webhook_aud_present" \
+            --argjson expected_kv_count "$expected_kv_count" \
+            --argjson worker_exists "$worker_exists" \
+            --argjson host_decisions "$host_decisions" \
+            --argjson webhook_decisions "$webhook_decisions" \
+            --argjson missing "$(printf '%s\n' "${missing[@]:-}" | jq -Rsc 'split("\n") | map(select(length > 0))')" '
+            {
+              exact_head: $exact_head,
+              operator_head: $operator_head,
+              production_targeted: false,
+              staging_mutated: false,
+              provider_called: false,
+              token_verify_http: $token_http,
+              cloudflare: {
+                kv_namespaces_http: $kv_http,
+                workers_scripts_http: $workers_http,
+                access_apps_http: $apps_http,
+                expected_monzo_kv_count: $expected_kv_count,
+                expected_worker_exists: $worker_exists,
+                host_application_count: $host_app_count,
+                webhook_application_count: $webhook_app_count,
+                host_access_aud_present: $host_aud_present,
+                webhook_access_aud_present: $webhook_aud_present,
+                host_policies_http: $host_policies_http,
+                webhook_policies_http: $webhook_policies_http,
+                host_policy_decisions: $host_decisions,
+                webhook_policy_decisions: $webhook_decisions
+              },
+              encrypted_configuration: {
+                missing_names: $missing,
+                ready: ($missing | length == 0)
+              },
+              access_read_ready: ($apps_http == "200"),
+              expected_kv_ready: ($kv_http == "200" and $expected_kv_count == 3),
+              worker_absent_as_expected: ($workers_http == "200" and ($worker_exists | not)),
+              activation_ready: false
+            }
+          ' > "$evidence/summary.json"
+
+          rm -f "$evidence/token.json" "$evidence/kv.json" "$evidence/workers.json" "$evidence/apps.json" "$evidence/host-policies.json" "$evidence/webhook-policies.json"
+          jq . "$evidence/summary.json"
+
+      - name: Publish safe Access preflight summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/monzo-staging-access-preflight/summary.json"
+          if [ -f "$evidence" ]; then
+            {
+              echo '### Monzo staging Access preflight'
+              echo '```json'
+              jq . "$evidence"
+              echo '```'
+              echo ''
+              echo 'Read-only inspection only. No Access policy/app write, Worker deploy, KV write, provider call, Supabase mutation, DNS change or production action is implemented.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload non-sensitive Access preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monzo-staging-access-preflight-${{ env.APPROVED_SHA }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: ${{ runner.temp }}/monzo-staging-access-preflight/summary.json
