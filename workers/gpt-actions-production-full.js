@@ -38,10 +38,31 @@ const PRIVACY_HTML = `<!doctype html>
 </body>
 </html>`;
 
-function privacyResponse(request) {
-  if (!['GET', 'HEAD'].includes(request.method)) return null;
-  const url = new URL(request.url);
-  if (url.pathname !== '/privacy' && url.pathname !== '/privacy/') return null;
+function isPrivacyRoute(request) {
+  if (!['GET', 'HEAD'].includes(request.method)) return false;
+  const pathname = new URL(request.url).pathname;
+  return pathname === '/privacy' || pathname === '/privacy/';
+}
+
+async function privacyResponse(request, env) {
+  if (!isPrivacyRoute(request)) return null;
+
+  const limiter = env?.GPT_RATE_LIMIT;
+  if (limiter && typeof limiter.limit === 'function') {
+    const address = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const { success } = await limiter.limit({ key: `privacy:${address}` });
+    if (!success) {
+      return new Response(JSON.stringify({ error: 'rate_limited' }), {
+        status: 429,
+        headers: {
+          'cache-control': 'no-store',
+          'content-type': 'application/json; charset=utf-8',
+          'x-content-type-options': 'nosniff',
+        },
+      });
+    }
+  }
+
   return new Response(request.method === 'HEAD' ? null : PRIVACY_HTML, {
     status: 200,
     headers: { ...PUBLIC_HEADERS, 'content-type': 'text/html; charset=utf-8' },
@@ -50,8 +71,8 @@ function privacyResponse(request) {
 
 export default {
   async fetch(request, env, ctx) {
-    return privacyResponse(request) || productionWorker.fetch(request, env, ctx);
+    return (await privacyResponse(request, env)) || productionWorker.fetch(request, env, ctx);
   },
 };
 
-export const __testing = Object.freeze({ privacyResponse });
+export const __testing = Object.freeze({ isPrivacyRoute, privacyResponse });
