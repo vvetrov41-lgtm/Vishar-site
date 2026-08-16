@@ -96,11 +96,21 @@ jobs:
         run: |
           set -euo pipefail
           supabase migration list | tee "$RUNNER_TEMP/migrations-before.txt"
-          grep -Eq '0052' "$RUNNER_TEMP/migrations-before.txt"
-          if grep -Eq '0053[^0-9].*0053' "$RUNNER_TEMP/migrations-before.txt"; then
-            echo 'Migration 0053 already appears remote; refusing an ambiguous rollout.' >&2
-            exit 1
-          fi
+          awk -F'|' '
+            function clean(value) { gsub(/[`[:space:]]/, "", value); return value }
+            {
+              local_version = clean($1)
+              remote_version = clean($2)
+              if (local_version == "0052" && remote_version == "0052") have_0052 = 1
+              if (local_version == "0053") {
+                have_0053 = 1
+                remote_0053 = remote_version
+              }
+            }
+            END {
+              if (!have_0052 || !have_0053 || remote_0053 != "") exit 1
+            }
+          ' "$RUNNER_TEMP/migrations-before.txt"
 
       - name: Dry-run production migration
         run: supabase db push --dry-run
@@ -113,7 +123,15 @@ jobs:
         run: |
           set -euo pipefail
           supabase migration list | tee "$RUNNER_TEMP/migrations-after.txt"
-          grep -Eq '0053' "$RUNNER_TEMP/migrations-after.txt"
+          awk -F'|' '
+            function clean(value) { gsub(/[`[:space:]]/, "", value); return value }
+            {
+              local_version = clean($1)
+              remote_version = clean($2)
+              if (local_version == "0053" && remote_version == "0053") deployed_0053 = 1
+            }
+            END { if (!deployed_0053) exit 1 }
+          ' "$RUNNER_TEMP/migrations-after.txt"
 
       - name: Deploy enquiry-enabled production GPT edge
         shell: bash
