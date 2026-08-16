@@ -12,7 +12,7 @@ function count(text, value) {
 }
 
 assert.match(config, /^name = "vishar-gpt-actions-production"$/m);
-assert.match(config, /^main = "workers\/gpt-actions-production\.js"$/m);
+assert.match(config, /^main = "workers\/gpt-actions-production-entrypoint\.js"$/m);
 assert.match(config, /^workers_dev = false$/m);
 assert.match(config, /^preview_urls = false$/m);
 assert.match(config, /pattern = "gpt-actions\.vishartattoo\.com", custom_domain = true/);
