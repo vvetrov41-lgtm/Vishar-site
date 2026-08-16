@@ -229,12 +229,13 @@ jobs:
                 kv_namespaces_http: $kv_list_http,
                 workers_scripts_http: $workers_list_http
               },
-              activation_ready: (
+              configuration_and_read_access_ready: (
                 ($missing | length == 0)
                 and $token_verify_http == "200"
                 and $kv_list_http == "200"
                 and $workers_list_http == "200"
-              )
+              ),
+              activation_ready: false
             }
           ' > "$evidence/summary.json"
 
@@ -251,7 +252,7 @@ jobs:
             jq . "$RUNNER_TEMP/monzo-staging-preflight/summary.json"
             echo '```'
             echo ''
-            echo 'Read-only preflight only. No Worker deploy, KV creation, secret write, Supabase mutation or Monzo provider call occurred.'
+            echo 'Read-only preflight only. No Worker deploy, KV creation, secret write, Supabase mutation or Monzo provider call occurred. activation_ready intentionally remains false until resource existence and Access policy are separately proved.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload non-sensitive preflight evidence
