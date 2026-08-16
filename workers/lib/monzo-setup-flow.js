@@ -303,12 +303,9 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
   }
   assertRecordRoute(record, config, alias, env);
 
-  if (record.webhookId) {
-    if (request.method === 'GET') return html(connectedPage(env, alias, record.accountLabel));
-    return Response.redirect(connectedReturnUrl(env, alias), 303);
-  }
-
   if (request.method === 'GET') {
+    if (record.webhookId) return html(connectedPage(env, alias, record.accountLabel));
+
     let accounts;
     try {
       const access = await accessForSetup(env, record, fetchImpl);
@@ -335,6 +332,8 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
 
   const { setupToken, accountId } = await readSetupForm(request);
   await consumeSetupState(env.MONZO_OAUTH_STATE, setupToken, alias, ownerEmail);
+  if (record.webhookId) return Response.redirect(connectedReturnUrl(env, alias), 303);
+
   const connected = await selectAndRegister(alias, accountId, env, record, fetchImpl);
   if (!connected.webhookId) throw new MonzoSecurityError('monzo_webhook_registration_failed', 502);
   return Response.redirect(connectedReturnUrl(env, alias), 303);
