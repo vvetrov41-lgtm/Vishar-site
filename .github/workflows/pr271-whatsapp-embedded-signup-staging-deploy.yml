@@ -6,6 +6,8 @@ on:
       - agent/pr271-whatsapp-embedded-signup-staging-harness
     paths:
       - .github/workflows/pr271-whatsapp-embedded-signup-staging-deploy.yml
+      - admin/public/_headers
+      - admin/public/whatsapp-embedded-signup.html
   workflow_dispatch:
 
 permissions:
@@ -51,7 +53,7 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/vishar-crm-staging")"
           echo "$response" | jq -e '.success == true' >/dev/null
           current="$(echo "$response" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // ""')"
-          if [ "$current" != 'f5e019d6a6ae5ea12bf89ab9fc79bcc6ee8406d4' ]; then
+          if [ "$current" != 'c5a6d40e79bf8200a5f1cef7f94d2d4bf6fa9bca' ]; then
             echo "Retained staging moved since preflight: current=$current" >&2
             exit 1
           fi
@@ -85,6 +87,8 @@ jobs:
           grep -Fq 'whatsapp_business_app_onboarding' dist/whatsapp-embedded-signup.html
           grep -Fq '4468652066715473' dist/whatsapp-embedded-signup.html
           grep -Fq '1481226093843982' dist/whatsapp-embedded-signup.html
+          grep -Fq "https://connect.facebook.net" dist/_headers
+          grep -Fq "frame-src https://www.facebook.com https://web.facebook.com" dist/_headers
 
       - name: Scan browser artifact for credential-shaped values
         shell: bash
@@ -114,7 +118,7 @@ jobs:
             --project-name vishar-crm-staging \
             --branch main \
             --commit-hash "$GITHUB_SHA" \
-            --commit-message 'PR271 WhatsApp Embedded Signup protected staging harness' \
+            --commit-message 'PR271 WhatsApp Embedded Signup protected staging harness CSP fix' \
             --commit-dirty=true
 
       - name: Verify deployed exact head and Access remains closed
