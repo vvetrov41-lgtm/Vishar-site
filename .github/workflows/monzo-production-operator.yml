@@ -114,6 +114,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # Full history. The default shallow clone has no common ancestry, so
+          # `git merge-base --is-ancestor` cannot distinguish "does not descend
+          # from the base" from "cannot tell", and the ancestry proof below
+          # would fail closed on every run for the wrong reason.
+          fetch-depth: 0
 
       - name: Verify exact head, release ancestry and untouched tree
         shell: bash
@@ -136,8 +141,13 @@ jobs:
           fi
 
           # The approved head must actually descend from the pull request base,
-          # so a rewritten or unrelated branch cannot be activated.
-          git fetch --no-tags --depth=200 origin "$BASE_SHA" >/dev/null 2>&1 || git fetch --no-tags origin "$BASE_SHA" >/dev/null
+          # so a rewritten or unrelated branch cannot be activated. Prove the
+          # base commit is present first, otherwise a missing object would be
+          # indistinguishable from a genuine ancestry failure.
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "Base commit ${BASE_SHA} is not present in this checkout; cannot prove ancestry." >&2
+            exit 1
+          fi
           if ! git merge-base --is-ancestor "$BASE_SHA" "$APPROVED_SHA"; then
             echo "Approved head does not descend from the pull request base ${BASE_SHA}." >&2
             exit 1
