@@ -1,9 +1,11 @@
 import {
+  deleteMonzoWebhook,
   ensureMonzoAccessToken,
   exchangeMonzoAuthorizationCode,
   listMonzoAccounts,
   logoutMonzoAccessToken,
   monzoWhoAmI,
+  registerMonzoWebhook,
   retrieveMonzoTransaction,
   verifyTransactionBelongsToAccount,
   MonzoApiError,
@@ -18,6 +20,7 @@ import {
   monzoCrmReturnUrl,
   monzoOAuthRedirectUri,
   monzoReadiness,
+  monzoWebhookCallbackUrl,
   randomMonzoToken,
   storeMonzoOAuthState,
   verifiedMonzoOwnerEmail,
@@ -67,6 +70,16 @@ function routeRecord(alias, config, accountId) {
     providerAccountKey: config.providerAccountKey,
     accountId,
   });
+}
+
+function validStoredRoute(route, record, config, alias) {
+  return Boolean(
+    route
+    && route.alias === alias
+    && route.artistId === config.artistId
+    && route.providerAccountKey === config.providerAccountKey
+    && route.accountId === record.accountId
+  );
 }
 
 async function saveConnectionStateBestEffort(env, record, connectionState) {
@@ -310,6 +323,78 @@ async function selectAccount(request, alias, env, fetchImpl = fetch) {
   });
 }
 
+async function registerSelectedAccountWebhook(request, alias, env, fetchImpl = fetch) {
+  await verifiedMonzoOwnerEmail(request, env, fetchImpl);
+  assertMonzoAccountConfiguration(env);
+  const config = artistMonzoConfig(alias, env);
+  let record = await loadMonzoTokenRecord(env, config.artistId);
+
+  if (
+    record.alias !== alias
+    || record.artistId !== config.artistId
+    || record.providerAccountKey !== config.providerAccountKey
+    || record.clientId !== env.MONZO_OAUTH_CLIENT_ID
+  ) {
+    throw new MonzoSecurityError('provider_route_invalid', 503);
+  }
+  if (!record.accountId || !record.webhookKey) {
+    throw new MonzoSecurityError('monzo_account_not_selected', 409);
+  }
+  if (record.webhookId) {
+    return json({
+      ok: true,
+      artist: alias,
+      state: record.connectionState,
+      account_label: record.accountLabel || null,
+      webhook_registered: true,
+      replayed: true,
+    });
+  }
+
+  const route = await env.MONZO_WEBHOOK_ROUTES.get(routeKey(record.webhookKey), 'json');
+  if (!validStoredRoute(route, record, config, alias)) {
+    throw new MonzoSecurityError('provider_route_invalid', 503);
+  }
+
+  const access = await accessFor(env, record, fetchImpl);
+  record = access.record;
+  await monzoWhoAmI(access.accessToken, record.clientId, record.userId, fetchImpl);
+  const accounts = await listMonzoAccounts(access.accessToken, fetchImpl);
+  if (!accounts.some((account) => account.id === record.accountId)) {
+    throw new MonzoSecurityError('monzo_account_not_allowed', 409);
+  }
+
+  const callbackUrl = monzoWebhookCallbackUrl(env, record.webhookKey);
+  const webhook = await registerMonzoWebhook(
+    access.accessToken,
+    record.accountId,
+    callbackUrl,
+    fetchImpl,
+  );
+  const updated = {
+    ...record,
+    connectionState: 'connected',
+    webhookId: webhook.id,
+    webhookRegisteredAt: new Date().toISOString(),
+  };
+
+  try {
+    await saveMonzoTokenRecord(env, updated);
+  } catch (error) {
+    await deleteMonzoWebhook(access.accessToken, webhook.id, fetchImpl).catch(() => false);
+    throw error;
+  }
+
+  return json({
+    ok: true,
+    artist: alias,
+    state: 'connected',
+    account_label: updated.accountLabel || null,
+    webhook_registered: true,
+    replayed: false,
+  });
+}
+
 function validWebhookHint(body) {
   const transactionId = body?.type === 'transaction.created' && typeof body?.data?.id === 'string'
     ? body.data.id
@@ -403,6 +488,11 @@ export default {
       const selectMatch = url.pathname.match(new RegExp(`^/oauth/monzo/select-account/${ALIAS_PATH}$`));
       if (request.method === 'POST' && selectMatch) return await selectAccount(request, selectMatch[1], env);
 
+      const registerMatch = url.pathname.match(new RegExp(`^/oauth/monzo/register-webhook/${ALIAS_PATH}$`));
+      if (request.method === 'POST' && registerMatch) {
+        return await registerSelectedAccountWebhook(request, registerMatch[1], env);
+      }
+
       const webhookMatch = url.pathname.match(WEBHOOK_PATH);
       if (request.method === 'POST' && webhookMatch) return await handleWebhook(request, webhookMatch[1], env);
 
@@ -425,8 +515,10 @@ export const __testing = {
   connectionStatus,
   listAccounts,
   selectAccount,
+  registerSelectedAccountWebhook,
   handleWebhook,
   readJsonBody,
   validWebhookHint,
+  validStoredRoute,
   accessFor,
 };
