@@ -63,12 +63,25 @@ jobs:
               "$1"
           }
 
+          inspect_optional() {
+            local url="$1"
+            local output="$2"
+            curl --silent --show-error \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --output "$output" \
+              --write-out '%{http_code}' \
+              "$url"
+          }
+
           account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
           pages="$(api "$account/pages/projects/vishar-crm-production")"
           echo "$pages" | jq -e '.success == true' >/dev/null
           echo "pages_project=vishar-crm-production"
           echo "pages_latest_commit=$(echo "$pages" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // "missing"')"
           echo "pages_latest_id=$(echo "$pages" | jq -r '.result.latest_deployment.id // "missing"')"
+          echo "pages_production_branch=$(echo "$pages" | jq -r '.result.production_branch // "missing"')"
+          echo "pages_domains=$(echo "$pages" | jq -c '.result.domains // [] | sort')"
           echo "pages_production_env_names=$(echo "$pages" | jq -r '(.result.deployment_configs.production.env_vars // {}) | keys | sort | join(",")')"
 
           scripts="$(api "$account/workers/scripts")"
@@ -79,9 +92,36 @@ jobs:
             if [ "$present" != '1' ]; then
               continue
             fi
+            echo "worker_${worker}_metadata=$(echo "$scripts" | jq -c --arg worker "$worker" '[.result[] | select(.id == $worker) | {id,modified_on,created_on,handlers}] | first')"
+
             secrets="$(api "$account/workers/scripts/$worker/secrets")"
             echo "$secrets" | jq -e '.success == true' >/dev/null
             echo "worker_${worker}_secret_names=$(echo "$secrets" | jq -r '[.result[].name] | sort | join(",")')"
+
+            deployments_file="$(mktemp)"
+            deployments_status="$(inspect_optional "$account/workers/scripts/$worker/deployments" "$deployments_file")"
+            echo "worker_${worker}_deployments_status=$deployments_status"
+            if [ "$deployments_status" = '200' ]; then
+              echo "worker_${worker}_latest_deployment=$(jq -c '.result.deployments // .result // [] | if type == "array" then (sort_by(.created_on // "") | last | {id,created_on,versions}) else {} end' "$deployments_file")"
+            fi
+            rm -f "$deployments_file"
+
+            schedules_file="$(mktemp)"
+            schedules_status="$(inspect_optional "$account/workers/scripts/$worker/schedules" "$schedules_file")"
+            echo "worker_${worker}_schedules_status=$schedules_status"
+            if [ "$schedules_status" = '200' ]; then
+              echo "worker_${worker}_schedules=$(jq -c '[.result[]? | {cron,created_on,modified_on}]' "$schedules_file")"
+            fi
+            rm -f "$schedules_file"
+
+            settings_file="$(mktemp)"
+            settings_status="$(inspect_optional "$account/workers/scripts/$worker/settings" "$settings_file")"
+            echo "worker_${worker}_settings_status=$settings_status"
+            if [ "$settings_status" = '200' ]; then
+              echo "worker_${worker}_binding_names=$(jq -r '[.result.bindings[]? | (.name // empty)] | unique | sort | join(",")' "$settings_file")"
+              echo "worker_${worker}_binding_types=$(jq -c '[.result.bindings[]? | {name:(.name // null),type:(.type // null)}] | sort_by(.name // "")' "$settings_file")"
+            fi
+            rm -f "$settings_file"
           done
 
           domains="$(api "$account/workers/domains")"
