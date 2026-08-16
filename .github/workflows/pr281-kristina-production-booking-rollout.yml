@@ -1,0 +1,211 @@
+name: Roll out Kristina production booking recovery
+
+on:
+  pull_request:
+    branches:
+      - agent/kristina-production-booking-recovery
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kristina-production-booking-recovery
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy exact Kristina booking recovery
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/run-kristina-production-booking-recovery' &&
+      github.event.pull_request.base.ref == 'agent/kristina-production-booking-recovery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      WORKER_NAME: tattooai
+      WORKER_ENDPOINT: https://tattooai.vvetrov41.workers.dev/
+      ALLOWED_ORIGINS: https://vishartattoo.com,https://booking.vishartattoo.com,https://www.kristinavishar.com
+      SUPABASE_URL: https://vfjexhfdbrjmuxfdvbdx.supabase.co
+
+    steps:
+      - name: Verify exact same-repository rollout marker
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$BASE_SHA" != "$HEAD_SHA" ]
+          [ "${{ github.event.pull_request.changed_files }}" = '1' ]
+
+      - name: Checkout exact approved recovery base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout and recovery boundary
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$BASE_SHA" ]
+          [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor 2729bf08ed206a0d6d42f6d055ded8489d0858e4 HEAD
+          test -f workers/lib/production-booking-routing.js
+          test -f scripts/test-production-booking-routing.mjs
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and audit locked dependencies
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+
+      - name: Re-run focused production boundaries
+        run: |
+          node scripts/test-production-booking-routing.mjs
+          node scripts/test-booking-flow.mjs
+          node scripts/test-worker-modules.mjs
+          npm run check:worker-bundle
+          npm run scan:secrets
+
+      - name: Verify production credentials and current Worker bindings
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name:-}" ] || { echo "Missing encrypted configuration name: $name" >&2; exit 1; }
+          done
+
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/deployments" > "$RUNNER_TEMP/deployments-before.json"
+          jq -e '.success == true' "$RUNNER_TEMP/deployments-before.json" >/dev/null
+          prior_version="$(jq -r '(.result.deployments // .result)[0].versions[]? | select(.percentage == 100) | .version_id' "$RUNNER_TEMP/deployments-before.json" | head -n1)"
+          [[ "$prior_version" =~ ^[0-9a-f-]{36}$ ]]
+
+          secret_list="$(npx wrangler secret list --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secret_list" node <<'NODE'
+          const entries = JSON.parse(process.env.SECRET_LIST || '[]');
+          const names = new Set(entries.map((entry) => entry?.name).filter(Boolean));
+          const supabaseKeys = ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY'].filter((name) => names.has(name));
+          if (supabaseKeys.length !== 1) throw new Error('Expected exactly one production Supabase secret binding');
+          for (const name of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']) {
+            if (!names.has(name)) throw new Error(`Missing required production secret binding: ${name}`);
+          }
+          NODE
+          echo "PRIOR_WORKER_VERSION=$prior_version" >> "$GITHUB_ENV"
+
+      - name: Dry-run exact production Worker
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx wrangler deploy
+          --env=""
+          --name "$WORKER_NAME"
+          --strict
+          --keep-vars
+          --var "ALLOWED_ORIGINS:$ALLOWED_ORIGINS"
+          --dry-run
+          --outdir .wrangler/kristina-production-recovery
+
+      - name: Deploy only the tattooai production Worker
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          deploy_output="$RUNNER_TEMP/tattooai-production-output.ndjson"
+          rm -f "$deploy_output"
+          WRANGLER_OUTPUT_FILE_PATH="$deploy_output" \
+            npx wrangler deploy \
+              --env="" \
+              --name "$WORKER_NAME" \
+              --strict \
+              --keep-vars \
+              --var "ALLOWED_ORIGINS:$ALLOWED_ORIGINS"
+
+          DEPLOY_OUTPUT="$deploy_output" node <<'NODE'
+          const fs = require('fs');
+          const events = fs.readFileSync(process.env.DEPLOY_OUTPUT, 'utf8')
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line));
+          const deploys = events.filter((entry) => (
+            entry?.type === 'deploy'
+            && entry?.worker_name === process.env.WORKER_NAME
+            && typeof entry?.version_id === 'string'
+          ));
+          if (deploys.length !== 1) throw new Error('Unable to resolve exactly one deployed tattooai version');
+          fs.appendFileSync(process.env.GITHUB_ENV, `DEPLOYED_WORKER_VERSION=${deploys[0].version_id}\n`);
+          NODE
+
+      - name: Verify deployed bindings and edge behaviour
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOYED_WORKER_VERSION" =~ ^[0-9a-f-]{36}$ ]]
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions/$DEPLOYED_WORKER_VERSION" \
+            > "$RUNNER_TEMP/deployed-version.json"
+          jq -e --arg allowed "$ALLOWED_ORIGINS" --arg supabase "$SUPABASE_URL" '
+            .success == true
+            and ([.result.resources.bindings[]? | select(.name == "ALLOWED_ORIGINS" and .type == "plain_text") | .text] == [$allowed])
+            and ([.result.resources.bindings[]? | select(.name == "VISHAR_ENVIRONMENT" and .type == "plain_text") | .text] == ["production"])
+            and ([.result.resources.bindings[]? | select(.name == "SUPABASE_URL" and .type == "plain_text") | .text] == [$supabase])
+            and ([.result.resources.bindings[]? | select(.name == "AI")] | length == 1)
+          ' "$RUNNER_TEMP/deployed-version.json" >/dev/null
+
+          IFS=',' read -r -a origins <<< "$ALLOWED_ORIGINS"
+          for origin in "${origins[@]}"; do
+            headers="$RUNNER_TEMP/headers-$(printf '%s' "$origin" | sha256sum | cut -c1-12).txt"
+            status="$(curl --silent --show-error --output /dev/null --dump-header "$headers" --write-out '%{http_code}' \
+              -X OPTIONS -H "Origin: $origin" "$WORKER_ENDPOINT")"
+            [ "$status" = '204' ]
+            tr -d '\r' < "$headers" | grep -Fqi "Access-Control-Allow-Origin: $origin"
+          done
+
+          rejected="$RUNNER_TEMP/rejected.json"
+          status="$(curl --silent --show-error --output "$rejected" --write-out '%{http_code}' \
+            -H 'Origin: https://www.kristinavishar.com.attacker.invalid' \
+            -F 'probe=1' "$WORKER_ENDPOINT")"
+          [ "$status" = '403' ]
+          jq -e '.code == "origin_not_allowed"' "$rejected" >/dev/null
+
+      - name: Record safe rollback evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Kristina production booking recovery'
+            echo
+            echo "- Source SHA: \`${{ github.event.pull_request.base.sha }}\`"
+            echo "- Worker: \`$WORKER_NAME\`"
+            echo "- Prior version: \`${PRIOR_WORKER_VERSION:-not changed}\`"
+            echo "- Deployed version: \`${DEPLOYED_WORKER_VERSION:-not deployed}\`"
+            echo "- Allowed origins: \`$ALLOWED_ORIGINS\`"
+            echo '- Secrets were checked by name only and were not changed.'
+            echo '- Rollback: redeploy the prior Worker version and disable `kristina-website`.'
+          } >> "$GITHUB_STEP_SUMMARY"
