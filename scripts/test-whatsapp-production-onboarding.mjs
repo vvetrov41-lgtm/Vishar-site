@@ -38,6 +38,14 @@ const validBody = {
   },
 };
 
+const coexistenceBody = {
+  ...validBody,
+  session: {
+    waba_id: '12345678901',
+    phone_number_id: null,
+  },
+};
+
 {
   const response = await onRequestPost({
     request: request(validBody, { origin: 'https://evil.example' }),
@@ -76,10 +84,8 @@ const validBody = {
   }
 }
 
-{
-  const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async (url, init = {}) => {
+function metaSuccessFetch(calls, phoneRows) {
+  return async (url, init = {}) => {
     const target = String(url);
     calls.push({ target, init });
 
@@ -97,13 +103,7 @@ const validBody = {
       return Response.json({ id: '12345678901', name: 'Vladimir WABA' });
     }
     if (target.includes('/v25.0/12345678901/phone_numbers')) {
-      return Response.json({
-        data: [{
-          id: '10987654321',
-          display_phone_number: '+44 7000 000000',
-          verified_name: 'Vladimir',
-        }],
-      });
+      return Response.json({ data: phoneRows });
     }
     if (target.includes('/workers/scripts/vishar-whatsapp-webhook-production/secrets')) {
       const payload = JSON.parse(String(init.body));
@@ -130,6 +130,18 @@ const validBody = {
     }
     throw new Error(`Unexpected network call: ${target}`);
   };
+}
+
+const singlePhone = [{
+  id: '10987654321',
+  display_phone_number: '+44 7000 000000',
+  verified_name: 'Vladimir',
+}];
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = metaSuccessFetch(calls, singlePhone);
 
   try {
     const response = await onRequestPost({ request: request(validBody), env: env() });
@@ -148,6 +160,40 @@ const validBody = {
     assert.ok(webhookSecretIndex > -1);
     assert.ok(drainSecretIndex > webhookSecretIndex);
     assert.ok(subscribeIndex > drainSecretIndex);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = metaSuccessFetch(calls, singlePhone);
+
+  try {
+    const response = await onRequestPost({ request: request(coexistenceBody), env: env() });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).integration_key, 'vladimir-production');
+    assert.ok(calls.some((call) => call.target.includes('vishar-whatsapp-webhook-production/secrets')));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = metaSuccessFetch(calls, [
+    singlePhone[0],
+    { id: '10987654322', display_phone_number: '+44 7000 000001', verified_name: 'Other' },
+  ]);
+
+  try {
+    const response = await onRequestPost({ request: request(coexistenceBody), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_selection_ambiguous' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((call) => call.target.endsWith('/subscribed_apps')), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
