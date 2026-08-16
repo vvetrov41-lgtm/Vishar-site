@@ -1,0 +1,76 @@
+name: WhatsApp production read-only preflight
+
+on:
+  push:
+    branches:
+      - agent/whatsapp-production-onboarding
+    paths:
+      - .github/workflows/whatsapp-production-readonly-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify bounded branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'agent/whatsapp-production-onboarding'
+
+      - name: Inspect production Cloudflare metadata read-only
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+
+          api() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H 'Content-Type: application/json' \
+              "$1"
+          }
+
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+
+          pages="$(api "$account/pages/projects/vishar-crm-production")"
+          echo "$pages" | jq -e '.success == true' >/dev/null
+          echo "pages_project=vishar-crm-production"
+          echo "pages_latest_commit=$(echo "$pages" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // "missing"')"
+          echo "pages_latest_id=$(echo "$pages" | jq -r '.result.latest_deployment.id // "missing"')"
+
+          scripts="$(api "$account/workers/scripts")"
+          echo "$scripts" | jq -e '.success == true' >/dev/null
+          for worker in vishar-whatsapp-drain-production vishar-whatsapp-webhook-production; do
+            present="$(echo "$scripts" | jq -r --arg worker "$worker" '[.result[] | select(.id == $worker)] | length')"
+            echo "worker_${worker}_present=$present"
+            if [ "$present" != '1' ]; then
+              continue
+            fi
+
+            secrets="$(api "$account/workers/scripts/$worker/secrets")"
+            echo "$secrets" | jq -e '.success == true' >/dev/null
+            echo "worker_${worker}_secret_names=$(echo "$secrets" | jq -r '[.result[].name] | sort | join(",")')"
+
+            schedules="$(api "$account/workers/scripts/$worker/schedules")"
+            echo "$schedules" | jq -e '.success == true' >/dev/null
+            echo "worker_${worker}_schedules=$(echo "$schedules" | jq -r '[.result[].cron] | sort | join(",")')"
+          done
+
+          domains="$(api "$account/workers/domains")"
+          echo "$domains" | jq -e '.success == true' >/dev/null
+          echo "whatsapp_custom_domain=$(echo "$domains" | jq -r '[.result[] | select(.hostname == "whatsapp.vishartattoo.com") | {hostname,service,environment}] | @json')"
+
+      - name: Confirm no production mutation commands exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='.github/workflows/whatsapp-production-readonly-preflight.yml'
+          ! grep -Eq 'wrangler (deploy|secret put)|curl[^\n]*(--request|-X)[ =]*(POST|PUT|PATCH|DELETE)|supabase (db push|migration|functions deploy)' "$file"
