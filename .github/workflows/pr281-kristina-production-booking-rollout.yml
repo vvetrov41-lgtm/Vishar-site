@@ -145,15 +145,17 @@ jobs:
               exit 1
             }
           fi
-          if [ -n "${SUPABASE_LEGACY_SECRET:-}" ]; then
+          probe_key="${SUPABASE_LEGACY_SECRET:-${SUPABASE_DIRECT_SECRET:-}}"
+          if [ -n "$probe_key" ]; then
             probe_status="$(curl --silent --show-error --output "$RUNNER_TEMP/supabase-probe.json" --write-out '%{http_code}' \
-              -H "apikey: $SUPABASE_LEGACY_SECRET" \
-              -H "Authorization: Bearer $SUPABASE_LEGACY_SECRET" \
+              -H "apikey: $probe_key" \
+              -H "Authorization: Bearer $probe_key" \
               "$SUPABASE_URL/rest/v1/booking_sources?select=source_key&limit=1")"
             echo "Supabase service-role probe HTTP status: $probe_status"
             [ "$probe_status" = '200' ] || { echo 'Supabase service-role probe failed' >&2; exit 1; }
             rm -f "$RUNNER_TEMP/supabase-probe.json"
           fi
+          unset probe_key
           echo "PRIOR_WORKER_VERSION=$prior_version" >> "$GITHUB_ENV"
 
       - name: Dry-run exact production Worker
