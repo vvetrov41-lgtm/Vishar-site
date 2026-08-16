@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   FACEBOOK_ALLOWED_MESSAGE_ORIGINS,
+  launchWhatsAppEmbeddedSignup,
   parseEmbeddedSignupMessage,
+  prepareWhatsAppEmbeddedSignup,
 } from '../lib/meta-whatsapp-embedded-signup';
 
 describe('Meta WhatsApp Embedded Signup event boundary', () => {
@@ -46,5 +48,29 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
     expect(parseEmbeddedSignupMessage('https://web.facebook.com', {
       type: 'WA_EMBEDDED_SIGNUP', event: 'ERROR', data: {},
     })).toEqual({ event: 'ERROR', wabaId: null, phoneNumberId: null });
+  });
+
+  it('calls FB.login synchronously after the SDK has been prepared', async () => {
+    const originalFb = window.FB;
+    const originalAsyncInit = window.fbAsyncInit;
+    let loginCalls = 0;
+
+    window.FB = {
+      init() {},
+      login(callback) {
+        loginCalls += 1;
+        callback({ status: 'not_authorized' });
+      },
+    };
+
+    try {
+      await prepareWhatsAppEmbeddedSignup();
+      const result = launchWhatsAppEmbeddedSignup();
+      expect(loginCalls).toBe(1);
+      await expect(result).rejects.toThrow('Meta authorization was not granted.');
+    } finally {
+      window.FB = originalFb;
+      window.fbAsyncInit = originalAsyncInit;
+    }
   });
 });
