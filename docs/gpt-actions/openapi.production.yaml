@@ -417,17 +417,40 @@ components:
           type: string
           format: date-time
     EnquiryDetail:
-      allOf:
-        - $ref: '#/components/schemas/EnquirySummary'
-        - type: object
-          additionalProperties: false
-          properties:
-            approximate_size:
-              type: string
-            cover_up:
-              type: string
-            idea:
-              type: string
+      type: object
+      additionalProperties: false
+      required: [enquiry_id, reference_number, status, client_id, client_name, created_at, last_action_at]
+      properties:
+        enquiry_id:
+          type: string
+          format: uuid
+        reference_number:
+          type: string
+        status:
+          $ref: '#/components/schemas/EnquiryStatus'
+        client_id:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        project_type:
+          type: string
+        placement:
+          type: string
+        approximate_size:
+          type: string
+        cover_up:
+          type: string
+        preferred_timing:
+          type: string
+        idea:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_action_at:
+          type: string
+          format: date-time
     AppointmentType:
       type: string
       enum: [tattoo_session, in_person_consultation, video_consultation, touch_up]
@@ -582,13 +605,13 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NotFound:
-      description: Record not found in this GPT's artist scope.
+      description: The artist-scoped record was not found.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     Conflict:
-      description: The appointment changed after it was read.
+      description: The request conflicts with current CRM state.
       content:
         application/json:
           schema:
