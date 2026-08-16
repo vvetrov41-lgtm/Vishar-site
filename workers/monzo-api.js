@@ -18,6 +18,7 @@ import {
   monzoDisconnectReturnUrl,
   storeMonzoDisconnectState,
 } from './lib/monzo-disconnect-security.js';
+import { handleMonzoSetup, monzoSetupUrl } from './lib/monzo-setup-flow.js';
 import {
   artistMonzoConfig,
   assertMonzoAccountConfiguration,
@@ -239,9 +240,6 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
   try {
     await saveMonzoTokenRecord(env, record);
   } catch (error) {
-    // Monzo permits only one active access token per client/user. Once this
-    // exchange succeeds, a previous same-user token is no longer a safe
-    // rollback target. Fail closed locally instead of restoring stale secrets.
     if (previous?.webhookId) {
       await deleteMonzoWebhook(tokens.access_token, previous.webhookId, fetchImpl).catch(() => false);
     }
@@ -253,8 +251,9 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
     throw error;
   }
 
+  if (!record.webhookId) return Response.redirect(monzoSetupUrl(env, stored.alias), 302);
   const destination = new URL(monzoCrmReturnUrl(env));
-  destination.searchParams.set('monzo', record.webhookId ? 'connected' : 'authorized');
+  destination.searchParams.set('monzo', 'connected');
   destination.searchParams.set('artist', stored.alias);
   return Response.redirect(destination.toString(), 302);
 }
@@ -575,6 +574,11 @@ export default {
       if (request.method === 'GET' && startMatch) return await startOAuth(request, startMatch[1], env);
       if (request.method === 'GET' && url.pathname === '/oauth/monzo/callback') {
         return await oauthCallback(request, env);
+      }
+
+      const setupMatch = url.pathname.match(new RegExp(`^/oauth/monzo/setup/${ALIAS_PATH}$`));
+      if (setupMatch && (request.method === 'GET' || request.method === 'POST')) {
+        return await handleMonzoSetup(request, setupMatch[1], env);
       }
 
       const statusMatch = url.pathname.match(new RegExp(`^/oauth/monzo/status/${ALIAS_PATH}$`));
