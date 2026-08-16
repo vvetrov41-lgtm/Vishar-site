@@ -58,6 +58,7 @@ export interface EmbeddedSignupMessage {
 }
 
 let sdkPromise: Promise<FacebookSdk> | null = null;
+let initializedSdk: FacebookSdk | null = null;
 
 function numericProviderId(value: unknown): string | null {
   return typeof value === 'string' && /^[0-9]{5,32}$/.test(value.trim()) ? value.trim() : null;
@@ -91,29 +92,57 @@ export function parseEmbeddedSignupMessage(origin: string, data: unknown): Embed
   };
 }
 
+function initializeFacebookSdk(fb: FacebookSdk): FacebookSdk {
+  if (initializedSdk === fb) return fb;
+  fb.init({
+    appId: META_WHATSAPP_APP_ID,
+    autoLogAppEvents: false,
+    xfbml: false,
+    version: 'v25.0',
+  });
+  initializedSdk = fb;
+  return fb;
+}
+
 function loadFacebookSdk(): Promise<FacebookSdk> {
-  if (window.FB) return Promise.resolve(window.FB);
+  if (window.FB) return Promise.resolve(initializeFacebookSdk(window.FB));
   if (sdkPromise) return sdkPromise;
 
-  sdkPromise = new Promise((resolve, reject) => {
+  sdkPromise = new Promise<FacebookSdk>((resolve, reject) => {
+    let settled = false;
     const existing = document.querySelector<HTMLScriptElement>('script[data-vishar-meta-sdk="true"]');
     const script = existing ?? document.createElement('script');
 
-    const timeout = window.setTimeout(() => reject(new Error('Meta SDK did not load in time.')), 15000);
-    window.fbAsyncInit = () => {
+    const cleanup = () => {
       window.clearTimeout(timeout);
-      if (!window.FB) {
-        reject(new Error('Meta SDK loaded without FB object.'));
-        return;
-      }
-      window.FB.init({
-        appId: META_WHATSAPP_APP_ID,
-        autoLogAppEvents: false,
-        xfbml: false,
-        version: 'v25.0',
-      });
-      resolve(window.FB);
+      window.clearInterval(poll);
+      script.removeEventListener('error', fail);
     };
+
+    const finish = () => {
+      if (settled || !window.FB) return;
+      settled = true;
+      cleanup();
+      resolve(initializeFacebookSdk(window.FB));
+    };
+
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('Could not load Meta SDK.'));
+    };
+
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('Meta SDK did not load in time.'));
+    }, 15000);
+    const poll = window.setInterval(finish, 100);
+
+    window.fbAsyncInit = finish;
+    script.addEventListener('error', fail, { once: true });
 
     if (!existing) {
       script.async = true;
@@ -121,19 +150,27 @@ function loadFacebookSdk(): Promise<FacebookSdk> {
       script.crossOrigin = 'anonymous';
       script.src = FACEBOOK_SDK_URL;
       script.dataset.visharMetaSdk = 'true';
-      script.onerror = () => {
-        window.clearTimeout(timeout);
-        reject(new Error('Could not load Meta SDK.'));
-      };
       document.head.appendChild(script);
+    } else {
+      finish();
     }
+  }).catch((error) => {
+    sdkPromise = null;
+    throw error;
   });
 
   return sdkPromise;
 }
 
-export async function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupResult> {
-  const fb = await loadFacebookSdk();
+export async function prepareWhatsAppEmbeddedSignup(): Promise<void> {
+  await loadFacebookSdk();
+}
+
+export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupResult> {
+  const fb = window.FB && initializedSdk === window.FB ? window.FB : null;
+  if (!fb) {
+    return Promise.reject(new Error('Meta SDK is still loading. Please try again in a moment.'));
+  }
 
   return new Promise((resolve, reject) => {
     let authorizationCode: string | null = null;
@@ -188,6 +225,8 @@ export async function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSi
       rejectOnce(new Error('Meta Embedded Signup timed out.'));
     }, 10 * 60 * 1000);
 
+    // FB.login must run synchronously inside the user's click gesture. Loading
+    // the SDK with an await here can make iOS/WebKit block the Meta popup.
     fb.login((response) => {
       const code = response.authResponse?.code?.trim() || '';
       if (!code) {
