@@ -1,0 +1,84 @@
+name: PR 271 WhatsApp Embedded Signup staging preflight
+
+on:
+  push:
+    branches:
+      - agent/whatsapp-embedded-signup-owner
+    paths:
+      - .github/workflows/pr271-whatsapp-embedded-signup-staging-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify exact branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "agent/whatsapp-embedded-signup-owner"
+          echo "head_sha=${GITHUB_SHA}"
+
+      - name: Inspect unauthenticated staging edge
+        id: edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          curl --silent --show-error --max-time 20 --output /dev/null --dump-header "$headers" \
+            https://vishar-crm-staging.pages.dev/ || true
+          status="$(awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "$headers")"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$headers")"
+          access_redirect=false
+          case "$location" in
+            https://*.cloudflareaccess.com/*) access_redirect=true ;;
+          esac
+          echo "http_status=${status:-unknown}"
+          echo "access_redirect=$access_redirect"
+          echo "http_status=${status:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "access_redirect=$access_redirect" >> "$GITHUB_OUTPUT"
+          rm -f "$headers"
+
+      - name: Inspect Cloudflare Pages deployment metadata
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo 'Cloudflare inspection credentials are unavailable.' >&2
+            exit 1
+          fi
+          response="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/vishar-crm-staging")"
+          echo "$response" | jq -e '.success == true' >/dev/null
+          echo "$response" | jq -r '
+            .result as $p |
+            "project=" + ($p.name // "unknown"),
+            "production_branch=" + ($p.production_branch // "unknown"),
+            "latest_deployment_id=" + ($p.latest_deployment.id // "none"),
+            "latest_environment=" + ($p.latest_deployment.environment // "unknown"),
+            "latest_branch=" + ($p.latest_deployment.deployment_trigger.metadata.branch // "unknown"),
+            "latest_commit_hash=" + ($p.latest_deployment.deployment_trigger.metadata.commit_hash // "unknown"),
+            "latest_url=" + ($p.latest_deployment.url // "unknown")'
+
+      - name: Require owner-only Access evidence before any deploy
+        shell: bash
+        env:
+          ACCESS_REDIRECT: ${{ steps.edge.outputs.access_redirect }}
+        run: |
+          set -euo pipefail
+          if [ "$ACCESS_REDIRECT" != true ]; then
+            echo 'Unauthenticated request did not prove a Cloudflare Access redirect. Do not deploy PR271 to this staging host yet.' >&2
+            exit 1
+          fi
+          echo 'Cloudflare Access redirect observed for staging host.'
