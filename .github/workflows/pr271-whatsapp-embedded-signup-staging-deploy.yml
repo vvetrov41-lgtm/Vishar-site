@@ -54,7 +54,7 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/vishar-crm-staging")"
           echo "$response" | jq -e '.success == true' >/dev/null
           current="$(echo "$response" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // ""')"
-          if [ "$current" != '8ed7e9364362c9db5214dbf24f1ff32af55a4420' ]; then
+          if [ "$current" != '72185f86765d3be90e158320289409c050286528' ]; then
             echo "Retained staging moved since preflight: current=$current" >&2
             exit 1
           fi
@@ -88,10 +88,11 @@ jobs:
           test -f dist/whatsapp-embedded-signup.js
           grep -Fq '/whatsapp-embedded-signup.js' dist/whatsapp-embedded-signup.html
           grep -Fq 'whatsapp_business_app_onboarding' dist/whatsapp-embedded-signup.js
+          grep -Fq 'https://m.facebook.com' dist/whatsapp-embedded-signup.js
           grep -Fq '4468652066715473' dist/whatsapp-embedded-signup.js
           grep -Fq '1481226093843982' dist/whatsapp-embedded-signup.js
-          grep -Fq "https://connect.facebook.net" dist/_headers
-          grep -Fq "frame-src https://www.facebook.com https://web.facebook.com" dist/_headers
+          grep -Fq 'https://connect.facebook.net' dist/_headers
+          grep -Fq 'https://m.facebook.com' dist/_headers
 
       - name: Scan browser artifact for credential-shaped values
         shell: bash
@@ -121,7 +122,7 @@ jobs:
             --project-name vishar-crm-staging \
             --branch main \
             --commit-hash "$GITHUB_SHA" \
-            --commit-message 'PR271 WhatsApp Embedded Signup external launcher' \
+            --commit-message 'PR271 WhatsApp Embedded Signup mobile event origin' \
             --commit-dirty=true
 
       - name: Verify deployed exact head and Access remains closed
