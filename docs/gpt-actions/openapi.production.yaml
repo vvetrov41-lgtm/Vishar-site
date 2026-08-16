@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Vishar CRM Private Artist Actions
-  version: 2.0.0-production
+  version: 2.1.0-production
   description: >-
     Private OAuth-authenticated operational CRM actions for one artist. The artist
     is fixed by the OAuth client binding and cannot be selected in a request.
@@ -12,6 +12,15 @@ servers:
 security:
   - supabaseOAuth: [email]
 paths:
+  /v1/clients:
+    get:
+      operationId: listClients
+      summary: List clients linked to this GPT artist scope without contact PII
+      x-openai-isConsequential: false
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 25}}
+      responses: {'200': {description: PII-minimised linked clients}}
+
   /v1/clients/search:
     get:
       operationId: searchAppointmentClients
@@ -73,10 +82,7 @@ paths:
               properties:
                 request_id: {type: string, format: uuid}
                 privacy_acknowledged: {type: boolean}
-                client:
-                  allOf:
-                    - {$ref: '#/components/schemas/ClientEditableFields'}
-                    - {type: object, required: [full_name, email]}
+                client: {$ref: '#/components/schemas/ManualClient'}
                 enquiry: {$ref: '#/components/schemas/EnquiryEditableFields'}
       responses: {'200': {description: Created or idempotently replayed enquiry}}
 
@@ -204,6 +210,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
+              minProperties: 1
               properties:
                 title: {type: string, maxLength: 200}
                 description: {type: string, maxLength: 4000}
@@ -730,12 +737,24 @@ components:
     ClientEditableFields:
       type: object
       additionalProperties: false
+      minProperties: 1
       properties:
         full_name: {type: string, maxLength: 160}
         email: {type: string, maxLength: 320}
         phone: {type: string, maxLength: 80}
         instagram: {type: string, maxLength: 80}
         preferred_contact: {type: string, maxLength: 40}
+        travelling_from: {type: string, maxLength: 160}
+    ManualClient:
+      type: object
+      additionalProperties: false
+      required: [full_name, email]
+      properties:
+        full_name: {type: string, maxLength: 160}
+        email: {type: string, maxLength: 320}
+        phone: {type: string, maxLength: 80}
+        instagram: {type: string, maxLength: 80}
+        preferred_contact: {type: string, enum: [Email, WhatsApp, Instagram]}
         travelling_from: {type: string, maxLength: 160}
     EnquiryStatus:
       type: string
@@ -758,6 +777,7 @@ components:
     EnquiryEditableFields:
       type: object
       additionalProperties: false
+      minProperties: 1
       properties:
         project_type: {type: string, maxLength: 100}
         placement: {type: string, maxLength: 160}
