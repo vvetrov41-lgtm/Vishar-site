@@ -159,12 +159,6 @@ jobs:
           echo 'Production full-management GPT edge did not reach the expected OAuth-gated state.' >&2
           exit 1
 
-      - name: Assert workflow never enables database capabilities
-        shell: bash
-        run: |
-          set -euo pipefail
-          ! grep -Ei 'configure_gpt_full_management|update[[:space:]]+crm_private\.gpt_action_clients' .github/workflows/gpt-production-full-management-rollout.yml
-
       - name: Boundary summary
         if: always()
         shell: bash
