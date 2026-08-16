@@ -303,6 +303,52 @@ await test('attribution and idempotency reach the database', async () => {
   assert.equal(intake.args.p_enquiry.privacy_notice_version, '2026-07-29');
 });
 
+await test('production derives Kristina source only from the exact canonical origin', async () => {
+  const calls = stubBackend({
+    state: {
+      artistId: 'a2222222-2222-4222-8222-222222222222',
+      bookingSourceId: 'b2222222-2222-4222-8222-222222222222',
+    },
+  });
+  const kristinaOrigin = 'https://www.kristinavishar.com';
+  const { response, payload } = await send(enquiryForm(), {
+    origin: kristinaOrigin,
+    env: {
+      ...env,
+      VISHAR_ENVIRONMENT: 'production',
+      ALLOWED_ORIGINS: kristinaOrigin,
+      BOOKING_SOURCE_KEY: 'stale-source',
+      BOOKING_FORM_VERSION: 'stale-version',
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  const intake = calls.rpc.find((call) => call.name === 'create_trusted_enquiry_intake');
+  assert.equal(intake.args.p_source_key, 'kristina-website');
+  assert.equal(intake.args.p_origin, kristinaOrigin);
+  assert.equal(intake.args.p_form_version, 'booking-v1');
+  assert.ok(!('p_artist_id' in intake.args));
+});
+
+await test('production rejects an allow-listed origin without a reviewed source route', async () => {
+  const calls = stubBackend();
+  const lookalike = 'https://www.kristinavishar.com.evil.example';
+  const { response, payload } = await send(enquiryForm(), {
+    origin: lookalike,
+    env: {
+      ...env,
+      VISHAR_ENVIRONMENT: 'production',
+      ALLOWED_ORIGINS: lookalike,
+    },
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(payload.code, 'origin_not_allowed');
+  assert.equal(calls.rpc.length, 0);
+  assert.equal(calls.uploads.length, 0);
+});
+
 await test('browser routing fields cannot select an artist or provider', async () => {
   const calls=stubBackend();
   await send(enquiryForm({fields:{
