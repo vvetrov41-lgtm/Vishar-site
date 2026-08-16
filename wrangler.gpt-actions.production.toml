@@ -1,5 +1,5 @@
 name = "vishar-gpt-actions-production"
-main = "workers/gpt-actions-production.js"
+main = "workers/gpt-actions-production-entrypoint.js"
 compatibility_date = "2026-08-16"
 workers_dev = false
 preview_urls = false
