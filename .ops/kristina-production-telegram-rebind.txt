@@ -3,3 +3,4 @@ Binding: ARTIST_TELEGRAM_KRISTINA_HPRODUCTION
 Bot: @kristina_vishar_booking_bot
 Chat ID: -5307909475
 Scope: production Kristina only
+Secret check requested: 2026-08-16T15:23:00Z
