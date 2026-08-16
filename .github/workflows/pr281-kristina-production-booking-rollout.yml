@@ -149,7 +149,6 @@ jobs:
           if [ -n "$probe_key" ]; then
             probe_status="$(curl --silent --show-error --output "$RUNNER_TEMP/supabase-probe.json" --write-out '%{http_code}' \
               -H "apikey: $probe_key" \
-              -H "Authorization: Bearer $probe_key" \
               "$SUPABASE_URL/rest/v1/booking_sources?select=source_key&limit=1")"
             echo "Supabase service-role probe HTTP status: $probe_status"
             [ "$probe_status" = '200' ] || { echo 'Supabase service-role probe failed' >&2; exit 1; }
