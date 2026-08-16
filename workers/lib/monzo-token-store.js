@@ -32,8 +32,15 @@ function base64UrlBytes(value) {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
   try {
-    return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
-  } catch {
+    const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+    // Require the single canonical, unpadded base64url spelling of every
+    // envelope field and encryption key. Without this check, changing only
+    // unused trailing base64 padding bits can alter the stored string while
+    // decoding to identical bytes, which makes textual tampering ambiguous.
+    if (base64Url(bytes) !== value) throw new MonzoTokenError();
+    return bytes;
+  } catch (error) {
+    if (error instanceof MonzoTokenError) throw error;
     throw new MonzoTokenError();
   }
 }
