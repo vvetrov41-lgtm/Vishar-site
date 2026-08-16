@@ -88,7 +88,7 @@ const validBody = {
       return Response.json([{ id: OWNER_ID, role: 'owner', is_active: true }]);
     }
     if (target.includes('/oauth/access_token')) {
-      assert.ok(target.includes('client_id=1481226093843982'));
+      assert.ok(target.includes('client_id=894809783179152'));
       assert.ok(target.includes('client_secret='));
       assert.ok(target.includes('code='));
       return Response.json({ access_token: 'meta-access-token-for-test' });
