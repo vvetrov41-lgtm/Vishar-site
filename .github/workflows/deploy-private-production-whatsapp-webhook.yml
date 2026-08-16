@@ -108,7 +108,7 @@ jobs:
           npm run check:whatsapp-webhook-production-bundle
           npm run scan:secrets
 
-      - name: Verify exact pre-provisioned production Worker secret names
+      - name: Verify exact Vladimir-only pre-provisioned production Worker secret names
         if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -121,7 +121,6 @@ jobs:
           const values = JSON.parse(process.env.SECRET_LIST || '[]');
           const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
           const expected = [
-            'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
             'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
             'SUPABASE_SECRET_KEY',
             'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
@@ -228,7 +227,8 @@ jobs:
             echo '- Pre-provisioned Custom Domain: `whatsapp.vishartattoo.com`'
             echo '- Accepted callback path: `/webhook` only'
             echo '- workers.dev disabled; preview URLs disabled'
-            echo '- Required secret names: production Supabase backend key, verify token and two artist-scoped WhatsApp bindings'
+            echo '- Required secret names: production Supabase backend key, verify token and Vladimir artist-scoped WhatsApp binding only'
+            echo '- Kristina production binding is intentionally absent until separately onboarded'
             echo '- Global WhatsApp token/phone-number bindings are forbidden'
             echo '- Secret values are never read or printed; no secret put/bulk command exists here'
             echo '- Meta actions not performed: no Embedded Signup, phone registration/migration, WABA subscription, billing change or message send'
