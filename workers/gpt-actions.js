@@ -80,6 +80,17 @@ function malformedOAuthBearer(request) {
   });
 }
 
+function normalizedActionEnv(env) {
+  if (typeof env?.SUPABASE_PUBLISHABLE_KEY !== 'string') return env;
+  const trimmed = env.SUPABASE_PUBLISHABLE_KEY.trim();
+  if (trimmed === env.SUPABASE_PUBLISHABLE_KEY) return env;
+  return { ...env, SUPABASE_PUBLISHABLE_KEY: trimmed };
+}
+
+async function noFollowFetch(input, init = {}) {
+  return fetch(input, { ...init, redirect: 'manual' });
+}
+
 export function omitNullFields(value) {
   if (Array.isArray(value)) return value.map(omitNullFields);
   if (!value || typeof value !== 'object') return value;
@@ -99,7 +110,11 @@ export default {
     const malformedBearerResponse = malformedOAuthBearer(request);
     if (malformedBearerResponse) return malformedBearerResponse;
 
-    const response = await handleGptActionsRequest(request, env);
+    const response = await handleGptActionsRequest(
+      request,
+      normalizedActionEnv(env),
+      noFollowFetch,
+    );
     const contentType = response.headers.get('content-type') || '';
     if (response.status < 200 || response.status >= 300 || !contentType.includes('application/json')) {
       return response;
@@ -122,4 +137,9 @@ export default {
   },
 };
 
-export const __testing = Object.freeze({ publicRoute, malformedOAuthBearer });
+export const __testing = Object.freeze({
+  publicRoute,
+  malformedOAuthBearer,
+  normalizedActionEnv,
+  noFollowFetch,
+});
