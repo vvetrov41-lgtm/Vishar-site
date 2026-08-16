@@ -1,0 +1,164 @@
+name: GPT production bootstrap
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: gpt-production-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.head.ref == 'agent/gpt-production-actions' &&
+      github.event.pull_request.base.ref == 'release/private-crm-rc25-whatsapp' &&
+      contains(github.event.pull_request.body, '<!-- DEPLOY_GPT_PRODUCTION_BOOTSTRAP -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: vishar-gpt-actions-production
+      TARGET_HOST: gpt-actions.vishartattoo.com
+      CRM_ORIGIN: https://crm.vishartattoo.com
+
+    steps:
+      - name: Fail-closed PR guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == "release/private-crm-rc25-whatsapp"
+            and .pull_request.head.ref == "agent/gpt-production-actions"
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains("<!-- DEPLOY_GPT_PRODUCTION_BOOTSTRAP -->"))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Verify exact production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          [ "$CRM_ORIGIN" = 'https://crm.vishartattoo.com' ]
+          [ "$WORKER_NAME" = 'vishar-gpt-actions-production' ]
+          [ "$TARGET_HOST" = 'gpt-actions.vishartattoo.com' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+
+      - name: Verify exact head and normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" 'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies and validate GPT production boundary
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          node scripts/test-gpt-production.mjs
+          node scripts/test-gpt-production-config.mjs
+          npm run validate:gpt-actions
+          npm run check:gpt-production-bundle
+          npm run scan:secrets
+
+      - name: Enable only the production Supabase OAuth server
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$RUNNER_TEMP/auth-before.json"
+          after="$RUNNER_TEMP/auth-after.json"
+          trap 'rm -f "$before" "$after"' EXIT
+          curl --fail --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF/config/auth" > "$before"
+          jq -e --arg site "$CRM_ORIGIN" 'type == "object" and (.site_url == $site or .site_url == "http://localhost:3000") and (.oauth_server_enabled | type == "boolean")' "$before" >/dev/null
+          payload="$(jq -n --arg site "$CRM_ORIGIN" '{site_url:$site,oauth_server_enabled:true,oauth_server_authorization_path:"/oauth/consent",oauth_server_allow_dynamic_registration:false}')"
+          curl --fail --silent --show-error -X PATCH -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data "$payload" "https://api.supabase.com/v1/projects/$PROJECT_REF/config/auth" >/dev/null
+          curl --fail --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF/config/auth" > "$after"
+          jq -e --arg site "$CRM_ORIGIN" '.site_url == $site and .oauth_server_enabled == true and .oauth_server_authorization_path == "/oauth/consent" and .oauth_server_allow_dynamic_registration == false' "$after" >/dev/null
+          rm -f "$before" "$after"
+          trap - EXIT
+
+      - name: Verify production OAuth discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "https://$PROJECT_REF.supabase.co/.well-known/oauth-authorization-server/auth/v1" > "$RUNNER_TEMP/oauth-discovery.json"
+          jq -e --arg base "https://$PROJECT_REF.supabase.co/auth/v1" '.authorization_endpoint == ($base + "/oauth/authorize") and .token_endpoint == ($base + "/oauth/token")' "$RUNNER_TEMP/oauth-discovery.json" >/dev/null
+          rm -f "$RUNNER_TEMP/oauth-discovery.json"
+
+      - name: Deploy production GPT edge with OAuth relay only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --dry-run --outdir .wrangler/gpt-production-dry-run --var SUPABASE_URL:"$SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" --var VISHAR_ENVIRONMENT:production --var GPT_OAUTH_RELAY_ENABLED:true --var GPT_ACTIONS_ENABLED:false
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict --var SUPABASE_URL:"$SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" --var VISHAR_ENVIRONMENT:production --var GPT_OAUTH_RELAY_ENABLED:true --var GPT_ACTIONS_ENABLED:false
+
+      - name: Verify production edge remains action-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/privacy" || true)"
+            oauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/oauth/authorize" || true)"
+            actions="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/appointments?from=2026-08-01T00%3A00%3A00Z&to=2026-09-01T00%3A00%3A00Z" || true)"
+            if [ "$privacy" = 200 ] && [ "$oauth" = 400 ] && [ "$actions" = 404 ]; then exit 0; fi
+            sleep 6
+          done
+          echo 'Production GPT edge did not reach expected OAuth-only state.' >&2
+          exit 1
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### GPT production bootstrap'
+            echo "- Exact SHA: \`$APPROVED_SHA\`"
+            echo '- Supabase target: production project only'
+            echo '- OAuth server: enabled, dynamic registration disabled'
+            echo '- Worker host: `gpt-actions.vishartattoo.com`'
+            echo '- OAuth relay: enabled'
+            echo '- Appointment actions: disabled'
+            echo '- OAuth clients created: no'
+            echo '- GPT client database bindings changed: no'
+            echo '- Retained staging targeted: no'
+          } >> "$GITHUB_STEP_SUMMARY"

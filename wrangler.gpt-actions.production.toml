@@ -1,0 +1,24 @@
+name = "vishar-gpt-actions-production"
+main = "workers/gpt-actions-production.js"
+compatibility_date = "2026-08-16"
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "gpt-actions.vishartattoo.com", custom_domain = true }
+]
+
+[[ratelimits]]
+name = "GPT_RATE_LIMIT"
+namespace_id = "1002"
+simple = { limit = 30, period = 60 }
+
+# Tracked production configuration is deliberately inert. The guarded production
+# workflow supplies the production publishable key and may enable the OAuth relay
+# first. Appointment actions are a separate activation step after both OAuth
+# clients are registered and artist-bound in production.
+[vars]
+VISHAR_ENVIRONMENT = "production"
+GPT_ACTIONS_ENABLED = "false"
+GPT_OAUTH_RELAY_ENABLED = "false"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
