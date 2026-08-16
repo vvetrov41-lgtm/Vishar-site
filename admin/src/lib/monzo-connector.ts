@@ -2,10 +2,11 @@ import type { CrmRole } from './types';
 
 export type MonzoConnectorAlias = 'vladimir' | 'kristina';
 
-const HOSTED_MONZO_CONNECTOR_HOSTS = new Set([
-  'monzo.vishartattoo.com',
-  'monzo-staging.vishartattoo.com',
-]);
+function isHostedMonzoConnectorHost(hostname: string): boolean {
+  const labels = hostname.split('.');
+  if (labels.length !== 3 || labels[1] !== 'vishartattoo' || labels[2] !== 'com') return false;
+  return /^monzo(?:-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)?$/.test(labels[0]);
+}
 
 export function readMonzoConnectorOrigin(
   env: Record<string, string | undefined>,
@@ -25,7 +26,7 @@ export function readMonzoConnectorOrigin(
     && parsed.protocol === 'http:'
     && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost');
   const hosted = parsed.protocol === 'https:'
-    && HOSTED_MONZO_CONNECTOR_HOSTS.has(parsed.hostname)
+    && isHostedMonzoConnectorHost(parsed.hostname)
     && !parsed.port;
 
   if (
