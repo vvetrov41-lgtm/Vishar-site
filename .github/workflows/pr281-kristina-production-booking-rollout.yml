@@ -148,8 +148,11 @@ jobs:
           probe_key="${SUPABASE_LEGACY_SECRET:-${SUPABASE_DIRECT_SECRET:-}}"
           if [ -n "$probe_key" ]; then
             probe_status="$(curl --silent --show-error --output "$RUNNER_TEMP/supabase-probe.json" --write-out '%{http_code}' \
+              -X POST \
               -H "apikey: $probe_key" \
-              "$SUPABASE_URL/rest/v1/booking_sources?select=source_key&limit=1")"
+              -H 'Content-Type: application/json' \
+              --data '{"p_source_key":"kristina-website","p_origin":"https://www.kristinavishar.com","p_form_version":"booking-v1"}' \
+              "$SUPABASE_URL/rest/v1/rpc/resolve_booking_source")"
             echo "Supabase service-role probe HTTP status: $probe_status"
             if [ "$probe_status" != '200' ]; then
               echo 'Configured GitHub Supabase key was rejected; retrieving a backend secret through the masked Management API handoff.'
@@ -173,8 +176,11 @@ jobs:
               probe_key="$secret_key"
               unset secret_key
               probe_status="$(curl --silent --show-error --output "$RUNNER_TEMP/supabase-probe.json" --write-out '%{http_code}' \
+                -X POST \
                 -H "apikey: $probe_key" \
-                "$SUPABASE_URL/rest/v1/booking_sources?select=source_key&limit=1")"
+                -H 'Content-Type: application/json' \
+                --data '{"p_source_key":"kristina-website","p_origin":"https://www.kristinavishar.com","p_form_version":"booking-v1"}' \
+                "$SUPABASE_URL/rest/v1/rpc/resolve_booking_source")"
               echo "Supabase Management API replacement probe HTTP status: $probe_status"
             fi
             [ "$probe_status" = '200' ] || { echo 'Supabase service-role probe failed' >&2; exit 1; }
