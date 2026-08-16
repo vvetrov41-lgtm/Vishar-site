@@ -1,0 +1,51 @@
+name: Ops RC31 WhatsApp binding names read-only
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc31-whatsapp-mobile-launcher-operator
+    paths:
+      - .github/workflows/ops-rc31-whatsapp-binding-readonly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CRM_PAGES_PROJECT: vishar-crm-production
+    steps:
+      - name: Check available Cloudflare credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'CLOUDFLARE_API_TOKEN unavailable outside crm-production environment'; exit 2; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo 'CLOUDFLARE_ACCOUNT_ID unavailable outside crm-production environment'; exit 3; }
+      - name: Inspect production and preview binding names only
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          project="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "$account/pages/projects/$CRM_PAGES_PROJECT")"
+          PROJECT_JSON="$project" node <<'NODE'
+          const doc = JSON.parse(process.env.PROJECT_JSON || '{}');
+          if (doc.success !== true) throw new Error('Cloudflare Pages project lookup failed');
+          const result = doc.result || {};
+          for (const scope of ['production', 'preview']) {
+            const env = result?.deployment_configs?.[scope]?.env_vars || {};
+            const names = Object.keys(env).sort();
+            console.log(`${scope.toUpperCase()}_BINDING_NAMES=${names.join(',')}`);
+            for (const [name, meta] of Object.entries(env)) {
+              const type = meta && typeof meta === 'object' && 'type' in meta ? meta.type : 'unknown';
+              console.log(`${scope.toUpperCase()}_BINDING_TYPE_${name}=${type}`);
+            }
+          }
+          const current = result?.latest_deployment?.deployment_trigger?.metadata?.commit_hash || 'missing';
+          console.log(`PAGES_CURRENT_COMMIT=${current}`);
+          NODE
