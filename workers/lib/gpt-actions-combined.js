@@ -45,6 +45,23 @@ async function readJson(request) {
   }
 }
 
+function clientListRoute(request, url) {
+  if (request.method.toUpperCase() !== 'GET' || url.pathname.replace(/\/+$/, '') !== '/v1/clients') return null;
+  for (const key of url.searchParams.keys()) {
+    if (['artist_id', 'oauth_client_id', 'integration_key', 'sql', 'rpc'].includes(key)) {
+      throw new Error(`forbidden_field:${key}`);
+    }
+    if (key !== 'limit') throw new Error(`unexpected_field:${key}`);
+  }
+  const rawLimit = url.searchParams.get('limit');
+  let limit = 25;
+  if (rawLimit != null && rawLimit !== '') {
+    limit = Number(rawLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('invalid_field:limit');
+  }
+  return { rpc: 'gpt_list_clients', payload: { p_limit: limit }, responseKind: 'list' };
+}
+
 function safeRpcError(status, text) {
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = null; }
@@ -76,7 +93,7 @@ async function handleFullRequest(request, env, fetchImpl) {
   let body = {};
   try {
     if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) body = await readJson(request);
-    const route = routeForFullGptAction(request, url, body);
+    const route = clientListRoute(request, url) || routeForFullGptAction(request, url, body);
     if (!route) return null;
 
     const response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${route.rpc}`, {
@@ -130,4 +147,4 @@ export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
   return handleCoreGptActionsRequest(request, env, fetchImpl);
 }
 
-export const __testing = Object.freeze({ configured, bearer, handleFullRequest });
+export const __testing = Object.freeze({ configured, bearer, clientListRoute, handleFullRequest });
