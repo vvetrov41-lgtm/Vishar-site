@@ -23,13 +23,17 @@ assert.match(workflow, /Apply canonical production migrations/);
 assert.match(workflow, /local_version == "0053" && remote_version == "0053"/);
 assert.match(workflow, /local_version == "0054"/);
 assert.match(workflow, /local_version == "0055"/);
-assert.match(workflow, /remote_0054 != "" \|\| remote_0055 != ""/);
+assert.match(workflow, /local_version == "0056"/);
+assert.match(workflow, /remote_0054 != "" \|\| remote_0055 != "" \|\| remote_0056 != ""/);
 assert.match(workflow, /deployed_0054/);
 assert.match(workflow, /deployed_0055/);
+assert.match(workflow, /deployed_0056/);
+assert.match(workflow, /Verify migration 0056 is recorded remotely/);
 assert.match(workflow, /GPT_OAUTH_RELAY_ENABLED:true/);
 assert.match(workflow, /GPT_ACTIONS_ENABLED:true/);
 assert.match(workflow, /"\$privacy" = 200/);
 assert.match(workflow, /"\$oauth" = 400/);
+assert.match(workflow, /"\$clients" = 401/);
 assert.match(workflow, /"\$projects" = 401/);
 assert.match(workflow, /"\$payments" = 401/);
 
@@ -41,4 +45,4 @@ assert.doesNotMatch(workflow, /update\s+crm_private\.gpt_action_clients/i,
   'deployment workflow must not directly mutate GPT bindings');
 assert.doesNotMatch(workflow, /service_role|SUPABASE_SECRET_KEY|sb_secret_/i);
 
-console.log('GPT full management rollout config tests passed: exact RC31 gate, 0053->0055 migration boundary, capabilities remain default-off.');
+console.log('GPT full management rollout config tests passed: exact RC31 gate, 0053->0056 migration boundary, capabilities remain default-off.');
