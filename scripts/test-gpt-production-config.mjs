@@ -20,11 +20,10 @@ assert.match(config, /name = "GPT_RATE_LIMIT"/);
 assert.match(config, /GPT_ACTIONS_ENABLED = "false"/);
 assert.match(config, /GPT_OAUTH_RELAY_ENABLED = "false"/);
 assert.match(config, /SUPABASE_URL = "https:\/\/vfjexhfdbrjmuxfdvbdx\.supabase\.co"/);
-assert.doesNotMatch(config, /gwaliusblwrzisrwnsvs|service_role|SUPABASE_SECRET|sb_secret_/);
+assert.doesNotMatch(config, /GPT_OAUTH_BRIDGE_SECRET|gwaliusblwrzisrwnsvs|service_role|SUPABASE_SECRET|sb_secret_/);
 
 for (const workflow of [bootstrap, activate]) {
   assert.match(workflow, /environment: crm-production/);
-  assert.match(workflow, /PRODUCT_BRANCH: agent\/gpt-production-actions/);
   assert.match(workflow, /git ls-remote origin "refs\/heads\/\$PRODUCT_BRANCH"/);
   assert.match(workflow, /CRM_PRODUCTION_SUPABASE_URL/);
   assert.match(workflow, /CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY/);
@@ -34,6 +33,7 @@ for (const workflow of [bootstrap, activate]) {
   assert.doesNotMatch(workflow, /pull_request|refs\/pull\/|STAGING_SUPABASE_DB_PASSWORD|gwaliusblwrzisrwnsvs/);
 }
 
+assert.match(bootstrap, /PRODUCT_BRANCH: agent\/gpt-production-actions/);
 assert.match(bootstrap, /release\/private-crm-rc26-gpt-actions/);
 assert.match(bootstrap, /oauth_server_enabled:true/);
 assert.match(bootstrap, /oauth_server_allow_dynamic_registration:false/);
@@ -42,9 +42,13 @@ assert.match(bootstrap, /GPT_ACTIONS_ENABLED:false/);
 assert.match(bootstrap, /OAuth clients created: no/);
 assert.match(bootstrap, /GPT client database bindings changed: no/);
 
-assert.match(activate, /release\/private-crm-rc27-gpt-actions-enable/);
+assert.match(activate, /PRODUCT_BRANCH: agent\/gpt-production-pkce-bridge/);
+assert.match(activate, /release\/private-crm-rc28-gpt-pkce-bridge/);
+assert.match(activate, /wrangler secret put GPT_OAUTH_BRIDGE_SECRET/);
+assert.match(activate, /openssl rand -hex 32/);
 assert.match(activate, /GPT_OAUTH_RELAY_ENABLED:true/);
 assert.match(activate, /GPT_ACTIONS_ENABLED:true/);
+assert.match(activate, /Supabase S256 PKCE: preserved through encrypted Worker bridge/);
 assert.match(activate, /GPT client binding mutation: none/);
 assert.doesNotMatch(activate, /configure_gpt_action_client|update\s+crm_private\.gpt_action_clients/i,
   'activation workflow must never create or mutate GPT bindings');
@@ -76,7 +80,9 @@ assert.match(runbook, /fresh live Supabase check/i,
   'runbook must require a fresh live binding check before action activation');
 assert.match(runbook, /release\/private-crm-rc26-gpt-actions/);
 assert.match(runbook, /release\/private-crm-rc27-gpt-actions-enable/);
-assert.match(runbook, /Do not guess or normalize the callback URL/);
+assert.match(runbook, /release\/private-crm-rc28-gpt-pkce-bridge/);
+assert.match(runbook, /fixed Worker callback/i);
+assert.match(runbook, /S256 PKCE/i);
 assert.match(runbook, /There is no GPT action for WhatsApp/);
 
-console.log('GPT production config tests passed: inert tracked config, exact release operators, production-only OAuth edge, inline OpenAPI and separate live binding gate.');
+console.log('GPT production config tests passed: inert tracked config, exact release operators, encrypted S256 PKCE bridge, production-only OAuth edge, inline OpenAPI and separate live binding gate.');
