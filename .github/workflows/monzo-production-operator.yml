@@ -168,28 +168,46 @@ jobs:
           # This operator path adds a trigger; it does not replace normal CI.
           # A production phase may not proceed unless the repository's own
           # validation has already passed on this exact tree.
-          runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100")"
-          RUNS="$runs" node <<'NODE'
-          const required = ['static-validation', 'Private CRM', 'Supabase migrations and pgTAP', 'Public site and Worker'];
-          const runs = JSON.parse(process.env.RUNS || '{}').check_runs || [];
-          const latest = new Map();
-          for (const run of runs) {
-            if (!required.includes(run.name)) continue;
-            const previous = latest.get(run.name);
-            if (!previous || new Date(run.started_at) >= new Date(previous.started_at)) latest.set(run.name, run);
-          }
-          const problems = [];
-          for (const name of required) {
-            const run = latest.get(name);
-            if (!run) problems.push(`${name}: absent on this SHA`);
-            else if (run.status !== 'completed') problems.push(`${name}: ${run.status}`);
-            else if (run.conclusion !== 'success') problems.push(`${name}: ${run.conclusion}`);
-          }
-          if (problems.length) {
-            throw new Error(`Normal exact-head CI is not green: ${problems.join('; ')}`);
-          }
-          console.log('Normal exact-head CI green for all required checks.');
-          NODE
+          #
+          # The check-runs payload for this SHA is large enough that passing it
+          # through the environment exceeds the exec argument limit, so it is
+          # projected to four fields server-side and read from a file.
+          runs_file="$(mktemp)"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100" \
+            --jq '.check_runs[] | [.name, .status, (.conclusion // "none"), .started_at] | @tsv' \
+            > "$runs_file"
+
+          problems=''
+          while IFS= read -r required; do
+            # Re-runs leave several rows per check name, so compare the most
+            # recently started one rather than whichever the API lists first.
+            latest="$(awk -F'\t' -v name="$required" '$1 == name { print $4 "\t" $2 "\t" $3 }' "$runs_file" \
+              | sort -r | head -1)"
+            if [ -z "$latest" ]; then
+              problems="${problems}${required}: absent on this SHA; "
+              continue
+            fi
+            status="$(printf '%s' "$latest" | cut -f2)"
+            conclusion="$(printf '%s' "$latest" | cut -f3)"
+            echo "required check: ${required} -> ${status}/${conclusion}"
+            if [ "$status" != 'completed' ] || [ "$conclusion" != 'success' ]; then
+              problems="${problems}${required}: ${status}/${conclusion}; "
+            fi
+          done <<'REQUIRED'
+          static-validation
+          Private CRM
+          Supabase migrations and pgTAP
+          Public site and Worker
+          REQUIRED
+
+          rm -f "$runs_file"
+
+          if [ -n "$problems" ]; then
+            echo "Normal exact-head CI is not green: ${problems}" >&2
+            exit 1
+          fi
+          echo 'Normal exact-head CI green for all required checks.'
 
       - name: Operator authorisation summary
         if: always()
