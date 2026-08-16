@@ -1,0 +1,290 @@
+name: Monzo staging KV provisioning
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: monzo-staging-kv-provisioning
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision isolated Monzo staging KV namespaces
+    if: >-
+      github.event.action == 'edited' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.base.ref == 'agent/monzo-staging-kv-provisioning-operator' &&
+      github.event.pull_request.head.ref == 'agent/monzo-staging-kv-provisioning-validation' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.body, format('<!-- RUN_MONZO_STAGING_KV_PROVISIONING:{0} -->', github.event.pull_request.head.sha))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    env:
+      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      OPERATOR_SHA: ${{ github.event.pull_request.base.sha }}
+      EXPECTED_PRODUCT_SHA: 5fc45508be2bcda2fb573254cdbfb430a57b3cc6
+      EXPECTED_OPERATOR_BRANCH: agent/monzo-staging-kv-provisioning-operator
+      EXPECTED_VALIDATION_BRANCH: agent/monzo-staging-kv-provisioning-validation
+      PRODUCTION_TARGETED: 'false'
+
+    steps:
+      - name: Fail closed before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$OPERATOR_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          marker="<!-- RUN_MONZO_STAGING_KV_PROVISIONING:${APPROVED_SHA} -->"
+          jq -e \
+            --arg sha "$APPROVED_SHA" \
+            --arg operator_sha "$OPERATOR_SHA" \
+            --arg base "$EXPECTED_OPERATOR_BRANCH" \
+            --arg head "$EXPECTED_VALIDATION_BRANCH" \
+            --arg marker "$marker" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            .action == "edited"
+            and .sender.login == "vvetrov41-lgtm"
+            and .pull_request.state == "open"
+            and .pull_request.draft == true
+            and .pull_request.merged == false
+            and .pull_request.base.ref == $base
+            and .pull_request.base.sha == $operator_sha
+            and .pull_request.head.ref == $head
+            and .pull_request.head.sha == $sha
+            and .pull_request.head.repo.full_name == $repo
+            and (.pull_request.body | contains($marker))
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+
+      - name: Check out exact validation head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact stack, diff and successful normal CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "${EXPECTED_PRODUCT_SHA}^{commit}")" = "$EXPECTED_PRODUCT_SHA" ]
+          [ "$(git rev-parse "${OPERATOR_SHA}^{commit}")" = "$OPERATOR_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_PRODUCT_SHA" "$OPERATOR_SHA"
+          git merge-base --is-ancestor "$OPERATOR_SHA" "$APPROVED_SHA"
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$EXPECTED_PRODUCT_SHA...$OPERATOR_SHA" > "$RUNNER_TEMP/operator-compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              ".github/workflows/monzo-staging-kv-provisioning.yml"
+            ] | sort)
+          ' "$RUNNER_TEMP/operator-compare.json" >/dev/null
+
+          gh api "repos/$GITHUB_REPOSITORY/compare/$OPERATOR_SHA...$APPROVED_SHA" > "$RUNNER_TEMP/validation-compare.json"
+          jq -e '
+            .status == "ahead"
+            and .behind_by == 0
+            and ([.files[].filename] | sort) == ([
+              "docs/ai/monzo-staging-kv-provisioning-validation.md"
+            ] | sort)
+          ' "$RUNNER_TEMP/validation-compare.json" >/dev/null
+
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {id,name,event,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+
+          jq -n --slurpfile runs "$RUNNER_TEMP/runs.json" --arg sha "$APPROVED_SHA" '
+            ["Static Validation", "CRM and booking validation"] as $required
+            | reduce $required[] as $name ({};
+                ($runs[0] | map(select(
+                  .name == $name
+                  and .event == "pull_request"
+                  and .head_sha == $sha
+                  and .status == "completed"
+                  and .conclusion == "success"
+                )) | sort_by(.id) | last) as $run
+                | if $run == null then error("missing exact-head normal CI: " + $name)
+                  else .[$name] = $run end
+              )
+          ' > "$RUNNER_TEMP/normal-ci-runs.json"
+
+          crm_run_id="$(jq -r '.["CRM and booking validation"].id' "$RUNNER_TEMP/normal-ci-runs.json")"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$crm_run_id/jobs?filter=latest&per_page=100" \
+            --jq '.jobs[] | {id,name,status,conclusion}' \
+            | jq -s . > "$RUNNER_TEMP/normal-ci-jobs.json"
+          for job in "Public site and Worker" "Private CRM" "Supabase migrations and pgTAP"; do
+            jq -e --arg name "$job" '
+              [.[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length == 1
+            ' "$RUNNER_TEMP/normal-ci-jobs.json" >/dev/null
+          done
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate dormant Monzo staging contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run validate:monzo-staging
+          npm run check:monzo-staging-bundle
+          npm run scan:secrets
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+
+      - name: Provision exact empty Monzo KV namespaces
+        id: provision
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ "$PRODUCTION_TARGETED" = 'false' ]
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ]
+          [[ "${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[0-9a-f]{32}$ ]]
+
+          evidence="$RUNNER_TEMP/monzo-staging-kv-provisioning"
+          mkdir -p "$evidence"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces"
+          desired=(
+            "vishar-monzo-oauth-state-staging"
+            "vishar-monzo-oauth-tokens-staging"
+            "vishar-monzo-webhook-routes-staging"
+          )
+
+          list_namespaces() {
+            local target="$1"
+            local http
+            http="$(curl --silent --show-error --output "$target" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "$api?per_page=100" || true)"
+            [ "$http" = '200' ] || {
+              printf 'Cloudflare KV namespace list failed with HTTP %s\n' "$http" >&2
+              exit 1
+            }
+            jq -e '.success == true and (.result | type == "array")' "$target" >/dev/null
+          }
+
+          list_namespaces "$evidence/before.json"
+
+          unexpected="$(jq -r '
+            [.result[] | (.title // "") | select(test("^vishar-monzo-.*-staging$"))]
+            - [
+              "vishar-monzo-oauth-state-staging",
+              "vishar-monzo-oauth-tokens-staging",
+              "vishar-monzo-webhook-routes-staging"
+            ]
+            | .[]
+          ' "$evidence/before.json")"
+          [ -z "$unexpected" ] || {
+            printf 'Unexpected Monzo staging KV namespace title exists; refusing mutation.\n' >&2
+            exit 1
+          }
+
+          : > "$evidence/created.ndjson"
+          for title in "${desired[@]}"; do
+            count="$(jq --arg title "$title" '[.result[] | select(.title == $title)] | length' "$evidence/before.json")"
+            [ "$count" -le 1 ] || {
+              printf 'Duplicate KV namespace title detected: %s\n' "$title" >&2
+              exit 1
+            }
+            if [ "$count" -eq 1 ]; then
+              jq -c --arg title "$title" '
+                .result[] | select(.title == $title) | {title, id, disposition:"existing"}
+              ' "$evidence/before.json" >> "$evidence/created.ndjson"
+              continue
+            fi
+
+            payload="$(jq -n --arg title "$title" '{title:$title}')"
+            http="$(curl --silent --show-error --output "$evidence/create.json" --write-out '%{http_code}' \
+              -X POST \
+              -H 'Content-Type: application/json' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              --data "$payload" \
+              "$api" || true)"
+            [ "$http" = '200' ] || {
+              printf 'Cloudflare KV namespace creation failed with HTTP %s for an approved title. Existing namespaces are preserved; no deletion is attempted.\n' "$http" >&2
+              rm -f "$evidence/create.json"
+              exit 1
+            }
+            jq -e --arg title "$title" '
+              .success == true
+              and .result.title == $title
+              and (.result.id | test("^[0-9a-f]{32}$"))
+            ' "$evidence/create.json" >/dev/null
+            jq -c --arg title "$title" '{title:$title, id:.result.id, disposition:"created"}' \
+              "$evidence/create.json" >> "$evidence/created.ndjson"
+            rm -f "$evidence/create.json"
+          done
+
+          list_namespaces "$evidence/after.json"
+          jq -n \
+            --slurpfile after "$evidence/after.json" \
+            --slurpfile records "$evidence/created.ndjson" '
+            [
+              "vishar-monzo-oauth-state-staging",
+              "vishar-monzo-oauth-tokens-staging",
+              "vishar-monzo-webhook-routes-staging"
+            ] as $desired
+            | ($after[0].result | map(select(.title as $t | $desired | index($t))) | sort_by(.title)) as $found
+            | if ($found | length) != 3 then error("expected exactly three Monzo staging namespaces") else . end
+            | if ($found | map(.id) | unique | length) != 3 then error("Monzo staging namespace ids must be distinct") else . end
+            | {
+                production_targeted: false,
+                staging_mutated: ($records | map(select(.disposition == "created")) | length > 0),
+                provider_called: false,
+                worker_deployed: false,
+                access_changed: false,
+                dns_changed: false,
+                namespaces: ($found | map({title, id})),
+                dispositions: ($records | map({title, disposition}) | sort_by(.title))
+              }
+          ' > "$evidence/summary.json"
+
+          rm -f "$evidence/before.json" "$evidence/after.json" "$evidence/created.ndjson"
+          jq . "$evidence/summary.json"
+
+      - name: Publish safe provisioning summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/monzo-staging-kv-provisioning/summary.json"
+          if [ -f "$evidence" ]; then
+            {
+              echo '### Monzo staging KV provisioning'
+              echo '```json'
+              jq . "$evidence"
+              echo '```'
+              echo ''
+              echo 'Only the three exact empty Monzo staging KV namespaces may be created. No deletion, rename, value write, Worker deploy, Access/DNS change, provider call, Supabase mutation or production action is implemented.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload non-sensitive provisioning evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monzo-staging-kv-provisioning-${{ env.APPROVED_SHA }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: ${{ runner.temp }}/monzo-staging-kv-provisioning/summary.json
