@@ -195,6 +195,9 @@ jobs:
           token_verify_http="not_attempted"
           kv_list_http="not_attempted"
           workers_list_http="not_attempted"
+          monzo_kv_titles='[]'
+          expected_worker_exists=false
+
           if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
             token_verify_http="$(curl --silent --show-error --output "$evidence/token-verify.json" --write-out '%{http_code}' \
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -209,13 +212,26 @@ jobs:
               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts" || true)"
           fi
 
+          if [ "$kv_list_http" = '200' ]; then
+            jq -e '.success == true and (.result | type == "array")' "$evidence/kv-list.json" >/dev/null
+            monzo_kv_titles="$(jq -c '[.result[] | select((.title // "") | test("monzo"; "i")) | .title] | sort' "$evidence/kv-list.json")"
+          fi
+          if [ "$workers_list_http" = '200' ]; then
+            jq -e '.success == true and (.result | type == "array")' "$evidence/workers-list.json" >/dev/null
+            if jq -e '[.result[] | .id // empty] | index("vishar-monzo-api-staging") != null' "$evidence/workers-list.json" >/dev/null; then
+              expected_worker_exists=true
+            fi
+          fi
+
           jq -n \
             --arg sha "$APPROVED_SHA" \
             --arg operator_sha "$OPERATOR_SHA" \
             --argjson missing "$(printf '%s\n' "${missing[@]:-}" | jq -Rsc 'split("\n") | map(select(length > 0))')" \
             --arg token_verify_http "$token_verify_http" \
             --arg kv_list_http "$kv_list_http" \
-            --arg workers_list_http "$workers_list_http" '
+            --arg workers_list_http "$workers_list_http" \
+            --argjson monzo_kv_titles "$monzo_kv_titles" \
+            --argjson expected_worker_exists "$expected_worker_exists" '
             {
               exact_head: $sha,
               operator_head: $operator_sha,
@@ -230,7 +246,10 @@ jobs:
               cloudflare_read_only: {
                 token_verify_http: $token_verify_http,
                 kv_namespaces_http: $kv_list_http,
-                workers_scripts_http: $workers_list_http
+                workers_scripts_http: $workers_list_http,
+                monzo_kv_namespace_count: ($monzo_kv_titles | length),
+                monzo_kv_namespace_titles: $monzo_kv_titles,
+                expected_staging_worker_exists: $expected_worker_exists
               },
               configuration_and_read_access_ready: (
                 ($missing | length == 0)
