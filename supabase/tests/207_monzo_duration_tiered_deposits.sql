@@ -39,15 +39,16 @@ insert into public.projects (id, client_id, enquiry_id, artist_id, title, status
   'Tier Deposit Project', 'active', 'GBP'
 );
 
--- Each appointment is on a separate future day. start_at/end_at are the
--- authoritative duration; duration_hours is deliberately not supplied.
+-- Production appointments use five-minute increments. The first valid duration
+-- above each inclusive threshold is therefore 65, 185 and 305 minutes.
+-- start_at/end_at remain authoritative; duration_hours is deliberately omitted.
 insert into public.sessions (id, project_id, artist_id, status, start_at, end_at) values
   ('d7611111-1111-4111-8111-111111111111', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '30 days 10 hours', date_trunc('day', now()) + interval '30 days 11 hours'),
-  ('d7622222-2222-4222-8222-222222222222', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '31 days 10 hours', date_trunc('day', now()) + interval '31 days 11 hours 1 minute'),
+  ('d7622222-2222-4222-8222-222222222222', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '31 days 10 hours', date_trunc('day', now()) + interval '31 days 11 hours 5 minutes'),
   ('d7633333-3333-4333-8333-333333333333', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '32 days 10 hours', date_trunc('day', now()) + interval '32 days 13 hours'),
-  ('d7644444-4444-4444-8444-444444444444', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '33 days 10 hours', date_trunc('day', now()) + interval '33 days 13 hours 1 minute'),
+  ('d7644444-4444-4444-8444-444444444444', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '33 days 10 hours', date_trunc('day', now()) + interval '33 days 13 hours 5 minutes'),
   ('d7655555-5555-4555-8555-555555555555', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '34 days 10 hours', date_trunc('day', now()) + interval '34 days 15 hours'),
-  ('d7666666-6666-4666-8666-666666666666', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '35 days 10 hours', date_trunc('day', now()) + interval '35 days 15 hours 1 minute'),
+  ('d7666666-6666-4666-8666-666666666666', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '35 days 10 hours', date_trunc('day', now()) + interval '35 days 15 hours 5 minutes'),
   ('d7677777-7777-4777-8777-777777777777', 'd7511111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'proposed', date_trunc('day', now()) + interval '36 days 10 hours', date_trunc('day', now()) + interval '36 days 17 hours');
 
 set local role authenticated;
@@ -93,15 +94,15 @@ insert into tier_results values
 select is((select (result ->> 'amount')::numeric from tier_results where session_id = 'd7611111-1111-4111-8111-111111111111'), 50::numeric,
   'exactly 60 minutes requires GBP 50');
 select is((select (result ->> 'amount')::numeric from tier_results where session_id = 'd7622222-2222-4222-8222-222222222222'), 100::numeric,
-  '61 minutes requires GBP 100');
+  '65 minutes, the first valid appointment duration above one hour, requires GBP 100');
 select is((select (result ->> 'amount')::numeric from tier_results where session_id = 'd7633333-3333-4333-8333-333333333333'), 100::numeric,
   'exactly 180 minutes requires GBP 100');
 select is((select (result ->> 'amount')::numeric from tier_results where session_id = 'd7644444-4444-4444-8444-444444444444'), 150::numeric,
-  '181 minutes requires GBP 150');
+  '185 minutes, the first valid appointment duration above three hours, requires GBP 150');
 select is((select (result ->> 'amount')::numeric from tier_results where session_id = 'd7655555-5555-4555-8555-555555555555'), 150::numeric,
   'exactly 300 minutes requires GBP 150');
 select is((select (result ->> 'amount')::numeric from tier_results where session_id = 'd7666666-6666-4666-8666-666666666666'), 250::numeric,
-  '301 minutes requires the GBP 250 full-day deposit');
+  '305 minutes, the first valid appointment duration above five hours, requires the GBP 250 full-day deposit');
 select is((select (result ->> 'amount')::numeric from tier_results where session_id = 'd7677777-7777-4777-8777-777777777777'), 250::numeric,
   'a seven-hour session remains GBP 250');
 
