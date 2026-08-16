@@ -11,7 +11,718 @@ servers:
     description: Vishar CRM production action edge.
 security:
   - supabaseOAuth: [email]
-paths: {}
+paths:
+  /v1/clients:
+    get:
+      operationId: listClients
+      summary: List clients linked to this GPT artist scope without contact PII
+      x-openai-isConsequential: false
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 25}}
+      responses: {'200': {description: PII-minimised linked clients}}
+
+  /v1/clients/search:
+    get:
+      operationId: searchAppointmentClients
+      summary: Find client names in this GPT artist scope
+      x-openai-isConsequential: false
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 20, default: 10}}
+      responses: {'200': {description: Matching client IDs and names}}
+
+  /v1/clients/{client_id}:
+    get:
+      operationId: getClient
+      summary: Read one linked client including contact details
+      x-openai-isConsequential: false
+      parameters:
+        - {name: client_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Client detail}, '404': {description: Not found}}
+    patch:
+      operationId: updateClient
+      summary: Update one non-shared client
+      description: Shared cross-artist clients fail closed and must be edited in the CRM UI.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: client_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientEditableFields'}
+      responses: {'200': {description: Updated client}}
+
+  /v1/enquiries:
+    get:
+      operationId: listEnquiries
+      summary: List complete enquiries without contact PII
+      x-openai-isConsequential: false
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: status, in: query, required: false, schema: {$ref: '#/components/schemas/EnquiryStatus'}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 25, default: 20}}
+      responses: {'200': {description: Enquiry summaries}}
+
+  /v1/enquiries/manual:
+    post:
+      operationId: createManualEnquiry
+      summary: Create a manual enquiry for this fixed artist
+      description: Requires confirmed privacy acknowledgement. Generate one UUID request_id and reuse it only for an identical retry.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, client, enquiry, privacy_acknowledged]
+              properties:
+                request_id: {type: string, format: uuid}
+                privacy_acknowledged: {type: boolean}
+                client: {$ref: '#/components/schemas/ManualClient'}
+                enquiry: {$ref: '#/components/schemas/EnquiryEditableFields'}
+      responses: {'200': {description: Created or idempotently replayed enquiry}}
+
+  /v1/enquiries/{enquiry_id}:
+    get:
+      operationId: getEnquiry
+      summary: Read safe enquiry detail without contact PII
+      x-openai-isConsequential: false
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Enquiry detail}, '404': {description: Not found}}
+    patch:
+      operationId: updateEnquiry
+      summary: Update editable project fields on an enquiry
+      x-openai-isConsequential: true
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnquiryEditableFields'}
+      responses: {'200': {description: Updated enquiry}}
+
+  /v1/enquiries/{enquiry_id}/full:
+    get:
+      operationId: getEnquiryFull
+      summary: Read one full enquiry including canonical client contact details and source attribution
+      x-openai-isConsequential: false
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Full enquiry detail}, '404': {description: Not found}}
+
+  /v1/enquiries/{enquiry_id}/status:
+    post:
+      operationId: setEnquiryStatus
+      summary: Transition enquiry status using CRM workflow rules
+      x-openai-isConsequential: true
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties: {status: {$ref: '#/components/schemas/EnquiryStatus'}}
+      responses: {'200': {description: Status transition result}}
+
+  /v1/staff:
+    get:
+      operationId: listArtistStaff
+      summary: List active staff assignable inside this GPT artist scope
+      x-openai-isConsequential: false
+      responses: {'200': {description: Active artist memberships}}
+
+  /v1/enquiries/{enquiry_id}/assign:
+    post:
+      operationId: assignEnquiry
+      summary: Assign an enquiry to active staff in this artist scope
+      x-openai-isConsequential: true
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [profile_id]
+              properties: {profile_id: {type: string, format: uuid}}
+      responses: {'200': {description: Assignment result}}
+
+  /v1/enquiries/{enquiry_id}/convert:
+    post:
+      operationId: convertEnquiryToProject
+      summary: Convert an accepted enquiry into a project
+      x-openai-isConsequential: true
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title]
+              properties:
+                title: {type: string, maxLength: 200}
+                description: {type: string, maxLength: 4000}
+      responses: {'200': {description: Project conversion result}}
+
+  /v1/projects:
+    get:
+      operationId: listProjects
+      summary: List projects in this GPT artist scope
+      x-openai-isConsequential: false
+      parameters:
+        - {name: status, in: query, required: false, schema: {$ref: '#/components/schemas/ProjectStatus'}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 25, default: 20}}
+      responses: {'200': {description: Projects}}
+
+  /v1/projects/{project_id}:
+    get:
+      operationId: getProject
+      summary: Read one project
+      x-openai-isConsequential: false
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Project detail}, '404': {description: Not found}}
+    patch:
+      operationId: updateProject
+      summary: Update project title or description
+      x-openai-isConsequential: true
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                title: {type: string, maxLength: 200}
+                description: {type: string, maxLength: 4000}
+      responses: {'200': {description: Project update result}}
+
+  /v1/projects/{project_id}/status:
+    post:
+      operationId: setProjectStatus
+      summary: Change project lifecycle status
+      x-openai-isConsequential: true
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties: {status: {$ref: '#/components/schemas/ProjectStatus'}}
+      responses: {'200': {description: Project status result}}
+
+  /v1/projects/{project_id}/finance:
+    get:
+      operationId: getProjectFinance
+      summary: Read project estimate and deposit fields when finance capability is enabled
+      x-openai-isConsequential: false
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Project finance detail}}
+
+  /v1/projects/{project_id}/estimate:
+    patch:
+      operationId: updateProjectEstimate
+      summary: Update project estimate fields
+      x-openai-isConsequential: true
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                hourly_rate: {type: number, minimum: 0}
+                estimate_total: {type: number, minimum: 0}
+                estimated_sessions: {type: integer, minimum: 0}
+                estimated_hours: {type: number, minimum: 0}
+                currency: {type: string, minLength: 3, maxLength: 3}
+      responses: {'200': {description: Estimate update result}}
+
+  /v1/projects/{project_id}/deposit:
+    patch:
+      operationId: updateProjectDeposit
+      summary: Update project deposit amount and status
+      x-openai-isConsequential: true
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount, status]
+              properties:
+                amount: {type: number, minimum: 0}
+                status: {$ref: '#/components/schemas/DepositStatus'}
+                currency: {type: string, minLength: 3, maxLength: 3}
+      responses: {'200': {description: Deposit update result}}
+
+  /v1/notes:
+    get:
+      operationId: listInternalNotes
+      summary: List internal notes linked to specific CRM records
+      x-openai-isConsequential: false
+      parameters:
+        - {name: client_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: enquiry_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: project_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: session_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses: {'200': {description: Internal notes}}
+    post:
+      operationId: createInternalNote
+      summary: Create an internal CRM note
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [body]
+              properties:
+                body: {type: string, maxLength: 8000}
+                client_id: {type: string, format: uuid}
+                enquiry_id: {type: string, format: uuid}
+                project_id: {type: string, format: uuid}
+                session_id: {type: string, format: uuid}
+      responses: {'200': {description: Created note}}
+
+  /v1/follow-ups:
+    get:
+      operationId: listFollowUps
+      summary: List artist follow-ups
+      x-openai-isConsequential: false
+      parameters:
+        - {name: status, in: query, required: false, schema: {$ref: '#/components/schemas/FollowUpStatus'}}
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses: {'200': {description: Follow-ups}}
+    post:
+      operationId: createFollowUp
+      summary: Create a follow-up
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [subject, due_at]
+              properties:
+                subject: {type: string, maxLength: 300}
+                due_at: {type: string, format: date-time}
+                client_id: {type: string, format: uuid}
+                enquiry_id: {type: string, format: uuid}
+                project_id: {type: string, format: uuid}
+                assigned_to: {type: string, format: uuid}
+                details: {type: string, maxLength: 4000}
+      responses: {'200': {description: Created follow-up}}
+
+  /v1/follow-ups/{follow_up_id}/complete:
+    post:
+      operationId: completeFollowUp
+      summary: Mark follow-up done
+      x-openai-isConsequential: true
+      parameters:
+        - {name: follow_up_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      responses: {'200': {description: Follow-up completion result}}
+
+  /v1/follow-ups/{follow_up_id}/cancel:
+    post:
+      operationId: cancelFollowUp
+      summary: Cancel an open follow-up
+      x-openai-isConsequential: true
+      parameters:
+        - {name: follow_up_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      responses: {'200': {description: Follow-up cancellation result}}
+
+  /v1/appointments:
+    get:
+      operationId: listAppointments
+      summary: List appointments in this GPT artist scope
+      x-openai-isConsequential: false
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 25, default: 20}}
+      responses: {'200': {description: Appointments}}
+    post:
+      operationId: scheduleAppointment
+      summary: Create an appointment for this fixed artist
+      description: Check conflicts first. Generate one UUID request_id and reuse it only for an identical retry.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ScheduleAppointmentRequest'}
+      responses: {'200': {description: Appointment result}}
+
+  /v1/appointments/conflicts:
+    post:
+      operationId: checkAppointmentConflicts
+      summary: Check appointment conflicts
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [start_at, end_at]
+              properties:
+                start_at: {type: string, format: date-time}
+                end_at: {type: string, format: date-time}
+                exclude_appointment_id: {type: string, format: uuid}
+      responses: {'200': {description: Appointment conflicts}}
+
+  /v1/appointments/{appointment_id}:
+    get:
+      operationId: getAppointment
+      summary: Read safe appointment detail
+      x-openai-isConsequential: false
+      parameters:
+        - {name: appointment_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Appointment detail}, '404': {description: Not found}}
+
+  /v1/appointments/{appointment_id}/full:
+    get:
+      operationId: getAppointmentFull
+      summary: Read full appointment detail including internal notes
+      x-openai-isConsequential: false
+      parameters:
+        - {name: appointment_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Full appointment detail}, '404': {description: Not found}}
+
+  /v1/appointments/{appointment_id}/time:
+    patch:
+      operationId: rescheduleAppointment
+      summary: Reschedule appointment
+      description: Read first and supply current calendar_version.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: appointment_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, expected_calendar_version, start_at, end_at]
+              properties:
+                request_id: {type: string, format: uuid}
+                expected_calendar_version: {type: integer, minimum: 0}
+                start_at: {type: string, format: date-time}
+                end_at: {type: string, format: date-time}
+      responses: {'200': {description: Reschedule result}}
+
+  /v1/appointments/{appointment_id}/cancel:
+    post:
+      operationId: cancelAppointment
+      summary: Cancel appointment
+      description: Read first and supply current calendar_version.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: appointment_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, expected_calendar_version]
+              properties:
+                request_id: {type: string, format: uuid}
+                expected_calendar_version: {type: integer, minimum: 0}
+      responses: {'200': {description: Cancellation result}}
+
+  /v1/appointments/{appointment_id}/status:
+    post:
+      operationId: setAppointmentStatus
+      summary: Change appointment status using CRM transition rules
+      x-openai-isConsequential: true
+      parameters:
+        - {name: appointment_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties: {status: {$ref: '#/components/schemas/AppointmentStatus'}}
+      responses: {'200': {description: Status result}}
+
+  /v1/availability:
+    get:
+      operationId: listAvailability
+      summary: List time-off and availability blocks
+      x-openai-isConsequential: false
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: include_cancelled, in: query, required: false, schema: {type: boolean, default: false}}
+      responses: {'200': {description: Availability blocks}}
+    post:
+      operationId: createAvailability
+      summary: Block artist availability
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AvailabilityRequest'}
+      responses: {'200': {description: Availability block result}}
+
+  /v1/availability/{block_id}:
+    patch:
+      operationId: updateAvailability
+      summary: Edit availability block
+      x-openai-isConsequential: true
+      parameters:
+        - {name: block_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AvailabilityRequest'}
+      responses: {'200': {description: Availability update result}}
+
+  /v1/availability/{block_id}/cancel:
+    post:
+      operationId: cancelAvailability
+      summary: Cancel availability block
+      x-openai-isConsequential: true
+      parameters:
+        - {name: block_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      responses: {'200': {description: Availability cancellation result}}
+
+  /v1/payments/requests:
+    get:
+      operationId: listPaymentRequests
+      summary: List payment requests when finance capability is enabled
+      x-openai-isConsequential: false
+      parameters:
+        - {name: status, in: query, required: false, schema: {$ref: '#/components/schemas/PaymentRequestStatus'}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses: {'200': {description: Payment requests}}
+
+  /v1/appointments/{appointment_id}/deposit-request:
+    post:
+      operationId: requestSessionDeposit
+      summary: Request the configured session deposit
+      description: Uses the existing artist payment route and policy. Generate one UUID request_id and reuse it only for an identical retry.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: appointment_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id]
+              properties:
+                request_id: {type: string, format: uuid}
+                delivery_channel: {type: string, enum: [email, whatsapp]}
+      responses: {'200': {description: Deposit request result}}
+
+  /v1/payments/requests/{payment_request_id}/cancel:
+    post:
+      operationId: cancelPaymentRequest
+      summary: Cancel an existing payment request
+      x-openai-isConsequential: true
+      parameters:
+        - {name: payment_request_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      responses: {'200': {description: Payment request cancellation result}}
+
+  /v1/payments/requests/{payment_request_id}/manual-payment:
+    post:
+      operationId: recordManualPayment
+      summary: Record a real manual payment against a payment request
+      description: Confirm exact amount with the user. Generate one UUID request_id and reuse it only for an identical retry.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: payment_request_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, amount]
+              properties:
+                request_id: {type: string, format: uuid}
+                amount: {type: number, exclusiveMinimum: 0}
+                occurred_at: {type: string, format: date-time}
+                safe_note_code: {type: string, maxLength: 120}
+      responses: {'200': {description: Manual payment result}}
+
+  /v1/enquiries/{enquiry_id}/whatsapp:
+    get:
+      operationId: getWhatsAppConversation
+      summary: Get WhatsApp conversation metadata for an enquiry
+      x-openai-isConsequential: false
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Conversation metadata}, '404': {description: No conversation}}
+
+  /v1/enquiries/{enquiry_id}/whatsapp/ensure:
+    post:
+      operationId: ensureWhatsAppConversation
+      summary: Resolve or create the bounded WhatsApp conversation for an enquiry
+      description: Uses only the artist configured WhatsApp integration and canonical client phone.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      responses: {'200': {description: Conversation result}}
+
+  /v1/whatsapp/conversations/{conversation_id}/messages:
+    get:
+      operationId: listWhatsAppMessages
+      summary: Read recent WhatsApp message history
+      x-openai-isConsequential: false
+      parameters:
+        - {name: conversation_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses: {'200': {description: WhatsApp messages}}
+    post:
+      operationId: sendWhatsAppMessage
+      summary: Queue an outbound WhatsApp message
+      description: Send only when the user explicitly requested the exact message. Generate one UUID request_id and reuse it only for an identical retry.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: conversation_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, body]
+              properties:
+                request_id: {type: string, format: uuid}
+                body: {type: string, maxLength: 4000}
+      responses: {'200': {description: Queued message result}}
+
+  /v1/enquiries/{enquiry_id}/emails:
+    get:
+      operationId: listEmailMessages
+      summary: Read recent email drafts and delivery history for an enquiry
+      x-openai-isConsequential: false
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses: {'200': {description: Email messages}}
+
+  /v1/enquiries/{enquiry_id}/emails/drafts:
+    post:
+      operationId: createEmailDraft
+      summary: Create an email draft to the enquiry canonical client email
+      x-openai-isConsequential: true
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [subject, body]
+              properties:
+                subject: {type: string, maxLength: 300}
+                body: {type: string, maxLength: 8000}
+      responses: {'200': {description: Draft result}}
+
+  /v1/emails/{email_message_id}/approve:
+    post:
+      operationId: approveEmailDraft
+      summary: Approve an existing email draft for the normal email workflow
+      description: Approve only when the user explicitly approves the draft content.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: email_message_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      responses: {'200': {description: Approval result}}
+
+  /v1/enquiries/{enquiry_id}/files:
+    get:
+      operationId: listEnquiryFiles
+      summary: List private enquiry file metadata only
+      description: Does not expose Storage paths, checksums, signed URLs or file bytes.
+      x-openai-isConsequential: false
+      parameters:
+        - {name: enquiry_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Private file metadata}}
+
+  /v1/projects/{project_id}/files:
+    get:
+      operationId: listProjectFiles
+      summary: List private project file metadata only
+      description: Does not expose Storage paths, checksums, signed URLs or file bytes.
+      x-openai-isConsequential: false
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses: {'200': {description: Private file metadata}}
+
+  /v1/activity:
+    get:
+      operationId: listActivity
+      summary: List recent artist-scoped CRM activity without raw metadata payloads
+      x-openai-isConsequential: false
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 30}}
+      responses: {'200': {description: Activity summaries}}
+
 components:
   securitySchemes:
     supabaseOAuth:
@@ -22,3 +733,79 @@ components:
           tokenUrl: https://gpt-actions.vishartattoo.com/oauth/token
           scopes:
             email: Authenticate the CRM user. CRM membership, fixed OAuth artist binding and operation capabilities remain authoritative.
+  schemas:
+    ClientEditableFields:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        full_name: {type: string, maxLength: 160}
+        email: {type: string, maxLength: 320}
+        phone: {type: string, maxLength: 80}
+        instagram: {type: string, maxLength: 80}
+        preferred_contact: {type: string, maxLength: 40}
+        travelling_from: {type: string, maxLength: 160}
+    ManualClient:
+      type: object
+      additionalProperties: false
+      required: [full_name, email]
+      properties:
+        full_name: {type: string, maxLength: 160}
+        email: {type: string, maxLength: 320}
+        phone: {type: string, maxLength: 80}
+        instagram: {type: string, maxLength: 80}
+        preferred_contact: {type: string, enum: [Email, WhatsApp, Instagram]}
+        travelling_from: {type: string, maxLength: 160}
+    EnquiryStatus:
+      type: string
+      enum: [new, reviewing, waiting_for_client, accepted, declined, quote_sent, deposit_requested, deposit_paid, converted, closed]
+    ProjectStatus:
+      type: string
+      enum: [draft, active, on_hold, completed, cancelled]
+    DepositStatus:
+      type: string
+      enum: [not_required, requested, paid, refunded, forfeited]
+    FollowUpStatus:
+      type: string
+      enum: [open, done, cancelled]
+    AppointmentStatus:
+      type: string
+      enum: [draft, proposed, confirmed, completed, cancelled, no_show]
+    PaymentRequestStatus:
+      type: string
+      enum: [pending, partially_paid, paid, cancelled, expired]
+    EnquiryEditableFields:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        project_type: {type: string, maxLength: 100}
+        placement: {type: string, maxLength: 160}
+        approximate_size: {type: string, maxLength: 120}
+        cover_up: {type: string, maxLength: 40}
+        preferred_timing: {type: string, maxLength: 160}
+        idea: {type: string, maxLength: 4000}
+    ScheduleAppointmentRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, client_id, appointment_type, start_at, end_at]
+      properties:
+        request_id: {type: string, format: uuid}
+        client_id: {type: string, format: uuid}
+        appointment_type: {type: string, enum: [tattoo_session, in_person_consultation, video_consultation, touch_up]}
+        start_at: {type: string, format: date-time}
+        end_at: {type: string, format: date-time}
+        status: {type: string, enum: [draft, proposed, confirmed], default: proposed}
+        enquiry_id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        notes: {type: string, maxLength: 4000}
+    AvailabilityRequest:
+      type: object
+      additionalProperties: false
+      required: [block_kind, start_at, end_at]
+      properties:
+        block_kind: {type: string, enum: [day_off, holiday, personal, other]}
+        start_at: {type: string, format: date-time}
+        end_at: {type: string, format: date-time}
+        is_all_day: {type: boolean, default: false}
+        note: {type: string, maxLength: 500}
