@@ -2,8 +2,18 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { LoadingState } from '../components/StateViews';
 import type { Appointment } from '../lib/appointment-api';
 import { useArtistScope } from '../lib/artist-scope';
+import {
+  canManageMonzoConnection,
+  monzoConnectionResultNotice,
+  monzoConnectorAlias,
+  monzoSetupUrl,
+  readMonzoConnectorOrigin,
+} from '../lib/monzo-connector';
 import type { DepositRequestResult, DepositTier, MonzoDepositSettings } from '../lib/payment-api';
-import { useApi } from '../lib/session';
+import { useApi, useSession } from '../lib/session';
+
+const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
+const MONZO_CONNECTOR_ORIGIN = readMonzoConnectorOrigin(browserEnv, import.meta.env.DEV);
 
 const DEFAULT_DEPOSIT_TIERS: DepositTier[] = [
   { max_minutes: 60, amount: 50, currency: 'GBP' },
@@ -37,6 +47,7 @@ function depositAmountForAppointment(appointment: Appointment, tiers: DepositTie
 
 export function PaymentsPage() {
   const api = useApi();
+  const { profile } = useSession();
   const { artists, selectedArtistId, loading: artistScopeLoading } = useArtistScope();
   const [settings, setSettings] = useState<MonzoDepositSettings>(EMPTY_SETTINGS);
   const [paymentUrl, setPaymentUrl] = useState('');
@@ -51,6 +62,14 @@ export function PaymentsPage() {
   const selectedArtist = useMemo(
     () => artists.find((artist) => artist.id === selectedArtistId) ?? null,
     [artists, selectedArtistId]
+  );
+  const selectedMonzoAlias = monzoConnectorAlias(selectedArtist?.slug);
+  const canManageConnection = canManageMonzoConnection(profile?.role);
+  const monzoNotice = useMemo(
+    () => selectedMonzoAlias
+      ? monzoConnectionResultNotice(window.location.search, selectedMonzoAlias)
+      : null,
+    [selectedMonzoAlias]
   );
 
   const eligibleAppointments = useMemo(() => {
@@ -130,6 +149,41 @@ export function PaymentsPage() {
 
   return (
     <div className="page-stack">
+      {canManageConnection ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Monzo account connection</h2>
+              <p>{selectedArtist.display_name}: protected bank-account connection for payment reconciliation.</p>
+            </div>
+          </div>
+
+          {monzoNotice ? <div className="notice ok" role="status">{monzoNotice}</div> : null}
+          {!MONZO_CONNECTOR_ORIGIN ? (
+            <div className="notice">
+              Monzo account connection is disabled in this environment. Existing deposit settings remain unchanged.
+            </div>
+          ) : selectedMonzoAlias ? (
+            <div className="button-row">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => window.location.assign(
+                  monzoSetupUrl(MONZO_CONNECTOR_ORIGIN, selectedMonzoAlias)
+                )}
+              >
+                Manage Monzo connection
+              </button>
+            </div>
+          ) : (
+            <div className="notice">This artist does not have a Monzo connector route.</div>
+          )}
+          <div className="notice">
+            Connection opens as top-level navigation through the Access-protected Monzo connector. The CRM browser never receives Monzo access tokens, refresh tokens, webhook keys or bank account IDs.
+          </div>
+        </section>
+      ) : null}
+
       <section className="panel">
         <div className="panel-heading">
           <div>
@@ -156,7 +210,7 @@ export function PaymentsPage() {
               <span>Enable for this artist</span>
             </label>
             <div className="notice field-wide">
-              Deposits: up to 1 hour £50, up to 3 hours £100, up to 5 hours £150, over 5 hours / full day £250. The CRM calculates the amount from the appointment duration. Email: provider not connected. SMS: not configured. Monzo API: not connected.
+              Deposits: up to 1 hour £50, up to 3 hours £100, up to 5 hours £150, over 5 hours / full day £250. The server calculates the amount from the appointment duration. Email: provider not connected. SMS: not configured. Monzo API: connection managed separately above.
             </div>
             <div className="field-wide">
               <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</button>

@@ -1,4 +1,4 @@
-import { verifiedOwnerEmail } from './calendar-oauth-security.js';
+import { OAuthSecurityError, verifiedOwnerEmail } from './calendar-oauth-security.js';
 
 const ALIASES = new Set(['vladimir', 'kristina']);
 const ARTIST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -80,12 +80,20 @@ export function artistMonzoConfig(alias, env) {
 }
 
 export async function verifiedMonzoOwnerEmail(request, env, fetchImpl = fetch) {
-  return verifiedOwnerEmail(request, {
-    ...env,
-    CALENDAR_ACCESS_TEAM_DOMAIN: env?.MONZO_ACCESS_TEAM_DOMAIN,
-    CALENDAR_ACCESS_AUD: env?.MONZO_ACCESS_AUD,
-    CALENDAR_OWNER_EMAILS: env?.MONZO_OWNER_EMAILS,
-  }, fetchImpl);
+  try {
+    return await verifiedOwnerEmail(request, {
+      ...env,
+      CALENDAR_ACCESS_TEAM_DOMAIN: env?.MONZO_ACCESS_TEAM_DOMAIN,
+      CALENDAR_ACCESS_AUD: env?.MONZO_ACCESS_AUD,
+      CALENDAR_OWNER_EMAILS: env?.MONZO_OWNER_EMAILS,
+    }, fetchImpl);
+  } catch (error) {
+    if (error instanceof OAuthSecurityError) {
+      const status = error.code === 'owner_access_required' ? 404 : error.status;
+      throw new MonzoSecurityError(error.code, status);
+    }
+    throw error;
+  }
 }
 
 export function assertMonzoOAuthStartConfiguration(env) {

@@ -1,13 +1,24 @@
 import {
+  deleteMonzoWebhook,
   ensureMonzoAccessToken,
   exchangeMonzoAuthorizationCode,
   listMonzoAccounts,
   logoutMonzoAccessToken,
   monzoWhoAmI,
+  registerMonzoWebhook,
   retrieveMonzoTransaction,
   verifyTransactionBelongsToAccount,
   MonzoApiError,
 } from './lib/monzo-api-client.js';
+import {
+  buildMonzoDisconnectState,
+  consumeMonzoDisconnectState,
+  monzoDisconnectConfirmationPage,
+  monzoDisconnectConfirmationToken,
+  monzoDisconnectReturnUrl,
+  storeMonzoDisconnectState,
+} from './lib/monzo-disconnect-security.js';
+import { handleMonzoSetup } from './lib/monzo-setup-flow.js';
 import {
   artistMonzoConfig,
   assertMonzoAccountConfiguration,
@@ -18,6 +29,7 @@ import {
   monzoCrmReturnUrl,
   monzoOAuthRedirectUri,
   monzoReadiness,
+  monzoWebhookCallbackUrl,
   randomMonzoToken,
   storeMonzoOAuthState,
   verifiedMonzoOwnerEmail,
@@ -46,6 +58,17 @@ function json(body, status = 200) {
   return Response.json(body, { status, headers: securityHeaders });
 }
 
+function html(body, status = 200) {
+  return new Response(body, {
+    status,
+    headers: {
+      ...securityHeaders,
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    },
+  });
+}
+
 function safeError(error) {
   if (error instanceof MonzoSecurityError) return json({ ok: false, code: error.code }, error.status);
   if (error instanceof MonzoApiError) return json({ ok: false, code: error.code }, error.status);
@@ -67,6 +90,27 @@ function routeRecord(alias, config, accountId) {
     providerAccountKey: config.providerAccountKey,
     accountId,
   });
+}
+
+function validStoredRoute(route, record, config, alias) {
+  return Boolean(
+    route
+    && route.alias === alias
+    && route.artistId === config.artistId
+    && route.providerAccountKey === config.providerAccountKey
+    && route.accountId === record.accountId
+  );
+}
+
+function assertRecordRoute(record, config, alias, env) {
+  if (
+    record.alias !== alias
+    || record.artistId !== config.artistId
+    || record.providerAccountKey !== config.providerAccountKey
+    || record.clientId !== env.MONZO_OAUTH_CLIENT_ID
+  ) {
+    throw new MonzoSecurityError('provider_route_invalid', 503);
+  }
 }
 
 async function saveConnectionStateBestEffort(env, record, connectionState) {
@@ -131,6 +175,17 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
 
   const config = artistMonzoConfig(stored.alias, env);
   const previous = await previousTokenRecord(env, config.artistId);
+  if (previous) {
+    assertRecordRoute(previous, config, stored.alias, env);
+    if (previous.accountId || previous.webhookId) assertMonzoAccountConfiguration(env);
+    if (previous.webhookId) {
+      const route = await env.MONZO_WEBHOOK_ROUTES.get(routeKey(previous.webhookKey), 'json');
+      if (!validStoredRoute(route, previous, config, stored.alias)) {
+        throw new MonzoSecurityError('provider_route_invalid', 503);
+      }
+    }
+  }
+
   const tokens = await exchangeMonzoAuthorizationCode(env, code, fetchImpl);
   try {
     await monzoWhoAmI(
@@ -144,44 +199,60 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
     throw error;
   }
 
-  const record = {
-    alias: stored.alias,
-    connectionState: 'oauth_authorized',
-    artistId: config.artistId,
-    providerAccountKey: config.providerAccountKey,
-    clientId: tokens.client_id,
-    userId: tokens.user_id,
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
-    expiresAt: Date.now() + tokens.expires_in * 1000,
-    connectedAt: new Date().toISOString(),
-    accountId: null,
-    accountLabel: null,
-    webhookKey: randomMonzoToken(),
-    webhookId: null,
-  };
+  if (previous && previous.userId !== tokens.user_id) {
+    await logoutMonzoAccessToken(tokens.access_token, fetchImpl).catch(() => false);
+    throw new MonzoSecurityError('monzo_user_mismatch', 409);
+  }
+
+  const now = new Date().toISOString();
+  const record = previous
+    ? {
+        ...previous,
+        connectionState: previous.webhookId
+          ? 'webhook_registered'
+          : previous.accountId
+            ? 'account_selected'
+            : 'oauth_authorized',
+        clientId: tokens.client_id,
+        userId: tokens.user_id,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: Date.now() + tokens.expires_in * 1000,
+        reauthorizedAt: now,
+      }
+    : {
+        alias: stored.alias,
+        connectionState: 'oauth_authorized',
+        artistId: config.artistId,
+        providerAccountKey: config.providerAccountKey,
+        clientId: tokens.client_id,
+        userId: tokens.user_id,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: Date.now() + tokens.expires_in * 1000,
+        connectedAt: now,
+        accountId: null,
+        accountLabel: null,
+        webhookKey: randomMonzoToken(),
+        webhookId: null,
+      };
 
   try {
     await saveMonzoTokenRecord(env, record);
-    if (
-      env.MONZO_WEBHOOK_ROUTES
-      && previous?.webhookKey
-      && previous.webhookKey !== record.webhookKey
-    ) {
+  } catch (error) {
+    if (previous?.webhookId) {
+      await deleteMonzoWebhook(tokens.access_token, previous.webhookId, fetchImpl).catch(() => false);
+    }
+    if (previous?.webhookKey && env.MONZO_WEBHOOK_ROUTES) {
       await env.MONZO_WEBHOOK_ROUTES.delete(routeKey(previous.webhookKey)).catch(() => {});
     }
-  } catch (error) {
-    if (previous) {
-      await saveMonzoTokenRecord(env, previous).catch(() => {});
-    } else {
-      await deleteMonzoTokenRecord(env, config.artistId).catch(() => {});
-    }
+    await deleteMonzoTokenRecord(env, config.artistId).catch(() => {});
     await logoutMonzoAccessToken(tokens.access_token, fetchImpl).catch(() => false);
     throw error;
   }
 
   const destination = new URL(monzoCrmReturnUrl(env));
-  destination.searchParams.set('monzo', 'authorized');
+  destination.searchParams.set('monzo', record.webhookId ? 'connected' : 'authorized');
   destination.searchParams.set('artist', stored.alias);
   return Response.redirect(destination.toString(), 302);
 }
@@ -206,14 +277,7 @@ async function connectionStatus(request, alias, env, fetchImpl = fetch) {
     throw error;
   }
 
-  if (
-    record.alias !== alias
-    || record.artistId !== config.artistId
-    || record.providerAccountKey !== config.providerAccountKey
-    || record.clientId !== env.MONZO_OAUTH_CLIENT_ID
-  ) {
-    throw new MonzoSecurityError('provider_route_invalid', 503);
-  }
+  assertRecordRoute(record, config, alias, env);
 
   return json({
     ok: true,
@@ -229,6 +293,7 @@ async function listAccounts(request, alias, env, fetchImpl = fetch) {
   assertMonzoAccountConfiguration(env);
   const config = artistMonzoConfig(alias, env);
   let record = await loadMonzoTokenRecord(env, config.artistId);
+  assertRecordRoute(record, config, alias, env);
   const access = await accessFor(env, record, fetchImpl);
   record = access.record;
   try {
@@ -266,6 +331,7 @@ async function selectAccount(request, alias, env, fetchImpl = fetch) {
   const input = await readJsonBody(request, 4096);
   const proposedAccountId = typeof input?.account_id === 'string' ? input.account_id : '';
   const previous = await loadMonzoTokenRecord(env, config.artistId);
+  assertRecordRoute(previous, config, alias, env);
   if (previous.webhookId) throw new MonzoSecurityError('monzo_account_locked', 409);
 
   const access = await accessFor(env, previous, fetchImpl);
@@ -308,6 +374,121 @@ async function selectAccount(request, alias, env, fetchImpl = fetch) {
     account: { id: selected.id, description: selected.description },
     webhook_registered: false,
   });
+}
+
+async function registerSelectedAccountWebhook(request, alias, env, fetchImpl = fetch) {
+  await verifiedMonzoOwnerEmail(request, env, fetchImpl);
+  assertMonzoAccountConfiguration(env);
+  const config = artistMonzoConfig(alias, env);
+  let record = await loadMonzoTokenRecord(env, config.artistId);
+  assertRecordRoute(record, config, alias, env);
+  if (!record.accountId || !record.webhookKey) {
+    throw new MonzoSecurityError('monzo_account_not_selected', 409);
+  }
+  if (record.webhookId) {
+    return json({
+      ok: true,
+      artist: alias,
+      state: record.connectionState,
+      account_label: record.accountLabel || null,
+      webhook_registered: true,
+      replayed: true,
+    });
+  }
+
+  const route = await env.MONZO_WEBHOOK_ROUTES.get(routeKey(record.webhookKey), 'json');
+  if (!validStoredRoute(route, record, config, alias)) {
+    throw new MonzoSecurityError('provider_route_invalid', 503);
+  }
+
+  const access = await accessFor(env, record, fetchImpl);
+  record = access.record;
+  await monzoWhoAmI(access.accessToken, record.clientId, record.userId, fetchImpl);
+  const accounts = await listMonzoAccounts(access.accessToken, fetchImpl);
+  if (!accounts.some((account) => account.id === record.accountId)) {
+    throw new MonzoSecurityError('monzo_account_not_allowed', 409);
+  }
+
+  const callbackUrl = monzoWebhookCallbackUrl(env, record.webhookKey);
+  const webhook = await registerMonzoWebhook(
+    access.accessToken,
+    record.accountId,
+    callbackUrl,
+    fetchImpl,
+  );
+  const updated = {
+    ...record,
+    connectionState: 'webhook_registered',
+    webhookId: webhook.id,
+    webhookRegisteredAt: new Date().toISOString(),
+  };
+
+  try {
+    await saveMonzoTokenRecord(env, updated);
+  } catch (error) {
+    await deleteMonzoWebhook(access.accessToken, webhook.id, fetchImpl).catch(() => false);
+    throw error;
+  }
+
+  return json({
+    ok: true,
+    artist: alias,
+    state: 'webhook_registered',
+    account_label: updated.accountLabel || null,
+    webhook_registered: true,
+    replayed: false,
+  });
+}
+
+async function disconnect(request, alias, env, fetchImpl = fetch) {
+  const ownerEmail = await verifiedMonzoOwnerEmail(request, env, fetchImpl);
+  assertMonzoAccountConfiguration(env);
+  const config = artistMonzoConfig(alias, env);
+
+  if (request.method === 'GET') {
+    const token = randomMonzoToken();
+    await storeMonzoDisconnectState(
+      env.MONZO_OAUTH_STATE,
+      token,
+      buildMonzoDisconnectState(alias, ownerEmail),
+    );
+    return html(monzoDisconnectConfirmationPage(alias, request.url, env, token));
+  }
+
+  if (request.method !== 'POST') return json({ ok: false, code: 'method_not_allowed' }, 405);
+  const token = await monzoDisconnectConfirmationToken(request);
+  if (!token) return json({ ok: false, code: 'disconnect_confirmation_required' }, 400);
+  await consumeMonzoDisconnectState(env.MONZO_OAUTH_STATE, alias, token, ownerEmail);
+
+  let record;
+  try {
+    record = await loadMonzoTokenRecord(env, config.artistId);
+  } catch (error) {
+    if (error instanceof MonzoTokenError && error.code === 'monzo_not_connected') {
+      return Response.redirect(monzoDisconnectReturnUrl(env, alias), 303);
+    }
+    throw error;
+  }
+  assertRecordRoute(record, config, alias, env);
+
+  try {
+    const access = await accessFor(env, record, fetchImpl);
+    record = access.record;
+    if (record.webhookId) {
+      await deleteMonzoWebhook(access.accessToken, record.webhookId, fetchImpl).catch(() => false);
+    }
+    await logoutMonzoAccessToken(access.accessToken, fetchImpl).catch(() => false);
+  } catch {
+    // Local removal is authoritative. Once the route and token envelope are
+    // deleted, a stale provider callback cannot reach reconciliation even if
+    // provider cleanup was temporarily unavailable.
+  }
+
+  if (record.webhookKey) {
+    await env.MONZO_WEBHOOK_ROUTES.delete(routeKey(record.webhookKey)).catch(() => {});
+  }
+  await deleteMonzoTokenRecord(env, config.artistId);
+  return Response.redirect(monzoDisconnectReturnUrl(env, alias), 303);
 }
 
 function validWebhookHint(body) {
@@ -394,6 +575,11 @@ export default {
         return await oauthCallback(request, env);
       }
 
+      const setupMatch = url.pathname.match(new RegExp(`^/oauth/monzo/setup/${ALIAS_PATH}$`));
+      if (setupMatch && (request.method === 'GET' || request.method === 'POST')) {
+        return await handleMonzoSetup(request, setupMatch[1], env);
+      }
+
       const statusMatch = url.pathname.match(new RegExp(`^/oauth/monzo/status/${ALIAS_PATH}$`));
       if (request.method === 'GET' && statusMatch) return await connectionStatus(request, statusMatch[1], env);
 
@@ -402,6 +588,14 @@ export default {
 
       const selectMatch = url.pathname.match(new RegExp(`^/oauth/monzo/select-account/${ALIAS_PATH}$`));
       if (request.method === 'POST' && selectMatch) return await selectAccount(request, selectMatch[1], env);
+
+      const registerMatch = url.pathname.match(new RegExp(`^/oauth/monzo/register-webhook/${ALIAS_PATH}$`));
+      if (request.method === 'POST' && registerMatch) {
+        return await registerSelectedAccountWebhook(request, registerMatch[1], env);
+      }
+
+      const disconnectMatch = url.pathname.match(new RegExp(`^/oauth/monzo/disconnect/${ALIAS_PATH}$`));
+      if (disconnectMatch) return await disconnect(request, disconnectMatch[1], env);
 
       const webhookMatch = url.pathname.match(WEBHOOK_PATH);
       if (request.method === 'POST' && webhookMatch) return await handleWebhook(request, webhookMatch[1], env);
@@ -425,8 +619,12 @@ export const __testing = {
   connectionStatus,
   listAccounts,
   selectAccount,
+  registerSelectedAccountWebhook,
+  disconnect,
   handleWebhook,
   readJsonBody,
   validWebhookHint,
+  validStoredRoute,
+  assertRecordRoute,
   accessFor,
 };

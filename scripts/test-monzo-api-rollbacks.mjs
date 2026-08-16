@@ -7,6 +7,7 @@ import {
 import {
   loadMonzoTokenRecord,
   saveMonzoTokenRecord,
+  MonzoTokenError,
 } from '../workers/lib/monzo-token-store.js';
 
 class FakeKv {
@@ -120,10 +121,16 @@ function fetcher(routes = {}) {
   };
 }
 
-async function oauthRollback() {
+async function oauthPersistenceFailureFailsClosed() {
   const e = env();
   const previous = record();
   await saveMonzoTokenRecord(e, previous);
+  await e.MONZO_WEBHOOK_ROUTES.put(`route:${previous.webhookKey}`, JSON.stringify({
+    alias: previous.alias,
+    artistId: previous.artistId,
+    providerAccountKey: previous.providerAccountKey,
+    accountId: previous.accountId,
+  }));
   const state = 'o'.repeat(48);
   await storeMonzoOAuthState(
     e.MONZO_OAUTH_STATE,
@@ -140,6 +147,7 @@ async function oauthRollback() {
     }
     return originalPut(...args);
   };
+  let logoutCalls = 0;
 
   await assert.rejects(
     workerTesting.oauthCallback(
@@ -159,17 +167,21 @@ async function oauthRollback() {
           client_id: e.MONZO_OAUTH_CLIENT_ID,
           user_id: previous.userId,
         }),
-        'https://api.monzo.com/oauth2/logout': async () => new Response(null, { status: 200 }),
+        'https://api.monzo.com/oauth2/logout': async () => {
+          logoutCalls += 1;
+          return new Response(null, { status: 200 });
+        },
       }),
     ),
     /synthetic token KV write failure/,
   );
 
-  const restored = await loadMonzoTokenRecord(e, previous.artistId);
-  assert.equal(restored.accessToken, previous.accessToken);
-  assert.equal(restored.refreshToken, previous.refreshToken);
-  assert.equal(restored.accountId, previous.accountId);
-  assert.equal(restored.connectionState, 'account_selected');
+  await assert.rejects(
+    loadMonzoTokenRecord(e, previous.artistId),
+    (error) => error instanceof MonzoTokenError && error.code === 'monzo_not_connected',
+  );
+  assert.equal(await e.MONZO_WEBHOOK_ROUTES.get(`route:${previous.webhookKey}`), null);
+  assert.equal(logoutCalls, 1);
 }
 
 async function accountRouteRollback() {
@@ -223,6 +235,6 @@ async function accountRouteRollback() {
   assert.deepEqual(await e.MONZO_WEBHOOK_ROUTES.get(key, 'json'), oldRoute);
 }
 
-await oauthRollback();
+await oauthPersistenceFailureFailsClosed();
 await accountRouteRollback();
 console.log('Monzo rollback tests passed: 2 cases.');
