@@ -1,7 +1,19 @@
 name = "vishar-monzo-api"
-main = "workers/monzo-api.js"
+main = "workers/monzo-api-gateway.js"
 compatibility_date = "2026-08-01"
 workers_dev = false
+
+[[ratelimits]]
+name = "MONZO_WEBHOOK_RATE_LIMIT"
+namespace_id = "1101"
+simple = { limit = 60, period = 60 }
+
+# `namespace_id` is a developer-chosen positive integer for this isolated
+# Workers Rate Limiting binding. It is not a Cloudflare object id and does not
+# require resource provisioning. Keep it distinct from other Vishar Worker
+# limiters so the Monzo public webhook never shares counters with another
+# surface. The gateway uses one stable key for all opaque Monzo webhook routes,
+# preventing key rotation or random-path probing from bypassing the bound.
 
 # Intentionally dormant. This file defines no route, cron, KV namespace id,
 # OAuth credential, token encryption key or Supabase secret.
@@ -10,6 +22,7 @@ workers_dev = false
 # - MONZO_OAUTH_TOKENS (KV)
 # - MONZO_WEBHOOK_ROUTES (KV)
 # and encrypted Worker secrets/vars required by workers/monzo-api.js.
-# The foundation exposes no provider webhook-registration endpoint.
-# MONZO_RECONCILIATION_ENABLED must stay false until an exact staging
-# activation is explicitly approved.
+# Provider webhook registration exists server-side, but the public callback
+# remains fail-closed while MONZO_RECONCILIATION_ENABLED is not exactly "true".
+# A real staging activation must also preserve the isolated rate-limit binding
+# and the narrow Cloudflare Access/WAF boundary for /webhooks/monzo/*.
