@@ -9,6 +9,7 @@ on:
       - admin/public/_headers
       - admin/public/whatsapp-embedded-signup.html
       - admin/public/whatsapp-embedded-signup.js
+      - admin/functions/api/whatsapp/embedded-signup/exchange.js
   workflow_dispatch:
 
 permissions:
@@ -54,7 +55,7 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/vishar-crm-staging")"
           echo "$response" | jq -e '.success == true' >/dev/null
           current="$(echo "$response" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // ""')"
-          if [ "$current" != '72185f86765d3be90e158320289409c050286528' ]; then
+          if [ "$current" != '24a588b33905e5fac221f2e54f90bdb79c5224bc' ]; then
             echo "Retained staging moved since preflight: current=$current" >&2
             exit 1
           fi
@@ -74,7 +75,7 @@ jobs:
         working-directory: admin
         run: npm ci
 
-      - name: Test typecheck and build existing staging CRM plus harness
+      - name: Test typecheck build and Pages Function bundle
         working-directory: admin
         env:
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -86,43 +87,51 @@ jobs:
           npm run build
           test -f dist/whatsapp-embedded-signup.html
           test -f dist/whatsapp-embedded-signup.js
+          test -f functions/api/whatsapp/embedded-signup/exchange.js
           grep -Fq '/whatsapp-embedded-signup.js' dist/whatsapp-embedded-signup.html
           grep -Fq 'whatsapp_business_app_onboarding' dist/whatsapp-embedded-signup.js
+          grep -Fq '/api/whatsapp/embedded-signup/exchange' dist/whatsapp-embedded-signup.js
           grep -Fq 'https://m.facebook.com' dist/whatsapp-embedded-signup.js
           grep -Fq '4468652066715473' dist/whatsapp-embedded-signup.js
           grep -Fq '1481226093843982' dist/whatsapp-embedded-signup.js
+          grep -Fq 'META_APP_SECRET' functions/api/whatsapp/embedded-signup/exchange.js
           grep -Fq 'https://connect.facebook.net' dist/_headers
           grep -Fq 'https://m.facebook.com' dist/_headers
+          npx --yes wrangler@4.123.0 pages functions build functions --outfile /tmp/whatsapp-embedded-signup-worker.js
+          test -s /tmp/whatsapp-embedded-signup-worker.js
 
-      - name: Scan browser artifact for credential-shaped values
+      - name: Scan browser and Function artifacts for credential-shaped values
         shell: bash
         run: |
           set -euo pipefail
-          if grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{20,}' admin/dist; then
-            echo 'Secret-key-shaped value found in browser artifact.' >&2
-            exit 1
-          fi
-          if grep -R -E -q 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}' admin/dist; then
-            echo 'JWT-shaped value found in browser artifact.' >&2
-            exit 1
-          fi
-          if grep -R -E -q 'EA[A-Za-z0-9]{40,}' admin/dist; then
-            echo 'Meta access-token-shaped value found in browser artifact.' >&2
-            exit 1
-          fi
+          for path in admin/dist admin/functions; do
+            if grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{20,}' "$path"; then
+              echo 'Secret-key-shaped value found in deploy artifact.' >&2
+              exit 1
+            fi
+            if grep -R -E -q 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}' "$path"; then
+              echo 'JWT-shaped value found in deploy artifact.' >&2
+              exit 1
+            fi
+            if grep -R -E -q 'EA[A-Za-z0-9]{40,}' "$path"; then
+              echo 'Meta access-token-shaped value found in deploy artifact.' >&2
+              exit 1
+            fi
+          done
 
-      - name: Deploy frontend-only harness to protected retained staging Pages
+      - name: Deploy frontend plus staging-only exchange Function
         id: deploy
+        working-directory: admin
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          npx wrangler pages deploy admin/dist \
+          npx --yes wrangler@4.123.0 pages deploy dist \
             --project-name vishar-crm-staging \
             --branch main \
             --commit-hash "$GITHUB_SHA" \
-            --commit-message 'PR271 WhatsApp Embedded Signup mobile event origin' \
+            --commit-message 'PR271 WhatsApp Embedded Signup server exchange validation' \
             --commit-dirty=true
 
       - name: Verify deployed exact head and Access remains closed
@@ -145,13 +154,16 @@ jobs:
           echo "rollback_previous_id=${{ steps.preflight.outputs.previous_deployment_id }}"
           echo "rollback_previous_commit=${{ steps.preflight.outputs.previous_commit }}"
 
-          headers="$(mktemp)"
-          curl --silent --show-error --max-time 20 --output /dev/null --dump-header "$headers" \
-            https://vishar-crm-staging.pages.dev/whatsapp-embedded-signup.html || true
-          status="$(awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "$headers")"
-          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$headers")"
-          rm -f "$headers"
-          case "$location" in
-            https://*.cloudflareaccess.com/*) echo "harness_access_redirect=true status=${status:-unknown}" ;;
-            *) echo 'Harness path is not protected by Cloudflare Access after deployment.' >&2; exit 1 ;;
-          esac
+          for target in \
+            https://vishar-crm-staging.pages.dev/whatsapp-embedded-signup.html \
+            https://vishar-crm-staging.pages.dev/api/whatsapp/embedded-signup/exchange; do
+            headers="$(mktemp)"
+            curl --silent --show-error --max-time 20 --output /dev/null --dump-header "$headers" "$target" || true
+            status="$(awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "$headers")"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$headers")"
+            rm -f "$headers"
+            case "$location" in
+              https://*.cloudflareaccess.com/*) echo "access_redirect=true status=${status:-unknown} target=$target" ;;
+              *) echo "Protected staging target is not behind Cloudflare Access: $target" >&2; exit 1 ;;
+            esac
+          done
