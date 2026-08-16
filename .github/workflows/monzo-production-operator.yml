@@ -1,0 +1,235 @@
+name: Monzo production operator
+
+# Why this workflow exists.
+#
+# `deploy-private-production-monzo.yml` is `workflow_dispatch`, and GitHub only
+# registers a dispatchable workflow from the default branch. While the Monzo
+# rollout lives on a feature branch the dispatch API answers 404, so there is no
+# executable operator path and the runbook step that says "dispatch it from the
+# release branch" cannot be followed.
+#
+# Merging the product PR to create that path would invert the intended order:
+# production would be reachable before the rollout had been proven. This
+# workflow uses the pattern the repository already relies on for every
+# branch-local operator run (pr177, pr185, pr186, pr189, pr190, pr192, pr201,
+# pr202): a `pull_request` event, whose workflow file is read from the pull
+# request's own head, gated on an activation marker in the pull request body
+# that must carry the exact current head SHA.
+#
+# Security properties, none of which are weaker than the dispatch path:
+#
+#   - it cannot fire on opening or pushing to the pull request, because the
+#     trigger is `edited` and the marker must match the head SHA that exists
+#     after that push;
+#   - the marker self-invalidates: any new commit changes the head SHA, so a
+#     stale marker in the body can never authorise a later tree;
+#   - pull request number, head branch, base branch, head repository, open,
+#     draft and unmerged state and the editing account are all asserted;
+#   - the approved SHA must also be the current tip of the release branch;
+#   - validation carries no environment and no secrets;
+#   - every mutating phase goes through `deploy-private-production-monzo.yml`,
+#     which owns the whole production gate and keeps the mandatory
+#     `crm-production` environment approval, the deploy-enabled repository
+#     variable and the exact approval phrases;
+#   - there is no generic command input anywhere. The only thing the marker
+#     selects is which of three fixed, reviewable phases runs.
+#
+# This workflow performs no production mutation of its own. It runs no Cloudflare
+# command, holds no Cloudflare or Supabase credential, and cannot deploy.
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  contents: read
+  checks: read
+
+concurrency:
+  group: monzo-production-operator
+  cancel-in-progress: false
+
+env:
+  OPERATOR_PR: '304'
+  OPERATOR_HEAD_BRANCH: claude/vishar-monzo-production-ejbe23
+  OPERATOR_BASE_BRANCH: agent/monzo-duration-tiered-deposits-production
+  OPERATOR_RELEASE_BRANCH: release/private-crm-rc34-monzo-production
+
+jobs:
+  authorize:
+    name: Authorize Monzo production operator request
+    # Every condition here is evaluated by GitHub before any job starts, so an
+    # unrelated pull request edit never allocates a runner. `contains` is
+    # deliberately given the head SHA, so the body marker authorises exactly one
+    # tree and expires the moment anything is pushed.
+    if: >-
+      github.event.action == 'edited' &&
+      github.event.sender.login == 'vvetrov41-lgtm' &&
+      github.event.pull_request.number == 304 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.head.ref == 'claude/vishar-monzo-production-ejbe23' &&
+      github.event.pull_request.base.ref == 'agent/monzo-duration-tiered-deposits-production' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        contains(github.event.pull_request.body, format('<!-- RUN_MONZO_PRODUCTION_VALIDATE:{0} -->', github.event.pull_request.head.sha)) ||
+        contains(github.event.pull_request.body, format('<!-- RUN_MONZO_PRODUCTION_BOOTSTRAP:{0} -->', github.event.pull_request.head.sha)) ||
+        contains(github.event.pull_request.body, format('<!-- RUN_MONZO_PRODUCTION_ROLLOUT:{0} -->', github.event.pull_request.head.sha))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      approved_sha: ${{ github.event.pull_request.head.sha }}
+      phase: ${{ steps.phase.outputs.phase }}
+    steps:
+      - name: Resolve the requested phase
+        id: phase
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          validate=0; bootstrap=0; rollout=0
+          case "$PR_BODY" in *"<!-- RUN_MONZO_PRODUCTION_VALIDATE:${HEAD_SHA} -->"*) validate=1 ;; esac
+          case "$PR_BODY" in *"<!-- RUN_MONZO_PRODUCTION_BOOTSTRAP:${HEAD_SHA} -->"*) bootstrap=1 ;; esac
+          case "$PR_BODY" in *"<!-- RUN_MONZO_PRODUCTION_ROLLOUT:${HEAD_SHA} -->"*) rollout=1 ;; esac
+
+          total=$((validate + bootstrap + rollout))
+          if [ "$total" -ne 1 ]; then
+            echo "Exactly one activation marker must be present for this head SHA; found ${total}." >&2
+            exit 1
+          fi
+
+          if [ "$validate" = 1 ]; then phase=validate
+          elif [ "$bootstrap" = 1 ]; then phase=bootstrap
+          else phase=rollout
+          fi
+          echo "phase=$phase" >> "$GITHUB_OUTPUT"
+          echo "Requested phase: $phase for ${HEAD_SHA}"
+
+      - name: Checkout the exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact head, release ancestry and untouched tree
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+          # The release branch must name exactly this tree. Without this a
+          # marker could authorise a product head that no approved release
+          # branch points at.
+          release_tip="$(git ls-remote --heads origin "refs/heads/${OPERATOR_RELEASE_BRANCH}" | awk '{print $1}')"
+          if [ "$release_tip" != "$APPROVED_SHA" ]; then
+            echo "${OPERATOR_RELEASE_BRANCH} is at '${release_tip}', not the approved head '${APPROVED_SHA}'." >&2
+            exit 1
+          fi
+
+          # The approved head must actually descend from the pull request base,
+          # so a rewritten or unrelated branch cannot be activated.
+          git fetch --no-tags --depth=200 origin "$BASE_SHA" >/dev/null 2>&1 || git fetch --no-tags origin "$BASE_SHA" >/dev/null
+          if ! git merge-base --is-ancestor "$BASE_SHA" "$APPROVED_SHA"; then
+            echo "Approved head does not descend from the pull request base ${BASE_SHA}." >&2
+            exit 1
+          fi
+
+          echo "approved head:    $APPROVED_SHA"
+          echo "release branch:   $OPERATOR_RELEASE_BRANCH"
+          echo "base ancestry:    verified from $BASE_SHA"
+
+      - name: Confirm normal exact-head CI is authoritative and green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # This operator path adds a trigger; it does not replace normal CI.
+          # A production phase may not proceed unless the repository's own
+          # validation has already passed on this exact tree.
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100")"
+          RUNS="$runs" node <<'NODE'
+          const required = ['static-validation', 'Private CRM', 'Supabase migrations and pgTAP', 'Public site and Worker'];
+          const runs = JSON.parse(process.env.RUNS || '{}').check_runs || [];
+          const latest = new Map();
+          for (const run of runs) {
+            if (!required.includes(run.name)) continue;
+            const previous = latest.get(run.name);
+            if (!previous || new Date(run.started_at) >= new Date(previous.started_at)) latest.set(run.name, run);
+          }
+          const problems = [];
+          for (const name of required) {
+            const run = latest.get(name);
+            if (!run) problems.push(`${name}: absent on this SHA`);
+            else if (run.status !== 'completed') problems.push(`${name}: ${run.status}`);
+            else if (run.conclusion !== 'success') problems.push(`${name}: ${run.conclusion}`);
+          }
+          if (problems.length) {
+            throw new Error(`Normal exact-head CI is not green: ${problems.join('; ')}`);
+          }
+          console.log('Normal exact-head CI green for all required checks.');
+          NODE
+
+      - name: Operator authorisation summary
+        if: always()
+        shell: bash
+        env:
+          PHASE: ${{ steps.phase.outputs.phase }}
+          APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          {
+            echo '### Monzo production operator'
+            echo
+            echo "- Pull request: #${OPERATOR_PR} (open, draft, unmerged)"
+            echo "- Approved head: \`${APPROVED_SHA}\`"
+            echo "- Release branch: \`${OPERATOR_RELEASE_BRANCH}\` at the same SHA"
+            echo "- Requested phase: \`${PHASE:-unresolved}\`"
+            echo '- This job holds no Cloudflare or Supabase credential and performs no production mutation.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  validate:
+    name: Validate only
+    needs: authorize
+    if: needs.authorize.outputs.phase == 'validate'
+    # No environment and no secrets: validation touches nothing in production,
+    # so it must not consume a production approval.
+    uses: ./.github/workflows/deploy-private-production-monzo.yml
+    with:
+      approved_sha: ${{ needs.authorize.outputs.approved_sha }}
+      deploy: false
+
+  bootstrap:
+    name: Inert bootstrap
+    needs: authorize
+    if: needs.authorize.outputs.phase == 'bootstrap'
+    # Reaches the same gate as the dispatch path: the `crm-production`
+    # environment approval, CRM_PRODUCTION_MONZO_DEPLOY_ENABLED and the exact
+    # bootstrap phrase are all still required inside it.
+    uses: ./.github/workflows/deploy-private-production-monzo.yml
+    with:
+      approved_sha: ${{ needs.authorize.outputs.approved_sha }}
+      deploy: true
+      approval_phrase: BOOTSTRAP_PRIVATE_CRM_MONZO_INERT
+    secrets: inherit
+
+  rollout:
+    name: Full rollout
+    needs: authorize
+    if: needs.authorize.outputs.phase == 'rollout'
+    uses: ./.github/workflows/deploy-private-production-monzo.yml
+    with:
+      approved_sha: ${{ needs.authorize.outputs.approved_sha }}
+      deploy: true
+      approval_phrase: DEPLOY_PRIVATE_CRM_MONZO_ONLY
+    secrets: inherit

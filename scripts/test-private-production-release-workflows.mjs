@@ -165,4 +165,106 @@ expectExcludes(calendarProductionConfig, '93302bc4f35242c38358a16fcd4ab9a2', 'Ca
 // appearing there would be an unrequested change to a live environment.
 expectExcludes(read('wrangler.calendar.staging.toml'), '[[ratelimits]]', 'Calendar staging config');
 
+// ---------------------------------------------------------------------------
+// Monzo connector: the reusable production gate and its pre-merge operator path
+// ---------------------------------------------------------------------------
+//
+// The gate is reachable by workflow_dispatch and by workflow_call. Both must
+// land on the same crm-production approval and the same approval phrases, so
+// these assertions describe the gate itself rather than either entry point.
+
+// Both YAML and the embedded shell use `#`, so dropping whole comment lines
+// keeps an explanatory note from failing a check about actual behaviour.
+const withoutComments = (text) => text
+  .split('\n')
+  .filter((line) => !line.trim().startsWith('#'))
+  .join('\n');
+
+const monzo = read('.github/workflows/deploy-private-production-monzo.yml');
+const monzoDirectives = withoutComments(monzo);
+const monzoOperator = read('.github/workflows/monzo-production-operator.yml');
+
+expectIncludes(monzo, 'environment: crm-production', 'Monzo connector');
+expectIncludes(monzo, 'release/private-crm-rc*', 'Monzo connector');
+expectIncludes(monzo, 'approved_sha', 'Monzo connector');
+expectIncludes(monzo, 'workflow_call:', 'Monzo connector');
+expectIncludes(monzo, 'DEPLOY_PRIVATE_CRM_MONZO_ONLY', 'Monzo connector');
+expectIncludes(monzo, 'BOOTSTRAP_PRIVATE_CRM_MONZO_INERT', 'Monzo connector');
+expectIncludes(monzo, 'CRM_PRODUCTION_MONZO_DEPLOY_ENABLED', 'Monzo connector');
+expectIncludes(monzo, 'wrangler.monzo-api.production.toml', 'Monzo connector');
+expectIncludes(monzo, '--strict', 'Monzo connector');
+expectExcludes(monzo, 'environment: production\n', 'Monzo connector');
+expectExcludes(monzoDirectives, '--keep-vars', 'Monzo connector');
+expectExcludes(monzoDirectives, 'wrangler pages deploy', 'Monzo connector');
+expectExcludes(monzoDirectives, 'supabase db push', 'Monzo connector');
+
+// The deployed entrypoint must stay the rate-limiting gateway. Deploying the
+// bare router would expose an unthrottled public webhook path.
+expectExcludes(monzoDirectives, 'config wrangler.monzo-api.toml', 'Monzo connector');
+
+// Validation must never sit behind the production approval, and the deploy job
+// must never run without it.
+{
+  const jobs = monzo.split(/^  (?=[a-z][a-z0-9_-]*:$)/m);
+  const validateJob = jobs.find((job) => job.startsWith('validate:'));
+  const deployJob = jobs.find((job) => job.startsWith('deploy:'));
+  if (!validateJob || !deployJob) throw new Error('Monzo connector: expected separate validate and deploy jobs');
+  expectExcludes(validateJob, 'environment:', 'Monzo validate job');
+  expectExcludes(validateJob, 'CLOUDFLARE_API_TOKEN', 'Monzo validate job');
+  expectExcludes(validateJob, 'wrangler deploy --config', 'Monzo validate job');
+  expectExcludes(validateJob, 'wrangler secret put', 'Monzo validate job');
+  expectIncludes(deployJob, 'environment: crm-production', 'Monzo deploy job');
+  expectIncludes(deployJob, 'needs: validate', 'Monzo deploy job');
+}
+
+// The operator path exists only because a workflow_dispatch workflow is not
+// registered off the default branch. It must remain a trigger, never a second
+// implementation of the gate and never a generic command bridge.
+expectIncludes(monzoOperator, 'types: [edited]', 'Monzo operator');
+expectIncludes(monzoOperator, 'uses: ./.github/workflows/deploy-private-production-monzo.yml', 'Monzo operator');
+expectIncludes(monzoOperator, 'RUN_MONZO_PRODUCTION_VALIDATE:{0}', 'Monzo operator');
+expectIncludes(monzoOperator, 'RUN_MONZO_PRODUCTION_BOOTSTRAP:{0}', 'Monzo operator');
+expectIncludes(monzoOperator, 'RUN_MONZO_PRODUCTION_ROLLOUT:{0}', 'Monzo operator');
+expectIncludes(monzoOperator, 'github.event.pull_request.head.sha', 'Monzo operator');
+expectIncludes(monzoOperator, 'draft == true', 'Monzo operator');
+expectIncludes(monzoOperator, 'merged == false', 'Monzo operator');
+expectIncludes(monzoOperator, "state == 'open'", 'Monzo operator');
+expectIncludes(monzoOperator, 'head.repo.full_name == github.repository', 'Monzo operator');
+expectIncludes(monzoOperator, 'release/private-crm-rc34-monzo-production', 'Monzo operator');
+
+// A marker keyed on the branch name rather than the exact head SHA would stay
+// valid across pushes and silently authorise a later tree.
+expectExcludes(monzoOperator, 'RUN_MONZO_PRODUCTION_VALIDATE -->', 'Monzo operator');
+expectExcludes(monzoOperator, 'RUN_MONZO_PRODUCTION_BOOTSTRAP -->', 'Monzo operator');
+expectExcludes(monzoOperator, 'RUN_MONZO_PRODUCTION_ROLLOUT -->', 'Monzo operator');
+
+// The operator must hold no credential and must not be able to mutate anything
+// on its own, nor become reachable from an ordinary push or PR open.
+expectExcludes(monzoOperator, 'CLOUDFLARE_API_TOKEN', 'Monzo operator');
+expectExcludes(monzoOperator, 'SUPABASE_SECRET_KEY', 'Monzo operator');
+expectExcludes(withoutComments(monzoOperator), 'wrangler', 'Monzo operator');
+expectExcludes(monzoOperator, 'types: [opened', 'Monzo operator');
+expectExcludes(monzoOperator, 'types: [synchronize', 'Monzo operator');
+expectExcludes(withoutComments(monzoOperator), 'pull_request_target', 'Monzo operator');
+expectExcludes(withoutComments(monzoOperator), 'workflow_dispatch', 'Monzo operator');
+
+const monzoProductionConfig = directivesOf(read('wrangler.monzo-api.production.toml'));
+expectIncludes(monzoProductionConfig, 'name = "vishar-monzo-api-production"', 'Monzo production config');
+expectIncludes(monzoProductionConfig, 'main = "workers/monzo-api-gateway.js"', 'Monzo production config');
+expectIncludes(monzoProductionConfig, 'workers_dev = false', 'Monzo production config');
+expectIncludes(monzoProductionConfig, 'preview_urls = false', 'Monzo production config');
+expectIncludes(monzoProductionConfig, 'pattern = "monzo.vishartattoo.com"', 'Monzo production config');
+expectIncludes(monzoProductionConfig, '[[ratelimits]]', 'Monzo production config');
+expectIncludes(monzoProductionConfig, 'MONZO_RECONCILIATION_ENABLED = "false"', 'Monzo production config');
+expectLineAbsent(monzoProductionConfig, '[triggers]', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'crons', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'workers_dev = true', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'preview_urls = true', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'MONZO_RECONCILIATION_ENABLED = "true"', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'gwaliusblwrzisrwnsvs', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'monzo-staging', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'MONZO_OAUTH_CLIENT_SECRET', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'MONZO_TOKEN_ENCRYPTION_KEY', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'SUPABASE_SECRET_KEY', 'Monzo production config');
+
 console.log('Private production release workflow boundaries: passed');

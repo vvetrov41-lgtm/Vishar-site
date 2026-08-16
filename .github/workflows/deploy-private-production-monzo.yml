@@ -1,5 +1,19 @@
 name: Deploy private production Monzo connector
 
+# This gate is the single implementation of the Monzo production boundary. It
+# is reachable two ways and behaves identically through both:
+#
+#   workflow_dispatch  once this file exists on the default branch;
+#   workflow_call      from `monzo-production-operator.yml`, which is how the
+#                      rollout is reachable before that happens. A
+#                      `workflow_dispatch` workflow is only registered from the
+#                      default branch, so on a feature branch the dispatch API
+#                      answers 404 and there is no executable operator path.
+#
+# Duplicating the gate for the pre-merge path would create two copies of a
+# security-critical control that could drift apart, so the caller supplies
+# inputs and this file keeps sole ownership of every check.
+
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +31,21 @@ on:
         required: false
         default: ''
         type: string
+  workflow_call:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation. Leave false for validation-only runs.
+        required: true
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -25,45 +54,35 @@ concurrency:
   group: deploy-private-production-monzo
   cancel-in-progress: false
 
+env:
+  WORKER_NAME: vishar-monzo-api-production
+  MONZO_HOSTNAME: monzo.vishartattoo.com
+
 jobs:
-  monzo:
-    name: Private CRM Monzo production gate
+  validate:
+    name: Validate Monzo production artifact
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: crm-production
-    env:
-      WORKER_NAME: vishar-monzo-api-production
-      MONZO_HOSTNAME: monzo.vishartattoo.com
+    # Deliberately no environment and no Cloudflare credential. Validation
+    # proves the artifact without touching production, so it must not consume a
+    # crm-production approval or hold a token that could mutate anything.
 
     steps:
-      - name: Verify exact release branch and explicit production gate
+      - name: Verify the approved SHA and requested phase
         shell: bash
         env:
           APPROVED_SHA: ${{ inputs.approved_sha }}
           DEPLOY_REQUESTED: ${{ inputs.deploy }}
           APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
-          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_MONZO_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
 
-          case "$GITHUB_REF_NAME" in
-            release/private-crm-rc*) ;;
-            *)
-              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
-              exit 1
-              ;;
-          esac
-
-          if [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
-            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+          if ! printf '%s' "$APPROVED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo 'approved_sha must be a full 40-character commit SHA.' >&2
             exit 1
           fi
 
           if [ "$DEPLOY_REQUESTED" = 'true' ]; then
-            if [ "$DEPLOY_ENABLED" != 'true' ]; then
-              echo 'CRM_PRODUCTION_MONZO_DEPLOY_ENABLED is not explicitly enabled in the crm-production environment.' >&2
-              exit 1
-            fi
             case "$APPROVAL_PHRASE" in
               BOOTSTRAP_PRIVATE_CRM_MONZO_INERT|DEPLOY_PRIVATE_CRM_MONZO_ONLY) ;;
               *)
@@ -90,7 +109,7 @@ jobs:
         with:
           ref: ${{ inputs.approved_sha }}
 
-      - name: Verify checkout SHA
+      - name: Verify checkout SHA and approved release-branch ancestry
         shell: bash
         env:
           APPROVED_SHA: ${{ inputs.approved_sha }}
@@ -99,6 +118,20 @@ jobs:
           actual="$(git rev-parse HEAD)"
           test "$actual" = "$APPROVED_SHA"
           test -z "$(git status --short)"
+
+          # Checking the ref this run was launched from proves nothing when the
+          # gate is reached through workflow_call, and even under
+          # workflow_dispatch it only describes the launch ref. Proving that the
+          # approved SHA is the current tip of a `release/private-crm-rc*`
+          # branch is the property that actually matters, and it holds
+          # identically for both trigger types.
+          tips="$(git ls-remote --heads origin 'refs/heads/release/private-crm-rc*')"
+          if ! printf '%s' "$tips" | awk '{print $1}' | grep -Fxq "$APPROVED_SHA"; then
+            echo 'approved_sha is not the current tip of any release/private-crm-rc* branch.' >&2
+            printf '%s\n' "$tips" | sed 's/^/  candidate: /' >&2
+            exit 1
+          fi
+          printf '%s\n' "$tips" | grep -F "$APPROVED_SHA" | sed 's/^/approved release branch: /'
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -162,8 +195,89 @@ jobs:
           grep -R -F -q 'vfjexhfdbrjmuxfdvbdx.supabase.co' "$bundle_dir"
           grep -R -F -q 'monzo.vishartattoo.com' "$bundle_dir"
 
+      - name: Validation summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          {
+            echo '### Monzo production validation'
+            echo
+            echo "- Approved SHA: \`$APPROVED_SHA\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo "- Bootstrap mode: \`${MONZO_BOOTSTRAP:-false}\`"
+            echo '- Credentials held by this job: none'
+            echo '- Production mutation by this job: none'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Private CRM Monzo production gate
+    needs: validate
+    if: ${{ inputs.deploy }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Mandatory manual approval. Every production mutation for the Monzo
+    # connector passes through this environment, whether the run arrived by
+    # workflow_dispatch or through the pre-merge operator path.
+    environment: crm-production
+
+    steps:
+      - name: Confirm the production deploy gate
+        shell: bash
+        env:
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_MONZO_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+
+          # CRM_PRODUCTION_MONZO_DEPLOY_ENABLED lives in the crm-production
+          # environment, so it is only readable here. Approving the deployment
+          # is therefore not sufficient on its own: the variable must also have
+          # been set deliberately.
+          if [ "$DEPLOY_ENABLED" != 'true' ]; then
+            echo 'CRM_PRODUCTION_MONZO_DEPLOY_ENABLED is not explicitly enabled in the crm-production environment.' >&2
+            exit 1
+          fi
+
+          case "$APPROVAL_PHRASE" in
+            BOOTSTRAP_PRIVATE_CRM_MONZO_INERT|DEPLOY_PRIVATE_CRM_MONZO_ONLY) ;;
+            *)
+              echo 'An exact production approval phrase is required to deploy.' >&2
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "MONZO_BOOTSTRAP=$([ "$APPROVAL_PHRASE" = 'BOOTSTRAP_PRIVATE_CRM_MONZO_INERT' ] && echo true || echo false)"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+
+      - name: Verify checkout SHA
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
       - name: Verify pre-provisioned Worker secret boundary
-        if: ${{ inputs.deploy && env.MONZO_BOOTSTRAP != 'true' }}
+        if: ${{ env.MONZO_BOOTSTRAP != 'true' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
@@ -188,7 +302,6 @@ jobs:
           NODE
 
       - name: Deploy only the Monzo connector Worker
-        if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
@@ -209,7 +322,7 @@ jobs:
               --strict
 
       - name: Generate the token encryption key if the Worker has none
-        if: ${{ inputs.deploy && env.MONZO_BOOTSTRAP == 'true' }}
+        if: ${{ env.MONZO_BOOTSTRAP == 'true' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
@@ -236,7 +349,6 @@ jobs:
           echo 'Installed a freshly generated MONZO_TOKEN_ENCRYPTION_KEY.'
 
       - name: Verify the production protected and public boundary
-        if: ${{ inputs.deploy }}
         shell: bash
         run: |
           set -euo pipefail
@@ -308,8 +420,7 @@ jobs:
           {
             echo '### Private CRM Monzo production gate'
             echo
-            echo "- Exact SHA: \`$GITHUB_SHA\`"
-            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Exact SHA: \`${{ inputs.approved_sha }}\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo "- Worker: \`$WORKER_NAME\` from \`workers/monzo-api-gateway.js\` only"
             echo "- Custom Domain: exact \`$MONZO_HOSTNAME\`, workers.dev and preview URLs disabled"

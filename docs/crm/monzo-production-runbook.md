@@ -94,13 +94,31 @@ Never print, paste, commit, log or copy these values into an agent prompt, PR bo
 
 Encrypted Worker secrets cannot be installed before the Worker exists, and the full deploy gate refuses to run until they are present. The bootstrap step below breaks that dependency without weakening anything: it deploys the same artifact with the same bindings and the same Access boundary, but with no provider credentials, so every route answers `monzo_not_configured` 503 until the real rollout runs.
 
+### How the rollout is triggered before merge
+
+`deploy-private-production-monzo.yml` is `workflow_dispatch`, and GitHub only registers a dispatchable workflow from the default branch. While this work lives on a feature branch the dispatch API answers 404 for it, so it cannot be started that way and merging first would put production ahead of proof.
+
+The pre-merge path is `monzo-production-operator.yml`, using the same `pull_request`-event pattern as every other branch-local operator run in this repository. Editing the pull request body to contain one activation marker carrying the **exact current head SHA** starts the corresponding phase:
+
+```text
+<!-- RUN_MONZO_PRODUCTION_VALIDATE:<head sha> -->
+<!-- RUN_MONZO_PRODUCTION_BOOTSTRAP:<head sha> -->
+<!-- RUN_MONZO_PRODUCTION_ROLLOUT:<head sha> -->
+```
+
+Exactly one marker may be present for a given head SHA. Any new commit changes the head SHA, so a marker left in the body expires immediately and can never authorise a later tree. Opening the pull request or pushing to it triggers nothing.
+
+The operator holds no Cloudflare or Supabase credential and cannot deploy. Every mutating phase calls `deploy-private-production-monzo.yml`, which owns the whole gate: the `crm-production` environment approval, `CRM_PRODUCTION_MONZO_DEPLOY_ENABLED`, the exact approval phrases and the release-branch-tip check all still apply. Validation runs in a separate job with no environment and no secrets, so it never consumes a production approval. Once this work reaches the default branch, `workflow_dispatch` becomes available and drives the identical gate.
+
+### Order
+
 1. Fresh-check product exact head, ancestry and normal exact-head CI.
 2. Set `CRM_PRODUCTION_MONZO_DEPLOY_ENABLED=true` in the `crm-production` environment.
-3. Run `Deploy private production Monzo connector` with `deploy=false` from the release branch to validate configuration, Worker tests, compile, secret scan and artifact scan without touching production.
-4. Re-run with `deploy=true` and approval phrase `BOOTSTRAP_PRIVATE_CRM_MONZO_INERT`. This creates the Worker and its `monzo.vishartattoo.com` Custom Domain, and generates `MONZO_TOKEN_ENCRYPTION_KEY` inside the runner — 32 random bytes, base64url, piped straight into `wrangler secret put`, never echoed, never written to a file, never leaving the protected environment. An existing key is never replaced, because rotating it would strand every encrypted token envelope.
+3. Add the validate marker for the current head SHA to validate configuration, Worker tests, compile, secret scan and artifact scan without touching production.
+4. Replace it with the bootstrap marker, which runs the gate with approval phrase `BOOTSTRAP_PRIVATE_CRM_MONZO_INERT` and stops for `crm-production` approval. This creates the Worker and its `monzo.vishartattoo.com` Custom Domain, and generates `MONZO_TOKEN_ENCRYPTION_KEY` inside the runner — 32 random bytes, base64url, piped straight into `wrangler secret put`, never echoed, never written to a file, never leaving the protected environment. An existing key is never replaced, because rotating it would strand every encrypted token envelope.
 5. Register the production Monzo OAuth client with redirect URI exactly `https://monzo.vishartattoo.com/oauth/monzo/callback`, confidential.
 6. Add the remaining three encrypted secrets to the Worker — `MONZO_OAUTH_CLIENT_ID`, `MONZO_OAUTH_CLIENT_SECRET`, `SUPABASE_SECRET_KEY`. The staging `SUPABASE_SECRET_KEY` must never be reused here.
-7. Re-run with `deploy=true` and approval phrase `DEPLOY_PRIVATE_CRM_MONZO_ONLY`. The workflow verifies the pre-provisioned secret **names** (never values), deploys with `--strict`, then probes the boundary.
+7. Replace it with the rollout marker, which runs the gate with approval phrase `DEPLOY_PRIVATE_CRM_MONZO_ONLY` and again stops for `crm-production` approval. The workflow verifies the pre-provisioned secret **names** (never values), deploys with `--strict`, then probes the boundary.
 8. Confirm the post-deploy probe: `/health` and `/oauth/monzo/*` return an Access challenge; the webhook path reaches the Worker rather than an Access challenge.
 9. Connect each artist separately through the CRM Payments page, owner-only launcher.
 10. Leave `MONZO_RECONCILIATION_ENABLED=false`.
