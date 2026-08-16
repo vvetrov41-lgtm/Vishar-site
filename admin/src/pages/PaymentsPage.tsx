@@ -2,20 +2,38 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { LoadingState } from '../components/StateViews';
 import type { Appointment } from '../lib/appointment-api';
 import { useArtistScope } from '../lib/artist-scope';
-import type { DepositRequestResult, MonzoDepositSettings } from '../lib/payment-api';
+import type { DepositRequestResult, DepositTier, MonzoDepositSettings } from '../lib/payment-api';
 import { useApi } from '../lib/session';
+
+const DEFAULT_DEPOSIT_TIERS: DepositTier[] = [
+  { max_minutes: 60, amount: 50, currency: 'GBP' },
+  { max_minutes: 180, amount: 100, currency: 'GBP' },
+  { max_minutes: 300, amount: 150, currency: 'GBP' },
+  { max_minutes: null, amount: 250, currency: 'GBP' },
+];
 
 const EMPTY_SETTINGS: MonzoDepositSettings = {
   configured: false,
   enabled: false,
   payment_url: null,
   deposit_amount: 250,
+  deposit_policy: 'duration_tiered_v1',
+  deposit_tiers: DEFAULT_DEPOSIT_TIERS,
   currency: 'GBP',
   default_delivery_channel: 'email',
   email_status: 'provider_not_connected',
   sms_status: 'not_configured',
   monzo_api_status: 'not_connected',
 };
+
+function depositAmountForAppointment(appointment: Appointment, tiers: DepositTier[]): number | null {
+  const start = new Date(appointment.start_at).getTime();
+  const end = new Date(appointment.end_at).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  const durationMinutes = Math.ceil((end - start) / 60_000);
+  const tier = tiers.find((candidate) => candidate.max_minutes == null || durationMinutes <= candidate.max_minutes);
+  return tier?.amount ?? null;
+}
 
 export function PaymentsPage() {
   const api = useApi();
@@ -116,7 +134,7 @@ export function PaymentsPage() {
         <div className="panel-heading">
           <div>
             <h2>Deposits</h2>
-            <p>{selectedArtist.display_name}: fixed £250 Monzo Easy Bank Transfer.</p>
+            <p>{selectedArtist.display_name}: duration-based Monzo Easy Bank Transfer deposits.</p>
           </div>
         </div>
 
@@ -138,7 +156,7 @@ export function PaymentsPage() {
               <span>Enable for this artist</span>
             </label>
             <div className="notice field-wide">
-              Deposit amount: £250. Email: provider not connected. SMS: not configured. Monzo API: not connected.
+              Deposits: up to 1 hour £50, up to 3 hours £100, up to 5 hours £150, over 5 hours / full day £250. The CRM calculates the amount from the appointment duration. Email: provider not connected. SMS: not configured. Monzo API: not connected.
             </div>
             <div className="field-wide">
               <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</button>
@@ -151,33 +169,39 @@ export function PaymentsPage() {
         <div className="panel-heading">
           <div>
             <h2>Request a deposit</h2>
-            <p>The CRM creates one opaque personal path. Opening it never marks the deposit as paid.</p>
+            <p>The CRM calculates the deposit server-side and creates one opaque personal path. Opening it never marks the deposit as paid.</p>
           </div>
         </div>
         {eligibleAppointments.length === 0 ? <div className="notice">No eligible future tattoo appointments.</div> : (
           <div className="list-stack">
-            {eligibleAppointments.map((appointment) => (
-              <div className="list-row" key={appointment.id}>
-                <div>
-                  <strong>{new Date(appointment.start_at).toLocaleString('en-GB')}</strong>
-                  <div className="muted">{appointment.status} · {appointment.payment_status}</div>
+            {eligibleAppointments.map((appointment) => {
+              const depositAmount = depositAmountForAppointment(appointment, settings.deposit_tiers);
+              return (
+                <div className="list-row" key={appointment.id}>
+                  <div>
+                    <strong>{new Date(appointment.start_at).toLocaleString('en-GB')}</strong>
+                    <div className="muted">
+                      {appointment.status} · {appointment.payment_status}
+                      {depositAmount == null ? '' : ` · £${depositAmount} deposit`}
+                    </div>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={busySession === appointment.id || !settings.enabled || depositAmount == null}
+                      onClick={() => void requestDeposit(appointment.id, 'copy_link')}
+                    >{depositAmount == null ? 'Create personal link' : `Create £${depositAmount} link`}</button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={busySession === appointment.id || !settings.enabled || depositAmount == null}
+                      onClick={() => void requestDeposit(appointment.id, 'email')}
+                    >{depositAmount == null ? 'Queue deposit email' : `Queue £${depositAmount} email`}</button>
+                  </div>
                 </div>
-                <div className="button-row">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={busySession === appointment.id || !settings.enabled}
-                    onClick={() => void requestDeposit(appointment.id, 'copy_link')}
-                  >Create personal link</button>
-                  <button
-                    type="button"
-                    className="primary-button"
-                    disabled={busySession === appointment.id || !settings.enabled}
-                    onClick={() => void requestDeposit(appointment.id, 'email')}
-                  >Queue £250 email</button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -185,7 +209,7 @@ export function PaymentsPage() {
       {result ? (
         <section className="panel">
           <h2>Deposit request created</h2>
-          <p><code>{result.public_path}</code></p>
+          <p><strong>£{result.amount}</strong> {result.currency} · <code>{result.public_path}</code></p>
           <div className="notice">
             {result.delivery_channel === 'email'
               ? 'Email is queued, but it will not send until an email provider is deliberately connected.'
