@@ -100,17 +100,16 @@ jobs:
           [[ "$prior_version" =~ ^[0-9a-f-]{36}$ ]]
 
           secret_list="$(npx wrangler secret list --name "$WORKER_NAME" --format json)"
-          supabase_secret_count="$(SECRET_LIST="$secret_list" node <<'NODE'
-          const entries = JSON.parse(process.env.SECRET_LIST || '[]');
-          const names = new Set(entries.map((entry) => entry?.name).filter(Boolean));
-          const supabaseKeys = ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY'].filter((name) => names.has(name));
-          if (supabaseKeys.length > 1) throw new Error('Conflicting production Supabase secret bindings');
-          for (const name of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']) {
-            if (!names.has(name)) throw new Error(`Missing required production secret binding: ${name}`);
-          }
-          process.stdout.write(String(supabaseKeys.length));
-          NODE
-          )"
+          supabase_secret_count="$(printf '%s' "$secret_list" | jq -er '
+            [.[]? | .name | select(. == "SUPABASE_SECRET_KEY" or . == "SUPABASE_SERVICE_ROLE_KEY")]
+            | if length <= 1 then length else error("Conflicting production Supabase secret bindings") end
+          ')"
+          for name in TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            printf '%s' "$secret_list" | jq -e --arg name "$name" 'any(.[]?; .name == $name)' >/dev/null || {
+              echo "Missing required production secret binding: $name" >&2
+              exit 1
+            }
+          done
 
           if [ "$supabase_secret_count" = '0' ]; then
             key_file="$RUNNER_TEMP/supabase-api-keys.json"
@@ -137,14 +136,13 @@ jobs:
             rm -f "$key_file"
 
             secret_list="$(npx wrangler secret list --name "$WORKER_NAME" --format json)"
-            SECRET_LIST="$secret_list" node <<'NODE'
-            const entries = JSON.parse(process.env.SECRET_LIST || '[]');
-            const names = new Set(entries.map((entry) => entry?.name).filter(Boolean));
-            const selected = ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY'].filter((name) => names.has(name));
-            if (JSON.stringify(selected) !== JSON.stringify(['SUPABASE_SECRET_KEY'])) {
-              throw new Error('Production Supabase secret binding was not provisioned exactly once');
+            printf '%s' "$secret_list" | jq -e '
+              ([.[]? | .name | select(. == "SUPABASE_SECRET_KEY")] | length) == 1
+              and ([.[]? | .name | select(. == "SUPABASE_SERVICE_ROLE_KEY")] | length) == 0
+            ' >/dev/null || {
+              echo 'Production Supabase secret binding was not provisioned exactly once' >&2
+              exit 1
             }
-            NODE
           fi
           echo "PRIOR_WORKER_VERSION=$prior_version" >> "$GITHUB_ENV"
 
