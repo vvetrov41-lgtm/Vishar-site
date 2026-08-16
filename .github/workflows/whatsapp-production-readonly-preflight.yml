@@ -1,33 +1,35 @@
 name: WhatsApp production read-only preflight
 
 on:
-  push:
-    branches:
-      - agent/whatsapp-production-onboarding
-    paths:
-      - .github/workflows/whatsapp-production-readonly-preflight.yml
   pull_request:
+    branches:
+      - release/private-crm-rc30-whatsapp-onboarding
     paths:
       - .github/workflows/whatsapp-production-readonly-preflight.yml
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   inspect:
+    if: >-
+      github.event.pull_request.head.ref == 'agent/rc30-whatsapp-production-preflight' &&
+      github.event.pull_request.base.ref == 'release/private-crm-rc30-whatsapp-onboarding' &&
+      github.event.pull_request.base.sha == 'c8a8d631580f9ec675e47ad039de5500fc9ebc69'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact head
+      - name: Checkout exact RC30 release head
         uses: actions/checkout@v4
+        with:
+          ref: c8a8d631580f9ec675e47ad039de5500fc9ebc69
 
-      - name: Verify bounded branch
+      - name: Verify exact release SHA
         shell: bash
         run: |
           set -euo pipefail
-          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          test "$branch" = 'agent/whatsapp-production-onboarding'
-          echo "head_sha=$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = 'c8a8d631580f9ec675e47ad039de5500fc9ebc69'
+          test -z "$(git status --short)"
+          echo 'release_sha=c8a8d631580f9ec675e47ad039de5500fc9ebc69'
 
       - name: Require production CRM Cloudflare Access
         shell: bash
@@ -77,7 +79,6 @@ jobs:
             if [ "$present" != '1' ]; then
               continue
             fi
-
             secrets="$(api "$account/workers/scripts/$worker/secrets")"
             echo "$secrets" | jq -e '.success == true' >/dev/null
             echo "worker_${worker}_secret_names=$(echo "$secrets" | jq -r '[.result[].name] | sort | join(",")')"
@@ -92,5 +93,4 @@ jobs:
         run: |
           set -euo pipefail
           file='.github/workflows/whatsapp-production-readonly-preflight.yml'
-          test -f "$file"
           ! grep -Eq 'wrangler (deploy|secret put)|curl[^\n]*(--request|-X)[ =]*(POST|PUT|PATCH|DELETE)|supabase (db push|migration|functions deploy)' "$file"
