@@ -1,13 +1,13 @@
 name: GPT production bootstrap
 
 on:
-  pull_request:
-    types: [edited]
+  push:
+    branches:
+      - release/private-crm-rc26-gpt-actions
 
 permissions:
   actions: read
   contents: read
-  pull-requests: read
 
 concurrency:
   group: gpt-production-bootstrap
@@ -15,16 +15,12 @@ concurrency:
 
 jobs:
   bootstrap:
-    if: >-
-      github.event.pull_request.draft == true &&
-      github.event.pull_request.head.ref == 'agent/gpt-production-actions' &&
-      github.event.pull_request.base.ref == 'release/private-crm-rc25-whatsapp' &&
-      contains(github.event.pull_request.body, '<!-- DEPLOY_GPT_PRODUCTION_BOOTSTRAP -->')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: crm-production
     env:
-      APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+      APPROVED_SHA: ${{ github.sha }}
+      PRODUCT_BRANCH: agent/gpt-production-actions
       PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
       SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
@@ -36,27 +32,11 @@ jobs:
       CRM_ORIGIN: https://crm.vishartattoo.com
 
     steps:
-      - name: Fail-closed PR guard
+      - name: Verify exact release operator and production target
         shell: bash
         run: |
           set -euo pipefail
-          jq -e --arg sha "$APPROVED_SHA" --arg repo "$GITHUB_REPOSITORY" '
-            .action == "edited"
-            and .sender.login == "vvetrov41-lgtm"
-            and .pull_request.state == "open"
-            and .pull_request.draft == true
-            and .pull_request.merged == false
-            and .pull_request.base.ref == "release/private-crm-rc25-whatsapp"
-            and .pull_request.head.ref == "agent/gpt-production-actions"
-            and .pull_request.head.sha == $sha
-            and .pull_request.head.repo.full_name == $repo
-            and (.pull_request.body | contains("<!-- DEPLOY_GPT_PRODUCTION_BOOTSTRAP -->"))
-          ' "$GITHUB_EVENT_PATH" >/dev/null
-
-      - name: Verify exact production target
-        shell: bash
-        run: |
-          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc26-gpt-actions' ]
           [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
           [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
           [ "$CRM_ORIGIN" = 'https://crm.vishartattoo.com' ]
@@ -67,12 +47,13 @@ jobs:
           [ -n "$CLOUDFLARE_API_TOKEN" ]
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
 
-      - name: Checkout exact head
+      - name: Checkout exact release SHA
         uses: actions/checkout@v4
         with:
           ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
 
-      - name: Verify exact head and normal CI
+      - name: Verify operator SHA equals product head and normal CI is green
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -80,7 +61,10 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
           test -z "$(git status --short)"
-          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          product_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test -n "$product_sha"
+          test "$product_sha" = "$APPROVED_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha,event}' | jq -s . > "$RUNNER_TEMP/runs.json"
           for workflow in 'Static Validation' 'CRM and booking validation'; do
             jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" 'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' "$RUNNER_TEMP/runs.json" >/dev/null
           done
@@ -153,6 +137,8 @@ jobs:
           {
             echo '### GPT production bootstrap'
             echo "- Exact SHA: \`$APPROVED_SHA\`"
+            echo "- Operator branch: \`$GITHUB_REF_NAME\`"
+            echo "- Product branch: \`$PRODUCT_BRANCH\`"
             echo '- Supabase target: production project only'
             echo '- OAuth server: enabled, dynamic registration disabled'
             echo '- Worker host: `gpt-actions.vishartattoo.com`'

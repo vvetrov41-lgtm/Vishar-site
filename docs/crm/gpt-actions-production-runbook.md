@@ -7,6 +7,7 @@ This runbook promotes the already-tested private GPT appointment action surface 
 - Production Supabase project: `vfjexhfdbrjmuxfdvbdx`.
 - Production CRM origin: `https://crm.vishartattoo.com`.
 - Production GPT action host: `https://gpt-actions.vishartattoo.com`.
+- Product branch: `agent/gpt-production-actions`.
 - Retained staging is never targeted by this rollout.
 - The Worker carries no Supabase service-role or secret key. It forwards the signed-in user's Supabase OAuth bearer token and only the public project key.
 - Artist scope is never accepted from ChatGPT. `auth.jwt()->>'client_id'` resolves through `crm_private.gpt_action_clients` to exactly one artist.
@@ -14,14 +15,22 @@ This runbook promotes the already-tested private GPT appointment action surface 
 - Appointment create/reschedule/cancel remain consequential actions and use existing idempotency/calendar-version checks.
 - There is no GPT action for WhatsApp, Telegram, email, payments or arbitrary CRM writes.
 
+## Why rollout uses release operator branches
+
+The protected `crm-production` GitHub environment allows approved release branches and correctly rejects pull-request merge refs. Production workflows therefore run only when a dedicated release operator branch is fast-forwarded to the exact, already-green product head. Each workflow verifies that its release SHA is byte-for-byte equal to the current `agent/gpt-production-actions` head before any production mutation.
+
+No code is merged to `main`, no feature PR is marked Ready, and the operator branch must not carry an extra rollout commit.
+
 ## Phase 1: backend bootstrap
 
-1. Exact head must pass normal `Static Validation` and `CRM and booking validation`.
-2. Add the PR marker `<!-- DEPLOY_GPT_PRODUCTION_BOOTSTRAP -->`.
-3. `gpt-production-bootstrap.yml` enables the production Supabase OAuth server with dynamic registration disabled.
-4. It deploys only `vishar-gpt-actions-production` at `gpt-actions.vishartattoo.com` with OAuth relay enabled and appointment actions disabled.
-5. Expected external state after the phase: `/privacy` = 200, incomplete `/oauth/authorize` = 400, `/v1/appointments` = 404.
-6. No OAuth client is created and no GPT database binding is activated in this phase.
+1. Exact product head must pass normal `Static Validation` and `CRM and booking validation`.
+2. Fresh-check production DB state and confirm the expected migration/GPT rows.
+3. Create `release/private-crm-rc26-gpt-actions` at the parent RC25 SHA, then fast-forward it to the exact green `agent/gpt-production-actions` head. That push is the bootstrap trigger.
+4. `gpt-production-bootstrap.yml` re-verifies that release SHA equals product head, re-runs focused production GPT tests, audit, bundle check and secret scan.
+5. It enables the production Supabase OAuth server with dynamic registration disabled.
+6. It deploys only `vishar-gpt-actions-production` at `gpt-actions.vishartattoo.com` with OAuth relay enabled and appointment actions disabled.
+7. Expected external state after the phase: `/privacy` = 200, incomplete `/oauth/authorize` = 400, `/v1/appointments` = 404.
+8. No OAuth client is created and no GPT database binding is activated in this phase.
 
 ## Phase 2: create two production OAuth clients
 
@@ -49,13 +58,13 @@ After the two OAuth clients exist, bind only their non-secret client IDs to the 
 
 Use the existing owner-only `configure_gpt_action_client(...)` path. Both rows must be active, readable and manageable. Do not store or pass client secrets to this RPC.
 
-Verify directly in production that there are exactly two active GPT client rows, both have non-null distinct OAuth client IDs, and no staging OAuth client ID is reused.
+Verify directly in production that there are exactly two active GPT client rows, both have non-null distinct OAuth client IDs, and no retained-staging OAuth client ID is reused.
 
 ## Phase 4: enable the action edge
 
 Immediately before activation, perform a **fresh live Supabase check** of the production project. Confirm that both production GPT rows are active, both have distinct non-null OAuth client IDs, and neither client ID matches retained staging. CI deliberately does not mutate or manufacture this state.
 
-Only after that live check passes, add `<!-- ENABLE_GPT_PRODUCTION_ACTIONS -->` to the same draft PR. `gpt-production-activate.yml` redeploys the same Worker with OAuth relay and GPT actions enabled.
+Only after that live check passes, create `release/private-crm-rc27-gpt-actions-enable` at the parent RC25 SHA and fast-forward it to the same exact green product head. That push triggers `gpt-production-activate.yml`.
 
 Expected unauthenticated state after activation:
 

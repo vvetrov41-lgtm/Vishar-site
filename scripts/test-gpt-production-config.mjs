@@ -24,16 +24,17 @@ assert.doesNotMatch(config, /gwaliusblwrzisrwnsvs|service_role|SUPABASE_SECRET|s
 
 for (const workflow of [bootstrap, activate]) {
   assert.match(workflow, /environment: crm-production/);
-  assert.match(workflow, /agent\/gpt-production-actions/);
-  assert.match(workflow, /release\/private-crm-rc25-whatsapp/);
+  assert.match(workflow, /PRODUCT_BRANCH: agent\/gpt-production-actions/);
+  assert.match(workflow, /git ls-remote origin "refs\/heads\/\$PRODUCT_BRANCH"/);
   assert.match(workflow, /CRM_PRODUCTION_SUPABASE_URL/);
   assert.match(workflow, /CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY/);
   assert.match(workflow, /CRM_PRODUCTION_CLOUDFLARE_API_TOKEN/);
   assert.match(workflow, /npm run scan:secrets/);
   assert.match(workflow, /gpt-actions\.vishartattoo\.com/);
-  assert.doesNotMatch(workflow, /STAGING_SUPABASE_DB_PASSWORD|gwaliusblwrzisrwnsvs/);
+  assert.doesNotMatch(workflow, /pull_request|refs\/pull\/|STAGING_SUPABASE_DB_PASSWORD|gwaliusblwrzisrwnsvs/);
 }
 
+assert.match(bootstrap, /release\/private-crm-rc26-gpt-actions/);
 assert.match(bootstrap, /oauth_server_enabled:true/);
 assert.match(bootstrap, /oauth_server_allow_dynamic_registration:false/);
 assert.match(bootstrap, /GPT_OAUTH_RELAY_ENABLED:true/);
@@ -41,7 +42,7 @@ assert.match(bootstrap, /GPT_ACTIONS_ENABLED:false/);
 assert.match(bootstrap, /OAuth clients created: no/);
 assert.match(bootstrap, /GPT client database bindings changed: no/);
 
-assert.match(activate, /ENABLE_GPT_PRODUCTION_ACTIONS/);
+assert.match(activate, /release\/private-crm-rc27-gpt-actions-enable/);
 assert.match(activate, /GPT_OAUTH_RELAY_ENABLED:true/);
 assert.match(activate, /GPT_ACTIONS_ENABLED:true/);
 assert.match(activate, /GPT client binding mutation: none/);
@@ -73,7 +74,9 @@ assert.deepEqual(operationIds.sort(), [
 
 assert.match(runbook, /fresh live Supabase check/i,
   'runbook must require a fresh live binding check before action activation');
+assert.match(runbook, /release\/private-crm-rc26-gpt-actions/);
+assert.match(runbook, /release\/private-crm-rc27-gpt-actions-enable/);
 assert.match(runbook, /Do not guess or normalize the callback URL/);
 assert.match(runbook, /There is no GPT action for WhatsApp/);
 
-console.log('GPT production config tests passed: inert tracked config, production-only OAuth edge, inline OpenAPI and separate live binding gate.');
+console.log('GPT production config tests passed: inert tracked config, exact release operators, production-only OAuth edge, inline OpenAPI and separate live binding gate.');
