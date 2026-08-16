@@ -34,17 +34,6 @@ insert into auth.users (id, email) values
 insert into public.profiles (id, email, display_name, role, is_active) values
   ('db061111-1111-4111-8111-111111111111',
    'gpt-client-list-owner@example.test', 'GPT Client List Owner', 'owner', true);
-insert into public.artist_memberships (
-  profile_id, artist_id, access_level,
-  can_view_finance, can_manage_finance, can_manage_sessions,
-  can_manage_integrations, is_active
-) values
-  ('db061111-1111-4111-8111-111111111111',
-   'a1111111-1111-4111-8111-111111111111',
-   'owner', true, true, true, true, true),
-  ('db061111-1111-4111-8111-111111111111',
-   'a2222222-2222-4222-8222-222222222222',
-   'owner', true, true, true, true, true);
 
 create function pg_temp.gpt_client_list_claims(p text) returns void language sql as $$
   select set_config('request.jwt.claims', p, true)::void;
