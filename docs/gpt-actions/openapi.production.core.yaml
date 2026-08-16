@@ -358,7 +358,7 @@ paths:
       x-openai-isConsequential: true
       parameters:
         - {name: follow_up_id, in: path, required: true, schema: {type: string, format: uuid}}
-      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Follow-up completion result}}
 
   /v1/follow-ups/{follow_up_id}/cancel:
@@ -368,7 +368,7 @@ paths:
       x-openai-isConsequential: true
       parameters:
         - {name: follow_up_id, in: path, required: true, schema: {type: string, format: uuid}}
-      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Follow-up cancellation result}}
 
 components:
