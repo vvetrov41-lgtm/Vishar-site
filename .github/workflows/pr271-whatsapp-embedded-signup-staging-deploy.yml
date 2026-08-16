@@ -1,0 +1,149 @@
+name: PR 271 protected WhatsApp Embedded Signup staging harness
+
+on:
+  push:
+    branches:
+      - agent/pr271-whatsapp-embedded-signup-staging-harness
+    paths:
+      - .github/workflows/pr271-whatsapp-embedded-signup-staging-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr271-whatsapp-embedded-signup-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact harness head
+        uses: actions/checkout@v4
+
+      - name: Verify branch and protected staging boundary
+        id: preflight
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'agent/pr271-whatsapp-embedded-signup-staging-harness'
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+
+          headers="$(mktemp)"
+          curl --silent --show-error --max-time 20 --output /dev/null --dump-header "$headers" \
+            https://vishar-crm-staging.pages.dev/ || true
+          status="$(awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "$headers")"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$headers")"
+          rm -f "$headers"
+          case "$location" in
+            https://*.cloudflareaccess.com/*) ;;
+            *) echo "Staging host is not proven behind Cloudflare Access (status=${status:-unknown})." >&2; exit 1 ;;
+          esac
+
+          response="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/vishar-crm-staging")"
+          echo "$response" | jq -e '.success == true' >/dev/null
+          current="$(echo "$response" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // ""')"
+          if [ "$current" != 'f5e019d6a6ae5ea12bf89ab9fc79bcc6ee8406d4' ]; then
+            echo "Retained staging moved since preflight: current=$current" >&2
+            exit 1
+          fi
+          previous_id="$(echo "$response" | jq -r '.result.latest_deployment.id // ""')"
+          echo "previous_deployment_id=$previous_id" >> "$GITHUB_OUTPUT"
+          echo "previous_commit=$current" >> "$GITHUB_OUTPUT"
+          echo "Staging Access protected; current deployment commit=$current"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install locked dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Test typecheck and build existing staging CRM plus harness
+        working-directory: admin
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          npm test
+          npm run typecheck
+          npm run build
+          test -f dist/whatsapp-embedded-signup.html
+          grep -Fq 'whatsapp_business_app_onboarding' dist/whatsapp-embedded-signup.html
+          grep -Fq '4468652066715473' dist/whatsapp-embedded-signup.html
+          grep -Fq '1481226093843982' dist/whatsapp-embedded-signup.html
+
+      - name: Scan browser artifact for credential-shaped values
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{20,}' admin/dist; then
+            echo 'Secret-key-shaped value found in browser artifact.' >&2
+            exit 1
+          fi
+          if grep -R -E -q 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}' admin/dist; then
+            echo 'JWT-shaped value found in browser artifact.' >&2
+            exit 1
+          fi
+          if grep -R -E -q 'EA[A-Za-z0-9]{40,}' admin/dist; then
+            echo 'Meta access-token-shaped value found in browser artifact.' >&2
+            exit 1
+          fi
+
+      - name: Deploy frontend-only harness to protected retained staging Pages
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx wrangler pages deploy admin/dist \
+            --project-name vishar-crm-staging \
+            --branch main \
+            --commit-hash "$GITHUB_SHA" \
+            --commit-message 'PR271 WhatsApp Embedded Signup protected staging harness' \
+            --commit-dirty=true
+
+      - name: Verify deployed exact head and Access remains closed
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/vishar-crm-staging")"
+          echo "$response" | jq -e '.success == true' >/dev/null
+          deployed="$(echo "$response" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // ""')"
+          deployment_id="$(echo "$response" | jq -r '.result.latest_deployment.id // ""')"
+          test "$deployed" = "$GITHUB_SHA"
+          echo "deployed_commit=$deployed"
+          echo "deployment_id=$deployment_id"
+          echo "rollback_previous_id=${{ steps.preflight.outputs.previous_deployment_id }}"
+          echo "rollback_previous_commit=${{ steps.preflight.outputs.previous_commit }}"
+
+          headers="$(mktemp)"
+          curl --silent --show-error --max-time 20 --output /dev/null --dump-header "$headers" \
+            https://vishar-crm-staging.pages.dev/whatsapp-embedded-signup.html || true
+          status="$(awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "$headers")"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$headers")"
+          rm -f "$headers"
+          case "$location" in
+            https://*.cloudflareaccess.com/*) echo "harness_access_redirect=true status=${status:-unknown}" ;;
+            *) echo 'Harness path is not protected by Cloudflare Access after deployment.' >&2; exit 1 ;;
+          esac
