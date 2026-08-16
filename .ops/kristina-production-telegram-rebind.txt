@@ -1,0 +1,5 @@
+Worker: vishar-telegram-drain-production
+Binding: ARTIST_TELEGRAM_KRISTINA_HPRODUCTION
+Bot: @kristina_vishar_booking_bot
+Chat ID: -5307909475
+Scope: production Kristina only
