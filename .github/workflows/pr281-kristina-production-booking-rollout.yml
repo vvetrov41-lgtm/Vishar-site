@@ -3,7 +3,7 @@ name: Roll out Kristina production booking recovery
 on:
   pull_request:
     branches:
-      - agent/kristina-production-booking-recovery
+      - release/private-crm-rc25-kristina-booking
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -19,7 +19,7 @@ jobs:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'ops/run-kristina-production-booking-recovery' &&
-      github.event.pull_request.base.ref == 'agent/kristina-production-booking-recovery'
+      github.event.pull_request.base.ref == 'release/private-crm-rc25-kristina-booking'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: crm-production
