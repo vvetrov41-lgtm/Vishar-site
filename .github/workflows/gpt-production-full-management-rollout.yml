@@ -104,9 +104,10 @@ jobs:
               if (local_version == "0053" && remote_version == "0053") have_0053 = 1
               if (local_version == "0054") { have_0054 = 1; remote_0054 = remote_version }
               if (local_version == "0055") { have_0055 = 1; remote_0055 = remote_version }
+              if (local_version == "0056") { have_0056 = 1; remote_0056 = remote_version }
             }
             END {
-              if (!have_0053 || !have_0054 || !have_0055 || remote_0054 != "" || remote_0055 != "") exit 1
+              if (!have_0053 || !have_0054 || !have_0055 || !have_0056 || remote_0054 != "" || remote_0055 != "" || remote_0056 != "") exit 1
             }
           ' "$RUNNER_TEMP/migrations-before.txt"
 
@@ -116,7 +117,7 @@ jobs:
       - name: Apply canonical production migrations
         run: supabase db push
 
-      - name: Verify migration 0055 is recorded remotely
+      - name: Verify migration 0056 is recorded remotely
         shell: bash
         run: |
           set -euo pipefail
@@ -128,8 +129,9 @@ jobs:
               remote_version = clean($2)
               if (local_version == "0054" && remote_version == "0054") deployed_0054 = 1
               if (local_version == "0055" && remote_version == "0055") deployed_0055 = 1
+              if (local_version == "0056" && remote_version == "0056") deployed_0056 = 1
             }
-            END { if (!deployed_0054 || !deployed_0055) exit 1 }
+            END { if (!deployed_0054 || !deployed_0055 || !deployed_0056) exit 1 }
           ' "$RUNNER_TEMP/migrations-after.txt"
 
       - name: Deploy full-management production GPT edge
@@ -150,10 +152,11 @@ jobs:
           for attempt in $(seq 1 20); do
             privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/privacy" || true)"
             oauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/oauth/authorize" || true)"
+            clients="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/clients" || true)"
             enquiries="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/enquiries" || true)"
             projects="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/projects" || true)"
             payments="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TARGET_HOST/v1/payments/requests" || true)"
-            if [ "$privacy" = 200 ] && [ "$oauth" = 400 ] && [ "$enquiries" = 401 ] && [ "$projects" = 401 ] && [ "$payments" = 401 ]; then exit 0; fi
+            if [ "$privacy" = 200 ] && [ "$oauth" = 400 ] && [ "$clients" = 401 ] && [ "$enquiries" = 401 ] && [ "$projects" = 401 ] && [ "$payments" = 401 ]; then exit 0; fi
             sleep 6
           done
           echo 'Production full-management GPT edge did not reach the expected OAuth-gated state.' >&2
@@ -168,7 +171,7 @@ jobs:
             echo "- Exact SHA: \`$APPROVED_SHA\`"
             echo "- Operator branch: \`$GITHUB_REF_NAME\`"
             echo "- Product branch: \`$PRODUCT_BRANCH\`"
-            echo '- Production migrations: `0054_gpt_full_crm_management`, `0055_gpt_full_crm_completion`'
+            echo '- Production migrations: `0054_gpt_full_crm_management`, `0055_gpt_full_crm_completion`, `0056_gpt_client_list`'
             echo '- Worker host: `gpt-actions.vishartattoo.com`'
             echo '- OAuth and artist routing: unchanged'
             echo '- Full-management capability mutation: none in this workflow'
