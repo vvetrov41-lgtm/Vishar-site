@@ -1,13 +1,17 @@
 // Artist-scoped GPT Actions proxy.
 //
 // This proxy never holds a Supabase service key. It forwards the caller's
-// Supabase OAuth access token to seven named RPCs and adds only the public
+// Supabase OAuth access token to named, bounded RPCs and adds only the public
 // project key required by the Supabase API gateway. Artist scope is resolved by
 // the database from the OAuth token's client_id claim.
 
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_RESPONSE_BYTES = 128 * 1024;
 const UUID_PATTERN = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}';
+const ENQUIRY_STATUSES = new Set([
+  'new', 'reviewing', 'waiting_for_client', 'accepted', 'declined',
+  'quote_sent', 'deposit_requested', 'deposit_paid', 'converted', 'closed',
+]);
 const JSON_HEADERS = Object.freeze({
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store',
@@ -89,8 +93,14 @@ function requiredString(value, name) {
 }
 
 function optionalString(value, name) {
-  if (value == null) return null;
+  if (value == null || value === '') return null;
   if (typeof value !== 'string') throw new Error(`invalid_field:${name}`);
+  return value;
+}
+
+function optionalEnum(value, name, allowed) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string' || !allowed.has(value)) throw new Error(`invalid_field:${name}`);
   return value;
 }
 
@@ -125,6 +135,30 @@ function routeFor(request, url, body) {
     };
   }
 
+  if (method === 'GET' && path === '/v1/enquiries') {
+    exactSearchParams(url.searchParams, ['from', 'to', 'status', 'limit']);
+    return {
+      rpc: 'gpt_list_enquiries',
+      payload: {
+        p_from: optionalString(url.searchParams.get('from'), 'from'),
+        p_to: optionalString(url.searchParams.get('to'), 'to'),
+        p_status: optionalEnum(url.searchParams.get('status'), 'status', ENQUIRY_STATUSES),
+        p_limit: boundedQueryInteger(url.searchParams.get('limit'), 'limit', 20, 25),
+      },
+      responseKind: 'list',
+    };
+  }
+
+  const enquiryMatch = new RegExp(`^/v1/enquiries/(${UUID_PATTERN})$`).exec(path);
+  if (method === 'GET' && enquiryMatch) {
+    return {
+      rpc: 'gpt_get_enquiry',
+      payload: { p_enquiry_id: enquiryMatch[1] },
+      responseKind: 'single-row',
+      notFoundError: 'enquiry_not_found',
+    };
+  }
+
   if (method === 'GET' && path === '/v1/appointments') {
     exactSearchParams(url.searchParams, ['from', 'to', 'limit']);
     return {
@@ -144,6 +178,7 @@ function routeFor(request, url, body) {
       rpc: 'gpt_get_appointment',
       payload: { p_appointment_id: appointmentMatch[1] },
       responseKind: 'single-row',
+      notFoundError: 'appointment_not_found',
     };
   }
 
@@ -292,7 +327,7 @@ export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
     }
     if (route.responseKind === 'single-row') {
       if (!Array.isArray(parsed) || parsed.length === 0) {
-        return json(404, { error: 'appointment_not_found' });
+        return json(404, { error: route.notFoundError || 'record_not_found' });
       }
       return json(200, parsed[0]);
     }
