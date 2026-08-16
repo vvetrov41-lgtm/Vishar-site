@@ -6,10 +6,19 @@ const root = path.resolve(process.argv[2] ?? 'admin/dist');
 const bannedText = [
   'calendar-staging.vishartattoo.com',
   'intake-staging.vishartattoo.com',
+  'monzo-staging.vishartattoo.com',
+  'gpt-actions-staging.vishartattoo.com',
   'vishar-crm-staging.pages.dev',
   'vishar-booking-staging.pages.dev',
   'tattooai-preview',
 ];
+
+// The retained staging Supabase project ref is deliberately NOT banned here.
+// `admin/src/lib/whatsapp-connections-api.ts` carries both project origins as
+// constants so it can classify which environment the CRM is pointed at and
+// derive the correct artist integration key suffix. It is a discriminator, not
+// an endpoint the production CRM talks to. Worker artifacts have no such
+// discriminator, so their production scans do reject that ref.
 
 const credentialPatterns = [
   {

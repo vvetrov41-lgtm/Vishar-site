@@ -36,6 +36,7 @@ jobs:
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
       VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
       VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      VITE_MONZO_CONNECTOR_ORIGIN: https://monzo.vishartattoo.com
       CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
 
     steps:
@@ -109,6 +110,11 @@ jobs:
             exit 1
           fi
 
+          if [ "$VITE_MONZO_CONNECTOR_ORIGIN" != 'https://monzo.vishartattoo.com' ]; then
+            echo 'The private production CRM may use only the exact production Monzo connector origin.' >&2
+            exit 1
+          fi
+
           if ! [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]; then
             echo 'CRM_PRODUCTION_PAGES_PROJECT must be a dedicated private CRM project name.' >&2
             exit 1
@@ -161,6 +167,7 @@ jobs:
           grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
           grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
           grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
+          grep -R -Fq "$VITE_MONZO_CONNECTOR_ORIGIN" admin/dist
           node scripts/check-private-crm-artifact.mjs admin/dist
 
       - name: Install pinned root deployment tooling
@@ -275,5 +282,6 @@ jobs:
             echo '- Upload scope: `admin/dist` only'
             echo '- Production Auth site URL target: `https://crm.vishartattoo.com`'
             echo '- Calendar connector in this build: `https://calendar.vishartattoo.com`'
+            echo '- Monzo connector in this build: `https://monzo.vishartattoo.com` (owner-only launcher; no token, account id or webhook key reaches the browser)'
             echo '- Public site / booking Worker deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"

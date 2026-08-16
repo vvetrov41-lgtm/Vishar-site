@@ -1,0 +1,280 @@
+name: Deploy private production Monzo connector
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation. Leave false for validation-only runs.
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-monzo
+  cancel-in-progress: false
+
+jobs:
+  monzo:
+    name: Private CRM Monzo production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-monzo-api-production
+      MONZO_HOSTNAME: monzo.vishartattoo.com
+
+    steps:
+      - name: Verify exact release branch and explicit production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_MONZO_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *)
+              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          fi
+
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            if [ "$DEPLOY_ENABLED" != 'true' ]; then
+              echo 'CRM_PRODUCTION_MONZO_DEPLOY_ENABLED is not explicitly enabled in the crm-production environment.' >&2
+              exit 1
+            fi
+            if [ "$APPROVAL_PHRASE" != 'DEPLOY_PRIVATE_CRM_MONZO_ONLY' ]; then
+              echo 'The exact production approval phrase is required for deploy=true.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+
+      - name: Verify checkout SHA
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
+      - name: Audit root dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Validate production Monzo configuration
+        run: node scripts/test-monzo-production-config.mjs
+
+      - name: Test Monzo Worker boundaries
+        run: |
+          node scripts/test-monzo-api-worker.mjs
+          node scripts/test-monzo-api-client-guards.mjs
+          node scripts/test-monzo-api-rollbacks.mjs
+          node scripts/test-monzo-account-activation.mjs
+          node scripts/test-monzo-connection-lifecycle.mjs
+          node scripts/test-monzo-setup-flow.mjs
+          node scripts/test-monzo-webhook-rate-limit.mjs
+
+      - name: Compile production Monzo Worker with workers.dev disabled
+        run: npm run check:monzo-production-bundle
+
+      - name: Scan repository for committed secrets
+        run: npm run scan:secrets
+
+      - name: Verify the compiled artifact carries no staging or credential material
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_dir=.wrangler/monzo-production-dry-run
+          test -d "$bundle_dir"
+
+          # The retained staging Supabase project, Monzo staging hostname and
+          # staging Access audience must never appear in a production artifact.
+          for forbidden in \
+            'gwaliusblwrzisrwnsvs' \
+            'monzo-staging.vishartattoo.com' \
+            'aace3f92b458d0669564d0ee65ecc41fe488dca2ad2299b5dda8e4cabd46764e' \
+            'acbfc61aa59e59ba516e96aae1d0f7b532a078190303f643ebdc25516288bf84'
+          do
+            if grep -R -F -q "$forbidden" "$bundle_dir"; then
+              echo "Production Monzo artifact contains staging material." >&2
+              exit 1
+            fi
+          done
+
+          # Credential shapes must never be baked into the bundle.
+          if grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.' "$bundle_dir"; then
+            echo "Production Monzo artifact contains credential-shaped material." >&2
+            exit 1
+          fi
+
+          grep -R -F -q 'vfjexhfdbrjmuxfdvbdx.supabase.co' "$bundle_dir"
+          grep -R -F -q 'monzo.vishartattoo.com' "$bundle_dir"
+
+      - name: Verify pre-provisioned Worker secret boundary
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          secrets_json="$(npx wrangler secret list --config wrangler.monzo-api.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const names = new Set(values.map((entry) => entry?.name).filter(Boolean));
+          const expected = [
+            'MONZO_OAUTH_CLIENT_ID',
+            'MONZO_OAUTH_CLIENT_SECRET',
+            'MONZO_TOKEN_ENCRYPTION_KEY',
+            'SUPABASE_SECRET_KEY',
+          ];
+          const missing = expected.filter((name) => !names.has(name));
+          if (missing.length) {
+            throw new Error(`Pre-provisioned production Worker is missing ${missing.join(', ')}`);
+          }
+          NODE
+
+      - name: Deploy only the Monzo connector Worker
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Deliberately no --keep-vars. Every variable, binding and the exact
+          # Custom Domain are declared in the tracked configuration, so --strict
+          # compares the complete intended production Worker state and a release
+          # cannot silently retain a stale variable or widen the public surface.
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/monzo-production-wrangler.log \
+          WRANGLER_SEND_METRICS=false \
+            npx wrangler deploy \
+              --config wrangler.monzo-api.production.toml \
+              --name "$WORKER_NAME" \
+              --strict
+
+      - name: Verify the production protected and public boundary
+        if: ${{ inputs.deploy }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Owner-protected surfaces must answer with an Access challenge, never
+          # with Worker output. /health leaks configuration posture and is
+          # deliberately inside the protected boundary.
+          for path in /health /oauth/monzo/start/vladimir /oauth/monzo/status/vladimir /oauth/monzo/accounts/kristina; do
+            gated=''
+            for attempt in $(seq 1 20); do
+              status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "https://${MONZO_HOSTNAME}${path}" || true)"
+              echo "PROTECTED ${path} -> ${status}"
+              case "$status" in
+                302|303|307|401|403) gated='yes'; break ;;
+                200)
+                  echo "Access is not gating ${path}." >&2
+                  exit 1
+                  ;;
+              esac
+              sleep 6
+            done
+            if [ -z "$gated" ]; then
+              echo "${path} never returned an Access response." >&2
+              exit 1
+            fi
+          done
+
+          # The webhook path is the only public surface. It must reach the
+          # Worker rather than an Access challenge, and while reconciliation is
+          # dormant the Worker answers 503 reconciliation_disabled. An unknown
+          # opaque key must never reveal whether a route exists by any other
+          # status.
+          webhook_key="$(head -c 36 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
+          status="$(curl --silent --show-error --output /tmp/monzo-webhook-body --write-out '%{http_code}' --max-time 10 \
+            -X POST -H 'Content-Type: application/json' --data '{"type":"transaction.created","data":{"id":"tx_boundarycheck"}}' \
+            "https://${MONZO_HOSTNAME}/webhooks/monzo/${webhook_key}" || true)"
+          echo "PUBLIC /webhooks/monzo/<opaque> -> ${status}"
+          cat /tmp/monzo-webhook-body || true
+          case "$status" in
+            503|429) ;;
+            302|303|307|401|403)
+              echo 'Access is blocking the Monzo webhook delivery path.' >&2
+              exit 1
+              ;;
+            *)
+              echo "Unexpected public webhook status ${status}." >&2
+              exit 1
+              ;;
+          esac
+
+          # An unrelated public path must not be reachable at all.
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 \
+            "https://${MONZO_HOSTNAME}/webhooks/monzo/" || true)"
+          echo "PUBLIC /webhooks/monzo/ -> ${status}"
+          case "$status" in
+            302|303|307|401|403|404) ;;
+            200)
+              echo 'An unexpected public path returned Worker output.' >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Production Monzo boundary summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+        run: |
+          {
+            echo '### Private CRM Monzo production gate'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo "- Worker: \`$WORKER_NAME\` from \`workers/monzo-api-gateway.js\` only"
+            echo "- Custom Domain: exact \`$MONZO_HOSTNAME\`, workers.dev and preview URLs disabled"
+            echo '- Public surface: `POST /webhooks/monzo/<opaque key>` only; Access bypass is scoped to that exact path'
+            echo '- Protected surface: `/health` and every `/oauth/monzo/*` route, re-verified inside the Worker'
+            echo '- Webhook rate limiting: isolated `MONZO_WEBHOOK_RATE_LIMIT` binding, applied unconditionally, fails closed'
+            echo '- Reconciliation: `MONZO_RECONCILIATION_ENABLED=false`; candidate-only by design, no automatic settlement exists'
+            echo '- Required pre-existing secrets: `MONZO_OAUTH_CLIENT_ID`, `MONZO_OAUTH_CLIENT_SECRET`, `MONZO_TOKEN_ENCRYPTION_KEY`, `SUPABASE_SECRET_KEY`'
+            echo '- Retained staging Supabase, Monzo KV namespaces, Access audiences and hostname: explicitly refused'
+            echo '- Pages / database / booking / Calendar / Telegram / WhatsApp / GPT deploy commands: none'
+          } >> "$GITHUB_STEP_SUMMARY"
