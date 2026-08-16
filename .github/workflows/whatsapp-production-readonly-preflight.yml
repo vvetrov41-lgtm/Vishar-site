@@ -6,6 +6,9 @@ on:
       - agent/whatsapp-production-onboarding
     paths:
       - .github/workflows/whatsapp-production-readonly-preflight.yml
+  pull_request:
+    paths:
+      - .github/workflows/whatsapp-production-readonly-preflight.yml
   workflow_dispatch:
 
 permissions:
@@ -19,7 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = 'agent/whatsapp-production-onboarding'
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          test "$branch" = 'agent/whatsapp-production-onboarding'
 
       - name: Inspect production Cloudflare metadata read-only
         shell: bash
