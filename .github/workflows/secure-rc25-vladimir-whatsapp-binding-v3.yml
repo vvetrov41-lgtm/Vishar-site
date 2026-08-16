@@ -1,0 +1,220 @@
+name: Secure RC25 Vladimir WhatsApp binding v3
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc25-whatsapp-webhook-operator
+    paths:
+      - .github/workflows/secure-rc25-vladimir-whatsapp-binding-v3.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: secure-rc25-vladimir-whatsapp-binding-v3
+  cancel-in-progress: false
+
+jobs:
+  secure:
+    name: Encrypt Vladimir binding, purge plaintext versions, promote secure version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      RELEASE_SHA: 2729bf08ed206a0d6d42f6d055ded8489d0858e4
+      WORKER_NAME: vishar-whatsapp-webhook-production
+      WEBHOOK_URL: https://whatsapp.vishartattoo.com/webhook
+      TARGET_BINDING: ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact RC25 ancestry and operator-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          unexpected="$(git diff --name-only "$RELEASE_SHA"...HEAD | grep -vE '^\.github/workflows/(bootstrap-rc25-whatsapp-webhook|inspect-rc25-whatsapp-production|verify-rc25-whatsapp-public|diagnose-rc25-whatsapp-secret|provision-rc25-whatsapp-supabase-secret|promote-rc25-whatsapp-secret-version|promote-rc25-whatsapp-secret-version-v2|secure-rc25-vladimir-whatsapp-binding|secure-rc25-vladimir-whatsapp-binding-v3)\.yml$' || true)"
+          [ -z "$unexpected" ] || { echo 'Unexpected non-operator changes.' >&2; exit 1; }
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Inventory and stage secret value without logging it
+        id: inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET_FILE="$RUNNER_TEMP/vladimir-binding.txt" STATE_FILE="$RUNNER_TEMP/vladimir-binding-state.json" GITHUB_OUTPUT="$GITHUB_OUTPUT" node <<'NODE'
+          const fs = require('fs');
+          const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const worker = process.env.WORKER_NAME;
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const targetName = process.env.TARGET_BINDING;
+          const api = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}`;
+          const headers = { Authorization: `Bearer ${token}` };
+          const get = async (url) => {
+            const r = await fetch(url, { headers });
+            if (!r.ok) throw new Error(`Cloudflare GET failed: ${r.status}`);
+            const doc = await r.json();
+            if (!doc.success) throw new Error('Cloudflare response unsuccessful');
+            return doc;
+          };
+          const versionsDoc = await get(`${api}/versions?deployable=true&per_page=100`);
+          const deploymentsDoc = await get(`${api}/deployments`);
+          const versions = Array.isArray(versionsDoc.result?.items) ? versionsDoc.result.items : [];
+          if (!versions.length || versions.length >= 100) throw new Error('Unsafe or incomplete version inventory');
+          const activeVersions = deploymentsDoc.result?.deployments?.[0]?.versions || [];
+          if (activeVersions.length !== 1 || Number(activeVersions[0].percentage) !== 100 || !activeVersions[0].version_id) throw new Error('Expected one active version at 100 percent');
+          const activeId = activeVersions[0].version_id;
+          const sourceId = versions[0].id;
+          const [activeDoc, sourceDoc] = await Promise.all([get(`${api}/versions/${activeId}`), get(`${api}/versions/${sourceId}`)]);
+          const active = activeDoc.result;
+          const source = sourceDoc.result;
+          if (!active?.resources?.script?.etag || active.resources.script.etag !== source?.resources?.script?.etag) throw new Error('Latest code differs from active code');
+          const activeBindings = Array.isArray(active?.resources?.bindings) ? active.resources.bindings : [];
+          const sourceBindings = Array.isArray(source?.resources?.bindings) ? source.resources.bindings : [];
+          const target = sourceBindings.find((b) => b?.name === targetName);
+          if (!target || target.type !== 'plain_text' || typeof target.text !== 'string' || !target.text) throw new Error('Expected latest Vladimir binding to be plaintext before repair');
+          if (activeBindings.some((b) => b?.name === targetName)) throw new Error('Target binding is already active; refusing automated repair');
+          const expectedText = ['SUPABASE_URL','VISHAR_ENVIRONMENT','WHATSAPP_KRISTINA_ARTIST_ID','WHATSAPP_VLADIMIR_ARTIST_ID'];
+          const textMap = (list) => new Map(list.filter((b) => b?.type === 'plain_text' && expectedText.includes(b.name)).map((b) => [b.name,b.text]));
+          const aText = textMap(activeBindings); const sText = textMap(sourceBindings);
+          for (const name of expectedText) if (!aText.has(name) || !sText.has(name) || aText.get(name) !== sText.get(name)) throw new Error(`Runtime text mismatch: ${name}`);
+          const secretNames = sourceBindings.filter((b) => ['secret_text','secret_key'].includes(b?.type)).map((b) => b.name);
+          for (const required of ['SUPABASE_SECRET_KEY','WHATSAPP_WEBHOOK_VERIFY_TOKEN']) if (!secretNames.includes(required)) throw new Error(`Missing encrypted binding: ${required}`);
+          let parsed; try { parsed = JSON.parse(target.text); } catch { throw new Error('Vladimir binding JSON invalid'); }
+          const keys = Object.keys(parsed || {}).sort();
+          if (JSON.stringify(keys) !== JSON.stringify(['appSecret','phoneNumberId','wabaId'].sort())) throw new Error('Unexpected Vladimir binding fields');
+          if (!/^[0-9]{5,32}$/.test(parsed.phoneNumberId || '') || !/^[0-9]{5,32}$/.test(parsed.wabaId || '')) throw new Error('Provider ids invalid');
+          if (typeof parsed.appSecret !== 'string' || parsed.appSecret.length < 16 || parsed.appSecret.length > 512) throw new Error('App Secret invalid');
+          const insecureIds = [];
+          for (const v of versions) {
+            const detail = (await get(`${api}/versions/${v.id}`)).result;
+            const bindings = Array.isArray(detail?.resources?.bindings) ? detail.resources.bindings : [];
+            const t = bindings.find((b) => b?.name === targetName);
+            if (t?.type === 'plain_text') {
+              if (v.id === activeId) throw new Error('Plaintext target binding is active');
+              insecureIds.push(v.id);
+            }
+          }
+          if (!insecureIds.length) throw new Error('No plaintext Worker version found');
+          fs.writeFileSync(process.env.SECRET_FILE, target.text, { mode: 0o600 });
+          fs.writeFileSync(process.env.STATE_FILE, JSON.stringify({ activeId, insecureIds }), { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `active_id=${activeId}\n`);
+          console.log(`VERSION_COUNT=${versions.length}`);
+          console.log(`INSECURE_VERSION_COUNT=${insecureIds.length}`);
+          console.log('PLAINTEXT_BINDING_STRUCTURE_VALID=true');
+          NODE
+
+      - name: Create encrypted-secret version
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_file="$RUNNER_TEMP/vladimir-binding.txt"
+          [ -s "$secret_file" ]
+          npx wrangler versions secret put "$TARGET_BINDING" --name "$WORKER_NAME" --message 'Convert Vladimir WhatsApp binding to encrypted secret' < "$secret_file" >/dev/null
+          rm -f "$secret_file"
+          echo 'ENCRYPTED_SECRET_VERSION_CREATED=true'
+
+      - name: Verify secure version and purge inactive plaintext versions
+        id: secure
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATE_FILE="$RUNNER_TEMP/vladimir-binding-state.json" GITHUB_OUTPUT="$GITHUB_OUTPUT" node <<'NODE'
+          const fs = require('fs');
+          const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const worker = process.env.WORKER_NAME;
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const targetName = process.env.TARGET_BINDING;
+          const api = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}`;
+          const beta = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/workers/${worker}/versions`;
+          const headers = { Authorization: `Bearer ${token}` };
+          const get = async (url) => { const r = await fetch(url,{headers}); if(!r.ok) throw new Error(`Cloudflare GET failed: ${r.status}`); const d=await r.json(); if(!d.success) throw new Error('Cloudflare response unsuccessful'); return d; };
+          const del = async (url) => { const r = await fetch(url,{method:'DELETE',headers}); if(!r.ok) throw new Error(`Cloudflare DELETE failed: ${r.status}`); const d=await r.json(); if(!d.success) throw new Error('Cloudflare delete unsuccessful'); };
+          const state = JSON.parse(fs.readFileSync(process.env.STATE_FILE,'utf8'));
+          const versionsDoc = await get(`${api}/versions?deployable=true&per_page=100`);
+          const versions = versionsDoc.result?.items || [];
+          if (!versions.length || versions.length >= 100) throw new Error('Unsafe or incomplete post-secret inventory');
+          const secureId = versions[0].id;
+          if (!secureId || state.insecureIds.includes(secureId)) throw new Error('Secure version id invalid');
+          const [secureDoc, activeDoc] = await Promise.all([get(`${api}/versions/${secureId}`), get(`${api}/versions/${state.activeId}`)]);
+          const secure = secureDoc.result; const active = activeDoc.result;
+          if (!secure?.resources?.script?.etag || secure.resources.script.etag !== active?.resources?.script?.etag) throw new Error('Secure version code differs from active code');
+          const bindings = Array.isArray(secure?.resources?.bindings) ? secure.resources.bindings : [];
+          const target = bindings.find((b) => b?.name === targetName);
+          if (!target || !['secret_text','secret_key'].includes(target.type)) throw new Error('Vladimir binding is not encrypted');
+          if (bindings.some((b) => b?.name === targetName && b?.type === 'plain_text')) throw new Error('Secure version still has plaintext target');
+          const secrets = bindings.filter((b) => ['secret_text','secret_key'].includes(b?.type)).map((b) => b.name);
+          for (const required of [targetName,'SUPABASE_SECRET_KEY','WHATSAPP_WEBHOOK_VERIFY_TOKEN']) if (!secrets.includes(required)) throw new Error(`Secure version missing encrypted binding: ${required}`);
+          for (const id of state.insecureIds) {
+            if (id === state.activeId || id === secureId) throw new Error('Refusing unsafe version deletion');
+            await del(`${beta}/${id}`);
+          }
+          const after = await get(`${api}/versions?deployable=true&per_page=100`);
+          const remaining = after.result?.items || [];
+          if (remaining.length >= 100) throw new Error('Post-cleanup inventory may be incomplete');
+          for (const v of remaining) {
+            const detail = (await get(`${api}/versions/${v.id}`)).result;
+            const bs = Array.isArray(detail?.resources?.bindings) ? detail.resources.bindings : [];
+            if (bs.some((b) => b?.name === targetName && b?.type === 'plain_text')) throw new Error('Plaintext Vladimir binding remains in Worker version history');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `secure_id=${secureId}\n`);
+          console.log('SECURE_VERSION_BINDINGS_VERIFIED=true');
+          console.log('PLAINTEXT_VERSIONS_REMOVED=true');
+          NODE
+
+      - name: Promote verified secure version to 100 percent
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler versions deploy "${{ steps.secure.outputs.secure_id }}@100%" --name "$WORKER_NAME" --message 'Activate secured RC25 WhatsApp webhook bindings' -y >/dev/null
+          echo 'SECURE_VERSION_PROMOTED=true'
+
+      - name: Verify active deployment and public fail-closed boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          deployments_file="$RUNNER_TEMP/deployments-after.json"
+          curl --fail --silent --show-error -H "$auth" "$api/deployments" > "$deployments_file"
+          DEPLOYMENTS_FILE="$deployments_file" EXPECTED_VERSION="${{ steps.secure.outputs.secure_id }}" node <<'NODE'
+          const fs=require('fs'); const d=JSON.parse(fs.readFileSync(process.env.DEPLOYMENTS_FILE,'utf8')); const v=d.result?.deployments?.[0]?.versions||[];
+          if(!d.success || v.length!==1 || v[0].version_id!==process.env.EXPECTED_VERSION || Number(v[0].percentage)!==100) throw new Error('Secure version is not active at 100 percent');
+          console.log('SECURE_VERSION_ACTIVE_100_PERCENT=true');
+          NODE
+          base="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 "$WEBHOOK_URL" || true)"
+          wrong="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 "$WEBHOOK_URL?hub.mode=subscribe&hub.verify_token=definitely-wrong-operator-token&hub.challenge=123456" || true)"
+          [ "$base" = '403' ]
+          [ "$wrong" = '403' ]
+          echo "WEBHOOK_HTTP_NO_QUERY=$base"
+          echo "WEBHOOK_HTTP_WRONG_TOKEN=$wrong"
+
+      - name: Safe summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC25 Vladimir WhatsApp binding security repair v3'
+            echo
+            echo "- Exact RC25 ancestor: \`$RELEASE_SHA\`"
+            echo '- Secret values are never printed or written to artifacts'
+            echo '- Only inactive Worker versions containing the Vladimir binding as plain_text may be deleted'
+            echo '- Secure version must preserve the exact active code etag and required runtime bindings'
+            echo '- No database mutation, Meta API call, outbound message, billing action or automatic drain exists in this workflow'
+          } >> "$GITHUB_STEP_SUMMARY"
