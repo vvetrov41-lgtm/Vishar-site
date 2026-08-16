@@ -18,7 +18,7 @@ import {
   monzoDisconnectReturnUrl,
   storeMonzoDisconnectState,
 } from './lib/monzo-disconnect-security.js';
-import { handleMonzoSetup, monzoSetupUrl } from './lib/monzo-setup-flow.js';
+import { handleMonzoSetup } from './lib/monzo-setup-flow.js';
 import {
   artistMonzoConfig,
   assertMonzoAccountConfiguration,
@@ -251,9 +251,8 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
     throw error;
   }
 
-  if (!record.webhookId) return Response.redirect(monzoSetupUrl(env, stored.alias), 302);
   const destination = new URL(monzoCrmReturnUrl(env));
-  destination.searchParams.set('monzo', 'connected');
+  destination.searchParams.set('monzo', record.webhookId ? 'connected' : 'authorized');
   destination.searchParams.set('artist', stored.alias);
   return Response.redirect(destination.toString(), 302);
 }
