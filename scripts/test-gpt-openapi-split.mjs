@@ -30,6 +30,28 @@ for (const [name, schema] of [['core', core], ['operations', operations]]) {
   assert.doesNotMatch(schema, /gpt-actions-staging|gwaliusblwrzisrwnsvs/);
   assert.doesNotMatch(schema, /\bartist_id\b|oauth_client_id|integration_key|service_role|SUPABASE_SECRET_KEY|sb_secret_|storage_path|sha256|signed_url/i,
     `${name} schema must not expose routing, credentials or private Storage internals`);
+  assert.doesNotMatch(
+    schema,
+    /schema:\s*\{type: object, additionalProperties: false\}\}/,
+    `${name} ChatGPT-import schema must not contain an object request schema without properties`,
+  );
+}
+
+const noPayloadOperations = [
+  'completeFollowUp',
+  'cancelFollowUp',
+  'cancelAvailability',
+  'cancelPaymentRequest',
+  'ensureWhatsAppConversation',
+  'approveEmailDraft',
+];
+for (const operationId of noPayloadOperations) {
+  const schema = coreIds.includes(operationId) ? core : operations;
+  assert.match(
+    schema,
+    new RegExp(`operationId: ${operationId}[\\s\\S]{0,500}?properties: \\{\\}`),
+    `${operationId} must expose explicit empty properties for ChatGPT schema compatibility`,
+  );
 }
 
 assert.ok(coreIds.includes('listEnquiries'));
@@ -40,4 +62,4 @@ assert.ok(operationIdsSplit.includes('recordManualPayment'));
 assert.ok(operationIdsSplit.includes('sendWhatsAppMessage'));
 assert.ok(operationIdsSplit.includes('approveEmailDraft'));
 
-console.log('GPT OpenAPI split tests passed: 26 core + 26 operations, exact 52-operation coverage.');
+console.log('GPT OpenAPI split tests passed: 26 core + 26 operations, exact 52-operation coverage and ChatGPT-compatible object schemas.');
