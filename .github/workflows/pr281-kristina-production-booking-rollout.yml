@@ -155,10 +155,11 @@ jobs:
               echo 'Configured GitHub Supabase key was rejected; retrieving a backend secret through the masked Management API handoff.'
               umask 077
               key_file="$RUNNER_TEMP/supabase-api-keys-recovery.json"
-              curl --fail-with-body --silent --show-error \
+              key_status="$(curl --silent --show-error --output "$key_file" --write-out '%{http_code}' \
                 -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-                "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true" > "$key_file"
-              secret_key="$(jq -er '
+                "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true")"
+              echo "Supabase key inventory HTTP status: $key_status"
+              secret_key="$(if [ "$key_status" = '200' ]; then jq -er '
                 [.[]?
                   | select((.disabled // false) == false)
                   | select(.type == "secret")
@@ -166,7 +167,7 @@ jobs:
                   | select(type == "string" and startswith("sb_secret_"))]
                 | unique
                 | if length == 1 then .[0] else "" end
-              ' "$key_file")"
+              ' "$key_file"; else printf ''; fi)"
               if [ -z "$secret_key" ]; then
                 curl --fail-with-body --silent --show-error \
                   -X POST \
