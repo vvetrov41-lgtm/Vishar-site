@@ -79,6 +79,31 @@ Calendar-related implementation is spread across SQL, the canonical Worker, a de
 
 Do not infer a complete Calendar flow from one Worker file. Versioning, lease ownership, retry/dead-letter behavior, token custody, and provider calls cross several layers.
 
+## Monzo deposits and the Monzo connector
+
+Two separate responsibilities live under the same provider name. Do not conflate them.
+
+Deposit request and payment link — server-owned, independent of the Monzo Developer API:
+
+- `supabase/migrations/0042_monzo_easy_bank_transfer_deposits.sql`
+- `supabase/migrations/0043_monzo_reconciliation_guard.sql`
+- `supabase/migrations/0044_monzo_payment_url_validator.sql`
+- `supabase/migrations/0057_monzo_duration_tiered_deposits.sql`
+- `admin/src/lib/payment-api.ts`, `admin/src/pages/PaymentsPage.tsx`
+
+The amount is resolved by `crm_private.resolve_session_deposit_tier` from `sessions.start_at`/`end_at`. Neither `public.request_session_deposit` nor `public.gpt_request_session_deposit` accepts an amount, so browser and GPT callers cannot propose one. A trigger enforces the same amount on the lower-level `create_payment_request` path.
+
+OAuth, account, webhook and reconciliation observation — the connector Worker:
+
+- `workers/monzo-api-gateway.js` (deployed entrypoint; carries the webhook rate limiter)
+- `workers/monzo-api.js` (router and handlers)
+- `workers/lib/monzo-api-client.js`, `monzo-oauth-security.js`, `monzo-token-store.js`
+- `workers/lib/monzo-setup-flow.js`, `monzo-disconnect-security.js`
+- `wrangler.monzo-api.toml` (dormant template), `wrangler.monzo-api.production.toml`
+- `docs/crm/monzo-production-runbook.md`
+
+Monzo does not sign webhooks. Never treat a webhook payload as evidence of payment; the transaction is refetched server-side and proven against the selected account. Deploying `workers/monzo-api.js` directly would bypass the rate limiter — the gateway is the entrypoint.
+
 ## GPT / agent-facing appointment actions
 
 Search:
