@@ -1,4 +1,4 @@
-const APP_ID = '1481226093843982';
+const APP_ID = '894809783179152';
 const GRAPH_VERSION = 'v25.0';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
