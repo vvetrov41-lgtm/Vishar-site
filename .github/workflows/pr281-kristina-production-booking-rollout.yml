@@ -173,7 +173,7 @@ jobs:
                   -X POST \
                   -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
                   -H 'Content-Type: application/json' \
-                  --data '{"type":"secret","name":"tattooai-production"}' \
+                  --data '{"type":"secret","name":"tattooai_production"}' \
                   "https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/api-keys?reveal=true")"
                 echo "Supabase secret creation HTTP status: $create_status"
                 [ "$create_status" = '201' ] || {
