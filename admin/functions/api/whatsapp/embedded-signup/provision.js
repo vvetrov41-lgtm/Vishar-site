@@ -107,7 +107,7 @@ async function exchangeCode(code, appSecret) {
   return token;
 }
 
-async function verifyMetaSelection(accessToken, wabaId, phoneNumberId) {
+async function verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId) {
   const wabaUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}`);
   wabaUrl.searchParams.set('fields', 'id,name');
   const waba = await graph(wabaUrl.toString(), {
@@ -120,12 +120,22 @@ async function verifyMetaSelection(accessToken, wabaId, phoneNumberId) {
   const phones = await graph(phonesUrl.toString(), {
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
   });
-  const selected = Array.isArray(phones.data)
-    ? phones.data.find((item) => String(item?.id || '') === phoneNumberId)
-    : null;
-  if (!selected) throw Object.assign(new Error('meta_phone_not_in_waba'), { status: 409 });
+  const available = Array.isArray(phones.data)
+    ? phones.data.filter((item) => PROVIDER_ID.test(String(item?.id || '')))
+    : [];
+
+  let selected = null;
+  if (requestedPhoneNumberId) {
+    selected = available.find((item) => String(item.id) === requestedPhoneNumberId) || null;
+    if (!selected) throw Object.assign(new Error('meta_phone_not_in_waba'), { status: 409 });
+  } else {
+    if (available.length === 0) throw Object.assign(new Error('meta_phone_not_found'), { status: 409 });
+    if (available.length !== 1) throw Object.assign(new Error('meta_phone_selection_ambiguous'), { status: 409 });
+    [selected] = available;
+  }
 
   return {
+    phoneNumberId: String(selected.id),
     wabaName: typeof waba.name === 'string' ? waba.name : null,
     displayPhoneNumber: typeof selected.display_phone_number === 'string' ? selected.display_phone_number : null,
     verifiedName: typeof selected.verified_name === 'string' ? selected.verified_name : null,
@@ -196,14 +206,19 @@ export async function onRequestPost(context) {
     if (artistId !== VLADIMIR_ARTIST_ID || integrationKey !== INTEGRATION_KEY) {
       return json({ ok: false, error: 'artist_scope_not_allowed' }, 403);
     }
-    if (code.length < 10 || code.length > 2048 || !PROVIDER_ID.test(wabaId) || !PROVIDER_ID.test(phoneNumberId)) {
+    if (
+      code.length < 10
+      || code.length > 2048
+      || !PROVIDER_ID.test(wabaId)
+      || (phoneNumberId && !PROVIDER_ID.test(phoneNumberId))
+    ) {
       return json({ ok: false, error: 'invalid_signup_session' }, 400);
     }
 
     const accessToken = await exchangeCode(code, env.META_APP_SECRET);
-    const safeMeta = await verifyMetaSelection(accessToken, wabaId, phoneNumberId);
+    const safeMeta = await verifyMetaSelection(accessToken, wabaId, phoneNumberId || null);
     const envelope = JSON.stringify({
-      phoneNumberId,
+      phoneNumberId: safeMeta.phoneNumberId,
       accessToken,
       wabaId,
       appSecret: env.META_APP_SECRET,
