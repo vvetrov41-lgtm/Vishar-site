@@ -80,20 +80,28 @@ export function WhatsAppConnectionsPage() {
     setActionError(null);
     setMetaMessage(null);
     try {
-      const result = await launchWhatsAppEmbeddedSignup();
-      if (!result.authorizationCode) throw new Error('Meta returned no authorization code.');
+      if (!api || !data || data.environment !== 'production') {
+        throw new Error('Production WhatsApp onboarding is unavailable in this CRM environment.');
+      }
+      const artist = data.artists.find((candidate) => candidate.slug === 'vladimir');
+      if (!artist) throw new Error('Vladimir is not available in your current artist scope.');
+
+      const signup = await launchWhatsAppEmbeddedSignup();
+      const provisioned = await api.provisionProductionWhatsApp(artist, supabaseUrl, signup);
+      const identity = [provisioned.verified_name, provisioned.display_phone_number].filter(Boolean).join(' · ');
       setMetaMessage(
         language === 'ru'
-          ? 'Meta onboarding завершён в браузере. Код авторизации не сохранён. Следующий этап - безопасный server-side обмен кода и проверка artist-scoped binding.'
-          : 'Meta onboarding completed in the browser. The authorization code was not persisted. Next: secure server-side code exchange and artist-scoped binding verification.',
+          ? `WhatsApp Владимира подключён${identity ? `: ${identity}` : ''}. Meta account и encrypted Worker binding проверены.`
+          : `Vladimir WhatsApp connected${identity ? `: ${identity}` : ''}. The Meta account and encrypted Worker binding were verified.`,
       );
+      reload();
     } catch (cause) {
       setActionError(
         cause instanceof Error
           ? cause.message
           : language === 'ru'
-            ? 'Не удалось запустить Meta Embedded Signup.'
-            : 'Could not start Meta Embedded Signup.',
+            ? 'Не удалось подключить WhatsApp через Meta.'
+            : 'Could not connect WhatsApp through Meta.',
       );
     } finally {
       setMetaBusy(false);
@@ -120,7 +128,7 @@ export function WhatsAppConnectionsPage() {
         </div>
         <div className="actions">
           <Link to="/integrations/calendar" className="badge">
-            {language === 'ru' ? 'Google Calendar' : 'Google Calendar'}
+            Google Calendar
           </Link>
         </div>
       </div>
@@ -131,24 +139,24 @@ export function WhatsAppConnectionsPage() {
           : `CRM environment: ${data.environment}. Enable a route only after the Meta account and encrypted Worker bindings have been verified separately.`}
       </div>
 
-      {profile?.role === 'owner' ? (
-        <Section title={language === 'ru' ? 'Подключение существующего WhatsApp Business' : 'Connect an existing WhatsApp Business app'}>
+      {profile?.role === 'owner' && data.environment === 'production' ? (
+        <Section title={language === 'ru' ? 'WhatsApp Владимира' : 'Vladimir WhatsApp'}>
           <p>
             {language === 'ru'
-              ? 'Запускает официальный Meta Embedded Signup в режиме WhatsApp Business App onboarding. Номер не выбирается CRM и не мигрируется автоматически.'
-              : 'Launches Meta Embedded Signup in WhatsApp Business App onboarding mode. The CRM does not choose a number or migrate it automatically.'}
+              ? 'Подключает существующий WhatsApp Business через Meta Embedded Signup. CRM принимает только завершённую Meta-сессию Владимира и сохраняет provider credentials только в encrypted Cloudflare Worker bindings.'
+              : 'Connects the existing WhatsApp Business app through Meta Embedded Signup. The CRM accepts only a completed Vladimir Meta session and stores provider credentials only in encrypted Cloudflare Worker bindings.'}
           </p>
           <div className="actions">
             <button type="button" className="primary" disabled={metaBusy} onClick={() => { void startMetaOnboarding(); }}>
               {metaBusy
-                ? (language === 'ru' ? 'Открываю Meta…' : 'Opening Meta…')
-                : (language === 'ru' ? 'Подключить через Meta' : 'Connect with Meta')}
+                ? (language === 'ru' ? 'Подключаю…' : 'Connecting…')
+                : (language === 'ru' ? 'Подключить WhatsApp Владимира' : 'Connect Vladimir WhatsApp')}
             </button>
           </div>
           <p className="notice" style={{ marginTop: 12 }}>
             {language === 'ru'
-              ? 'Доступно только owner. Authorization code остаётся только в памяти браузера и не показывается в интерфейсе или логах.'
-              : 'Owner only. The authorization code remains in browser memory and is never displayed or logged.'}
+              ? 'Доступно только owner. Authorization code остаётся в памяти только до server-side обмена и не показывается в интерфейсе или логах.'
+              : 'Owner only. The authorization code stays in memory only until the server-side exchange and is never displayed or logged.'}
           </p>
           {metaMessage ? <div className="notice" role="status">{metaMessage}</div> : null}
         </Section>
