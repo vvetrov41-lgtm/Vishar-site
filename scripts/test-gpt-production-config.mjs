@@ -59,18 +59,24 @@ assert.match(openapi, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.co
 assert.match(openapi, /tokenUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/token/);
 assert.doesNotMatch(openapi, /gpt-actions-staging|gwaliusblwrzisrwnsvs/);
 assert.doesNotMatch(openapi, /artist_id|service_role|SUPABASE_SECRET_KEY|sb_secret_/);
+assert.doesNotMatch(openapi, /submitted_email|submitted_phone|submitted_instagram|submitted_travelling_from/,
+  'production GPT schema must not expose enquiry contact fields');
 assert.doesNotMatch(openapi, /#\/components\/parameters\//,
   'ChatGPT path parameters must remain inlined in the production schema');
 assert.equal(count(openapi, '- name: appointment_id'), 3,
   'all three appointment path operations must inline appointment_id');
+assert.equal(count(openapi, '- name: enquiry_id'), 1,
+  'enquiry detail path must inline enquiry_id');
 assert.equal(count(openapi, 'x-openai-isConsequential: true'), 3);
-assert.equal(count(openapi, 'x-openai-isConsequential: false'), 4);
+assert.equal(count(openapi, 'x-openai-isConsequential: false'), 6);
 const operationIds = [...openapi.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 assert.deepEqual(operationIds.sort(), [
   'cancelAppointment',
   'checkAppointmentConflicts',
   'getAppointment',
+  'getEnquiry',
   'listAppointments',
+  'listEnquiries',
   'rescheduleAppointment',
   'scheduleAppointment',
   'searchAppointmentClients',
@@ -85,4 +91,4 @@ assert.match(runbook, /fixed Worker callback/i);
 assert.match(runbook, /S256 PKCE/i);
 assert.match(runbook, /There is no GPT action for WhatsApp/);
 
-console.log('GPT production config tests passed: inert tracked config, exact release operators, encrypted S256 PKCE bridge, production-only OAuth edge, inline OpenAPI and separate live binding gate.');
+console.log('GPT production config tests passed: production-only OAuth edge, nine bounded artist-scoped actions and separate enquiry-read capability.');
