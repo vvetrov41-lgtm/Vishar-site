@@ -1,10 +1,10 @@
 -- 045_legacy_gpt_fixture_compat.sql
 --
 -- Tests 050 and 100 predate the private-GPT foundation and intentionally
--- inventory the API surface / integration metadata that existed before
--- migrations 0032-0034. Keep those historical assertions meaningful without
--- weakening production ACLs or changing migration behavior: hide only the new
--- GPT surface for the legacy pgTAP files, then restore and verify it in
+-- inventory the API surface / integration metadata that existed before the GPT
+-- migrations. Keep those historical assertions meaningful without weakening
+-- production ACLs or changing migration behavior: hide only the GPT surface for
+-- the legacy pgTAP files, then restore and verify it in
 -- 1835_gpt_foundation_restore.sql immediately before the dedicated GPT tests.
 
 select no_plan();
@@ -26,6 +26,12 @@ revoke execute on function public.gpt_reschedule_appointment(uuid,uuid,integer,t
 revoke execute on function public.gpt_cancel_appointment(uuid,uuid,integer)
   from authenticated;
 revoke execute on function public.get_gpt_action_consent_summary(text)
+  from authenticated;
+revoke execute on function public.configure_gpt_enquiry_read_access(text,boolean)
+  from authenticated;
+revoke execute on function public.gpt_list_enquiries(timestamptz,timestamptz,public.enquiry_status,integer)
+  from authenticated;
+revoke execute on function public.gpt_get_enquiry(uuid)
   from authenticated;
 
 delete from public.artist_integrations
