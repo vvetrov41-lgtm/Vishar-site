@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const monolith = readFileSync(new URL('../docs/gpt-actions/openapi.production.yaml', import.meta.url), 'utf8');
 const core = readFileSync(new URL('../docs/gpt-actions/openapi.production.core.yaml', import.meta.url), 'utf8');
 const operations = readFileSync(new URL('../docs/gpt-actions/openapi.production.operations.yaml', import.meta.url), 'utf8');
+const wrangler = readFileSync(new URL('../wrangler.gpt-actions.production.toml', import.meta.url), 'utf8');
 
 function operationIds(text) {
   return [...text.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
@@ -26,6 +27,10 @@ assert.match(core, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(operations, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
 assert.doesNotMatch(core, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
 assert.doesNotMatch(operations, /^\s*- url: https:\/\/gpt-actions\.vishartattoo\.com$/m);
+assert.match(wrangler, /pattern = "gpt-actions\.vishartattoo\.com", custom_domain = true/);
+assert.match(wrangler, /pattern = "gpt-operations\.vishartattoo\.com", custom_domain = true/);
+assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 2,
+  'production GPT Worker must expose exactly two custom domains for the two ChatGPT action sets');
 
 for (const [name, schema] of [['core', core], ['operations', operations]]) {
   assert.match(schema, /^openapi: 3\.1\.0$/m, `${name} schema must use OpenAPI 3.1`);
