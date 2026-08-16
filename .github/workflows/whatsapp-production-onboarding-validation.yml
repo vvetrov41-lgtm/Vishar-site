@@ -6,6 +6,7 @@ on:
       - agent/whatsapp-production-onboarding
     paths:
       - .github/workflows/whatsapp-production-onboarding-validation.yml
+      - admin/public/_headers
       - admin/functions/api/whatsapp/embedded-signup/provision.js
       - admin/src/lib/meta-whatsapp-embedded-signup.ts
       - admin/src/lib/whatsapp-connections-api.ts
@@ -16,6 +17,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/whatsapp-production-onboarding-validation.yml
+      - admin/public/_headers
       - admin/functions/api/whatsapp/embedded-signup/provision.js
       - admin/src/lib/meta-whatsapp-embedded-signup.ts
       - admin/src/lib/whatsapp-connections-api.ts
@@ -55,6 +57,19 @@ jobs:
 
       - name: Test production onboarding server boundary
         run: node scripts/test-whatsapp-production-onboarding.mjs
+
+      - name: Verify exact Meta browser CSP surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers=admin/public/_headers
+          grep -Fq "script-src 'self' https://connect.facebook.net" "$headers"
+          grep -Fq 'https://www.facebook.com' "$headers"
+          grep -Fq 'https://web.facebook.com' "$headers"
+          grep -Fq 'https://m.facebook.com' "$headers"
+          grep -Fq 'https://graph.facebook.com' "$headers"
+          grep -Fq 'Cross-Origin-Opener-Policy: same-origin-allow-popups' "$headers"
+          grep -Fq "frame-ancestors 'none'" "$headers"
 
       - name: Bundle Pages Functions
         working-directory: admin
