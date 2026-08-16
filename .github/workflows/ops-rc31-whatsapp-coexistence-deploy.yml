@@ -1,0 +1,162 @@
+name: Ops RC31 WhatsApp coexistence deploy
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc31-whatsapp-coexistence-operator
+    paths:
+      - .github/workflows/ops-rc31-whatsapp-coexistence-deploy.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ops-rc31-whatsapp-coexistence-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      RELEASE_SHA: 3f9b8efed9b938cea23a301ad60c9c7184aafb3a
+      EXPECTED_CURRENT_SHA: c1109f2a38b5c1e57179d03a237d80bacca2027f
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify bounded operator and exact release ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc31-whatsapp-coexistence-operator'
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          unexpected="$(git diff --name-only "$RELEASE_SHA"...HEAD | grep -v '^.github/workflows/ops-rc31-whatsapp-coexistence-deploy.yml$' || true)"
+          test -z "$unexpected" || { echo 'Unexpected non-operator changes.' >&2; exit 1; }
+          test "$CRM_PAGES_PROJECT" = 'vishar-crm-production'
+
+      - name: Verify exact-head CI runs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run in 31970200893 31970200877 31970200874; do
+            payload="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/$run")"
+            RUN_JSON="$payload" EXPECTED_SHA="$RELEASE_SHA" node <<'NODE'
+          const run = JSON.parse(process.env.RUN_JSON || '{}');
+          if (run.head_sha !== process.env.EXPECTED_SHA) throw new Error(`CI run ${run.id} head mismatch`);
+          if (run.status !== 'completed' || run.conclusion !== 'success') throw new Error(`CI run ${run.id} is not successful`);
+          NODE
+          done
+
+      - name: Verify current production Pages state and binding names
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          project="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' "$account/pages/projects/$CRM_PAGES_PROJECT")"
+          PROJECT_JSON="$project" EXPECTED="$EXPECTED_CURRENT_SHA" node <<'NODE'
+          const doc = JSON.parse(process.env.PROJECT_JSON || '{}');
+          if (doc.success !== true) throw new Error('Cloudflare Pages project lookup failed');
+          const result = doc.result || {};
+          const current = result?.latest_deployment?.deployment_trigger?.metadata?.commit_hash || '';
+          if (current !== process.env.EXPECTED) throw new Error(`Production CRM Pages moved unexpectedly: ${current || 'missing'}`);
+          const env = result?.deployment_configs?.production?.env_vars || {};
+          for (const name of ['META_APP_SECRET','SUPABASE_PUBLISHABLE_KEY','CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_WORKERS_EDIT_TOKEN']) {
+            if (!Object.prototype.hasOwnProperty.call(env, name)) throw new Error(`Missing production binding: ${name}`);
+          }
+          console.log(`PAGES_CURRENT_COMMIT=${current}`);
+          console.log(`PAGES_PRODUCTION_ENV_NAMES=${Object.keys(env).sort().join(',')}`);
+          NODE
+
+      - name: Checkout exact coexistence release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Verify coexistence completion fix in source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          grep -Fq "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING" admin/src/lib/meta-whatsapp-embedded-signup.ts
+          grep -Fq "meta_phone_selection_ambiguous" admin/functions/api/whatsapp/embedded-signup/provision.js
+          grep -Fq "META_WHATSAPP_APP_ID = '1481226093843982'" admin/src/lib/meta-whatsapp-embedded-signup.ts
+          grep -Fq "META_WHATSAPP_CONFIG_ID = '4468652066715473'" admin/src/lib/meta-whatsapp-embedded-signup.ts
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Build exact CRM release
+        working-directory: admin
+        run: |
+          npm ci
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Install pinned deployment tooling
+        run: npm ci
+
+      - name: Deploy CRM assets and Pages Functions
+        working-directory: admin
+        run: >-
+          ../node_modules/.bin/wrangler pages deploy dist
+          --project-name "$CRM_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$RELEASE_SHA"
+          --commit-dirty=false
+
+      - name: Verify deployed exact SHA and bindings remain present
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          project="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' "$account/pages/projects/$CRM_PAGES_PROJECT")"
+          PROJECT_JSON="$project" EXPECTED="$RELEASE_SHA" node <<'NODE'
+          const doc = JSON.parse(process.env.PROJECT_JSON || '{}');
+          if (doc.success !== true) throw new Error('Cloudflare Pages project lookup failed');
+          const result = doc.result || {};
+          const current = result?.latest_deployment?.deployment_trigger?.metadata?.commit_hash || '';
+          if (current !== process.env.EXPECTED) throw new Error(`Unexpected deployed SHA: ${current || 'missing'}`);
+          const env = result?.deployment_configs?.production?.env_vars || {};
+          for (const name of ['META_APP_SECRET','SUPABASE_PUBLISHABLE_KEY','CLOUDFLARE_ACCOUNT_ID','CLOUDFLARE_WORKERS_EDIT_TOKEN']) {
+            if (!Object.prototype.hasOwnProperty.call(env, name)) throw new Error(`Missing post-deploy binding: ${name}`);
+          }
+          console.log(`PAGES_DEPLOYED_COMMIT=${current}`);
+          console.log('COEXISTENCE_DEPLOY_READY=true');
+          NODE
+
+      - name: Safety summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC31 WhatsApp coexistence production deploy'
+            echo "- Release SHA: \`$RELEASE_SHA\`"
+            echo '- Accepts Meta WhatsApp Business App coexistence completion event'
+            echo '- Missing phone ID resolves server-side only when the WABA has exactly one phone'
+            echo '- Multiple phones fail closed before Worker binding writes'
+            echo '- WhatsApp drain activation: unchanged / disabled'
+            echo '- Supabase migrations: none'
+            echo '- Retained staging: untouched'
+          } >> "$GITHUB_STEP_SUMMARY"
