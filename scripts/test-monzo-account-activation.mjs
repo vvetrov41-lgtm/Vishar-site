@@ -164,7 +164,7 @@ await test('selected account webhook registration is owner-only and stores only 
   assert.deepEqual(body, {
     ok: true,
     artist: 'vladimir',
-    state: 'connected',
+    state: 'webhook_registered',
     account_label: record.accountLabel,
     webhook_registered: true,
     replayed: false,
@@ -172,8 +172,8 @@ await test('selected account webhook registration is owner-only and stores only 
   assert.equal(providerCalls.length, 3);
 
   const saved = await loadMonzoTokenRecord(env, record.artistId);
+  assert.equal(saved.connectionState, 'webhook_registered');
   assert.equal(saved.webhookId, 'webhook_synthetic1');
-  assert.equal(saved.connectionState, 'connected');
   const serialized = JSON.stringify(body);
   assert.ok(!serialized.includes(saved.accessToken));
   assert.ok(!serialized.includes(saved.refreshToken));
