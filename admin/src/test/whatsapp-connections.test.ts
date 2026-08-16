@@ -18,13 +18,18 @@ function clientFor(rows: unknown[] = []) {
   const select = vi.fn((_columns: string) => ({ eq }));
   const from = vi.fn((_table: string) => ({ select }));
   const rpc = vi.fn(async (_name: string, _args?: Record<string, unknown>) => ({ data: { ok: true }, error: null }));
+  const getSession = vi.fn(async () => ({
+    data: { session: { access_token: 'browser-session-access-token-for-test' } },
+    error: null,
+  }));
   return {
-    client: { from, rpc } as unknown as CrmClient,
+    client: { from, rpc, auth: { getSession } } as unknown as CrmClient,
     from,
     select,
     eq,
     order,
     rpc,
+    getSession,
   };
 }
 
@@ -108,12 +113,13 @@ describe('WhatsApp Connections safety', () => {
     );
   });
 
-  it('exposes only fixed metadata operations and no credential-bearing API surface', async () => {
+  it('keeps provider credentials out of database metadata operations', async () => {
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
     expect(Object.keys(api).sort()).toEqual([
       'listWhatsAppIntegrations',
       'prepareWhatsAppIntegration',
+      'provisionProductionWhatsApp',
       'setWhatsAppIntegrationEnabled',
     ].sort());
 
@@ -130,5 +136,43 @@ describe('WhatsApp Connections safety', () => {
     for (const forbidden of ['token', 'secret', 'waba', 'phone', 'destination', 'credential']) {
       expect(Object.keys(args).some((key) => key.toLowerCase().includes(forbidden))).toBe(false);
     }
+  });
+
+  it('posts a completed Vladimir signup only to the same-origin production provision endpoint', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      ok: true,
+      integration_key: 'vladimir-production',
+      waba_name: 'Business account',
+      display_phone_number: '+44 7000 000000',
+      verified_name: 'Vladimir',
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await expect(api.provisionProductionWhatsApp(
+      VLADIMIR,
+      'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+      {
+        authorizationCode: 'one-time-code-for-test',
+        wabaId: '12345678901',
+        phoneNumberId: '10987654321',
+        event: 'FINISH',
+      },
+    )).resolves.toMatchObject({ ok: true, integration_key: 'vladimir-production' });
+
+    expect(mocks.getSession).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/whatsapp/embedded-signup/provision');
+    expect(init?.method).toBe('POST');
+    expect(init?.credentials).toBe('same-origin');
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual({
+      artist_id: VLADIMIR.id,
+      integration_key: 'vladimir-production',
+      code: 'one-time-code-for-test',
+      session: { waba_id: '12345678901', phone_number_id: '10987654321' },
+    });
+    fetchMock.mockRestore();
   });
 });
