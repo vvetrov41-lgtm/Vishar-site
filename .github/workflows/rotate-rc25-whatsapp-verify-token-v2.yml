@@ -1,0 +1,201 @@
+name: Rotate RC25 WhatsApp webhook verify token v2
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc25-whatsapp-webhook-operator
+    paths:
+      - .github/workflows/rotate-rc25-whatsapp-verify-token-v2.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rotate-rc25-whatsapp-verify-token
+  cancel-in-progress: true
+
+jobs:
+  rotate:
+    name: Rotate compromised handshake token and promote secret-only version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crm-production
+    env:
+      RELEASE_SHA: 2729bf08ed206a0d6d42f6d055ded8489d0858e4
+      WORKER_NAME: vishar-whatsapp-webhook-production
+      WEBHOOK_URL: https://whatsapp.vishartattoo.com/webhook
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact RC25 ancestry and operator-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          unexpected="$(git diff --name-only "$RELEASE_SHA"...HEAD | grep -vE '^\.github/workflows/(bootstrap-rc25-whatsapp-webhook|inspect-rc25-whatsapp-production|verify-rc25-whatsapp-public|diagnose-rc25-whatsapp-secret|provision-rc25-whatsapp-supabase-secret|promote-rc25-whatsapp-secret-version|promote-rc25-whatsapp-secret-version-v2|secure-rc25-vladimir-whatsapp-binding|secure-rc25-vladimir-whatsapp-binding-v3|secure-rc25-vladimir-whatsapp-binding-v4|rotate-rc25-whatsapp-verify-token|rotate-rc25-whatsapp-verify-token-v2)\.yml$' || true)"
+          [ -z "$unexpected" ] || { echo 'Unexpected non-operator changes.' >&2; exit 1; }
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify active Worker is latest and securely bound
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const worker = process.env.WORKER_NAME;
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const api = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}`;
+          const headers = { Authorization: `Bearer ${token}` };
+          const get = async (url) => {
+            const r = await fetch(url, { headers });
+            if (!r.ok) throw new Error(`Cloudflare GET failed: ${r.status}`);
+            const doc = await r.json();
+            if (!doc.success) throw new Error('Cloudflare response unsuccessful');
+            return doc;
+          };
+          const [versionsDoc, deploymentsDoc] = await Promise.all([
+            get(`${api}/versions?deployable=true&per_page=100`),
+            get(`${api}/deployments`),
+          ]);
+          const versions = Array.isArray(versionsDoc.result?.items) ? versionsDoc.result.items : [];
+          const deployed = deploymentsDoc.result?.deployments?.[0]?.versions || [];
+          if (!versions.length || versions.length >= 100) throw new Error('Unsafe version inventory');
+          if (deployed.length !== 1 || Number(deployed[0].percentage) !== 100) throw new Error('Expected one active version at 100 percent');
+          const activeId = deployed[0].version_id;
+          if (!activeId || versions[0].id !== activeId) throw new Error('Latest Worker version must be active before rotation');
+          const active = (await get(`${api}/versions/${activeId}`)).result;
+          const bindings = Array.isArray(active?.resources?.bindings) ? active.resources.bindings : [];
+          const secretNames = bindings.filter((b) => ['secret_text','secret_key'].includes(b?.type)).map((b) => b.name);
+          for (const required of ['ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION','SUPABASE_SECRET_KEY','WHATSAPP_WEBHOOK_VERIFY_TOKEN']) if (!secretNames.includes(required)) throw new Error(`Missing encrypted binding: ${required}`);
+          if (bindings.some((b) => b?.name === 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION' && b?.type === 'plain_text')) throw new Error('Vladimir binding is plaintext');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `active_id=${activeId}\n`);
+          console.log('PRE_ROTATION_WORKER_STATE_VALID=true');
+          NODE
+
+      - name: Generate random verify token and create encrypted-secret version
+        shell: bash
+        run: |
+          set -euo pipefail
+          token_file="$RUNNER_TEMP/whatsapp-verify-token.txt"
+          umask 077
+          openssl rand -hex 32 > "$token_file"
+          [ "$(wc -c < "$token_file" | tr -d ' ')" -eq 65 ]
+          npx wrangler versions secret put WHATSAPP_WEBHOOK_VERIFY_TOKEN --name "$WORKER_NAME" --env="" --message 'Rotate production WhatsApp webhook verify token' < "$token_file" >/dev/null
+          echo 'VERIFY_TOKEN_SECRET_VERSION_CREATED=true'
+
+      - name: Verify secret-only delta and promote it
+        id: promote
+        shell: bash
+        env:
+          PREVIOUS_ACTIVE_ID: ${{ steps.preflight.outputs.active_id }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const worker = process.env.WORKER_NAME;
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const previousId = process.env.PREVIOUS_ACTIVE_ID;
+          const api = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}`;
+          const headers = { Authorization: `Bearer ${token}` };
+          const get = async (url) => {
+            const r = await fetch(url, { headers });
+            if (!r.ok) throw new Error(`Cloudflare GET failed: ${r.status}`);
+            const doc = await r.json();
+            if (!doc.success) throw new Error('Cloudflare response unsuccessful');
+            return doc;
+          };
+          const versionsDoc = await get(`${api}/versions?deployable=true&per_page=100`);
+          const versions = Array.isArray(versionsDoc.result?.items) ? versionsDoc.result.items : [];
+          if (!versions.length || versions.length >= 100) throw new Error('Unsafe post-rotation version inventory');
+          const newId = versions[0].id;
+          if (!newId || newId === previousId) throw new Error('No new version created');
+          const [beforeDoc, afterDoc] = await Promise.all([get(`${api}/versions/${previousId}`), get(`${api}/versions/${newId}`)]);
+          const before = beforeDoc.result;
+          const after = afterDoc.result;
+          if (!before?.resources?.script?.etag || before.resources.script.etag !== after?.resources?.script?.etag) throw new Error('Rotation changed Worker code');
+          const expectedText = ['SUPABASE_URL','VISHAR_ENVIRONMENT','WHATSAPP_KRISTINA_ARTIST_ID','WHATSAPP_VLADIMIR_ARTIST_ID'];
+          const textMap = (list) => new Map((list || []).filter((b) => b?.type === 'plain_text' && expectedText.includes(b.name)).map((b) => [b.name,b.text]));
+          const beforeBindings = Array.isArray(before?.resources?.bindings) ? before.resources.bindings : [];
+          const afterBindings = Array.isArray(after?.resources?.bindings) ? after.resources.bindings : [];
+          const a = textMap(beforeBindings); const b = textMap(afterBindings);
+          for (const name of expectedText) if (!a.has(name) || !b.has(name) || a.get(name) !== b.get(name)) throw new Error(`Runtime text changed: ${name}`);
+          const secrets = afterBindings.filter((x) => ['secret_text','secret_key'].includes(x?.type)).map((x) => x.name);
+          for (const required of ['ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION','SUPABASE_SECRET_KEY','WHATSAPP_WEBHOOK_VERIFY_TOKEN']) if (!secrets.includes(required)) throw new Error(`Missing rotated encrypted binding: ${required}`);
+          if (afterBindings.some((x) => x?.name === 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION' && x?.type === 'plain_text')) throw new Error('Rotated version contains plaintext Vladimir binding');
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/rotated-version-id.txt`, newId, { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `new_id=${newId}\n`);
+          console.log('VERIFY_TOKEN_ROTATION_IS_SECRET_ONLY=true');
+          NODE
+          new_id="$(cat "$RUNNER_TEMP/rotated-version-id.txt")"
+          [ -n "$new_id" ]
+          npx wrangler versions deploy "$new_id@100%" --name "$WORKER_NAME" --env="" --message 'Activate rotated production WhatsApp verify token' -y >/dev/null
+          echo 'ROTATED_VERSION_PROMOTED=true'
+
+      - name: Verify active version and handshake boundaries
+        shell: bash
+        env:
+          EXPECTED_NEW_ID: ${{ steps.promote.outputs.new_id }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const worker = process.env.WORKER_NAME;
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const expected = process.env.EXPECTED_NEW_ID;
+          const api = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}`;
+          const r = await fetch(`${api}/deployments`, { headers: { Authorization: `Bearer ${token}` } });
+          if (!r.ok) throw new Error(`Deployment check failed: ${r.status}`);
+          const doc = await r.json();
+          const versions = doc.result?.deployments?.[0]?.versions || [];
+          if (!doc.success || versions.length !== 1 || versions[0].version_id !== expected || Number(versions[0].percentage) !== 100) throw new Error('Rotated version is not active at 100 percent');
+          console.log('ROTATED_VERSION_ACTIVE_100_PERCENT=true');
+          NODE
+          token_file="$RUNNER_TEMP/whatsapp-verify-token.txt"
+          [ -s "$token_file" ]
+          challenge='73482915'
+          ok="$(curl -sS -o "$RUNNER_TEMP/verify-response.txt" -w '%{http_code}' --connect-timeout 10 --max-time 20 --get --data-urlencode 'hub.mode=subscribe' --data-urlencode "hub.verify_token=$(cat "$token_file")" --data-urlencode "hub.challenge=$challenge" "$WEBHOOK_URL")"
+          [ "$ok" = '200' ]
+          [ "$(cat "$RUNNER_TEMP/verify-response.txt")" = "$challenge" ]
+          wrong="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 --get --data-urlencode 'hub.mode=subscribe' --data-urlencode 'hub.verify_token=definitely-wrong-operator-token' --data-urlencode 'hub.challenge=1' "$WEBHOOK_URL" || true)"
+          [ "$wrong" = '403' ]
+          echo 'ROTATED_VERIFY_TOKEN_HANDSHAKE_VALID=true'
+          echo 'WRONG_VERIFY_TOKEN_HTTP=403'
+
+      - name: Cleanup temporary token material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/whatsapp-verify-token.txt" "$RUNNER_TEMP/verify-response.txt" "$RUNNER_TEMP/rotated-version-id.txt"
+
+      - name: Safe summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC25 WhatsApp webhook verify-token rotation v2'
+            echo
+            echo "- Exact RC25 ancestor: \`$RELEASE_SHA\`"
+            echo '- New token is generated only inside the protected runner and never printed or uploaded'
+            echo '- Worker code and non-secret runtime bindings must remain identical'
+            echo '- Vladimir provider binding remains encrypted'
+            echo '- No database mutation, Meta API action, outbound send, drain activation or billing action exists in this workflow'
+          } >> "$GITHUB_STEP_SUMMARY"
