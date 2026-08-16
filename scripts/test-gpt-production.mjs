@@ -146,7 +146,10 @@ let bridgeCode;
 
 {
   assert.ok(capturedVerifier);
-  const tampered = `${bridgeCode.slice(0, -1)}${bridgeCode.endsWith('A') ? 'B' : 'A'}`;
+  const [version, iv, ciphertext] = bridgeCode.split('.');
+  const index = Math.floor(ciphertext.length / 2);
+  const replacement = ciphertext[index] === 'A' ? 'B' : 'A';
+  const tampered = `${version}.${iv}.${ciphertext.slice(0, index)}${replacement}${ciphertext.slice(index + 1)}`;
   const response = await handleOAuthRelay(
     new Request('https://gpt-actions.vishartattoo.com/oauth/token', {
       method: 'POST',
@@ -161,6 +164,7 @@ let bridgeCode;
       }),
     }),
     env,
+    async () => { throw new Error('tampered bridge code must never reach upstream'); },
   );
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'oauth_token_bridge_code_invalid' });
@@ -182,6 +186,7 @@ let bridgeCode;
       }),
     }),
     env,
+    async () => { throw new Error('cross-client bridge code must never reach upstream'); },
   );
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'oauth_token_bridge_code_invalid' });
