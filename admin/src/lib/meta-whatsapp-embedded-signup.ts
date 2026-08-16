@@ -2,9 +2,10 @@ export const META_WHATSAPP_APP_ID = '1481226093843982';
 export const META_WHATSAPP_CONFIG_ID = '4468652066715473';
 
 const FACEBOOK_SDK_URL = 'https://connect.facebook.net/en_US/sdk.js';
-const FACEBOOK_ALLOWED_MESSAGE_ORIGINS = new Set([
+export const FACEBOOK_ALLOWED_MESSAGE_ORIGINS = new Set([
   'https://www.facebook.com',
   'https://web.facebook.com',
+  'https://m.facebook.com',
 ]);
 
 interface FacebookLoginResponse {
@@ -44,12 +45,51 @@ declare global {
 }
 
 export interface WhatsAppEmbeddedSignupResult {
-  authorizationCode: string | null;
+  authorizationCode: string;
+  wabaId: string;
+  phoneNumberId: string;
+  event: 'FINISH';
+}
+
+export interface EmbeddedSignupMessage {
+  event: 'FINISH' | 'CANCEL' | 'ERROR';
   wabaId: string | null;
-  event: string | null;
+  phoneNumberId: string | null;
 }
 
 let sdkPromise: Promise<FacebookSdk> | null = null;
+
+function numericProviderId(value: unknown): string | null {
+  return typeof value === 'string' && /^[0-9]{5,32}$/.test(value.trim()) ? value.trim() : null;
+}
+
+export function parseEmbeddedSignupMessage(origin: string, data: unknown): EmbeddedSignupMessage | null {
+  if (!FACEBOOK_ALLOWED_MESSAGE_ORIGINS.has(origin)) return null;
+
+  let payload = data;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      return null;
+    }
+  }
+  if (!payload || typeof payload !== 'object') return null;
+
+  const record = payload as Record<string, unknown>;
+  if (record.type !== 'WA_EMBEDDED_SIGNUP') return null;
+  if (record.event !== 'FINISH' && record.event !== 'CANCEL' && record.event !== 'ERROR') return null;
+
+  const session = record.data && typeof record.data === 'object'
+    ? record.data as Record<string, unknown>
+    : {};
+
+  return {
+    event: record.event,
+    wabaId: numericProviderId(session.waba_id),
+    phoneNumberId: numericProviderId(session.phone_number_id),
+  };
+}
 
 function loadFacebookSdk(): Promise<FacebookSdk> {
   if (window.FB) return Promise.resolve(window.FB);
@@ -96,8 +136,8 @@ export async function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSi
   const fb = await loadFacebookSdk();
 
   return new Promise((resolve, reject) => {
-    let wabaId: string | null = null;
-    let finishEvent: string | null = null;
+    let authorizationCode: string | null = null;
+    let finishedSession: EmbeddedSignupMessage | null = null;
     let settled = false;
 
     const cleanup = () => {
@@ -105,52 +145,63 @@ export async function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSi
       window.clearTimeout(timeout);
     };
 
-    const maybeResolve = (authorizationCode: string | null) => {
+    const rejectOnce = (error: Error) => {
       if (settled) return;
       settled = true;
       cleanup();
-      resolve({ authorizationCode, wabaId, event: finishEvent });
+      reject(error);
     };
 
-    const onMessage = (event: MessageEvent) => {
-      if (!FACEBOOK_ALLOWED_MESSAGE_ORIGINS.has(event.origin)) return;
-      let payload: unknown = event.data;
-      if (typeof payload === 'string') {
-        try {
-          payload = JSON.parse(payload);
-        } catch {
-          return;
-        }
+    const maybeResolve = () => {
+      if (settled || !authorizationCode || finishedSession?.event !== 'FINISH') return;
+      if (!finishedSession.wabaId || !finishedSession.phoneNumberId) {
+        rejectOnce(new Error('Meta finished onboarding without a complete WhatsApp account session.'));
+        return;
       }
-      if (!payload || typeof payload !== 'object') return;
-      const record = payload as Record<string, unknown>;
-      if (record.type !== 'WA_EMBEDDED_SIGNUP') return;
-      if (typeof record.event === 'string') finishEvent = record.event;
-      const data = record.data;
-      if (data && typeof data === 'object') {
-        const candidate = (data as Record<string, unknown>).waba_id;
-        if (typeof candidate === 'string' && /^\d+$/.test(candidate)) wabaId = candidate;
+      settled = true;
+      cleanup();
+      resolve({
+        authorizationCode,
+        wabaId: finishedSession.wabaId,
+        phoneNumberId: finishedSession.phoneNumberId,
+        event: 'FINISH',
+      });
+    };
+
+    const onMessage = (messageEvent: MessageEvent) => {
+      const parsed = parseEmbeddedSignupMessage(messageEvent.origin, messageEvent.data);
+      if (!parsed) return;
+      if (parsed.event === 'CANCEL') {
+        rejectOnce(new Error('Meta Embedded Signup was cancelled.'));
+        return;
       }
+      if (parsed.event === 'ERROR') {
+        rejectOnce(new Error('Meta reported an Embedded Signup error.'));
+        return;
+      }
+      finishedSession = parsed;
+      maybeResolve();
     };
 
     window.addEventListener('message', onMessage);
     const timeout = window.setTimeout(() => {
-      if (!settled) {
-        cleanup();
-        reject(new Error('Meta Embedded Signup timed out.'));
-      }
+      rejectOnce(new Error('Meta Embedded Signup timed out.'));
     }, 10 * 60 * 1000);
 
     fb.login((response) => {
-      const code = response.authResponse?.code?.trim() || null;
+      const code = response.authResponse?.code?.trim() || '';
       if (!code) {
-        cleanup();
-        reject(new Error(response.status === 'not_authorized' ? 'Meta authorization was not granted.' : 'Meta Embedded Signup was cancelled or returned no authorization code.'));
+        rejectOnce(new Error(
+          response.status === 'not_authorized'
+            ? 'Meta authorization was not granted.'
+            : 'Meta Embedded Signup was cancelled or returned no authorization code.',
+        ));
         return;
       }
-      // The authorization code is intentionally kept only in memory here.
-      // A later backend exchange must use the app secret outside the browser.
-      window.setTimeout(() => maybeResolve(code), 300);
+      // The one-time authorization code remains only in memory until the
+      // authenticated production backend consumes it. It is never logged or displayed.
+      authorizationCode = code;
+      maybeResolve();
     }, {
       config_id: META_WHATSAPP_CONFIG_ID,
       response_type: 'code',
