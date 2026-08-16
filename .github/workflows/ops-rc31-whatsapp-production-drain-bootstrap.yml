@@ -1,0 +1,174 @@
+name: Ops RC31 WhatsApp production drain bootstrap
+
+on:
+  push:
+    branches:
+      - ops/rc31-whatsapp-production-drain-bootstrap
+    paths:
+      - .github/workflows/ops-rc31-whatsapp-production-drain-bootstrap.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-rc31-whatsapp-production-drain-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Bootstrap inert production WhatsApp drain
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      RELEASE_SHA: 75fd09ee8bdbe12dfff2faf6b5fb034b6683e2a0
+      WORKER_NAME: vishar-whatsapp-drain-production
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout operator branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact RC31 ancestry and operator-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          [ "$(git merge-base "$RELEASE_SHA" HEAD)" = "$RELEASE_SHA" ]
+          unexpected="$(git diff --name-only "$RELEASE_SHA"...HEAD | grep -v '^.github/workflows/ops-rc31-whatsapp-production-drain-bootstrap.yml$' || true)"
+          [ -z "$unexpected" ] || { echo 'Unexpected non-operator changes.' >&2; printf '%s\n' "$unexpected" >&2; exit 1; }
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+          grep -Fq 'name = "vishar-whatsapp-drain-production"' wrangler.whatsapp-drain.production.toml
+          grep -Fq 'WHATSAPP_DRAIN_ENABLED = "false"' wrangler.whatsapp-drain.production.toml
+          ! grep -Eq '^\s*\[triggers\]\s*$' wrangler.whatsapp-drain.production.toml
+          ! grep -Eq '^\s*crons\s*=' wrangler.whatsapp-drain.production.toml
+          ! grep -Fq 'gwaliusblwrzisrwnsvs' wrangler.whatsapp-drain.production.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Re-run exact release safety checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm audit --audit-level=moderate
+          node scripts/test-whatsapp-routing.mjs
+          node scripts/test-whatsapp-drain.mjs
+          node scripts/test-whatsapp-drain-worker.mjs
+          npm run test:whatsapp-production
+          npm run check:whatsapp-production-bundle
+          npm run scan:secrets
+
+      - name: Fresh preflight proves production drain Worker is absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME")"
+          [ "$status" = '404' ] || {
+            echo "Refusing bootstrap because production drain Worker already exists (status=$status)." >&2
+            exit 1
+          }
+          echo 'PREFLIGHT_DRAIN_WORKER_ABSENT=true'
+
+      - name: Dry-run exact inert Worker
+        shell: bash
+        run: >-
+          npx wrangler deploy
+          --config wrangler.whatsapp-drain.production.toml
+          --name "$WORKER_NAME"
+          --dry-run
+          --outdir .wrangler/whatsapp-production-bootstrap
+
+      - name: Deploy inert Worker only
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/whatsapp-drain-bootstrap.ndjson"
+          rm -f "$output"
+          WRANGLER_OUTPUT_FILE_PATH="$output" \
+            npx wrangler deploy \
+              --config wrangler.whatsapp-drain.production.toml \
+              --name "$WORKER_NAME" \
+              --strict
+          DEPLOY_OUTPUT="$output" node <<'NODE'
+          const fs = require('fs');
+          const rows = fs.readFileSync(process.env.DEPLOY_OUTPUT, 'utf8')
+            .split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+          const deploys = rows.filter((row) => row?.type === 'deploy' && row?.worker_name === process.env.WORKER_NAME && row?.version_id);
+          if (deploys.length !== 1) throw new Error('Expected exactly one structured inert Worker deploy event');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version_id=${deploys[0].version_id}\n`);
+          console.log(`INERT_WORKER_VERSION=${deploys[0].version_id}`);
+          NODE
+
+      - name: Verify active production Worker remains inert
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.deploy.outputs.version_id }}
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          deployments="$(curl --fail --silent --show-error "${auth[@]}" "$base/deployments")"
+          secrets="$(curl --fail --silent --show-error "${auth[@]}" "$base/secrets")"
+          schedules="$(curl --fail --silent --show-error "${auth[@]}" "$base/schedules")"
+          settings="$(curl --fail --silent --show-error "${auth[@]}" "$base/settings")"
+          domains="$(curl --fail --silent --show-error "${auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains")"
+
+          DEPLOYMENTS="$deployments" SECRETS="$secrets" SCHEDULES="$schedules" SETTINGS="$settings" DOMAINS="$domains" node <<'NODE'
+          const expected = process.env.EXPECTED_VERSION;
+          const deployments = JSON.parse(process.env.DEPLOYMENTS || '{}');
+          const secrets = JSON.parse(process.env.SECRETS || '{}');
+          const schedules = JSON.parse(process.env.SCHEDULES || '{}');
+          const settings = JSON.parse(process.env.SETTINGS || '{}');
+          const domains = JSON.parse(process.env.DOMAINS || '{}');
+
+          const active = deployments?.result?.deployments?.[0]?.versions || deployments?.result?.[0]?.versions || [];
+          if (active.length !== 1 || active[0]?.version_id !== expected || Number(active[0]?.percentage) !== 100) {
+            throw new Error('Inert drain Worker version is not active at 100 percent');
+          }
+          const secretNames = Array.isArray(secrets.result) ? secrets.result.map((row) => row?.name).filter(Boolean).sort() : [];
+          if (secretNames.length !== 0) throw new Error(`Inert Worker unexpectedly has secrets: ${secretNames.join(', ')}`);
+          const scheduleRows = Array.isArray(schedules.result) ? schedules.result : [];
+          if (scheduleRows.length !== 0) throw new Error('Inert Worker unexpectedly has a cron schedule');
+          const bindings = Array.isArray(settings?.result?.bindings) ? settings.result.bindings : [];
+          const enabled = bindings.find((row) => row?.name === 'WHATSAPP_DRAIN_ENABLED');
+          if (!enabled || enabled?.text !== 'false') throw new Error('WHATSAPP_DRAIN_ENABLED is not exactly false');
+          const domainRows = Array.isArray(domains.result) ? domains.result : [];
+          if (domainRows.some((row) => row?.service === process.env.WORKER_NAME)) throw new Error('Inert drain Worker unexpectedly has a Custom Domain');
+          console.log('INERT_SECRET_NAMES=[]');
+          console.log('INERT_SCHEDULES=[]');
+          console.log('INERT_CUSTOM_DOMAINS=[]');
+          console.log('WHATSAPP_DRAIN_ENABLED=false');
+          NODE
+
+      - name: Safe production summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC31 production WhatsApp drain inert bootstrap'
+            echo
+            echo "- Exact release SHA: \`$RELEASE_SHA\`"
+            echo "- Operator SHA: \`$GITHUB_SHA\`"
+            echo '- Worker: `vishar-whatsapp-drain-production`'
+            echo '- Drain enabled: false'
+            echo '- Cron: none'
+            echo '- Public route / Custom Domain: none'
+            echo '- Encrypted secrets: none'
+            echo '- Meta API calls: none'
+            echo '- WhatsApp messages: none'
+            echo '- Database writes/migrations: none'
+            echo '- Retained staging: untouched'
+          } >> "$GITHUB_STEP_SUMMARY"
