@@ -1,10 +1,11 @@
 openapi: 3.1.0
 info:
-  title: Vishar CRM Private Appointment Actions
-  version: 1.0.0-production
+  title: Vishar CRM Private Artist Actions
+  version: 1.1.0-production
   description: >-
-    Private OAuth-authenticated appointment actions for one artist. Artist scope
-    is fixed by the OAuth client and cannot be selected in an API request.
+    Private OAuth-authenticated CRM actions for one artist. Artist scope is fixed
+    by the OAuth client and cannot be selected in an API request. Enquiry reads
+    are separately owner-enabled and deliberately exclude contact details.
 servers:
   - url: https://gpt-actions.vishartattoo.com
     description: Vishar CRM production action edge.
@@ -49,6 +50,83 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /v1/enquiries:
+    get:
+      operationId: listEnquiries
+      summary: List complete enquiries in this GPT's fixed artist scope
+      description: >-
+        Returns only the safe enquiry summary surface. Contact details, source
+        tracking, files, finance and internal notes are not returned.
+      x-openai-isConsequential: false
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/EnquiryStatus'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 25
+            default: 20
+      responses:
+        '200':
+          description: Complete enquiries in the fixed artist scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 25
+                items:
+                  $ref: '#/components/schemas/EnquirySummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/enquiries/{enquiry_id}:
+    get:
+      operationId: getEnquiry
+      summary: Read one complete enquiry in this GPT's fixed artist scope
+      x-openai-isConsequential: false
+      parameters:
+        - name: enquiry_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contact-detail-free enquiry detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnquiryDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /v1/appointments:
     get:
@@ -296,15 +374,9 @@ components:
           scopes:
             email: Authenticate the CRM user. Database access remains controlled by CRM membership and the fixed OAuth client ID.
   schemas:
-    AppointmentType:
+    EnquiryStatus:
       type: string
-      enum: [tattoo_session, in_person_consultation, video_consultation, touch_up]
-    AppointmentStatus:
-      type: string
-      enum: [draft, proposed, confirmed, completed, cancelled, no_show]
-    CalendarSyncStatus:
-      type: string
-      enum: [not_connected, queued, synced, retrying, failed]
+      enum: [new, reviewing, waiting_for_client, accepted, declined, quote_sent, deposit_requested, deposit_paid, converted, closed]
     ClientSearchResult:
       type: object
       additionalProperties: false
@@ -315,6 +387,56 @@ components:
           format: uuid
         client_name:
           type: string
+    EnquirySummary:
+      type: object
+      additionalProperties: false
+      required: [enquiry_id, reference_number, status, client_id, client_name, created_at, last_action_at]
+      properties:
+        enquiry_id:
+          type: string
+          format: uuid
+        reference_number:
+          type: string
+        status:
+          $ref: '#/components/schemas/EnquiryStatus'
+        client_id:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        project_type:
+          type: string
+        placement:
+          type: string
+        preferred_timing:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_action_at:
+          type: string
+          format: date-time
+    EnquiryDetail:
+      allOf:
+        - $ref: '#/components/schemas/EnquirySummary'
+        - type: object
+          additionalProperties: false
+          properties:
+            approximate_size:
+              type: string
+            cover_up:
+              type: string
+            idea:
+              type: string
+    AppointmentType:
+      type: string
+      enum: [tattoo_session, in_person_consultation, video_consultation, touch_up]
+    AppointmentStatus:
+      type: string
+      enum: [draft, proposed, confirmed, completed, cancelled, no_show]
+    CalendarSyncStatus:
+      type: string
+      enum: [not_connected, queued, synced, retrying, failed]
     Appointment:
       type: object
       additionalProperties: false
