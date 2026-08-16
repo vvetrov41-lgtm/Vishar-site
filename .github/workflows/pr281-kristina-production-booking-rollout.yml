@@ -122,13 +122,21 @@ jobs:
                 if type == "array" then .[]
                 elif (.keys? | type) == "array" then .keys[]
                 else empty end;
-              [entries
-                | select(.type == "secret")
+              ([entries
                 | select((.disabled // false) == false)
+                | select(.type == "secret")
                 | .api_key
                 | select(type == "string" and startswith("sb_secret_"))]
-              | unique
-              | if length == 1 then .[0] else error("Expected exactly one enabled Supabase secret API key") end
+                | unique) as $secret_keys
+              | ([entries
+                | select((.disabled // false) == false)
+                | select(.type == "legacy" and .name == "service_role")
+                | .api_key
+                | select(type == "string" and length > 0)]
+                | unique) as $legacy_keys
+              | if ($secret_keys | length) == 1 then $secret_keys[0]
+                elif ($secret_keys | length) == 0 and ($legacy_keys | length) == 1 then $legacy_keys[0]
+                else error("Expected exactly one enabled Supabase server API key") end
             ' "$key_file")"
             echo "::add-mask::$secret_key"
             printf '%s' "$secret_key" | npx wrangler secret put SUPABASE_SECRET_KEY --name "$WORKER_NAME"
