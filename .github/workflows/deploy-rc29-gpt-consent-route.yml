@@ -1,0 +1,157 @@
+name: Deploy RC29 GPT consent route
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc29-gpt-consent-route
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-private-production-crm
+  cancel-in-progress: false
+
+jobs:
+  private-crm-ui:
+    name: RC29 GPT consent route production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      RELEASE_SHA: 91b13992e94baedba3f02daa01da62e1ba6144a7
+      RELEASE_BASE_SHA: d83a9bcd102dc5dc051afed80210524922ce1fb5
+      PRODUCT_BRANCH: agent/gpt-production-consent-route
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+
+    steps:
+      - name: Checkout operator head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact operator and product head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc29-gpt-consent-route'
+          git merge-base --is-ancestor "$RELEASE_SHA" "$GITHUB_SHA"
+          actual="$(git diff --name-only "$RELEASE_SHA"..."$GITHUB_SHA")"
+          test "$actual" = '.github/workflows/deploy-rc29-gpt-consent-route.yml'
+          product_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test -n "$product_sha"
+          test "$product_sha" = "$RELEASE_SHA"
+
+      - name: Verify normal exact-head CI is green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$RELEASE_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha,event}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$workflow" --arg sha "$RELEASE_SHA" 'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - name: Checkout exact validated consent-route head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Verify exact bounded frontend delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test -z "$(git status --short)"
+          actual="$(git diff --name-only "$RELEASE_BASE_SHA" "$RELEASE_SHA" | sort)"
+          expected="$(printf '%s\n' \
+            'admin/src/lib/router.tsx' \
+            'admin/src/test/oauth-consent-route.test.tsx' | sort)"
+          test "$actual" = "$expected"
+          test ! -n "$(git diff --name-only "$RELEASE_BASE_SHA" "$RELEASE_SHA" -- supabase workers public .github package.json package-lock.json)"
+
+      - name: Verify production browser configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$VITE_SUPABASE_URL" in https://*.supabase.co) ;; *) exit 1 ;; esac
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          if [ -n "$VITE_TEAM_INVITE_URL" ]; then
+            case "$VITE_TEAM_INVITE_URL" in https://*.vishartattoo.com/v1/staff/invite) ;; *) exit 1 ;; esac
+          fi
+          test "$VITE_CALENDAR_CONNECTOR_ORIGIN" = 'https://calendar.vishartattoo.com'
+          [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install and audit private CRM dependencies
+        working-directory: admin
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+
+      - name: Revalidate exact private CRM source
+        working-directory: admin
+        run: |
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify private CRM artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
+          grep -R -Fq '/oauth/consent' admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Install locked root deployment tooling
+        run: npm ci
+
+      - name: Scan exact release source for committed secrets
+        run: npm run scan:secrets
+
+      - name: Deploy only admin/dist to production CRM Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx wrangler pages deploy admin/dist
+          --project-name "$CRM_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$RELEASE_SHA"
+          --commit-dirty=false
+
+      - name: Record safe rollout summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC29 GPT consent route rollout'
+            echo
+            echo "- Exact release SHA: \`$RELEASE_SHA\`"
+            echo "- Previous deployed frontend source: \`$RELEASE_BASE_SHA\`"
+            echo '- Release delta: exactly router fix plus focused regression test'
+            echo '- Upload scope: `admin/dist` only'
+            echo '- Database migration commands: none'
+            echo '- Supabase data/auth mutation commands: none'
+            echo '- GPT Actions Worker deploy commands: none'
+            echo '- Public site / booking / Telegram / Calendar / WhatsApp / Monzo deploy commands: none'
+            echo '- Retained staging targeted: no'
+          } >> "$GITHUB_STEP_SUMMARY"
