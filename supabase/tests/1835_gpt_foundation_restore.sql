@@ -1,9 +1,9 @@
 -- 1835_gpt_foundation_restore.sql
 --
--- Restore the exact migration 0032-0034 GPT surface after the legacy pre-GPT
--- compatibility tests. This runs before 184-186, so the dedicated GPT tests
--- exercise the real grants and metadata state rather than the compatibility
--- fixture used by 050/100.
+-- Restore the exact migration-defined GPT surface after the legacy pre-GPT
+-- compatibility tests. This runs before the dedicated GPT tests so they exercise
+-- the real grants and metadata state rather than the compatibility fixture used
+-- by 050/100.
 
 select no_plan();
 
@@ -24,6 +24,12 @@ grant execute on function public.gpt_reschedule_appointment(uuid,uuid,integer,ti
 grant execute on function public.gpt_cancel_appointment(uuid,uuid,integer)
   to authenticated;
 grant execute on function public.get_gpt_action_consent_summary(text)
+  to authenticated;
+grant execute on function public.configure_gpt_enquiry_read_access(text,boolean)
+  to authenticated;
+grant execute on function public.gpt_list_enquiries(timestamptz,timestamptz,public.enquiry_status,integer)
+  to authenticated;
+grant execute on function public.gpt_get_enquiry(uuid)
   to authenticated;
 
 insert into public.artist_integrations (
@@ -61,11 +67,14 @@ select is(
      'public.gpt_schedule_appointment(uuid,uuid,public.appointment_type,timestamptz,timestamptz,public.session_status,uuid,uuid,text)',
      'public.gpt_reschedule_appointment(uuid,uuid,integer,timestamptz,timestamptz)',
      'public.gpt_cancel_appointment(uuid,uuid,integer)',
-     'public.get_gpt_action_consent_summary(text)'
+     'public.get_gpt_action_consent_summary(text)',
+     'public.configure_gpt_enquiry_read_access(text,boolean)',
+     'public.gpt_list_enquiries(timestamptz,timestamptz,public.enquiry_status,integer)',
+     'public.gpt_get_enquiry(uuid)'
    ]::text[]) as signature
    where has_function_privilege('authenticated', signature, 'EXECUTE')),
-  9,
-  'all nine migration-defined authenticated GPT/consent/configuration grants are restored'
+  12,
+  'all twelve migration-defined authenticated GPT/consent/configuration grants are restored'
 );
 
 select is(
