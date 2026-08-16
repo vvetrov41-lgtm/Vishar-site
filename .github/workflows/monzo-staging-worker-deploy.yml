@@ -136,7 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
-          npm run test:monzo-staging
+          node scripts/test-monzo-staging-config.mjs
           npm run validate:monzo-staging
           npm run check:monzo-staging-bundle
           npm run scan:secrets
