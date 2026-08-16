@@ -1,0 +1,50 @@
+name = "vishar-monzo-api-staging"
+main = "workers/monzo-api-gateway.js"
+compatibility_date = "2026-08-01"
+workers_dev = false
+preview_urls = false
+
+[[ratelimits]]
+name = "MONZO_WEBHOOK_RATE_LIMIT"
+namespace_id = "1101"
+simple = { limit = 60, period = 60 }
+
+[vars]
+VISHAR_ENVIRONMENT = "staging"
+MONZO_OAUTH_REDIRECT_URI = "https://monzo-staging.vishartattoo.com/oauth/monzo/callback"
+MONZO_CRM_RETURN_URL = "https://vishar-crm-staging.pages.dev/#/payments"
+MONZO_WEBHOOK_BASE_URL = "https://monzo-staging.vishartattoo.com"
+MONZO_ACCESS_TEAM_DOMAIN = "https://vishar-site-pages.cloudflareaccess.com"
+MONZO_OWNER_EMAILS = "vvetrov41@gmail.com"
+VLADIMIR_ARTIST_ID = "a1111111-1111-4111-8111-111111111111"
+KRISTINA_ARTIST_ID = "a2222222-2222-4222-8222-222222222222"
+SUPABASE_URL = "https://gwaliusblwrzisrwnsvs.supabase.co"
+MONZO_RECONCILIATION_ENABLED = "false"
+
+# Intentionally non-routable and non-deploy-ready.
+#
+# This tracked staging template declares no Custom Domain route, no KV namespace
+# ids and no Cloudflare Access audience. A guarded activation layer must inject
+# only pre-provisioned staging identifiers after exact-head validation. Until
+# then, workers.dev and preview URLs remain disabled and the public reconciliation
+# path remains fail-closed.
+#
+# Required pre-provisioned KV bindings for a future activation:
+#   MONZO_OAUTH_STATE
+#   MONZO_OAUTH_TOKENS
+#   MONZO_WEBHOOK_ROUTES
+#
+# Required protected Worker values, installed outside Git and never printed:
+#   MONZO_OAUTH_CLIENT_ID
+#   MONZO_OAUTH_CLIENT_SECRET
+#   MONZO_TOKEN_ENCRYPTION_KEY   32 random bytes, base64url encoded
+#   SUPABASE_SECRET_KEY          retained staging backend credential
+#
+# Required non-secret activation input:
+#   MONZO_ACCESS_AUD             dedicated Monzo staging Access application AUD
+#
+# Edge policy is also external to this file: the staging hostname must be
+# owner-only behind Cloudflare Access, with only /webhooks/monzo/* covered by a
+# more-specific public Bypass application and the existing WAF/rate protections
+# preserved. Reconciliation must stay false until that boundary and the retained
+# staging candidate-only RPC path are both revalidated.
