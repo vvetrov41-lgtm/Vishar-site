@@ -1,4 +1,4 @@
-import { handleGptActionsRequest } from './lib/gpt-actions.js';
+import { handleGptActionsRequest } from './lib/gpt-actions-combined.js';
 
 const PUBLIC_HEADERS = Object.freeze({
   'cache-control': 'public, max-age=300',
@@ -30,28 +30,28 @@ const PRIVACY_HTML = `<!doctype html>
 <p><strong>Staging notice.</strong> This private integration is being tested with synthetic retained-staging data only. It is not a public booking service and it is not connected to production CRM data.</p>
 
 <h2>What the private GPT can access</h2>
-<p>After an authorised CRM staff member signs in through Supabase OAuth, the action service can access only appointment functions for the single artist permanently bound to that GPT OAuth client. The action API does not accept an artist identifier from ChatGPT.</p>
+<p>After an authorised CRM staff member signs in through Supabase OAuth, the action service can access only the single artist permanently bound to that GPT OAuth client. The action API does not accept an artist identifier from ChatGPT.</p>
 <ul>
-<li>Search existing client names in that artist scope, returning only client ID and name.</li>
-<li>List and read that artist's appointments.</li>
-<li>Check appointment conflicts.</li>
-<li>Create, reschedule or cancel appointments when the signed-in CRM user also has the required permission.</li>
+<li>Read and manage that artist's enquiries, projects, appointments, availability, internal notes and follow-ups when the corresponding capability is enabled.</li>
+<li>Read a specific linked client's contact details when operational CRM management is enabled. Bulk client lists remain minimised.</li>
+<li>Read and manage finance or communications only when those independent owner-controlled capabilities are enabled and the signed-in CRM user also has the required permission.</li>
+<li>Read only safe metadata for private reference files; private Storage paths, checksums and file bytes are not exposed by GPT Actions.</li>
 </ul>
 
 <h2>Data deliberately excluded</h2>
-<p>The GPT action surface does not expose client email addresses, phone numbers, Instagram handles, addresses, finance, payments, arbitrary database queries or service-role credentials. It does not provide an action for sending client messages.</p>
+<p>The GPT action surface does not expose OAuth client secrets, provider credentials, privileged Supabase credentials, arbitrary SQL, generic table access, team-access administration, RLS or Storage policy controls. Private file bytes remain behind the existing CRM Storage boundary.</p>
 
 <h2>Authentication and artist separation</h2>
-<p>Authentication uses the retained-staging Supabase OAuth server. The OAuth access token keeps the signed-in human identity. A separate OAuth client is registered for each private GPT, and its client ID is bound in the CRM database to exactly one artist. Database membership and appointment permissions are checked again for every action.</p>
+<p>Authentication uses Supabase OAuth. The access token keeps the signed-in human identity. A separate OAuth client is registered for each private GPT and bound in the CRM database to exactly one artist. Database membership and operation-specific permissions are checked again for every action.</p>
 
 <h2>Changes made through the GPT</h2>
-<p>Appointment writes use idempotency request IDs. Reschedule and cancellation require the current calendar version to reduce accidental overwrites. AI-assisted mutations are written to the CRM activity log with the authenticated staff identity and fixed artist scope. Calendar synchronisation then follows the same CRM outbox used by human CRM actions.</p>
+<p>Operational mutations use the same audited CRM RPCs as the human interface wherever those workflows already exist. Appointment and availability changes preserve the Calendar outbox/version boundary. Payment and provider-delivery actions preserve their existing idempotency, routing and credential-custody controls.</p>
 
 <h2>Providers</h2>
-<p>OpenAI provides ChatGPT and the private GPT interface. Cloudflare hosts the staging action endpoint. Supabase provides retained-staging authentication and the CRM database. Google Calendar may receive synthetic appointment data through the separately authorised staging calendar integration during testing.</p>
+<p>OpenAI provides ChatGPT and the private GPT interface. Cloudflare hosts the action endpoint. Supabase provides authentication and the CRM database. Other providers such as Google Calendar, email or messaging services are contacted only through separately configured artist integrations and their existing CRM workflows.</p>
 
 <h2>Retention and production boundary</h2>
-<p>Only synthetic staging records may be used during this validation stage. The retained staging environment is not reset as part of normal testing. Production data, production credentials and production endpoints are outside this integration stage.</p>
+<p>Only synthetic staging records may be used during staging validation. Production activation is a separate gated deployment and configuration step.</p>
 
 <h2>Contact</h2>
 <p>Questions about this private integration can be sent to <a href="mailto:info@vishartattoo.com">info@vishartattoo.com</a>.</p>
