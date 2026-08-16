@@ -1,136 +1,179 @@
 # GPT Actions production rollout
 
-This runbook promotes the already-tested private GPT appointment action surface to production without changing the RPC or RLS model introduced by migrations 0032-0034.
+This runbook covers the private artist-bound GPT production edge from OAuth bootstrap through the full operational CRM surface. Production remains separate from retained staging and every production code/migration rollout uses the protected `crm-production` environment.
 
 ## Fixed boundaries
 
 - Production Supabase project: `vfjexhfdbrjmuxfdvbdx`.
 - Production CRM origin: `https://crm.vishartattoo.com`.
 - Production GPT action host: `https://gpt-actions.vishartattoo.com`.
-- Base production GPT branch: `agent/gpt-production-actions`.
-- Current OAuth compatibility branch: `agent/gpt-production-pkce-bridge`.
-- Retained staging is never targeted by this rollout.
-- The Worker carries no Supabase service-role or secret key. It forwards the signed-in user's Supabase OAuth bearer token and only the public project key.
+- OAuth bootstrap branch: `agent/gpt-production-actions`.
+- PKCE compatibility branch: `agent/gpt-production-pkce-bridge`.
+- Enquiry-read branch: `agent/gpt-production-enquiry-reads`.
+- Full management branch: `agent/gpt-full-crm-management`.
+- Retained staging is never targeted by a production rollout.
+- The Worker carries no Supabase service-role or secret key. It forwards the signed-in user's OAuth bearer token plus only the production publishable key.
 - Artist scope is never accepted from ChatGPT. `auth.jwt()->>'client_id'` resolves through `crm_private.gpt_action_clients` to exactly one artist.
-- Client search returns only CRM client ID and name. No phone, email, Instagram, address, finance or arbitrary query surface exists.
-- Appointment create/reschedule/cancel remain consequential actions and use existing idempotency/calendar-version checks.
-- There is no GPT action for WhatsApp, Telegram, email, payments or arbitrary CRM writes.
+- There is no generic SQL, table or arbitrary RPC Action.
+- Team/role administration, OAuth/integration credentials, RLS controls and Storage policies are never GPT Actions.
 
-## Why rollout uses release operator branches
+## OAuth and fixed Worker callback
 
-The protected `crm-production` GitHub environment allows approved release branches and correctly rejects pull-request merge refs. Production workflows therefore run only when a dedicated release operator branch is fast-forwarded to the exact, already-green product head. Each production workflow verifies that its release SHA is byte-for-byte equal to its declared product branch before any production mutation.
-
-No code is merged to `main`, no feature PR is marked Ready, and the operator branch must not carry an extra rollout commit.
-
-## Phase 1: backend bootstrap
-
-1. Exact product head must pass normal `Static Validation` and `CRM and booking validation`.
-2. Fresh-check production DB state and confirm the expected migration/GPT rows.
-3. Create `release/private-crm-rc26-gpt-actions` at the parent RC25 SHA, then fast-forward it to the exact green `agent/gpt-production-actions` head. That push is the bootstrap trigger.
-4. `gpt-production-bootstrap.yml` re-verifies that release SHA equals product head, re-runs focused production GPT tests, audit, bundle check and secret scan.
-5. It enables the production Supabase OAuth server with dynamic registration disabled.
-6. It deploys only `vishar-gpt-actions-production` at `gpt-actions.vishartattoo.com` with OAuth relay enabled and appointment actions disabled.
-7. Expected external state after the phase: `/privacy` = 200, incomplete `/oauth/authorize` = 400, `/v1/appointments` = 404.
-8. No OAuth client is created and no GPT database binding is activated in this phase.
-
-## Phase 2: create two production OAuth clients
-
-Create one confidential Supabase OAuth client for Vladimir's private GPT and one for Kristina's private GPT. Use `authorization_code,refresh_token` and `client_secret_basic`.
-
-The client secret is shown only during OAuth client creation and must be copied directly into that GPT's OAuth configuration. Never put it in GitHub, CRM data, ChatGPT conversation text, logs or documentation.
-
-For each GPT configure:
+Each private GPT has its own confidential Supabase OAuth client with `client_secret_basic`. Configure the GPT with:
 
 - authorization URL: `https://gpt-actions.vishartattoo.com/oauth/authorize`
 - token URL: `https://gpt-actions.vishartattoo.com/oauth/token`
 - scope: `email`
-- token exchange: Basic/client-secret authentication
-- OpenAPI schema: `docs/gpt-actions/openapi.production.yaml`
+- token exchange: Basic authorization header
+- production OpenAPI schema: `docs/gpt-actions/openapi.production.yaml`
 - privacy policy: `https://gpt-actions.vishartattoo.com/privacy`
 
-The callback displayed by the GPT editor is treated as an untrusted-but-validated downstream callback. The Worker accepts only HTTPS callbacks on `chat.openai.com` or `chatgpt.com` with the exact `/aip/<gpt-id>/oauth/callback` shape. It does not use a wildcard redirect at Supabase.
+The callback displayed by the GPT editor is validated on every authorization request. Allowed downstream callbacks are HTTPS `chat.openai.com` or `chatgpt.com` paths with the exact `/aip/<gpt-id>/oauth/callback` shape.
 
-Supabase receives one fixed Worker callback instead:
+Supabase receives only the fixed Worker callback:
 
 `https://gpt-actions.vishartattoo.com/oauth/callback`
 
-Register that exact fixed Worker callback on each production OAuth client. This decouples Supabase's exact redirect registration from GPT editor callback changes while preserving an exact upstream redirect URI.
+The fixed Worker callback must be registered on each production OAuth client. A later GPT-editor callback change therefore does not require changing the Supabase redirect URI.
 
-## Phase 3: bind the non-secret client IDs
+The client secret is shown only during OAuth client creation/rotation and must be copied directly into the GPT editor. Never place it in GitHub, CRM data, logs, documentation or chat messages.
 
-After the two OAuth clients exist, bind only their non-secret client IDs to the existing production rows:
+## S256 PKCE bridge
 
-- `vladimir-gpt-actions` -> Vladimir production OAuth client ID
-- `kristina-gpt-actions` -> Kristina production OAuth client ID
+Supabase OAuth 2.1 requires Authorization Code with S256 PKCE. Custom GPT authorization traffic observed during rollout did not supply a PKCE challenge, so the production Worker bridges the protocols without disabling PKCE.
 
-Use the existing owner-only `configure_gpt_action_client(...)` path. Both rows must be active, readable and manageable. Do not store or pass client secrets to this RPC.
+1. ChatGPT calls `/oauth/authorize` with Client ID, callback and `state`.
+2. The Worker validates the callback, generates a random verifier and S256 challenge, substitutes the fixed Worker callback and sends the request to Supabase.
+3. GPT callback, original state, client ID, verifier and short expiry are held only inside AES-GCM authenticated encrypted bridge state.
+4. Supabase returns the authorization code to the fixed Worker callback.
+5. The Worker returns an opaque encrypted bridge code to the validated GPT callback.
+6. ChatGPT exchanges that bridge code at `/oauth/token` using the confidential Client ID/Secret.
+7. The Worker restores the Supabase authorization code and PKCE verifier and performs the upstream token exchange.
+8. The Supabase code/verifier are never exposed to ChatGPT in plaintext, and the Worker never stores the OAuth client secret.
 
-Verify directly in production that there are exactly two active GPT client rows, both have non-null distinct OAuth client IDs, and no retained-staging OAuth client ID is reused.
+The bridge secret is a Cloudflare Worker secret named `GPT_OAUTH_BRIDGE_SECRET`. It must not exist in tracked configuration, Supabase or CRM tables.
 
-## Phase 4: enable the action edge
+Historical PKCE production operator: `release/private-crm-rc28-gpt-pkce-bridge`.
 
-Immediately before activation, perform a **fresh live Supabase check** of the production project. Confirm that both production GPT rows are active, both have distinct non-null OAuth client IDs, and neither client ID matches retained staging. CI deliberately does not mutate or manufacture this state.
+## Artist binding
 
-The original action-edge activation used `release/private-crm-rc27-gpt-actions-enable` at the exact green `agent/gpt-production-actions` head.
+Bind only the non-secret OAuth Client ID through the owner-only `configure_gpt_action_client(...)` RPC.
 
-Expected unauthenticated state after activation:
+Required production rows:
 
-- `/privacy` = 200
-- incomplete `/oauth/authorize` = 400
-- `/v1/appointments` without OAuth bearer = 401
+- `vladimir-gpt-actions` -> Vladimir production OAuth client
+- `kristina-gpt-actions` -> Kristina production OAuth client
 
-A 200 from an action endpoint without an OAuth token is a release blocker.
+Both clients must be distinct, confidential, non-deleted and must not reuse a retained-staging OAuth Client ID.
 
-## Phase 5: production smoke test
+Immediately before every activation or expansion, perform a **fresh live Supabase check** of the production project rather than trusting a handoff SHA or prior database snapshot.
 
-Use the two private GPTs separately. For each artist:
+## Capability model
 
-1. complete OAuth sign-in as an authorised production CRM user;
-2. search a known client by name;
-3. list a bounded appointment window;
-4. read one appointment;
-5. check a non-mutating conflict window first;
-6. perform an appointment mutation only when it is valid production work, then verify the CRM activity event and Calendar outbox result;
-7. prove the other artist's records are not visible.
+Capabilities are database-controlled and are independent of what the OpenAPI schema advertises. A route can exist publicly while the database still denies it for an artist/client.
 
-Do not create synthetic production client records just for this test. Use existing legitimate production records and avoid mutations unless there is a real intended appointment change.
+Existing appointment controls remain:
 
-## Phase 6: Custom GPT to Supabase S256 PKCE bridge
+- `can_read_appointments`
+- `can_manage_appointments`
 
-Supabase OAuth 2.1 requires Authorization Code with S256 PKCE. The observed Custom GPT authorization request does not supply `code_challenge` or `code_challenge_method`, so the production Worker must bridge the two protocols without disabling Supabase PKCE.
+Enquiry summary/detail reads use:
 
-The bridge has these properties:
+- `can_read_enquiries`
 
-1. ChatGPT sends its normal confidential-client authorization request to `/oauth/authorize` with Client ID, exact GPT callback and `state`.
-2. The Worker validates the GPT callback, generates a random PKCE verifier, derives an S256 challenge, replaces the upstream redirect URI with the fixed Worker callback, and sends the S256 request to Supabase.
-3. The original GPT callback, state, client ID, verifier and short expiry are carried only inside an AES-GCM authenticated encrypted bridge state.
-4. Supabase redirects its authorization code to the fixed Worker callback. The Worker converts that upstream code into a second encrypted short-lived bridge code and redirects the browser to the original validated GPT callback with the original `state`.
-5. ChatGPT posts that opaque bridge code to `/oauth/token` using the existing confidential Client ID/Secret authentication.
-6. The Worker verifies the Basic-auth Client ID against the encrypted bridge payload, restores the Supabase authorization code, fixed Worker callback and PKCE verifier, then performs the Supabase token exchange.
-7. The Supabase authorization code and PKCE verifier are never exposed to ChatGPT in plaintext. The client secret is never stored by the Worker and is forwarded only in the token endpoint Authorization header.
-8. Refresh-token requests continue to use the same confidential Client ID/Secret authentication and are forwarded to Supabase without changing artist scope.
+Full management adds three default-off controls:
 
-The AES-GCM bridge secret is generated by the protected production workflow and stored only as the Cloudflare Worker secret `GPT_OAUTH_BRIDGE_SECRET`. It must not exist in tracked Wrangler config, GitHub files, Supabase, CRM tables, logs or GPT settings.
+- `can_manage_crm`
+- `can_manage_finance`
+- `can_manage_communications`
 
-Before deploying the bridge:
+Only the owner can change these through `configure_gpt_full_management(...)`. Capability changes are written to `activity_log` as `gpt.client_configured`.
 
-1. append the exact fixed Worker callback to both production Supabase OAuth clients;
-2. leave both existing production OAuth client IDs and secrets unchanged;
-3. leave the database artist bindings unchanged;
-4. verify retained staging is not targeted;
-5. require normal CI and secret scan green on the exact bridge head.
+`can_manage_crm` covers daily artist operations such as specific-client detail/update, full enquiry detail/update/status/assignment/conversion, projects, internal notes, follow-ups and full appointment/availability operations. It does not grant team/security administration.
 
-Deploy only from `release/private-crm-rc28-gpt-pkce-bridge`, which must point exactly to the green `agent/gpt-production-pkce-bridge` head. The protected `crm-production` gate remains mandatory.
+`can_manage_finance` additionally requires the signed-in human user to have the existing artist `manage_finance` permission. It covers project estimates/deposits, payment-request reads, requesting the configured session deposit, cancelling a payment request and recording an explicitly confirmed manual payment.
 
-After deployment, retry OAuth from a new GPT chat. A changed GPT callback does not require another Supabase redirect update as long as it remains a valid HTTPS ChatGPT `/aip/<gpt-id>/oauth/callback` URL. The Worker validates the downstream callback on every authorization request, while Supabase sees only the fixed Worker callback.
+`can_manage_communications` covers artist-scoped email/WhatsApp history and bounded outbound workflows. Existing provider integration state, credential custody, routing and human CRM permissions remain authoritative. Enabling this flag does not manufacture a provider connection or credential.
 
-## Rollback
+## PII and private files
 
-Least destructive containment order:
+Bulk client/enquiry lists remain minimised. A single specific linked client or full enquiry detail may return canonical CRM contact fields needed for operational work, including email, phone, Instagram, preferred contact method and travelling-from information.
 
-1. set `GPT_ACTIONS_ENABLED=false` on the production Worker while leaving the privacy route available;
-2. if OAuth must also be closed, set `GPT_OAUTH_RELAY_ENABLED=false`;
-3. deactivate the affected `crm_private.gpt_action_clients` row through the existing owner configuration path;
-4. revoke/delete the affected Supabase OAuth client if its credential is suspected compromised.
+Raw duplicate intake snapshots are not part of the GPT contract. Shared cross-artist client updates fail closed and must be performed in the human CRM UI.
 
-Do not weaken RPC ACLs, RLS, artist membership checks, Supabase PKCE or Calendar protections as a rollback shortcut.
+Private file Actions return only metadata such as file ID, filename, category, MIME type, size and upload state. They do not expose Storage paths, checksums, signed URLs or file bytes.
+
+## Consequential actions
+
+Every write, provider-send or financial mutation is marked `x-openai-isConsequential: true` in the production OpenAPI schema. Read-only Actions are marked false.
+
+For high-impact operations:
+
+- manual payments require the user to confirm the exact amount;
+- WhatsApp sends require an explicit request for the exact message;
+- email approval requires explicit approval of the draft content;
+- appointment reschedule/cancel continues to require current `calendar_version`;
+- idempotent operations use a generated UUID request ID reused only for an identical retry.
+
+The GPT does not bypass human CRM role checks or the canonical RPC business rules.
+
+## Historical rollout phases
+
+### OAuth bootstrap
+
+`release/private-crm-rc26-gpt-actions` enabled the production Supabase OAuth server and deployed the public OAuth edge with Actions closed. No OAuth client or database binding was created by that workflow.
+
+### Action edge and PKCE
+
+The original Action activation and the later PKCE bridge were deployed only after normal CI, secret scan and protected production approval. Unauthenticated action requests must return 401 once Actions are enabled.
+
+### Enquiry reads
+
+Migration `0053_gpt_enquiry_reads` added separate default-off enquiry reads and the two read-only enquiry Actions. Capability enablement was performed after migration/Worker verification rather than inside the deployment workflow.
+
+## Full management rollout
+
+Full management is a forward-only expansion from production migration `0053`.
+
+1. Confirm the exact `agent/gpt-full-crm-management` head and its ancestry from the deployed enquiry-read head.
+2. Require normal `Static Validation` and `CRM and booking validation` green for that exact SHA, including clean Supabase reset, pgTAP, lint, Worker tests, production bundle and secret scan.
+3. Fresh-check production: migration latest must be `0053`; both production GPT bindings must still point to the intended Vladimir/Kristina production OAuth clients; retained staging must remain separate.
+4. Fast-forward `release/private-crm-rc31-gpt-full-management` to the exact green product SHA. The operator branch must carry no extra commit.
+5. Protected workflow re-verifies product SHA/normal CI, performs a migration dry run, applies only canonical pending migrations `0054` and `0055`, verifies remote `0055`, then deploys the production GPT Worker.
+6. The workflow must not call `configure_gpt_full_management` or directly update `crm_private.gpt_action_clients`. New full-management flags must remain false after code/migration deployment.
+7. Verify live `/privacy` = 200, incomplete `/oauth/authorize` = 400 and an Action request without OAuth bearer = 401.
+8. Verify production migration latest `0055`, no RLS/Storage policy changes and no staging changes.
+9. Only after those checks, enable the desired capabilities for each intended production GPT through the owner-audited `configure_gpt_full_management(...)` RPC.
+10. Re-check the two artist bindings, activity log and cross-artist isolation.
+11. Import the immutable exact-SHA production OpenAPI schema into each production Custom GPT.
+12. After schema replacement, verify the GPT editor still sends the expected Client ID. If the editor emits `oauth_authorize_client_id_invalid`, re-enter the known non-secret Client ID, Save Authentication, then Update the GPT. Do not rotate the Client Secret unless Supabase actually returns `invalid client credentials`.
+
+## Production validation
+
+Do read-only validation first:
+
+1. list enquiries and appointments for each artist;
+2. read a specific full enquiry/client/project record;
+3. prove a known other-artist record is not visible;
+4. list availability/follow-ups/activity where present;
+5. finance/communications reads should either succeed inside the correct configured artist integration or fail closed for missing capability/provider configuration.
+
+Do not create synthetic production clients, enquiries, payments or messages just to prove the surface. A write test must correspond to a real intended production change or a separately approved real operation.
+
+## Release operator rule
+
+Protected `crm-production` workflows run from dedicated release operator branches because the environment rejects pull-request merge refs. Every operator workflow must verify that its SHA equals the declared product branch before any production mutation.
+
+No feature PR is merged or marked Ready as part of deployment. The operator branch must not contain an extra rollout-only commit.
+
+## Rollback and containment
+
+Use the least destructive containment first:
+
+1. disable the affected full-management capability through `configure_gpt_full_management(...)` while leaving OAuth/read access intact;
+2. if all Actions must close, deploy with `GPT_ACTIONS_ENABLED=false`;
+3. if OAuth must also close, set `GPT_OAUTH_RELAY_ENABLED=false`;
+4. deactivate the affected GPT binding through the existing owner configuration path;
+5. revoke/delete the affected Supabase OAuth client only if its credential is suspected compromised.
+
+Do not weaken RPC ACLs, RLS, Storage policies, artist membership checks, PKCE, Calendar versioning, provider credential custody or rate limits as a rollback shortcut.
