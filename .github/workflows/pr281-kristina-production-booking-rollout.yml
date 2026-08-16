@@ -87,6 +87,8 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DIRECT_SECRET: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_LEGACY_SECRET: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          KRISTINA_TELEGRAM_BOT_TOKEN: ${{ secrets.KRISTINA_TELEGRAM_BOT_TOKEN }}
+          KRISTINA_TELEGRAM_CHAT_ID: ${{ secrets.KRISTINA_TELEGRAM_CHAT_ID }}
         run: |
           set -euo pipefail
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID SUPABASE_ACCESS_TOKEN; do
@@ -204,6 +206,12 @@ jobs:
             rm -f "$RUNNER_TEMP/supabase-probe.json"
           fi
           unset probe_key
+          [ -n "$KRISTINA_TELEGRAM_BOT_TOKEN" ] || { echo 'Missing encrypted configuration name: KRISTINA_TELEGRAM_BOT_TOKEN' >&2; exit 1; }
+          [ -n "$KRISTINA_TELEGRAM_CHAT_ID" ] || { echo 'Missing encrypted configuration name: KRISTINA_TELEGRAM_CHAT_ID' >&2; exit 1; }
+          jq -n --arg bot "$KRISTINA_TELEGRAM_BOT_TOKEN" --arg chat "$KRISTINA_TELEGRAM_CHAT_ID" \
+            '{botToken:$bot,chatId:$chat}' \
+            | npx wrangler secret put ARTIST_TELEGRAM_KRISTINA_HPRODUCTION --name "$WORKER_NAME"
+          unset KRISTINA_TELEGRAM_BOT_TOKEN KRISTINA_TELEGRAM_CHAT_ID
           echo "PRIOR_WORKER_VERSION=$prior_version" >> "$GITHUB_ENV"
 
       - name: Dry-run exact production Worker
@@ -283,7 +291,7 @@ jobs:
           VISHAR_ENVIRONMENT|production
           SUPABASE_URL|$SUPABASE_URL
           EOF
-          for name in AI SUPABASE_SECRET_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+          for name in AI SUPABASE_SECRET_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID ARTIST_TELEGRAM_KRISTINA_HPRODUCTION; do
             jq -e --arg name "$name" 'any(.result.resources.bindings[]?; .name == $name)' \
               "$RUNNER_TEMP/deployed-version.json" >/dev/null || {
               echo "Missing required deployed binding: $name" >&2
