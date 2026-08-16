@@ -34,7 +34,7 @@ assert.deepEqual(
   assert.match(html, /does not accept an artist identifier from ChatGPT/);
   assert.match(html, /specific linked client's contact details/i);
   assert.match(html, /Bulk client lists remain minimised/);
-  assert.match(html, /Finance and communications are separate owner-controlled capabilities/i);
+  assert.match(html, /finance or communications only when those independent owner-controlled capabilities are enabled/i);
   assert.match(html, /Storage paths, checksums and file bytes are not exposed/i);
   assert.match(html, /arbitrary SQL/i);
   assert.match(html, /OpenAI provides ChatGPT/);
