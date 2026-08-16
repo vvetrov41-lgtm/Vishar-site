@@ -3,7 +3,7 @@ name: GPT production action activation
 on:
   push:
     branches:
-      - release/private-crm-rc27-gpt-actions-enable
+      - release/private-crm-rc28-gpt-pkce-bridge
 
 permissions:
   actions: read
@@ -20,7 +20,7 @@ jobs:
     environment: crm-production
     env:
       APPROVED_SHA: ${{ github.sha }}
-      PRODUCT_BRANCH: agent/gpt-production-actions
+      PRODUCT_BRANCH: agent/gpt-production-pkce-bridge
       SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc27-gpt-actions-enable' ]
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc28-gpt-pkce-bridge' ]
           [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
           case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
           [ -n "$CLOUDFLARE_API_TOKEN" ]
@@ -77,6 +77,14 @@ jobs:
           npm run check:gpt-production-bundle
           npm run scan:secrets
 
+      - name: Provision ephemeral-code bridge secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          bridge_secret="$(openssl rand -hex 32)"
+          printf '%s' "$bridge_secret" | npx wrangler secret put GPT_OAUTH_BRIDGE_SECRET --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME"
+          unset bridge_secret
+
       - name: Deploy action-enabled production GPT edge
         shell: bash
         run: |
@@ -102,12 +110,13 @@ jobs:
         shell: bash
         run: |
           {
-            echo '### GPT production action activation'
+            echo '### GPT production PKCE bridge activation'
             echo "- Exact SHA: \`$APPROVED_SHA\`"
             echo "- Operator branch: \`$GITHUB_REF_NAME\`"
             echo "- Product branch: \`$PRODUCT_BRANCH\`"
             echo '- Worker host: `gpt-actions.vishartattoo.com`'
             echo '- OAuth relay: enabled'
+            echo '- Supabase S256 PKCE: preserved through encrypted Worker bridge'
             echo '- Appointment actions: enabled but still require valid Supabase OAuth token and database artist binding'
             echo '- Database migrations: none'
             echo '- GPT client binding mutation: none'
