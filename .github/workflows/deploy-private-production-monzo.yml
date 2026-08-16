@@ -192,8 +192,9 @@ jobs:
             exit 1
           fi
 
-          grep -R -F -q 'vfjexhfdbrjmuxfdvbdx.supabase.co' "$bundle_dir"
-          grep -R -F -q 'monzo.vishartattoo.com' "$bundle_dir"
+          # Positive runtime bindings are proved by the tracked production
+          # config suite above. Wrangler injects those bindings at runtime, so
+          # their literal values are not required to appear inside the JS bundle.
 
       - name: Validation summary
         if: always()
