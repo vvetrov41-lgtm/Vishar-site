@@ -207,29 +207,50 @@ jobs:
           curl --fail-with-body --silent --show-error "${auth[@]}" \
             "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/versions/$DEPLOYED_WORKER_VERSION" \
             > "$RUNNER_TEMP/deployed-version.json"
-          jq -e --arg allowed "$ALLOWED_ORIGINS" --arg supabase "$SUPABASE_URL" '
-            .success == true
-            and ([.result.resources.bindings[]? | select(.name == "ALLOWED_ORIGINS" and .type == "plain_text") | .text] == [$allowed])
-            and ([.result.resources.bindings[]? | select(.name == "VISHAR_ENVIRONMENT" and .type == "plain_text") | .text] == ["production"])
-            and ([.result.resources.bindings[]? | select(.name == "SUPABASE_URL" and .type == "plain_text") | .text] == [$supabase])
-            and ([.result.resources.bindings[]? | select(.name == "AI")] | length == 1)
-          ' "$RUNNER_TEMP/deployed-version.json" >/dev/null
+          jq -e '.success == true' "$RUNNER_TEMP/deployed-version.json" >/dev/null
+          while IFS='|' read -r name expected; do
+            jq -e --arg name "$name" --arg expected "$expected" '
+              [.result.resources.bindings[]?
+                | select(.name == $name and .type == "plain_text")
+                | .text] == [$expected]
+            ' "$RUNNER_TEMP/deployed-version.json" >/dev/null || {
+              echo "Unexpected production plain-text binding: $name" >&2
+              exit 1
+            }
+          done <<EOF
+          ALLOWED_ORIGINS|$ALLOWED_ORIGINS
+          VISHAR_ENVIRONMENT|production
+          SUPABASE_URL|$SUPABASE_URL
+          EOF
+          for name in AI SUPABASE_SECRET_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            jq -e --arg name "$name" 'any(.result.resources.bindings[]?; .name == $name)' \
+              "$RUNNER_TEMP/deployed-version.json" >/dev/null || {
+              echo "Missing required deployed binding: $name" >&2
+              exit 1
+            }
+          done
 
           IFS=',' read -r -a origins <<< "$ALLOWED_ORIGINS"
           for origin in "${origins[@]}"; do
             headers="$RUNNER_TEMP/headers-$(printf '%s' "$origin" | sha256sum | cut -c1-12).txt"
             status="$(curl --silent --show-error --output /dev/null --dump-header "$headers" --write-out '%{http_code}' \
               -X OPTIONS -H "Origin: $origin" "$WORKER_ENDPOINT")"
-            [ "$status" = '204' ]
-            tr -d '\r' < "$headers" | grep -Fqi "Access-Control-Allow-Origin: $origin"
+            [ "$status" = '204' ] || { echo "Unexpected preflight status for $origin: $status" >&2; exit 1; }
+            tr -d '\r' < "$headers" | grep -Fqi "Access-Control-Allow-Origin: $origin" || {
+              echo "Missing exact preflight allow-origin for $origin" >&2
+              exit 1
+            }
           done
 
           rejected="$RUNNER_TEMP/rejected.json"
           status="$(curl --silent --show-error --output "$rejected" --write-out '%{http_code}' \
             -H 'Origin: https://www.kristinavishar.com.attacker.invalid' \
             -F 'probe=1' "$WORKER_ENDPOINT")"
-          [ "$status" = '403' ]
-          jq -e '.code == "origin_not_allowed"' "$rejected" >/dev/null
+          [ "$status" = '403' ] || { echo "Unexpected hostile-origin status: $status" >&2; exit 1; }
+          jq -e '.code == "origin_not_allowed"' "$rejected" >/dev/null || {
+            echo 'Hostile-origin response did not contain the expected safe error code' >&2
+            exit 1
+          }
 
       - name: Record safe rollback evidence
         if: always()
