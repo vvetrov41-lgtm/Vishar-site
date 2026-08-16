@@ -1,0 +1,182 @@
+name: Rebind Kristina production Telegram destination
+
+on:
+  pull_request:
+    branches:
+      - agent/kristina-production-booking-recovery
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kristina-production-telegram-rebind
+  cancel-in-progress: false
+
+jobs:
+  rebind:
+    name: Rebind exact Kristina production Telegram destination
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/run-kristina-production-telegram-rebind' &&
+      github.event.pull_request.base.ref == 'agent/kristina-production-booking-recovery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      WORKER_NAME: vishar-telegram-drain-production
+      BINDING_NAME: ARTIST_TELEGRAM_KRISTINA_HPRODUCTION
+      TARGET_CHAT_ID: '-5307909475'
+      EXPECTED_BOT_USERNAME: kristina_vishar_booking_bot
+
+    steps:
+      - name: Verify exact owner-approved marker
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$BASE_SHA" != "$HEAD_SHA" ]
+          [ "${{ github.event.pull_request.changed_files }}" = '1' ]
+          [ "${{ github.event.sender.login }}" = 'vvetrov41-lgtm' ]
+          printf '%s' "$PR_BODY" | grep -Fq '<!-- APPROVE_KRISTINA_TELEGRAM_CHAT:-5307909475 -->'
+
+      - name: Checkout exact recovery base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Verify checkout and bounded source
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$BASE_SHA" ]
+          [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor 314f0359ad083cec4efc7ea389d3111e2d83b755 HEAD
+          test -f workers/lib/provider-routing.js
+          test -f workers/lib/telegram.js
+          test -f wrangler.telegram-drain.production.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate Telegram boundary
+        run: |
+          npm ci
+          node scripts/test-telegram-drain.mjs
+          node scripts/test-telegram-drain-worker.mjs
+          npm run test:telegram-production
+          npm run scan:secrets
+
+      - name: Verify token, destination, and current Worker
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          KRISTINA_TELEGRAM_BOT_TOKEN: ${{ secrets.KRISTINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID KRISTINA_TELEGRAM_BOT_TOKEN; do
+            [ -n "${!name:-}" ] || { echo "Missing encrypted configuration name: $name" >&2; exit 1; }
+          done
+          echo "::add-mask::$KRISTINA_TELEGRAM_BOT_TOKEN"
+
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          curl --fail-with-body --silent --show-error "${auth[@]}"             "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/deployments"             > "$RUNNER_TEMP/deployments-before.json"
+          jq -e '.success == true' "$RUNNER_TEMP/deployments-before.json" >/dev/null
+          prior_version="$(jq -r '(.result.deployments // .result)[0].versions[]? | select(.percentage == 100) | .version_id' "$RUNNER_TEMP/deployments-before.json" | head -n1)"
+          [[ "$prior_version" =~ ^[0-9a-f-]{36}$ ]]
+          echo "PRIOR_WORKER_VERSION=$prior_version" >> "$GITHUB_ENV"
+
+          secrets_json="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
+          const expected = [
+            'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
+            'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+            'SUPABASE_SECRET_KEY',
+          ].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error('Production Telegram Worker secret-name set is not exact');
+          }
+          NODE
+
+          bot_file="$RUNNER_TEMP/telegram-bot.json"
+          chat_file="$RUNNER_TEMP/telegram-chat.json"
+          bot_status="$(curl --silent --show-error --output "$bot_file" --write-out '%{http_code}'             "https://api.telegram.org/bot$KRISTINA_TELEGRAM_BOT_TOKEN/getMe")"
+          [ "$bot_status" = '200' ]
+          jq -e --arg username "$EXPECTED_BOT_USERNAME"             '.ok == true and .result.username == $username' "$bot_file" >/dev/null
+
+          chat_status="$(curl --silent --show-error --output "$chat_file" --write-out '%{http_code}'             -X POST -H 'Content-Type: application/json'             --data "$(jq -cn --arg chat_id "$TARGET_CHAT_ID" '{chat_id:$chat_id}')"             "https://api.telegram.org/bot$KRISTINA_TELEGRAM_BOT_TOKEN/getChat")"
+          [ "$chat_status" = '200' ]
+          jq -e --arg chat_id "$TARGET_CHAT_ID"             '.ok == true and (.result.id | tostring) == $chat_id and (.result.type == "group" or .result.type == "supergroup")'             "$chat_file" >/dev/null
+          rm -f "$bot_file" "$chat_file"
+
+      - name: Replace only Kristina production binding
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          KRISTINA_TELEGRAM_BOT_TOKEN: ${{ secrets.KRISTINA_TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$KRISTINA_TELEGRAM_BOT_TOKEN"
+          envelope="$RUNNER_TEMP/kristina-telegram-envelope.json"
+          umask 077
+          BOT_TOKEN="$KRISTINA_TELEGRAM_BOT_TOKEN" CHAT_ID="$TARGET_CHAT_ID" node <<'NODE' > "$envelope"
+          process.stdout.write(JSON.stringify({
+            botToken: process.env.BOT_TOKEN,
+            chatId: process.env.CHAT_ID,
+          }));
+          NODE
+          npx wrangler secret put "$BINDING_NAME"             --config wrangler.telegram-drain.production.toml             --name "$WORKER_NAME" < "$envelope"
+          rm -f "$envelope"
+
+      - name: Verify exact binding names after replacement
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
+          const expected = [
+            'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
+            'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+            'SUPABASE_SECRET_KEY',
+          ].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error('Production Telegram Worker secret-name set changed unexpectedly');
+          }
+          NODE
+
+      - name: Record safe result
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Kristina production Telegram rebind'
+            echo
+            echo "- Worker: `$WORKER_NAME`"
+            echo "- Binding: `$BINDING_NAME` only"
+            echo "- Target chat id: `$TARGET_CHAT_ID`"
+            echo "- Expected bot: `@$EXPECTED_BOT_USERNAME`"
+            echo "- Prior Worker version: `${PRIOR_WORKER_VERSION:-not changed}`"
+            echo '- Staging and Vladimir bindings: not modified'
+            echo '- Secret values: never printed or stored in the repository'
+          } >> "$GITHUB_STEP_SUMMARY"
