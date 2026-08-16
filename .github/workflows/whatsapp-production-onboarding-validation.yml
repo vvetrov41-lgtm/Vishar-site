@@ -1,0 +1,87 @@
+name: WhatsApp production onboarding validation
+
+on:
+  push:
+    branches:
+      - agent/whatsapp-production-onboarding
+    paths:
+      - .github/workflows/whatsapp-production-onboarding-validation.yml
+      - admin/functions/api/whatsapp/embedded-signup/provision.js
+      - admin/src/lib/meta-whatsapp-embedded-signup.ts
+      - admin/src/lib/whatsapp-connections-api.ts
+      - admin/src/pages/WhatsAppConnectionsPage.tsx
+      - admin/src/test/meta-whatsapp-embedded-signup.test.ts
+      - admin/src/test/whatsapp-connections.test.ts
+      - scripts/test-whatsapp-production-onboarding.mjs
+  pull_request:
+    paths:
+      - .github/workflows/whatsapp-production-onboarding-validation.yml
+      - admin/functions/api/whatsapp/embedded-signup/provision.js
+      - admin/src/lib/meta-whatsapp-embedded-signup.ts
+      - admin/src/lib/whatsapp-connections-api.ts
+      - admin/src/pages/WhatsAppConnectionsPage.tsx
+      - admin/src/test/meta-whatsapp-embedded-signup.test.ts
+      - admin/src/test/whatsapp-connections.test.ts
+      - scripts/test-whatsapp-production-onboarding.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+
+      - name: Verify bounded branch and exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          test "$branch" = 'agent/whatsapp-production-onboarding'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          echo "exact_head=$GITHUB_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root tooling
+        run: npm ci
+
+      - name: Test production onboarding server boundary
+        run: node scripts/test-whatsapp-production-onboarding.mjs
+
+      - name: Bundle Pages Functions
+        working-directory: admin
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.123.0 pages functions build functions --outfile /tmp/whatsapp-production-onboarding-worker.js
+          test -s /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'vishar-whatsapp-webhook-production' /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'vishar-whatsapp-drain-production' /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION' /tmp/whatsapp-production-onboarding-worker.js
+
+      - name: Secret scan source and built function
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run scan:secrets
+          for path in admin/functions /tmp/whatsapp-production-onboarding-worker.js; do
+            if grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{20,}' "$path"; then
+              echo 'Supabase secret-key-shaped value found in onboarding artifact.' >&2
+              exit 1
+            fi
+            if grep -R -E -q 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}' "$path"; then
+              echo 'JWT-shaped value found in onboarding artifact.' >&2
+              exit 1
+            fi
+            if grep -R -E -q 'EA[A-Za-z0-9]{40,}' "$path"; then
+              echo 'Meta access-token-shaped value found in onboarding artifact.' >&2
+              exit 1
+            fi
+          done
