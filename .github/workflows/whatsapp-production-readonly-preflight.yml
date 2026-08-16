@@ -18,12 +18,31 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+
       - name: Verify bounded branch
         shell: bash
         run: |
           set -euo pipefail
           branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           test "$branch" = 'agent/whatsapp-production-onboarding'
+          echo "head_sha=$GITHUB_SHA"
+
+      - name: Require production CRM Cloudflare Access
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          curl --silent --show-error --max-time 20 --output /dev/null --dump-header "$headers" \
+            https://vishar-crm-production.pages.dev/ || true
+          status="$(awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "$headers")"
+          location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$headers")"
+          rm -f "$headers"
+          case "$location" in
+            https://*.cloudflareaccess.com/*) echo "production_access_redirect=true status=${status:-unknown}" ;;
+            *) echo "Production CRM is not proven behind Cloudflare Access (status=${status:-unknown})." >&2; exit 1 ;;
+          esac
 
       - name: Inspect production Cloudflare metadata read-only
         shell: bash
@@ -43,12 +62,12 @@ jobs:
           }
 
           account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
-
           pages="$(api "$account/pages/projects/vishar-crm-production")"
           echo "$pages" | jq -e '.success == true' >/dev/null
           echo "pages_project=vishar-crm-production"
           echo "pages_latest_commit=$(echo "$pages" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // "missing"')"
           echo "pages_latest_id=$(echo "$pages" | jq -r '.result.latest_deployment.id // "missing"')"
+          echo "pages_production_env_names=$(echo "$pages" | jq -r '(.result.deployment_configs.production.env_vars // {}) | keys | sort | join(",")')"
 
           scripts="$(api "$account/workers/scripts")"
           echo "$scripts" | jq -e '.success == true' >/dev/null
@@ -62,19 +81,16 @@ jobs:
             secrets="$(api "$account/workers/scripts/$worker/secrets")"
             echo "$secrets" | jq -e '.success == true' >/dev/null
             echo "worker_${worker}_secret_names=$(echo "$secrets" | jq -r '[.result[].name] | sort | join(",")')"
-
-            schedules="$(api "$account/workers/scripts/$worker/schedules")"
-            echo "$schedules" | jq -e '.success == true' >/dev/null
-            echo "worker_${worker}_schedules=$(echo "$schedules" | jq -r '[.result[].cron] | sort | join(",")')"
           done
 
           domains="$(api "$account/workers/domains")"
           echo "$domains" | jq -e '.success == true' >/dev/null
           echo "whatsapp_custom_domain=$(echo "$domains" | jq -r '[.result[] | select(.hostname == "whatsapp.vishartattoo.com") | {hostname,service,environment}] | @json')"
 
-      - name: Confirm no production mutation commands exist
+      - name: Confirm preflight remains read-only
         shell: bash
         run: |
           set -euo pipefail
           file='.github/workflows/whatsapp-production-readonly-preflight.yml'
+          test -f "$file"
           ! grep -Eq 'wrangler (deploy|secret put)|curl[^\n]*(--request|-X)[ =]*(POST|PUT|PATCH|DELETE)|supabase (db push|migration|functions deploy)' "$file"
