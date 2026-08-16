@@ -105,6 +105,7 @@ jobs:
           node scripts/test-monzo-api-worker.mjs
           node scripts/test-monzo-api-client-guards.mjs
           node scripts/test-monzo-api-rollbacks.mjs
+          node scripts/test-monzo-artist-isolation.mjs
           node scripts/test-monzo-account-activation.mjs
           node scripts/test-monzo-connection-lifecycle.mjs
           node scripts/test-monzo-setup-flow.mjs
