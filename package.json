@@ -35,7 +35,7 @@
     "vendor:fonts:check": "node scripts/vendor-fonts.mjs --check",
     "test:whatsapp-production": "node scripts/test-whatsapp-production-config.mjs",
     "check:whatsapp-production-bundle": "XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/whatsapp-production-wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.whatsapp-drain.production.toml --dry-run --outdir .wrangler/whatsapp-production-dry-run",
-    "check:whatsapp-webhook-production-bundle": "XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/whatsapp-webhook-production-wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.whatsapp-webhook.production.toml --dry-run --outdir .wrangler/whatsapp-webhook-dry-run"
+    "check:whatsapp-webhook-production-bundle": "XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/whatsapp-webhook-production-wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.whatsapp-webhook.production.toml --dry-run --outdir .wrangler/whatsapp-webhook-production-dry-run"
   },
   "devDependencies": {
     "@fontsource/bodoni-moda": "5.2.7",
