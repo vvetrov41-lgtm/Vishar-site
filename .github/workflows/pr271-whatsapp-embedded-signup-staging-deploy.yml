@@ -8,6 +8,7 @@ on:
       - .github/workflows/pr271-whatsapp-embedded-signup-staging-deploy.yml
       - admin/public/_headers
       - admin/public/whatsapp-embedded-signup.html
+      - admin/public/whatsapp-embedded-signup.js
   workflow_dispatch:
 
 permissions:
@@ -53,7 +54,7 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/vishar-crm-staging")"
           echo "$response" | jq -e '.success == true' >/dev/null
           current="$(echo "$response" | jq -r '.result.latest_deployment.deployment_trigger.metadata.commit_hash // ""')"
-          if [ "$current" != 'c5a6d40e79bf8200a5f1cef7f94d2d4bf6fa9bca' ]; then
+          if [ "$current" != '8ed7e9364362c9db5214dbf24f1ff32af55a4420' ]; then
             echo "Retained staging moved since preflight: current=$current" >&2
             exit 1
           fi
@@ -84,9 +85,11 @@ jobs:
           npm run typecheck
           npm run build
           test -f dist/whatsapp-embedded-signup.html
-          grep -Fq 'whatsapp_business_app_onboarding' dist/whatsapp-embedded-signup.html
-          grep -Fq '4468652066715473' dist/whatsapp-embedded-signup.html
-          grep -Fq '1481226093843982' dist/whatsapp-embedded-signup.html
+          test -f dist/whatsapp-embedded-signup.js
+          grep -Fq '/whatsapp-embedded-signup.js' dist/whatsapp-embedded-signup.html
+          grep -Fq 'whatsapp_business_app_onboarding' dist/whatsapp-embedded-signup.js
+          grep -Fq '4468652066715473' dist/whatsapp-embedded-signup.js
+          grep -Fq '1481226093843982' dist/whatsapp-embedded-signup.js
           grep -Fq "https://connect.facebook.net" dist/_headers
           grep -Fq "frame-src https://www.facebook.com https://web.facebook.com" dist/_headers
 
@@ -118,7 +121,7 @@ jobs:
             --project-name vishar-crm-staging \
             --branch main \
             --commit-hash "$GITHUB_SHA" \
-            --commit-message 'PR271 WhatsApp Embedded Signup protected staging harness CSP fix' \
+            --commit-message 'PR271 WhatsApp Embedded Signup external launcher' \
             --commit-dirty=true
 
       - name: Verify deployed exact head and Access remains closed
