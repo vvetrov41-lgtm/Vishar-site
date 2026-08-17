@@ -589,6 +589,10 @@ insert into expected_function_acl values
   ('public.configure_monzo_easy_bank_transfer(uuid,text,boolean)', false, true, false),
   ('public.get_monzo_easy_bank_transfer_settings(uuid)', false, true, false),
   ('public.request_session_deposit(uuid,uuid,text)', false, true, false),
+  ('public.list_monzo_reconciliation_candidates(uuid)', false, true, false),
+  ('public.match_monzo_reconciliation_candidate(uuid,uuid)', false, true, false),
+  ('public.ignore_monzo_reconciliation_candidate(uuid)', false, true, false),
+  ('public.confirm_monzo_reconciliation_candidate(uuid)', false, true, false),
   ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
 
