@@ -46,7 +46,8 @@ function classifyTokenExchangeRejection(response, body) {
     return new MonzoApiError('monzo_oauth_redirect_uri_rejected');
   }
   if (
-    signal.includes('invalid_client')
+    signal.includes('could_not_authenticate')
+    || signal.includes('invalid_client')
     || signal.includes('client_secret')
     || signal.includes('client_credentials')
     || signal.includes('client_id')
@@ -64,26 +65,35 @@ function classifyTokenExchangeRejection(response, body) {
   if (response.status === 401) {
     return new MonzoApiError('monzo_token_exchange_unauthorized');
   }
+  if (response.status === 400) {
+    return new MonzoApiError('monzo_token_exchange_bad_request');
+  }
+  if (response.status === 403) {
+    return new MonzoApiError('monzo_token_exchange_forbidden');
+  }
   return new MonzoApiError('monzo_token_exchange_failed');
 }
 
 function validateTokenResponse(response, body, expectedClientId) {
   if (!response.ok) throw classifyTokenExchangeRejection(response, body);
+  if (typeof body?.access_token !== 'string' || !body.access_token) {
+    throw new MonzoApiError('monzo_token_payload_invalid');
+  }
+  if (typeof body?.refresh_token !== 'string' || !body.refresh_token) {
+    throw new MonzoApiError('monzo_refresh_token_missing');
+  }
+  if (typeof body?.client_id !== 'string' || body.client_id !== expectedClientId) {
+    throw new MonzoApiError('monzo_token_client_mismatch');
+  }
   if (
-    typeof body?.access_token !== 'string'
-    || !body.access_token
-    || typeof body?.refresh_token !== 'string'
-    || !body.refresh_token
-    || body.token_type !== 'Bearer'
-    || typeof body?.client_id !== 'string'
-    || body.client_id !== expectedClientId
+    body.token_type !== 'Bearer'
     || typeof body?.user_id !== 'string'
     || !body.user_id
     || !Number.isInteger(body?.expires_in)
     || body.expires_in < 60
     || body.expires_in > 86400
   ) {
-    throw new MonzoApiError('monzo_token_exchange_failed');
+    throw new MonzoApiError('monzo_token_payload_invalid');
   }
   return body;
 }
