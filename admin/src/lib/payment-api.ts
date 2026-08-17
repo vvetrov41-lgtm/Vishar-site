@@ -33,6 +33,24 @@ export interface DepositRequestResult {
   replayed: boolean;
 }
 
+export interface ProjectPaymentRequest {
+  id: string;
+  session_id: string | null;
+  purpose: string;
+  amount: number;
+  currency: string;
+  status: 'pending' | 'partially_paid' | 'paid' | 'cancelled' | 'expired';
+  created_at: string;
+  net_paid: number;
+  outstanding_amount: number;
+}
+
+export interface ManualPaymentResult {
+  payment_transaction_id: string;
+  payment_request_id: string;
+  replayed: boolean;
+}
+
 export interface MonzoReconciliationRequestSummary {
   payment_request_id: string;
   client_name: string;
@@ -108,6 +126,71 @@ export function createPaymentApi(client: CrmClient) {
           p_delivery_channel: input.deliveryChannel,
         }),
         'request that deposit'
+      );
+    },
+
+    async listProjectPaymentRequests(projectId: string): Promise<ProjectPaymentRequest[]> {
+      const requests = unwrap<any[]>(
+        await client
+          .from('payment_requests')
+          .select('id, session_id, purpose, amount, currency, status, created_at')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false })
+          .limit(100),
+        'load project payment requests'
+      );
+      if (requests.length === 0) return [];
+
+      const ids = requests.map((request) => request.id);
+      const transactions = unwrap<any[]>(
+        await client
+          .from('payment_transactions')
+          .select('payment_request_id, direction, amount, status')
+          .in('payment_request_id', ids),
+        'load project payment history'
+      );
+
+      return requests.map((request) => {
+        const netPaid = transactions
+          .filter((entry) => entry.payment_request_id === request.id && entry.status === 'succeeded')
+          .reduce((sum, entry) => sum + (entry.direction === 'credit' ? Number(entry.amount) : -Number(entry.amount)), 0);
+        const amount = Number(request.amount);
+        return {
+          id: request.id,
+          session_id: request.session_id ?? null,
+          purpose: request.purpose,
+          amount,
+          currency: request.currency,
+          status: request.status,
+          created_at: request.created_at,
+          net_paid: Math.max(0, netPaid),
+          outstanding_amount: Math.max(0, amount - netPaid),
+        } as ProjectPaymentRequest;
+      });
+    },
+
+    async recordManualPayment(input: {
+      paymentRequestId: string;
+      amount: number;
+      occurredAt?: string;
+      idempotencyKey?: string;
+    }): Promise<ManualPaymentResult> {
+      return unwrap<ManualPaymentResult>(
+        await client.rpc('record_manual_payment', {
+          p_payment_request_id: input.paymentRequestId,
+          p_idempotency_key: input.idempotencyKey ?? crypto.randomUUID(),
+          p_amount: input.amount,
+          p_occurred_at: input.occurredAt ?? new Date().toISOString(),
+          p_safe_note_code: 'crm_manual_payment',
+        }),
+        'record that manual payment'
+      );
+    },
+
+    async cancelPaymentRequest(paymentRequestId: string) {
+      return unwrap<Record<string, unknown>>(
+        await client.rpc('cancel_payment_request', { p_payment_request_id: paymentRequestId }),
+        'cancel that payment request'
       );
     },
 
