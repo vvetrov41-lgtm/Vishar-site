@@ -31,6 +31,12 @@ See [branch-workflow.md](branch-workflow.md).
 - [investigation-playbook.md](investigation-playbook.md): repeatable procedures for RPC, Worker, migration, outbox, Calendar, and security tracing.
 - [benchmark.md](benchmark.md): how to measure whether this navigation layer actually improves agent work.
 
+## Specialized operational skills
+
+Use `.agents/skills/vishar-gpt-production-onboarding/SKILL.md` when creating, replacing, repairing, or independently verifying an artist-scoped production Vishar CRM Custom GPT. It covers versioned Supabase OAuth Apps, the Cloudflare OAuth bridge, Core and Operations schema import by exact-SHA URL, Builder callbacks, capability binding, E2E production evidence, `invalid_credentials` recovery, and safe retirement of superseded OAuth clients.
+
+Use `.agents/skills/vishar-code-navigation/SKILL.md` for general repository tracing, RPC investigation, migration history, security review, and CI diagnosis.
+
 ## Current reference snapshot
 
 This navigation layer was introduced from the top of the active CRM stack represented by PR #186, `agent/kristina-crm-intake-staging`, at exact head `3085d382f7f6bf39442a5f5e90ae27ae6435cf58` on 2026-08-10.
