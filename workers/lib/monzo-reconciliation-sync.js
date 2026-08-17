@@ -96,6 +96,10 @@ async function listRecentTransactionHints(accessToken, accountId, now, fetchImpl
 }
 
 export async function syncRecentMonzoReconciliation(alias, env, fetchImpl = fetch, now = Date.now()) {
+  if (env?.MONZO_RECONCILIATION_ENABLED !== 'true') {
+    throw new MonzoSecurityError('reconciliation_disabled', 503);
+  }
+
   const config = artistMonzoConfig(alias, env);
   const initial = await loadMonzoTokenRecord(env, config.artistId);
   assertConnectedRecord(initial, config, alias);
