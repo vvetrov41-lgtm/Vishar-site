@@ -5,6 +5,7 @@ name: Monzo token diagnostics production operator
 # happen only after the existing reusable gate reaches the protected
 # crm-production environment and receives manual approval.
 # Activation commit requests only the safe token-exchange error classifier.
+# rc37 activation is bound to the exact release SHA by the checks below.
 
 on:
   push:
