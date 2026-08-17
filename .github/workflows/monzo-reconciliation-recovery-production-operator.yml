@@ -1,9 +1,8 @@
 name: Monzo reconciliation recovery production operator
 
-# Release-only operator for PR #327. It owns no production credentials.
-# Once explicitly activated, it dispatches the canonical protected DB workflow,
-# waits for success, then calls the canonical protected Monzo Worker workflow.
-# No CRM Pages, public site, booking, Calendar, Telegram, WhatsApp or GPT deploy.
+# Release-only operator for incident fix PR #327. It owns no production
+# credentials. Production mutations remain in the canonical protected DB and
+# Monzo workflows and run strictly DB first, Worker second.
 
 on:
   push:
@@ -21,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OPERATOR_PR: '0'
+  OPERATOR_PR: '328'
   PRODUCT_PR: '327'
   PRODUCT_HEAD_BRANCH: agent/monzo-reconciliation-route-recovery
   PRODUCT_BASE_BRANCH: agent/monzo-reconciliation-crm-review
@@ -44,13 +43,12 @@ jobs:
       approved_sha: ${{ github.sha }}
       product_sha: ${{ steps.lineage.outputs.product_sha }}
     steps:
-      - name: Checkout exact release SHA
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Verify release branch and stacked PR lineage
+      - name: Verify exact release and product lineage
         id: lineage
         shell: bash
         env:
@@ -60,37 +58,26 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
           test -z "$(git status --short)"
-
           release_tip="$(git ls-remote --heads origin "refs/heads/${OPERATOR_RELEASE_BRANCH}" | awk '{print $1}')"
           test "$release_tip" = "$APPROVED_SHA"
 
           operator="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${OPERATOR_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha, .base.ref] | @tsv')"
-          IFS=$'\t' read -r op_state op_draft op_merged op_head_ref op_head_sha op_base_ref <<< "$operator"
-          test "$op_state" = open
-          test "$op_draft" = true
-          test "$op_merged" = false
-          test "$op_head_ref" = "$OPERATOR_RELEASE_BRANCH"
-          test "$op_head_sha" = "$APPROVED_SHA"
-          test "$op_base_ref" = "$OPERATOR_BASE_BRANCH"
+          IFS=$'\t' read -r os od om oh ohs ob <<< "$operator"
+          test "$os" = open && test "$od" = true && test "$om" = false
+          test "$oh" = "$OPERATOR_RELEASE_BRANCH" && test "$ohs" = "$APPROVED_SHA"
+          test "$ob" = "$OPERATOR_BASE_BRANCH"
 
           product="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PRODUCT_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha, .base.ref, .base.sha] | @tsv')"
-          IFS=$'\t' read -r state draft merged head_ref product_sha base_ref base_sha <<< "$product"
-          test "$state" = open
-          test "$draft" = true
-          test "$merged" = false
-          test "$head_ref" = "$PRODUCT_HEAD_BRANCH"
-          test "$base_ref" = "$PRODUCT_BASE_BRANCH"
-          test "$base_sha" = "$PRODUCT_BASE_SHA"
-
+          IFS=$'\t' read -r ps pd pm ph product_sha pb pbs <<< "$product"
+          test "$ps" = open && test "$pd" = true && test "$pm" = false
+          test "$ph" = "$PRODUCT_HEAD_BRANCH"
+          test "$pb" = "$PRODUCT_BASE_BRANCH" && test "$pbs" = "$PRODUCT_BASE_SHA"
           git cat-file -e "${product_sha}^{commit}"
           git merge-base --is-ancestor "$product_sha" "$APPROVED_SHA"
 
           mapfile -t release_delta < <(git diff --name-only "$product_sha" "$APPROVED_SHA")
-          if [ "${#release_delta[@]}" -ne 1 ] || [ "${release_delta[0]}" != "$OPERATOR_WORKFLOW_PATH" ]; then
-            echo 'Release-only delta is not confined to the operator workflow:' >&2
-            printf '  %s\n' "${release_delta[@]}" >&2
-            exit 1
-          fi
+          test "${#release_delta[@]}" -eq 1
+          test "${release_delta[0]}" = "$OPERATOR_WORKFLOW_PATH"
 
           mapfile -t product_delta < <(git diff --name-only "$PRODUCT_BASE_SHA" "$product_sha")
           allowed=(
@@ -101,34 +88,22 @@ jobs:
             workers/lib/monzo-reconciliation-sync.js
             workers/lib/monzo-setup-flow.js
           )
-          if [ "${#product_delta[@]}" -ne "${#allowed[@]}" ]; then
-            echo 'Unexpected product delta size.' >&2
-            printf '  %s\n' "${product_delta[@]}" >&2
-            exit 1
-          fi
+          test "${#product_delta[@]}" -eq "${#allowed[@]}"
           for path in "${product_delta[@]}"; do
             ok=''
             for expected in "${allowed[@]}"; do
               if [ "$path" = "$expected" ]; then ok=yes; break; fi
             done
-            if [ "$ok" != yes ]; then
-              echo "Unexpected product path: $path" >&2
-              exit 1
-            fi
+            test "$ok" = yes
           done
 
-          test -f supabase/migrations/0059_monzo_reconciliation_route_recovery.sql
-          test -f supabase/tests/209_monzo_reconciliation_route_recovery.sql
-          test -f workers/lib/monzo-reconciliation-sync.js
           grep -Fxq 'MONZO_RECONCILIATION_ENABLED = "true"' wrangler.monzo-api.production.toml
           grep -Fq 'resolve_monzo_reconciliation_owner' supabase/migrations/0059_monzo_reconciliation_route_recovery.sql
           grep -Fq 'Sync recent transfers' workers/lib/monzo-setup-flow.js
           grep -Fq "MONZO_RECONCILIATION_ENABLED !== 'true'" workers/lib/monzo-reconciliation-sync.js
-
           echo "product_sha=$product_sha" >> "$GITHUB_OUTPUT"
-          echo "Release ${APPROVED_SHA} is product ${product_sha} plus one operator-only workflow."
 
-      - name: Wait for normal exact-head CI to be green
+      - name: Require green normal CI on this exact release SHA
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -137,50 +112,40 @@ jobs:
           set -euo pipefail
           deadline=$((SECONDS + 1200))
           while [ "$SECONDS" -lt "$deadline" ]; do
-            runs_file="$(mktemp)"
-            gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100" \
-              --jq '.check_runs[] | [.name, .status, (.conclusion // "none"), .started_at] | @tsv' \
-              > "$runs_file"
+            checks="$(mktemp)"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name,.status,(.conclusion // "none"),.started_at] | @tsv' > "$checks"
             waiting=''; failed=''
             while IFS= read -r required; do
-              latest="$(awk -F'\t' -v name="$required" '$1 == name { print $4 "\t" $2 "\t" $3 }' "$runs_file" | sort -r | head -1)"
-              if [ -z "$latest" ]; then waiting="${waiting}${required}: absent; "; continue; fi
+              latest="$(awk -F'\t' -v n="$required" '$1==n {print $4"\t"$2"\t"$3}' "$checks" | sort -r | head -1)"
+              if [ -z "$latest" ]; then waiting="${waiting}${required}:absent;"; continue; fi
               status="$(printf '%s' "$latest" | cut -f2)"
               conclusion="$(printf '%s' "$latest" | cut -f3)"
-              if [ "$status" != completed ]; then waiting="${waiting}${required}: ${status}; "
-              elif [ "$conclusion" != success ]; then failed="${failed}${required}: ${conclusion}; "; fi
+              if [ "$status" != completed ]; then waiting="${waiting}${required}:${status};"
+              elif [ "$conclusion" != success ]; then failed="${failed}${required}:${conclusion};"; fi
             done <<'REQUIRED'
           static-validation
           Private CRM
           Supabase migrations and pgTAP
           Public site and Worker
           REQUIRED
-            rm -f "$runs_file"
-            if [ -n "$failed" ]; then echo "Normal exact-head CI failed: ${failed}" >&2; exit 1; fi
-            if [ -z "$waiting" ]; then echo "All required exact-head CI checks are green for ${APPROVED_SHA}."; exit 0; fi
-            echo "Waiting for exact-head CI: ${waiting}"
+            rm -f "$checks"
+            test -z "$failed" || { echo "Exact-head CI failed: $failed" >&2; exit 1; }
+            if [ -z "$waiting" ]; then exit 0; fi
             sleep 10
           done
           echo 'Timed out waiting for exact-head CI.' >&2
           exit 1
 
-      - name: Authorisation summary
+      - name: Authorization summary
         if: always()
         shell: bash
-        env:
-          APPROVED_SHA: ${{ github.sha }}
-          PRODUCT_SHA: ${{ steps.lineage.outputs.product_sha }}
         run: |
           {
-            echo '### Monzo reconciliation recovery production operator'
-            echo
-            echo "- Operator PR: #${OPERATOR_PR} (draft, never merge)"
-            echo "- Product PR: #${PRODUCT_PR} (verified open/draft/unmerged)"
-            echo "- Product SHA: \`${PRODUCT_SHA:-unresolved}\`"
-            echo "- Release SHA: \`${APPROVED_SHA}\`"
-            echo '- Production effect before crm-production approvals: none'
-            echo '- Required order: DB migration first, Monzo Worker second'
+            echo '### Monzo reconciliation recovery operator'
+            echo "- Release SHA: \`${GITHUB_SHA}\`"
+            echo '- Production before protected approvals: unchanged'
+            echo '- Ordered scope: database migration, then Monzo Worker only'
           } >> "$GITHUB_STEP_SUMMARY"
 
   database:
@@ -198,15 +163,10 @@ jobs:
         run: |
           set -euo pipefail
           started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          payload="$(jq -n \
-            --arg ref "$OPERATOR_RELEASE_BRANCH" \
-            --arg sha "$APPROVED_SHA" \
-            '{ref:$ref,inputs:{approved_sha:$sha,deploy:"true",approval_phrase:"DEPLOY_PRIVATE_CRM_DATABASE"}}')"
-          printf '%s' "$payload" | gh api -X POST \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/${DATABASE_WORKFLOW}/dispatches" \
-            --input -
+          jq -n --arg ref "$OPERATOR_RELEASE_BRANCH" --arg sha "$APPROVED_SHA" \
+            '{ref:$ref,inputs:{approved_sha:$sha,deploy:"true",approval_phrase:"DEPLOY_PRIVATE_CRM_DATABASE"}}' \
+            | gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${DATABASE_WORKFLOW}/dispatches" --input -
           echo "started_at=$started_at" >> "$GITHUB_OUTPUT"
-          echo "Dispatched ${DATABASE_WORKFLOW} for ${APPROVED_SHA}."
 
       - name: Wait for canonical database workflow
         shell: bash
@@ -216,37 +176,26 @@ jobs:
           STARTED_AT: ${{ steps.dispatch.outputs.started_at }}
         run: |
           set -euo pipefail
-          deadline=$((SECONDS + 9600))
-          run_id=''
+          deadline=$((SECONDS + 9600)); run_id=''
           while [ "$SECONDS" -lt "$deadline" ]; do
-            candidate="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/${DATABASE_WORKFLOW}/runs?branch=${OPERATOR_RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
-              | jq -r --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" \
-                '[.workflow_runs[] | select(.head_sha == $sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
-            if [ -n "$candidate" ]; then run_id="$candidate"; break; fi
+            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${DATABASE_WORKFLOW}/runs?branch=${OPERATOR_RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
+              | jq -r --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" '[.workflow_runs[] | select(.head_sha==$sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+            [ -n "$run_id" ] && break
             sleep 3
           done
-          if [ -z "$run_id" ]; then echo 'Could not resolve dispatched database workflow run.' >&2; exit 1; fi
-          echo "Database workflow run: ${run_id}"
+          test -n "$run_id"
+          echo "Database workflow run: $run_id"
           while [ "$SECONDS" -lt "$deadline" ]; do
-            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '[.status, (.conclusion // "none")] | @tsv')"
-            status="$(printf '%s' "$row" | cut -f1)"
-            conclusion="$(printf '%s' "$row" | cut -f2)"
-            echo "Database ${run_id}: ${status}/${conclusion}"
-            if [ "$status" = completed ]; then
-              test "$conclusion" = success
-              exit 0
-            fi
+            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '[.status,(.conclusion // "none")] | @tsv')"
+            status="$(printf '%s' "$row" | cut -f1)"; conclusion="$(printf '%s' "$row" | cut -f2)"
+            if [ "$status" = completed ]; then test "$conclusion" = success; exit 0; fi
             sleep 15
           done
-          echo 'Timed out waiting for protected database rollout.' >&2
           exit 1
 
   monzo:
     name: Deploy recovered Monzo reconciliation Worker
-    needs:
-      - authorize
-      - database
+    needs: [authorize, database]
     uses: ./.github/workflows/deploy-private-production-monzo.yml
     with:
       approved_sha: ${{ needs.authorize.outputs.approved_sha }}
