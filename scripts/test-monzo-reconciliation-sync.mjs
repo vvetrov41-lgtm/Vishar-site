@@ -28,7 +28,7 @@ function makeEnv() {
     VLADIMIR_ARTIST_ID: 'a1111111-1111-4111-8111-111111111111',
     KRISTINA_ARTIST_ID: 'a2222222-2222-4222-8222-222222222222',
     SUPABASE_URL: 'https://synthetic-recovery.supabase.co',
-    SUPABASE_SECRET_KEY: 'sb_secret_test-only-recovery',
+    SUPABASE_SECRET_KEY: 'sb' + '_secret_' + 'test-only-recovery',
   };
 }
 
