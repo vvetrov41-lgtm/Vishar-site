@@ -9,7 +9,8 @@ import { resolve } from 'node:path';
  * future edit could silently remove:
  *
  *   - only the opaque webhook path is publicly reachable;
- *   - reconciliation ships dormant and can never settle a payment;
+ *   - reconciliation is explicitly enabled only for candidate creation and can
+ *     never settle a payment;
  *   - the encrypted token store is bound to the production KV namespace and
  *     never to retained staging;
  *   - no provider credential, Supabase service key or encryption key is
@@ -91,8 +92,8 @@ test('nothing is scheduled', () => {
   assert.doesNotMatch(body, /crons\s*=/);
 });
 
-test('reconciliation ships dormant', () => {
-  assert.equal(value('MONZO_RECONCILIATION_ENABLED'), 'false');
+test('candidate-only reconciliation is explicitly enabled in production', () => {
+  assert.equal(value('MONZO_RECONCILIATION_ENABLED'), 'true');
 });
 
 test('the public webhook rate limiter is bound and isolated from other surfaces', () => {
