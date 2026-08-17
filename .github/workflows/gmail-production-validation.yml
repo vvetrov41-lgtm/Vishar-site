@@ -1,0 +1,83 @@
+name: Gmail production validation
+
+on:
+  pull_request:
+    paths:
+      - 'workers/gmail-production.js'
+      - 'workers/lib/google-gmail.js'
+      - 'workers/lib/gmail-supabase.js'
+      - 'workers/gpt-actions-production-full.js'
+      - 'wrangler.gmail.production.toml'
+      - 'wrangler.gpt-actions.production.toml'
+      - 'supabase/migrations/0059_gmail_production_integration.sql'
+      - 'supabase/tests/209_gmail_production_integration.sql'
+      - 'docs/gpt-actions/openapi.production*.yaml'
+      - 'scripts/test-gmail-production.mjs'
+      - 'scripts/test-gpt-gmail-openapi.mjs'
+      - 'scripts/materialize-gmail-openapi.mjs'
+      - '.github/workflows/gmail-production-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gmail-production-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install pinned dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Gmail OAuth/provider regression
+        run: node scripts/test-gmail-production.mjs
+
+      - name: GPT Gmail OpenAPI split regression
+        run: node scripts/test-gpt-gmail-openapi.mjs
+
+      - name: Canonical GPT Actions validation
+        run: npm run validate:gpt-actions
+
+      - name: Secret scan
+        run: npm run scan:secrets
+
+      - name: Gmail Worker syntax check
+        run: |
+          node --check workers/gmail-production.js
+          node --check workers/lib/google-gmail.js
+          node --check workers/lib/gmail-supabase.js
+
+      - name: Gmail production bundle dry-run
+        env:
+          XDG_CONFIG_HOME: ${{ github.workspace }}/.wrangler/config
+          WRANGLER_LOG_PATH: ${{ github.workspace }}/.wrangler/gmail-production-wrangler.log
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx wrangler deploy --config wrangler.gmail.production.toml --dry-run --outdir .wrangler/gmail-production-dry-run
+
+      - name: GPT production service-binding bundle dry-run
+        env:
+          XDG_CONFIG_HOME: ${{ github.workspace }}/.wrangler/config
+          WRANGLER_LOG_PATH: ${{ github.workspace }}/.wrangler/gpt-gmail-production-wrangler.log
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx wrangler deploy --config wrangler.gpt-actions.production.toml --dry-run --outdir .wrangler/gpt-gmail-production-dry-run
+
+      - name: Reject tracked credential-shaped Gmail configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RniE '(access_token|refresh_token|client_secret)[[:space:]]*[:=][[:space:]]*["'"'][^"'"']+' \
+            workers/gmail-production.js workers/lib/google-gmail.js workers/lib/gmail-supabase.js \
+            wrangler.gmail.production.toml docs/gpt-actions/openapi.production.operations.yaml; then
+            echo 'Tracked Gmail credential-shaped value detected.' >&2
+            exit 1
+          fi
+
+      - name: Diff hygiene
+        run: git diff --check
