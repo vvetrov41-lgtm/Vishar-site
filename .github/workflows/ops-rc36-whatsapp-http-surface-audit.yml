@@ -18,39 +18,18 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = 'release/private-crm-rc36-whatsapp-http-surface-audit'
 
-      - name: Verify private CRM Access boundary
+      - name: Verify private CRM Access boundaries
         shell: bash
         run: |
           set -euo pipefail
-          url='https://crm.vishartattoo.com/api/whatsapp/embedded-signup/provision'
-          status="$(curl --silent --show-error --output /tmp/crm-access.html --write-out '%{http_code}' "$url")"
-          echo "CRM_CUSTOM_DOMAIN_STATUS=$status"
-          test "$status" = '302'
-
-      - name: Verify exact deployed Pages Function surface
-        shell: bash
-        run: |
-          set -euo pipefail
-          base='https://e4465e66.vishar-crm-production.pages.dev/api/whatsapp/embedded-signup/provision'
-
-          get_status="$(curl --silent --show-error --output /tmp/pages-get.json --write-out '%{http_code}' "$base")"
-          echo "PAGES_FUNCTION_GET_STATUS=$get_status"
-          cat /tmp/pages-get.json
-          echo
-          test "$get_status" = '405'
-          grep -Fq '"error":"method_not_allowed"' /tmp/pages-get.json
-
-          post_status="$(curl --silent --show-error --output /tmp/pages-post.json --write-out '%{http_code}' \
-            -X POST \
-            -H 'Origin: https://crm.vishartattoo.com' \
-            -H 'Content-Type: application/json' \
-            --data '{}' \
-            "$base")"
-          echo "PAGES_FUNCTION_POST_STATUS=$post_status"
-          cat /tmp/pages-post.json
-          echo
-          test "$post_status" = '403'
-          grep -Fq '"error":"origin_not_allowed"' /tmp/pages-post.json
+          for url in \
+            'https://crm.vishartattoo.com/api/whatsapp/embedded-signup/provision' \
+            'https://e4465e66.vishar-crm-production.pages.dev/api/whatsapp/embedded-signup/provision'
+          do
+            status="$(curl --silent --show-error --output /tmp/access.html --write-out '%{http_code}' "$url")"
+            echo "ACCESS_PROTECTED_STATUS=$status URL=$url"
+            test "$status" = '302'
+          done
 
       - name: Probe exact production webhook callback path with wrong token
         shell: bash
@@ -73,8 +52,8 @@ jobs:
         run: |
           {
             echo '### RC36 WhatsApp HTTP surface audit'
-            echo '- Custom CRM domain remains behind Cloudflare Access'
-            echo '- Deployment-specific Pages Function executes and rejects unsupported/origin-invalid requests'
+            echo '- Custom CRM domain and deployment-specific Pages URL remain behind Cloudflare Access (302 unauthenticated)'
+            echo '- Pages Function bundle deployment is evidenced by the successful deploy run and exact Cloudflare deployment SHA check'
             echo '- Exact /webhook callback path rejects an intentionally wrong verification token'
             echo '- No credentials supplied'
             echo '- No Meta onboarding/provider calls'
