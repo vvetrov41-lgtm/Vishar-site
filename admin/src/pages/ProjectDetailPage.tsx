@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
+import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
+import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
+import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
+import { ProjectEstimatePanel } from '../components/ProjectEstimatePanel';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { Link } from '../lib/router';
-import { can } from '../lib/permissions';
+import { can, canAccess } from '../lib/permissions';
 import { formatDateTime, formatMoney } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
-import { operationalLabel } from '../lib/operational-labels';
 import { typeLabel } from './AppointmentsPage';
 import type { Appointment, AppointmentConflict, AppointmentType } from '../lib/appointment-api';
 import type {
-  ActivityEntry, InternalNote, Project, ProjectFinance, SessionFinance,
+  ActivityEntry, InternalNote, Project, ProjectFinance, ProjectStatus, SessionFinance,
 } from '../lib/types';
 
 interface ProjectData {
@@ -37,11 +40,14 @@ const APPOINTMENT_TYPES: AppointmentType[] = [
   'touch_up',
 ];
 
+const PROJECT_STATUSES: ProjectStatus[] = ['draft', 'active', 'on_hold', 'completed', 'cancelled'];
+
 export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const api = useApi();
-  const { profile } = useSession();
+  const { profile, memberships } = useSession();
   const { t, label, language } = useLanguage();
   const role = profile?.role;
+  const copy = COPY[language];
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [appointmentType, setAppointmentType] = useState<AppointmentType>('tattoo_session');
@@ -49,7 +55,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const [appointmentEnd, setAppointmentEnd] = useState('');
   const [conflicts, setConflicts] = useState<AppointmentConflict[]>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
-  const [depositAmount, setDepositAmount] = useState('');
+  const [projectStatus, setProjectStatus] = useState<ProjectStatus>('draft');
 
   const { data, loading, error, reload } = useAsync<ProjectData>(async () => {
     const project = await api.getProject(projectId);
@@ -64,16 +70,22 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       };
     }
 
+    const scopedMemberships = memberships.filter((membership) => membership.artist_id === project.artist_id);
+    const mayViewFinance = canAccess(role, 'viewFinance', scopedMemberships);
     const [finance, appointments, sessionFinance, notes, activity] = await Promise.all([
-      can(role, 'viewFinance') ? api.getProjectFinance(projectId) : Promise.resolve(null),
+      mayViewFinance ? api.getProjectFinance(projectId) : Promise.resolve(null),
       api.listAppointments({ projectId }),
-      can(role, 'viewFinance') ? api.listSessionFinance(projectId) : Promise.resolve([]),
+      mayViewFinance ? api.listSessionFinance(projectId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ projectId }) : Promise.resolve([]),
       can(role, 'viewActivity') ? api.listActivity({ projectId }) : Promise.resolve([]),
     ]);
 
     return { project, finance, appointments, sessionFinance, notes, activity };
-  }, [api, projectId, role]);
+  }, [api, projectId, role, memberships]);
+
+  useEffect(() => {
+    if (data?.project) setProjectStatus(data.project.status);
+  }, [data?.project?.status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,24 +126,17 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   if (!data?.project) return <EmptyState title={t('project.notFound')} />;
 
   const { project, finance, appointments, sessionFinance, notes, activity } = data;
+  const scopedMemberships = memberships.filter((membership) => membership.artist_id === project.artist_id);
+  const mayViewFinance = canAccess(role, 'viewFinance', scopedMemberships);
+  const mayManageFinance = canAccess(role, 'manageFinance', scopedMemberships);
+  const mayManageAppointments = can(role, 'manageSessions');
+  const mayManageProject = can(role, 'manageProjects');
   const priceFor = (appointmentId: string) =>
     sessionFinance.find((entry) => entry.session_id === appointmentId)?.price ?? null;
-  const parsedDepositAmount = Number(depositAmount);
-  const hasValidDepositAmount =
-    depositAmount.trim() !== ''
-    && Number.isFinite(parsedDepositAmount)
-    && parsedDepositAmount > 0;
-  const appointmentTitle = language === 'ru' ? 'Записи' : 'Appointments';
-  const noAppointments = language === 'ru' ? 'Записей пока нет' : 'No appointments planned';
-  const proposeLabel = language === 'ru' ? 'Предложить запись' : 'Propose appointment';
-  const startLabel = language === 'ru' ? 'Предлагаемое начало' : 'Proposed start';
-  const endLabel = language === 'ru' ? 'Предлагаемое окончание' : 'Proposed end';
-  const typeSelectLabel = language === 'ru' ? 'Тип записи' : 'Appointment type';
-  const durationLabel = language === 'ru' ? 'Выбрать длительность' : 'Set duration';
+  const hasConfirmedWork = appointments.some((appointment) => ['confirmed', 'completed'].includes(appointment.status));
+  const lifecycleMismatch = project.status === 'draft' && (project.deposit_status === 'paid' || hasConfirmedWork);
   const conflictMessage = conflicts.length > 0
-    ? language === 'ru'
-      ? `Пересекающихся активных записей: ${conflicts.length}. Первая начинается ${formatDateTime(conflicts[0].start_at, language)}. Это время всё равно можно предложить, если пересечение намеренное.`
-      : `Conflicting active appointments: ${conflicts.length}. The first starts ${formatDateTime(conflicts[0].start_at, language)}. You can still propose this time if the overlap is intentional.`
+    ? copy.conflicts(conflicts.length, formatDateTime(conflicts[0].start_at, language))
     : null;
 
   return (
@@ -142,9 +147,12 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       <div className="card">
         <h2 style={{ fontSize: '1.2rem' }}>{project.title}</h2>
         <div>
-          <span className="badge">{label('projectStatus', project.status)}</span>{' '}
-          <span className="badge">
-            {t('common.deposit')}: {label('depositStatus', project.deposit_status)}
+          <span className="badge">{projectStatusLabel(project.status, language)}</span>{' '}
+          <span className={project.deposit_status === 'paid' ? 'badge ok' : 'badge'}>
+            {copy.deposit}: {depositStatusLabel(project.deposit_status, language)}
+            {mayViewFinance && finance?.deposit_amount !== null && finance?.deposit_amount !== undefined
+              ? ` · ${formatMoney(finance.deposit_amount, project.currency, language)}`
+              : ''}
           </span>
         </div>
         {project.description ? (
@@ -156,37 +164,62 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
             <Link to={`/enquiries/${project.enquiry_id}`} className="badge">{t('project.openEnquiry')}</Link>
           ) : null}
         </div>
+
+        {mayManageProject ? (
+          <div style={{ marginTop: 14 }}>
+            <label htmlFor="project-status">{copy.projectStatus}</label>
+            <div className="field-row">
+              <select
+                id="project-status"
+                value={projectStatus}
+                disabled={busy}
+                onChange={(event) => setProjectStatus(event.target.value as ProjectStatus)}
+              >
+                {PROJECT_STATUSES.map((status) => (
+                  <option key={status} value={status}>{projectStatusLabel(status, language)}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={busy || projectStatus === project.status}
+                onClick={() => {
+                  if (projectStatus === 'cancelled' && !window.confirm(copy.cancelProjectConfirm)) return;
+                  void run(() => api.setProjectStatus(project.id, projectStatus));
+                }}
+              >
+                {copy.saveStatus}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
+      {lifecycleMismatch ? (
+        <div className="notice warn" role="status">{copy.draftMismatch}</div>
+      ) : null}
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 
       <Section title={t('project.estimate')}>
-        <dl className="definition">
-          <dt>{t('project.sessions')}</dt><dd>{project.estimated_sessions ?? '—'}</dd>
-          <dt>{t('project.hours')}</dt><dd>{project.estimated_hours ?? '—'}</dd>
-          {can(role, 'viewFinance') ? (
-            <>
-              <dt>{t('project.hourlyRate')}</dt>
-              <dd>{formatMoney(finance?.hourly_rate ?? null, project.currency, language)}</dd>
-              <dt>{t('project.estimateTotal')}</dt>
-              <dd>{formatMoney(finance?.estimate_total ?? null, project.currency, language)}</dd>
-              <dt>{t('common.deposit')}</dt>
-              <dd>{formatMoney(finance?.deposit_amount ?? null, project.currency, language)}</dd>
-            </>
-          ) : null}
-        </dl>
-        {!can(role, 'viewFinance') ? (
+        <ProjectEstimatePanel
+          project={project}
+          finance={finance}
+          appointments={appointments}
+          mayManage={mayManageFinance}
+          onSaved={reload}
+        />
+        {!mayViewFinance ? (
           <p className="notice" style={{ marginTop: 12 }}>{t('project.ratesOwnerOnly')}</p>
         ) : null}
       </Section>
 
-      <Section title={appointmentTitle}>
+      <Section title={copy.appointments}>
         {appointments.length === 0 ? (
-          <EmptyState title={noAppointments} />
+          <EmptyState title={copy.noAppointments} />
         ) : (
           <div className="list">
             {appointments.map((appointment) => {
               const price = priceFor(appointment.id);
+              const active = ['draft', 'proposed', 'confirmed'].includes(appointment.status);
               return (
                 <div key={appointment.id} className="row">
                   <div className="title">{formatDateTime(appointment.start_at, language)}</div>
@@ -196,15 +229,22 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                       {label('sessionStatus', appointment.status)}
                     </span>{' '}
                     <span className="badge">{durationValue(appointment.duration_hours, language)}</span>{' '}
-                    <span className="badge">{label('paymentStatus', appointment.payment_status)}</span>{' '}
-                    {can(role, 'viewFinance') && price !== null ? (
-                      <span className="badge">{formatMoney(price, appointment.currency, language)}</span>
+                    <span className={appointment.payment_status === 'paid' ? 'badge ok' : 'badge'}>
+                      {copy.appointmentPayment}: {label('paymentStatus', appointment.payment_status)}
+                    </span>{' '}
+                    {mayViewFinance && price !== null ? (
+                      <span className="badge">{copy.appointmentPrice}: {formatMoney(price, appointment.currency, language)}</span>
                     ) : null}{' '}
-                    <span className="badge">
-                      {t('common.calendar')}: {appointment.calendar_event_id ? t('common.linked') : t('common.notConnected')}
+                    <span className={appointment.calendar_sync_status === 'failed' ? 'badge warn' : appointment.calendar_sync_status === 'synced' ? 'badge ok' : 'badge'}>
+                      {copy.calendar}: {calendarSyncLabel(appointment, language)}
                     </span>
                   </div>
-                  {can(role, 'manageSessions') ? (
+
+                  {mayManageAppointments && active ? (
+                    <ProjectAppointmentEditor appointment={appointment} disabled={busy} onSaved={reload} />
+                  ) : null}
+
+                  {mayManageAppointments ? (
                     <div className="actions">
                       {['draft', 'proposed'].includes(appointment.status) ? (
                         <button
@@ -230,7 +270,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                           </button>
                         </>
                       ) : null}
-                      {['draft', 'proposed', 'confirmed'].includes(appointment.status) ? (
+                      {active ? (
                         <button
                           type="button" className="danger" disabled={busy}
                           onClick={() => { void run(() => api.setAppointmentStatus(appointment.id, 'cancelled')); }}
@@ -246,128 +286,104 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {can(role, 'manageSessions') ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void run(async () => {
-                const start = inputToIso(appointmentStart);
-                const end = inputToIso(appointmentEnd);
-                if (!start || !end || end <= start) {
-                  throw new Error(t('project.invalidSessionTime'));
-                }
-                await api.scheduleAppointment({
-                  artistId: project.artist_id,
-                  clientId: project.client_id,
-                  appointmentType,
-                  startAt: start,
-                  endAt: end,
-                  status: 'proposed',
-                  enquiryId: project.enquiry_id,
-                  projectId,
+        {mayManageAppointments ? (
+          <details style={{ marginTop: 14 }}>
+            <summary>{copy.addAppointment}</summary>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void run(async () => {
+                  const start = inputToIso(appointmentStart);
+                  const end = inputToIso(appointmentEnd);
+                  if (!start || !end || end <= start) {
+                    throw new Error(t('project.invalidSessionTime'));
+                  }
+                  await api.scheduleAppointment({
+                    artistId: project.artist_id,
+                    clientId: project.client_id,
+                    appointmentType,
+                    startAt: start,
+                    endAt: end,
+                    status: 'proposed',
+                    enquiryId: project.enquiry_id,
+                    projectId,
+                  });
+                  setAppointmentStart('');
+                  setAppointmentEnd('');
+                  setConflicts([]);
                 });
-                setAppointmentStart('');
-                setAppointmentEnd('');
-                setConflicts([]);
-              });
-            }}
-          >
-            <label htmlFor="appointment-type" style={{ marginTop: 12 }}>{typeSelectLabel}</label>
-            <select
-              id="appointment-type"
-              value={appointmentType}
-              onChange={(event) => setAppointmentType(event.target.value as AppointmentType)}
+              }}
             >
-              {APPOINTMENT_TYPES.map((type) => (
-                <option key={type} value={type}>{typeLabel(type, language)}</option>
-              ))}
-            </select>
+              <label htmlFor="appointment-type" style={{ marginTop: 12 }}>{copy.appointmentType}</label>
+              <select
+                id="appointment-type"
+                value={appointmentType}
+                onChange={(event) => setAppointmentType(event.target.value as AppointmentType)}
+              >
+                {APPOINTMENT_TYPES.map((type) => (
+                  <option key={type} value={type}>{typeLabel(type, language)}</option>
+                ))}
+              </select>
 
-            <div className="field-row" style={{ marginTop: 12 }}>
-              <div>
-                <label htmlFor="appointment-start">{startLabel}</label>
-                <input
-                  id="appointment-start"
-                  type="datetime-local"
-                  value={appointmentStart}
-                  onChange={(event) => setAppointmentStart(event.target.value)}
-                  required
-                />
+              <div className="field-row" style={{ marginTop: 12 }}>
+                <div>
+                  <label htmlFor="appointment-start">{copy.proposedStart}</label>
+                  <input
+                    id="appointment-start"
+                    type="datetime-local"
+                    value={appointmentStart}
+                    onChange={(event) => setAppointmentStart(event.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="appointment-end">{copy.proposedEnd}</label>
+                  <input
+                    id="appointment-end"
+                    type="datetime-local"
+                    value={appointmentEnd}
+                    onChange={(event) => setAppointmentEnd(event.target.value)}
+                    required
+                  />
+                </div>
               </div>
-              <div>
-                <label htmlFor="appointment-end">{endLabel}</label>
-                <input
-                  id="appointment-end"
-                  type="datetime-local"
-                  value={appointmentEnd}
-                  onChange={(event) => setAppointmentEnd(event.target.value)}
-                  required
-                />
+              <div className="actions" role="group" aria-label={copy.duration}>
+                {PROJECT_DURATION_MINUTES[appointmentType].map((minutes) => (
+                  <button
+                    key={minutes}
+                    type="button"
+                    disabled={busy || !appointmentStart}
+                    onClick={() => {
+                      const end = addMinutesToLocalDateTime(appointmentStart, minutes);
+                      if (end) setAppointmentEnd(end);
+                    }}
+                  >
+                    {durationShortcut(minutes, language)}
+                  </button>
+                ))}
               </div>
-            </div>
-            <div className="actions" role="group" aria-label={durationLabel}>
-              {PROJECT_DURATION_MINUTES[appointmentType].map((minutes) => (
-                <button
-                  key={minutes}
-                  type="button"
-                  disabled={busy || !appointmentStart}
-                  onClick={() => {
-                    const end = addMinutesToLocalDateTime(appointmentStart, minutes);
-                    if (end) setAppointmentEnd(end);
-                  }}
-                >
-                  {durationShortcut(minutes, language)}
+              {checkingConflicts ? <div className="notice">{copy.checking}</div> : null}
+              {conflictMessage ? <div className="notice warn" role="alert">{conflictMessage}</div> : null}
+              <div className="actions">
+                <button type="submit" disabled={busy || !appointmentStart || !appointmentEnd}>
+                  {copy.propose}
                 </button>
-              ))}
-            </div>
-            {checkingConflicts ? (
-              <div className="notice">{language === 'ru' ? 'Проверяем расписание…' : 'Checking the schedule…'}</div>
-            ) : null}
-            {conflictMessage ? (
-              <div className="notice warn" role="alert">{conflictMessage}</div>
-            ) : null}
-            <div className="actions">
-              <button type="submit" disabled={busy || !appointmentStart || !appointmentEnd}>
-                {proposeLabel}
-              </button>
-            </div>
-          </form>
+              </div>
+            </form>
+          </details>
         ) : null}
 
-        <p className="notice" style={{ marginTop: 12 }}>{t('project.calendarNotice')}</p>
+        <p className="notice" style={{ marginTop: 12 }}>{copy.calendarNotice}</p>
       </Section>
 
-      {can(role, 'manageFinance') ? (
-        <Section title={t('common.deposit')}>
-          <label htmlFor="deposit-amount">{t('project.depositAmount', { currency: project.currency })}</label>
-          <input
-            id="deposit-amount"
-            type="number"
-            inputMode="decimal"
-            min="0.01"
-            step="0.01"
-            value={depositAmount}
-            placeholder={finance?.deposit_amount?.toString() ?? t('project.enterAmount')}
-            onChange={(event) => setDepositAmount(event.target.value)}
+      {mayManageFinance ? (
+        <Section title={copy.deposit}>
+          <ProjectDepositPanel
+            project={project}
+            finance={finance}
+            appointments={appointments}
+            onChanged={reload}
           />
-          <div className="actions">
-            <button
-              type="button" disabled={busy || !hasValidDepositAmount}
-              onClick={() => {
-                void run(() => api.updateDeposit(projectId, parsedDepositAmount, 'requested'));
-              }}
-            >
-              {t('project.markRequested')}
-            </button>
-            <button
-              type="button" disabled={busy || !hasValidDepositAmount}
-              onClick={() => {
-                void run(() => api.updateDeposit(projectId, parsedDepositAmount, 'paid'));
-              }}
-            >
-              {t('project.markPaid')}
-            </button>
-          </div>
         </Section>
       ) : null}
 
@@ -388,20 +404,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
       {can(role, 'viewActivity') ? (
         <Section title={t('project.activity')}>
-          {activity.length === 0 ? <EmptyState title={t('project.noActivity')} /> : (
-            <ul className="timeline">
-              {activity.slice(0, 12).map((entry) => (
-                <li key={entry.id}>
-                  <div title={entry.event_type}>
-                    {operationalLabel(language, 'event', entry.event_type)}
-                  </div>
-                  <div className="when">
-                    {formatDateTime(entry.occurred_at, language)} · {label('actor', entry.actor_kind)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          <CollapsibleActivityLog activity={activity} emptyTitle={t('project.noActivity')} />
         </Section>
       ) : null}
     </>
@@ -433,3 +436,75 @@ function durationValue(hours: number | null, language: Language): string {
   if (hours < 1) return durationShortcut(Math.round(hours * 60), language);
   return language === 'ru' ? `${hours} ч` : `${hours} h`;
 }
+
+function calendarSyncLabel(appointment: Appointment, language: Language): string {
+  const labels = {
+    en: { not_connected: 'not connected', queued: 'queued', synced: 'synced', retrying: 'retrying', failed: 'failed' },
+    ru: { not_connected: 'не подключён', queued: 'в очереди', synced: 'синхронизирован', retrying: 'повторная попытка', failed: 'ошибка' },
+  } as const;
+  const base = labels[language][appointment.calendar_sync_status];
+  return appointment.calendar_sync_status === 'failed' && appointment.calendar_last_error_code
+    ? `${base}: ${appointment.calendar_last_error_code}`
+    : base;
+}
+
+function projectStatusLabel(status: ProjectStatus, language: Language): string {
+  const labels = {
+    en: { draft: 'draft', active: 'active', on_hold: 'on hold', completed: 'completed', cancelled: 'cancelled' },
+    ru: { draft: 'черновик', active: 'активный', on_hold: 'на паузе', completed: 'завершён', cancelled: 'отменён' },
+  } as const;
+  return labels[language][status];
+}
+
+function depositStatusLabel(status: Project['deposit_status'], language: Language): string {
+  const labels = {
+    en: { not_required: 'not required', requested: 'requested', paid: 'paid', refunded: 'refunded', forfeited: 'forfeited' },
+    ru: { not_required: 'не требуется', requested: 'запрошен', paid: 'оплачен', refunded: 'возвращён', forfeited: 'удержан' },
+  } as const;
+  return labels[language][status];
+}
+
+const COPY = {
+  en: {
+    deposit: 'Deposit',
+    projectStatus: 'Project status',
+    saveStatus: 'Save status',
+    cancelProjectConfirm: 'Mark this project cancelled?',
+    draftMismatch: 'This project is still a draft even though it already has a paid deposit or confirmed work. Set it to Active if work is proceeding.',
+    appointments: 'Appointments',
+    noAppointments: 'No appointments planned',
+    appointmentPayment: 'Session payment',
+    appointmentPrice: 'Planned price',
+    calendar: 'Calendar',
+    addAppointment: 'Add another appointment',
+    appointmentType: 'Appointment type',
+    proposedStart: 'Proposed start',
+    proposedEnd: 'Proposed end',
+    duration: 'Duration shortcuts',
+    checking: 'Checking the schedule…',
+    conflicts: (count: number, date: string) => `Conflicting active appointments: ${count}. The first starts ${date}. You can still propose this time if the overlap is intentional.`,
+    propose: 'Propose appointment',
+    calendarNotice: 'CRM is the schedule source of truth. Proposed appointments stay in CRM; each confirmed appointment shows its actual Google Calendar sync state above.',
+  },
+  ru: {
+    deposit: 'Депозит',
+    projectStatus: 'Статус проекта',
+    saveStatus: 'Сохранить статус',
+    cancelProjectConfirm: 'Отметить этот проект отменённым?',
+    draftMismatch: 'Проект всё ещё в черновике, хотя депозит уже оплачен или есть подтверждённая запись. Если работа идёт, переведи проект в статус «активный».',
+    appointments: 'Записи',
+    noAppointments: 'Записей пока нет',
+    appointmentPayment: 'Оплата сеанса',
+    appointmentPrice: 'Плановая стоимость',
+    calendar: 'Календарь',
+    addAppointment: 'Добавить ещё одну запись',
+    appointmentType: 'Тип записи',
+    proposedStart: 'Предлагаемое начало',
+    proposedEnd: 'Предлагаемое окончание',
+    duration: 'Быстрый выбор длительности',
+    checking: 'Проверяем расписание…',
+    conflicts: (count: number, date: string) => `Пересекающихся активных записей: ${count}. Первая начинается ${date}. Время всё равно можно предложить, если пересечение намеренное.`,
+    propose: 'Предложить запись',
+    calendarNotice: 'Расписание в CRM является основным. Предложенные записи остаются в CRM, а у каждой подтверждённой записи выше показывается фактический статус синхронизации с Google Calendar.',
+  },
+} as const;
