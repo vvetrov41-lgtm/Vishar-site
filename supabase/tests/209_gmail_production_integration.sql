@@ -148,9 +148,10 @@ select ok(
   'artist_integrations contains safe scope/custody metadata but no provider credentials'
 );
 
-insert into public.clients (id, artist_id, full_name, email) values
+-- Clients are shared canonical people. Artist isolation is carried by the
+-- enquiry/project rows, not by a clients.artist_id column.
+insert into public.clients (id, full_name, email) values
   ('e0911111-1111-4111-8111-111111111111',
-   'a1111111-1111-4111-8111-111111111111',
    'Synthetic Gmail Client', 'gmail-client@example.test');
 
 insert into public.enquiries (
