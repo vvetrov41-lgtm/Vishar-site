@@ -22,9 +22,12 @@ import {
   MonzoTokenError,
 } from './monzo-token-store.js';
 
-const SETUP_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
-const ACCOUNT_ID_PATTERN = /^acc_[A-Za-z0-9]+$/;
+const SETUP_TOKEN_PATTERN = /^[A-Za-z0-9_-]{96,512}$/;
+const SETUP_TOKEN_VERSION = 1;
 const SETUP_TTL_SECONDS = 600;
+const SETUP_CLOCK_SKEW_MS = 30_000;
+const SETUP_TOKEN_CONTEXT = new TextEncoder().encode('vishar-monzo-setup-confirmation-v1');
+const ACCOUNT_ID_PATTERN = /^acc_[A-Za-z0-9]+$/;
 const FORM_BODY_LIMIT = 4096;
 const ALIASES = new Set(['vladimir', 'kristina']);
 
@@ -170,32 +173,125 @@ ${form}
 <a href="${escapeHtml(monzoCrmReturnUrl(env))}">Cancel</a>`);
 }
 
-async function storeSetupState(namespace, token, alias, ownerEmail) {
-  if (!namespace || !SETUP_TOKEN_PATTERN.test(token) || !ALIASES.has(alias)) {
-    throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
-  }
-  await namespace.put(`setup:${token}`, JSON.stringify({
-    alias,
-    ownerEmail: String(ownerEmail).trim().toLowerCase(),
-    createdAt: new Date().toISOString(),
-  }), { expirationTtl: SETUP_TTL_SECONDS });
+function base64Url(bytes) {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
-async function consumeSetupState(namespace, token, alias, ownerEmail) {
-  if (!namespace || !SETUP_TOKEN_PATTERN.test(String(token || '')) || !ALIASES.has(alias)) {
+function base64UrlBytes(value) {
+  if (typeof value !== 'string' || !value) throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  try {
+    return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  } catch {
     throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
   }
-  const key = `setup:${token}`;
-  const stored = await namespace.get(key, 'json');
-  await namespace.delete(key);
+}
+
+function setupKeyBytes(value) {
+  const bytes = base64UrlBytes(String(value || ''));
+  if (bytes.length !== 32) throw new MonzoSecurityError('monzo_not_configured', 503);
+  return bytes;
+}
+
+async function setupEncryptionKey(value, usages) {
+  return crypto.subtle.importKey(
+    'raw',
+    setupKeyBytes(value),
+    'AES-GCM',
+    false,
+    usages,
+  );
+}
+
+function normalizedOwnerEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  if (!email) throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
+  return email;
+}
+
+export async function createSetupConfirmationToken(env, alias, ownerEmail, record, now = Date.now()) {
   if (
-    !stored
-    || stored.alias !== alias
-    || String(stored.ownerEmail || '').trim().toLowerCase() !== String(ownerEmail || '').trim().toLowerCase()
+    !ALIASES.has(alias)
+    || !record
+    || record.alias !== alias
+    || typeof record.clientId !== 'string'
+    || !record.clientId
+    || typeof record.userId !== 'string'
+    || !record.userId
+    || !Number.isSafeInteger(now)
+    || now <= 0
   ) {
     throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
   }
-  return stored;
+
+  const payload = {
+    v: SETUP_TOKEN_VERSION,
+    a: alias,
+    o: normalizedOwnerEmail(ownerEmail),
+    c: record.clientId,
+    u: record.userId,
+    i: now,
+    n: randomMonzoToken(16),
+  };
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: SETUP_TOKEN_CONTEXT },
+    await setupEncryptionKey(env?.MONZO_TOKEN_ENCRYPTION_KEY, ['encrypt']),
+    new TextEncoder().encode(JSON.stringify(payload)),
+  );
+  const sealed = new Uint8Array(iv.length + encrypted.byteLength);
+  sealed.set(iv, 0);
+  sealed.set(new Uint8Array(encrypted), iv.length);
+  const token = base64Url(sealed);
+  if (!SETUP_TOKEN_PATTERN.test(token)) {
+    throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
+  }
+  return token;
+}
+
+export async function verifySetupConfirmationToken(env, token, alias, ownerEmail, record, now = Date.now()) {
+  if (!SETUP_TOKEN_PATTERN.test(String(token || '')) || !ALIASES.has(alias) || !record) {
+    throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
+  }
+
+  let payload;
+  try {
+    const sealed = base64UrlBytes(token);
+    if (sealed.length <= 28) throw new Error('sealed setup token too short');
+    const iv = sealed.slice(0, 12);
+    const ciphertext = sealed.slice(12);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv, additionalData: SETUP_TOKEN_CONTEXT },
+      await setupEncryptionKey(env?.MONZO_TOKEN_ENCRYPTION_KEY, ['decrypt']),
+      ciphertext,
+    );
+    payload = JSON.parse(new TextDecoder().decode(decrypted));
+  } catch (error) {
+    if (error instanceof MonzoSecurityError && error.code === 'monzo_not_configured') throw error;
+    throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
+  }
+
+  const owner = normalizedOwnerEmail(ownerEmail);
+  if (
+    payload?.v !== SETUP_TOKEN_VERSION
+    || payload.a !== alias
+    || payload.o !== owner
+    || payload.c !== record.clientId
+    || payload.u !== record.userId
+    || !Number.isSafeInteger(payload.i)
+    || payload.i <= 0
+    || payload.i > now + SETUP_CLOCK_SKEW_MS
+    || now - payload.i > SETUP_TTL_SECONDS * 1000
+    || typeof payload.n !== 'string'
+    || !/^[A-Za-z0-9_-]{22,32}$/.test(payload.n)
+  ) {
+    throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
+  }
+  return true;
 }
 
 async function readSetupForm(request) {
@@ -318,8 +414,7 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
       }
       throw error;
     }
-    const token = randomMonzoToken();
-    await storeSetupState(env.MONZO_OAUTH_STATE, token, alias, ownerEmail);
+    const token = await createSetupConfirmationToken(env, alias, ownerEmail, record);
     return html(accountsPage(env, alias, accounts, token));
   }
 
@@ -331,7 +426,7 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
   }
 
   const { setupToken, accountId } = await readSetupForm(request);
-  await consumeSetupState(env.MONZO_OAUTH_STATE, setupToken, alias, ownerEmail);
+  await verifySetupConfirmationToken(env, setupToken, alias, ownerEmail, record);
   if (record.webhookId) return Response.redirect(connectedReturnUrl(env, alias), 303);
 
   const connected = await selectAndRegister(alias, accountId, env, record, fetchImpl);
@@ -343,8 +438,8 @@ export const __testing = {
   SETUP_TOKEN_PATTERN,
   SETUP_TTL_SECONDS,
   readSetupForm,
-  storeSetupState,
-  consumeSetupState,
+  createSetupConfirmationToken,
+  verifySetupConfirmationToken,
   selectAndRegister,
   notConnectedPage,
   approvalPendingPage,
