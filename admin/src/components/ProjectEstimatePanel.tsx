@@ -9,12 +9,14 @@ export function ProjectEstimatePanel({
   project,
   finance,
   appointments,
+  mayViewFinance,
   mayManage,
   onSaved,
 }: {
   project: Project;
   finance: ProjectFinance | null;
   appointments: Appointment[];
+  mayViewFinance: boolean;
   mayManage: boolean;
   onSaved: () => void;
 }) {
@@ -24,11 +26,13 @@ export function ProjectEstimatePanel({
   const planned = useMemo(() => plannedWork(appointments), [appointments]);
   const fallbackSessions = project.estimated_sessions ?? (planned.sessions > 0 ? planned.sessions : null);
   const fallbackHours = project.estimated_hours ?? (planned.hours > 0 ? planned.hours : null);
-  const fallbackRate = finance?.hourly_rate ?? null;
-  const fallbackTotal = finance?.estimate_total
-    ?? (fallbackHours !== null && fallbackRate !== null ? roundMoney(fallbackHours * fallbackRate) : null);
-  const paidDeposit = project.deposit_status === 'paid' ? (finance?.deposit_amount ?? 0) : 0;
-  const remaining = fallbackTotal === null ? null : Math.max(0, fallbackTotal - paidDeposit);
+  const fallbackRate = mayViewFinance ? (finance?.hourly_rate ?? null) : null;
+  const fallbackTotal = mayViewFinance
+    ? (finance?.estimate_total
+      ?? (fallbackHours !== null && fallbackRate !== null ? roundMoney(fallbackHours * fallbackRate) : null))
+    : null;
+  const paidDeposit = mayViewFinance && project.deposit_status === 'paid' ? (finance?.deposit_amount ?? 0) : 0;
+  const remaining = mayViewFinance && fallbackTotal !== null ? Math.max(0, fallbackTotal - paidDeposit) : null;
 
   const [editing, setEditing] = useState(false);
   const [sessions, setSessions] = useState(numberToInput(fallbackSessions));
@@ -117,11 +121,15 @@ export function ProjectEstimatePanel({
           {fallbackHours ?? '—'}
           {project.estimated_hours === null && planned.hours > 0 ? <span className="meta"> {copy.fromAppointments}</span> : null}
         </dd>
-        <dt>{copy.hourlyRate}</dt><dd>{formatMoney(fallbackRate, project.currency, language)}</dd>
-        <dt>{copy.estimateTotal}</dt><dd>{formatMoney(fallbackTotal, project.currency, language)}</dd>
-        <dt>{copy.depositReceived}</dt>
-        <dd>{paidDeposit > 0 ? formatMoney(paidDeposit, project.currency, language) : '—'}</dd>
-        <dt>{copy.remaining}</dt><dd>{formatMoney(remaining, project.currency, language)}</dd>
+        {mayViewFinance ? (
+          <>
+            <dt>{copy.hourlyRate}</dt><dd>{formatMoney(fallbackRate, project.currency, language)}</dd>
+            <dt>{copy.estimateTotal}</dt><dd>{formatMoney(fallbackTotal, project.currency, language)}</dd>
+            <dt>{copy.depositReceived}</dt>
+            <dd>{paidDeposit > 0 ? formatMoney(paidDeposit, project.currency, language) : '—'}</dd>
+            <dt>{copy.remaining}</dt><dd>{formatMoney(remaining, project.currency, language)}</dd>
+          </>
+        ) : null}
       </dl>
 
       {mayManage ? (
