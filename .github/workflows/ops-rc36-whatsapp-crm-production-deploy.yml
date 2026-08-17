@@ -1,0 +1,146 @@
+name: Ops RC36 private CRM production deploy
+
+on:
+  push:
+    branches:
+      - ops/rc36-whatsapp-crm-production-deploy
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-rc36-whatsapp-crm-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy exact RC36 private CRM only
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      TARGET_SHA: e98a71e38b7fb8d853bfbad791ec4061d6ae4772
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+
+    steps:
+      - name: Verify bounded operator branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ops/rc36-whatsapp-crm-production-deploy'
+          test "$TARGET_SHA" = 'e98a71e38b7fb8d853bfbad791ec4061d6ae4772'
+          test "$CRM_PAGES_PROJECT" = 'vishar-crm-production'
+          test "$VITE_SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co'
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in
+            sb_publishable_*) ;;
+            *) echo 'Production publishable key is missing or malformed.' >&2; exit 1 ;;
+          esac
+
+      - name: Checkout exact RC36 candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact clean candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --short)"
+          test -f admin/functions/api/whatsapp/embedded-signup/provision.js
+          grep -Fq "const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';" admin/functions/api/whatsapp/embedded-signup/provision.js
+          grep -Fq "const INTEGRATION_KEY = 'vladimir-production';" admin/functions/api/whatsapp/embedded-signup/provision.js
+          ! grep -Fq 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION' admin/functions/api/whatsapp/embedded-signup/provision.js
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install locked CRM dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Audit CRM dependencies
+        working-directory: admin
+        run: npm audit --audit-level=moderate
+
+      - name: Test typecheck and build private CRM
+        working-directory: admin
+        run: |
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify deploy artifact and Pages Functions root
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          test -f admin/functions/api/whatsapp/embedded-signup/provision.js
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Install pinned root deployment tooling
+        run: npm ci
+
+      - name: Deploy exact RC36 private CRM Pages and Functions
+        working-directory: admin
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          ../node_modules/.bin/wrangler pages deploy dist \
+            --project-name "$CRM_PAGES_PROJECT" \
+            --branch production \
+            --commit-hash "$TARGET_SHA" \
+            --commit-dirty=false
+
+      - name: Verify Cloudflare Pages reports exact RC36 SHA
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          project="$(curl -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$CRM_PAGES_PROJECT")"
+          PROJECT_JSON="$project" TARGET_SHA="$TARGET_SHA" node <<'NODE'
+          const payload = JSON.parse(process.env.PROJECT_JSON || '{}');
+          if (payload.success !== true) throw new Error('pages_lookup_failed');
+          const sha = payload?.result?.latest_deployment?.deployment_trigger?.metadata?.commit_hash || '';
+          if (sha !== process.env.TARGET_SHA) throw new Error(`pages_sha_mismatch:${sha}`);
+          console.log(`CRM_PAGES_SHA=${sha}`);
+          NODE
+
+      - name: Safety summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC36 private CRM production deploy'
+            echo "- Target candidate: \`$TARGET_SHA\`"
+            echo '- Target Pages project: `vishar-crm-production`'
+            echo '- Upload root: `admin/`, containing `dist/` and `functions/`'
+            echo '- Database/Auth configuration changes: none'
+            echo '- Worker/webhook/drain deploys: none'
+            echo '- Meta/provider calls: none'
+            echo '- Kristina WhatsApp activation: none'
+            echo '- Retained staging changes: none'
+          } >> "$GITHUB_STEP_SUMMARY"
