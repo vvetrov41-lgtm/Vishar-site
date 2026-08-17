@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OPERATOR_PR: '0'
+  OPERATOR_PR: '316'
   PRODUCT_PR: '315'
   PRODUCT_HEAD_BRANCH: agent/monzo-sca-approval-race-fix
   PRODUCT_BASE_BRANCH: agent/monzo-token-exchange-diagnostics
