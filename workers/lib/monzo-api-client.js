@@ -237,15 +237,38 @@ async function authenticatedJson(url, accessToken, fetchImpl, options = {}) {
 }
 
 export async function monzoWhoAmI(accessToken, expectedClientId, expectedUserId, fetchImpl = fetch) {
-  const body = await authenticatedJson(WHOAMI_URL, accessToken, fetchImpl);
-  if (
-    body?.authenticated !== true
-    || body.client_id !== expectedClientId
-    || body.user_id !== expectedUserId
-  ) {
-    throw new MonzoApiError('monzo_account_mismatch', 403);
+  try {
+    const body = await authenticatedJson(WHOAMI_URL, accessToken, fetchImpl);
+    if (
+      body?.authenticated !== true
+      || body.client_id !== expectedClientId
+      || body.user_id !== expectedUserId
+    ) {
+      throw new MonzoApiError('monzo_account_mismatch', 403);
+    }
+    return {
+      clientId: body.client_id,
+      userId: body.user_id,
+      approvalPending: false,
+    };
+  } catch (error) {
+    // Monzo may issue the access/refresh-token pair before the account owner
+    // finishes the separate SCA approval in the Monzo app. At that point the
+    // token endpoint has already bound the token to the expected client/user,
+    // while /ping/whoami is expected to answer 403 because the token has no
+    // permissions yet. Preserve the encrypted token for the callback instead
+    // of logging it out. Every account/webhook path still performs a provider
+    // request after this probe, so a pending token remains unable to select an
+    // account, register a webhook or create a reconciliation candidate.
+    if (error instanceof MonzoApiError && error.code === 'monzo_approval_pending') {
+      return {
+        clientId: expectedClientId,
+        userId: expectedUserId,
+        approvalPending: true,
+      };
+    }
+    throw error;
   }
-  return { clientId: body.client_id, userId: body.user_id };
 }
 
 export async function listMonzoAccounts(accessToken, fetchImpl = fetch) {
