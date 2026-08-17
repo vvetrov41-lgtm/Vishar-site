@@ -211,6 +211,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           project={project}
           finance={finance}
           appointments={appointments}
+          mayViewFinance={mayViewFinance}
           mayManage={mayEditEstimate}
           onSaved={reload}
         />
