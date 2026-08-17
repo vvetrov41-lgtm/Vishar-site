@@ -1,0 +1,99 @@
+name: Ops RC36 WhatsApp runtime audit
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc36-whatsapp-runtime-audit
+    paths:
+      - .github/workflows/ops-rc36-whatsapp-runtime-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: crm-production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+    steps:
+      - name: Verify bounded audit branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc36-whatsapp-runtime-audit'
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - name: Audit Cloudflare WhatsApp runtime without secret values
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          workers_json="$(curl -fsS "${auth[@]}" "$account/workers/scripts")"
+          WORKERS_JSON="$workers_json" node <<'NODE'
+          const doc = JSON.parse(process.env.WORKERS_JSON || '{}');
+          if (doc.success !== true) throw new Error('workers_list_failed');
+          const names = (doc.result || []).map(x => x.id || x.name).filter(Boolean).sort();
+          for (const expected of ['vishar-whatsapp-webhook-production','vishar-whatsapp-drain-production']) {
+            console.log(`WORKER_${expected.toUpperCase().replace(/-/g,'_')}=${names.includes(expected) ? 'present' : 'missing'}`);
+          }
+          NODE
+
+          for worker in vishar-whatsapp-webhook-production vishar-whatsapp-drain-production; do
+            settings="$(curl -fsS "${auth[@]}" "$account/workers/scripts/$worker/settings")"
+            SETTINGS_JSON="$settings" WORKER="$worker" node <<'NODE'
+          const doc = JSON.parse(process.env.SETTINGS_JSON || '{}');
+          if (doc.success !== true) throw new Error(`settings_failed:${process.env.WORKER}`);
+          const bindings = Array.isArray(doc.result?.bindings) ? doc.result.bindings : [];
+          const safe = bindings.map(b => `${b.name}:${b.type}`).sort();
+          console.log(`${process.env.WORKER}:BINDINGS=${safe.join(',')}`);
+          console.log(`${process.env.WORKER}:VLADIMIR_BINDING=${bindings.some(b => b.name === 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION') ? 'present' : 'missing'}`);
+          NODE
+
+            schedules="$(curl -fsS "${auth[@]}" "$account/workers/scripts/$worker/schedules" || printf '{"success":false,"result":[]}')"
+            SCHEDULES_JSON="$schedules" WORKER="$worker" node <<'NODE'
+          const doc = JSON.parse(process.env.SCHEDULES_JSON || '{}');
+          const schedules = doc.success === true && Array.isArray(doc.result) ? doc.result : [];
+          console.log(`${process.env.WORKER}:CRON_COUNT=${schedules.length}`);
+          NODE
+          done
+
+          domains="$(curl -fsS "${auth[@]}" "$account/workers/domains")"
+          DOMAINS_JSON="$domains" node <<'NODE'
+          const doc = JSON.parse(process.env.DOMAINS_JSON || '{}');
+          if (doc.success !== true) throw new Error('worker_domains_failed');
+          const rows = Array.isArray(doc.result) ? doc.result : [];
+          const filtered = rows.filter(r => String(r.hostname || '').includes('whatsapp') || String(r.service || '').includes('whatsapp'));
+          for (const row of filtered) console.log(`WHATSAPP_DOMAIN=${row.hostname || ''};SERVICE=${row.service || ''};ENV=${row.environment || ''}`);
+          if (!filtered.length) console.log('WHATSAPP_DOMAIN=none');
+          NODE
+
+          pages="$(curl -fsS "${auth[@]}" "$account/pages/projects/$CRM_PAGES_PROJECT")"
+          PAGES_JSON="$pages" node <<'NODE'
+          const doc = JSON.parse(process.env.PAGES_JSON || '{}');
+          if (doc.success !== true) throw new Error('pages_lookup_failed');
+          const p = doc.result || {};
+          const sha = p?.latest_deployment?.deployment_trigger?.metadata?.commit_hash || '';
+          const names = Object.keys(p?.deployment_configs?.production?.env_vars || {}).sort();
+          console.log(`CRM_PAGES_SHA=${sha}`);
+          console.log(`CRM_PAGES_BINDING_NAMES=${names.join(',')}`);
+          NODE
+
+          status="$(curl -sS -o /dev/null -w '%{http_code}' 'https://whatsapp.vishartattoo.com/?hub.mode=subscribe&hub.verify_token=definitely-wrong-audit-token&hub.challenge=audit' || true)"
+          echo "WHATSAPP_WEBHOOK_WRONG_TOKEN_HTTP=$status"
+
+      - name: Safety summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Read-only production WhatsApp runtime audit'
+            echo '- No Worker, binding, route, cron, database or staging mutations.'
+            echo '- Secret values were not requested or printed.'
+          } >> "$GITHUB_STEP_SUMMARY"
