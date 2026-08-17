@@ -4,6 +4,7 @@ import {
   exchangeMonzoAuthorizationCode,
   isIncomingGbpTransferCredit,
   listMonzoAccounts,
+  monzoWhoAmI,
   registerMonzoWebhook,
   MonzoApiError,
 } from '../workers/lib/monzo-api-client.js';
@@ -158,9 +159,55 @@ for (const [body, expected] of [
   );
 }
 
+// Monzo may issue the token pair before the separate in-app SCA approval has
+// completed. /ping/whoami is then expected to be 403. The identity probe must
+// preserve the token for the OAuth callback, but it must explicitly report
+// that identity is still pending rather than pretending verification occurred.
+const pendingIdentity = await monzoWhoAmI(
+  'access-guard-test',
+  oauthEnv.MONZO_OAUTH_CLIENT_ID,
+  'user-token-test',
+  async () => Response.json({ code: 'forbidden.verification_required' }, { status: 403 }),
+);
+assert.deepEqual(pendingIdentity, {
+  clientId: oauthEnv.MONZO_OAUTH_CLIENT_ID,
+  userId: 'user-token-test',
+  approvalPending: true,
+});
+
+const verifiedIdentity = await monzoWhoAmI(
+  'access-guard-test',
+  oauthEnv.MONZO_OAUTH_CLIENT_ID,
+  'user-token-test',
+  async () => Response.json({
+    authenticated: true,
+    client_id: oauthEnv.MONZO_OAUTH_CLIENT_ID,
+    user_id: 'user-token-test',
+  }),
+);
+assert.deepEqual(verifiedIdentity, {
+  clientId: oauthEnv.MONZO_OAUTH_CLIENT_ID,
+  userId: 'user-token-test',
+  approvalPending: false,
+});
+await assert.rejects(
+  monzoWhoAmI(
+    'access-guard-test',
+    oauthEnv.MONZO_OAUTH_CLIENT_ID,
+    'user-token-test',
+    async () => Response.json({
+      authenticated: true,
+      client_id: oauthEnv.MONZO_OAUTH_CLIENT_ID,
+      user_id: 'user-other-test',
+    }),
+  ),
+  (error) => error instanceof MonzoApiError && error.code === 'monzo_account_mismatch',
+);
+
 // The live Monzo API answers an invalid or expired bearer token with HTTP 400
 // and `code: "bad_request.invalid_token"`, not the documented 401. That must
-// still route to reauthorisation instead of a generic provider rejection.
+// still route to reauthorisation instead of a generic provider rejection. A
+// 403 on an account endpoint remains fail-closed while SCA approval is pending.
 for (const [status, body, expected] of [
   [400, { code: 'bad_request.invalid_token', message: 'Token is invalid' }, 'monzo_reauthorization_required'],
   [400, { error: 'invalid_token' }, 'monzo_reauthorization_required'],
@@ -196,4 +243,4 @@ for (const transaction of [
   assert.equal(isIncomingGbpTransferCredit(transaction), false, JSON.stringify(transaction));
 }
 
-console.log('Monzo API client guard tests passed, including token exchange diagnostics.');
+console.log('Monzo API client guard tests passed, including token exchange diagnostics and SCA race handling.');
