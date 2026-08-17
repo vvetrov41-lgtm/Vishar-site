@@ -218,8 +218,8 @@ jobs:
           while [ "$SECONDS" -lt "$deadline" ]; do
             candidate="$(gh api \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/${DATABASE_WORKFLOW}/runs?branch=${OPERATOR_RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
-              --jq --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" \
-              '[.workflow_runs[] | select(.head_sha == $sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+              | jq -r --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" \
+                '[.workflow_runs[] | select(.head_sha == $sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
             if [ -n "$candidate" ]; then run_id="$candidate"; break; fi
             sleep 3
           done
@@ -279,8 +279,8 @@ jobs:
           while [ "$SECONDS" -lt "$deadline" ]; do
             candidate="$(gh api \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?branch=${OPERATOR_RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
-              --jq --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" \
-              '[.workflow_runs[] | select(.head_sha == $sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+              | jq -r --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" \
+                '[.workflow_runs[] | select(.head_sha == $sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
             if [ -n "$candidate" ]; then run_id="$candidate"; break; fi
             sleep 3
           done
