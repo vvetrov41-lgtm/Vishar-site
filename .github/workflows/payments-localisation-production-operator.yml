@@ -1,0 +1,249 @@
+name: Payments localisation production operator
+
+# Release-only operator for the Payments RU/EN localisation follow-up on PR #322.
+# It owns no production credentials and can only dispatch the canonical private
+# CRM Pages workflow for this exact release SHA after normal exact-head CI passes.
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc43-payments-localisation
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+  actions: write
+
+concurrency:
+  group: payments-localisation-production-operator
+  cancel-in-progress: false
+
+env:
+  OPERATOR_PR: '0'
+  PRODUCT_PR: '322'
+  PRODUCT_HEAD_BRANCH: agent/monzo-reconciliation-crm-review
+  PREVIOUS_PRODUCT_SHA: cb3338de786a079eebe433382bfdba7b25946df1
+  OPERATOR_RELEASE_BRANCH: release/private-crm-rc43-payments-localisation
+  OPERATOR_BASE_BRANCH: agent/monzo-reconciliation-crm-review
+  OPERATOR_WORKFLOW_PATH: .github/workflows/payments-localisation-production-operator.yml
+  CRM_WORKFLOW: deploy-private-production-crm.yml
+
+jobs:
+  authorize:
+    name: Authorize Payments localisation rollout
+    if: >-
+      github.actor == 'vvetrov41-lgtm' &&
+      github.ref == 'refs/heads/release/private-crm-rc43-payments-localisation' &&
+      contains(github.event.head_commit.message, '[RUN_PAYMENTS_LOCALISATION]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      approved_sha: ${{ github.sha }}
+      product_sha: ${{ steps.lineage.outputs.product_sha }}
+    steps:
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify release branch and product lineage
+        id: lineage
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+          release_tip="$(git ls-remote --heads origin "refs/heads/${OPERATOR_RELEASE_BRANCH}" | awk '{print $1}')"
+          test "$release_tip" = "$APPROVED_SHA"
+
+          operator="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${OPERATOR_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha, .base.ref] | @tsv')"
+          IFS=$'\t' read -r op_state op_draft op_merged op_head_ref op_head_sha op_base_ref <<< "$operator"
+          test "$op_state" = open
+          test "$op_draft" = true
+          test "$op_merged" = false
+          test "$op_head_ref" = "$OPERATOR_RELEASE_BRANCH"
+          test "$op_head_sha" = "$APPROVED_SHA"
+          test "$op_base_ref" = "$OPERATOR_BASE_BRANCH"
+
+          product="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PRODUCT_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha] | @tsv')"
+          IFS=$'\t' read -r state draft merged head_ref product_sha <<< "$product"
+          test "$state" = open
+          test "$draft" = true
+          test "$merged" = false
+          test "$head_ref" = "$PRODUCT_HEAD_BRANCH"
+
+          git cat-file -e "${product_sha}^{commit}"
+          git merge-base --is-ancestor "$PREVIOUS_PRODUCT_SHA" "$product_sha"
+          git merge-base --is-ancestor "$product_sha" "$APPROVED_SHA"
+
+          mapfile -t release_delta < <(git diff --name-only "$product_sha" "$APPROVED_SHA")
+          if [ "${#release_delta[@]}" -ne 1 ] || [ "${release_delta[0]}" != "$OPERATOR_WORKFLOW_PATH" ]; then
+            echo 'Release-only delta is not confined to the operator workflow:' >&2
+            printf '  %s\n' "${release_delta[@]}" >&2
+            exit 1
+          fi
+
+          mapfile -t locale_delta < <(git diff --name-only "$PREVIOUS_PRODUCT_SHA" "$product_sha")
+          allowed=(
+            admin/src/lib/payment-copy.ts
+            admin/src/pages/PaymentsPage.tsx
+            admin/src/test/payment-copy.test.ts
+          )
+          if [ "${#locale_delta[@]}" -ne "${#allowed[@]}" ]; then
+            echo 'Unexpected Payments localisation delta size.' >&2
+            printf '  %s\n' "${locale_delta[@]}" >&2
+            exit 1
+          fi
+          for path in "${locale_delta[@]}"; do
+            ok=''
+            for expected in "${allowed[@]}"; do
+              if [ "$path" = "$expected" ]; then ok=yes; break; fi
+            done
+            if [ "$ok" != yes ]; then
+              echo "Unexpected localisation path: $path" >&2
+              exit 1
+            fi
+          done
+
+          grep -Fq "connectionTitle: 'Подключение Monzo'" admin/src/lib/payment-copy.ts
+          grep -Fq "reconciliationTitle: 'Сверка платежей Monzo'" admin/src/lib/payment-copy.ts
+          grep -Fq "useLanguage" admin/src/pages/PaymentsPage.tsx
+          grep -Fq "label('sessionStatus', appointment.status)" admin/src/pages/PaymentsPage.tsx
+          grep -Fq "label('paymentStatus', appointment.payment_status)" admin/src/pages/PaymentsPage.tsx
+
+          echo "product_sha=$product_sha" >> "$GITHUB_OUTPUT"
+          echo "Release ${APPROVED_SHA} is product ${product_sha} plus one operator-only workflow."
+
+      - name: Wait for normal exact-head CI to be green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            runs_file="$(mktemp)"
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name, .status, (.conclusion // "none"), .started_at] | @tsv' \
+              > "$runs_file"
+            waiting=''; failed=''
+            while IFS= read -r required; do
+              latest="$(awk -F'\t' -v name="$required" '$1 == name { print $4 "\t" $2 "\t" $3 }' "$runs_file" | sort -r | head -1)"
+              if [ -z "$latest" ]; then waiting="${waiting}${required}: absent; "; continue; fi
+              status="$(printf '%s' "$latest" | cut -f2)"
+              conclusion="$(printf '%s' "$latest" | cut -f3)"
+              if [ "$status" != completed ]; then waiting="${waiting}${required}: ${status}; "
+              elif [ "$conclusion" != success ]; then failed="${failed}${required}: ${conclusion}; "; fi
+            done <<'REQUIRED'
+          static-validation
+          Private CRM
+          Supabase migrations and pgTAP
+          Public site and Worker
+          REQUIRED
+            rm -f "$runs_file"
+            if [ -n "$failed" ]; then echo "Normal exact-head CI failed: ${failed}" >&2; exit 1; fi
+            if [ -z "$waiting" ]; then echo "All required exact-head CI checks are green for ${APPROVED_SHA}."; exit 0; fi
+            echo "Waiting for exact-head CI: ${waiting}"
+            sleep 10
+          done
+          echo 'Timed out waiting for exact-head CI.' >&2
+          exit 1
+
+      - name: Authorisation summary
+        if: always()
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ github.sha }}
+          PRODUCT_SHA: ${{ steps.lineage.outputs.product_sha }}
+        run: |
+          {
+            echo '### Payments localisation production operator'
+            echo
+            echo "- Operator PR: #${OPERATOR_PR} (draft, never merge)"
+            echo "- Product PR: #${PRODUCT_PR} (verified open/draft/unmerged)"
+            echo "- Product SHA: \`${PRODUCT_SHA:-unresolved}\`"
+            echo "- Release SHA: \`${APPROVED_SHA}\`"
+            echo '- Production effect before canonical crm-production approval: none'
+            echo '- Database / Monzo Worker / public site / booking deploy: none'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  crm:
+    name: Dispatch and verify private CRM production deployment
+    needs: authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Dispatch canonical private CRM workflow
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          payload="$(jq -n \
+            --arg ref "$OPERATOR_RELEASE_BRANCH" \
+            --arg sha "$APPROVED_SHA" \
+            '{ref:$ref,inputs:{approved_sha:$sha,deploy:"true",approval_phrase:"DEPLOY_PRIVATE_CRM_ONLY"}}')"
+          printf '%s' "$payload" | gh api -X POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/dispatches" \
+            --input -
+          echo "started_at=$started_at" >> "$GITHUB_OUTPUT"
+          echo "Dispatched ${CRM_WORKFLOW} for ${APPROVED_SHA}."
+
+      - name: Wait for canonical private CRM workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
+          STARTED_AT: ${{ steps.dispatch.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 9600))
+          run_id=''
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            candidate="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?branch=${OPERATOR_RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
+              | jq -r --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" \
+                '[.workflow_runs[] | select(.head_sha == $sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+            if [ -n "$candidate" ]; then run_id="$candidate"; break; fi
+            sleep 3
+          done
+          if [ -z "$run_id" ]; then echo 'Could not resolve dispatched private CRM workflow run.' >&2; exit 1; fi
+          echo "Private CRM workflow run: ${run_id}"
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '[.status, (.conclusion // "none")] | @tsv')"
+            status="$(printf '%s' "$row" | cut -f1)"
+            conclusion="$(printf '%s' "$row" | cut -f2)"
+            echo "CRM ${run_id}: ${status}/${conclusion}"
+            if [ "$status" = completed ]; then
+              test "$conclusion" = success
+              exit 0
+            fi
+            sleep 15
+          done
+          echo 'Timed out waiting for protected private CRM rollout.' >&2
+          exit 1
+
+      - name: Rollout summary
+        if: always()
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
+        run: |
+          {
+            echo '### Payments localisation rollout'
+            echo
+            echo "- Exact release SHA: \`${APPROVED_SHA}\`"
+            echo '- Private CRM: canonical protected Pages workflow only'
+            echo '- Database / Monzo Worker / public site / booking / Calendar / Telegram / WhatsApp / GPT deploy: none'
+          } >> "$GITHUB_STEP_SUMMARY"
