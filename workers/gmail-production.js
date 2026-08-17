@@ -59,7 +59,7 @@ function html(status, title, message) {
 }
 
 function configured(env) {
-  return env?.VISHAR_ENVIRONMENT === 'production'
+  return Boolean(env?.VISHAR_ENVIRONMENT === 'production'
     && env?.SUPABASE_URL === PRODUCTION_SUPABASE_ORIGIN
     && env?.GOOGLE_OAUTH_REDIRECT_URI === REDIRECT_URI
     && typeof env?.GOOGLE_OAUTH_CLIENT_ID === 'string'
@@ -71,7 +71,7 @@ function configured(env) {
     && typeof env?.SUPABASE_PUBLISHABLE_KEY === 'string'
     && env.SUPABASE_PUBLISHABLE_KEY.startsWith('sb_publishable_')
     && env?.GMAIL_OAUTH_STATE
-    && env?.GMAIL_OAUTH_TOKENS;
+    && env?.GMAIL_OAUTH_TOKENS);
 }
 
 function artistConfig(slug, env) {
