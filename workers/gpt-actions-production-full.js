@@ -1,5 +1,7 @@
 import productionWorker from './gpt-actions-production.js';
 
+const OPERATIONS_HOST = 'gpt-operations.vishartattoo.com';
+const GMAIL_ACTION_PATH = /^\/v1\/enquiries\/[0-9a-f-]{36}\/gmail\/(?:history\/?|threads\/[0-9a-f-]{36}\/?|reply-drafts\/?)$/i;
 const PUBLIC_HEADERS = Object.freeze({
   'cache-control': 'public, max-age=300',
   'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
@@ -32,7 +34,7 @@ const PRIVACY_HTML = `<!doctype html>
 <h2>Changes made through the GPT</h2>
 <p>Operational mutations reuse the existing audited CRM workflows wherever they exist. Appointment and availability changes preserve Calendar version/outbox rules. Payment and provider-delivery actions preserve their existing idempotency and routing boundaries. Consequential Actions are marked as consequential in the GPT schema.</p>
 <h2>Providers</h2>
-<p>OpenAI provides ChatGPT and the private GPT interface. Cloudflare hosts the public OAuth/action edge. Supabase provides authentication and the CRM database. Google Calendar, email, WhatsApp or payment providers are contacted only through separately configured artist integrations and their existing CRM workflows.</p>
+<p>OpenAI provides ChatGPT and the private GPT interface. Cloudflare hosts the public OAuth/action edge. Supabase provides authentication and the CRM database. Google Calendar, Gmail, WhatsApp or payment providers are contacted only through separately configured artist integrations and their existing CRM workflows.</p>
 <h2>Contact</h2>
 <p>Questions can be sent to <a href="mailto:info@vishartattoo.com">info@vishartattoo.com</a>.</p>
 </body>
@@ -42,6 +44,11 @@ function isPrivacyRoute(request) {
   if (!['GET', 'HEAD'].includes(request.method)) return false;
   const pathname = new URL(request.url).pathname;
   return pathname === '/privacy' || pathname === '/privacy/';
+}
+
+function isGmailActionRoute(request) {
+  const url = new URL(request.url);
+  return url.hostname === OPERATIONS_HOST && GMAIL_ACTION_PATH.test(url.pathname);
 }
 
 async function privacyResponse(request, env) {
@@ -69,10 +76,27 @@ async function privacyResponse(request, env) {
   });
 }
 
+async function gmailActionResponse(request, env) {
+  if (!isGmailActionRoute(request)) return null;
+  if (!env?.GMAIL_SERVICE || typeof env.GMAIL_SERVICE.fetch !== 'function') {
+    return new Response(JSON.stringify({ error: 'gmail_provider_unavailable' }), {
+      status: 503,
+      headers: {
+        'cache-control': 'no-store',
+        'content-type': 'application/json; charset=utf-8',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  }
+  return env.GMAIL_SERVICE.fetch(request);
+}
+
 export default {
   async fetch(request, env, ctx) {
-    return (await privacyResponse(request, env)) || productionWorker.fetch(request, env, ctx);
+    return (await privacyResponse(request, env))
+      || (await gmailActionResponse(request, env))
+      || productionWorker.fetch(request, env, ctx);
   },
 };
 
-export const __testing = Object.freeze({ isPrivacyRoute, privacyResponse });
+export const __testing = Object.freeze({ isPrivacyRoute, isGmailActionRoute, privacyResponse, gmailActionResponse });
