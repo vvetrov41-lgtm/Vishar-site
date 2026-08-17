@@ -4,6 +4,7 @@ name: Monzo SCA race production operator
 # The release-only delta must remain this workflow file. A production mutation
 # can happen only after the existing reusable gate reaches the protected
 # crm-production environment and receives manual approval.
+# rc39 activation is bound to this exact release SHA by the lineage checks.
 
 on:
   push:
