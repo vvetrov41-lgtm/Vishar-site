@@ -96,13 +96,14 @@ begin
     raise exception 'Gmail target resolution is backend-only' using errcode = '42501';
   end if;
 
+  -- Clients are canonical people and are deliberately not artist-owned rows.
+  -- Artist isolation comes from the authoritative enquiry -> artist binding.
   select lower(btrim(c.email)) into v_client_email
   from public.enquiries e
   join public.clients c on c.id = e.client_id
   where e.id = p_enquiry_id
     and e.client_id = p_client_id
-    and e.artist_id = p_artist_id
-    and c.artist_id = p_artist_id;
+    and e.artist_id = p_artist_id;
   if not found or nullif(v_client_email, '') is null then
     raise exception 'Gmail CRM target is unavailable' using errcode = '22023';
   end if;
@@ -345,8 +346,7 @@ begin
   from public.enquiries e
   join public.clients cl on cl.id = e.client_id
   where e.id = p_enquiry_id
-    and e.artist_id = v_artist_id
-    and cl.artist_id = v_artist_id;
+    and e.artist_id = v_artist_id;
   if not found then
     raise exception 'enquiry is outside this GPT artist scope' using errcode = '42501';
   end if;
@@ -471,7 +471,7 @@ begin
     ) as job_valid
   from leased l
   left join public.email_messages m on m.id = l.email_message_id
-  left join public.clients cl on cl.id = l.client_id and cl.artist_id = l.artist_id
+  left join public.clients cl on cl.id = l.client_id
   left join public.artist_integrations i
     on i.artist_id = l.artist_id
    and i.integration_type = 'email'::public.artist_integration_type
@@ -586,9 +586,9 @@ begin
 end;
 $function$;
 
-revoke all on function public.gpt_authorize_gmail_enquiry(uuid) from public, anon;
+revoke all on function public.gpt_authorize_gmail_enquiry(uuid) from public, anon, service_role;
 grant execute on function public.gpt_authorize_gmail_enquiry(uuid) to authenticated;
-revoke all on function public.gpt_create_gmail_reply_draft(uuid, uuid, text) from public, anon;
+revoke all on function public.gpt_create_gmail_reply_draft(uuid, uuid, text) from public, anon, service_role;
 grant execute on function public.gpt_create_gmail_reply_draft(uuid, uuid, text) to authenticated;
 
 revoke all on function public.service_resolve_gmail_target(uuid, uuid, uuid) from public, anon, authenticated;
