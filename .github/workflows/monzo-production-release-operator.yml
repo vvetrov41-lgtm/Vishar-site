@@ -1,5 +1,6 @@
 name: Monzo production release operator
 
+# Current activation: full rollout after successful inert bootstrap and manual secret provisioning.
 # Mutating Monzo production phases must enter crm-production from the approved
 # release branch because the environment itself only permits release/private-crm-rc*.
 # A pull_request-triggered deployment is not sufficient here: GitHub evaluates
