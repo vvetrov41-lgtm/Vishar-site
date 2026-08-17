@@ -4,6 +4,7 @@ name: Monzo token validation production operator
 # The release-only delta must remain this workflow file. A production mutation
 # can happen only after the existing reusable gate reaches the protected
 # crm-production environment and receives manual approval.
+# rc38 activation is bound to this exact release SHA by the lineage checks.
 
 on:
   push:
