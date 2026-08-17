@@ -77,7 +77,7 @@ function classifyTokenExchangeRejection(response, body) {
 function validateTokenResponse(response, body, expectedClientId) {
   if (!response.ok) throw classifyTokenExchangeRejection(response, body);
   if (typeof body?.access_token !== 'string' || !body.access_token) {
-    throw new MonzoApiError('monzo_token_payload_invalid');
+    throw new MonzoApiError('monzo_access_token_missing');
   }
   if (typeof body?.refresh_token !== 'string' || !body.refresh_token) {
     throw new MonzoApiError('monzo_refresh_token_missing');
@@ -85,15 +85,17 @@ function validateTokenResponse(response, body, expectedClientId) {
   if (typeof body?.client_id !== 'string' || body.client_id !== expectedClientId) {
     throw new MonzoApiError('monzo_token_client_mismatch');
   }
-  if (
-    body.token_type !== 'Bearer'
-    || typeof body?.user_id !== 'string'
-    || !body.user_id
-    || !Number.isInteger(body?.expires_in)
-    || body.expires_in < 60
-    || body.expires_in > 86400
-  ) {
-    throw new MonzoApiError('monzo_token_payload_invalid');
+  if (typeof body?.token_type !== 'string' || body.token_type.toLowerCase() !== 'bearer') {
+    throw new MonzoApiError('monzo_token_type_invalid');
+  }
+  if (typeof body?.user_id !== 'string' || !body.user_id) {
+    throw new MonzoApiError('monzo_user_id_missing');
+  }
+  // OAuth 2.0 defines expires_in as a lifetime in seconds but does not cap it.
+  // Reject malformed/non-positive lifetimes, but do not invent a provider
+  // maximum that could reject an otherwise valid Monzo access token.
+  if (!Number.isInteger(body?.expires_in) || body.expires_in < 60) {
+    throw new MonzoApiError('monzo_token_expiry_invalid');
   }
   return body;
 }
