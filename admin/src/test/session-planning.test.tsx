@@ -45,7 +45,7 @@ describe('session planning helpers', () => {
 });
 
 describe('project appointment planner', () => {
-  it('shows duration shortcuts and warns about a database-reported artist overlap', async () => {
+  it('stays collapsed by default, then shows duration shortcuts and warns about a database-reported artist overlap', async () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     const baseClient = createFakeClient({ role: 'booking_manager', rpcCalls });
     const client = {
@@ -79,11 +79,16 @@ describe('project appointment planner', () => {
       </SessionProvider>
     );
 
+    const disclosure = await screen.findByText('Add another appointment');
+    expect(disclosure.closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText('6 h')).toBeInTheDocument();
+
+    fireEvent.click(disclosure);
+
     const start = await screen.findByLabelText('Proposed start');
     const end = screen.getByLabelText('Proposed end');
     const threeHours = screen.getByRole('button', { name: '3 h' });
 
-    expect(screen.getByText('6 h')).toBeInTheDocument();
     expect(threeHours).toBeDisabled();
     expect(screen.getByRole('button', { name: '5 h' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '7 h' })).toBeInTheDocument();
