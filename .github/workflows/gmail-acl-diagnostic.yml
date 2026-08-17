@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/gmail-acl-diagnostic.yml'
       - 'supabase/migrations/0059_gmail_production_integration.sql'
+      - 'supabase/tests/000_legacy_appointment_fixture_compat.sql'
       - 'supabase/tests/050_rls_roles.sql'
       - 'supabase/tests/210_gmail_acl_inventory.sql'
       - 'supabase/tests/212_function_acl_mismatch_diagnostic.sql'
@@ -60,9 +61,11 @@ jobs:
           SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
         run: supabase db reset --local --no-seed
 
-      - name: Keep only canonical ACL test for diagnostic output
+      - name: Keep only fixture compatibility and canonical ACL tests
         run: |
-          find supabase/tests -maxdepth 1 -type f -name '*.sql' ! -name '050_rls_roles.sql' -delete
+          find supabase/tests -maxdepth 1 -type f -name '*.sql' \
+            ! -name '000_legacy_appointment_fixture_compat.sql' \
+            ! -name '050_rls_roles.sql' -delete
 
       - name: Run canonical ACL test with diagnostics
         env:
