@@ -129,8 +129,15 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const scopedMemberships = memberships.filter((membership) => membership.artist_id === project.artist_id);
   const mayViewFinance = canAccess(role, 'viewFinance', scopedMemberships);
   const mayManageFinance = canAccess(role, 'manageFinance', scopedMemberships);
-  const mayManageAppointments = can(role, 'manageSessions');
-  const mayManageProject = can(role, 'manageProjects');
+  const mayManageAppointments = role === 'owner' || (
+    role === 'booking_manager'
+    && scopedMemberships.some((membership) => membership.is_active && membership.can_manage_sessions)
+  );
+  const mayManageProject = role === 'owner' || (
+    role === 'booking_manager'
+    && scopedMemberships.some((membership) => membership.is_active && membership.access_level !== 'read_only')
+  );
+  const mayEditEstimate = role === 'owner';
   const priceFor = (appointmentId: string) =>
     sessionFinance.find((entry) => entry.session_id === appointmentId)?.price ?? null;
   const hasConfirmedWork = appointments.some((appointment) => ['confirmed', 'completed'].includes(appointment.status));
@@ -204,7 +211,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           project={project}
           finance={finance}
           appointments={appointments}
-          mayManage={mayManageFinance}
+          mayManage={mayEditEstimate}
           onSaved={reload}
         />
         {!mayViewFinance ? (
