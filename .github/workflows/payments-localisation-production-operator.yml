@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OPERATOR_PR: '0'
+  OPERATOR_PR: '324'
   PRODUCT_PR: '322'
   PRODUCT_HEAD_BRANCH: agent/monzo-reconciliation-crm-review
   PREVIOUS_PRODUCT_SHA: cb3338de786a079eebe433382bfdba7b25946df1
