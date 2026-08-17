@@ -15,6 +15,8 @@ import {
 import { createGmailSupabase } from './lib/gmail-supabase.js';
 
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
+const GMAIL_PUBLIC_HOST = 'gmail.vishartattoo.com';
+const GPT_OPERATIONS_HOST = 'gpt-operations.vishartattoo.com';
 const REDIRECT_URI = 'https://gmail.vishartattoo.com/oauth/google/callback';
 const STATE_PREFIX = 'gmail:state:';
 const STATE_TTL_SECONDS = 600;
@@ -105,6 +107,7 @@ function stateKey(state) {
 }
 
 async function startOAuth(url, env) {
+  if (url.hostname !== GMAIL_PUBLIC_HOST) return null;
   if (env?.GMAIL_OAUTH_ENABLED !== 'true') return json(404, { error: 'not_found' });
   const match = /^\/oauth\/google\/start\/(vladimir|kristina)\/?$/.exec(url.pathname);
   if (!match) return null;
@@ -139,6 +142,7 @@ async function startOAuth(url, env) {
 }
 
 async function oauthCallback(url, env, fetchImpl) {
+  if (url.hostname !== GMAIL_PUBLIC_HOST) return null;
   if (url.pathname.replace(/\/+$/, '') !== '/oauth/google/callback') return null;
   if (env?.GMAIL_OAUTH_ENABLED !== 'true') return html(404, 'Gmail connection unavailable', 'The production Gmail OAuth connector is disabled.');
   const state = url.searchParams.get('state') || '';
@@ -283,6 +287,7 @@ function publicMessage(message) {
 }
 
 async function handleGptAction(request, url, env, fetchImpl) {
+  if (url.hostname !== GPT_OPERATIONS_HOST) return null;
   const history = /^\/v1\/enquiries\/([0-9a-f-]{36})\/gmail\/history\/?$/i.exec(url.pathname);
   const thread = /^\/v1\/enquiries\/([0-9a-f-]{36})\/gmail\/threads\/([0-9a-f-]{36})\/?$/i.exec(url.pathname);
   const reply = /^\/v1\/enquiries\/([0-9a-f-]{36})\/gmail\/reply-drafts\/?$/i.exec(url.pathname);

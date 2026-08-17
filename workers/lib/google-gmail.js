@@ -71,10 +71,19 @@ async function openToken(value, secret) {
   const key = await encryptionKey(secret);
   const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, b64urlDecode(parts[2]));
   const parsed = JSON.parse(decoder.decode(plaintext));
-  if (!parsed || parsed.v !== 1 || !safeEmail(parsed.mailbox_email) || !safeProviderId(parsed.artist_id?.replace(/-/g, '_') || '')) {
-    // artist_id is validated separately because UUIDs contain hyphens and are not provider ids.
-  }
-  if (!parsed || parsed.v !== 1 || typeof parsed.refresh_token !== 'string' || parsed.refresh_token.length < 8) {
+  if (
+    !parsed
+    || parsed.v !== 1
+    || typeof parsed.artist_id !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed.artist_id)
+    || typeof parsed.integration_key !== 'string'
+    || !/^google_gmail_[a-z0-9_-]{2,60}$/.test(parsed.integration_key)
+    || !safeEmail(parsed.mailbox_email)
+    || typeof parsed.refresh_token !== 'string'
+    || parsed.refresh_token.length < 8
+    || parsed.refresh_token.length > 8192
+    || !hasRequiredScopes(parsed.scope)
+  ) {
     throw new Error('gmail_token_envelope_invalid');
   }
   return parsed;
