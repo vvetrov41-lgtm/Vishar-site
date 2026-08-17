@@ -1,9 +1,9 @@
 // A minimal hash router.
 //
-// Nine routes do not justify a routing dependency, and a hash router works on
-// any static host without server rewrite rules — which matters because the CRM
-// is hosted separately from the public site and the hosting choice is still an
-// owner decision.
+// Ordinary CRM navigation stays hash-based so it works on any static host
+// without server rewrite rules. Supabase OAuth is the one bounded exception:
+// its authorization server redirects the browser to the configured consent UI
+// as a normal pathname, so that exact owned path must reach the consent page.
 
 import {
   createContext,
@@ -27,9 +27,14 @@ interface RouterValue extends Route {
 
 const RouterContext = createContext<RouterValue | null>(null);
 
+export function routePathFromLocation(pathname: string, hash: string): string {
+  if (pathname === '/oauth/consent') return '/oauth/consent';
+  const hashPath = hash.replace(/^#/, '');
+  return hashPath || '/';
+}
+
 function currentPath(): string {
-  const hash = window.location.hash.replace(/^#/, '');
-  return hash || '/';
+  return routePathFromLocation(window.location.pathname, window.location.hash);
 }
 
 /** Matches `/enquiries/:id` against `/enquiries/abc`. */
