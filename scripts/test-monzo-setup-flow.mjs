@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { handleMonzoSetup } from '../workers/lib/monzo-setup-flow.js';
+import { handleMonzoSetup, __testing as setupTesting } from '../workers/lib/monzo-setup-flow.js';
 import { loadMonzoTokenRecord, saveMonzoTokenRecord } from '../workers/lib/monzo-token-store.js';
 
 class FakeKv {
@@ -17,6 +17,12 @@ class FakeKv {
     if (options) this.putOptions.set(key, options);
   }
   async delete(key) { this.map.delete(key); }
+}
+
+class RejectSetupStateKv {
+  async get() { throw new Error('setup confirmation must not read Workers KV'); }
+  async put() { throw new Error('setup confirmation must not write Workers KV'); }
+  async delete() { throw new Error('setup confirmation must not delete Workers KV'); }
 }
 
 function base64Url(value) {
@@ -118,6 +124,10 @@ function fetchRouter(routes = {}) {
   };
 }
 
+function setupTokenFrom(page) {
+  return page.match(/name="setup_token" value="([A-Za-z0-9_-]+)"/)?.[1];
+}
+
 let passes = 0;
 let failures = 0;
 async function test(name, run) {
@@ -186,8 +196,9 @@ await test('approval-pending response shows SCA guidance and persists only safe 
   assert.equal(saved.connectionState, 'approval_pending');
 });
 
-await test('account selection page uses a short-lived owner-bound setup token and escapes provider labels', async () => {
+await test('account selection uses an opaque owner-bound token without Workers KV read-after-write', async () => {
   const env = makeEnv();
+  env.MONZO_OAUTH_STATE = new RejectSetupStateKv();
   const record = tokenRecord();
   await saveMonzoTokenRecord(env, record);
   const response = await handleMonzoSetup(
@@ -210,16 +221,59 @@ await test('account selection page uses a short-lived owner-bound setup token an
   const page = await response.text();
   assert.match(page, /Business &lt;Current&gt; &amp; Main/);
   assert.ok(!page.includes('Business <Current> & Main'));
-  const token = page.match(/name="setup_token" value="([A-Za-z0-9_-]+)"/)?.[1];
-  assert.match(token, /^[A-Za-z0-9_-]{43,128}$/);
-  assert.equal(env.MONZO_OAUTH_STATE.putOptions.get(`setup:${token}`).expirationTtl, 600);
+  const token = setupTokenFrom(page);
+  assert.match(token, setupTesting.SETUP_TOKEN_PATTERN);
   assert.ok(!page.includes(record.accessToken));
   assert.ok(!page.includes(record.refreshToken));
   assert.ok(!page.includes(record.webhookKey));
+  assert.ok(!page.includes(record.userId));
+  assert.ok(!page.includes('owner@example.test'));
 });
 
-await test('POST revalidates the selected account, registers the exact server callback and makes the setup token single-use', async () => {
+await test('setup confirmation is bound to owner, artist, client/user record and ten-minute lifetime', async () => {
   const env = makeEnv();
+  const record = tokenRecord();
+  const issuedAt = 1_800_000_000_000;
+  const token = await setupTesting.createSetupConfirmationToken(
+    env,
+    'vladimir',
+    'owner@example.test',
+    record,
+    issuedAt,
+  );
+  assert.match(token, setupTesting.SETUP_TOKEN_PATTERN);
+  assert.equal(
+    await setupTesting.verifySetupConfirmationToken(
+      env,
+      token,
+      'vladimir',
+      'owner@example.test',
+      record,
+      issuedAt + 30_000,
+    ),
+    true,
+  );
+
+  const last = token.at(-1);
+  const tampered = `${token.slice(0, -1)}${last === 'A' ? 'B' : 'A'}`;
+  for (const [candidate, alias, owner, candidateRecord, now] of [
+    [tampered, 'vladimir', 'owner@example.test', record, issuedAt + 30_000],
+    [token, 'vladimir', 'other-owner@example.test', record, issuedAt + 30_000],
+    [token, 'kristina', 'owner@example.test', record, issuedAt + 30_000],
+    [token, 'vladimir', 'owner@example.test', tokenRecord({ userId: 'user_setup_other' }), issuedAt + 30_000],
+    [token, 'vladimir', 'owner@example.test', tokenRecord({ clientId: 'oauth-client-other' }), issuedAt + 30_000],
+    [token, 'vladimir', 'owner@example.test', record, issuedAt + setupTesting.SETUP_TTL_SECONDS * 1000 + 1],
+  ]) {
+    await assert.rejects(
+      setupTesting.verifySetupConfirmationToken(env, candidate, alias, owner, candidateRecord, now),
+      (error) => error?.code === 'setup_confirmation_invalid_or_expired',
+    );
+  }
+});
+
+await test('POST revalidates the selected account, registers the exact callback and replay is harmless', async () => {
+  const env = makeEnv();
+  env.MONZO_OAUTH_STATE = new RejectSetupStateKv();
   const record = tokenRecord();
   await saveMonzoTokenRecord(env, record);
   const getResponse = await handleMonzoSetup(
@@ -238,8 +292,8 @@ await test('POST revalidates the selected account, registers the exact server ca
     }),
   );
   const getPage = await getResponse.text();
-  const setupToken = getPage.match(/name="setup_token" value="([A-Za-z0-9_-]+)"/)?.[1];
-  assert.ok(setupToken);
+  const setupToken = setupTokenFrom(getPage);
+  assert.match(setupToken, setupTesting.SETUP_TOKEN_PATTERN);
 
   let webhookCalls = 0;
   const providerFetch = fetchRouter({
@@ -285,19 +339,17 @@ await test('POST revalidates the selected account, registers the exact server ca
   assert.equal(saved.accountLabel, 'Business Current Account');
   assert.equal(saved.webhookId, 'webhook_setup1');
 
-  await assert.rejects(
-    handleMonzoSetup(
-      ownerRequest('https://monzo.example.test/oauth/monzo/setup/vladimir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: form,
-      }),
-      'vladimir',
-      env,
-      providerFetch,
-    ),
-    (error) => error?.code === 'setup_confirmation_invalid_or_expired',
+  const replay = await handleMonzoSetup(
+    ownerRequest('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form,
+    }),
+    'vladimir',
+    env,
+    providerFetch,
   );
+  assert.equal(replay.status, 303);
   assert.equal(webhookCalls, 1);
 });
 
@@ -314,7 +366,8 @@ await test('forged account selection is rejected after provider revalidation and
     }),
   );
   const page = await getResponse.text();
-  const setupToken = page.match(/name="setup_token" value="([A-Za-z0-9_-]+)"/)?.[1];
+  const setupToken = setupTokenFrom(page);
+  assert.match(setupToken, setupTesting.SETUP_TOKEN_PATTERN);
   let webhookCalls = 0;
   const providerFetch = fetchRouter({
     'https://api.monzo.com/ping/whoami': async () => Response.json({ authenticated: true, client_id: record.clientId, user_id: record.userId }),
