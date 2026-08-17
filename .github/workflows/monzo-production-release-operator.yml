@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OPERATOR_PR: '0'
+  OPERATOR_PR: '314'
   PRODUCT_PR: '310'
   PRODUCT_HEAD_BRANCH: agent/monzo-token-exchange-diagnostics
   PRODUCT_BASE_BRANCH: claude/vishar-monzo-production-ejbe23
