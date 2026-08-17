@@ -9,6 +9,10 @@ routes = [
   { pattern = "gpt-operations.vishartattoo.com", custom_domain = true }
 ]
 
+[[services]]
+binding = "GMAIL_SERVICE"
+service = "vishar-gmail-production"
+
 [[ratelimits]]
 name = "GPT_RATE_LIMIT"
 namespace_id = "1002"
