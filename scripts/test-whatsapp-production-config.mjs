@@ -66,7 +66,7 @@ try {
   expectIncludes(generated, '[secrets]', 'generated config');
   expectIncludes(generated, '"SUPABASE_SECRET_KEY"', 'generated config');
   expectIncludes(generated, '"ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION"', 'generated config');
-  expectIncludes(generated, '"ARTIST_WHATSAPP_KRISTINA_HPRODUCTION"', 'generated config');
+  expectExcludes(generated, '"ARTIST_WHATSAPP_KRISTINA_HPRODUCTION"', 'generated config');
   expectExcludes(generated, 'WHATSAPP_DRAIN_ENABLED = "false"', 'generated config');
 
   // Generating must never mutate the tracked template.
@@ -97,15 +97,16 @@ for (const needle of [
   'CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED',
   'wrangler secret list',
   'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
-  'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
   '--strict',
   'wrangler versions list',
   'wrangler deployments list',
   'safe-summary.json',
   'WRANGLER_OUTPUT_FILE_PATH',
   "version_source: 'wrangler_deploy_event'",
+  'Kristina production binding is intentionally absent',
 ]) expectIncludes(workflow, needle, 'production workflow');
 
+expectExcludes(workflow, 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION', 'production workflow');
 expectExcludes(workflow, 'versions[0].id', 'production workflow');
 
 for (const needle of [
@@ -133,5 +134,5 @@ expectExcludes(workerSource, 'async fetch(', 'drain Worker');
 
 console.log(
   'WhatsApp production config tests passed: tracked template inert, generated config activates '
-  + 'exactly one drain with one cron, and the guarded workflow writes no secret and touches no Meta account.'
+  + 'exactly one Vladimir-only drain with one cron, and the guarded workflow writes no secret and touches no Meta account.'
 );

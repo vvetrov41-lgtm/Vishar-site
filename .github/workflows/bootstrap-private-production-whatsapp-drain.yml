@@ -1,0 +1,204 @@
+name: Bootstrap private production WhatsApp drain inert
+
+# Creates the production drain Worker in a deliberately inert state only.
+# No cron, no public route, no provider binding, no database secret and no
+# message delivery are enabled here. Secret provisioning and activation are
+# separate guarded stages.
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Create the inert Worker after validation
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-private-production-whatsapp-drain
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Inert WhatsApp drain production bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-whatsapp-drain-production
+
+    steps:
+      - name: Verify exact release branch and production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *) echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
+          esac
+          [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          }
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            [ "$DEPLOY_ENABLED" = 'true' ] || {
+              echo 'CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED is not explicitly enabled.' >&2
+              exit 1
+            }
+            [ "$APPROVAL_PHRASE" = 'BOOTSTRAP_PRIVATE_CRM_WHATSAPP_DRAIN_INERT' ] || {
+              echo 'The exact inert WhatsApp bootstrap approval phrase is required.' >&2
+              exit 1
+            }
+          fi
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact inert config
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          grep -Fq 'name = "vishar-whatsapp-drain-production"' wrangler.whatsapp-drain.production.toml
+          grep -Fq 'WHATSAPP_DRAIN_ENABLED = "false"' wrangler.whatsapp-drain.production.toml
+          ! grep -Eq '^\s*\[triggers\]\s*$' wrangler.whatsapp-drain.production.toml
+          ! grep -Eq '^\s*crons\s*=' wrangler.whatsapp-drain.production.toml
+          ! grep -Fq 'gwaliusblwrzisrwnsvs' wrangler.whatsapp-drain.production.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and validate locked production bundle
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          node scripts/test-whatsapp-routing.mjs
+          node scripts/test-whatsapp-drain.mjs
+          node scripts/test-whatsapp-drain-worker.mjs
+          npm run test:whatsapp-production
+          npm run check:whatsapp-production-bundle
+          npm run scan:secrets
+
+      - name: Refuse to overwrite an existing production drain Worker
+        if: ${{ inputs.deploy }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME")"
+          if [ "$status" != '404' ]; then
+            echo "Refusing inert bootstrap because production drain Worker already exists (status=$status)." >&2
+            exit 1
+          fi
+
+      - name: Deploy only the inert scheduled Worker shell
+        if: ${{ inputs.deploy }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/whatsapp-drain-bootstrap.ndjson"
+          rm -f "$output"
+          npx wrangler deploy \
+            --config wrangler.whatsapp-drain.production.toml \
+            --name "$WORKER_NAME" \
+            --dry-run \
+            --outdir .wrangler/whatsapp-production-bootstrap
+          WRANGLER_OUTPUT_FILE_PATH="$output" \
+            npx wrangler deploy \
+              --config wrangler.whatsapp-drain.production.toml \
+              --name "$WORKER_NAME" \
+              --strict
+
+      - name: Verify inert Cloudflare state by metadata only
+        if: ${{ inputs.deploy }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          secrets="$(curl --fail --silent --show-error "${auth[@]}" "$base/secrets")"
+          SECRET_LIST="$secrets" node <<'NODE'
+          const payload = JSON.parse(process.env.SECRET_LIST || '{}');
+          const names = Array.isArray(payload.result)
+            ? payload.result.map((entry) => entry?.name).filter(Boolean)
+            : [];
+          if (names.length !== 0) throw new Error(`Inert drain Worker unexpectedly has secrets: ${names.sort().join(', ')}`);
+          console.log('INERT_DRAIN_SECRET_NAMES=[]');
+          NODE
+
+          schedules="$(curl --fail --silent --show-error "${auth[@]}" "$base/schedules")"
+          SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const rows = Array.isArray(payload.result) ? payload.result : [];
+          if (rows.length !== 0) throw new Error('Inert drain Worker unexpectedly has a schedule');
+          console.log('INERT_DRAIN_SCHEDULES=[]');
+          NODE
+
+          settings="$(curl --fail --silent --show-error "${auth[@]}" "$base/settings")"
+          SETTINGS="$settings" node <<'NODE'
+          const payload = JSON.parse(process.env.SETTINGS || '{}');
+          const bindings = Array.isArray(payload?.result?.bindings) ? payload.result.bindings : [];
+          const names = bindings.map((entry) => entry?.name).filter(Boolean).sort();
+          if (!names.includes('WHATSAPP_DRAIN_ENABLED')) throw new Error('Missing inert drain enable flag');
+          console.log(`INERT_DRAIN_BINDING_NAMES=${JSON.stringify(names)}`);
+          NODE
+
+      - name: Safe summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+        run: |
+          {
+            echo '### Inert production WhatsApp drain bootstrap'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo '- Worker: `vishar-whatsapp-drain-production` only'
+            echo '- `WHATSAPP_DRAIN_ENABLED=false`'
+            echo '- Cron: none'
+            echo '- Public route: none'
+            echo '- Encrypted secrets: none at bootstrap'
+            echo '- Meta calls/messages/database writes: none'
+            echo '- Retained staging: untouched'
+          } >> "$GITHUB_STEP_SUMMARY"

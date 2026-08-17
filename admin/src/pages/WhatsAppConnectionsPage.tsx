@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useAsync } from '../components/AsyncData';
 import { useLanguage } from '../lib/i18n';
+import {
+  launchWhatsAppEmbeddedSignup,
+  prepareWhatsAppEmbeddedSignup,
+} from '../lib/meta-whatsapp-embedded-signup';
 import { Link } from '../lib/router';
 import { useSession } from '../lib/session';
 import type { Artist } from '../lib/types';
@@ -35,7 +39,38 @@ export function WhatsAppConnectionsPage() {
   const { language } = useLanguage();
   const [busyArtistId, setBusyArtistId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [metaBusy, setMetaBusy] = useState(false);
+  const [metaMessage, setMetaMessage] = useState<string | null>(null);
+  const [metaSdkReady, setMetaSdkReady] = useState(false);
+  const [metaSdkError, setMetaSdkError] = useState<string | null>(null);
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
+
+  useEffect(() => {
+    let environment: 'production' | 'staging';
+    try {
+      environment = whatsappCrmEnvironment(supabaseUrl);
+    } catch {
+      return undefined;
+    }
+    if (environment !== 'production') return undefined;
+
+    let active = true;
+    setMetaSdkReady(false);
+    setMetaSdkError(null);
+    void prepareWhatsAppEmbeddedSignup()
+      .then(() => {
+        if (!active) return;
+        setMetaSdkReady(true);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setMetaSdkError(cause instanceof Error ? cause.message : 'Could not load Meta SDK.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [supabaseUrl]);
 
   const { data, loading, error, reload } = useAsync<ConnectionsData>(async () => {
     if (!api) throw new Error('CRM API unavailable.');
@@ -72,6 +107,53 @@ export function WhatsAppConnectionsPage() {
     }
   }
 
+  function retryMetaSdk() {
+    setMetaSdkReady(false);
+    setMetaSdkError(null);
+    void prepareWhatsAppEmbeddedSignup()
+      .then(() => setMetaSdkReady(true))
+      .catch((cause) => {
+        setMetaSdkError(cause instanceof Error ? cause.message : 'Could not load Meta SDK.');
+      });
+  }
+
+  async function startMetaOnboarding() {
+    setMetaBusy(true);
+    setActionError(null);
+    setMetaMessage(null);
+    try {
+      if (!api || !data || data.environment !== 'production') {
+        throw new Error('Production WhatsApp onboarding is unavailable in this CRM environment.');
+      }
+      if (!metaSdkReady) throw new Error('Meta SDK is not ready yet.');
+      const artist = data.artists.find((candidate) => candidate.slug === 'vladimir');
+      if (!artist) throw new Error('Vladimir is not available in your current artist scope.');
+
+      // launchWhatsAppEmbeddedSignup invokes FB.login synchronously here, while
+      // this click still carries transient user activation on iOS/WebKit.
+      const signupPromise = launchWhatsAppEmbeddedSignup();
+      const signup = await signupPromise;
+      const provisioned = await api.provisionProductionWhatsApp(artist, supabaseUrl, signup);
+      const identity = [provisioned.verified_name, provisioned.display_phone_number].filter(Boolean).join(' · ');
+      setMetaMessage(
+        language === 'ru'
+          ? `WhatsApp Владимира подключён${identity ? `: ${identity}` : ''}. Meta account и encrypted Worker binding проверены.`
+          : `Vladimir WhatsApp connected${identity ? `: ${identity}` : ''}. The Meta account and encrypted Worker binding were verified.`,
+      );
+      reload();
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error
+          ? cause.message
+          : language === 'ru'
+            ? 'Не удалось подключить WhatsApp через Meta.'
+            : 'Could not connect WhatsApp through Meta.',
+      );
+    } finally {
+      setMetaBusy(false);
+    }
+  }
+
   if (loading) {
     return <LoadingState label={language === 'ru' ? 'Загрузка WhatsApp…' : 'Loading WhatsApp…'} />;
   }
@@ -92,7 +174,7 @@ export function WhatsAppConnectionsPage() {
         </div>
         <div className="actions">
           <Link to="/integrations/calendar" className="badge">
-            {language === 'ru' ? 'Google Calendar' : 'Google Calendar'}
+            Google Calendar
           </Link>
         </div>
       </div>
@@ -102,6 +184,46 @@ export function WhatsAppConnectionsPage() {
           ? `Среда CRM: ${data.environment}. Включайте маршрут только после отдельной проверки Meta и encrypted Worker bindings.`
           : `CRM environment: ${data.environment}. Enable a route only after the Meta account and encrypted Worker bindings have been verified separately.`}
       </div>
+
+      {profile?.role === 'owner' && data.environment === 'production' ? (
+        <Section title={language === 'ru' ? 'WhatsApp Владимира' : 'Vladimir WhatsApp'}>
+          <p>
+            {language === 'ru'
+              ? 'Подключает существующий WhatsApp Business через Meta Embedded Signup. CRM принимает только завершённую Meta-сессию Владимира и сохраняет provider credentials только в encrypted Cloudflare Worker bindings.'
+              : 'Connects the existing WhatsApp Business app through Meta Embedded Signup. The CRM accepts only a completed Vladimir Meta session and stores provider credentials only in encrypted Cloudflare Worker bindings.'}
+          </p>
+          <div className="actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={metaBusy || !metaSdkReady}
+              onClick={() => { void startMetaOnboarding(); }}
+            >
+              {metaBusy
+                ? (language === 'ru' ? 'Подключаю…' : 'Connecting…')
+                : !metaSdkReady
+                  ? (language === 'ru' ? 'Загрузка Meta…' : 'Loading Meta…')
+                  : (language === 'ru' ? 'Подключить WhatsApp Владимира' : 'Connect Vladimir WhatsApp')}
+            </button>
+            {metaSdkError ? (
+              <button type="button" disabled={metaBusy} onClick={retryMetaSdk}>
+                {language === 'ru' ? 'Повторить загрузку Meta' : 'Retry Meta SDK'}
+              </button>
+            ) : null}
+          </div>
+          {metaSdkError ? (
+            <div className="notice warn" role="alert" style={{ marginTop: 12 }}>
+              {metaSdkError}
+            </div>
+          ) : null}
+          <p className="notice" style={{ marginTop: 12 }}>
+            {language === 'ru'
+              ? 'Доступно только owner. Authorization code остаётся в памяти только до server-side обмена и не показывается в интерфейсе или логах.'
+              : 'Owner only. The authorization code stays in memory only until the server-side exchange and is never displayed or logged.'}
+          </p>
+          {metaMessage ? <div className="notice" role="status">{metaMessage}</div> : null}
+        </Section>
+      ) : null}
 
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 

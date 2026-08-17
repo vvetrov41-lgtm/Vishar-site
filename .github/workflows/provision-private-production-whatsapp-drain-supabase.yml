@@ -1,0 +1,239 @@
+name: Provision private production WhatsApp drain Supabase secret
+
+# Copies one existing modern production Supabase backend key directly into the
+# inert drain Worker. The value is never printed, committed or uploaded. This
+# workflow does not create/rotate a Supabase key and cannot activate the drain.
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      provision:
+        description: Provision the existing backend key after validation
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for provision=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-private-production-whatsapp-drain-supabase
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision existing production Supabase key to inert WhatsApp drain
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-whatsapp-drain-production
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+
+    steps:
+      - name: Verify exact release branch and production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          PROVISION_REQUESTED: ${{ inputs.provision }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *) echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
+          esac
+          [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          }
+          [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ] || {
+            echo 'Refusing non-production or retained-staging Supabase project.' >&2
+            exit 1
+          }
+          if [ "$PROVISION_REQUESTED" = 'true' ]; then
+            [ "$DEPLOY_ENABLED" = 'true' ] || {
+              echo 'CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED is not explicitly enabled.' >&2
+              exit 1
+            }
+            [ "$APPROVAL_PHRASE" = 'PROVISION_PRIVATE_CRM_WHATSAPP_DRAIN_SUPABASE' ] || {
+              echo 'The exact WhatsApp Supabase provisioning approval phrase is required.' >&2
+              exit 1
+            }
+          fi
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact inert source state
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          grep -Fq 'WHATSAPP_DRAIN_ENABLED = "false"' wrangler.whatsapp-drain.production.toml
+          ! grep -Eq '^\s*\[triggers\]\s*$' wrangler.whatsapp-drain.production.toml
+          ! grep -Eq '^\s*crons\s*=' wrangler.whatsapp-drain.production.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and validate locked production bundle
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm run test:whatsapp-production
+          npm run check:whatsapp-production-bundle
+          npm run scan:secrets
+
+      - name: Verify Worker exists, remains unscheduled and has no secrets yet
+        if: ${{ inputs.provision }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "${auth[@]}" "$base")"
+          [ "$status" = '200' ] || {
+            echo "Production drain Worker is not present (status=$status)." >&2
+            exit 1
+          }
+
+          secrets="$(curl --fail --silent --show-error "${auth[@]}" "$base/secrets")"
+          schedules="$(curl --fail --silent --show-error "${auth[@]}" "$base/schedules")"
+          SECRETS="$secrets" SCHEDULES="$schedules" node <<'NODE'
+          const secrets = JSON.parse(process.env.SECRETS || '{}');
+          const schedules = JSON.parse(process.env.SCHEDULES || '{}');
+          const names = Array.isArray(secrets.result)
+            ? secrets.result.map((entry) => entry?.name).filter(Boolean)
+            : [];
+          const cron = Array.isArray(schedules.result) ? schedules.result : [];
+          if (names.length !== 0) throw new Error(`Refusing to overwrite existing drain secrets: ${names.sort().join(', ')}`);
+          if (cron.length !== 0) throw new Error('Refusing secret provisioning because drain Worker is already scheduled');
+          NODE
+
+      - name: Copy existing modern Supabase secret directly into Cloudflare
+        if: ${{ inputs.provision }}
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          keys_file="$RUNNER_TEMP/supabase-api-keys.json"
+          secret_file="$RUNNER_TEMP/supabase-backend-key.txt"
+          cleanup() { rm -f "$keys_file" "$secret_file"; }
+          trap cleanup EXIT
+          umask 077
+
+          curl --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H 'Accept: application/json' \
+            "https://api.supabase.com/v1/projects/${PROJECT_REF}/api-keys?reveal=true" \
+            > "$keys_file"
+
+          KEYS_FILE="$keys_file" SECRET_FILE="$secret_file" node <<'NODE'
+          const fs = require('fs');
+          const rows = JSON.parse(fs.readFileSync(process.env.KEYS_FILE, 'utf8'));
+          if (!Array.isArray(rows)) throw new Error('Supabase API-key response was not an array');
+          const modern = rows.filter((row) => (
+            row && typeof row === 'object'
+            && typeof row.api_key === 'string'
+            && row.api_key.startsWith('sb_secret_')
+          ));
+          const defaults = modern.filter((row) => row.name === 'default');
+          const selected = defaults.length === 1 ? defaults[0] : (modern.length === 1 ? modern[0] : null);
+          if (!selected) throw new Error('No unambiguous existing modern Supabase secret key is available; no key was created');
+          if (selected.api_key.length < 20 || selected.api_key.length > 1024) {
+            throw new Error('Selected Supabase secret key has an unexpected format');
+          }
+          fs.writeFileSync(process.env.SECRET_FILE, selected.api_key, { mode: 0o600 });
+          console.log('EXISTING_MODERN_SUPABASE_SECRET_SELECTED=true');
+          NODE
+
+          npx wrangler secret put SUPABASE_SECRET_KEY \
+            --config wrangler.whatsapp-drain.production.toml \
+            --name "$WORKER_NAME" \
+            < "$secret_file" >/dev/null
+
+          cleanup
+          trap - EXIT
+
+      - name: Verify secret name only and drain remains inert
+        if: ${{ inputs.provision }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          secrets="$(curl --fail --silent --show-error "${auth[@]}" "$base/secrets")"
+          schedules="$(curl --fail --silent --show-error "${auth[@]}" "$base/schedules")"
+          settings="$(curl --fail --silent --show-error "${auth[@]}" "$base/settings")"
+          SECRETS="$secrets" SCHEDULES="$schedules" SETTINGS="$settings" node <<'NODE'
+          const secrets = JSON.parse(process.env.SECRETS || '{}');
+          const schedules = JSON.parse(process.env.SCHEDULES || '{}');
+          const settings = JSON.parse(process.env.SETTINGS || '{}');
+          const names = Array.isArray(secrets.result)
+            ? secrets.result.map((entry) => entry?.name).filter(Boolean).sort()
+            : [];
+          if (JSON.stringify(names) !== JSON.stringify(['SUPABASE_SECRET_KEY'])) {
+            throw new Error(`Unexpected drain secret-name set: ${names.join(', ')}`);
+          }
+          const cron = Array.isArray(schedules.result) ? schedules.result : [];
+          if (cron.length !== 0) throw new Error('Drain unexpectedly became scheduled');
+          const bindings = Array.isArray(settings?.result?.bindings) ? settings.result.bindings : [];
+          const enabled = bindings.find((entry) => entry?.name === 'WHATSAPP_DRAIN_ENABLED');
+          if (!enabled || enabled.text !== 'false') throw new Error('Drain enable flag is not false after secret provisioning');
+          console.log('DRAIN_SECRET_NAMES=["SUPABASE_SECRET_KEY"]');
+          console.log('DRAIN_SCHEDULES=[]');
+          NODE
+
+      - name: Safe summary
+        if: always()
+        shell: bash
+        env:
+          PROVISION_REQUESTED: ${{ inputs.provision }}
+        run: |
+          {
+            echo '### Production WhatsApp drain Supabase secret provisioning'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Provision requested: \`$PROVISION_REQUESTED\`"
+            echo '- Existing modern Supabase production backend key only; no key created or rotated'
+            echo '- Worker target: `vishar-whatsapp-drain-production` only'
+            echo '- Secret name after provisioning: `SUPABASE_SECRET_KEY` only'
+            echo '- Secret value is never printed, committed or uploaded'
+            echo '- Drain remains disabled and unscheduled'
+            echo '- Meta calls/messages/database writes: none'
+            echo '- Retained staging: untouched'
+          } >> "$GITHUB_STEP_SUMMARY"

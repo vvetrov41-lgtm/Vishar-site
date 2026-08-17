@@ -51,5 +51,5 @@ if (!text.includes('WHATSAPP_DRAIN_ENABLED = "true"')) {
   throw new Error('failed to enable the production drain in generated config');
 }
 
-text += `\n[triggers]\ncrons = ["*/5 * * * *"]\n\n[secrets]\nrequired = [\n  "SUPABASE_SECRET_KEY",\n  "ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION",\n  "ARTIST_WHATSAPP_KRISTINA_HPRODUCTION",\n]\n`;
+text += `\n[triggers]\ncrons = ["*/5 * * * *"]\n\n[secrets]\nrequired = [\n  "SUPABASE_SECRET_KEY",\n  "ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION",\n]\n`;
 fs.writeFileSync(output, text, { mode: 0o600 });
