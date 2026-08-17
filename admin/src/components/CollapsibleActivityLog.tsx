@@ -5,12 +5,18 @@ import { useLanguage } from '../lib/i18n';
 import { operationalLabel } from '../lib/operational-labels';
 import type { ActivityEntry } from '../lib/types';
 
-export function CollapsibleActivityLog({ activity }: { activity: ActivityEntry[] }) {
+export function CollapsibleActivityLog({
+  activity,
+  emptyTitle,
+}: {
+  activity: ActivityEntry[];
+  emptyTitle?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const { t, label, language } = useLanguage();
 
   if (activity.length === 0) {
-    return <EmptyState title={t('enquiry.noActivity')} />;
+    return <EmptyState title={emptyTitle ?? t('enquiry.noActivity')} />;
   }
 
   const visibleActivity = expanded ? activity : activity.slice(0, 1);
