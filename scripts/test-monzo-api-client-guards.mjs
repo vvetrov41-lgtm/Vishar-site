@@ -118,11 +118,35 @@ const accepted = await exchangeMonzoAuthorizationCode(
 );
 assert.deepEqual(accepted, validTokenPayload);
 
+// RFC 6749 defines token_type as case-insensitive. Do not reject a valid
+// Bearer token solely because a provider changes the response casing.
+const lowercaseBearerPayload = { ...validTokenPayload, token_type: 'bearer' };
+const lowercaseBearerAccepted = await exchangeMonzoAuthorizationCode(
+  oauthEnv,
+  'authorization-code-test',
+  async () => Response.json(lowercaseBearerPayload),
+);
+assert.deepEqual(lowercaseBearerAccepted, lowercaseBearerPayload);
+
+// OAuth defines expires_in as a positive lifetime in seconds and does not set
+// an upper bound. A client may refresh earlier, but must not invent a provider
+// maximum and reject a valid response.
+const longLivedPayload = { ...validTokenPayload, expires_in: 172800 };
+const longLivedAccepted = await exchangeMonzoAuthorizationCode(
+  oauthEnv,
+  'authorization-code-test',
+  async () => Response.json(longLivedPayload),
+);
+assert.deepEqual(longLivedAccepted, longLivedPayload);
+
 for (const [body, expected] of [
+  [{ ...validTokenPayload, access_token: undefined }, 'monzo_access_token_missing'],
   [{ ...validTokenPayload, refresh_token: undefined }, 'monzo_refresh_token_missing'],
   [{ ...validTokenPayload, client_id: 'oauth-client-other-test' }, 'monzo_token_client_mismatch'],
-  [{ ...validTokenPayload, access_token: undefined }, 'monzo_token_payload_invalid'],
-  [{ ...validTokenPayload, token_type: 'bearer' }, 'monzo_token_payload_invalid'],
+  [{ ...validTokenPayload, token_type: 'MAC' }, 'monzo_token_type_invalid'],
+  [{ ...validTokenPayload, user_id: undefined }, 'monzo_user_id_missing'],
+  [{ ...validTokenPayload, expires_in: '21600' }, 'monzo_token_expiry_invalid'],
+  [{ ...validTokenPayload, expires_in: 0 }, 'monzo_token_expiry_invalid'],
 ]) {
   await assert.rejects(
     exchangeMonzoAuthorizationCode(
