@@ -451,9 +451,19 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
   }
 
   if (record.webhookId) {
-    await readSyncForm(request, env);
-    const result = await syncRecentMonzoReconciliation(alias, env, fetchImpl);
-    return html(connectedPage(env, alias, record.accountLabel, result));
+    const probe = new URLSearchParams(await readFormText(request.clone()));
+    if (probe.get('action') === 'sync_recent') {
+      await readSyncForm(request, env);
+      const result = await syncRecentMonzoReconciliation(alias, env, fetchImpl);
+      return html(connectedPage(env, alias, record.accountLabel, result));
+    }
+
+    const { setupToken, accountId } = await readSetupForm(request);
+    await verifySetupConfirmationToken(env, setupToken, alias, ownerEmail, record);
+    if (!ACCOUNT_ID_PATTERN.test(accountId)) {
+      throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
+    }
+    return Response.redirect(connectedReturnUrl(env, alias), 303);
   }
 
   const { setupToken, accountId } = await readSetupForm(request);
