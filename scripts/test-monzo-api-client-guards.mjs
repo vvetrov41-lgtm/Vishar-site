@@ -73,11 +73,14 @@ const oauthEnv = {
 };
 for (const [status, body, expected] of [
   [400, { code: 'bad_request.client_not_enabled' }, 'monzo_oauth_client_not_enabled'],
+  [400, { code: 'bad_request.could_not_authenticate', error: 'invalid_request' }, 'monzo_oauth_client_rejected'],
   [400, { error: 'invalid_client' }, 'monzo_oauth_client_rejected'],
   [400, { code: 'bad_request.bad_param.redirect_uri' }, 'monzo_oauth_redirect_uri_rejected'],
   [400, { code: 'bad_request.authorization_code.invalid' }, 'monzo_authorization_code_rejected'],
   [401, { code: 'unauthorized' }, 'monzo_token_exchange_unauthorized'],
-  [400, { message: 'do not reflect provider detail or secret-shaped content' }, 'monzo_token_exchange_failed'],
+  [400, { message: 'do not reflect provider detail or secret-shaped content' }, 'monzo_token_exchange_bad_request'],
+  [403, { message: 'do not reflect provider detail' }, 'monzo_token_exchange_forbidden'],
+  [418, { message: 'unclassified provider detail' }, 'monzo_token_exchange_failed'],
   [500, {}, 'monzo_provider_unavailable'],
 ]) {
   let submitted = null;
@@ -98,6 +101,37 @@ for (const [status, body, expected] of [
   assert.equal(submitted.get('client_secret'), oauthEnv.MONZO_OAUTH_CLIENT_SECRET);
   assert.equal(submitted.get('redirect_uri'), oauthEnv.MONZO_OAUTH_REDIRECT_URI);
   assert.equal(submitted.get('code'), 'authorization-code-test');
+}
+
+const validTokenPayload = {
+  access_token: 'access-token-test',
+  refresh_token: 'refresh-token-test',
+  token_type: 'Bearer',
+  client_id: oauthEnv.MONZO_OAUTH_CLIENT_ID,
+  user_id: 'user-token-test',
+  expires_in: 21600,
+};
+const accepted = await exchangeMonzoAuthorizationCode(
+  oauthEnv,
+  'authorization-code-test',
+  async () => Response.json(validTokenPayload),
+);
+assert.deepEqual(accepted, validTokenPayload);
+
+for (const [body, expected] of [
+  [{ ...validTokenPayload, refresh_token: undefined }, 'monzo_refresh_token_missing'],
+  [{ ...validTokenPayload, client_id: 'oauth-client-other-test' }, 'monzo_token_client_mismatch'],
+  [{ ...validTokenPayload, access_token: undefined }, 'monzo_token_payload_invalid'],
+  [{ ...validTokenPayload, token_type: 'bearer' }, 'monzo_token_payload_invalid'],
+]) {
+  await assert.rejects(
+    exchangeMonzoAuthorizationCode(
+      oauthEnv,
+      'authorization-code-test',
+      async () => Response.json(body),
+    ),
+    (error) => error instanceof MonzoApiError && error.code === expected,
+  );
 }
 
 // The live Monzo API answers an invalid or expired bearer token with HTTP 400
