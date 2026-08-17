@@ -19,6 +19,8 @@ async function test(name, fn) {
 }
 
 const encryptionKey = Buffer.alloc(32, 7).toString('base64url');
+const syntheticSecret = (prefix = '') => `${prefix}${'x'.repeat(40)}`;
+const syntheticSupabaseKey = (kind) => ['sb', kind, 'syntheticproductionvalue000000000000'].join('_');
 function kv() {
   const values = new Map();
   return {
@@ -61,13 +63,13 @@ await test('refresh token envelope is encrypted and artist-bound', async () => {
     artist_id: 'a1111111-1111-4111-8111-111111111111',
     integration_key: 'google_gmail_vladimir',
     mailbox_email: 'vvetrov41@gmail.com',
-    refresh_token: 'refresh-secret-value',
+    refresh_token: syntheticSecret('refresh-'),
     scope: `${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE}`,
   };
   await storeRefreshToken(env, record);
   const raw = [...store.values.values()][0];
   assert.match(raw, /^v1\./);
-  assert(!raw.includes('refresh-secret-value'));
+  assert(!raw.includes(record.refresh_token));
   const opened = await gmail.openToken(raw, encryptionKey);
   assert.equal(opened.artist_id, record.artist_id);
   assert.equal(opened.integration_key, record.integration_key);
@@ -79,17 +81,17 @@ await test('revoked refresh token fails closed without exposing provider body', 
     GMAIL_OAUTH_TOKENS: store,
     GMAIL_TOKEN_ENCRYPTION_KEY: encryptionKey,
     GOOGLE_OAUTH_CLIENT_ID: 'client-id-1234567890',
-    GOOGLE_OAUTH_CLIENT_SECRET: 'client-secret-1234567890',
+    GOOGLE_OAUTH_CLIENT_SECRET: syntheticSecret(),
   };
   await storeRefreshToken(env, {
     artist_id: 'a1111111-1111-4111-8111-111111111111',
     integration_key: 'google_gmail_vladimir',
     mailbox_email: 'vvetrov41@gmail.com',
-    refresh_token: 'revoked-refresh-token',
+    refresh_token: syntheticSecret('revoked-'),
     scope: `${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE}`,
   });
   await assert.rejects(
-    refreshAccessToken(env, 'a1111111-1111-4111-8111-111111111111', async () => Response.json({ error: 'invalid_grant', error_description: 'secret provider detail' }, { status: 400 })),
+    refreshAccessToken(env, 'a1111111-1111-4111-8111-111111111111', async () => Response.json({ error: 'invalid_grant', error_description: 'synthetic provider detail' }, { status: 400 })),
     (error) => error instanceof Error && error.message === 'gmail_refresh_token_revoked' && !error.message.includes('provider detail'),
   );
 });
@@ -215,9 +217,9 @@ await test('production config enables Vladimir and keeps Kristina independently 
     SUPABASE_URL: 'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
     GOOGLE_OAUTH_REDIRECT_URI: 'https://gmail.vishartattoo.com/oauth/google/callback',
     GOOGLE_OAUTH_CLIENT_ID: 'client-id-1234567890',
-    GOOGLE_OAUTH_CLIENT_SECRET: 'client-secret-1234567890',
-    SUPABASE_SECRET_KEY: 'sb_secret_exampleproductionkey',
-    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_exampleproductionkey',
+    GOOGLE_OAUTH_CLIENT_SECRET: syntheticSecret(),
+    SUPABASE_SECRET_KEY: syntheticSupabaseKey('secret'),
+    SUPABASE_PUBLISHABLE_KEY: syntheticSupabaseKey('publishable'),
     GMAIL_OAUTH_STATE: {}, GMAIL_OAUTH_TOKENS: {},
     GMAIL_VLADIMIR_ENABLED: 'true', GMAIL_KRISTINA_ENABLED: 'false',
   };
