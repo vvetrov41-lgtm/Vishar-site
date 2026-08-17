@@ -121,19 +121,26 @@ insert into expected_acl values
   ('crm_private.is_service_backend()', false, true, true),
   ('crm_private.no_active_owner()', false, true, true);
 
-select diag(format(
-  '%s expected[a=%s,u=%s,s=%s] actual[a=%s,u=%s,s=%s]',
-  signature, anon_allowed, authenticated_allowed, service_role_allowed,
-  has_function_privilege('anon', signature, 'EXECUTE'),
-  has_function_privilege('authenticated', signature, 'EXECUTE'),
-  has_function_privilege('service_role', signature, 'EXECUTE')
-))
-from expected_acl
-where has_function_privilege('anon', signature, 'EXECUTE') is distinct from anon_allowed
-   or has_function_privilege('authenticated', signature, 'EXECUTE') is distinct from authenticated_allowed
-   or has_function_privilege('service_role', signature, 'EXECUTE') is distinct from service_role_allowed
-order by signature;
+with mismatches as (
+  select *,
+    has_function_privilege('anon', signature, 'EXECUTE') as actual_anon,
+    has_function_privilege('authenticated', signature, 'EXECUTE') as actual_authenticated,
+    has_function_privilege('service_role', signature, 'EXECUTE') as actual_service
+  from expected_acl
+  where has_function_privilege('anon', signature, 'EXECUTE') is distinct from anon_allowed
+     or has_function_privilege('authenticated', signature, 'EXECUTE') is distinct from authenticated_allowed
+     or has_function_privilege('service_role', signature, 'EXECUTE') is distinct from service_role_allowed
+)
+select is(
+  (select count(*)::int from mismatches),
+  0,
+  'ACL mismatches: ' || coalesce((
+    select string_agg(
+      format('%s expected[%s,%s,%s] actual[%s,%s,%s]', signature, anon_allowed, authenticated_allowed, service_role_allowed, actual_anon, actual_authenticated, actual_service),
+      '; ' order by signature
+    ) from mismatches
+  ), 'none')
+);
 
-select ok(true, 'canonical ACL mismatch diagnostic emitted');
 select * from finish();
 rollback;
