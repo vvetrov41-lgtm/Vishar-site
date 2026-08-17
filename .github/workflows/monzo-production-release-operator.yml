@@ -4,6 +4,7 @@ name: Monzo token diagnostics production operator
 # release-only delta must remain this workflow file. A production mutation can
 # happen only after the existing reusable gate reaches the protected
 # crm-production environment and receives manual approval.
+# Activation commit requests only the safe token-exchange error classifier.
 
 on:
   push:
