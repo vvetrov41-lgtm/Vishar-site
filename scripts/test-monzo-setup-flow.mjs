@@ -254,8 +254,9 @@ await test('setup confirmation is bound to owner, artist, client/user record and
     true,
   );
 
-  const last = token.at(-1);
-  const tampered = `${token.slice(0, -1)}${last === 'A' ? 'B' : 'A'}`;
+  const tamperIndex = Math.floor(token.length / 2);
+  const tamperCharacter = token[tamperIndex] === 'A' ? 'B' : 'A';
+  const tampered = `${token.slice(0, tamperIndex)}${tamperCharacter}${token.slice(tamperIndex + 1)}`;
   for (const [candidate, alias, owner, candidateRecord, now] of [
     [tampered, 'vladimir', 'owner@example.test', record, issuedAt + 30_000],
     [token, 'vladimir', 'other-owner@example.test', record, issuedAt + 30_000],
