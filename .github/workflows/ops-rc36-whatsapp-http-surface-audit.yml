@@ -1,0 +1,83 @@
+name: Ops RC36 WhatsApp HTTP surface audit
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc36-whatsapp-http-surface-audit
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify operator branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc36-whatsapp-http-surface-audit'
+
+      - name: Verify CRM Pages Function public boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://crm.vishartattoo.com/api/whatsapp/embedded-signup/provision'
+
+          get_status="$(curl --fail-with-body --silent --show-error --output /tmp/crm-get.json --write-out '%{http_code}' "$base" || true)"
+          echo "CRM_GET_STATUS=$get_status"
+          cat /tmp/crm-get.json
+          echo
+          test "$get_status" = '405'
+          grep -Fq '"error":"method_not_allowed"' /tmp/crm-get.json
+
+          post_status="$(curl --silent --show-error --output /tmp/crm-post.json --write-out '%{http_code}' \
+            -X POST \
+            -H 'Origin: https://crm.vishartattoo.com' \
+            -H 'Content-Type: application/json' \
+            --data '{}' \
+            "$base")"
+          echo "CRM_POST_NOAUTH_STATUS=$post_status"
+          cat /tmp/crm-post.json
+          echo
+          test "$post_status" = '401'
+          grep -Fq '"error":"crm_auth_required"' /tmp/crm-post.json
+
+          origin_status="$(curl --silent --show-error --output /tmp/crm-origin.json --write-out '%{http_code}' \
+            -X POST \
+            -H 'Origin: https://example.invalid' \
+            -H 'Content-Type: application/json' \
+            --data '{}' \
+            "$base")"
+          echo "CRM_WRONG_ORIGIN_STATUS=$origin_status"
+          cat /tmp/crm-origin.json
+          echo
+          test "$origin_status" = '403'
+          grep -Fq '"error":"origin_not_allowed"' /tmp/crm-origin.json
+
+      - name: Probe exact production webhook callback path with wrong token
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://whatsapp.vishartattoo.com/webhook?hub.mode=subscribe&hub.verify_token=definitely-wrong-rc36-audit&hub.challenge=rc36-audit'
+          status="$(curl --silent --show-error --output /tmp/webhook.json --write-out '%{http_code}' "$url")"
+          echo "WEBHOOK_WRONG_TOKEN_STATUS=$status"
+          cat /tmp/webhook.json || true
+          echo
+          case "$status" in
+            200|201|202|204)
+              echo 'Wrong verify token was unexpectedly accepted.' >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Safety summary
+        shell: bash
+        run: |
+          {
+            echo '### RC36 WhatsApp HTTP surface audit'
+            echo '- Public GET/unauthenticated POST probes only'
+            echo '- No credentials supplied'
+            echo '- No Meta onboarding/provider calls'
+            echo '- No Worker, binding, route, cron or database mutation'
+          } >> "$GITHUB_STEP_SUMMARY"
