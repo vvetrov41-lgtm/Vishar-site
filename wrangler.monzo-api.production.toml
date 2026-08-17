@@ -55,10 +55,10 @@ simple = { limit = 60, period = 60 }
 # shares a counter with another surface.
 #
 # The gateway applies this limiter to every request on the webhook path,
-# including while MONZO_RECONCILIATION_ENABLED is "false", and fails closed with
-# 503 when the binding is missing or the limiter errors. One stable limiter key
-# covers all opaque webhook routes, so rotating or probing webhook paths cannot
-# buy a fresh budget.
+# including before reconciliation is enabled, and fails closed with 503 when
+# the binding is missing or the limiter errors. One stable limiter key covers
+# all opaque webhook routes, so rotating or probing webhook paths cannot buy a
+# fresh budget.
 #
 # A Workers binding is used rather than a zone WAF rate-limiting rule because
 # the Cloudflare Free zone allows exactly one such rule and it already protects
@@ -73,16 +73,17 @@ MONZO_OWNER_EMAILS = "vvetrov41@gmail.com"
 MONZO_OAUTH_REDIRECT_URI = "https://monzo.vishartattoo.com/oauth/monzo/callback"
 MONZO_CRM_RETURN_URL = "https://crm.vishartattoo.com/#/payments"
 MONZO_WEBHOOK_BASE_URL = "https://monzo.vishartattoo.com"
-MONZO_RECONCILIATION_ENABLED = "false"
+MONZO_RECONCILIATION_ENABLED = "true"
 VLADIMIR_ARTIST_ID = "a1111111-1111-4111-8111-111111111111"
 KRISTINA_ARTIST_ID = "a2222222-2222-4222-8222-222222222222"
 
-# MONZO_RECONCILIATION_ENABLED stays "false" for the initial production rollout.
-# While it is not exactly "true" the webhook path is still rate limited and
-# still resolves its route, but returns 503 `reconciliation_disabled` before
-# reading the body. Turning it on only ever produces reconciliation
-# *candidates*; no code path in this Worker marks a payment request or session
-# paid, and manual payment recording remains authoritative.
+# Production reconciliation is enabled only for candidate creation. Incoming
+# Monzo webhook bodies remain untrusted hints: the Worker re-verifies the OAuth
+# identity, re-fetches the transaction from Monzo, proves it belongs to the
+# selected account, accepts only incoming GBP transfer credits, then calls the
+# backend-only register_monzo_reconciliation_candidate RPC. No code path in
+# this Worker marks a payment request or session paid, and manual payment
+# recording remains authoritative.
 #
 # MONZO_ACCESS_AUD is the audience tag of the "Vishar Monzo production owner
 # access" application. It is a public claim present in every Access JWT, not a
