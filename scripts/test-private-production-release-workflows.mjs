@@ -255,12 +255,12 @@ expectIncludes(monzoProductionConfig, 'workers_dev = false', 'Monzo production c
 expectIncludes(monzoProductionConfig, 'preview_urls = false', 'Monzo production config');
 expectIncludes(monzoProductionConfig, 'pattern = "monzo.vishartattoo.com"', 'Monzo production config');
 expectIncludes(monzoProductionConfig, '[[ratelimits]]', 'Monzo production config');
-expectIncludes(monzoProductionConfig, 'MONZO_RECONCILIATION_ENABLED = "false"', 'Monzo production config');
+expectIncludes(monzoProductionConfig, 'MONZO_RECONCILIATION_ENABLED = "true"', 'Monzo production config');
 expectLineAbsent(monzoProductionConfig, '[triggers]', 'Monzo production config');
 expectExcludes(monzoProductionConfig, 'crons', 'Monzo production config');
 expectExcludes(monzoProductionConfig, 'workers_dev = true', 'Monzo production config');
 expectExcludes(monzoProductionConfig, 'preview_urls = true', 'Monzo production config');
-expectExcludes(monzoProductionConfig, 'MONZO_RECONCILIATION_ENABLED = "true"', 'Monzo production config');
+expectExcludes(monzoProductionConfig, 'MONZO_RECONCILIATION_ENABLED = "false"', 'Monzo production config');
 expectExcludes(monzoProductionConfig, 'gwaliusblwrzisrwnsvs', 'Monzo production config');
 expectExcludes(monzoProductionConfig, 'monzo-staging', 'Monzo production config');
 expectExcludes(monzoProductionConfig, 'MONZO_OAUTH_CLIENT_SECRET', 'Monzo production config');
