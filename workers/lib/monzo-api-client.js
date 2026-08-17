@@ -28,10 +28,49 @@ function transientStatus(status) {
   return status === 429 || status >= 500;
 }
 
-function validateTokenResponse(response, body, expectedClientId) {
+function classifyTokenExchangeRejection(response, body) {
+  if (transientStatus(response.status)) {
+    return new MonzoApiError('monzo_provider_unavailable', 503);
+  }
+
+  const providerCode = typeof body?.code === 'string' ? body.code.toLowerCase() : '';
+  const legacyError = typeof body?.error === 'string' ? body.error.toLowerCase() : '';
+  const signal = `${providerCode} ${legacyError}`;
+
+  // Never expose the provider's raw code/message to the browser. Only map a
+  // small set of token-endpoint failure shapes to stable internal categories.
+  if (signal.includes('client_not_enabled')) {
+    return new MonzoApiError('monzo_oauth_client_not_enabled');
+  }
+  if (signal.includes('redirect_uri') || signal.includes('redirect')) {
+    return new MonzoApiError('monzo_oauth_redirect_uri_rejected');
+  }
   if (
-    !response.ok
-    || typeof body?.access_token !== 'string'
+    signal.includes('invalid_client')
+    || signal.includes('client_secret')
+    || signal.includes('client_credentials')
+    || signal.includes('client_id')
+  ) {
+    return new MonzoApiError('monzo_oauth_client_rejected');
+  }
+  if (
+    signal.includes('authorization_code')
+    || signal.includes('invalid_grant')
+    || signal.includes('bad_param.code')
+    || signal.includes('invalid_code')
+  ) {
+    return new MonzoApiError('monzo_authorization_code_rejected');
+  }
+  if (response.status === 401) {
+    return new MonzoApiError('monzo_token_exchange_unauthorized');
+  }
+  return new MonzoApiError('monzo_token_exchange_failed');
+}
+
+function validateTokenResponse(response, body, expectedClientId) {
+  if (!response.ok) throw classifyTokenExchangeRejection(response, body);
+  if (
+    typeof body?.access_token !== 'string'
     || !body.access_token
     || typeof body?.refresh_token !== 'string'
     || !body.refresh_token
@@ -44,7 +83,6 @@ function validateTokenResponse(response, body, expectedClientId) {
     || body.expires_in < 60
     || body.expires_in > 86400
   ) {
-    if (transientStatus(response.status)) throw new MonzoApiError('monzo_provider_unavailable', 503);
     throw new MonzoApiError('monzo_token_exchange_failed');
   }
   return body;
@@ -364,6 +402,7 @@ export const __testing = {
   TRANSACTIONS_URL,
   WEBHOOKS_URL,
   INBOUND_TRANSFER_SCHEMES,
+  classifyTokenExchangeRejection,
   validateTokenResponse,
   invalidTokenBody,
 };
