@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OPERATOR_PR: '0'
+  OPERATOR_PR: '323'
   PRODUCT_PR: '322'
   PRODUCT_HEAD_BRANCH: agent/monzo-reconciliation-crm-review
   PRODUCT_BASE_BRANCH: agent/monzo-reconciliation-production-activation
