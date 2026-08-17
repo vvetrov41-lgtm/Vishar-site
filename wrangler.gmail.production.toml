@@ -24,10 +24,9 @@ GMAIL_VLADIMIR_ENABLED = "false"
 GMAIL_KRISTINA_ENABLED = "false"
 
 # Production KV bindings are appended only by the guarded production deploy
-# workflow. They deliberately reuse the existing production-only encrypted-token
-# and OAuth-state KV objects with disjoint `gmail:*` key prefixes. Calendar token
-# records are never read or modified by this Worker, and Gmail uses its own
-# GMAIL_TOKEN_ENCRYPTION_KEY.
+# workflow. Gmail uses dedicated production OAuth-state and encrypted-token KV
+# namespaces, so this Worker has no binding to Calendar state or token storage.
+# Gmail refresh-token envelopes also use a distinct GMAIL_TOKEN_ENCRYPTION_KEY.
 #
 # Required Worker secrets before OAuth activation:
 #   GOOGLE_OAUTH_CLIENT_ID
