@@ -4,11 +4,11 @@ import type { Appointment } from '../lib/appointment-api';
 import { useArtistScope } from '../lib/artist-scope';
 import {
   canManageMonzoConnection,
-  monzoConnectionResultNotice,
   monzoConnectorAlias,
   monzoSetupUrl,
   readMonzoConnectorOrigin,
 } from '../lib/monzo-connector';
+import { paymentCopy, type PaymentCopy } from '../lib/payment-copy';
 import type {
   DepositRequestResult,
   DepositTier,
@@ -17,6 +17,7 @@ import type {
   MonzoReconciliationRequestSummary,
 } from '../lib/payment-api';
 import { useApi, useSession } from '../lib/session';
+import { useLanguage, type Language } from '../lib/i18n';
 
 const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
 const MONZO_CONNECTOR_ORIGIN = readMonzoConnectorOrigin(browserEnv, import.meta.env.DEV);
@@ -51,26 +52,58 @@ function depositAmountForAppointment(appointment: Appointment, tiers: DepositTie
   return tier?.amount ?? null;
 }
 
-function money(amount: number, currency: string): string {
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
+function money(amount: number, currency: string, locale: string): string {
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount);
 }
 
-function requestSummaryLabel(request: MonzoReconciliationRequestSummary): string {
+function requestSummaryLabel(
+  request: MonzoReconciliationRequestSummary,
+  locale: string,
+  copy: PaymentCopy,
+): string {
   const session = request.session_start_at
-    ? new Date(request.session_start_at).toLocaleString('en-GB')
-    : 'No session date';
-  return `${request.client_name} · ${session} · ${money(request.outstanding_amount, request.currency)} outstanding`;
+    ? new Date(request.session_start_at).toLocaleString(locale)
+    : copy.noSessionDate;
+  return `${request.client_name} · ${session} · ${money(request.outstanding_amount, request.currency, locale)} ${copy.outstanding}`;
 }
 
-function candidateStatusLabel(candidate: MonzoReconciliationCandidate): string {
-  if (candidate.confirmed) return 'Confirmed';
-  if (candidate.status === 'candidate') return 'Suggested match';
-  return candidate.status.charAt(0).toUpperCase() + candidate.status.slice(1);
+function candidateStatusLabel(
+  candidate: MonzoReconciliationCandidate,
+  language: Language,
+  copy: PaymentCopy,
+): string {
+  if (candidate.confirmed) return copy.statusConfirmed;
+  if (candidate.status === 'candidate') return copy.statusSuggested;
+  if (candidate.status === 'matched') return copy.statusMatched;
+  if (candidate.status === 'ignored') return copy.statusIgnored;
+  if (candidate.status === 'ambiguous') return language === 'ru' ? 'Неоднозначное совпадение' : 'Ambiguous match';
+  return language === 'ru' ? 'Не сопоставлен' : 'Unmatched';
+}
+
+function paymentRequestStatusLabel(status: string | undefined, language: Language): string | null {
+  if (!status) return null;
+  const ru: Record<string, string> = {
+    pending: 'ожидает оплаты',
+    partially_paid: 'частично оплачен',
+    paid: 'оплачен',
+    cancelled: 'отменён',
+    expired: 'истёк',
+  };
+  const en: Record<string, string> = {
+    pending: 'pending',
+    partially_paid: 'partially paid',
+    paid: 'paid',
+    cancelled: 'cancelled',
+    expired: 'expired',
+  };
+  return (language === 'ru' ? ru : en)[status] ?? status.replace(/_/g, ' ');
 }
 
 export function PaymentsPage() {
   const api = useApi();
   const { profile, memberships } = useSession();
+  const { language, locale, label } = useLanguage();
+  const copy = useMemo(() => paymentCopy(language), [language]);
   const { artists, selectedArtistId, loading: artistScopeLoading } = useArtistScope();
   const [settings, setSettings] = useState<MonzoDepositSettings>(EMPTY_SETTINGS);
   const [paymentUrl, setPaymentUrl] = useState('');
@@ -98,12 +131,16 @@ export function PaymentsPage() {
   const canManageReconciliation = profile?.role === 'owner' || Boolean(selectedMembership?.can_manage_finance);
   const selectedMonzoAlias = monzoConnectorAlias(selectedArtist?.slug);
   const canManageConnection = canManageMonzoConnection(profile?.role);
-  const monzoNotice = useMemo(
-    () => selectedMonzoAlias
-      ? monzoConnectionResultNotice(window.location.search, selectedMonzoAlias)
-      : null,
-    [selectedMonzoAlias]
-  );
+  const monzoNotice = useMemo(() => {
+    if (!selectedMonzoAlias || !selectedArtist) return null;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('artist') !== selectedMonzoAlias) return null;
+    const result = params.get('monzo');
+    if (result === 'authorized') return copy.connectionAuthorized(selectedArtist.display_name);
+    if (result === 'connected') return copy.connectionConnected(selectedArtist.display_name);
+    if (result === 'disconnected') return copy.connectionDisconnected(selectedArtist.display_name);
+    return null;
+  }, [selectedMonzoAlias, selectedArtist, copy]);
 
   const eligibleAppointments = useMemo(() => {
     const now = Date.now();
@@ -143,7 +180,7 @@ export function PaymentsPage() {
       setReconciliationCandidates(nextCandidates);
       setCandidateDefaults(nextCandidates);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not load payment settings.');
+      setError(cause instanceof Error ? cause.message : copy.loadError);
     } finally {
       setLoading(false);
     }
@@ -162,7 +199,7 @@ export function PaymentsPage() {
       return;
     }
     void reload(selectedArtistId);
-  }, [selectedArtistId, canViewReconciliation]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedArtistId, canViewReconciliation, language]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveSettings(event: FormEvent) {
     event.preventDefault();
@@ -173,7 +210,7 @@ export function PaymentsPage() {
       await api.configureMonzoDeposit({ artistId: selectedArtistId, paymentUrl, enabled });
       await reload(selectedArtistId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save payment settings.');
+      setError(cause instanceof Error ? cause.message : copy.saveError);
     } finally {
       setSaving(false);
     }
@@ -187,7 +224,7 @@ export function PaymentsPage() {
       const next = await api.requestSessionDeposit({ sessionId, deliveryChannel });
       setResult(next);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create the deposit request.');
+      setError(cause instanceof Error ? cause.message : copy.requestError);
     } finally {
       setBusySession(null);
     }
@@ -197,7 +234,7 @@ export function PaymentsPage() {
     if (!selectedArtistId || !canManageReconciliation) return;
     const paymentRequestId = matchSelection[candidate.id];
     if (!paymentRequestId) {
-      setError('Choose an eligible deposit request first.');
+      setError(copy.chooseRequestError);
       return;
     }
     setBusyCandidate(candidate.id);
@@ -205,10 +242,10 @@ export function PaymentsPage() {
     setReconciliationNotice(null);
     try {
       await api.matchMonzoReconciliationCandidate({ candidateId: candidate.id, paymentRequestId });
-      setReconciliationNotice('Payment matched. Nothing has been marked paid yet. Confirm payment separately after checking the match.');
+      setReconciliationNotice(copy.matchSuccess);
       await reload(selectedArtistId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not match that payment.');
+      setError(cause instanceof Error ? cause.message : copy.matchError);
     } finally {
       setBusyCandidate(null);
     }
@@ -216,16 +253,16 @@ export function PaymentsPage() {
 
   async function ignoreCandidate(candidate: MonzoReconciliationCandidate) {
     if (!selectedArtistId || !canManageReconciliation || candidate.confirmed) return;
-    if (!window.confirm(`Ignore this ${money(candidate.amount, candidate.currency)} Monzo payment candidate? No payment status will change.`)) return;
+    if (!window.confirm(copy.ignorePrompt(money(candidate.amount, candidate.currency, locale)))) return;
     setBusyCandidate(candidate.id);
     setError(null);
     setReconciliationNotice(null);
     try {
       await api.ignoreMonzoReconciliationCandidate(candidate.id);
-      setReconciliationNotice('Payment candidate ignored. No ledger or payment status was changed.');
+      setReconciliationNotice(copy.ignoreSuccess);
       await reload(selectedArtistId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not ignore that payment.');
+      setError(cause instanceof Error ? cause.message : copy.ignoreError);
     } finally {
       setBusyCandidate(null);
     }
@@ -235,7 +272,7 @@ export function PaymentsPage() {
     if (!selectedArtistId || !canManageReconciliation || candidate.confirmed || !candidate.matched_payment_request) return;
     const matched = candidate.matched_payment_request;
     const confirmed = window.confirm(
-      `Confirm ${money(candidate.amount, candidate.currency)} as received for ${matched.client_name}? This writes an immutable payment ledger entry and may mark the deposit paid.`
+      copy.confirmPrompt(money(candidate.amount, candidate.currency, locale), matched.client_name)
     );
     if (!confirmed) return;
     setBusyCandidate(candidate.id);
@@ -243,20 +280,18 @@ export function PaymentsPage() {
     setReconciliationNotice(null);
     try {
       const next = await api.confirmMonzoReconciliationCandidate(candidate.id);
-      setReconciliationNotice(
-        `Payment confirmed${next.payment_request_status ? ` · request is now ${next.payment_request_status}` : ''}.`
-      );
+      setReconciliationNotice(copy.confirmSuccess(paymentRequestStatusLabel(next.payment_request_status, language)));
       await reload(selectedArtistId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not confirm that payment.');
+      setError(cause instanceof Error ? cause.message : copy.confirmError);
     } finally {
       setBusyCandidate(null);
     }
   }
 
-  if (artistScopeLoading) return <LoadingState label="Loading payments…" />;
+  if (artistScopeLoading) return <LoadingState label={copy.loadingPayments} />;
   if (!selectedArtistId || !selectedArtist) {
-    return <section className="panel"><div className="notice">Choose one artist to manage payments.</div></section>;
+    return <section className="panel"><div className="notice">{copy.chooseArtist}</div></section>;
   }
 
   return (
@@ -265,16 +300,14 @@ export function PaymentsPage() {
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <h2>Monzo account connection</h2>
-              <p>{selectedArtist.display_name}: protected bank-account connection for payment reconciliation.</p>
+              <h2>{copy.connectionTitle}</h2>
+              <p>{copy.connectionDescription(selectedArtist.display_name)}</p>
             </div>
           </div>
 
           {monzoNotice ? <div className="notice ok" role="status">{monzoNotice}</div> : null}
           {!MONZO_CONNECTOR_ORIGIN ? (
-            <div className="notice">
-              Monzo account connection is disabled in this environment. Existing deposit settings remain unchanged.
-            </div>
+            <div className="notice">{copy.connectionDisabled}</div>
           ) : selectedMonzoAlias ? (
             <div className="button-row">
               <button
@@ -284,30 +317,28 @@ export function PaymentsPage() {
                   monzoSetupUrl(MONZO_CONNECTOR_ORIGIN, selectedMonzoAlias)
                 )}
               >
-                Manage Monzo connection
+                {copy.manageConnection}
               </button>
             </div>
           ) : (
-            <div className="notice">This artist does not have a Monzo connector route.</div>
+            <div className="notice">{copy.noConnectorRoute}</div>
           )}
-          <div className="notice">
-            Connection opens as top-level navigation through the Access-protected Monzo connector. The CRM browser never receives Monzo access tokens, refresh tokens, webhook keys or bank account IDs.
-          </div>
+          <div className="notice">{copy.connectionSecurity}</div>
         </section>
       ) : null}
 
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <h2>Deposits</h2>
-            <p>{selectedArtist.display_name}: duration-based Monzo Easy Bank Transfer deposits.</p>
+            <h2>{copy.depositsTitle}</h2>
+            <p>{copy.depositsDescription(selectedArtist.display_name)}</p>
           </div>
         </div>
 
-        {loading ? <LoadingState label="Loading payment settings…" /> : (
+        {loading ? <LoadingState label={copy.loadingSettings} /> : (
           <form onSubmit={saveSettings} className="form-grid">
             <label className="field field-wide">
-              <span>Reusable Monzo payment link</span>
+              <span>{copy.reusablePaymentLink}</span>
               <input
                 type="url"
                 value={paymentUrl}
@@ -319,13 +350,13 @@ export function PaymentsPage() {
             </label>
             <label className="field checkbox-field">
               <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
-              <span>Enable for this artist</span>
+              <span>{copy.enableArtist}</span>
             </label>
-            <div className="notice field-wide">
-              Deposits: up to 1 hour £50, up to 3 hours £100, up to 5 hours £150, over 5 hours / full day £250. The server calculates the amount from the appointment duration. Email: provider not connected. SMS: not configured. Monzo API: connection managed separately above.
-            </div>
+            <div className="notice field-wide">{copy.depositPolicyNotice}</div>
             <div className="field-wide">
-              <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</button>
+              <button type="submit" className="primary-button" disabled={saving}>
+                {saving ? copy.saving : copy.saveSettings}
+              </button>
             </div>
           </form>
         )}
@@ -334,21 +365,21 @@ export function PaymentsPage() {
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <h2>Request a deposit</h2>
-            <p>The CRM calculates the deposit server-side and creates one opaque personal path. Opening it never marks the deposit as paid.</p>
+            <h2>{copy.requestTitle}</h2>
+            <p>{copy.requestDescription}</p>
           </div>
         </div>
-        {eligibleAppointments.length === 0 ? <div className="notice">No eligible future tattoo appointments.</div> : (
+        {eligibleAppointments.length === 0 ? <div className="notice">{copy.noEligibleAppointments}</div> : (
           <div className="list-stack">
             {eligibleAppointments.map((appointment) => {
               const depositAmount = depositAmountForAppointment(appointment, settings.deposit_tiers);
               return (
                 <div className="list-row" key={appointment.id}>
                   <div>
-                    <strong>{new Date(appointment.start_at).toLocaleString('en-GB')}</strong>
+                    <strong>{new Date(appointment.start_at).toLocaleString(locale)}</strong>
                     <div className="muted">
-                      {appointment.status} · {appointment.payment_status}
-                      {depositAmount == null ? '' : ` · £${depositAmount} deposit`}
+                      {label('sessionStatus', appointment.status)} · {label('paymentStatus', appointment.payment_status)}
+                      {depositAmount == null ? '' : ` · £${depositAmount} ${copy.depositSuffix}`}
                     </div>
                   </div>
                   <div className="button-row">
@@ -357,13 +388,17 @@ export function PaymentsPage() {
                       className="secondary-button"
                       disabled={busySession === appointment.id || !settings.enabled || depositAmount == null}
                       onClick={() => void requestDeposit(appointment.id, 'copy_link')}
-                    >{depositAmount == null ? 'Create personal link' : `Create £${depositAmount} link`}</button>
+                    >
+                      {depositAmount == null ? copy.createPersonalLink : copy.createAmountLink(depositAmount)}
+                    </button>
                     <button
                       type="button"
                       className="primary-button"
                       disabled={busySession === appointment.id || !settings.enabled || depositAmount == null}
                       onClick={() => void requestDeposit(appointment.id, 'email')}
-                    >{depositAmount == null ? 'Queue deposit email' : `Queue £${depositAmount} email`}</button>
+                    >
+                      {depositAmount == null ? copy.queueDepositEmail : copy.queueAmountEmail(depositAmount)}
+                    </button>
                   </div>
                 </div>
               );
@@ -376,16 +411,14 @@ export function PaymentsPage() {
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <h2>Monzo reconciliation</h2>
-              <p>Review independently verified incoming bank transfers before they affect the payment ledger.</p>
+              <h2>{copy.reconciliationTitle}</h2>
+              <p>{copy.reconciliationDescription}</p>
             </div>
           </div>
-          <div className="notice">
-            A Monzo webhook is only a hint. The server re-fetches the transaction from Monzo before it can appear here. Match does not mark anything paid. Confirm payment is a separate human action.
-          </div>
+          <div className="notice">{copy.reconciliationSecurity}</div>
           {reconciliationNotice ? <div className="notice ok" role="status">{reconciliationNotice}</div> : null}
-          {loading ? <LoadingState label="Loading Monzo reconciliation…" /> : reconciliationCandidates.length === 0 ? (
-            <div className="notice">No Monzo reconciliation candidates.</div>
+          {loading ? <LoadingState label={copy.loadingReconciliation} /> : reconciliationCandidates.length === 0 ? (
+            <div className="notice">{copy.noCandidates}</div>
           ) : (
             <div className="list-stack">
               {reconciliationCandidates.map((candidate) => {
@@ -395,24 +428,26 @@ export function PaymentsPage() {
                 return (
                   <div className="list-row" key={candidate.id}>
                     <div>
-                      <strong>{money(candidate.amount, candidate.currency)} · {candidateStatusLabel(candidate)}</strong>
-                      <div className="muted">Received {new Date(candidate.occurred_at).toLocaleString('en-GB')}</div>
+                      <strong>
+                        {money(candidate.amount, candidate.currency, locale)} · {candidateStatusLabel(candidate, language, copy)}
+                      </strong>
+                      <div className="muted">{copy.received} {new Date(candidate.occurred_at).toLocaleString(locale)}</div>
                       {matched ? (
-                        <div className="muted">Matched: {requestSummaryLabel(matched)}</div>
+                        <div className="muted">{copy.matched}: {requestSummaryLabel(matched, locale, copy)}</div>
                       ) : candidate.suggested_payment_request ? (
-                        <div className="muted">Suggested: {requestSummaryLabel(candidate.suggested_payment_request)}</div>
+                        <div className="muted">{copy.suggested}: {requestSummaryLabel(candidate.suggested_payment_request, locale, copy)}</div>
                       ) : null}
                       {candidate.confirmed ? (
-                        <div className="notice ok">Confirmed in the immutable payment ledger.</div>
+                        <div className="notice ok">{copy.confirmedLedger}</div>
                       ) : candidate.status === 'ignored' ? (
-                        <div className="notice">Ignored. No payment status was changed.</div>
+                        <div className="notice">{copy.ignoredNoChange}</div>
                       ) : null}
                     </div>
 
                     {canMutate ? (
                       <div className="form-grid">
                         <label className="field field-wide">
-                          <span>Deposit request</span>
+                          <span>{copy.depositRequest}</span>
                           <select
                             value={selectedRequestId}
                             onChange={(event) => setMatchSelection((current) => ({
@@ -420,16 +455,16 @@ export function PaymentsPage() {
                               [candidate.id]: event.target.value,
                             }))}
                           >
-                            <option value="">Choose an eligible deposit request</option>
+                            <option value="">{copy.chooseEligibleRequest}</option>
                             {candidate.match_options.map((option) => (
                               <option key={option.payment_request_id} value={option.payment_request_id}>
-                                {requestSummaryLabel(option)}{option.is_suggested ? ' · suggested' : ''}
+                                {requestSummaryLabel(option, locale, copy)}{option.is_suggested ? ` · ${copy.suggestedSuffix}` : ''}
                               </option>
                             ))}
                           </select>
                         </label>
                         {candidate.match_options.length === 0 ? (
-                          <div className="notice field-wide">No eligible deposit request has this exact outstanding amount.</div>
+                          <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
                         ) : null}
                         <div className="button-row field-wide">
                           <button
@@ -438,7 +473,7 @@ export function PaymentsPage() {
                             disabled={busyCandidate === candidate.id || !selectedRequestId}
                             onClick={() => void matchCandidate(candidate)}
                           >
-                            {busyCandidate === candidate.id ? 'Working…' : matched ? 'Change match' : 'Match'}
+                            {busyCandidate === candidate.id ? copy.working : matched ? copy.changeMatch : copy.match}
                           </button>
                           {matched ? (
                             <button
@@ -447,7 +482,7 @@ export function PaymentsPage() {
                               disabled={busyCandidate === candidate.id}
                               onClick={() => void confirmCandidate(candidate)}
                             >
-                              Confirm payment
+                              {copy.confirmPayment}
                             </button>
                           ) : null}
                           <button
@@ -456,12 +491,12 @@ export function PaymentsPage() {
                             disabled={busyCandidate === candidate.id}
                             onClick={() => void ignoreCandidate(candidate)}
                           >
-                            Ignore
+                            {copy.ignore}
                           </button>
                         </div>
                       </div>
                     ) : !canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored' ? (
-                      <div className="notice">View only. Finance management permission is required to match, confirm or ignore.</div>
+                      <div className="notice">{copy.viewOnly}</div>
                     ) : null}
                   </div>
                 );
@@ -473,12 +508,10 @@ export function PaymentsPage() {
 
       {result ? (
         <section className="panel">
-          <h2>Deposit request created</h2>
+          <h2>{copy.requestCreated}</h2>
           <p><strong>£{result.amount}</strong> {result.currency} · <code>{result.public_path}</code></p>
           <div className="notice">
-            {result.delivery_channel === 'email'
-              ? 'Email is queued, but it will not send until an email provider is deliberately connected.'
-              : 'The personal path is ready in CRM. A public Worker route still has to be deliberately deployed before this path can be sent to clients.'}
+            {result.delivery_channel === 'email' ? copy.emailQueued : copy.personalPathReady}
           </div>
         </section>
       ) : null}
