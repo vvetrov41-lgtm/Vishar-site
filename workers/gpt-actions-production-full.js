@@ -1,7 +1,7 @@
 import productionWorker from './gpt-actions-production.js';
+import { isGmailHttpActionPath } from './lib/gmail-tool-contract.js';
 
 const OPERATIONS_HOST = 'gpt-operations.vishartattoo.com';
-const GMAIL_ACTION_PATH = /^\/v1\/enquiries\/[0-9a-f-]{36}\/gmail\/(?:history\/?|threads\/[0-9a-f-]{36}\/?|reply-drafts\/?)$/i;
 const PUBLIC_HEADERS = Object.freeze({
   'cache-control': 'public, max-age=300',
   'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
@@ -48,7 +48,7 @@ function isPrivacyRoute(request) {
 
 function isGmailActionRoute(request) {
   const url = new URL(request.url);
-  return url.hostname === OPERATIONS_HOST && GMAIL_ACTION_PATH.test(url.pathname);
+  return url.hostname === OPERATIONS_HOST && isGmailHttpActionPath(url.pathname);
 }
 
 async function privacyResponse(request, env) {
