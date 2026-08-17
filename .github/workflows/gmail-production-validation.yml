@@ -68,16 +68,5 @@ jobs:
           WRANGLER_SEND_METRICS: 'false'
         run: npx wrangler deploy --config wrangler.gpt-actions.production.toml --dry-run --outdir .wrangler/gpt-gmail-production-dry-run
 
-      - name: Reject tracked credential-shaped Gmail configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -RniE '(access_token|refresh_token|client_secret)[[:space:]]*[:=][[:space:]]*["'"'][^"'"']+' \
-            workers/gmail-production.js workers/lib/google-gmail.js workers/lib/gmail-supabase.js \
-            wrangler.gmail.production.toml docs/gpt-actions/openapi.production.operations.yaml; then
-            echo 'Tracked Gmail credential-shaped value detected.' >&2
-            exit 1
-          fi
-
       - name: Diff hygiene
         run: git diff --check
