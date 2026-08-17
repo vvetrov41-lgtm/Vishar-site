@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OPERATOR_PR: '0'
+  OPERATOR_PR: '318'
   PRODUCT_PR: '317'
   PRODUCT_HEAD_BRANCH: agent/monzo-setup-confirmation-consistency-fix
   PRODUCT_BASE_BRANCH: agent/monzo-sca-approval-race-fix
