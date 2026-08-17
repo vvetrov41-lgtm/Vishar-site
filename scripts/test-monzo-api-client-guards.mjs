@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   ensureMonzoAccessToken,
+  exchangeMonzoAuthorizationCode,
   isIncomingGbpTransferCredit,
   listMonzoAccounts,
   registerMonzoWebhook,
@@ -62,6 +63,43 @@ for (const callbackUrl of [
   assert.equal(called, false);
 }
 
+// Token endpoint failures are intentionally reduced to a small stable set of
+// internal categories. Never reflect Monzo's raw provider message/code because
+// those strings are external input and may contain operational detail.
+const oauthEnv = {
+  MONZO_OAUTH_CLIENT_ID: 'oauth-client-current-test',
+  MONZO_OAUTH_CLIENT_SECRET: 'client-secret-test',
+  MONZO_OAUTH_REDIRECT_URI: 'https://monzo.example.test/oauth/monzo/callback',
+};
+for (const [status, body, expected] of [
+  [400, { code: 'bad_request.client_not_enabled' }, 'monzo_oauth_client_not_enabled'],
+  [400, { error: 'invalid_client' }, 'monzo_oauth_client_rejected'],
+  [400, { code: 'bad_request.bad_param.redirect_uri' }, 'monzo_oauth_redirect_uri_rejected'],
+  [400, { code: 'bad_request.authorization_code.invalid' }, 'monzo_authorization_code_rejected'],
+  [401, { code: 'unauthorized' }, 'monzo_token_exchange_unauthorized'],
+  [400, { message: 'do not reflect provider detail or secret-shaped content' }, 'monzo_token_exchange_failed'],
+  [500, {}, 'monzo_provider_unavailable'],
+]) {
+  let submitted = null;
+  await assert.rejects(
+    exchangeMonzoAuthorizationCode(
+      oauthEnv,
+      'authorization-code-test',
+      async (url, options) => {
+        assert.equal(url, 'https://api.monzo.com/oauth2/token');
+        submitted = new URLSearchParams(options.body);
+        return Response.json(body, { status });
+      },
+    ),
+    (error) => error instanceof MonzoApiError && error.code === expected,
+  );
+  assert.equal(submitted.get('grant_type'), 'authorization_code');
+  assert.equal(submitted.get('client_id'), oauthEnv.MONZO_OAUTH_CLIENT_ID);
+  assert.equal(submitted.get('client_secret'), oauthEnv.MONZO_OAUTH_CLIENT_SECRET);
+  assert.equal(submitted.get('redirect_uri'), oauthEnv.MONZO_OAUTH_REDIRECT_URI);
+  assert.equal(submitted.get('code'), 'authorization-code-test');
+}
+
 // The live Monzo API answers an invalid or expired bearer token with HTTP 400
 // and `code: "bad_request.invalid_token"`, not the documented 401. That must
 // still route to reauthorisation instead of a generic provider rejection.
@@ -100,4 +138,4 @@ for (const transaction of [
   assert.equal(isIncomingGbpTransferCredit(transaction), false, JSON.stringify(transaction));
 }
 
-console.log('Monzo API client guard tests passed: 5 cases.');
+console.log('Monzo API client guard tests passed, including token exchange diagnostics.');
