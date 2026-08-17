@@ -1,13 +1,14 @@
-name: Monzo production release operator
+name: Monzo token diagnostics production operator
 
-# Mutating Monzo production phases must enter crm-production from the approved
-# release branch because the environment itself only permits release/private-crm-rc*.
-# PR #307 is an operator-only draft whose head is that exact release branch.
-# It is never a product base and must never be merged.
+# Diagnostic-only release operator. The product delta is PR #310, and the
+# release-only delta must remain this workflow file. A production mutation can
+# happen only after the existing reusable gate reaches the protected
+# crm-production environment and receives manual approval.
 
 on:
-  pull_request:
-    types: [edited]
+  push:
+    branches:
+      - release/private-crm-rc36-monzo-token-diagnostics
 
 permissions:
   contents: read
@@ -15,71 +16,42 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: monzo-production-release-operator
+  group: monzo-token-diagnostics-production-operator
   cancel-in-progress: false
 
 env:
-  OPERATOR_PR: '307'
-  PRODUCT_PR: '304'
-  PRODUCT_HEAD_BRANCH: claude/vishar-monzo-production-ejbe23
-  OPERATOR_RELEASE_BRANCH: release/private-crm-rc34-monzo-production
-  OPERATOR_BASE_BRANCH: agent/monzo-duration-tiered-deposits-production
+  OPERATOR_PR: '0'
+  PRODUCT_PR: '310'
+  PRODUCT_HEAD_BRANCH: agent/monzo-token-exchange-diagnostics
+  PRODUCT_BASE_BRANCH: claude/vishar-monzo-production-ejbe23
+  OPERATOR_RELEASE_BRANCH: release/private-crm-rc36-monzo-token-diagnostics
+  OPERATOR_BASE_BRANCH: agent/monzo-token-exchange-diagnostics
+  OPERATOR_WORKFLOW_PATH: .github/workflows/monzo-production-release-operator.yml
 
 jobs:
   authorize:
-    name: Authorize release-branch Monzo production request
+    name: Authorize Monzo token diagnostic production request
     if: >-
-      github.event.action == 'edited' &&
-      github.event.sender.login == 'vvetrov41-lgtm' &&
-      github.event.pull_request.number == 307 &&
-      github.event.pull_request.state == 'open' &&
-      github.event.pull_request.draft == true &&
-      github.event.pull_request.merged == false &&
-      github.event.pull_request.head.ref == 'release/private-crm-rc34-monzo-production' &&
-      github.event.pull_request.base.ref == 'agent/monzo-duration-tiered-deposits-production' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      (
-        contains(github.event.pull_request.body, format('<!-- RUN_MONZO_PRODUCTION_BOOTSTRAP:{0} -->', github.event.pull_request.head.sha)) ||
-        contains(github.event.pull_request.body, format('<!-- RUN_MONZO_PRODUCTION_ROLLOUT:{0} -->', github.event.pull_request.head.sha))
-      )
+      github.actor == 'vvetrov41-lgtm' &&
+      github.ref == 'refs/heads/release/private-crm-rc36-monzo-token-diagnostics' &&
+      contains(github.event.head_commit.message, '[RUN_MONZO_TOKEN_DIAGNOSTIC]')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     outputs:
-      approved_sha: ${{ github.event.pull_request.head.sha }}
-      phase: ${{ steps.phase.outputs.phase }}
+      approved_sha: ${{ github.sha }}
     steps:
-      - name: Resolve the requested phase
-        id: phase
-        shell: bash
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          bootstrap=0; rollout=0
-          case "$PR_BODY" in *"<!-- RUN_MONZO_PRODUCTION_BOOTSTRAP:${HEAD_SHA} -->"*) bootstrap=1 ;; esac
-          case "$PR_BODY" in *"<!-- RUN_MONZO_PRODUCTION_ROLLOUT:${HEAD_SHA} -->"*) rollout=1 ;; esac
-          total=$((bootstrap + rollout))
-          if [ "$total" -ne 1 ]; then
-            echo "Exactly one mutating activation marker must match this head; found ${total}." >&2
-            exit 1
-          fi
-          if [ "$bootstrap" = 1 ]; then phase=bootstrap; else phase=rollout; fi
-          echo "phase=$phase" >> "$GITHUB_OUTPUT"
-          echo "Requested phase: $phase"
-
       - name: Checkout exact approved release SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Verify release branch, ancestry and product PR
+      - name: Verify release branch, operator PR and diagnostic product PR
+        id: lineage
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          APPROVED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
@@ -88,89 +60,113 @@ jobs:
           release_tip="$(git ls-remote --heads origin "refs/heads/${OPERATOR_RELEASE_BRANCH}" | awk '{print $1}')"
           test "$release_tip" = "$APPROVED_SHA"
 
-          git cat-file -e "${BASE_SHA}^{commit}"
-          git merge-base --is-ancestor "$BASE_SHA" "$APPROVED_SHA"
+          operator="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${OPERATOR_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha, .base.ref] | @tsv')"
+          IFS=$'\t' read -r op_state op_draft op_merged op_head_ref op_head_sha op_base_ref <<< "$operator"
+          test "$op_state" = open
+          test "$op_draft" = true
+          test "$op_merged" = false
+          test "$op_head_ref" = "$OPERATOR_RELEASE_BRANCH"
+          test "$op_head_sha" = "$APPROVED_SHA"
+          test "$op_base_ref" = "$OPERATOR_BASE_BRANCH"
 
           product="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PRODUCT_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha, .base.ref] | @tsv')"
-          IFS=$'\t' read -r state draft merged head_ref head_sha base_ref <<< "$product"
+          IFS=$'\t' read -r state draft merged head_ref product_sha base_ref <<< "$product"
           test "$state" = open
           test "$draft" = true
           test "$merged" = false
           test "$head_ref" = "$PRODUCT_HEAD_BRANCH"
-          test "$head_sha" = "$APPROVED_SHA"
-          test "$base_ref" = "$OPERATOR_BASE_BRANCH"
+          test "$base_ref" = "$PRODUCT_BASE_BRANCH"
 
-          echo "Release branch and product PR #${PRODUCT_PR} both resolve to ${APPROVED_SHA}."
+          git cat-file -e "${product_sha}^{commit}"
+          git merge-base --is-ancestor "$product_sha" "$APPROVED_SHA"
 
-      - name: Confirm normal exact-head CI is green
+          mapfile -t release_delta < <(git diff --name-only "$product_sha" "$APPROVED_SHA")
+          if [ "${#release_delta[@]}" -ne 1 ] || [ "${release_delta[0]}" != "$OPERATOR_WORKFLOW_PATH" ]; then
+            echo 'Release-only delta is not confined to the operator workflow:' >&2
+            printf '  %s\n' "${release_delta[@]}" >&2
+            exit 1
+          fi
+
+          echo "product_sha=$product_sha" >> "$GITHUB_OUTPUT"
+          echo "Release ${APPROVED_SHA} is diagnostic product ${product_sha} plus operator-only workflow changes."
+
+      - name: Wait for normal exact-head CI to be green
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+          APPROVED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          runs_file="$(mktemp)"
-          gh api --paginate \
-            "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100" \
-            --jq '.check_runs[] | [.name, .status, (.conclusion // "none"), .started_at] | @tsv' \
-            > "$runs_file"
+          deadline=$((SECONDS + 720))
 
-          problems=''
-          while IFS= read -r required; do
-            latest="$(awk -F'\t' -v name="$required" '$1 == name { print $4 "\t" $2 "\t" $3 }' "$runs_file" | sort -r | head -1)"
-            if [ -z "$latest" ]; then
-              problems="${problems}${required}: absent; "
-              continue
-            fi
-            status="$(printf '%s' "$latest" | cut -f2)"
-            conclusion="$(printf '%s' "$latest" | cut -f3)"
-            if [ "$status" != completed ] || [ "$conclusion" != success ]; then
-              problems="${problems}${required}: ${status}/${conclusion}; "
-            fi
-          done <<'REQUIRED'
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            runs_file="$(mktemp)"
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name, .status, (.conclusion // "none"), .started_at] | @tsv' \
+              > "$runs_file"
+
+            waiting=''
+            failed=''
+            while IFS= read -r required; do
+              latest="$(awk -F'\t' -v name="$required" '$1 == name { print $4 "\t" $2 "\t" $3 }' "$runs_file" | sort -r | head -1)"
+              if [ -z "$latest" ]; then
+                waiting="${waiting}${required}: absent; "
+                continue
+              fi
+              status="$(printf '%s' "$latest" | cut -f2)"
+              conclusion="$(printf '%s' "$latest" | cut -f3)"
+              if [ "$status" != completed ]; then
+                waiting="${waiting}${required}: ${status}; "
+              elif [ "$conclusion" != success ]; then
+                failed="${failed}${required}: ${conclusion}; "
+              fi
+            done <<'REQUIRED'
           static-validation
           Private CRM
           Supabase migrations and pgTAP
           Public site and Worker
           REQUIRED
-          rm -f "$runs_file"
-          if [ -n "$problems" ]; then
-            echo "Normal exact-head CI is not green: ${problems}" >&2
-            exit 1
-          fi
+            rm -f "$runs_file"
+
+            if [ -n "$failed" ]; then
+              echo "Normal exact-head CI failed: ${failed}" >&2
+              exit 1
+            fi
+            if [ -z "$waiting" ]; then
+              echo "All required normal exact-head CI checks are green for ${APPROVED_SHA}."
+              exit 0
+            fi
+
+            echo "Waiting for exact-head CI: ${waiting}"
+            sleep 10
+          done
+
+          echo 'Timed out waiting for normal exact-head CI.' >&2
+          exit 1
 
       - name: Operator authorisation summary
         if: always()
         shell: bash
         env:
-          PHASE: ${{ steps.phase.outputs.phase }}
-          APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
+          APPROVED_SHA: ${{ github.sha }}
+          PRODUCT_SHA: ${{ steps.lineage.outputs.product_sha }}
         run: |
           {
-            echo '### Monzo production release operator'
+            echo '### Monzo token diagnostic production operator'
             echo
             echo "- Operator PR: #${OPERATOR_PR} (draft, never merge)"
-            echo "- Product PR: #${PRODUCT_PR} (verified open/draft/unmerged)"
+            echo "- Diagnostic product PR: #${PRODUCT_PR} (verified open/draft/unmerged)"
+            echo "- Product SHA: \`${PRODUCT_SHA:-unresolved}\`"
             echo "- Release branch: \`${OPERATOR_RELEASE_BRANCH}\`"
-            echo "- Approved SHA: \`${APPROVED_SHA}\`"
-            echo "- Phase: \`${PHASE:-unresolved}\`"
+            echo "- Approved release SHA: \`${APPROVED_SHA}\`"
+            echo "- Release-only delta: \`${OPERATOR_WORKFLOW_PATH}\`"
+            echo '- Production effect before crm-production approval: none'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  bootstrap:
-    name: Inert bootstrap
+  diagnostic:
+    name: Deploy diagnostic error classification only
     needs: authorize
-    if: needs.authorize.outputs.phase == 'bootstrap'
-    uses: ./.github/workflows/deploy-private-production-monzo.yml
-    with:
-      approved_sha: ${{ needs.authorize.outputs.approved_sha }}
-      deploy: true
-      approval_phrase: BOOTSTRAP_PRIVATE_CRM_MONZO_INERT
-    secrets: inherit
-
-  rollout:
-    name: Full rollout
-    needs: authorize
-    if: needs.authorize.outputs.phase == 'rollout'
     uses: ./.github/workflows/deploy-private-production-monzo.yml
     with:
       approved_sha: ${{ needs.authorize.outputs.approved_sha }}
