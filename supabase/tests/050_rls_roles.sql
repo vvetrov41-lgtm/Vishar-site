@@ -558,6 +558,7 @@ insert into expected_function_acl values
   ('public.cancel_artist_availability_block(uuid)', false, true, false),
   ('public.update_project_deposit(uuid,numeric,public.deposit_status,text)', false, true, false),
   ('public.update_project_estimate(uuid,numeric,numeric,integer,numeric,text)', false, true, false),
+  ('public.set_project_status(uuid,public.project_status)', false, true, false),
   ('public.create_internal_note(text,uuid,uuid,uuid,uuid)', false, true, false),
   ('public.create_follow_up(text,timestamptz,uuid,uuid,uuid,uuid,text)', false, true, false),
   ('public.complete_follow_up(uuid)', false, true, false),
