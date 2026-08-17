@@ -174,6 +174,70 @@ jobs:
         if: ${{ inputs.deploy }}
         run: npm ci
 
+      - name: Resolve exact Cloudflare Pages production target
+        if: ${{ inputs.deploy }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          EXPECTED_CRM_DOMAIN: crm.vishartattoo.com
+        run: |
+          set -euo pipefail
+
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo 'Production Cloudflare credentials are not configured.' >&2
+            exit 1
+          fi
+
+          project_json="$RUNNER_TEMP/cloudflare-pages-project.json"
+          domains_json="$RUNNER_TEMP/cloudflare-pages-domains.json"
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${CRM_PAGES_PROJECT}"
+
+          curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Accept: application/json' \
+            "$api" > "$project_json"
+
+          curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Accept: application/json' \
+            "$api/domains" > "$domains_json"
+
+          PROJECT_JSON_PATH="$project_json" \
+          DOMAINS_JSON_PATH="$domains_json" \
+          EXPECTED_PROJECT="$CRM_PAGES_PROJECT" \
+          EXPECTED_DOMAIN="$EXPECTED_CRM_DOMAIN" \
+          node --input-type=module <<'NODE' >> "$GITHUB_ENV"
+          import fs from 'node:fs';
+
+          const projectPayload = JSON.parse(fs.readFileSync(process.env.PROJECT_JSON_PATH, 'utf8'));
+          const domainsPayload = JSON.parse(fs.readFileSync(process.env.DOMAINS_JSON_PATH, 'utf8'));
+
+          if (projectPayload?.success !== true || !projectPayload.result) {
+            throw new Error('Cloudflare Pages project lookup did not succeed');
+          }
+          if (projectPayload.result.name !== process.env.EXPECTED_PROJECT) {
+            throw new Error('Cloudflare Pages project lookup returned an unexpected project');
+          }
+
+          const productionBranch = String(projectPayload.result.production_branch || '').trim();
+          if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/.test(productionBranch)) {
+            throw new Error('Cloudflare Pages production_branch is missing or malformed');
+          }
+
+          if (domainsPayload?.success !== true || !Array.isArray(domainsPayload.result)) {
+            throw new Error('Cloudflare Pages domain lookup did not succeed');
+          }
+          const expectedDomain = domainsPayload.result.find((entry) => entry?.name === process.env.EXPECTED_DOMAIN);
+          if (!expectedDomain || expectedDomain.status !== 'active') {
+            throw new Error('crm.vishartattoo.com is not an active custom domain on the target Pages project');
+          }
+
+          process.stdout.write(`CRM_PAGES_PRODUCTION_BRANCH=${productionBranch}\n`);
+          NODE
+
+          echo "Resolved Cloudflare Pages production branch: ${CRM_PAGES_PRODUCTION_BRANCH:-written-to-next-step}"
+
       - name: Configure production Supabase Auth URLs
         if: ${{ inputs.deploy }}
         shell: bash
@@ -254,7 +318,7 @@ jobs:
           }
           NODE
 
-      - name: Deploy only admin/dist to dedicated CRM Pages project
+      - name: Deploy only admin/dist to exact CRM Pages production branch
         if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -262,9 +326,65 @@ jobs:
         run: >-
           npx wrangler pages deploy admin/dist
           --project-name "$CRM_PAGES_PROJECT"
-          --branch production
+          --branch "$CRM_PAGES_PRODUCTION_BRANCH"
           --commit-hash "$GITHUB_SHA"
           --commit-dirty=false
+
+      - name: Verify canonical Pages production deployment
+        if: ${{ inputs.deploy }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${CRM_PAGES_PROJECT}"
+          project_json="$RUNNER_TEMP/cloudflare-pages-project-after.json"
+          verified=false
+
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            curl -fsS \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H 'Accept: application/json' \
+              "$api" > "$project_json"
+
+            if PROJECT_JSON_PATH="$project_json" \
+              EXPECTED_SHA="$GITHUB_SHA" \
+              EXPECTED_BRANCH="$CRM_PAGES_PRODUCTION_BRANCH" \
+              node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const payload = JSON.parse(fs.readFileSync(process.env.PROJECT_JSON_PATH, 'utf8'));
+          const deployment = payload?.result?.canonical_deployment;
+          const metadata = deployment?.deployment_trigger?.metadata;
+          const status = deployment?.latest_stage?.status;
+
+          if (
+            payload?.success === true
+            && deployment?.environment === 'production'
+            && metadata?.commit_hash === process.env.EXPECTED_SHA
+            && metadata?.branch === process.env.EXPECTED_BRANCH
+            && status === 'success'
+          ) {
+            process.exit(0);
+          }
+          process.exit(1);
+          NODE
+            then
+              verified=true
+              break
+            fi
+
+            sleep 3
+          done
+
+          if [ "$verified" != 'true' ]; then
+            echo 'Cloudflare canonical production deployment did not converge to the exact approved SHA and production branch.' >&2
+            exit 1
+          fi
+
+          echo 'Cloudflare canonical production deployment matches the exact approved SHA and resolved production branch.'
 
       - name: Production boundary summary
         if: always()
@@ -280,6 +400,7 @@ jobs:
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Source build scope: `admin/` only'
             echo '- Upload scope: `admin/dist` only'
+            echo '- Pages target: production branch is resolved from the Cloudflare project API and the canonical production deployment is verified against the exact approved SHA'
             echo '- Production Auth site URL target: `https://crm.vishartattoo.com`'
             echo '- Calendar connector in this build: `https://calendar.vishartattoo.com`'
             echo '- Monzo connector in this build: `https://monzo.vishartattoo.com` (owner-only launcher; no token, account id or webhook key reaches the browser)'
