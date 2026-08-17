@@ -6,13 +6,16 @@ on:
       - 'workers/gmail-production.js'
       - 'workers/lib/google-gmail.js'
       - 'workers/lib/gmail-supabase.js'
+      - 'workers/lib/gmail-tool-contract.js'
       - 'workers/gpt-actions-production-full.js'
       - 'wrangler.gmail.production.toml'
       - 'wrangler.gpt-actions.production.toml'
       - 'supabase/migrations/0059_gmail_production_integration.sql'
       - 'supabase/tests/209_gmail_production_integration.sql'
       - 'docs/gpt-actions/openapi.production*.yaml'
+      - 'docs/crm/MCP_READY_ARCHITECTURE.md'
       - 'scripts/test-gmail-production.mjs'
+      - 'scripts/test-gmail-mcp-ready.mjs'
       - 'scripts/test-gpt-gmail-openapi.mjs'
       - 'scripts/materialize-gmail-openapi.mjs'
       - '.github/workflows/gmail-production-validation.yml'
@@ -39,6 +42,9 @@ jobs:
       - name: Gmail OAuth/provider regression
         run: node scripts/test-gmail-production.mjs
 
+      - name: Gmail MCP-ready contract regression
+        run: node scripts/test-gmail-mcp-ready.mjs
+
       - name: GPT Gmail OpenAPI split regression
         run: node scripts/test-gpt-gmail-openapi.mjs
 
@@ -53,6 +59,7 @@ jobs:
           node --check workers/gmail-production.js
           node --check workers/lib/google-gmail.js
           node --check workers/lib/gmail-supabase.js
+          node --check workers/lib/gmail-tool-contract.js
 
       - name: Gmail production bundle dry-run
         env:
