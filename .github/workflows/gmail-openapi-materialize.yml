@@ -1,0 +1,40 @@
+name: Gmail OpenAPI materialize
+
+on:
+  push:
+    branches:
+      - agent/gmail-crm-production-integration
+    paths:
+      - scripts/materialize-gmail-openapi.mjs
+      - .github/workflows/gmail-openapi-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/gmail-crm-production-integration
+          fetch-depth: 0
+      - name: Materialize canonical Gmail action paths
+        run: node scripts/materialize-gmail-openapi.mjs
+      - name: Verify bounded schema diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = $'docs/gpt-actions/openapi.production.operations.yaml\ndocs/gpt-actions/openapi.production.yaml'
+      - name: Commit materialized schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/gpt-actions/openapi.production.operations.yaml docs/gpt-actions/openapi.production.yaml
+          git commit -m 'Add Gmail actions to production OpenAPI schemas'
+          git push origin HEAD:agent/gmail-crm-production-integration
