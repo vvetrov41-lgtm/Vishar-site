@@ -31,6 +31,19 @@ function kv() {
   };
 }
 
+function oauthEnv() {
+  return {
+    GMAIL_OAUTH_ENABLED: 'true',
+    GMAIL_VLADIMIR_ENABLED: 'true',
+    GMAIL_KRISTINA_ENABLED: 'false',
+    GOOGLE_OAUTH_CLIENT_ID: 'client-id-1234567890',
+    GOOGLE_OAUTH_CLIENT_SECRET: syntheticSecret(),
+    GMAIL_TOKEN_ENCRYPTION_KEY: encryptionKey,
+    GMAIL_OAUTH_STATE: kv(),
+    GMAIL_OAUTH_TOKENS: kv(),
+  };
+}
+
 await test('OAuth URL asks only for separate readonly/send Gmail scopes plus identity', () => {
   const url = new URL(authorizationUrl({
     clientId: 'client-id-1234567890',
@@ -56,6 +69,61 @@ await test('scope validation rejects full mailbox scope and missing send/read sc
   assert.equal(gmail.hasRequiredScopes(`${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE} https://mail.google.com/`), false);
 });
 
+await test('OAuth start is Vladimir-bound, PKCE-backed and only served on the Gmail production host', async () => {
+  const env = oauthEnv();
+  const response = await worker.startOAuth(new URL('https://gmail.vishartattoo.com/oauth/google/start/vladimir'), env);
+  assert.equal(response.status, 302);
+  const location = new URL(response.headers.get('location'));
+  assert.equal(location.hostname, 'accounts.google.com');
+  assert.equal(location.searchParams.get('login_hint'), 'vvetrov41@gmail.com');
+  assert.equal(location.searchParams.get('code_challenge_method'), 'S256');
+  const state = location.searchParams.get('state');
+  assert.match(state, /^[A-Za-z0-9_-]{32,128}$/);
+  assert.equal(env.GMAIL_OAUTH_STATE.values.size, 1);
+  assert.equal(await worker.startOAuth(new URL('https://gpt-operations.vishartattoo.com/oauth/google/start/vladimir'), env), null);
+});
+
+await test('OAuth callback rejects unknown state before any provider exchange', async () => {
+  const env = oauthEnv();
+  let calls = 0;
+  const response = await worker.oauthCallback(
+    new URL(`https://gmail.vishartattoo.com/oauth/google/callback?state=${'a'.repeat(43)}&code=synthetic-code`),
+    env,
+    async () => { calls += 1; throw new Error('provider must not be called'); },
+  );
+  assert.equal(response.status, 400);
+  assert.equal(calls, 0);
+});
+
+await test('OAuth callback rejects a valid token issued for the wrong Google account and stores no refresh token', async () => {
+  const env = oauthEnv();
+  const start = await worker.startOAuth(new URL('https://gmail.vishartattoo.com/oauth/google/start/vladimir'), env);
+  const state = new URL(start.headers.get('location')).searchParams.get('state');
+  let calls = 0;
+  const response = await worker.oauthCallback(
+    new URL(`https://gmail.vishartattoo.com/oauth/google/callback?state=${state}&code=synthetic-code`),
+    env,
+    async (url) => {
+      calls += 1;
+      if (String(url).includes('oauth2.googleapis.com/token')) {
+        return Response.json({
+          access_token: 'synthetic-access-token',
+          refresh_token: syntheticSecret('refresh-'),
+          scope: `openid email ${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE}`,
+        });
+      }
+      if (String(url).includes('/gmail/v1/users/me/profile')) {
+        return Response.json({ emailAddress: 'wrong-account@example.com', messagesTotal: 1, threadsTotal: 1 });
+      }
+      throw new Error(`unexpected provider call: ${url}`);
+    },
+  );
+  assert.equal(response.status, 403);
+  assert.equal(calls, 2);
+  assert.equal(env.GMAIL_OAUTH_TOKENS.values.size, 0);
+  assert.equal(env.GMAIL_OAUTH_STATE.values.size, 0);
+});
+
 await test('refresh token envelope is encrypted and artist-bound', async () => {
   const store = kv();
   const env = { GMAIL_OAUTH_TOKENS: store, GMAIL_TOKEN_ENCRYPTION_KEY: encryptionKey };
@@ -73,6 +141,18 @@ await test('refresh token envelope is encrypted and artist-bound', async () => {
   const opened = await gmail.openToken(raw, encryptionKey);
   assert.equal(opened.artist_id, record.artist_id);
   assert.equal(opened.integration_key, record.integration_key);
+});
+
+await test('encrypted token envelopes reject malformed binding or scope metadata', async () => {
+  const sealed = await gmail.sealToken({
+    v: 1,
+    artist_id: 'a1111111-1111-4111-8111-111111111111',
+    integration_key: 'google_gmail_vladimir',
+    mailbox_email: 'vvetrov41@gmail.com',
+    refresh_token: syntheticSecret('refresh-'),
+    scope: GMAIL_READ_SCOPE,
+  }, encryptionKey);
+  await assert.rejects(gmail.openToken(sealed, encryptionKey), /gmail_token_envelope_invalid/);
 });
 
 await test('revoked refresh token fails closed without exposing provider body', async () => {
@@ -164,6 +244,17 @@ await test('Gmail search query is derived from authoritative client email and th
   assert.match(decodeURIComponent(calls[0]), /from:client@example\.com OR to:client@example\.com/);
 });
 
+await test('Gmail provider errors fail closed with a stable backend error', async () => {
+  await assert.rejects(
+    searchThreads('access', {
+      mailboxEmail: 'vvetrov41@gmail.com',
+      clientEmail: 'client@example.com',
+      fetchImpl: async () => Response.json({ error: { message: 'synthetic provider failure' } }, { status: 503 }),
+    }),
+    (error) => error instanceof Error && error.message === 'gmail_api_error',
+  );
+});
+
 await test('thread ownership failure is closed when Gmail thread has no client/mailbox pair', async () => {
   const fetchImpl = async (url) => String(url).includes('/threads?')
     ? Response.json({ threads: [{ id: 'thread_1234' }] })
@@ -209,6 +300,21 @@ await test('thread reply uses verified threadId and RFC reply headers', async ()
   assert.match(raw, /In-Reply-To: <client-message@example\.test>/);
   assert.match(raw, /References: <older@example\.test> <client-message@example\.test>/);
   assert.match(raw, /Message-ID: <vishar-email-22222222-2222-4222-8222-222222222222@vishartattoo\.com>/);
+});
+
+await test('malformed Gmail send response fails closed and is not reported as sent', async () => {
+  await assert.rejects(
+    sendMessage('access', {
+      toEmail: 'client@example.com', subject: 'Tattoo booking', body: 'Reply text',
+      emailMessageId: '33333333-3333-4333-8333-333333333333',
+      fetchImpl: async (url, options = {}) => {
+        if (String(url).includes('/messages?')) return Response.json({ messages: [] });
+        if (String(url).endsWith('/messages/send') && options.method === 'POST') return Response.json({ id: 'msg_sent_5678' });
+        throw new Error(`unexpected ${url}`);
+      },
+    }),
+    (error) => error instanceof Error && error.message === 'gmail_send_response_invalid',
+  );
 });
 
 await test('production config enables Vladimir and keeps Kristina independently gated', () => {
