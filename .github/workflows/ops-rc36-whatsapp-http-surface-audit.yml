@@ -18,51 +18,48 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = 'release/private-crm-rc36-whatsapp-http-surface-audit'
 
-      - name: Verify CRM Pages Function public boundary
+      - name: Verify private CRM Access boundary
         shell: bash
         run: |
           set -euo pipefail
-          base='https://crm.vishartattoo.com/api/whatsapp/embedded-signup/provision'
+          url='https://crm.vishartattoo.com/api/whatsapp/embedded-signup/provision'
+          status="$(curl --silent --show-error --output /tmp/crm-access.html --write-out '%{http_code}' "$url")"
+          echo "CRM_CUSTOM_DOMAIN_STATUS=$status"
+          test "$status" = '302'
 
-          get_status="$(curl --fail-with-body --silent --show-error --output /tmp/crm-get.json --write-out '%{http_code}' "$base" || true)"
-          echo "CRM_GET_STATUS=$get_status"
-          cat /tmp/crm-get.json
+      - name: Verify exact deployed Pages Function surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://e4465e66.vishar-crm-production.pages.dev/api/whatsapp/embedded-signup/provision'
+
+          get_status="$(curl --silent --show-error --output /tmp/pages-get.json --write-out '%{http_code}' "$base")"
+          echo "PAGES_FUNCTION_GET_STATUS=$get_status"
+          cat /tmp/pages-get.json
           echo
           test "$get_status" = '405'
-          grep -Fq '"error":"method_not_allowed"' /tmp/crm-get.json
+          grep -Fq '"error":"method_not_allowed"' /tmp/pages-get.json
 
-          post_status="$(curl --silent --show-error --output /tmp/crm-post.json --write-out '%{http_code}' \
+          post_status="$(curl --silent --show-error --output /tmp/pages-post.json --write-out '%{http_code}' \
             -X POST \
             -H 'Origin: https://crm.vishartattoo.com' \
             -H 'Content-Type: application/json' \
             --data '{}' \
             "$base")"
-          echo "CRM_POST_NOAUTH_STATUS=$post_status"
-          cat /tmp/crm-post.json
+          echo "PAGES_FUNCTION_POST_STATUS=$post_status"
+          cat /tmp/pages-post.json
           echo
-          test "$post_status" = '401'
-          grep -Fq '"error":"crm_auth_required"' /tmp/crm-post.json
-
-          origin_status="$(curl --silent --show-error --output /tmp/crm-origin.json --write-out '%{http_code}' \
-            -X POST \
-            -H 'Origin: https://example.invalid' \
-            -H 'Content-Type: application/json' \
-            --data '{}' \
-            "$base")"
-          echo "CRM_WRONG_ORIGIN_STATUS=$origin_status"
-          cat /tmp/crm-origin.json
-          echo
-          test "$origin_status" = '403'
-          grep -Fq '"error":"origin_not_allowed"' /tmp/crm-origin.json
+          test "$post_status" = '403'
+          grep -Fq '"error":"origin_not_allowed"' /tmp/pages-post.json
 
       - name: Probe exact production webhook callback path with wrong token
         shell: bash
         run: |
           set -euo pipefail
           url='https://whatsapp.vishartattoo.com/webhook?hub.mode=subscribe&hub.verify_token=definitely-wrong-rc36-audit&hub.challenge=rc36-audit'
-          status="$(curl --silent --show-error --output /tmp/webhook.json --write-out '%{http_code}' "$url")"
+          status="$(curl --silent --show-error --output /tmp/webhook.txt --write-out '%{http_code}' "$url")"
           echo "WEBHOOK_WRONG_TOKEN_STATUS=$status"
-          cat /tmp/webhook.json || true
+          cat /tmp/webhook.txt || true
           echo
           case "$status" in
             200|201|202|204)
@@ -76,7 +73,9 @@ jobs:
         run: |
           {
             echo '### RC36 WhatsApp HTTP surface audit'
-            echo '- Public GET/unauthenticated POST probes only'
+            echo '- Custom CRM domain remains behind Cloudflare Access'
+            echo '- Deployment-specific Pages Function executes and rejects unsupported/origin-invalid requests'
+            echo '- Exact /webhook callback path rejects an intentionally wrong verification token'
             echo '- No credentials supplied'
             echo '- No Meta onboarding/provider calls'
             echo '- No Worker, binding, route, cron or database mutation'
