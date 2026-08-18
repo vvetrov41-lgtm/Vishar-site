@@ -1,0 +1,138 @@
+name: Monzo Worker recovery production operator
+
+# Worker-only recovery after production DB advanced beyond the original rc46
+# snapshot. The production database prerequisite (0060) is verified externally
+# before activation; this operator deliberately performs no database mutation.
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc51-monzo-worker-recovery
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+
+env:
+  BASE_SNAPSHOT_SHA: c81b1732a7263830a608edae709d0a74357216ae
+  MONZO_RECOVERY_SHA: 92464a958b05aeca4ac4f9d82b3ab208fc0f3ba8
+  RELEASE_BRANCH: release/private-crm-rc51-monzo-worker-recovery
+  OPERATOR_WORKFLOW: .github/workflows/monzo-worker-recovery-production-operator.yml
+  MONZO_GATE_WORKFLOW: .github/workflows/deploy-private-production-monzo.yml
+
+concurrency:
+  group: monzo-worker-recovery-production-operator-rc51
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Authorize rc51 Monzo Worker-only recovery
+    if: >-
+      github.actor == 'vvetrov41-lgtm' &&
+      github.ref == 'refs/heads/release/private-crm-rc51-monzo-worker-recovery' &&
+      contains(github.event.head_commit.message, '[RUN_MONZO_WORKER_RECOVERY]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      approved_sha: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify fixed release snapshot and bounded delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          release_tip="$(git ls-remote --heads origin "refs/heads/${RELEASE_BRANCH}" | awk '{print $1}')"
+          test "$release_tip" = "$GITHUB_SHA"
+          git cat-file -e "${BASE_SNAPSHOT_SHA}^{commit}"
+          git cat-file -e "${MONZO_RECOVERY_SHA}^{commit}"
+          git merge-base --is-ancestor "$MONZO_RECOVERY_SHA" "$BASE_SNAPSHOT_SHA"
+          git merge-base --is-ancestor "$BASE_SNAPSHOT_SHA" "$GITHUB_SHA"
+
+          mapfile -t delta < <(git diff --name-only "$BASE_SNAPSHOT_SHA" "$GITHUB_SHA")
+          test "${#delta[@]}" -eq 2
+          printf '%s\n' "${delta[@]}" | grep -Fxq "$OPERATOR_WORKFLOW"
+          printf '%s\n' "${delta[@]}" | grep -Fxq "$MONZO_GATE_WORKFLOW"
+
+      - name: Prove Monzo runtime is unchanged from the reviewed recovery product
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            workers/monzo-api-gateway.js
+            workers/monzo-api.js
+            workers/lib/monzo-reconciliation-sync.js
+            workers/lib/monzo-setup-flow.js
+            workers/lib/monzo-api-client.js
+            workers/lib/monzo-supabase.js
+            wrangler.monzo-api.production.toml
+            supabase/migrations/0060_monzo_reconciliation_route_recovery.sql
+            supabase/tests/211_monzo_reconciliation_route_recovery.sql
+          )
+          git diff --exit-code "$MONZO_RECOVERY_SHA" "$BASE_SNAPSHOT_SHA" -- "${paths[@]}"
+          test -f supabase/migrations/0061_project_status_management.sql
+          grep -Fxq 'MONZO_RECONCILIATION_ENABLED = "true"' wrangler.monzo-api.production.toml
+          grep -Fq 'Sync recent transfers' workers/lib/monzo-setup-flow.js
+          grep -Fq '404|503|429' "$MONZO_GATE_WORKFLOW"
+          grep -Fq 'MONZO_RECONCILIATION_ENABLED=true' "$MONZO_GATE_WORKFLOW"
+
+      - name: Require green normal CI on this exact release SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            checks="$(mktemp)"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name,.status,(.conclusion // "none"),.started_at] | @tsv' > "$checks"
+            waiting=''; failed=''
+            while IFS= read -r required; do
+              latest="$(awk -F'\t' -v n="$required" '$1==n {print $4"\t"$2"\t"$3}' "$checks" | sort -r | head -1)"
+              if [ -z "$latest" ]; then waiting="${waiting}${required}:absent;"; continue; fi
+              status="$(printf '%s' "$latest" | cut -f2)"
+              conclusion="$(printf '%s' "$latest" | cut -f3)"
+              if [ "$status" != completed ]; then waiting="${waiting}${required}:${status};"
+              elif [ "$conclusion" != success ]; then failed="${failed}${required}:${conclusion};"; fi
+            done <<'REQUIRED'
+          static-validation
+          Private CRM
+          Supabase migrations and pgTAP
+          Public site and Worker
+          REQUIRED
+            rm -f "$checks"
+            test -z "$failed" || { echo "Exact-head CI failed: $failed" >&2; exit 1; }
+            if [ -z "$waiting" ]; then exit 0; fi
+            sleep 10
+          done
+          echo 'Timed out waiting for exact-head CI.' >&2
+          exit 1
+
+      - name: Authorization summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc51 Monzo Worker-only recovery'
+            echo "- Release SHA: \`${GITHUB_SHA}\`"
+            echo "- Fixed product snapshot: \`${BASE_SNAPSHOT_SHA}\`"
+            echo '- Database deployment: none'
+            echo '- Runtime scope after approval: vishar-monzo-api-production only'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  monzo:
+    name: Deploy recovered Monzo reconciliation Worker
+    needs: authorize
+    uses: ./.github/workflows/deploy-private-production-monzo.yml
+    with:
+      approved_sha: ${{ needs.authorize.outputs.approved_sha }}
+      deploy: true
+      approval_phrase: DEPLOY_PRIVATE_CRM_MONZO_ONLY
+    secrets: inherit
