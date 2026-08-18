@@ -103,6 +103,28 @@ await test('OAuth token endpoint errors map to bounded diagnostics without provi
   );
   assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_client')), 'gmail_oauth_invalid_client');
   assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_grant')), 'gmail_oauth_invalid_grant');
+  await assert.rejects(
+    exchangeAuthorizationCode({ ...base, fetchImpl: async () => { throw new TypeError('network detail'); } }),
+    (error) => error instanceof Error && error.message === 'gmail_oauth_token_fetch_failed' && !error.message.includes('network detail'),
+  );
+  await assert.rejects(
+    exchangeAuthorizationCode({ ...base, fetchImpl: async () => new Response('not-json', { status: 401 }) }),
+    (error) => error instanceof Error && error.message === 'gmail_oauth_token_http_401',
+  );
+  await assert.rejects(
+    exchangeAuthorizationCode({ ...base, fetchImpl: async () => Response.json({ error: 'invalid_scope', error_description: 'do not expose' }, { status: 400 }) }),
+    (error) => error instanceof Error && error.message === 'gmail_oauth_invalid_scope',
+  );
+  await assert.rejects(
+    exchangeAuthorizationCode({ ...base, fetchImpl: async () => Response.json({ error: 'unexpected_provider_value', error_description: 'do not expose' }, { status: 400 }) }),
+    (error) => error instanceof Error && error.message === 'gmail_oauth_token_http_400',
+  );
+  await assert.rejects(
+    exchangeAuthorizationCode({ ...base, fetchImpl: async () => Response.json({}, { status: 200 }) }),
+    (error) => error instanceof Error && error.message === 'gmail_oauth_token_response_invalid',
+  );
+  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_token_fetch_failed')), 'gmail_oauth_token_fetch_failed');
+  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_token_http_401')), 'gmail_oauth_token_http_401');
 });
 
 await test('OAuth start is Vladimir-bound, PKCE-backed and only served on the Gmail production host', async () => {

@@ -141,13 +141,28 @@ async function exchangeAuthorizationCode({ clientId, clientSecret, redirectUri, 
     code_verifier: verifier,
     grant_type: 'authorization_code',
   });
-  const response = await fetchImpl(GOOGLE_TOKEN_ENDPOINT, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body,
-    redirect: 'error',
-  });
-  const json = await response.json().catch(() => null);
+  let response;
+  try {
+    response = await fetchImpl(GOOGLE_TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body,
+      redirect: 'error',
+    });
+  } catch {
+    throw new Error('gmail_oauth_token_fetch_failed');
+  }
+
+  let json = null;
+  try { json = await response.json(); } catch {
+    if (response.status === 400) throw new Error('gmail_oauth_token_http_400');
+    if (response.status === 401) throw new Error('gmail_oauth_token_http_401');
+    if (response.status === 403) throw new Error('gmail_oauth_token_http_403');
+    if (response.status === 429) throw new Error('gmail_oauth_token_http_429');
+    if (response.status >= 500) throw new Error('gmail_oauth_token_http_5xx');
+    throw new Error('gmail_oauth_token_response_invalid');
+  }
+
   if (!response.ok || !json || typeof json.access_token !== 'string') {
     const providerError = typeof json?.error === 'string' ? json.error : '';
     const code = ({
@@ -158,7 +173,17 @@ async function exchangeAuthorizationCode({ clientId, clientSecret, redirectUri, 
       unauthorized_client: 'gmail_oauth_unauthorized_client',
       deleted_client: 'gmail_oauth_deleted_client',
       access_denied: 'gmail_oauth_access_denied',
-    })[providerError] || 'gmail_oauth_code_exchange_failed';
+      invalid_scope: 'gmail_oauth_invalid_scope',
+      unsupported_grant_type: 'gmail_oauth_unsupported_grant_type',
+      temporarily_unavailable: 'gmail_oauth_temporarily_unavailable',
+      server_error: 'gmail_oauth_server_error',
+    })[providerError]
+      || (response.status === 400 ? 'gmail_oauth_token_http_400'
+        : response.status === 401 ? 'gmail_oauth_token_http_401'
+          : response.status === 403 ? 'gmail_oauth_token_http_403'
+            : response.status === 429 ? 'gmail_oauth_token_http_429'
+              : response.status >= 500 ? 'gmail_oauth_token_http_5xx'
+                : 'gmail_oauth_token_response_invalid');
     throw new Error(code);
   }
   if (typeof json.refresh_token !== 'string' || json.refresh_token.length < 8) throw new Error('gmail_oauth_refresh_token_missing');
