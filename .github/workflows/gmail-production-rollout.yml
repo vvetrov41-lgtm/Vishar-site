@@ -189,9 +189,9 @@ jobs:
             ops="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/enquiries/11111111-1111-4111-8111-111111111111/gmail/history" || true)"
             start_headers="$(curl -sS -D - -o /dev/null --max-time 10 "https://$GMAIL_HOST/oauth/google/start/vladimir" || true)"
             start_status="$(printf '%s' "$start_headers" | awk 'toupper($1) ~ /^HTTP\// {status=$2} END {print status}')"
-            if [ "$privacy" = 200 ] && [ "$ops" = 401 ]; then
-              if [ "$PHASE" = 'bootstrap' ] && [ "$start_status" = 404 ]; then exit 0; fi
-              if [ "$PHASE" != 'bootstrap' ] && [ "$start_status" = 302 ] && grep -qi '^location: https://accounts.google.com/' <<<"$start_headers"; then exit 0; fi
+            if [ "$privacy" = 200 ]; then
+              if [ "$PHASE" = 'bootstrap' ] && [ "$ops" = 404 ] && [ "$start_status" = 404 ]; then exit 0; fi
+              if [ "$PHASE" != 'bootstrap' ] && [ "$ops" = 401 ] && [ "$start_status" = 302 ] && grep -qi '^location: https://accounts.google.com/' <<<"$start_headers"; then exit 0; fi
             fi
             sleep 6
           done
