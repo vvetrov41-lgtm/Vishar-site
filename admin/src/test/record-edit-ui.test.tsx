@@ -39,6 +39,25 @@ describe('CRM record editing UI', () => {
     expect(screen.getByText('+447700900099')).toBeInTheDocument();
   });
 
+  it('shows record delete controls to owners but not booking managers', async () => {
+    const ownerClient = renderWithSession(<App />, { role: 'owner', path: `/clients/${CLIENT_ID}` });
+    expect(await screen.findByRole('button', { name: 'Delete client' })).toBeInTheDocument();
+    ownerClient.unmount();
+
+    const ownerEnquiry = renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });
+    expect(await screen.findByRole('button', { name: 'Delete enquiry' })).toBeInTheDocument();
+    ownerEnquiry.unmount();
+
+    const managerClient = renderWithSession(<App />, { role: 'booking_manager', path: `/clients/${CLIENT_ID}` });
+    expect(await screen.findByRole('button', { name: 'Edit client' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete client' })).not.toBeInTheDocument();
+    managerClient.unmount();
+
+    renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}` });
+    expect(await screen.findByRole('button', { name: 'Edit enquiry' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete enquiry' })).not.toBeInTheDocument();
+  });
+
   it('offers post-intake reference upload to a booking manager but not destructive removal', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}` });
 
@@ -57,12 +76,14 @@ describe('CRM record editing UI', () => {
 
     expect(await screen.findByText('Colour realism')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit enquiry' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete enquiry' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add references' })).not.toBeInTheDocument();
     enquiryView.unmount();
 
     renderWithSession(<App />, { role: 'read_only', path: `/clients/${CLIENT_ID}` });
     expect(await screen.findByText('Fixture Client')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit client' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete client' })).not.toBeInTheDocument();
   });
 
   it('keeps the immutable submitted snapshot collapsed inside current client details', async () => {
