@@ -124,10 +124,36 @@ jobs:
           grep -Fq 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"' "$GMAIL_DEPLOY_CONFIG"
           grep -Fq "id = \"$GMAIL_KV_STATE_ID\"" "$GMAIL_DEPLOY_CONFIG"
           grep -Fq "id = \"$GMAIL_KV_TOKENS_ID\"" "$GMAIL_DEPLOY_CONFIG"
-          if [ "$PHASE" = 'bootstrap' ]; then
-            grep -Fq 'GMAIL_OAUTH_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
-            grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
-          fi
+          case "$PHASE" in
+            bootstrap)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+            vladimir-read)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+            vladimir-send)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+            kristina-read|kristina-send)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+          esac
           npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --dry-run --outdir .wrangler/gmail-production-generated-phase
 
       - name: Deploy bootstrap Gmail Worker and provision only generated encryption key
@@ -164,7 +190,12 @@ jobs:
       - name: Deploy activated Gmail Worker phase
         if: ${{ steps.phase.outputs.phase != 'bootstrap' }}
         shell: bash
-        run: npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --strict
+        run: |
+          set -euo pipefail
+          # Activation phases intentionally change the bounded Gmail feature flags.
+          # Wrangler --strict rejects those expected remote differences, so the exact
+          # generated phase assertions above are the fail-closed guard for this upload.
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME"
 
       - name: Deploy GPT service binding without changing GPT OAuth/capability gates
         if: ${{ steps.phase.outputs.phase == 'bootstrap' }}
