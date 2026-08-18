@@ -1,0 +1,40 @@
+name: Cancel stale Gmail rc58 rollout
+
+on:
+  push:
+    branches:
+      - 'ops/gmail-cancel-stale-rc58'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel-stale-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      STALE_RUN_ID: '32135130372'
+      EXPECTED_BRANCH: 'release/private-crm-rc58-gmail-vladimir-read'
+      EXPECTED_SHA: '74b88f4dc44f80ac41dcd9ee39893ff247e7c8ad'
+    steps:
+      - name: Verify and cancel only stale rc58
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$STALE_RUN_ID")"
+          branch="$(jq -r '.head_branch' <<<"$run_json")"
+          sha="$(jq -r '.head_sha' <<<"$run_json")"
+          name="$(jq -r '.name' <<<"$run_json")"
+          status="$(jq -r '.status' <<<"$run_json")"
+          test "$branch" = "$EXPECTED_BRANCH"
+          test "$sha" = "$EXPECTED_SHA"
+          test "$name" = 'Gmail production rollout'
+          case "$status" in
+            completed) exit 0 ;;
+            waiting|queued|pending|in_progress|requested) ;;
+            *) echo "Unexpected stale run status: $status" >&2; exit 1 ;;
+          esac
+          gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$STALE_RUN_ID/cancel" >/dev/null
