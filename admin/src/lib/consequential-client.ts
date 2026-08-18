@@ -4,6 +4,8 @@ import './consequential-dialog.css';
 
 export type ConsequentialAction =
   | 'convertEnquiry'
+  | 'archiveEnquiry'
+  | 'archiveClient'
   | 'cancelSession'
   | 'markNoShow'
   | 'cancelAppointment'
@@ -13,6 +15,8 @@ export type ConsequentialAction =
 const COPY: Record<Language, Record<ConsequentialAction, string>> = {
   en: {
     convertEnquiry: 'Convert this enquiry to a project? This creates a permanent project link and cannot be undone.',
+    archiveEnquiry: 'Delete this enquiry from the working CRM? The record and its history will be retained for audit and recovery, but it will disappear from normal enquiry lists.',
+    archiveClient: 'Delete this client from the working CRM? The record and any unconverted enquiries will be retained for audit and recovery, but they will disappear from normal lists.',
     cancelSession: 'Cancel this session? It will be removed from the active schedule.',
     markNoShow: 'Mark this session as a no-show? This records that the client did not attend.',
     cancelAppointment: 'Cancel this appointment? It will be removed from the active schedule.',
@@ -21,6 +25,8 @@ const COPY: Record<Language, Record<ConsequentialAction, string>> = {
   },
   ru: {
     convertEnquiry: 'Преобразовать эту заявку в проект? Будет создана постоянная связь с проектом, которую нельзя отменить.',
+    archiveEnquiry: 'Удалить эту заявку из рабочей CRM? Запись и история сохранятся для аудита и восстановления, но заявка исчезнет из обычных списков.',
+    archiveClient: 'Удалить этого клиента из рабочей CRM? Запись и его незавершённые заявки сохранятся для аудита и восстановления, но исчезнут из обычных списков.',
     cancelSession: 'Отменить этот сеанс? Он будет удалён из активного расписания.',
     markNoShow: 'Отметить неявку на этот сеанс? Будет записано, что клиент не пришёл.',
     cancelAppointment: 'Отменить эту запись? Она будет удалена из активного расписания.',
@@ -32,6 +38,8 @@ const COPY: Record<Language, Record<ConsequentialAction, string>> = {
 const TITLES: Record<Language, Record<ConsequentialAction, string>> = {
   en: {
     convertEnquiry: 'Create project?',
+    archiveEnquiry: 'Delete enquiry?',
+    archiveClient: 'Delete client?',
     cancelSession: 'Cancel session?',
     markNoShow: 'Record no-show?',
     cancelAppointment: 'Cancel appointment?',
@@ -40,6 +48,8 @@ const TITLES: Record<Language, Record<ConsequentialAction, string>> = {
   },
   ru: {
     convertEnquiry: 'Создать проект?',
+    archiveEnquiry: 'Удалить заявку?',
+    archiveClient: 'Удалить клиента?',
     cancelSession: 'Отменить сеанс?',
     markNoShow: 'Отметить неявку?',
     cancelAppointment: 'Отменить запись?',
@@ -51,6 +61,8 @@ const TITLES: Record<Language, Record<ConsequentialAction, string>> = {
 const CONFIRM_LABELS: Record<Language, Record<ConsequentialAction, string>> = {
   en: {
     convertEnquiry: 'Create project',
+    archiveEnquiry: 'Delete enquiry',
+    archiveClient: 'Delete client',
     cancelSession: 'Cancel session',
     markNoShow: 'Mark no-show',
     cancelAppointment: 'Cancel appointment',
@@ -59,6 +71,8 @@ const CONFIRM_LABELS: Record<Language, Record<ConsequentialAction, string>> = {
   },
   ru: {
     convertEnquiry: 'Создать проект',
+    archiveEnquiry: 'Удалить заявку',
+    archiveClient: 'Удалить клиента',
     cancelSession: 'Отменить сеанс',
     markNoShow: 'Отметить неявку',
     cancelAppointment: 'Отменить запись',
@@ -98,6 +112,8 @@ function consequentialAction(
   args: Record<string, unknown> | undefined
 ): ConsequentialAction | null {
   if (name === 'convert_enquiry_to_project') return 'convertEnquiry';
+  if (name === 'archive_enquiry') return 'archiveEnquiry';
+  if (name === 'archive_client') return 'archiveClient';
   if (name === 'set_session_status' && args?.p_status === 'cancelled') return 'cancelSession';
   if (name === 'set_session_status' && args?.p_status === 'no_show') return 'markNoShow';
   if (name === 'set_appointment_status' && args?.p_status === 'cancelled') return 'cancelAppointment';
