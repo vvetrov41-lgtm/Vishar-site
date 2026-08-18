@@ -28,6 +28,8 @@ const SETUP_TOKEN_VERSION = 1;
 const SETUP_TTL_SECONDS = 600;
 const SETUP_CLOCK_SKEW_MS = 30_000;
 const SETUP_TOKEN_CONTEXT = new TextEncoder().encode('vishar-monzo-setup-confirmation-v1');
+const SYNC_TOKEN_VERSION = 1;
+const SYNC_TOKEN_CONTEXT = new TextEncoder().encode('vishar-monzo-sync-confirmation-v1');
 const ACCOUNT_ID_PATTERN = /^acc_[A-Za-z0-9]+$/;
 const FORM_BODY_LIMIT = 4096;
 const ALIASES = new Set(['vladimir', 'kristina']);
@@ -137,7 +139,7 @@ function notConnectedPage(env, alias) {
 <a href="${escapeHtml(monzoCrmReturnUrl(env))}">Back to CRM</a>`);
 }
 
-function connectedPage(env, alias, label, syncResult = null) {
+function connectedPage(env, alias, label, syncToken, syncResult = null) {
   const notice = syncResult ? `
 <p class="ok"><strong>Recent transfer sync complete.</strong> Scanned ${escapeHtml(syncResult.scanned)}, eligible ${escapeHtml(syncResult.eligible)}, verified ${escapeHtml(syncResult.verified)}, new candidates ${escapeHtml(syncResult.registered)}, already known ${escapeHtml(syncResult.replayed)}.</p>` : '';
   return shell('Monzo connected', `
@@ -147,6 +149,7 @@ function connectedPage(env, alias, label, syncResult = null) {
 ${notice}
 <form method="post" action="${escapeHtml(monzoSetupUrl(env, alias))}">
 <input type="hidden" name="action" value="sync_recent">
+<input type="hidden" name="sync_token" value="${escapeHtml(syncToken)}">
 <button type="submit">Sync recent transfers</button>
 </form>
 <p><small>Recovery scans a bounded recent window on this already-selected account and only creates or replays reconciliation candidates. It never marks a payment as paid.</small></p>
@@ -303,6 +306,100 @@ export async function verifySetupConfirmationToken(env, token, alias, ownerEmail
   return true;
 }
 
+export async function createSyncConfirmationToken(env, alias, ownerEmail, record, now = Date.now()) {
+  if (
+    !ALIASES.has(alias)
+    || !record
+    || record.alias !== alias
+    || typeof record.clientId !== 'string'
+    || !record.clientId
+    || typeof record.userId !== 'string'
+    || !record.userId
+    || typeof record.accountId !== 'string'
+    || !ACCOUNT_ID_PATTERN.test(record.accountId)
+    || typeof record.webhookId !== 'string'
+    || !record.webhookId
+    || !Number.isSafeInteger(now)
+    || now <= 0
+  ) {
+    throw new MonzoSecurityError('sync_confirmation_invalid_or_expired');
+  }
+
+  const payload = {
+    v: SYNC_TOKEN_VERSION,
+    a: alias,
+    o: normalizedOwnerEmail(ownerEmail),
+    c: record.clientId,
+    u: record.userId,
+    ac: record.accountId,
+    w: record.webhookId,
+    i: now,
+    n: randomMonzoToken(16),
+  };
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: SYNC_TOKEN_CONTEXT },
+    await setupEncryptionKey(env?.MONZO_TOKEN_ENCRYPTION_KEY, ['encrypt']),
+    new TextEncoder().encode(JSON.stringify(payload)),
+  );
+  const sealed = new Uint8Array(iv.length + encrypted.byteLength);
+  sealed.set(iv, 0);
+  sealed.set(new Uint8Array(encrypted), iv.length);
+  const token = base64Url(sealed);
+  if (!SETUP_TOKEN_PATTERN.test(token)) {
+    throw new MonzoSecurityError('sync_confirmation_invalid_or_expired');
+  }
+  return token;
+}
+
+export async function verifySyncConfirmationToken(env, token, alias, ownerEmail, record, now = Date.now()) {
+  if (!SETUP_TOKEN_PATTERN.test(String(token || '')) || !ALIASES.has(alias) || !record) {
+    throw new MonzoSecurityError('sync_confirmation_invalid_or_expired');
+  }
+
+  let payload;
+  try {
+    const sealed = base64UrlBytes(token);
+    if (sealed.length <= 28) throw new Error('sealed sync token too short');
+    const iv = sealed.slice(0, 12);
+    const ciphertext = sealed.slice(12);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv, additionalData: SYNC_TOKEN_CONTEXT },
+      await setupEncryptionKey(env?.MONZO_TOKEN_ENCRYPTION_KEY, ['decrypt']),
+      ciphertext,
+    );
+    payload = JSON.parse(new TextDecoder().decode(decrypted));
+  } catch (error) {
+    if (error instanceof MonzoSecurityError && error.code === 'monzo_not_configured') throw error;
+    throw new MonzoSecurityError('sync_confirmation_invalid_or_expired');
+  }
+
+  let owner;
+  try {
+    owner = normalizedOwnerEmail(ownerEmail);
+  } catch {
+    throw new MonzoSecurityError('sync_confirmation_invalid_or_expired');
+  }
+  if (
+    payload?.v !== SYNC_TOKEN_VERSION
+    || payload.a !== alias
+    || payload.o !== owner
+    || payload.c !== record.clientId
+    || payload.u !== record.userId
+    || payload.ac !== record.accountId
+    || payload.w !== record.webhookId
+    || !Number.isSafeInteger(payload.i)
+    || payload.i <= 0
+    || payload.i > now + SETUP_CLOCK_SKEW_MS
+    || now - payload.i > SETUP_TTL_SECONDS * 1000
+    || typeof payload.n !== 'string'
+    || !/^[A-Za-z0-9_-]{22,32}$/.test(payload.n)
+  ) {
+    throw new MonzoSecurityError('sync_confirmation_invalid_or_expired');
+  }
+  return true;
+}
+
 async function readFormText(request) {
   const declared = Number(request.headers.get('Content-Length') || '0');
   if (Number.isFinite(declared) && declared > FORM_BODY_LIMIT) {
@@ -329,15 +426,24 @@ async function readSetupForm(request) {
   return { setupToken, accountId };
 }
 
-async function readSyncForm(request, env) {
-  if (request.headers.get('Origin') !== connectorOrigin(env)) {
+async function readSyncForm(request, env, alias, ownerEmail, record, now = Date.now()) {
+  const origin = request.headers.get('Origin');
+  if (origin && origin !== connectorOrigin(env)) {
     throw new MonzoSecurityError('same_origin_required', 403);
   }
   const form = new URLSearchParams(await readFormText(request));
-  const entries = [...form.entries()];
-  if (entries.length !== 1 || entries[0][0] !== 'action' || entries[0][1] !== 'sync_recent') {
+  const actionValues = form.getAll('action');
+  const tokenValues = form.getAll('sync_token');
+  if (
+    [...form.entries()].length !== 2
+    || actionValues.length !== 1
+    || actionValues[0] !== 'sync_recent'
+    || tokenValues.length !== 1
+    || !SETUP_TOKEN_PATTERN.test(tokenValues[0])
+  ) {
     throw new MonzoSecurityError('sync_confirmation_required', 400);
   }
+  await verifySyncConfirmationToken(env, tokenValues[0], alias, ownerEmail, record, now);
   return true;
 }
 
@@ -425,7 +531,10 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
   assertRecordRoute(record, config, alias, env);
 
   if (request.method === 'GET') {
-    if (record.webhookId) return html(connectedPage(env, alias, record.accountLabel));
+    if (record.webhookId) {
+      const syncToken = await createSyncConfirmationToken(env, alias, ownerEmail, record);
+      return html(connectedPage(env, alias, record.accountLabel, syncToken));
+    }
 
     let accounts;
     try {
@@ -453,9 +562,10 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
   if (record.webhookId) {
     const probe = new URLSearchParams(await readFormText(request.clone()));
     if (probe.get('action') === 'sync_recent') {
-      await readSyncForm(request, env);
+      await readSyncForm(request, env, alias, ownerEmail, record);
       const result = await syncRecentMonzoReconciliation(alias, env, fetchImpl);
-      return html(connectedPage(env, alias, record.accountLabel, result));
+      const nextSyncToken = await createSyncConfirmationToken(env, alias, ownerEmail, record);
+      return html(connectedPage(env, alias, record.accountLabel, nextSyncToken, result));
     }
 
     const { setupToken, accountId } = await readSetupForm(request);
@@ -481,6 +591,8 @@ export const __testing = {
   readSyncForm,
   createSetupConfirmationToken,
   verifySetupConfirmationToken,
+  createSyncConfirmationToken,
+  verifySyncConfirmationToken,
   selectAndRegister,
   connectedPage,
   notConnectedPage,
