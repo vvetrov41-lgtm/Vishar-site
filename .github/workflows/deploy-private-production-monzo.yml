@@ -378,10 +378,9 @@ jobs:
           done
 
           # The webhook path is the only public surface. It must reach the
-          # Worker rather than an Access challenge, and while reconciliation is
-          # dormant the Worker answers 503 reconciliation_disabled. An unknown
-          # opaque key must never reveal whether a route exists by any other
-          # status.
+          # Worker rather than an Access challenge. With reconciliation enabled,
+          # an unknown opaque route returns 404 not_found; dormant/bootstrap
+          # configurations can return 503, and the rate limiter can return 429.
           webhook_key="$(head -c 36 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
           status="$(curl --silent --show-error --output /tmp/monzo-webhook-body --write-out '%{http_code}' --max-time 10 \
             -X POST -H 'Content-Type: application/json' --data '{"type":"transaction.created","data":{"id":"tx_boundarycheck"}}' \
@@ -389,7 +388,7 @@ jobs:
           echo "PUBLIC /webhooks/monzo/<opaque> -> ${status}"
           cat /tmp/monzo-webhook-body || true
           case "$status" in
-            503|429) ;;
+            404|503|429) ;;
             302|303|307|401|403)
               echo 'Access is blocking the Monzo webhook delivery path.' >&2
               exit 1
@@ -428,7 +427,7 @@ jobs:
             echo '- Public surface: `POST /webhooks/monzo/<opaque key>` only; Access bypass is scoped to that exact path'
             echo '- Protected surface: `/health` and every `/oauth/monzo/*` route, re-verified inside the Worker'
             echo '- Webhook rate limiting: isolated `MONZO_WEBHOOK_RATE_LIMIT` binding, applied unconditionally, fails closed'
-            echo '- Reconciliation: `MONZO_RECONCILIATION_ENABLED=false`; candidate-only by design, no automatic settlement exists'
+            echo '- Reconciliation: `MONZO_RECONCILIATION_ENABLED=true`; candidate-only by design, no automatic settlement exists'
             echo "- Bootstrap mode: \`${MONZO_BOOTSTRAP:-false}\`"
             echo '- Required pre-existing secrets: `MONZO_OAUTH_CLIENT_ID`, `MONZO_OAUTH_CLIENT_SECRET`, `SUPABASE_SECRET_KEY`; `MONZO_TOKEN_ENCRYPTION_KEY` is generated in-runner on bootstrap and never rotated afterwards'
             echo '- Retained staging Supabase, Monzo KV namespaces, Access audiences and hostname: explicitly refused'
