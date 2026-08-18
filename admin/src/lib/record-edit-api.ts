@@ -93,7 +93,10 @@ export function createRecordEditApi(client: CrmClient) {
 
     async archiveClient(clientId: string) {
       return archiveResult(
-        await client.rpc('archive_client', { p_client_id: clientId }),
+        await client.rpc('update_client_details', {
+          p_client_id: clientId,
+          p_client: { _archive: true },
+        }),
         'client'
       );
     },
@@ -117,7 +120,10 @@ export function createRecordEditApi(client: CrmClient) {
 
     async archiveEnquiry(enquiryId: string) {
       return archiveResult(
-        await client.rpc('archive_enquiry', { p_enquiry_id: enquiryId }),
+        await client.rpc('update_enquiry_details', {
+          p_enquiry_id: enquiryId,
+          p_enquiry: { _archive: true },
+        }),
         'enquiry'
       );
     },
