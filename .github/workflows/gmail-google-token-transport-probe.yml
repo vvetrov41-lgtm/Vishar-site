@@ -1,0 +1,107 @@
+name: Gmail Google token transport probe
+
+on:
+  push:
+    branches:
+      - 'agent/gmail-google-token-transport-probe'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gmail-google-token-transport-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crm-production
+    env:
+      PRODUCT_BRANCH: agent/gmail-crm-production-integration
+      EXPECTED_PRODUCT_SHA: 74b88f4dc44f80ac41dcd9ee39893ff247e7c8ad
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+
+    steps:
+      - name: Checkout bounded probe branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify probe boundary and unchanged product head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          product_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test "$product_sha" = "$EXPECTED_PRODUCT_SHA"
+          git merge-base --is-ancestor "$EXPECTED_PRODUCT_SHA" "$GITHUB_SHA"
+          git diff --name-only "$EXPECTED_PRODUCT_SHA"..."$GITHUB_SHA" | sort > "$RUNNER_TEMP/probe-files.txt"
+          cat > "$RUNNER_TEMP/expected-files.txt" <<'EOF'
+          .github/workflows/gmail-google-token-transport-probe.yml
+          workers/gmail-token-transport-probe.js
+          wrangler.gmail-token-transport-probe.toml
+          EOF
+          diff -u "$RUNNER_TEMP/expected-files.txt" "$RUNNER_TEMP/probe-files.txt"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Start Cloudflare remote preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler dev --config wrangler.gmail-token-transport-probe.toml --remote --port 8787 > "$RUNNER_TEMP/wrangler-probe.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/wrangler-probe.pid"
+          ready=0
+          for attempt in $(seq 1 45); do
+            if curl -sS --max-time 5 http://127.0.0.1:8787/probe -o "$RUNNER_TEMP/probe-result.json"; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != 1 ]; then
+            echo 'Remote preview did not become reachable.' >&2
+            tail -n 120 "$RUNNER_TEMP/wrangler-probe.log" >&2 || true
+            exit 1
+          fi
+
+      - name: Report bounded Google transport result
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e 'type == "object" and has("discovery") and has("token_default") and has("token_manual") and has("token_error")' "$RUNNER_TEMP/probe-result.json" >/dev/null
+          cat "$RUNNER_TEMP/probe-result.json"
+          {
+            echo '### Cloudflare remote preview -> Google transport probe'
+            echo
+            echo '| Probe | Transport | HTTP | Redirected | Provider error | Error name | Error kind |'
+            echo '|---|---|---:|---|---|---|---|'
+            jq -r '
+              def row($name; $v): "| " + $name + " | " + ($v.transport // "") + " | " + (($v.status // "")|tostring) + " | " + (($v.redirected // "")|tostring) + " | " + ($v.provider_error // "") + " | " + ($v.error.name // "") + " | " + ($v.error.kind // "") + " |";
+              row("Google discovery"; .discovery),
+              row("Token default"; .token_default),
+              row("Token manual"; .token_manual),
+              row("Token error"; .token_error)
+            ' "$RUNNER_TEMP/probe-result.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop remote preview
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/wrangler-probe.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/wrangler-probe.pid")" 2>/dev/null || true
+          fi
