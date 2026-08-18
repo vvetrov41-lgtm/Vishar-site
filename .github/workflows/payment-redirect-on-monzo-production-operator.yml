@@ -1,0 +1,180 @@
+name: Payment redirect on Monzo production operator
+
+# Worker-only rollout. Reuses the already-provisioned production Monzo Worker
+# and its existing encrypted Supabase backend credential. No database, CRM Pages,
+# Gmail, Calendar, Telegram, WhatsApp or staging mutation is performed here.
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc61-payment-redirect-on-monzo
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+
+env:
+  BASE_SHA: 960e76bd6e7b6658fff797d84cfd0fe05be5620c
+  PRODUCT_SHA: 817ae0a23443fe0c760392eaa61b498d213e6d98
+  PRODUCT_BRANCH: agent/payment-redirect-on-monzo-runtime
+  RELEASE_BRANCH: release/private-crm-rc61-payment-redirect-on-monzo
+  OPERATOR_WORKFLOW: .github/workflows/payment-redirect-on-monzo-production-operator.yml
+
+concurrency:
+  group: payment-redirect-on-monzo-production-operator-rc61
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Authorize rc61 payment redirect on existing Monzo runtime
+    if: >-
+      github.actor == 'vvetrov41-lgtm' &&
+      github.ref == 'refs/heads/release/private-crm-rc61-payment-redirect-on-monzo' &&
+      contains(github.event.head_commit.message, '[RUN_PAYMENT_REDIRECT_MONZO]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      approved_sha: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release tip and bounded lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          release_tip="$(git ls-remote --heads origin "refs/heads/${RELEASE_BRANCH}" | awk '{print $1}')"
+          product_tip="$(git ls-remote --heads origin "refs/heads/${PRODUCT_BRANCH}" | awk '{print $1}')"
+          test "$release_tip" = "$GITHUB_SHA"
+          test "$product_tip" = "$PRODUCT_SHA"
+          git merge-base --is-ancestor "$BASE_SHA" "$PRODUCT_SHA"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+
+          mapfile -t product_delta < <(git diff --name-only "$BASE_SHA" "$PRODUCT_SHA")
+          test "${#product_delta[@]}" -eq 4
+          for path in \
+            'workers/monzo-api-gateway.js' \
+            'wrangler.monzo-api.production.toml' \
+            'scripts/test-payment-redirect-worker.mjs' \
+            'scripts/test-monzo-production-config.mjs'
+          do
+            printf '%s\n' "${product_delta[@]}" | grep -Fxq "$path"
+          done
+
+          mapfile -t release_delta < <(git diff --name-only "$PRODUCT_SHA" "$GITHUB_SHA")
+          test "${#release_delta[@]}" -eq 1
+          test "${release_delta[0]}" = "$OPERATOR_WORKFLOW"
+
+      - name: Verify product PR and public/payment boundaries
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pr="$(gh api repos/${GITHUB_REPOSITORY}/pulls/343)"
+          test "$(jq -r '.state' <<<"$pr")" = open
+          test "$(jq -r '.draft' <<<"$pr")" = true
+          test "$(jq -r '.merged' <<<"$pr")" = false
+          test "$(jq -r '.head.ref' <<<"$pr")" = "$PRODUCT_BRANCH"
+          test "$(jq -r '.head.sha' <<<"$pr")" = "$PRODUCT_SHA"
+          test "$(jq -r '.base.sha' <<<"$pr")" = "$BASE_SHA"
+
+          grep -Fq "import paymentRedirect from './payment-redirect.js'" workers/monzo-api-gateway.js
+          grep -Fq "url.hostname === PAYMENT_HOST" workers/monzo-api-gateway.js
+          grep -Fq 'vishartattoo.com/pay-by-bank-transfer/*' wrangler.monzo-api.production.toml
+          grep -Fq 'name = "PAYMENT_REDIRECT_RATE_LIMIT"' wrangler.monzo-api.production.toml
+          grep -Fq 'name = "MONZO_WEBHOOK_RATE_LIMIT"' wrangler.monzo-api.production.toml
+          grep -Fq "'resolve_monzo_deposit_redirect'" workers/lib/payment-supabase.js
+          grep -Fxq 'MONZO_RECONCILIATION_ENABLED = "true"' wrangler.monzo-api.production.toml
+          if grep -Fq 'SUPABASE_SECRET_KEY =' wrangler.monzo-api.production.toml; then
+            echo 'Tracked Monzo production config must not contain the backend key.' >&2
+            exit 1
+          fi
+
+      - name: Require green normal CI on this exact release SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            checks="$(mktemp)"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name,.status,(.conclusion // "none"),.started_at] | @tsv' > "$checks"
+            waiting=''; failed=''
+            while IFS= read -r required; do
+              latest="$(awk -F'\t' -v n="$required" '$1==n {print $4"\t"$2"\t"$3}' "$checks" | sort -r | head -1)"
+              if [ -z "$latest" ]; then waiting="${waiting}${required}:absent;"; continue; fi
+              status="$(printf '%s' "$latest" | cut -f2)"
+              conclusion="$(printf '%s' "$latest" | cut -f3)"
+              if [ "$status" != completed ]; then waiting="${waiting}${required}:${status};"
+              elif [ "$conclusion" != success ]; then failed="${failed}${required}:${conclusion};"; fi
+            done <<'REQUIRED'
+          static-validation
+          Private CRM
+          Supabase migrations and pgTAP
+          Public site and Worker
+          REQUIRED
+            rm -f "$checks"
+            test -z "$failed" || { echo "Exact-head CI failed: $failed" >&2; exit 1; }
+            if [ -z "$waiting" ]; then exit 0; fi
+            sleep 10
+          done
+          echo 'Timed out waiting for exact-head CI.' >&2
+          exit 1
+
+      - name: Authorization summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc61 payment redirect on Monzo runtime'
+            echo "- Release SHA: \`${GITHUB_SHA}\`"
+            echo "- Product SHA: \`${PRODUCT_SHA}\`"
+            echo '- Database deployment: none'
+            echo '- CRM Pages deployment: none'
+            echo '- New Worker / new backend secret provisioning: none'
+            echo '- Monzo OAuth/token/account/webhook secrets: preserved, not rotated'
+            echo '- Gmail/GPT deployment: none'
+            echo '- Runtime scope after approval: `vishar-monzo-api-production` only'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  monzo:
+    name: Deploy Monzo runtime with bounded public payment route
+    needs: authorize
+    uses: ./.github/workflows/deploy-private-production-monzo.yml
+    with:
+      approved_sha: ${{ needs.authorize.outputs.approved_sha }}
+      deploy: true
+      approval_phrase: DEPLOY_PRIVATE_CRM_MONZO_ONLY
+    secrets: inherit
+
+  verify_payment_route:
+    name: Verify first-party personalized payment route
+    needs: monzo
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify invalid opaque link reaches payment Worker and public root stays intact
+        shell: bash
+        run: |
+          set -euo pipefail
+          invalid_id='00000000-0000-4000-8000-000000000000'
+          for attempt in $(seq 1 20); do
+            status="$(curl -sS -o /tmp/payment-route-body -w '%{http_code}' --max-time 10 "https://vishartattoo.com/pay-by-bank-transfer/${invalid_id}" || true)"
+            root="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 'https://vishartattoo.com/' || true)"
+            echo "payment route -> ${status}; root -> ${root}"
+            if [ "$status" = '404' ] && grep -Fq 'Payment link unavailable' /tmp/payment-route-body && [[ "$root" =~ ^(200|301|302|307|308)$ ]]; then
+              exit 0
+            fi
+            sleep 6
+          done
+          echo 'First-party payment route did not reach the expected bounded Worker state.' >&2
+          exit 1
