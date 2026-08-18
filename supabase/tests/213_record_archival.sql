@@ -54,25 +54,26 @@ grant select on archive_client_fixture to authenticated, service_role;
 select pg_temp.claims('{"sub":"fa222222-2222-4222-8222-222222222222","role":"authenticated"}');
 select throws_ok(
   format(
-    $$select public.archive_enquiry(%L::uuid)$$,
+    $$select public.update_enquiry_details(%L::uuid, '{"_archive":true}'::jsonb)$$,
     (select r ->> 'enquiry_id' from archive_enquiry_fixture)
   ),
   '42501', null,
-  'booking manager cannot archive an enquiry'
+  'booking manager cannot archive an enquiry through the canonical edit RPC'
 );
 select throws_ok(
   format(
-    $$select public.archive_client(%L::uuid)$$,
+    $$select public.update_client_details(%L::uuid, '{"_archive":true}'::jsonb)$$,
     (select r ->> 'client_id' from archive_client_fixture)
   ),
   '42501', null,
-  'booking manager cannot archive a client'
+  'booking manager cannot archive a client through the canonical edit RPC'
 );
 
 select pg_temp.claims('{"sub":"fa111111-1111-4111-8111-111111111111","role":"authenticated"}');
 select is(
-  public.archive_enquiry(
-    (select (r ->> 'enquiry_id')::uuid from archive_enquiry_fixture)
+  public.update_enquiry_details(
+    (select (r ->> 'enquiry_id')::uuid from archive_enquiry_fixture),
+    '{"_archive":true}'::jsonb
   ) ->> 'changed',
   'true',
   'owner can archive an erroneous enquiry'
@@ -93,8 +94,9 @@ select is(
 );
 
 select is(
-  public.archive_client(
-    (select (r ->> 'client_id')::uuid from archive_client_fixture)
+  public.update_client_details(
+    (select (r ->> 'client_id')::uuid from archive_client_fixture),
+    '{"_archive":true}'::jsonb
   ) ->> 'archived_enquiries',
   '1',
   'owner client cleanup also archives its unconverted enquiry'
@@ -122,16 +124,28 @@ select is(
 
 reset role;
 select ok(
-  has_function_privilege('authenticated', 'public.archive_enquiry(uuid)', 'execute')
-  and not has_function_privilege('anon', 'public.archive_enquiry(uuid)', 'execute')
-  and not has_function_privilege('service_role', 'public.archive_enquiry(uuid)', 'execute'),
-  'enquiry archival RPC is exposed only to authenticated human CRM callers'
+  to_regprocedure('public.archive_enquiry(uuid)') is null
+  and to_regprocedure('public.archive_client(uuid)') is null,
+  'record cleanup does not expand the public callable RPC inventory'
 );
 select ok(
-  has_function_privilege('authenticated', 'public.archive_client(uuid)', 'execute')
-  and not has_function_privilege('anon', 'public.archive_client(uuid)', 'execute')
-  and not has_function_privilege('service_role', 'public.archive_client(uuid)', 'execute'),
-  'client archival RPC is exposed only to authenticated human CRM callers'
+  has_function_privilege('authenticated', 'public.update_enquiry_details(uuid,jsonb)', 'execute')
+  and not has_function_privilege('anon', 'public.update_enquiry_details(uuid,jsonb)', 'execute')
+  and not has_function_privilege('service_role', 'public.update_enquiry_details(uuid,jsonb)', 'execute'),
+  'canonical enquiry edit RPC keeps its existing API-role ACL'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.update_client_details(uuid,jsonb)', 'execute')
+  and not has_function_privilege('anon', 'public.update_client_details(uuid,jsonb)', 'execute')
+  and not has_function_privilege('service_role', 'public.update_client_details(uuid,jsonb)', 'execute'),
+  'canonical client edit RPC keeps its existing API-role ACL'
+);
+select ok(
+  not has_function_privilege('authenticated', 'crm_private.update_enquiry_details_core(uuid,jsonb)', 'execute')
+  and not has_function_privilege('service_role', 'crm_private.update_enquiry_details_core(uuid,jsonb)', 'execute')
+  and not has_function_privilege('authenticated', 'crm_private.update_client_details_core(uuid,jsonb)', 'execute')
+  and not has_function_privilege('service_role', 'crm_private.update_client_details_core(uuid,jsonb)', 'execute'),
+  'preserved edit implementations stay closed behind the public wrappers'
 );
 
 select * from finish();
