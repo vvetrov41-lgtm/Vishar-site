@@ -32,10 +32,12 @@ describe('responsive navigation shell', () => {
       'Dashboard',
       'Enquiries',
       'Appointments',
-      'Clients',
+      'Projects',
     ]);
     expect(within(tabbar as HTMLElement).getByRole('link', { name: 'Appointments' }))
       .toHaveAttribute('href', '#/appointments');
+    expect(within(tabbar as HTMLElement).getByRole('link', { name: 'Projects' }))
+      .toHaveAttribute('href', '#/projects');
     expect(within(tabbar as HTMLElement).getByRole('button', { name: 'More' })).toBeInTheDocument();
   });
 
@@ -62,7 +64,7 @@ describe('responsive navigation shell', () => {
     const administration = within(dialog).getByRole('group', { name: 'Administration' });
 
     expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Projects',
+      'Clients',
       'Time off',
       'Activity',
     ]);
@@ -81,7 +83,7 @@ describe('responsive navigation shell', () => {
     const operations = within(dialog).getByRole('group', { name: 'Operations' });
 
     expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Projects',
+      'Clients',
       'Time off',
     ]);
     expect(within(dialog).queryByRole('group', { name: 'Administration' })).not.toBeInTheDocument();
