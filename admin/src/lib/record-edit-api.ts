@@ -75,6 +75,13 @@ export function createRecordEditApi(client: CrmClient) {
       );
     },
 
+    async archiveClient(clientId: string) {
+      return rpcResult(
+        await client.rpc('archive_client', { p_client_id: clientId }),
+        'delete that client'
+      );
+    },
+
     async updateEnquiryDetails(enquiryId: string, input: EnquiryDetailsUpdate) {
       return rpcResult(
         await client.rpc('update_enquiry_details', {
@@ -89,6 +96,13 @@ export function createRecordEditApi(client: CrmClient) {
           },
         }),
         'update that enquiry'
+      );
+    },
+
+    async archiveEnquiry(enquiryId: string) {
+      return rpcResult(
+        await client.rpc('archive_enquiry', { p_enquiry_id: enquiryId }),
+        'delete that enquiry'
       );
     },
 
