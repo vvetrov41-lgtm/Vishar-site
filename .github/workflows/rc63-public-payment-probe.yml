@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - ops/rc63-public-payment-probe
+  pull_request:
+    branches:
+      - release/private-crm-rc63-payment-route-recovery
 
 permissions:
   contents: read
@@ -11,7 +14,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: rc63-public-payment-probe
+  group: rc63-public-payment-probe-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -106,7 +109,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open --json number --jq '.[0].number // empty')"
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            pr="$(jq -r '.pull_request.number // empty' "$GITHUB_EVENT_PATH")"
+          else
+            pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open --json number --jq '.[0].number // empty')"
+          fi
           if [ -z "$pr" ]; then
             echo 'No open PR exists yet for this branch; skipping comment.'
             exit 0
