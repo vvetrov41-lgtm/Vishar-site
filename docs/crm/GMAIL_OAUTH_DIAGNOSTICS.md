@@ -36,7 +36,7 @@ Allowed callback diagnostic codes:
 
 The token endpoint classifier may use only Google OAuth's machine-readable `error` field, bounded HTTP status classes, and local transport stage to select a fixed diagnostic code. It must never expose `error_description`, provider response bodies, authorization codes, or credentials.
 
-A bounded Cloudflare remote-preview probe confirmed the Worker runtime behavior for the Google token endpoint: the default redirect policy and `redirect: "manual"` return an HTTP response, while `redirect: "error"` throws a `TypeError` before a response is available. Google provider calls in the Gmail Worker therefore use `redirect: "manual"`. This preserves explicit redirect handling without automatic redirect following and avoids the Cloudflare runtime failure that previously surfaced as `gmail_oauth_token_fetch_failed`. Do not replace this with automatic redirect following for credential-bearing Google requests.
+A bounded Cloudflare remote-preview probe confirmed the Worker runtime behavior for outbound credential-bearing fetches: `redirect: "manual"` returns an HTTP response, while `redirect: "error"` can throw a `TypeError` before a response is available. Google provider calls and Gmail Supabase RPC calls therefore use `redirect: "manual"`. This preserves explicit redirect handling without automatic redirect following and avoids runtime failures that previously surfaced as `gmail_oauth_token_fetch_failed` and then `gmail_oauth_token_cleanup_failed`.
 
 If an unexpected runtime error is raised, the callback may expose only one of these fixed stage codes:
 
@@ -45,9 +45,10 @@ If an unexpected runtime error is raised, the callback may expose only one of th
 - `gmail_oauth_supabase_client_failed`
 - `gmail_oauth_token_store_failed`
 - `gmail_oauth_supabase_rpc_failed`
-- `gmail_oauth_token_cleanup_failed`
 
 The stage value is selected only by backend control flow. Provider payloads and exception text are never interpolated into the response. Errors outside the allow-listed backend codes and fixed stages collapse to `gmail_oauth_failed`.
+
+Token cleanup after a failed Supabase binding is best-effort and must never replace the original bounded RPC diagnostic. A cleanup failure cannot enable a Gmail integration because the authoritative `artist_integrations` row was not created. A later successful OAuth attempt overwrites the same artist-scoped encrypted token key before enabling the integration.
 
 Production investigation order:
 
@@ -58,7 +59,8 @@ Production investigation order:
 5. For `gmail_oauth_invalid_client` or `gmail_oauth_token_http_401`, verify that the production Worker client ID and client secret belong to the same Web application OAuth client. Never paste the secret into chat or logs.
 6. For `gmail_oauth_invalid_grant` or `gmail_oauth_token_http_400`, verify a fresh authorization attempt, the exact redirect URI, and PKCE flow without reusing an authorization code.
 7. For `gmail_oauth_token_fetch_failed`, verify the Worker redirect policy remains `manual`, then investigate outbound transport to `https://oauth2.googleapis.com/token` before changing OAuth credentials.
-8. Check Supabase API logs for `service_set_gmail_integration`. If no call exists for the attempt, the failure occurred before the CRM binding step.
-9. Keep `GMAIL_DRAIN_ENABLED=false` until read-only OAuth and Gmail history E2E are proven.
+8. For `gmail_rpc_forbidden`, `gmail_rpc_failed`, or `gmail_oauth_supabase_rpc_failed`, verify the Supabase RPC fetch uses `redirect: "manual"`, then inspect the bounded HTTP status and Supabase API logs.
+9. Check Supabase API logs for `service_set_gmail_integration`. If no call exists for the attempt, the failure occurred before the CRM binding step.
+10. Keep `GMAIL_DRAIN_ENABLED=false` until read-only OAuth and Gmail history E2E are proven.
 
 Do not reuse or rotate Calendar credentials while diagnosing Gmail.
