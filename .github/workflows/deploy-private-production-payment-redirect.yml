@@ -165,6 +165,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
           PROVISIONING_SECRET: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
         run: |
           set -euo pipefail
           test -n "$CLOUDFLARE_API_TOKEN"
@@ -180,16 +182,77 @@ jobs:
             exit 0
           fi
 
-          if [ -z "$PROVISIONING_SECRET" ]; then
-            echo 'Dedicated payment redirect Worker has no SUPABASE_SECRET_KEY and crm-production does not expose CRM_PRODUCTION_SUPABASE_SECRET_KEY for one-time provisioning.' >&2
-            exit 1
+          use_environment_secret=false
+          if [ -n "$PROVISIONING_SECRET" ]; then
+            case "$PROVISIONING_SECRET" in
+              sb_secret_*) use_environment_secret=true ;;
+              *)
+                echo 'CRM_PRODUCTION_SUPABASE_SECRET_KEY is present but is not a modern Supabase secret key.' >&2
+                exit 1
+                ;;
+            esac
+          else
+            test "$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx'
+            test "$SUPABASE_PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+            if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+              echo 'Production Supabase management access is unavailable for one-time Worker secret provisioning.' >&2
+              exit 1
+            fi
+
+            # Prove the protected Management API credential can reveal an existing
+            # modern backend key before creating or changing any Worker runtime.
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/api-keys?reveal=true" \
+              | node -e '
+                  let input = "";
+                  process.stdin.setEncoding("utf8");
+                  process.stdin.on("data", (chunk) => { input += chunk; });
+                  process.stdin.on("end", () => {
+                    const rows = JSON.parse(input);
+                    const found = Array.isArray(rows) && rows.some((entry) =>
+                      entry
+                      && entry.type === "secret"
+                      && typeof entry.api_key === "string"
+                      && entry.api_key.startsWith("sb_secret_")
+                    );
+                    if (!found) process.exit(1);
+                  });
+                '
           fi
 
-          # Create/update the Worker while it is still unreachable, then install
-          # the encrypted secret. The public route is activated only afterwards.
+          # Create/update the Worker while it is still unreachable. The public
+          # route is activated only after the encrypted backend key is present.
           npx wrangler deploy --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME" --strict
-          printf '%s' "$PROVISIONING_SECRET" \
-            | npx wrangler secret put SUPABASE_SECRET_KEY --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME"
+
+          if [ "$use_environment_secret" = true ]; then
+            printf '%s' "$PROVISIONING_SECRET" \
+              | npx wrangler secret put SUPABASE_SECRET_KEY --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME"
+          else
+            # Fetch the existing production secret a second time and stream it
+            # directly into Wrangler. The value is never echoed, exported or
+            # written to disk by this workflow.
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/api-keys?reveal=true" \
+              | node -e '
+                  let input = "";
+                  process.stdin.setEncoding("utf8");
+                  process.stdin.on("data", (chunk) => { input += chunk; });
+                  process.stdin.on("end", () => {
+                    const rows = JSON.parse(input);
+                    const match = Array.isArray(rows) && rows.find((entry) =>
+                      entry
+                      && entry.type === "secret"
+                      && typeof entry.api_key === "string"
+                      && entry.api_key.startsWith("sb_secret_")
+                    );
+                    if (!match) process.exit(1);
+                    process.stdout.write(match.api_key);
+                  });
+                ' \
+              | npx wrangler secret put SUPABASE_SECRET_KEY --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME"
+          fi
 
           secrets_json="$(npx wrangler secret list --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME" --format json)"
           SECRET_LIST="$secrets_json" node -e "if(!JSON.parse(process.env.SECRET_LIST||'[]').some(e=>e&&e.name==='SUPABASE_SECRET_KEY')) process.exit(1)"
