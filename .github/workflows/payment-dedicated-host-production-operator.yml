@@ -1,0 +1,202 @@
+name: Payment dedicated host production operator
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc67-payment-dedicated-host
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: payment-dedicated-host-production
+  cancel-in-progress: false
+
+env:
+  PRODUCT_SHA: 2fa73424891693625ca6946d405427bd4e29ddd1
+  PRODUCT_PR: '353'
+  RELEASE_BRANCH: release/private-crm-rc67-payment-dedicated-host
+  CANONICAL_MONZO_GATE_REF: e4a87b811f3b9d6d85d5d464660ad2c2efbeee06
+  PAYMENT_HOSTNAME: pay.vishartattoo.com
+
+jobs:
+  validate:
+    name: Validate rc67 dedicated payment host rollout
+    if: contains(github.event.head_commit.message, '[RUN_PAYMENT_DEDICATED_HOST]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact branch, product lineage and tree-identical activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          test "$GITHUB_REF_NAME" = "$RELEASE_BRANCH"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+
+          parent="$(git rev-parse HEAD^)"
+          test "$(git rev-parse HEAD^{tree})" = "$(git rev-parse "${parent}^{tree}")"
+          echo "PREACTIVATION_SHA=$parent" >> "$GITHUB_ENV"
+
+          mapfile -t changed < <(git diff --name-only "$PRODUCT_SHA...$GITHUB_SHA")
+          printf '%s\n' "${changed[@]}" | sed 's/^/release changed: /'
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = '.github/workflows/payment-dedicated-host-production-operator.yml'
+
+      - name: Verify product PR remains exact Draft open unmerged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PRODUCT_PR}")"
+          test "$(jq -r '.state' <<<"$product")" = open
+          test "$(jq -r '.draft' <<<"$product")" = true
+          test "$(jq -r '.merged_at' <<<"$product")" = null
+          test "$(jq -r '.head.sha' <<<"$product")" = "$PRODUCT_SHA"
+          test "$(jq -r '.head.ref' <<<"$product")" = 'agent/payment-redirect-dedicated-pay-host'
+
+      - name: Verify release PR remains Draft open unmerged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$RELEASE_BRANCH" --state open --json number,isDraft,headRefOid --jq '.[0]')"
+          test -n "$release"
+          test "$(jq -r '.isDraft' <<<"$release")" = true
+          test "$(jq -r '.headRefOid' <<<"$release")" = "$GITHUB_SHA"
+
+      - name: Verify pre-activation exact-head CI is green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${PREACTIVATION_SHA}&per_page=100")"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            conclusion="$(jq -r --arg workflow "$workflow" '[.workflow_runs[] | select(.name==$workflow)] | sort_by(.created_at) | last | .conclusion // empty' <<<"$runs")"
+            echo "$workflow -> ${conclusion:-missing}"
+            test "$conclusion" = success
+          done
+
+      - name: Verify product patch remains bounded and payment-safe
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'pattern = "pay.vishartattoo.com"' wrangler.monzo-api.production.toml
+          grep -Fq 'custom_domain = true' wrangler.monzo-api.production.toml
+          ! grep -Fq 'vishartattoo.com/pay-by-bank-transfer' wrangler.monzo-api.production.toml
+          grep -Fq "const PAYMENT_HOST = 'pay.vishartattoo.com';" workers/monzo-api-gateway.js
+          grep -Fq "const PAYMENT_PATH = /^\\/pay-by-bank-transfer\\/" workers/payment-redirect.js
+          grep -Fq "url.hostname === 'monzo.com'" workers/payment-redirect.js
+          grep -Fq "url.pathname.startsWith(PAYMENT_PATH_PREFIX)" workers/monzo-api-gateway.js
+          grep -Fq "return paymentUnavailable();" workers/monzo-api-gateway.js
+
+      - name: Validation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc67 dedicated payment host validation'
+            echo
+            echo "- Activation SHA: \`$GITHUB_SHA\`"
+            echo "- Product SHA: \`$PRODUCT_SHA\`"
+            echo "- Pre-activation SHA: \`${PREACTIVATION_SHA:-unknown}\`"
+            echo '- Production plan: existing Monzo Worker only'
+            echo '- Payment Custom Domain: `pay.vishartattoo.com`'
+            echo '- Strict runtime path: `/pay-by-bank-transfer/<opaque UUID>`'
+            echo '- Apex payment Worker Route: removed'
+            echo '- Database / CRM Pages / Gmail / GPT / staging: no mutation'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy rc67 through canonical Monzo production gate
+    needs: validate
+    permissions:
+      contents: read
+    uses: vvetrov41-lgtm/Vishar-site/.github/workflows/deploy-private-production-monzo.yml@e4a87b811f3b9d6d85d5d464660ad2c2efbeee06
+    with:
+      approved_sha: ${{ github.sha }}
+      deploy: true
+      approval_phrase: DEPLOY_PRIVATE_CRM_MONZO_ONLY
+    secrets: inherit
+
+  verify:
+    name: Verify rc67 dedicated payment data plane
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+
+    steps:
+      - name: Verify dedicated payment host and surrounding boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          invalid='00000000-0000-4000-8000-000000000000'
+          payment_status=''
+          for attempt in $(seq 1 20); do
+            rm -f /tmp/payment-body /tmp/payment-headers
+            payment_status="$(curl --silent --show-error --output /tmp/payment-body --dump-header /tmp/payment-headers --write-out '%{http_code}' --max-time 15 \
+              "https://${PAYMENT_HOSTNAME}/pay-by-bank-transfer/${invalid}" || true)"
+            body="$(cat /tmp/payment-body 2>/dev/null || true)"
+            if [ "$payment_status" = 404 ] && [ "$body" = 'Payment link unavailable' ]; then
+              break
+            fi
+            echo "dedicated payment host not propagated yet: status=${payment_status}"
+            sleep 6
+          done
+
+          test "$payment_status" = 404
+          test "$(cat /tmp/payment-body)" = 'Payment link unavailable'
+          content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub("\r", "", $2); print $2; exit}' /tmp/payment-headers)"
+          cache_control="$(awk -F': *' 'tolower($1)=="cache-control" {gsub("\r", "", $2); print $2; exit}' /tmp/payment-headers)"
+          printf '%s' "$content_type" | grep -Fqi 'text/plain'
+          printf '%s' "$cache_control" | grep -Fqi 'no-store'
+
+          pay_root_status="$(curl --silent --show-error --output /tmp/pay-root-body --write-out '%{http_code}' --max-time 15 \
+            "https://${PAYMENT_HOSTNAME}/")"
+          test "$pay_root_status" = 404
+          test "$(cat /tmp/pay-root-body)" = 'Payment link unavailable'
+
+          root="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 'https://vishartattoo.com/')"
+          test "$root" = 200
+
+          apex_payment_status="$(curl --silent --show-error --output /tmp/apex-payment-body --write-out '%{http_code}' --max-time 15 \
+            "https://vishartattoo.com/pay-by-bank-transfer/${invalid}" || true)"
+          if [ "$(cat /tmp/apex-payment-body 2>/dev/null || true)" = 'Payment link unavailable' ]; then
+            echo 'Stale apex payment Worker Route is still active.' >&2
+            exit 1
+          fi
+
+          protected="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 \
+            'https://monzo.vishartattoo.com/oauth/monzo/status/vladimir')"
+          case "$protected" in 302|303|307|401|403) ;; *) exit 1 ;; esac
+
+          webhook_key='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+          webhook="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 \
+            -X POST -H 'Content-Type: application/json' --data '{}' \
+            "https://monzo.vishartattoo.com/webhooks/monzo/${webhook_key}")"
+          case "$webhook" in 404|429|503) ;; *) exit 1 ;; esac
+
+          {
+            echo '### rc67 production data-plane verification'
+            echo
+            echo "- Dedicated invalid payment UUID: \`${payment_status}\` with payment-handler signature"
+            echo "- Dedicated payment root: \`${pay_root_status}\`, fail closed"
+            echo "- Public site root: \`${root}\`"
+            echo "- Apex old payment path: \`${apex_payment_status}\`, not handled by payment Worker"
+            echo "- Monzo owner route: \`${protected}\` (Access gated)"
+            echo "- Unknown Monzo webhook: \`${webhook}\`"
+            echo '- Payment settlement performed: no'
+          } >> "$GITHUB_STEP_SUMMARY"
