@@ -69,6 +69,12 @@ await test('scope validation rejects full mailbox scope and missing send/read sc
   assert.equal(gmail.hasRequiredScopes(`${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE} https://mail.google.com/`), false);
 });
 
+await test('OAuth callback diagnostics expose only bounded backend codes', () => {
+  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_code_exchange_failed')), 'gmail_oauth_code_exchange_failed');
+  assert.equal(worker.oauthFailureCode(new Error('gmail_api_error')), 'gmail_api_error');
+  assert.equal(worker.oauthFailureCode(new Error('provider secret detail')), 'gmail_oauth_failed');
+});
+
 await test('OAuth start is Vladimir-bound, PKCE-backed and only served on the Gmail production host', async () => {
   const env = oauthEnv();
   const response = await worker.startOAuth(new URL('https://gmail.vishartattoo.com/oauth/google/start/vladimir'), env);

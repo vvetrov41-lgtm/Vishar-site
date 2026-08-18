@@ -106,6 +106,25 @@ function stateKey(state) {
   return `${STATE_PREFIX}${state}`;
 }
 
+const OAUTH_SAFE_FAILURE_CODES = new Set([
+  'gmail_oauth_code_exchange_failed',
+  'gmail_oauth_refresh_token_missing',
+  'gmail_oauth_scope_mismatch',
+  'gmail_access_token_rejected',
+  'gmail_api_error',
+  'gmail_profile_identity_invalid',
+  'gmail_encryption_key_unavailable',
+  'gmail_encryption_key_invalid',
+  'gmail_token_store_unavailable',
+  'gmail_rpc_forbidden',
+  'gmail_rpc_failed',
+]);
+
+function oauthFailureCode(error) {
+  const reason = error instanceof Error ? error.message : '';
+  return OAUTH_SAFE_FAILURE_CODES.has(reason) ? reason : 'gmail_oauth_failed';
+}
+
 async function startOAuth(url, env) {
   if (url.hostname !== GMAIL_PUBLIC_HOST) return null;
   if (env?.GMAIL_OAUTH_ENABLED !== 'true') return json(404, { error: 'not_found' });
@@ -203,9 +222,10 @@ async function oauthCallback(url, env, fetchImpl) {
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'gmail_oauth_failed';
+    const diagnostic = oauthFailureCode(error);
     const message = reason === 'gmail_oauth_scope_mismatch'
-      ? 'Google did not grant the required read and send Gmail scopes.'
-      : 'The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled.';
+      ? `Google did not grant the required read and send Gmail scopes. Diagnostic: ${diagnostic}.`
+      : `The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled. Diagnostic: ${diagnostic}.`;
     return html(400, 'Gmail connection failed', message);
   }
 
@@ -558,6 +578,7 @@ export const __testing = Object.freeze({
   artistConfig,
   bearer,
   stateKey,
+  oauthFailureCode,
   startOAuth,
   oauthCallback,
   handleGptAction,
