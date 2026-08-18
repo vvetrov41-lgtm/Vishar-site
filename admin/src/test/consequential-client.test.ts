@@ -42,6 +42,27 @@ describe('consequential RPC confirmations', () => {
   });
 
   it.each([
+    ['archive_enquiry', 'archiveEnquiry', /retained for audit and recovery/i],
+    ['archive_client', 'archiveClient', /unconverted enquiries/i],
+  ] as const)('guards %s before the RPC is sent', async (rpcName, action, expectedMessage) => {
+    const confirm = vi.fn(() => false);
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    const client = wrappedClient(confirm, rpcCalls);
+
+    const result = await client.rpc(rpcName, {
+      [rpcName === 'archive_enquiry' ? 'p_enquiry_id' : 'p_client_id']: 'record-id',
+    });
+
+    expect(result).toEqual({ data: null, error: null });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(expectedMessage),
+      action,
+      'en'
+    );
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it.each([
     ['cancelled', /active schedule/i],
     ['no_show', /did not attend/i],
   ])('guards the %s session state', async (status, expectedMessage) => {
@@ -144,14 +165,13 @@ describe('consequential RPC confirmations', () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     const client = wrappedClient(confirm, rpcCalls, 'ru');
 
-    await client.rpc('set_session_status', {
-      p_session_id: 'session-id',
-      p_status: 'no_show',
+    await client.rpc('archive_client', {
+      p_client_id: 'client-id',
     });
 
     expect(confirm).toHaveBeenCalledWith(
-      expect.stringMatching(/клиент не пришёл/i),
-      'markNoShow',
+      expect.stringMatching(/сохранятся для аудита и восстановления/i),
+      'archiveClient',
       'ru'
     );
   });
