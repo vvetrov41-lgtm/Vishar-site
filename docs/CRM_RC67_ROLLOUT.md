@@ -110,3 +110,52 @@ Covered by `admin/src/test/navigation-shell.test.tsx`,
 `admin/src/test/record-edit-api.test.ts`,
 `admin/src/test/consequential-client.test.ts` and
 `supabase/tests/213_record_archival.sql`.
+
+## Rollout outcome (2026-08-18)
+
+All runs at exact SHA `61b572cc1c4775eb73dfcde06d32a818d28d890f`.
+
+| Step | Run | Result |
+| --- | --- | --- |
+| Database dry-run | 32178357745 | success 20:18:09 — `Would push these migrations: 0062_record_archival.sql` |
+| Database apply | 32181717593 | success 21:18:38 |
+| CRM Pages deploy | 32188195723 | success 22:02:46 — `admin/dist` to `vishar-crm-production` |
+
+Monzo Worker: not deployed by this rollout, per the analysis above.
+
+### Verified directly against production
+
+Migration state on `vfjexhfdbrjmuxfdvbdx` now ends at `0062 record_archival`.
+
+Function boundary:
+
+| Function | Security | EXECUTE |
+| --- | --- | --- |
+| `public.update_client_details(uuid,jsonb)` | definer | postgres, authenticated |
+| `public.update_enquiry_details(uuid,jsonb)` | definer | postgres, authenticated |
+| `crm_private.update_client_details_core(uuid,jsonb)` | definer | postgres only |
+| `crm_private.update_enquiry_details_core(uuid,jsonb)` | definer | postgres only |
+
+Both public RPCs carry the `_archive` command, the `public.is_owner()` gate,
+the `55000` active-project guard, and delegation to the closed `crm_private`
+core helpers. Public RPC signatures and the authenticated-only grant are
+unchanged.
+
+### Not verifiable from an agent session
+
+`crm.vishartattoo.com` is behind Cloudflare Access — every path, including
+`/assets/`, answers `302` to `vishar-site-pages.cloudflareaccess.com`. The
+deployed JavaScript bundle therefore cannot be fetched or inspected from here,
+so the three mobile behaviours were not exercised against the running app.
+What is established: the deployed commit is exactly the one whose suite
+asserts them, and that suite passed inside the deploy run itself
+("Test, typecheck and build only the private CRM", 22:01:51-22:02:24).
+
+Owner-side confirmation on a phone is still worth doing:
+
+1. Delete an erroneous enquiry and an erroneous client; expect the destructive
+   confirmation, then removal from normal lists.
+2. Attempt to delete a record that has an active project; expect refusal with
+   the active-project message.
+3. Bottom navigation reads Dashboard, Enquiries, Appointments, Projects.
+4. Clients now appears in the More sheet, Operations group.
