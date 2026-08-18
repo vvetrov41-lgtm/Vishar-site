@@ -28,7 +28,7 @@ const NAV_KEYS: Record<string, string> = {
 // Order is deliberate. Filtering the general navigation list through a Set
 // preserved membership but inherited the desktop ordering, which put Clients
 // before Appointments. Keep the phone task order explicit as the CRM expands.
-const MOBILE_PRIMARY_PATHS = ['/', '/enquiries', '/appointments', '/clients'] as const;
+const MOBILE_PRIMARY_PATHS = ['/', '/enquiries', '/appointments', '/projects'] as const;
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
