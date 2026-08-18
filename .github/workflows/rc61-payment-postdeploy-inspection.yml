@@ -9,9 +9,15 @@ on:
   push:
     branches:
       - ops/rc61-payment-postdeploy-inspection
+  pull_request:
+    branches:
+      - release/private-crm-rc61-payment-redirect-on-monzo
 
 permissions:
   contents: read
+
+env:
+  TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   inspect:
@@ -23,16 +29,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.TARGET_SHA }}
           fetch-depth: 0
 
       - name: Verify inspection lineage and no production mutation capability
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           test -z "$(git status --short)"
-          git merge-base --is-ancestor 45161ea6d87dd27cc3dc16d7bacb3b40203c6013 "$GITHUB_SHA"
+          git merge-base --is-ancestor 45161ea6d87dd27cc3dc16d7bacb3b40203c6013 "$TARGET_SHA"
 
           # This recovery harness must remain read-only. A future edit cannot
           # silently turn it into another deployment path.
@@ -109,7 +115,7 @@ jobs:
           {
             echo '### rc61 production inspection'
             echo
-            echo "- Inspection SHA: \`${GITHUB_SHA}\`"
+            echo "- Inspection SHA: \`${TARGET_SHA}\`"
             echo '- Production mutation: none'
             echo '- Public root: checked'
             echo '- Personalized payment route: checked through invalid opaque id'
