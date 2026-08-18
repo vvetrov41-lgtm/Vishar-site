@@ -1,9 +1,8 @@
 name: Record archival and mobile projects production operator
 
 on:
-  push:
-    branches:
-      - release/private-crm-rc67-record-archival-mobile-projects-pages
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -16,6 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  RELEASE_PR: '357'
   PRODUCT_PR: '352'
   PRODUCT_HEAD_BRANCH: agent/mobile-record-archive-and-project-tab
   PRODUCT_BASE_BRANCH: agent/payment-redirect-on-monzo-runtime
@@ -31,23 +31,25 @@ jobs:
     name: Authorize rc67 CRM Pages rollout
     if: >-
       github.actor == 'vvetrov41-lgtm' &&
-      github.ref == 'refs/heads/release/private-crm-rc67-record-archival-mobile-projects-pages' &&
-      contains(github.event.head_commit.message, '[RUN_RC67_RECORD_ARCHIVAL_MOBILE_PROJECTS]')
+      github.event.pull_request.number == 357 &&
+      github.event.pull_request.head.ref == 'release/private-crm-rc67-record-archival-mobile-projects-pages' &&
+      github.event.pull_request.base.ref == 'agent/mobile-record-archive-and-project-tab'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
-      approved_sha: ${{ github.sha }}
+      approved_sha: ${{ steps.lineage.outputs.approved_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Verify exact release and product lineage
+        id: lineage
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          APPROVED_SHA: ${{ github.sha }}
+          APPROVED_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
@@ -56,11 +58,16 @@ jobs:
           release_tip="$(git ls-remote --heads origin "refs/heads/${RELEASE_BRANCH}" | awk '{print $1}')"
           test "$release_tip" = "$APPROVED_SHA"
 
+          release_pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${RELEASE_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha, .base.ref, .base.sha] | @tsv')"
+          IFS=$'\t' read -r rs rd rm rh rhs rb rbs <<< "$release_pr"
+          test "$rs" = open && test "$rd" = true && test "$rm" = false
+          test "$rh" = "$RELEASE_BRANCH" && test "$rhs" = "$APPROVED_SHA"
+          test "$rb" = "$PRODUCT_HEAD_BRANCH" && test "$rbs" = "$PRODUCT_SHA"
+
           product="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PRODUCT_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha, .base.ref, .base.sha] | @tsv')"
           IFS=$'\t' read -r ps pd pm ph product_sha pb pbs <<< "$product"
           test "$ps" = open && test "$pd" = true && test "$pm" = false
-          test "$ph" = "$PRODUCT_HEAD_BRANCH"
-          test "$product_sha" = "$PRODUCT_SHA"
+          test "$ph" = "$PRODUCT_HEAD_BRANCH" && test "$product_sha" = "$PRODUCT_SHA"
           test "$pb" = "$PRODUCT_BASE_BRANCH" && test "$pbs" = "$PRODUCT_BASE_SHA"
           git cat-file -e "${PRODUCT_SHA}^{commit}"
           git merge-base --is-ancestor "$PRODUCT_SHA" "$APPROVED_SHA"
@@ -73,6 +80,7 @@ jobs:
           grep -Fq "const MOBILE_PRIMARY_PATHS = ['/', '/enquiries', '/appointments', '/projects']" admin/src/components/AppShell.tsx
           grep -Fq "delete: 'Удалить заявку'" admin/src/components/EnquiryEditPanel.tsx
           grep -Fq "delete: 'Удалить клиента'" admin/src/components/ClientEditPanel.tsx
+          echo "approved_sha=$APPROVED_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Verify production database apply completed
         shell: bash
@@ -86,7 +94,6 @@ jobs:
           test "$conclusion" = success
           test "$head_sha" = "$PRODUCT_SHA"
           test "$head_branch" = 'release/private-crm-rc67-record-archival-mobile-projects'
-
           jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DB_APPLY_RUN}/jobs?per_page=100")"
           apply_conclusion="$(printf '%s' "$jobs" | jq -r '[.jobs[].steps[] | select(.name=="Apply production migrations without seed")][0].conclusion // empty')"
           test "$apply_conclusion" = success
@@ -123,7 +130,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          APPROVED_SHA: ${{ github.sha }}
+          APPROVED_SHA: ${{ steps.lineage.outputs.approved_sha }}
         run: |
           set -euo pipefail
           deadline=$((SECONDS + 1200))
@@ -159,7 +166,7 @@ jobs:
         run: |
           {
             echo '### rc67 record archival + mobile Projects production operator'
-            echo "- Release SHA: \`${GITHUB_SHA}\`"
+            echo "- Release SHA: \`${{ steps.lineage.outputs.approved_sha }}\`"
             echo "- Product SHA: \`${PRODUCT_SHA}\`"
             echo '- Production DB migration 0062 was already applied by the protected database gate'
             echo '- Runtime deployment requested here: private CRM Pages only'
@@ -173,7 +180,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
-      - name: Dispatch canonical private CRM workflow
+      - name: Reuse or dispatch canonical private CRM workflow
         id: dispatch
         shell: bash
         env:
@@ -181,32 +188,43 @@ jobs:
           APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
         run: |
           set -euo pipefail
-          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          jq -n --arg ref "$RELEASE_BRANCH" --arg sha "$APPROVED_SHA" \
-            '{ref:$ref,inputs:{approved_sha:$sha,deploy:"true",approval_phrase:"DEPLOY_PRIVATE_CRM_ONLY"}}' \
-            | gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/dispatches" --input -
-          echo "started_at=$started_at" >> "$GITHUB_OUTPUT"
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?branch=${RELEASE_BRANCH}&event=workflow_dispatch&per_page=20")"
+
+          while IFS= read -r stale_id; do
+            [ -z "$stale_id" ] && continue
+            echo "Cancelling stale protected CRM run: $stale_id"
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${stale_id}/cancel" >/dev/null || true
+          done < <(printf '%s' "$runs" | jq -r --arg sha "$APPROVED_SHA" '.workflow_runs[] | select((.status=="waiting" or .status=="queued" or .status=="in_progress") and .head_sha!=$sha) | .id')
+
+          run_id="$(printf '%s' "$runs" | jq -r --arg sha "$APPROVED_SHA" '[.workflow_runs[] | select((.status=="waiting" or .status=="queued" or .status=="in_progress") and .head_sha==$sha)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+          if [ -z "$run_id" ]; then
+            started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            jq -n --arg ref "$RELEASE_BRANCH" --arg sha "$APPROVED_SHA" \
+              '{ref:$ref,inputs:{approved_sha:$sha,deploy:"true",approval_phrase:"DEPLOY_PRIVATE_CRM_ONLY"}}' \
+              | gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/dispatches" --input -
+            deadline=$((SECONDS + 120));
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?branch=${RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
+                | jq -r --arg sha "$APPROVED_SHA" --arg started "$started_at" '[.workflow_runs[] | select(.head_sha==$sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+              [ -n "$run_id" ] && break
+              sleep 3
+            done
+          fi
+          test -n "$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Private CRM workflow run: $run_id"
+          echo "Private CRM workflow URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
 
       - name: Wait for canonical private CRM workflow
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
-          STARTED_AT: ${{ steps.dispatch.outputs.started_at }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
         run: |
           set -euo pipefail
-          deadline=$((SECONDS + 9600)); run_id=''
+          deadline=$((SECONDS + 9600))
           while [ "$SECONDS" -lt "$deadline" ]; do
-            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?branch=${RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
-              | jq -r --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" '[.workflow_runs[] | select(.head_sha==$sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
-            [ -n "$run_id" ] && break
-            sleep 3
-          done
-          test -n "$run_id"
-          echo "Private CRM workflow run: $run_id"
-          echo "Private CRM workflow URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '[.status,(.conclusion // "none")] | @tsv')"
+            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq '[.status,(.conclusion // "none")] | @tsv')"
             status="$(printf '%s' "$row" | cut -f1)"; conclusion="$(printf '%s' "$row" | cut -f2)"
             if [ "$status" = completed ]; then test "$conclusion" = success; exit 0; fi
             sleep 15
