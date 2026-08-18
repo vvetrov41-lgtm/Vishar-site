@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OPERATOR_PR: '0'
+  OPERATOR_PR: '330'
   PRODUCT_PR: '329'
   PRODUCT_HEAD_BRANCH: agent/monzo-reconciliation-route-recovery-v2
   PRODUCT_BASE_BRANCH: agent/gmail-crm-production-integration
