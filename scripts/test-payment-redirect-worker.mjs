@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import paymentWorker from '../workers/payment-redirect.js';
+import monzoGateway from '../workers/monzo-api-gateway.js';
 import { createPaymentSupabaseClient } from '../workers/lib/payment-supabase.js';
 
 const PUBLIC_ID = 'c6711111-1111-4111-8111-111111111111';
@@ -62,6 +63,40 @@ await test('GET resolves one opaque id through the single backend RPC and redire
   assert.equal(calls[0].options.headers.apikey, 'sb_secret_test-only');
   assert.ok(!('Authorization' in calls[0].options.headers));
   assert.deepEqual(JSON.parse(calls[0].options.body), { p_public_id: PUBLIC_ID });
+});
+
+await test('existing Monzo gateway intercepts only the first-party payment path before owner management handling', async () => {
+  let backendCalls = 0;
+  await withGlobalFetch(async () => {
+    backendCalls += 1;
+    return new Response(JSON.stringify(MONZO_URL), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }, async () => {
+    const response = await monzoGateway.fetch(
+      new Request(`https://vishartattoo.com${PAYMENT_PATH}`),
+      env,
+    );
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('location'), MONZO_URL);
+  });
+  assert.equal(backendCalls, 1);
+});
+
+await test('Monzo hostname cannot use the public payment redirect shortcut', async () => {
+  let backendCalled = false;
+  await withGlobalFetch(async () => {
+    backendCalled = true;
+    throw new Error('payment backend must not be called');
+  }, async () => {
+    const response = await monzoGateway.fetch(
+      new Request(`https://monzo.vishartattoo.com${PAYMENT_PATH}`),
+      {},
+    );
+    assert.notEqual(response.status, 302);
+  });
+  assert.equal(backendCalled, false);
 });
 
 await test('non-GET methods fail before rate limiting or backend access', async () => {
@@ -164,14 +199,15 @@ await test('the public redirect client cannot call Monzo reconciliation RPCs', a
   assert.equal(called, false);
 });
 
-await test('production config is exact-path only and contains no credential', async () => {
-  const config = fs.readFileSync(new URL('../wrangler.payment-redirect.production.toml', import.meta.url), 'utf8');
-  assert.match(config, /name = "vishar-payment-redirect-production"/);
+await test('production Monzo config owns the exact payment route without introducing a new backend credential', async () => {
+  const config = fs.readFileSync(new URL('../wrangler.monzo-api.production.toml', import.meta.url), 'utf8');
+  assert.match(config, /name = "vishar-monzo-api-production"/);
   assert.match(config, /workers_dev = false/);
   assert.match(config, /preview_urls = false/);
   assert.match(config, /pattern = "vishartattoo\.com\/pay-by-bank-transfer\/\*"/);
   assert.match(config, /SUPABASE_URL = "https:\/\/vfjexhfdbrjmuxfdvbdx\.supabase\.co"/);
   assert.match(config, /name = "PAYMENT_REDIRECT_RATE_LIMIT"/);
+  assert.match(config, /name = "MONZO_WEBHOOK_RATE_LIMIT"/);
   assert.doesNotMatch(config, /SUPABASE_SECRET_KEY\s*=/);
   assert.doesNotMatch(config, /gwaliusblwrzisrwnsvs/);
 });
