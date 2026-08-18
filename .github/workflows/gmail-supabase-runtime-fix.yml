@@ -95,3 +95,5 @@ jobs:
           git add scripts/test-gmail-production.mjs workers/gmail-production.js workers/lib/gmail-supabase.js
           git commit -m 'Fix Gmail Supabase fetch runtime handling'
           git push origin "HEAD:$PRODUCT_BRANCH"
+
+# trigger bounded operator after workflow registration
