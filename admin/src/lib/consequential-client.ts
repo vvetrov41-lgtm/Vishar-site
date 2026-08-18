@@ -107,13 +107,19 @@ function currentLanguage(): Language {
   return navigator.language.toLowerCase().startsWith('ru') ? 'ru' : 'en';
 }
 
+function hasArchiveCommand(value: unknown): boolean {
+  return typeof value === 'object'
+    && value !== null
+    && (value as Record<string, unknown>)._archive === true;
+}
+
 function consequentialAction(
   name: string,
   args: Record<string, unknown> | undefined
 ): ConsequentialAction | null {
   if (name === 'convert_enquiry_to_project') return 'convertEnquiry';
-  if (name === 'archive_enquiry') return 'archiveEnquiry';
-  if (name === 'archive_client') return 'archiveClient';
+  if (name === 'update_enquiry_details' && hasArchiveCommand(args?.p_enquiry)) return 'archiveEnquiry';
+  if (name === 'update_client_details' && hasArchiveCommand(args?.p_client)) return 'archiveClient';
   if (name === 'set_session_status' && args?.p_status === 'cancelled') return 'cancelSession';
   if (name === 'set_session_status' && args?.p_status === 'no_show') return 'markNoShow';
   if (name === 'set_appointment_status' && args?.p_status === 'cancelled') return 'cancelAppointment';
