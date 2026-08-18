@@ -121,21 +121,18 @@ describe('appointment workflow', () => {
     });
   });
 
-  it('requires an explicit positive deposit amount', async () => {
+  it('creates a deposit request from the appointment through the server duration policy', async () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}`, rpcCalls });
 
-    const amount = await screen.findByLabelText(/Deposit amount/);
-    const paid = screen.getByRole('button', { name: /mark paid/i });
-    expect(paid).toBeDisabled();
-
-    fireEvent.change(amount, { target: { value: '175.50' } });
-    fireEvent.click(paid);
+    fireEvent.click(await screen.findByRole('button', { name: /create deposit link/i }));
 
     await waitFor(() => {
-      const call = rpcCalls.find((entry) => entry.name === 'update_project_deposit');
-      expect(call?.args.p_deposit_amount).toBe(175.5);
-      expect(call?.args.p_deposit_status).toBe('paid');
+      const call = rpcCalls.find((entry) => entry.name === 'request_session_deposit');
+      expect(call).toBeDefined();
+      expect(call!.args.p_session_id).toBe(SESSION_ID);
+      expect(call!.args.p_delivery_channel).toBe('copy_link');
+      expect(rpcCalls.some((entry) => entry.name === 'update_project_deposit')).toBe(false);
     });
   });
 
@@ -153,9 +150,10 @@ describe('appointment workflow', () => {
     });
   });
 
-  it('says plainly that no calendar is connected', async () => {
+  it('shows the appointment actual calendar sync state instead of a stale global warning', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: `/projects/${PROJECT_ID}` });
-    expect(await screen.findByText(/no calendar provider is connected/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Calendar: not connected/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no calendar provider is connected/i)).not.toBeInTheDocument();
   });
 });
 
