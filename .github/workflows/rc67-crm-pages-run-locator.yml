@@ -1,0 +1,30 @@
+name: RC67 CRM Pages run locator
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  locate:
+    name: Locate active protected CRM run
+    if: github.actor == 'vvetrov41-lgtm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Locate active canonical CRM workflow run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: release/private-crm-rc67-record-archival-mobile-projects-pages
+          CRM_WORKFLOW: deploy-private-production-crm.yml
+        run: |
+          set -euo pipefail
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?branch=${RELEASE_BRANCH}&event=workflow_dispatch&per_page=30")"
+          printf '%s' "$runs" | jq -r '.workflow_runs[] | select(.status=="waiting" or .status=="queued" or .status=="in_progress" or .status=="pending") | "ACTIVE_RUN id=\(.id) status=\(.status) sha=\(.head_sha) url=\(.html_url) created=\(.created_at)"'
+          newest="$(printf '%s' "$runs" | jq -r '[.workflow_runs[] | select(.status=="waiting" or .status=="queued" or .status=="in_progress" or .status=="pending")] | sort_by(.created_at) | reverse | .[0].html_url // empty')"
+          test -n "$newest"
+          echo "NEWEST_ACTIVE=$newest"
