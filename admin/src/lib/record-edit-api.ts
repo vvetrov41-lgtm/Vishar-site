@@ -49,6 +49,22 @@ function rpcResult<T>(result: { data: any; error: any }, action: string): T {
   return result.data as T;
 }
 
+function archiveResult<T>(
+  result: { data: any; error: any },
+  record: 'client' | 'enquiry'
+): T | null {
+  if (result.error) {
+    if (result.error?.code === '55000') {
+      const message = record === 'client'
+        ? 'This client has an active project. Archive or close that project before deleting the client.'
+        : 'This enquiry has an active project. Archive or close that project before deleting the enquiry.';
+      throw new ApiError(message, result.error);
+    }
+    throw new ApiError(friendlyMessage(result.error, `delete that ${record}`), result.error);
+  }
+  return (result.data ?? null) as T | null;
+}
+
 function storageError(error: any, action: string) {
   if (!error) return;
   throw new ApiError(`Could not ${action}. Please try again.`, error);
@@ -76,9 +92,9 @@ export function createRecordEditApi(client: CrmClient) {
     },
 
     async archiveClient(clientId: string) {
-      return rpcResult(
+      return archiveResult(
         await client.rpc('archive_client', { p_client_id: clientId }),
-        'delete that client'
+        'client'
       );
     },
 
@@ -100,9 +116,9 @@ export function createRecordEditApi(client: CrmClient) {
     },
 
     async archiveEnquiry(enquiryId: string) {
-      return rpcResult(
+      return archiveResult(
         await client.rpc('archive_enquiry', { p_enquiry_id: enquiryId }),
-        'delete that enquiry'
+        'enquiry'
       );
     },
 
