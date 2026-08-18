@@ -1,3 +1,4 @@
+# Trigger bounded operator after workflow registration.
 name: Gmail Google fetch redirect fix
 
 on:
