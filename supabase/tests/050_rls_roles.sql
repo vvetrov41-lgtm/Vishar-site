@@ -570,8 +570,6 @@ insert into expected_function_acl values
   ('public.complete_follow_up(uuid)', false, true, false),
   ('public.create_email_draft(text,text,text,uuid,uuid,uuid,text)', false, true, false),
   ('public.approve_email_draft(uuid)', false, true, false),
-  ('public.gpt_authorize_gmail_enquiry(uuid)', false, true, false),
-  ('public.gpt_create_gmail_reply_draft(uuid,uuid,text)', false, true, false),
   ('public.set_profile_active(uuid,boolean)', false, true, false),
   ('public.set_profile_role(uuid,public.crm_role)', false, true, false),
   ('public.list_profiles()', false, true, false),
