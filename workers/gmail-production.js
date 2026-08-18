@@ -108,6 +108,13 @@ function stateKey(state) {
 
 const OAUTH_SAFE_FAILURE_CODES = new Set([
   'gmail_oauth_code_exchange_failed',
+  'gmail_oauth_invalid_client',
+  'gmail_oauth_invalid_grant',
+  'gmail_oauth_redirect_uri_mismatch',
+  'gmail_oauth_invalid_request',
+  'gmail_oauth_unauthorized_client',
+  'gmail_oauth_deleted_client',
+  'gmail_oauth_access_denied',
   'gmail_oauth_refresh_token_missing',
   'gmail_oauth_scope_mismatch',
   'gmail_access_token_rejected',

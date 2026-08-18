@@ -148,7 +148,19 @@ async function exchangeAuthorizationCode({ clientId, clientSecret, redirectUri, 
     redirect: 'error',
   });
   const json = await response.json().catch(() => null);
-  if (!response.ok || !json || typeof json.access_token !== 'string') throw new Error('gmail_oauth_code_exchange_failed');
+  if (!response.ok || !json || typeof json.access_token !== 'string') {
+    const providerError = typeof json?.error === 'string' ? json.error : '';
+    const code = ({
+      invalid_client: 'gmail_oauth_invalid_client',
+      invalid_grant: 'gmail_oauth_invalid_grant',
+      redirect_uri_mismatch: 'gmail_oauth_redirect_uri_mismatch',
+      invalid_request: 'gmail_oauth_invalid_request',
+      unauthorized_client: 'gmail_oauth_unauthorized_client',
+      deleted_client: 'gmail_oauth_deleted_client',
+      access_denied: 'gmail_oauth_access_denied',
+    })[providerError] || 'gmail_oauth_code_exchange_failed';
+    throw new Error(code);
+  }
   if (typeof json.refresh_token !== 'string' || json.refresh_token.length < 8) throw new Error('gmail_oauth_refresh_token_missing');
   if (!hasRequiredScopes(json.scope)) throw new Error('gmail_oauth_scope_mismatch');
   return json;

@@ -3,6 +3,7 @@ import {
   GMAIL_READ_SCOPE,
   GMAIL_SEND_SCOPE,
   authorizationUrl,
+  exchangeAuthorizationCode,
   storeRefreshToken,
   refreshAccessToken,
   searchThreads,
@@ -76,6 +77,32 @@ await test('OAuth callback diagnostics expose only bounded backend codes', () =>
   assert.equal(worker.oauthStageFailureCode('profile', new Error('gmail_api_error')), 'gmail_api_error');
   assert.equal(worker.oauthStageFailureCode('token_store', new Error('provider secret detail')), 'gmail_oauth_token_store_failed');
   assert.equal(worker.oauthStageFailureCode('not_a_stage', new Error('provider secret detail')), 'gmail_oauth_failed');
+});
+
+await test('OAuth token endpoint errors map to bounded diagnostics without provider descriptions', async () => {
+  const base = {
+    clientId: 'client-id-1234567890',
+    clientSecret: syntheticSecret(),
+    redirectUri: 'https://gmail.vishartattoo.com/oauth/google/callback',
+    code: 'synthetic-code',
+    verifier: 'v'.repeat(48),
+  };
+  await assert.rejects(
+    exchangeAuthorizationCode({
+      ...base,
+      fetchImpl: async () => Response.json({ error: 'invalid_client', error_description: 'do not expose this detail' }, { status: 401 }),
+    }),
+    (error) => error instanceof Error && error.message === 'gmail_oauth_invalid_client' && !error.message.includes('do not expose'),
+  );
+  await assert.rejects(
+    exchangeAuthorizationCode({
+      ...base,
+      fetchImpl: async () => Response.json({ error: 'invalid_grant', error_description: 'do not expose this detail' }, { status: 400 }),
+    }),
+    (error) => error instanceof Error && error.message === 'gmail_oauth_invalid_grant' && !error.message.includes('do not expose'),
+  );
+  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_client')), 'gmail_oauth_invalid_client');
+  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_grant')), 'gmail_oauth_invalid_grant');
 });
 
 await test('OAuth start is Vladimir-bound, PKCE-backed and only served on the Gmail production host', async () => {
