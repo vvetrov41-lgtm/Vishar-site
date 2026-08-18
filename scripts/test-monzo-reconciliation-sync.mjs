@@ -65,9 +65,18 @@ async function test(name, run) {
   }
 }
 
-await test('connected page exposes bounded recovery without provider identifiers or settlement wording', () => {
+await test('connected page exposes bounded recovery with an encrypted owner-bound confirmation and no provider identifiers', async () => {
   const env = makeEnv();
-  const page = setupTesting.connectedPage(env, 'vladimir', 'Recovery <Business>', {
+  const now = Date.parse('2026-08-18T08:45:00Z');
+  const record = connectedRecord(now);
+  const syncToken = await setupTesting.createSyncConfirmationToken(
+    env,
+    'vladimir',
+    'owner@example.test',
+    record,
+    now,
+  );
+  const page = setupTesting.connectedPage(env, 'vladimir', 'Recovery <Business>', syncToken, {
     scanned: 4,
     eligible: 1,
     verified: 1,
@@ -76,53 +85,194 @@ await test('connected page exposes bounded recovery without provider identifiers
   });
   assert.match(page, /Sync recent transfers/);
   assert.match(page, /name="action" value="sync_recent"/);
+  assert.match(page, new RegExp(`name="sync_token" value="${syncToken}"`));
   assert.match(page, /never marks a payment as paid/);
   assert.match(page, /Recovery &lt;Business&gt;/);
-  assert.ok(!page.includes('acc_recovery1'));
+  assert.ok(!page.includes(record.accountId));
+  assert.ok(!page.includes(record.userId));
+  assert.ok(!page.includes(record.webhookId));
+  assert.ok(!page.includes(record.webhookKey));
+  assert.ok(!page.includes('owner@example.test'));
   assert.ok(!page.includes('tx_'));
-  assert.ok(!page.includes('webhook_recovery1'));
 });
 
-await test('recovery POST requires exact same-origin form with no extra browser-selected fields', async () => {
+await test('recovery POST accepts iOS-style missing Origin only with the signed confirmation and rejects cross-origin or forged submissions', async () => {
   const env = makeEnv();
-  const good = new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+  const now = Date.parse('2026-08-18T08:45:00Z');
+  const record = connectedRecord(now);
+  const syncToken = await setupTesting.createSyncConfirmationToken(
+    env,
+    'vladimir',
+    'owner@example.test',
+    record,
+    now,
+  );
+
+  const formBody = () => new URLSearchParams({ action: 'sync_recent', sync_token: syncToken });
+  const safariStyle = new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: formBody(),
+  });
+  assert.equal(
+    await setupTesting.readSyncForm(
+      safariStyle,
+      env,
+      'vladimir',
+      'owner@example.test',
+      record,
+      now + 1_000,
+    ),
+    true,
+  );
+
+  const normalBrowser = new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
     method: 'POST',
     headers: {
       Origin: 'https://monzo.example.test',
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({ action: 'sync_recent' }),
+    body: formBody(),
   });
-  assert.equal(await setupTesting.readSyncForm(good, env), true);
+  assert.equal(
+    await setupTesting.readSyncForm(
+      normalBrowser,
+      env,
+      'vladimir',
+      'owner@example.test',
+      record,
+      now + 1_000,
+    ),
+    true,
+  );
 
-  for (const request of [
-    new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ action: 'sync_recent' }),
-    }),
-    new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
-      method: 'POST',
-      headers: {
-        Origin: 'https://attacker.example',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({ action: 'sync_recent' }),
-    }),
-    new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
-      method: 'POST',
-      headers: {
-        Origin: 'https://monzo.example.test',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({ action: 'sync_recent', account_id: 'acc_attacker' }),
-    }),
-  ]) {
-    await assert.rejects(
-      setupTesting.readSyncForm(request, env),
-      (error) => ['same_origin_required', 'sync_confirmation_required'].includes(error?.code),
-    );
-  }
+  await assert.rejects(
+    setupTesting.readSyncForm(
+      new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://attacker.example',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formBody(),
+      }),
+      env,
+      'vladimir',
+      'owner@example.test',
+      record,
+      now + 1_000,
+    ),
+    (error) => error?.code === 'same_origin_required' && error?.status === 403,
+  );
+
+  await assert.rejects(
+    setupTesting.readSyncForm(
+      new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ action: 'sync_recent' }),
+      }),
+      env,
+      'vladimir',
+      'owner@example.test',
+      record,
+      now + 1_000,
+    ),
+    (error) => error?.code === 'sync_confirmation_required',
+  );
+
+  await assert.rejects(
+    setupTesting.readSyncForm(
+      new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          action: 'sync_recent',
+          sync_token: syncToken,
+          account_id: 'acc_attacker',
+        }),
+      }),
+      env,
+      'vladimir',
+      'owner@example.test',
+      record,
+      now + 1_000,
+    ),
+    (error) => error?.code === 'sync_confirmation_required',
+  );
+
+  const tamperIndex = Math.floor(syncToken.length / 2);
+  const tampered = `${syncToken.slice(0, tamperIndex)}${syncToken[tamperIndex] === 'A' ? 'B' : 'A'}${syncToken.slice(tamperIndex + 1)}`;
+  await assert.rejects(
+    setupTesting.readSyncForm(
+      new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ action: 'sync_recent', sync_token: tampered }),
+      }),
+      env,
+      'vladimir',
+      'owner@example.test',
+      record,
+      now + 1_000,
+    ),
+    (error) => error?.code === 'sync_confirmation_invalid_or_expired',
+  );
+
+  await assert.rejects(
+    setupTesting.readSyncForm(
+      new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody(),
+      }),
+      env,
+      'vladimir',
+      'other-owner@example.test',
+      record,
+      now + 1_000,
+    ),
+    (error) => error?.code === 'sync_confirmation_invalid_or_expired',
+  );
+
+  const setupToken = await setupTesting.createSetupConfirmationToken(
+    env,
+    'vladimir',
+    'owner@example.test',
+    record,
+    now,
+  );
+  await assert.rejects(
+    setupTesting.readSyncForm(
+      new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ action: 'sync_recent', sync_token: setupToken }),
+      }),
+      env,
+      'vladimir',
+      'owner@example.test',
+      record,
+      now + 1_000,
+    ),
+    (error) => error?.code === 'sync_confirmation_invalid_or_expired',
+  );
+
+  await assert.rejects(
+    setupTesting.readSyncForm(
+      new Request('https://monzo.example.test/oauth/monzo/setup/vladimir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody(),
+      }),
+      env,
+      'vladimir',
+      'owner@example.test',
+      record,
+      now + setupTesting.SETUP_TTL_SECONDS * 1000 + 1,
+    ),
+    (error) => error?.code === 'sync_confirmation_invalid_or_expired',
+  );
 });
 
 await test('recovery sync re-fetches one recent incoming transfer and writes only the existing candidate RPC', async () => {
