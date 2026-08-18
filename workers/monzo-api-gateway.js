@@ -1,6 +1,9 @@
 import monzoApi from './monzo-api.js';
+import paymentRedirect from './payment-redirect.js';
 
 const WEBHOOK_PATH = /^\/webhooks\/monzo\/([A-Za-z0-9_-]{43,128})$/;
+const PAYMENT_HOST = 'vishartattoo.com';
+const PAYMENT_PATH_PREFIX = '/pay-by-bank-transfer/';
 const RATE_LIMIT_KEY = 'monzo-provider-webhook';
 
 const securityHeaders = {
@@ -35,12 +38,19 @@ export async function enforceMonzoWebhookRateLimit(env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Public personalized payment links reuse the already-provisioned Monzo
+    // production runtime and its existing encrypted Supabase backend key. The
+    // Cloudflare route is scoped to this first-party path prefix, and the
+    // payment handler independently validates the opaque UUID, rate limit and
+    // backend-only resolver before returning a clean monzo.com redirect.
+    if (url.hostname === PAYMENT_HOST && url.pathname.startsWith(PAYMENT_PATH_PREFIX)) {
+      return paymentRedirect.fetch(request, env);
+    }
+
     const webhookMatch = request.method === 'POST' && url.pathname.match(WEBHOOK_PATH);
 
-    // The webhook path is the only publicly reachable surface, so it is rate
-    // limited unconditionally. Production deliberately runs with
-    // MONZO_RECONCILIATION_ENABLED unset, and gating the limiter on that flag
-    // would have left the public path unthrottled in exactly that state.
+    // The Monzo provider webhook is public and rate limited unconditionally.
     // A missing or unavailable limiter fails closed with 503.
     if (webhookMatch) {
       const limited = await enforceMonzoWebhookRateLimit(env);
@@ -53,5 +63,7 @@ export default {
 
 export const __testing = {
   WEBHOOK_PATH,
+  PAYMENT_HOST,
+  PAYMENT_PATH_PREFIX,
   RATE_LIMIT_KEY,
 };
