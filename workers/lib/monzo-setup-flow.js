@@ -16,6 +16,7 @@ import {
   verifiedMonzoOwnerEmail,
   MonzoSecurityError,
 } from './monzo-oauth-security.js';
+import { syncRecentMonzoReconciliation } from './monzo-reconciliation-sync.js';
 import {
   loadMonzoTokenRecord,
   saveMonzoTokenRecord,
@@ -122,7 +123,7 @@ function shell(title, body) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>${escapeHtml(title)}</title>
-<style>body{font:16px system-ui;max-width:640px;margin:48px auto;padding:0 20px;line-height:1.5}a,button{display:inline-block;margin:8px 8px 0 0;padding:10px 14px}button{border:0;background:#111;color:#fff;border-radius:6px}fieldset{border:0;padding:0;margin:20px 0}label{display:block;padding:10px 0}small{color:#555}.danger{color:#8b1e1e}</style>
+<style>body{font:16px system-ui;max-width:640px;margin:48px auto;padding:0 20px;line-height:1.5}a,button{display:inline-block;margin:8px 8px 0 0;padding:10px 14px}button{border:0;background:#111;color:#fff;border-radius:6px}fieldset{border:0;padding:0;margin:20px 0}label{display:block;padding:10px 0}small{color:#555}.danger{color:#8b1e1e}.ok{padding:10px 12px;background:#eef8ee;border-radius:6px}</style>
 </head>
 <body>${body}</body>
 </html>`;
@@ -136,11 +137,19 @@ function notConnectedPage(env, alias) {
 <a href="${escapeHtml(monzoCrmReturnUrl(env))}">Back to CRM</a>`);
 }
 
-function connectedPage(env, alias, label) {
+function connectedPage(env, alias, label, syncResult = null) {
+  const notice = syncResult ? `
+<p class="ok"><strong>Recent transfer sync complete.</strong> Scanned ${escapeHtml(syncResult.scanned)}, eligible ${escapeHtml(syncResult.eligible)}, verified ${escapeHtml(syncResult.verified)}, new candidates ${escapeHtml(syncResult.registered)}, already known ${escapeHtml(syncResult.replayed)}.</p>` : '';
   return shell('Monzo connected', `
 <h1>Monzo is connected for ${escapeHtml(artistName(alias))}</h1>
 <p>Account: <strong>${escapeHtml(label || 'Connected account')}</strong></p>
 <p>Incoming webhook events are still only hints. The connector re-fetches each transaction from Monzo before creating a reconciliation candidate.</p>
+${notice}
+<form method="post" action="${escapeHtml(monzoSetupUrl(env, alias))}">
+<input type="hidden" name="action" value="sync_recent">
+<button type="submit">Sync recent transfers</button>
+</form>
+<p><small>Recovery scans a bounded recent window on this already-selected account and only creates or replays reconciliation candidates. It never marks a payment as paid.</small></p>
 <a href="${escapeHtml(monzoCrmReturnUrl(env))}">Back to CRM</a>
 <a class="danger" href="${escapeHtml(monzoDisconnectUrl(env, alias))}">Disconnect Monzo</a>`);
 }
@@ -294,7 +303,7 @@ export async function verifySetupConfirmationToken(env, token, alias, ownerEmail
   return true;
 }
 
-async function readSetupForm(request) {
+async function readFormText(request) {
   const declared = Number(request.headers.get('Content-Length') || '0');
   if (Number.isFinite(declared) && declared > FORM_BODY_LIMIT) {
     throw new MonzoSecurityError('request_too_large', 413);
@@ -307,13 +316,29 @@ async function readSetupForm(request) {
   if (new TextEncoder().encode(text).length > FORM_BODY_LIMIT) {
     throw new MonzoSecurityError('request_too_large', 413);
   }
-  const form = new URLSearchParams(text);
+  return text;
+}
+
+async function readSetupForm(request) {
+  const form = new URLSearchParams(await readFormText(request));
   const setupToken = form.get('setup_token') || '';
   const accountId = form.get('account_id') || '';
   if (!SETUP_TOKEN_PATTERN.test(setupToken) || !ACCOUNT_ID_PATTERN.test(accountId)) {
     throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
   }
   return { setupToken, accountId };
+}
+
+async function readSyncForm(request, env) {
+  if (request.headers.get('Origin') !== connectorOrigin(env)) {
+    throw new MonzoSecurityError('same_origin_required', 403);
+  }
+  const form = new URLSearchParams(await readFormText(request));
+  const entries = [...form.entries()];
+  if (entries.length !== 1 || entries[0][0] !== 'action' || entries[0][1] !== 'sync_recent') {
+    throw new MonzoSecurityError('sync_confirmation_required', 400);
+  }
+  return true;
 }
 
 async function accessForSetup(env, record, fetchImpl) {
@@ -425,9 +450,24 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
     });
   }
 
+  if (record.webhookId) {
+    const probe = new URLSearchParams(await readFormText(request.clone()));
+    if (probe.get('action') === 'sync_recent') {
+      await readSyncForm(request, env);
+      const result = await syncRecentMonzoReconciliation(alias, env, fetchImpl);
+      return html(connectedPage(env, alias, record.accountLabel, result));
+    }
+
+    const { setupToken, accountId } = await readSetupForm(request);
+    await verifySetupConfirmationToken(env, setupToken, alias, ownerEmail, record);
+    if (!ACCOUNT_ID_PATTERN.test(accountId)) {
+      throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
+    }
+    return Response.redirect(connectedReturnUrl(env, alias), 303);
+  }
+
   const { setupToken, accountId } = await readSetupForm(request);
   await verifySetupConfirmationToken(env, setupToken, alias, ownerEmail, record);
-  if (record.webhookId) return Response.redirect(connectedReturnUrl(env, alias), 303);
 
   const connected = await selectAndRegister(alias, accountId, env, record, fetchImpl);
   if (!connected.webhookId) throw new MonzoSecurityError('monzo_webhook_registration_failed', 502);
@@ -438,9 +478,11 @@ export const __testing = {
   SETUP_TOKEN_PATTERN,
   SETUP_TTL_SECONDS,
   readSetupForm,
+  readSyncForm,
   createSetupConfirmationToken,
   verifySetupConfirmationToken,
   selectAndRegister,
+  connectedPage,
   notConnectedPage,
   approvalPendingPage,
   accountsPage,
