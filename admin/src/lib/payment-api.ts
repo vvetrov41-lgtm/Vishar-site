@@ -6,6 +6,13 @@ export interface DepositTier {
   currency: string;
 }
 
+export interface MonzoDepositTierUrls {
+  '50': string | null;
+  '100': string | null;
+  '150': string | null;
+  '250': string | null;
+}
+
 export interface MonzoDepositSettings {
   configured: boolean;
   enabled: boolean;
@@ -102,11 +109,32 @@ export function createPaymentApi(client: CrmClient) {
       );
     },
 
-    async configureMonzoDeposit(input: { artistId: string; paymentUrl: string; enabled: boolean }) {
+    async getMonzoDepositTierUrls(artistId: string): Promise<MonzoDepositTierUrls> {
+      return unwrap<MonzoDepositTierUrls>(
+        await client.rpc('get_monzo_easy_bank_transfer_tier_urls', { p_artist_id: artistId }),
+        'load Monzo deposit tier links'
+      );
+    },
+
+    async configureMonzoDeposit(input: {
+      artistId: string;
+      paymentUrls: MonzoDepositTierUrls;
+      enabled: boolean;
+    }) {
+      const paymentUrl50 = input.paymentUrls['50'];
+      const paymentUrl100 = input.paymentUrls['100'];
+      const paymentUrl150 = input.paymentUrls['150'];
+      const paymentUrl250 = input.paymentUrls['250'];
+      if (!paymentUrl50 || !paymentUrl100 || !paymentUrl150 || !paymentUrl250) {
+        throw new ApiError('All four Monzo deposit links are required.');
+      }
       return unwrap<Record<string, unknown>>(
-        await client.rpc('configure_monzo_easy_bank_transfer', {
+        await client.rpc('configure_monzo_easy_bank_transfer_tier_urls', {
           p_artist_id: input.artistId,
-          p_payment_url: input.paymentUrl,
+          p_payment_url_50: paymentUrl50,
+          p_payment_url_100: paymentUrl100,
+          p_payment_url_150: paymentUrl150,
+          p_payment_url_250: paymentUrl250,
           p_is_enabled: input.enabled,
         }),
         'save Monzo deposit settings'
