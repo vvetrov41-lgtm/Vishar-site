@@ -1,0 +1,233 @@
+name: Payment route recovery production operator
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc63-payment-route-recovery
+
+permissions:
+  contents: read
+
+concurrency:
+  group: payment-route-recovery-production
+  cancel-in-progress: false
+
+env:
+  EXPECTED_PARENT: 45161ea6d87dd27cc3dc16d7bacb3b40203c6013
+  WORKER_NAME: vishar-monzo-api-production
+  ZONE_NAME: vishartattoo.com
+  PAYMENT_PATTERN: vishartattoo.com/pay-by-bank-transfer/*
+  MONZO_HOSTNAME: monzo.vishartattoo.com
+
+jobs:
+  validate:
+    name: Validate rc63 payment route recovery
+    if: contains(github.event.head_commit.message, '[RUN_PAYMENT_ROUTE_RECOVERY]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release lineage and bounded diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc63-payment-route-recovery'
+          git merge-base --is-ancestor "$EXPECTED_PARENT" "$GITHUB_SHA"
+
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_PARENT...$GITHUB_SHA")
+          printf '%s\n' "${changed[@]}" | sed 's/^/changed: /'
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = '.github/workflows/payment-route-recovery-production-operator.yml'
+
+      - name: Verify the deployed rc61 product/release PRs remain bounded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="$(gh api repos/${GITHUB_REPOSITORY}/pulls/343)"
+          release="$(gh api repos/${GITHUB_REPOSITORY}/pulls/344)"
+
+          test "$(jq -r '.state' <<<"$product")" = open
+          test "$(jq -r '.draft' <<<"$product")" = true
+          test "$(jq -r '.merged_at' <<<"$product")" = null
+          test "$(jq -r '.head.sha' <<<"$product")" = '817ae0a23443fe0c760392eaa61b498d213e6d98'
+
+          test "$(jq -r '.state' <<<"$release")" = open
+          test "$(jq -r '.draft' <<<"$release")" = true
+          test "$(jq -r '.merged_at' <<<"$release")" = null
+          test "$(jq -r '.head.sha' <<<"$release")" = "$EXPECTED_PARENT"
+
+      - name: Validation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc63 payment route recovery validation'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Worker code deployment: none"
+            echo "- Database/Pages deployment: none"
+            echo "- Intended mutation after protected approval: create the exact missing Worker Route only"
+            echo "- Existing conflicting route: fail closed, never overwrite"
+            echo "- Gmail/GPT/Calendar/Telegram/WhatsApp/staging: untouched"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  recover:
+    name: Recover exact public payment Worker route
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crm-production
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify exact approved SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+
+      - name: Ensure only the exact payment route and verify production boundary
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')
+          created_route_id=''
+
+          rollback() {
+            status=$?
+            if [ "$status" -ne 0 ] && [ -n "$created_route_id" ]; then
+              echo 'Post-create verification failed; removing the route created by this run.' >&2
+              curl --fail-with-body --silent --show-error "${auth[@]}" \
+                -X DELETE "$api/zones/${zone_id}/workers/routes/${created_route_id}" >/dev/null || true
+            fi
+            exit "$status"
+          }
+          trap rollback EXIT
+
+          zones="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+            --get "$api/zones" \
+            --data-urlencode "name=${ZONE_NAME}" \
+            --data-urlencode "account.id=${CLOUDFLARE_ACCOUNT_ID}")"
+          test "$(jq -r '.success' <<<"$zones")" = true
+          zone_id="$(jq -r --arg z "$ZONE_NAME" '.result[] | select(.name==$z) | .id' <<<"$zones" | head -1)"
+          test -n "$zone_id"
+
+          routes="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$api/zones/${zone_id}/workers/routes")"
+          test "$(jq -r '.success' <<<"$routes")" = true
+
+          matches="$(jq -c --arg p "$PAYMENT_PATTERN" '[.result[] | select(.pattern==$p)]' <<<"$routes")"
+          count="$(jq -r 'length' <<<"$matches")"
+          echo "Existing exact payment route count: $count"
+
+          if [ "$count" -gt 1 ]; then
+            echo 'Multiple exact payment routes exist; refusing to mutate an ambiguous production route set.' >&2
+            exit 1
+          fi
+
+          if [ "$count" -eq 1 ]; then
+            script="$(jq -r '.[0].script // ""' <<<"$matches")"
+            if [ "$script" != "$WORKER_NAME" ]; then
+              echo 'The exact payment pattern is owned by a different Worker; refusing to overwrite it.' >&2
+              exit 1
+            fi
+            echo 'Exact payment route already points to the intended Worker; route mutation is a no-op.'
+          else
+            payload="$(jq -cn --arg pattern "$PAYMENT_PATTERN" --arg script "$WORKER_NAME" '{pattern:$pattern,script:$script}')"
+            created="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+              -X POST "$api/zones/${zone_id}/workers/routes" \
+              --data "$payload")"
+            test "$(jq -r '.success' <<<"$created")" = true
+            test "$(jq -r '.result.pattern' <<<"$created")" = "$PAYMENT_PATTERN"
+            test "$(jq -r '.result.script' <<<"$created")" = "$WORKER_NAME"
+            created_route_id="$(jq -r '.result.id' <<<"$created")"
+            test -n "$created_route_id"
+            echo 'Created the exact missing payment route.'
+          fi
+
+          routes_after="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$api/zones/${zone_id}/workers/routes")"
+          test "$(jq -r '.success' <<<"$routes_after")" = true
+          correct_count="$(jq -r --arg p "$PAYMENT_PATTERN" --arg s "$WORKER_NAME" \
+            '[.result[] | select(.pattern==$p and .script==$s)] | length' <<<"$routes_after")"
+          test "$correct_count" = 1
+
+          settings="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$api/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/settings")"
+          test "$(jq -r '.success' <<<"$settings")" = true
+          for required in SUPABASE_SECRET_KEY MONZO_WEBHOOK_RATE_LIMIT PAYMENT_REDIRECT_RATE_LIMIT; do
+            count="$(jq -r --arg n "$required" '[.result.bindings[]? | select(.name==$n)] | length' <<<"$settings")"
+            if [ "$count" != 1 ]; then
+              echo "Required Worker binding is missing or duplicated: $required" >&2
+              exit 1
+            fi
+          done
+
+          invalid='00000000-0000-4000-8000-000000000000'
+          status="$(curl --silent --show-error --output /tmp/payment-body --dump-header /tmp/payment-headers \
+            --write-out '%{http_code}' --max-time 20 \
+            "https://${ZONE_NAME}/pay-by-bank-transfer/${invalid}")"
+          body="$(cat /tmp/payment-body)"
+          content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub("\r", "", $2); print $2; exit}' /tmp/payment-headers)"
+          cache_control="$(awk -F': *' 'tolower($1)=="cache-control" {gsub("\r", "", $2); print $2; exit}' /tmp/payment-headers)"
+          test "$status" = 404
+          test "$body" = 'Payment link unavailable'
+          printf '%s' "$content_type" | grep -Fqi 'text/plain'
+          printf '%s' "$cache_control" | grep -Fqi 'no-store'
+
+          root="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 "https://${ZONE_NAME}/")"
+          test "$root" = 200
+
+          protected="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 \
+            "https://${MONZO_HOSTNAME}/oauth/monzo/status/vladimir")"
+          test "$protected" = 302
+
+          webhook_key='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+          webhook_status="$(curl --silent --show-error --output /tmp/webhook-body --write-out '%{http_code}' --max-time 20 \
+            -X POST -H 'Content-Type: application/json' --data '{}' \
+            "https://${MONZO_HOSTNAME}/webhooks/monzo/${webhook_key}")"
+          case "$webhook_status" in
+            404|429) ;;
+            *) echo "Unexpected public webhook status: $webhook_status" >&2; exit 1 ;;
+          esac
+
+          # Successful verification makes a newly-created route permanent.
+          created_route_id=''
+          trap - EXIT
+
+      - name: Production summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc63 payment route recovery'
+            echo
+            echo "- Approved SHA: \`$GITHUB_SHA\`"
+            echo "- Exact public path: \`$PAYMENT_PATTERN\`"
+            echo "- Target Worker: \`$WORKER_NAME\`"
+            echo '- Worker code deploy: none'
+            echo '- Database/Pages deploy: none'
+            echo '- Existing conflicting route: never overwritten'
+            echo '- Failed post-create verification: route created by this run is rolled back'
+            echo '- Gmail/GPT/Calendar/Telegram/WhatsApp/staging: untouched'
+          } >> "$GITHUB_STEP_SUMMARY"
