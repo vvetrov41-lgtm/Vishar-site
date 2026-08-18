@@ -1,0 +1,187 @@
+name: Monzo tier links production operator
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc68-monzo-tier-links
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: monzo-tier-links-production
+  cancel-in-progress: false
+
+env:
+  PRODUCT_SHA: d3f6b2a4b533608bcd0099111e5763d68040c322
+  PRODUCT_PR: '358'
+  RELEASE_BRANCH: release/private-crm-rc68-monzo-tier-links
+  PRODUCTION_PROJECT_REF: vfjexhfdbrjmuxfdvbdx
+  RETAINED_STAGING_PROJECT_REF: gwaliusblwrzisrwnsvs
+
+jobs:
+  validate:
+    name: Validate rc68 Monzo tier-link database rollout
+    if: contains(github.event.head_commit.message, '[RUN_MONZO_TIER_LINKS]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release lineage and tree-identical activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$RELEASE_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+
+          parent="$(git rev-parse HEAD^)"
+          test "$(git rev-parse HEAD^{tree})" = "$(git rev-parse "${parent}^{tree}")"
+          echo "PREACTIVATION_SHA=$parent" >> "$GITHUB_ENV"
+
+          mapfile -t changed < <(git diff --name-only "$PRODUCT_SHA...$GITHUB_SHA")
+          printf '%s\n' "${changed[@]}" | sed 's/^/release changed: /'
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = '.github/workflows/monzo-tier-links-production-operator.yml'
+
+      - name: Verify product PR remains exact Draft open unmerged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PRODUCT_PR}")"
+          test "$(jq -r '.state' <<<"$product")" = open
+          test "$(jq -r '.draft' <<<"$product")" = true
+          test "$(jq -r '.merged_at' <<<"$product")" = null
+          test "$(jq -r '.head.sha' <<<"$product")" = "$PRODUCT_SHA"
+          test "$(jq -r '.head.ref' <<<"$product")" = 'agent/monzo-tier-links-after-record-archival'
+
+      - name: Verify release PR remains Draft open unmerged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$RELEASE_BRANCH" --state open --json number,isDraft,headRefOid --jq '.[0]')"
+          test -n "$release"
+          test "$(jq -r '.isDraft' <<<"$release")" = true
+          test "$(jq -r '.headRefOid' <<<"$release")" = "$GITHUB_SHA"
+
+      - name: Verify exact product and pre-activation CI are green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for sha in "$PRODUCT_SHA" "$PREACTIVATION_SHA"; do
+            runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${sha}&per_page=100")"
+            for workflow in 'Static Validation' 'CRM and booking validation'; do
+              conclusion="$(jq -r --arg workflow "$workflow" '[.workflow_runs[] | select(.name==$workflow)] | sort_by(.created_at) | last | .conclusion // empty' <<<"$runs")"
+              echo "$sha $workflow -> ${conclusion:-missing}"
+              test "$conclusion" = success
+            done
+          done
+
+      - name: Verify bounded migration-only product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='61b572cc1c4775eb73dfcde06d32a818d28d890f'
+          mapfile -t changed < <(git diff --name-only "$base...$PRODUCT_SHA")
+          printf '%s\n' "${changed[@]}" | sed 's/^/product changed: /'
+          test "${#changed[@]}" -eq 2
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'supabase/migrations/0063_monzo_tier_specific_deposit_links.sql'
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'supabase/tests/214_monzo_tier_specific_deposit_links.sql'
+          grep -Fq 'grant execute on function public.resolve_monzo_deposit_redirect(uuid)' supabase/migrations/0063_monzo_tier_specific_deposit_links.sql
+          grep -Fq 'to service_role;' supabase/migrations/0063_monzo_tier_specific_deposit_links.sql
+          ! grep -Fq 'to authenticated;' supabase/migrations/0063_monzo_tier_specific_deposit_links.sql
+
+  deploy:
+    name: Apply rc68 Monzo tier-link migration
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
+
+    steps:
+      - name: Verify protected production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$DEPLOY_ENABLED" = true
+          test "$PROJECT_REF" = "$PRODUCTION_PROJECT_REF"
+          test "$PROJECT_REF" != "$RETAINED_STAGING_PROJECT_REF"
+          test "$PROJECT_URL" = "https://${PROJECT_REF}.supabase.co"
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_DB_PASSWORD"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify exact approved checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact production project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Verify production migration boundary and dry-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list
+          dry_run="$(supabase db push --dry-run 2>&1)"
+          printf '%s\n' "$dry_run"
+          printf '%s\n' "$dry_run" | grep -Fq '0063_monzo_tier_specific_deposit_links.sql'
+
+      - name: Apply only pending production migration
+        run: supabase db push
+
+      - name: Verify production migration state after deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list
+          post="$(supabase db push --dry-run 2>&1)"
+          printf '%s\n' "$post"
+          ! printf '%s\n' "$post" | grep -Fq '0063_monzo_tier_specific_deposit_links.sql'
+
+      - name: Production summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc68 Monzo tier links production database rollout'
+            echo
+            echo "- Activation SHA: \`$GITHUB_SHA\`"
+            echo "- Product SHA: \`$PRODUCT_SHA\`"
+            echo '- Expected migration: `0063_monzo_tier_specific_deposit_links.sql` only'
+            echo '- Worker deploy: none'
+            echo '- CRM Pages deploy: none'
+            echo '- Gmail / staging mutation: none'
+            echo '- Real tier URL provisioning: separate post-migration bounded data step'
+          } >> "$GITHUB_STEP_SUMMARY"
