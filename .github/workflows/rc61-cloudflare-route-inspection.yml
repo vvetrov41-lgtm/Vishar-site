@@ -1,0 +1,140 @@
+name: RC61 Cloudflare route inspection
+
+# Read-only production inspection. It uses the existing protected Cloudflare
+# credential only to read zone route and Worker metadata after the rc61 deploy.
+# There is deliberately no deploy, route mutation, secret mutation or Pages
+# mutation command in this workflow.
+
+on:
+  push:
+    branches:
+      - ops/rc61-cloudflare-route-inspection
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_PARENT: 45161ea6d87dd27cc3dc16d7bacb3b40203c6013
+  WORKER_NAME: vishar-monzo-api-production
+  ZONE_NAME: vishartattoo.com
+  PAYMENT_PATTERN: vishartattoo.com/pay-by-bank-transfer/*
+
+jobs:
+  inspect:
+    name: Inspect rc61 Cloudflare route registration
+    if: github.actor == 'vvetrov41-lgtm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: crm-production
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact lineage and read-only workflow boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          git merge-base --is-ancestor "$EXPECTED_PARENT" "$GITHUB_SHA"
+
+          self='.github/workflows/rc61-cloudflare-route-inspection.yml'
+          # Fail if any obvious production mutation primitive is introduced.
+          if grep -Eiq 'wrangler[[:space:]]+(deploy|delete|secret|kv|pages)|curl[^\n]*(POST|PUT|PATCH|DELETE)|supabase[[:space:]]+db[[:space:]]+(push|reset)|gh[[:space:]]+(api|workflow)[^\n]*(--method| -X )' "$self"; then
+            echo 'Inspection workflow contains a production mutation primitive.' >&2
+            exit 1
+          fi
+
+      - name: Resolve production zone and inspect Worker routes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')
+
+          zones="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+            --get "$api/zones" \
+            --data-urlencode "name=${ZONE_NAME}" \
+            --data-urlencode "account.id=${CLOUDFLARE_ACCOUNT_ID}")"
+          test "$(jq -r '.success' <<<"$zones")" = true
+          zone_id="$(jq -r --arg z "$ZONE_NAME" '.result[] | select(.name==$z) | .id' <<<"$zones" | head -1)"
+          test -n "$zone_id"
+
+          routes="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$api/zones/${zone_id}/workers/routes")"
+          test "$(jq -r '.success' <<<"$routes")" = true
+
+          # Print only non-secret route metadata needed for diagnosis.
+          jq -r '.result[] | [.pattern, (.script // "<none>")] | @tsv' <<<"$routes" \
+            | sort \
+            | sed 's/^/ROUTE /'
+
+          route_count="$(jq -r --arg p "$PAYMENT_PATTERN" --arg s "$WORKER_NAME" \
+            '[.result[] | select(.pattern==$p and .script==$s)] | length' <<<"$routes")"
+          echo "EXPECTED_PAYMENT_ROUTE_COUNT=${route_count}"
+          echo "ZONE_ID=${zone_id}" >> "$GITHUB_ENV"
+          echo "EXPECTED_PAYMENT_ROUTE_COUNT=${route_count}" >> "$GITHUB_ENV"
+
+      - name: Inspect deployed Worker script metadata
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+
+          settings="$(curl --fail-with-body --silent --show-error "${auth[@]}" \
+            "$api/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/settings")"
+          test "$(jq -r '.success' <<<"$settings")" = true
+
+          # Binding names/types are safe diagnostic metadata. Never print values.
+          jq -r '.result.bindings[]? | [.name, .type] | @tsv' <<<"$settings" \
+            | sort \
+            | sed 's/^/BINDING /'
+
+          for required in SUPABASE_SECRET_KEY MONZO_WEBHOOK_RATE_LIMIT PAYMENT_REDIRECT_RATE_LIMIT; do
+            count="$(jq -r --arg n "$required" '[.result.bindings[]? | select(.name==$n)] | length' <<<"$settings")"
+            echo "BINDING_${required}=${count}"
+          done
+
+      - name: Recheck live routing from the runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          invalid='00000000-0000-4000-8000-000000000000'
+          status="$(curl --silent --show-error --output /tmp/payment-body --dump-header /tmp/payment-headers --write-out '%{http_code}' --max-time 15 \
+            "https://${ZONE_NAME}/pay-by-bank-transfer/${invalid}")"
+          content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub("\r", "", $2); print $2; exit}' /tmp/payment-headers)"
+          body_prefix="$(head -c 80 /tmp/payment-body | tr '\n\r' '  ')"
+          echo "LIVE_PAYMENT_STATUS=${status}"
+          echo "LIVE_PAYMENT_CONTENT_TYPE=${content_type}"
+          echo "LIVE_PAYMENT_BODY_PREFIX=${body_prefix}"
+
+          root="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 "https://${ZONE_NAME}/")"
+          echo "LIVE_ROOT_STATUS=${root}"
+          test "$root" = 200
+
+      - name: Diagnosis summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc61 Cloudflare route inspection'
+            echo
+            echo "- Inspection SHA: \`${GITHUB_SHA}\`"
+            echo "- Expected payment route registrations: \`${EXPECTED_PAYMENT_ROUTE_COUNT:-unknown}\`"
+            echo '- Production mutation: none'
+            echo '- Cloudflare token value: never printed'
+            echo '- Secret values: never printed'
+          } >> "$GITHUB_STEP_SUMMARY"
