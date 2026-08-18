@@ -121,19 +121,14 @@ describe('appointment workflow', () => {
     });
   });
 
-  it('creates a deposit request from the appointment through the server duration policy', async () => {
+  it('keeps deposit-link creation fail-closed while the public redirect runtime is dormant', async () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}`, rpcCalls });
 
-    fireEvent.click(await screen.findByRole('button', { name: /create deposit link/i }));
-
-    await waitFor(() => {
-      const call = rpcCalls.find((entry) => entry.name === 'request_session_deposit');
-      expect(call).toBeDefined();
-      expect(call!.args.p_session_id).toBe(SESSION_ID);
-      expect(call!.args.p_delivery_channel).toBe('copy_link');
-      expect(rpcCalls.some((entry) => entry.name === 'update_project_deposit')).toBe(false);
-    });
+    expect(await screen.findByText(/deposit-link creation is temporarily unavailable/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /create deposit link/i })).not.toBeInTheDocument();
+    expect(rpcCalls.some((entry) => entry.name === 'request_session_deposit')).toBe(false);
+    expect(rpcCalls.some((entry) => entry.name === 'update_project_deposit')).toBe(false);
   });
 
   it('confirms an appointment through set_appointment_status', async () => {
