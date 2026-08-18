@@ -1,0 +1,119 @@
+name: RC61 payment redirect production inspection
+
+# Read-only recovery inspection after the rc61 Monzo Worker deploy completed but
+# the reusable deployment gate rejected the now-correct 404 response for an
+# unknown webhook key. This workflow carries no credential and performs no
+# production mutation.
+
+on:
+  push:
+    branches:
+      - ops/rc61-payment-postdeploy-inspection
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect deployed payment and Monzo boundaries
+    if: github.actor == 'vvetrov41-lgtm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify inspection lineage and no production mutation capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          git merge-base --is-ancestor 45161ea6d87dd27cc3dc16d7bacb3b40203c6013 "$GITHUB_SHA"
+
+          # This recovery harness must remain read-only. A future edit cannot
+          # silently turn it into another deployment path.
+          self='.github/workflows/rc61-payment-postdeploy-inspection.yml'
+          if grep -Eiq 'wrangler[[:space:]]+(deploy|secret)|supabase[[:space:]]+db[[:space:]]+(push|reset)|pages[[:space:]]+deploy|environment:[[:space:]]*crm-production' "$self"; then
+            echo 'Inspection workflow contains a production mutation primitive.' >&2
+            exit 1
+          fi
+
+      - name: Verify public site root remains intact
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --output /tmp/root-body --write-out '%{http_code}' --max-time 15 https://vishartattoo.com/)"
+          echo "PUBLIC / -> ${status}"
+          test "$status" = 200
+
+      - name: Verify invalid personalized payment id reaches the deployed payment handler
+        shell: bash
+        run: |
+          set -euo pipefail
+          target='https://vishartattoo.com/pay-by-bank-transfer/00000000-0000-4000-8000-000000000000'
+          status="$(curl --silent --show-error --output /tmp/payment-body --dump-header /tmp/payment-headers --write-out '%{http_code}' --max-time 15 "$target")"
+          echo "PAYMENT invalid opaque id -> ${status}"
+          cat /tmp/payment-body
+
+          test "$status" = 404
+          test "$(cat /tmp/payment-body)" = 'Payment link unavailable'
+          ! grep -Eiq '^location:' /tmp/payment-headers
+          grep -Eiq '^cache-control:[[:space:]]*no-store, max-age=0' /tmp/payment-headers
+          grep -Eiq '^referrer-policy:[[:space:]]*no-referrer' /tmp/payment-headers
+          grep -Eiq '^x-content-type-options:[[:space:]]*nosniff' /tmp/payment-headers
+
+      - name: Verify Monzo owner surface remains Access protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /health /oauth/monzo/status/vladimir /oauth/monzo/accounts/kristina; do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 "https://monzo.vishartattoo.com${path}" || true)"
+            echo "PROTECTED ${path} -> ${status}"
+            case "$status" in
+              302|303|307|401|403) ;;
+              *)
+                echo "Monzo owner surface is not Access protected: ${path} -> ${status}" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Verify active reconciliation returns indistinguishable 404 for unknown webhook key
+        shell: bash
+        run: |
+          set -euo pipefail
+          webhook_key="$(head -c 36 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
+          status="$(curl --silent --show-error --output /tmp/webhook-body --dump-header /tmp/webhook-headers --write-out '%{http_code}' --max-time 15 \
+            -X POST -H 'Content-Type: application/json' --data '{"type":"transaction.created","data":{"id":"tx_boundarycheck"}}' \
+            "https://monzo.vishartattoo.com/webhooks/monzo/${webhook_key}")"
+          echo "PUBLIC /webhooks/monzo/<unknown> -> ${status}"
+          cat /tmp/webhook-body
+
+          # Reconciliation is explicitly enabled in the deployed rc61 config.
+          # Therefore the gateway rate-limits the request and the API then looks
+          # up the opaque route. An unknown key is intentionally `not_found` 404.
+          # This is the exact response the old gate incorrectly rejected.
+          test "$status" = 404
+          test "$(jq -r '.code // empty' /tmp/webhook-body)" = not_found
+          test "$(jq -r '.ok' /tmp/webhook-body)" = false
+          grep -Eiq '^cache-control:[[:space:]]*no-store, max-age=0' /tmp/webhook-headers
+
+      - name: Inspection summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc61 production inspection'
+            echo
+            echo "- Inspection SHA: \`${GITHUB_SHA}\`"
+            echo '- Production mutation: none'
+            echo '- Public root: checked'
+            echo '- Personalized payment route: checked through invalid opaque id'
+            echo '- Monzo owner Access boundary: checked'
+            echo '- Unknown public webhook behavior with reconciliation enabled: checked'
+            echo '- Secrets available to this job: none'
+          } >> "$GITHUB_STEP_SUMMARY"
