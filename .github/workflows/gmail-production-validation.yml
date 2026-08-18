@@ -15,10 +15,13 @@ on:
       - 'docs/gpt-actions/openapi.production*.yaml'
       - 'docs/crm/MCP_READY_ARCHITECTURE.md'
       - 'scripts/test-gmail-production.mjs'
+      - 'scripts/test-gmail-rollout-phases.mjs'
       - 'scripts/test-gmail-mcp-ready.mjs'
       - 'scripts/test-gpt-gmail-openapi.mjs'
       - 'scripts/materialize-gmail-openapi.mjs'
+      - 'scripts/generate-gmail-production-deploy-config.mjs'
       - '.github/workflows/gmail-production-validation.yml'
+      - '.github/workflows/gmail-production-rollout.yml'
   workflow_dispatch:
 
 permissions:
@@ -42,6 +45,9 @@ jobs:
       - name: Gmail OAuth/provider regression
         run: node scripts/test-gmail-production.mjs
 
+      - name: Gmail rollout phase regression
+        run: node scripts/test-gmail-rollout-phases.mjs
+
       - name: Gmail MCP-ready contract regression
         run: node scripts/test-gmail-mcp-ready.mjs
 
@@ -60,6 +66,8 @@ jobs:
           node --check workers/lib/google-gmail.js
           node --check workers/lib/gmail-supabase.js
           node --check workers/lib/gmail-tool-contract.js
+          node --check scripts/generate-gmail-production-deploy-config.mjs
+          node --check scripts/test-gmail-rollout-phases.mjs
 
       - name: Gmail production bundle dry-run
         env:
