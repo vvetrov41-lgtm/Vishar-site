@@ -3,7 +3,7 @@ import paymentRedirect from './payment-redirect.js';
 
 const WEBHOOK_PATH = /^\/webhooks\/monzo\/([A-Za-z0-9_-]{43,128})$/;
 const PAYMENT_HOST = 'vishartattoo.com';
-const PAYMENT_PATH_PREFIX = '/pay-by-bank-transfer/';
+const PAYMENT_PATH_PREFIX = '/pay-by-bank-transfer';
 const RATE_LIMIT_KEY = 'monzo-provider-webhook';
 
 const securityHeaders = {
@@ -39,11 +39,12 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Public personalized payment links reuse the already-provisioned Monzo
-    // production runtime and its existing encrypted Supabase backend key. The
-    // Cloudflare route is scoped to this first-party path prefix, and the
-    // payment handler independently validates the opaque UUID, rate limit and
-    // backend-only resolver before returning a clean monzo.com redirect.
+    // Cloudflare route matching has a documented specificity issue around a
+    // trailing `/*`. Production therefore uses `/pay-by-bank-transfer*` and
+    // lets this gateway send every request caught by that bounded prefix into
+    // the strict payment handler. The payment handler still requires the exact
+    // `/pay-by-bank-transfer/<opaque UUID>` shape, GET, no query string, rate
+    // limiting, and the backend-only resolver before returning a Monzo URL.
     if (url.hostname === PAYMENT_HOST && url.pathname.startsWith(PAYMENT_PATH_PREFIX)) {
       return paymentRedirect.fetch(request, env);
     }
