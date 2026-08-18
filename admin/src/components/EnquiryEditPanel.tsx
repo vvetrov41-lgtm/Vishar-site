@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { can } from '../lib/permissions';
 import type { RecordEditApi } from '../lib/record-edit-api';
+import { useRouter } from '../lib/router';
 import type { CrmRole, Enquiry } from '../lib/types';
 
 function value(value: string | null | undefined) {
@@ -16,10 +17,11 @@ export function EnquiryEditPanel({
 }: {
   enquiry: Enquiry;
   role: CrmRole | null | undefined;
-  api: Pick<RecordEditApi, 'updateEnquiryDetails'>;
+  api: Pick<RecordEditApi, 'updateEnquiryDetails' | 'archiveEnquiry'>;
   language: 'en' | 'ru';
   onSaved: () => void;
 }) {
+  const { navigate } = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export function EnquiryEditPanel({
 
   const copy = language === 'ru' ? {
     edit: 'Редактировать заявку',
+    delete: 'Удалить заявку',
     save: 'Сохранить',
     cancel: 'Отмена',
     type: 'Тип',
@@ -43,8 +46,10 @@ export function EnquiryEditPanel({
     timing: 'Сроки',
     idea: 'Описание проекта',
     failed: 'Не удалось сохранить изменения заявки.',
+    deleteFailed: 'Не удалось удалить заявку.',
   } : {
     edit: 'Edit enquiry',
+    delete: 'Delete enquiry',
     save: 'Save',
     cancel: 'Cancel',
     type: 'Type',
@@ -54,13 +59,35 @@ export function EnquiryEditPanel({
     timing: 'Timing',
     idea: 'Project description',
     failed: 'Could not save the enquiry changes.',
+    deleteFailed: 'Could not delete the enquiry.',
   };
+
+  async function archive() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.archiveEnquiry(enquiry.id);
+      if (result) navigate('/enquiries');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.deleteFailed);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!editing) {
     return (
-      <div className="actions" style={{ marginTop: 12 }}>
-        <button type="button" onClick={() => setEditing(true)}>{copy.edit}</button>
-      </div>
+      <>
+        {error ? <div className="notice warn" role="alert" style={{ marginTop: 12 }}>{error}</div> : null}
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button type="button" disabled={busy} onClick={() => setEditing(true)}>{copy.edit}</button>
+          {role === 'owner' ? (
+            <button type="button" className="danger" disabled={busy} onClick={() => { void archive(); }}>
+              {copy.delete}
+            </button>
+          ) : null}
+        </div>
+      </>
     );
   }
 
