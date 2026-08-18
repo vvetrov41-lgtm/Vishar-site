@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 10
     env:
       PRODUCT_BRANCH: agent/gmail-crm-production-integration
-      EXPECTED_HEAD: 4fbbd51d383d683aba2b82867c0315bee673c5b8
+      EXPECTED_HEAD: 8529d53cdef9256d69528ac682babd390c95095f
     steps:
       - name: Checkout product branch
         uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git status --short)"
 
-      - name: Apply bounded token endpoint diagnostics patch
+      - name: Apply bounded token transport diagnostics patch
         shell: bash
         run: |
           set -euo pipefail
@@ -38,32 +38,27 @@ jobs:
 
           gmail = Path('workers/lib/google-gmail.js')
           text = gmail.read_text()
-          old = """  const json = await response.json().catch(() => null);\n  if (!response.ok || !json || typeof json.access_token !== 'string') throw new Error('gmail_oauth_code_exchange_failed');\n  if (typeof json.refresh_token !== 'string' || json.refresh_token.length < 8) throw new Error('gmail_oauth_refresh_token_missing');\n"""
-          new = """  const json = await response.json().catch(() => null);\n  if (!response.ok || !json || typeof json.access_token !== 'string') {\n    const providerError = typeof json?.error === 'string' ? json.error : '';\n    const code = ({\n      invalid_client: 'gmail_oauth_invalid_client',\n      invalid_grant: 'gmail_oauth_invalid_grant',\n      redirect_uri_mismatch: 'gmail_oauth_redirect_uri_mismatch',\n      invalid_request: 'gmail_oauth_invalid_request',\n      unauthorized_client: 'gmail_oauth_unauthorized_client',\n      deleted_client: 'gmail_oauth_deleted_client',\n      access_denied: 'gmail_oauth_access_denied',\n    })[providerError] || 'gmail_oauth_code_exchange_failed';\n    throw new Error(code);\n  }\n  if (typeof json.refresh_token !== 'string' || json.refresh_token.length < 8) throw new Error('gmail_oauth_refresh_token_missing');\n"""
+
+          old = """  const response = await fetchImpl(GOOGLE_TOKEN_ENDPOINT, {\n    method: 'POST',\n    headers: { 'content-type': 'application/x-www-form-urlencoded' },\n    body,\n    redirect: 'error',\n  });\n  const json = await response.json().catch(() => null);\n  if (!response.ok || !json || typeof json.access_token !== 'string') {\n    const providerError = typeof json?.error === 'string' ? json.error : '';\n    const code = ({\n      invalid_client: 'gmail_oauth_invalid_client',\n      invalid_grant: 'gmail_oauth_invalid_grant',\n      redirect_uri_mismatch: 'gmail_oauth_redirect_uri_mismatch',\n      invalid_request: 'gmail_oauth_invalid_request',\n      unauthorized_client: 'gmail_oauth_unauthorized_client',\n      deleted_client: 'gmail_oauth_deleted_client',\n      access_denied: 'gmail_oauth_access_denied',\n    })[providerError] || 'gmail_oauth_code_exchange_failed';\n    throw new Error(code);\n  }\n"""
+          new = """  let response;\n  try {\n    response = await fetchImpl(GOOGLE_TOKEN_ENDPOINT, {\n      method: 'POST',\n      headers: { 'content-type': 'application/x-www-form-urlencoded' },\n      body,\n      redirect: 'error',\n    });\n  } catch {\n    throw new Error('gmail_oauth_token_fetch_failed');\n  }\n\n  let json = null;\n  try { json = await response.json(); } catch {\n    if (response.status === 400) throw new Error('gmail_oauth_token_http_400');\n    if (response.status === 401) throw new Error('gmail_oauth_token_http_401');\n    if (response.status === 403) throw new Error('gmail_oauth_token_http_403');\n    if (response.status === 429) throw new Error('gmail_oauth_token_http_429');\n    if (response.status >= 500) throw new Error('gmail_oauth_token_http_5xx');\n    throw new Error('gmail_oauth_token_response_invalid');\n  }\n\n  if (!response.ok || !json || typeof json.access_token !== 'string') {\n    const providerError = typeof json?.error === 'string' ? json.error : '';\n    const code = ({\n      invalid_client: 'gmail_oauth_invalid_client',\n      invalid_grant: 'gmail_oauth_invalid_grant',\n      redirect_uri_mismatch: 'gmail_oauth_redirect_uri_mismatch',\n      invalid_request: 'gmail_oauth_invalid_request',\n      unauthorized_client: 'gmail_oauth_unauthorized_client',\n      deleted_client: 'gmail_oauth_deleted_client',\n      access_denied: 'gmail_oauth_access_denied',\n      invalid_scope: 'gmail_oauth_invalid_scope',\n      unsupported_grant_type: 'gmail_oauth_unsupported_grant_type',\n      temporarily_unavailable: 'gmail_oauth_temporarily_unavailable',\n      server_error: 'gmail_oauth_server_error',\n    })[providerError]\n      || (response.status === 400 ? 'gmail_oauth_token_http_400'\n        : response.status === 401 ? 'gmail_oauth_token_http_401'\n          : response.status === 403 ? 'gmail_oauth_token_http_403'\n            : response.status === 429 ? 'gmail_oauth_token_http_429'\n              : response.status >= 500 ? 'gmail_oauth_token_http_5xx'\n                : 'gmail_oauth_token_response_invalid');\n    throw new Error(code);\n  }\n"""
           if old not in text:
-            raise SystemExit('token exchange anchor not found')
+            raise SystemExit('exchange transport anchor not found')
           gmail.write_text(text.replace(old, new, 1))
 
           worker = Path('workers/gmail-production.js')
           text = worker.read_text()
-          old = """  'gmail_oauth_code_exchange_failed',\n  'gmail_oauth_refresh_token_missing',\n"""
-          new = """  'gmail_oauth_code_exchange_failed',\n  'gmail_oauth_invalid_client',\n  'gmail_oauth_invalid_grant',\n  'gmail_oauth_redirect_uri_mismatch',\n  'gmail_oauth_invalid_request',\n  'gmail_oauth_unauthorized_client',\n  'gmail_oauth_deleted_client',\n  'gmail_oauth_access_denied',\n  'gmail_oauth_refresh_token_missing',\n"""
+          old = """  'gmail_oauth_access_denied',\n  'gmail_oauth_refresh_token_missing',\n"""
+          new = """  'gmail_oauth_access_denied',\n  'gmail_oauth_invalid_scope',\n  'gmail_oauth_unsupported_grant_type',\n  'gmail_oauth_temporarily_unavailable',\n  'gmail_oauth_server_error',\n  'gmail_oauth_token_fetch_failed',\n  'gmail_oauth_token_http_400',\n  'gmail_oauth_token_http_401',\n  'gmail_oauth_token_http_403',\n  'gmail_oauth_token_http_429',\n  'gmail_oauth_token_http_5xx',\n  'gmail_oauth_token_response_invalid',\n  'gmail_oauth_refresh_token_missing',\n"""
           if old not in text:
-            raise SystemExit('safe failure code anchor not found')
+            raise SystemExit('safe failure allow-list anchor not found')
           worker.write_text(text.replace(old, new, 1))
 
           tests = Path('scripts/test-gmail-production.mjs')
           text = tests.read_text()
-          old = """  authorizationUrl,\n  storeRefreshToken,\n"""
-          new = """  authorizationUrl,\n  exchangeAuthorizationCode,\n  storeRefreshToken,\n"""
-          if old not in text:
-            raise SystemExit('test import anchor not found')
-          text = text.replace(old, new, 1)
-
-          anchor = """await test('OAuth callback diagnostics expose only bounded backend codes', () => {\n  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_code_exchange_failed')), 'gmail_oauth_code_exchange_failed');\n  assert.equal(worker.oauthFailureCode(new Error('gmail_api_error')), 'gmail_api_error');\n  assert.equal(worker.oauthFailureCode(new Error('provider secret detail')), 'gmail_oauth_failed');\n  assert.equal(worker.oauthStageFailureCode('profile', new Error('gmail_api_error')), 'gmail_api_error');\n  assert.equal(worker.oauthStageFailureCode('token_store', new Error('provider secret detail')), 'gmail_oauth_token_store_failed');\n  assert.equal(worker.oauthStageFailureCode('not_a_stage', new Error('provider secret detail')), 'gmail_oauth_failed');\n});\n"""
-          insertion = anchor + """\nawait test('OAuth token endpoint errors map to bounded diagnostics without provider descriptions', async () => {\n  const base = {\n    clientId: 'client-id-1234567890',\n    clientSecret: syntheticSecret(),\n    redirectUri: 'https://gmail.vishartattoo.com/oauth/google/callback',\n    code: 'synthetic-code',\n    verifier: 'v'.repeat(48),\n  };\n  await assert.rejects(\n    exchangeAuthorizationCode({\n      ...base,\n      fetchImpl: async () => Response.json({ error: 'invalid_client', error_description: 'do not expose this detail' }, { status: 401 }),\n    }),\n    (error) => error instanceof Error && error.message === 'gmail_oauth_invalid_client' && !error.message.includes('do not expose'),\n  );\n  await assert.rejects(\n    exchangeAuthorizationCode({\n      ...base,\n      fetchImpl: async () => Response.json({ error: 'invalid_grant', error_description: 'do not expose this detail' }, { status: 400 }),\n    }),\n    (error) => error instanceof Error && error.message === 'gmail_oauth_invalid_grant' && !error.message.includes('do not expose'),\n  );\n  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_client')), 'gmail_oauth_invalid_client');\n  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_grant')), 'gmail_oauth_invalid_grant');\n});\n"""
+          anchor = """  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_client')), 'gmail_oauth_invalid_client');\n  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_grant')), 'gmail_oauth_invalid_grant');\n});\n"""
+          insertion = """  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_client')), 'gmail_oauth_invalid_client');\n  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_invalid_grant')), 'gmail_oauth_invalid_grant');\n  await assert.rejects(\n    exchangeAuthorizationCode({ ...base, fetchImpl: async () => { throw new TypeError('network detail'); } }),\n    (error) => error instanceof Error && error.message === 'gmail_oauth_token_fetch_failed' && !error.message.includes('network detail'),\n  );\n  await assert.rejects(\n    exchangeAuthorizationCode({ ...base, fetchImpl: async () => new Response('not-json', { status: 401 }) }),\n    (error) => error instanceof Error && error.message === 'gmail_oauth_token_http_401',\n  );\n  await assert.rejects(\n    exchangeAuthorizationCode({ ...base, fetchImpl: async () => Response.json({ error: 'invalid_scope', error_description: 'do not expose' }, { status: 400 }) }),\n    (error) => error instanceof Error && error.message === 'gmail_oauth_invalid_scope',\n  );\n  await assert.rejects(\n    exchangeAuthorizationCode({ ...base, fetchImpl: async () => Response.json({ error: 'unexpected_provider_value', error_description: 'do not expose' }, { status: 400 }) }),\n    (error) => error instanceof Error && error.message === 'gmail_oauth_token_http_400',\n  );\n  await assert.rejects(\n    exchangeAuthorizationCode({ ...base, fetchImpl: async () => Response.json({}, { status: 200 }) }),\n    (error) => error instanceof Error && error.message === 'gmail_oauth_token_response_invalid',\n  );\n  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_token_fetch_failed')), 'gmail_oauth_token_fetch_failed');\n  assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_token_http_401')), 'gmail_oauth_token_http_401');\n});\n"""
           if anchor not in text:
-            raise SystemExit('diagnostic test anchor not found')
+            raise SystemExit('token endpoint regression anchor not found')
           tests.write_text(text.replace(anchor, insertion, 1))
           PY
 
@@ -76,7 +71,7 @@ jobs:
           node scripts/test-gmail-production.mjs
           npm run scan:secrets
 
-      - name: Commit token endpoint diagnostics patch to product branch
+      - name: Commit token transport diagnostics patch to product branch
         shell: bash
         run: |
           set -euo pipefail
@@ -84,5 +79,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add workers/lib/google-gmail.js workers/gmail-production.js scripts/test-gmail-production.mjs
-          git commit -m 'Classify Google OAuth token exchange failures'
+          git commit -m 'Refine Google OAuth token transport diagnostics'
           git push origin "HEAD:$PRODUCT_BRANCH"
