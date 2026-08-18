@@ -85,7 +85,8 @@ create temporary table tier_link_results (
   payment_request_id uuid not null,
   public_id uuid
 );
-grant select on tier_link_results to authenticated, service_role;
+grant select, insert on tier_link_results to authenticated;
+grant select on tier_link_results to service_role;
 
 set local role authenticated;
 select pg_temp.claims('{"sub":"e8111111-1111-4111-8111-111111111111","role":"authenticated"}');
