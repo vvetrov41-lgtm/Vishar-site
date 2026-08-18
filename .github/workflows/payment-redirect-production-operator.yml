@@ -12,7 +12,7 @@ permissions:
 
 env:
   PRODUCT_BRANCH: agent/payment-redirect-production-activation
-  PRODUCT_SHA: 06bd47a55928085f18bffc1ee73466e5196fe8f7
+  PRODUCT_SHA: 960e76bd6e7b6658fff797d84cfd0fe05be5620c
   PRODUCT_BASE_SHA: 5752484466c83362ee1db373606c9c8e5bb144ea
   RELEASE_BRANCH: release/private-crm-rc54-payment-redirect
   OPERATOR_WORKFLOW: .github/workflows/payment-redirect-production-operator.yml
