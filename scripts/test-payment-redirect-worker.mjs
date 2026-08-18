@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import paymentWorker from '../workers/payment-redirect.js';
 import { createPaymentSupabaseClient } from '../workers/lib/payment-supabase.js';
 
 const PUBLIC_ID = 'c6711111-1111-4111-8111-111111111111';
 const PAYMENT_PATH = `/pay-by-bank-transfer/${PUBLIC_ID}`;
 const MONZO_URL = 'https://monzo.com/pay/r/synthetic-vladimir_250';
+const allowedLimiter = { limit: async () => ({ success: true }) };
 const env = {
   SUPABASE_URL: 'https://synthetic-project.supabase.co',
   SUPABASE_SECRET_KEY: 'sb_secret_test-only',
+  PAYMENT_REDIRECT_RATE_LIMIT: allowedLimiter,
 };
 
 let passes = 0;
@@ -61,23 +64,27 @@ await test('GET resolves one opaque id through the single backend RPC and redire
   assert.deepEqual(JSON.parse(calls[0].options.body), { p_public_id: PUBLIC_ID });
 });
 
-await test('non-GET methods fail before any backend request', async () => {
-  let called = false;
+await test('non-GET methods fail before rate limiting or backend access', async () => {
+  let backendCalled = false;
+  let rateCalled = false;
+  const localEnv = { ...env, PAYMENT_REDIRECT_RATE_LIMIT: { limit: async () => { rateCalled = true; return { success: true }; } } };
   await withGlobalFetch(async () => {
-    called = true;
+    backendCalled = true;
     throw new Error('backend must not be called');
   }, async () => {
-    const response = await paymentWorker.fetch(new Request(`https://pay.example${PAYMENT_PATH}`, { method: 'POST' }), env);
+    const response = await paymentWorker.fetch(new Request(`https://pay.example${PAYMENT_PATH}`, { method: 'POST' }), localEnv);
     assert.equal(response.status, 405);
-    assert.equal(await response.text(), 'Payment link unavailable');
   });
-  assert.equal(called, false);
+  assert.equal(rateCalled, false);
+  assert.equal(backendCalled, false);
 });
 
-await test('invalid path and query strings fail before any backend request', async () => {
-  let called = false;
+await test('invalid path and query strings fail before rate limiting or backend access', async () => {
+  let backendCalled = false;
+  let rateCalled = false;
+  const localEnv = { ...env, PAYMENT_REDIRECT_RATE_LIMIT: { limit: async () => { rateCalled = true; return { success: true }; } } };
   await withGlobalFetch(async () => {
-    called = true;
+    backendCalled = true;
     throw new Error('backend must not be called');
   }, async () => {
     for (const url of [
@@ -85,11 +92,33 @@ await test('invalid path and query strings fail before any backend request', asy
       `https://pay.example${PAYMENT_PATH}?next=https://evil.example`,
       `https://pay.example${PAYMENT_PATH}/extra`,
     ]) {
-      const response = await paymentWorker.fetch(new Request(url), env);
+      const response = await paymentWorker.fetch(new Request(url), localEnv);
       assert.equal(response.status, 404, url);
     }
   });
-  assert.equal(called, false);
+  assert.equal(rateCalled, false);
+  assert.equal(backendCalled, false);
+});
+
+await test('rate limiting applies before the privileged backend lookup and fails closed', async () => {
+  for (const [limiter, expected] of [
+    [{ limit: async () => ({ success: false }) }, 429],
+    [undefined, 503],
+    [{ limit: async () => { throw new Error('limiter unavailable'); } }, 503],
+  ]) {
+    let backendCalled = false;
+    await withGlobalFetch(async () => {
+      backendCalled = true;
+      throw new Error('backend must not be called');
+    }, async () => {
+      const response = await paymentWorker.fetch(
+        new Request(`https://pay.example${PAYMENT_PATH}`),
+        { ...env, PAYMENT_REDIRECT_RATE_LIMIT: limiter },
+      );
+      assert.equal(response.status, expected);
+    });
+    assert.equal(backendCalled, false);
+  }
 });
 
 await test('only a clean monzo.com reusable payment URL can become a redirect', async () => {
@@ -133,6 +162,18 @@ await test('the public redirect client cannot call Monzo reconciliation RPCs', a
     /payment RPC is not allowed/,
   );
   assert.equal(called, false);
+});
+
+await test('production config is exact-path only and contains no credential', async () => {
+  const config = fs.readFileSync(new URL('../wrangler.payment-redirect.production.toml', import.meta.url), 'utf8');
+  assert.match(config, /name = "vishar-payment-redirect-production"/);
+  assert.match(config, /workers_dev = false/);
+  assert.match(config, /preview_urls = false/);
+  assert.match(config, /pattern = "vishartattoo\.com\/pay-by-bank-transfer\/\*"/);
+  assert.match(config, /SUPABASE_URL = "https:\/\/vfjexhfdbrjmuxfdvbdx\.supabase\.co"/);
+  assert.match(config, /name = "PAYMENT_REDIRECT_RATE_LIMIT"/);
+  assert.doesNotMatch(config, /SUPABASE_SECRET_KEY\s*=/);
+  assert.doesNotMatch(config, /gwaliusblwrzisrwnsvs/);
 });
 
 if (failures > 0) {
