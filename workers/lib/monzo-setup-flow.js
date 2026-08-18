@@ -428,7 +428,12 @@ async function readSetupForm(request) {
 
 async function readSyncForm(request, env, alias, ownerEmail, record, now = Date.now()) {
   const origin = request.headers.get('Origin');
-  if (origin && origin !== connectorOrigin(env)) {
+  const fetchSite = String(request.headers.get('Sec-Fetch-Site') || '').trim().toLowerCase();
+  // A short-lived encrypted confirmation is the authoritative anti-CSRF control.
+  // Mobile Safari can submit an opaque `Origin: null`; treat that like a missing
+  // Origin, while still rejecting an explicit foreign origin and any request the
+  // browser itself classifies as cross-site.
+  if (fetchSite === 'cross-site' || (origin && origin !== 'null' && origin !== connectorOrigin(env))) {
     throw new MonzoSecurityError('same_origin_required', 403);
   }
   const form = new URLSearchParams(await readFormText(request));
