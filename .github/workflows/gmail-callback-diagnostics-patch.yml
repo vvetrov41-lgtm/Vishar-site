@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 10
     env:
       PRODUCT_BRANCH: agent/gmail-crm-production-integration
-      EXPECTED_HEAD: fc753f1acf55ea0b78e1df21d7fd8c1ff13d027b
+      EXPECTED_HEAD: 339d2a2ca2e8fae9d8359dceba59e6645f83a40b
     steps:
       - name: Checkout product branch
         uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git status --short)"
 
-      - name: Apply bounded callback diagnostics patch
+      - name: Apply bounded stage diagnostics patch
         shell: bash
         run: |
           set -euo pipefail
@@ -39,86 +39,139 @@ jobs:
           worker = Path('workers/gmail-production.js')
           text = worker.read_text()
 
-          anchor = """function stateKey(state) {
-            if (typeof state !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(state)) throw new Error('gmail_oauth_state_invalid');
-            return `${STATE_PREFIX}${state}`;
-          }
-          """
-          insertion = anchor + """
-          const OAUTH_SAFE_FAILURE_CODES = new Set([
-            'gmail_oauth_code_exchange_failed',
-            'gmail_oauth_refresh_token_missing',
-            'gmail_oauth_scope_mismatch',
-            'gmail_access_token_rejected',
-            'gmail_api_error',
-            'gmail_profile_identity_invalid',
-            'gmail_encryption_key_unavailable',
-            'gmail_encryption_key_invalid',
-            'gmail_token_store_unavailable',
-            'gmail_rpc_forbidden',
-            'gmail_rpc_failed',
-          ]);
-
-          function oauthFailureCode(error) {
+          old_helper = """function oauthFailureCode(error) {
             const reason = error instanceof Error ? error.message : '';
             return OAUTH_SAFE_FAILURE_CODES.has(reason) ? reason : 'gmail_oauth_failed';
           }
           """
-          if anchor not in text:
-            raise SystemExit('stateKey anchor not found')
-          text = text.replace(anchor, insertion, 1)
+          new_helper = old_helper + """
+          const OAUTH_SAFE_FAILURE_STAGES = new Set([
+            'code_exchange',
+            'profile',
+            'supabase_client',
+            'token_store',
+            'supabase_rpc',
+            'token_cleanup',
+          ]);
 
-          old_catch = """  } catch (error) {
-              const reason = error instanceof Error ? error.message : 'gmail_oauth_failed';
-              const message = reason === 'gmail_oauth_scope_mismatch'
-                ? 'Google did not grant the required read and send Gmail scopes.'
-                : 'The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled.';
-              return html(400, 'Gmail connection failed', message);
-            }
+          function oauthStageFailureCode(stage, error) {
+            const direct = oauthFailureCode(error);
+            if (direct !== 'gmail_oauth_failed') return direct;
+            return OAUTH_SAFE_FAILURE_STAGES.has(stage) ? `gmail_oauth_${stage}_failed` : direct;
+          }
           """
-          new_catch = """  } catch (error) {
-              const reason = error instanceof Error ? error.message : 'gmail_oauth_failed';
-              const diagnostic = oauthFailureCode(error);
-              const message = reason === 'gmail_oauth_scope_mismatch'
-                ? `Google did not grant the required read and send Gmail scopes. Diagnostic: ${diagnostic}.`
-                : `The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled. Diagnostic: ${diagnostic}.`;
-              return html(400, 'Gmail connection failed', message);
-            }
-          """
-          if old_catch not in text:
-            raise SystemExit('oauth catch anchor not found')
-          text = text.replace(old_catch, new_catch, 1)
+          if old_helper not in text:
+            raise SystemExit('oauthFailureCode anchor not found')
+          text = text.replace(old_helper, new_helper, 1)
 
-          old_export = """  stateKey,
+          old = """  let tokens;
+            try {
+          """
+          new = """  let tokens;
+            let stage = 'code_exchange';
+            try {
+          """
+          if old not in text:
+            raise SystemExit('callback stage anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """      fetchImpl,
+              });
+              const profile = await getProfile(tokens.access_token, fetchImpl);
+          """
+          new = """      fetchImpl,
+              });
+              stage = 'profile';
+              const profile = await getProfile(tokens.access_token, fetchImpl);
+          """
+          if old not in text:
+            raise SystemExit('profile stage anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """    const db = createGmailSupabase(env, fetchImpl);
+              await storeRefreshToken(env, {
+          """
+          new = """    stage = 'supabase_client';
+              const db = createGmailSupabase(env, fetchImpl);
+              stage = 'token_store';
+              await storeRefreshToken(env, {
+          """
+          if old not in text:
+            raise SystemExit('token store stage anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """      connected_at: new Date().toISOString(),
+              });
+              try {
+                await db.backendRpc('service_set_gmail_integration', {
+          """
+          new = """      connected_at: new Date().toISOString(),
+              });
+              stage = 'supabase_rpc';
+              try {
+                await db.backendRpc('service_set_gmail_integration', {
+          """
+          if old not in text:
+            raise SystemExit('rpc stage anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """    } catch (error) {
+                await deleteRefreshToken(env, config.artistId);
+                throw error;
+              }
+            } catch (error) {
+          """
+          new = """    } catch (error) {
+                stage = 'token_cleanup';
+                await deleteRefreshToken(env, config.artistId);
+                throw error;
+              }
+            } catch (error) {
+          """
+          if old not in text:
+            raise SystemExit('cleanup stage anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """    const diagnostic = oauthFailureCode(error);
+          """
+          new = """    const diagnostic = oauthStageFailureCode(stage, error);
+          """
+          if old not in text:
+            raise SystemExit('diagnostic call anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """  oauthFailureCode,
             startOAuth,
           """
-          new_export = """  stateKey,
-            oauthFailureCode,
+          new = """  oauthFailureCode,
+            oauthStageFailureCode,
             startOAuth,
           """
-          if old_export not in text:
+          if old not in text:
             raise SystemExit('__testing export anchor not found')
-          text = text.replace(old_export, new_export, 1)
+          text = text.replace(old, new, 1)
           worker.write_text(text)
 
           tests = Path('scripts/test-gmail-production.mjs')
           test_text = tests.read_text()
-          test_anchor = """await test('scope validation rejects full mailbox scope and missing send/read scope', () => {
-            assert.equal(gmail.hasRequiredScopes(`${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE}`), true);
-            assert.equal(gmail.hasRequiredScopes(GMAIL_READ_SCOPE), false);
-            assert.equal(gmail.hasRequiredScopes(`${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE} https://mail.google.com/`), false);
-          });
-          """
-          test_insert = test_anchor + """
-          await test('OAuth callback diagnostics expose only bounded backend codes', () => {
+          old_test = """await test('OAuth callback diagnostics expose only bounded backend codes', () => {
             assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_code_exchange_failed')), 'gmail_oauth_code_exchange_failed');
             assert.equal(worker.oauthFailureCode(new Error('gmail_api_error')), 'gmail_api_error');
             assert.equal(worker.oauthFailureCode(new Error('provider secret detail')), 'gmail_oauth_failed');
           });
           """
-          if test_anchor not in test_text:
-            raise SystemExit('test anchor not found')
-          tests.write_text(test_text.replace(test_anchor, test_insert, 1))
+          new_test = """await test('OAuth callback diagnostics expose only bounded backend codes', () => {
+            assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_code_exchange_failed')), 'gmail_oauth_code_exchange_failed');
+            assert.equal(worker.oauthFailureCode(new Error('gmail_api_error')), 'gmail_api_error');
+            assert.equal(worker.oauthFailureCode(new Error('provider secret detail')), 'gmail_oauth_failed');
+            assert.equal(worker.oauthStageFailureCode('profile', new Error('gmail_api_error')), 'gmail_api_error');
+            assert.equal(worker.oauthStageFailureCode('token_store', new Error('provider secret detail')), 'gmail_oauth_token_store_failed');
+            assert.equal(worker.oauthStageFailureCode('not_a_stage', new Error('provider secret detail')), 'gmail_oauth_failed');
+          });
+          """
+          if old_test not in test_text:
+            raise SystemExit('diagnostic regression anchor not found')
+          tests.write_text(test_text.replace(old_test, new_test, 1))
           PY
 
           git diff --check
@@ -130,7 +183,7 @@ jobs:
           node scripts/test-gmail-production.mjs
           npm run scan:secrets
 
-      - name: Commit diagnostics patch to product branch
+      - name: Commit stage diagnostics patch to product branch
         shell: bash
         run: |
           set -euo pipefail
@@ -138,5 +191,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add workers/gmail-production.js scripts/test-gmail-production.mjs
-          git commit -m 'Add safe Gmail OAuth callback diagnostics'
+          git commit -m 'Refine Gmail OAuth callback stage diagnostics'
           git push origin "HEAD:$PRODUCT_BRANCH"
