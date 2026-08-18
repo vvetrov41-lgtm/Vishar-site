@@ -8,7 +8,7 @@ name: RC61 Cloudflare route inspection
 on:
   push:
     branches:
-      - ops/rc61-cloudflare-route-inspection
+      - release/private-crm-rc62-cloudflare-route-inspection
 
 permissions:
   contents: read
