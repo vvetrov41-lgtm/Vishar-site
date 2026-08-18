@@ -1,3 +1,4 @@
+# Trigger after workflow registration.
 name: Cancel stale Gmail rc58 rollout
 
 on:
