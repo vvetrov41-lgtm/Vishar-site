@@ -28,9 +28,6 @@ env:
   OPERATOR_WORKFLOW_PATH: .github/workflows/project-detail-production-operator.yml
   DATABASE_WORKFLOW: deploy-private-production-database.yml
   CRM_WORKFLOW: deploy-private-production-crm.yml
-  MONZO_RECOVERY_WORKFLOW: monzo-reconciliation-recovery-production-operator.yml
-  MONZO_RECOVERY_BRANCH: release/private-crm-rc46-monzo-reconciliation-recovery
-  MONZO_RECOVERY_ACTIVATION_SHA: c39453b80955de6cea7d95e1dacd6116d0d8bcb4
 
 jobs:
   authorize:
@@ -144,19 +141,39 @@ jobs:
           echo 'Timed out waiting for exact-head product CI.' >&2
           exit 1
 
-      - name: Require completed Monzo recovery production rollout first
+      - name: Require green exact-head release CI
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${MONZO_RECOVERY_WORKFLOW}/runs?branch=${MONZO_RECOVERY_BRANCH}&event=push&per_page=30" \
-            | jq -r --arg sha "$MONZO_RECOVERY_ACTIVATION_SHA" '[.workflow_runs[] | select(.head_sha==$sha and .status=="completed" and .conclusion=="success")] | sort_by(.created_at) | reverse | .[0].id // empty')"
-          if [ -z "$run_id" ]; then
-            echo 'Monzo reconciliation recovery production rollout has not completed successfully on the required activation SHA.' >&2
-            exit 1
-          fi
-          echo "Verified prior Monzo recovery production run: $run_id"
+          deadline=$((SECONDS + 1200))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            checks="$(mktemp)"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name,.status,(.conclusion // "none"),.started_at] | @tsv' > "$checks"
+            waiting=''; failed=''
+            while IFS= read -r required; do
+              latest="$(awk -F'\t' -v n="$required" '$1==n {print $4"\t"$2"\t"$3}' "$checks" | sort -r | head -1)"
+              if [ -z "$latest" ]; then waiting="${waiting}${required}:absent;"; continue; fi
+              status="$(printf '%s' "$latest" | cut -f2)"
+              conclusion="$(printf '%s' "$latest" | cut -f3)"
+              if [ "$status" != completed ]; then waiting="${waiting}${required}:${status};"
+              elif [ "$conclusion" != success ]; then failed="${failed}${required}:${conclusion};"; fi
+            done <<'REQUIRED'
+          static-validation
+          Private CRM
+          Supabase migrations and pgTAP
+          Public site and Worker
+          REQUIRED
+            rm -f "$checks"
+            test -z "$failed" || { echo "Exact-head release CI failed: $failed" >&2; exit 1; }
+            if [ -z "$waiting" ]; then exit 0; fi
+            sleep 10
+          done
+          echo 'Timed out waiting for exact-head release CI.' >&2
+          exit 1
 
       - name: Authorization summary
         if: always()
@@ -166,7 +183,9 @@ jobs:
             echo '### Project detail production operator'
             echo "- Release SHA: \`${GITHUB_SHA}\`"
             echo '- Production before protected approvals: unchanged'
-            echo '- Prerequisite: successful rc46 Monzo reconciliation recovery rollout'
+            echo '- Production migration baseline was independently reconciled before activation: 0060 is already applied'
+            echo '- rc46 Monzo Worker completion is not a prerequisite for this private-CRM-only rollout'
+            echo '- Canonical database gate still performs remote migration list and dry-run before applying pending migration 0061'
             echo '- Ordered scope: production DB migration 0061, then private CRM Pages only'
             echo '- Staging, public site, booking, Gmail, Monzo, Calendar, Telegram and WhatsApp deployments: none'
           } >> "$GITHUB_STEP_SUMMARY"
