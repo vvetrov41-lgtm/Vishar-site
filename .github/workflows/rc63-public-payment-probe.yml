@@ -1,0 +1,132 @@
+name: RC63 public payment probe
+
+on:
+  push:
+    branches:
+      - ops/rc63-public-payment-probe
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: rc63-public-payment-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: Probe deployed public payment boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify exact probe SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+
+      - name: Probe public production endpoints without credentials
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          invalid='00000000-0000-4000-8000-000000000000'
+          payment_status="$(curl --silent --show-error --output /tmp/payment-body --dump-header /tmp/payment-headers \
+            --write-out '%{http_code}' --max-time 20 \
+            "https://vishartattoo.com/pay-by-bank-transfer/${invalid}")"
+          payment_body="$(cat /tmp/payment-body)"
+          payment_content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub("\r", "", $2); print $2; exit}' /tmp/payment-headers)"
+          payment_cache_control="$(awk -F': *' 'tolower($1)=="cache-control" {gsub("\r", "", $2); print $2; exit}' /tmp/payment-headers)"
+
+          if [ "$payment_body" = 'Payment link unavailable' ]; then
+            payment_body_class='payment_unavailable'
+          elif printf '%s' "$payment_body" | grep -Eqi '<!doctype html|<html'; then
+            payment_body_class='html'
+          else
+            payment_body_class='other'
+          fi
+
+          root_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 \
+            'https://vishartattoo.com/')"
+          protected_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 \
+            'https://monzo.vishartattoo.com/oauth/monzo/status/vladimir')"
+
+          webhook_key='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+          webhook_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 \
+            -X POST -H 'Content-Type: application/json' --data '{}' \
+            "https://monzo.vishartattoo.com/webhooks/monzo/${webhook_key}")"
+
+          payment_handler='no'
+          if [ "$payment_body_class" = payment_unavailable ] \
+             && printf '%s' "$payment_content_type" | grep -Fqi 'text/plain' \
+             && printf '%s' "$payment_cache_control" | grep -Fqi 'no-store'; then
+            payment_handler='yes'
+          fi
+
+          {
+            echo "payment_status=$payment_status"
+            echo "payment_body_class=$payment_body_class"
+            echo "payment_handler=$payment_handler"
+            echo "root_status=$root_status"
+            echo "protected_status=$protected_status"
+            echo "webhook_status=$webhook_status"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo '### RC63 public payment probe'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Invalid payment UUID status: \`$payment_status\`"
+            echo "- Payment response class: \`$payment_body_class\`"
+            echo "- Payment handler signature present: \`$payment_handler\`"
+            echo "- Public site root: \`$root_status\`"
+            echo "- Monzo owner route: \`$protected_status\`"
+            echo "- Unknown public webhook: \`$webhook_status\`"
+            echo '- Credentials used: none'
+            echo '- Production mutations: none'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post safe probe result to this draft PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAYMENT_STATUS: ${{ steps.probe.outputs.payment_status }}
+          PAYMENT_BODY_CLASS: ${{ steps.probe.outputs.payment_body_class }}
+          PAYMENT_HANDLER: ${{ steps.probe.outputs.payment_handler }}
+          ROOT_STATUS: ${{ steps.probe.outputs.root_status }}
+          PROTECTED_STATUS: ${{ steps.probe.outputs.protected_status }}
+          WEBHOOK_STATUS: ${{ steps.probe.outputs.webhook_status }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$pr" ]; then
+            echo 'No open PR exists yet for this branch; skipping comment.'
+            exit 0
+          fi
+
+          body="$(cat <<EOF
+### Automated public payment probe
+
+- Exact SHA: \`$GITHUB_SHA\`
+- Invalid payment UUID status: \`$PAYMENT_STATUS\`
+- Payment response class: \`$PAYMENT_BODY_CLASS\`
+- Payment handler signature present: \`$PAYMENT_HANDLER\`
+- Public site root: \`$ROOT_STATUS\`
+- Monzo owner route: \`$PROTECTED_STATUS\`
+- Unknown public webhook: \`$WEBHOOK_STATUS\`
+- Credentials used: none
+- Production mutations: none
+EOF
+)"
+          gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" \
+            -f body="$body" >/dev/null
