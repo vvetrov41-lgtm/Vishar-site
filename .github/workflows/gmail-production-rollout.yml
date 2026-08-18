@@ -32,8 +32,8 @@ jobs:
       GPT_WORKER_NAME: vishar-gpt-actions-production
       GMAIL_HOST: gmail.vishartattoo.com
       OPERATIONS_HOST: gpt-operations.vishartattoo.com
-      GMAIL_STATE_NAMESPACE_TITLE: vishar-gmail-production-oauth-state
-      GMAIL_TOKENS_NAMESPACE_TITLE: vishar-gmail-production-oauth-tokens
+      GMAIL_KV_STATE_ID: 4bdea97be49c4ca8975f95391a7ffdf1
+      GMAIL_KV_TOKENS_ID: 143c9044f0ff4acd93f6c9cf7d022a66
 
     steps:
       - name: Resolve phase and verify production branch boundary
@@ -90,38 +90,25 @@ jobs:
           npx wrangler deploy --config wrangler.gmail.production.toml --dry-run --outdir .wrangler/gmail-production-rollout-dry-run
           npx wrangler deploy --config wrangler.gpt-actions.production.toml --dry-run --outdir .wrangler/gpt-production-rollout-dry-run
 
-      - name: Resolve dedicated Gmail production KV namespaces
+      - name: Verify dedicated Gmail production KV namespace bindings
         id: kv
         shell: bash
-        env:
-          PHASE: ${{ steps.phase.outputs.phase }}
         run: |
           set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces"
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-
-          resolve_namespace() {
-            local title="$1"
-            local listing id created
-            listing="$(curl --fail --silent --show-error "${auth[@]}" "$api?per_page=100")"
-            id="$(jq -r --arg title "$title" '.result[]? | select(.title == $title) | .id' <<<"$listing")"
-            if [ -z "$id" ] && [ "$PHASE" = 'bootstrap' ]; then
-              created="$(jq -nc --arg title "$title" '{title:$title}' | curl --fail --silent --show-error "${auth[@]}" -X POST --data-binary @- "$api")"
-              jq -e '.success == true' <<<"$created" >/dev/null
-              id="$(jq -r '.result.id' <<<"$created")"
-            fi
-            if ! [[ "$id" =~ ^[0-9a-f]{32}$ ]]; then
-              echo "Dedicated Gmail namespace $title is unavailable." >&2
-              exit 1
-            fi
-            printf '%s' "$id"
-          }
-
-          state_id="$(resolve_namespace "$GMAIL_STATE_NAMESPACE_TITLE")"
-          tokens_id="$(resolve_namespace "$GMAIL_TOKENS_NAMESPACE_TITLE")"
-          test "$state_id" != "$tokens_id"
-          echo "state_id=$state_id" >> "$GITHUB_OUTPUT"
-          echo "tokens_id=$tokens_id" >> "$GITHUB_OUTPUT"
+          if ! [[ "$GMAIL_KV_STATE_ID" =~ ^[0-9a-f]{32}$ ]]; then
+            echo 'Dedicated Gmail OAuth state namespace id is invalid.' >&2
+            exit 1
+          fi
+          if ! [[ "$GMAIL_KV_TOKENS_ID" =~ ^[0-9a-f]{32}$ ]]; then
+            echo 'Dedicated Gmail OAuth token namespace id is invalid.' >&2
+            exit 1
+          fi
+          if [ "$GMAIL_KV_STATE_ID" = "$GMAIL_KV_TOKENS_ID" ]; then
+            echo 'Gmail OAuth state and token envelopes must not share a KV namespace.' >&2
+            exit 1
+          fi
+          echo "state_id=$GMAIL_KV_STATE_ID" >> "$GITHUB_OUTPUT"
+          echo "tokens_id=$GMAIL_KV_TOKENS_ID" >> "$GITHUB_OUTPUT"
 
       - name: Generate exact production Gmail Worker config
         shell: bash
@@ -222,7 +209,7 @@ jobs:
             echo '- Gmail Worker: `vishar-gmail-production`'
             echo '- Gmail OAuth domain: `gmail.vishartattoo.com`'
             echo '- GPT Operations domain remains `gpt-operations.vishartattoo.com`'
-            echo '- Gmail state/token KV namespaces: dedicated production-only namespaces'
+            echo '- Gmail state/token KV namespaces: dedicated pre-provisioned production-only namespaces'
             echo '- Calendar Worker/token/KV bindings: untouched'
             echo '- Tracked Gmail config: inert; activation exists only in generated ephemeral deploy config'
             echo '- Staging Supabase/Workers/KV: not referenced or mutated'
