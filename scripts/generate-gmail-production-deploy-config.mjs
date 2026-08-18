@@ -16,7 +16,7 @@ if (!/^sb_publishable_[A-Za-z0-9_-]{16,}$/.test(publishableKey)) {
 }
 
 const enabled = phase !== 'bootstrap';
-const drain = phase === 'vladimir-send' || phase === 'kristina-read' || phase === 'kristina-send';
+const drain = phase === 'vladimir-send' || phase === 'kristina-send';
 const kristina = phase === 'kristina-read' || phase === 'kristina-send';
 
 let config = fs.readFileSync('wrangler.gmail.production.toml', 'utf8');
