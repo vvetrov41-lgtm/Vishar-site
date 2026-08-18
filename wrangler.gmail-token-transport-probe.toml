@@ -1,0 +1,4 @@
+name = "vishar-gmail-token-transport-probe"
+main = "workers/gmail-token-transport-probe.js"
+compatibility_date = "2026-08-18"
+workers_dev = false
