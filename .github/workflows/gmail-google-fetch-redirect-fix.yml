@@ -1,0 +1,85 @@
+name: Gmail Google fetch redirect fix
+
+on:
+  push:
+    branches:
+      - 'ops/gmail-google-fetch-redirect-fix'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PRODUCT_BRANCH: agent/gmail-crm-production-integration
+      EXPECTED_PRODUCT_SHA: 74b88f4dc44f80ac41dcd9ee39893ff247e7c8ad
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_BRANCH }}
+          fetch-depth: 0
+
+      - name: Verify exact product head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_PRODUCT_SHA"
+          test -z "$(git status --short)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Patch Google fetch redirect policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('workers/lib/google-gmail.js')
+          source = path.read_text()
+          old = "redirect: 'error'"
+          count = source.count(old)
+          if count != 3:
+              raise SystemExit(f'expected exactly 3 Google redirect:error call sites, found {count}')
+          source = source.replace(old, "redirect: 'manual'")
+          path.write_text(source)
+
+          test_path = Path('scripts/test-gmail-production.mjs')
+          tests = test_path.read_text()
+          anchor = "await test('OAuth token endpoint errors map to bounded diagnostics without provider descriptions', async () => {"
+          if anchor not in tests:
+              raise SystemExit('OAuth token endpoint test anchor missing')
+          regression = """await test('Google provider fetches use manual redirect handling in Cloudflare Workers', async () => {\n  const { readFile } = await import('node:fs/promises');\n  const source = await readFile(new URL('../workers/lib/google-gmail.js', import.meta.url), 'utf8');\n  assert.equal((source.match(/redirect: 'error'/g) || []).length, 0);\n  assert.equal((source.match(/redirect: 'manual'/g) || []).length, 3);\n});\n\n"""
+          tests = tests.replace(anchor, regression + anchor, 1)
+          test_path.write_text(tests)
+          PY
+
+          git diff --check
+          test "$(grep -c "redirect: 'manual'" workers/lib/google-gmail.js)" -eq 3
+          test "$(grep -c "redirect: 'error'" workers/lib/google-gmail.js || true)" -eq 0
+
+      - name: Validate focused Gmail regression
+        run: |
+          npm ci --ignore-scripts
+          node --check workers/lib/google-gmail.js
+          node scripts/test-gmail-production.mjs
+          node scripts/scan-secrets.mjs
+          npx wrangler deploy --config wrangler.gmail.production.toml --dry-run --outdir .wrangler/gmail-redirect-fix-dry-run
+
+      - name: Commit exact bounded fix to product branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | sort)"
+          expected=$'scripts/test-gmail-production.mjs\nworkers/lib/google-gmail.js'
+          test "$changed" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add workers/lib/google-gmail.js scripts/test-gmail-production.mjs
+          git commit -m 'Fix Google fetch redirect handling in Gmail Worker'
+          git push origin "HEAD:$PRODUCT_BRANCH"
