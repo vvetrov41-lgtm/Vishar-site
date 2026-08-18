@@ -1,4 +1,4 @@
-name: RC67 CRM Pages run locator
+name: RC67 CRM Pages gate recovery
 
 on:
   pull_request:
@@ -6,25 +6,71 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 jobs:
-  locate:
-    name: Locate active protected CRM run
+  recover:
+    name: Cancel stale rc67 CRM gate and unblock run 24
     if: github.actor == 'vvetrov41-lgtm'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Locate active canonical CRM workflow run
+      - name: Verify and cancel stale run 22
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_BRANCH: release/private-crm-rc67-record-archival-mobile-projects-pages
           CRM_WORKFLOW: deploy-private-production-crm.yml
+          STALE_RUN_NUMBER: '22'
+          STALE_SHA: 61b572cc1c4775eb73dfcde06d32a818d28d890f
+          TARGET_RUN_NUMBER: '24'
+          TARGET_SHA: b1c236a635e7a6ba3d898d0a769b5f617af8f6b7
         run: |
           set -euo pipefail
-          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?branch=${RELEASE_BRANCH}&event=workflow_dispatch&per_page=30")"
-          printf '%s' "$runs" | jq -r '.workflow_runs[] | select(.status=="waiting" or .status=="queued" or .status=="in_progress" or .status=="pending") | "ACTIVE_RUN id=\(.id) status=\(.status) sha=\(.head_sha) url=\(.html_url) created=\(.created_at)"'
-          newest="$(printf '%s' "$runs" | jq -r '[.workflow_runs[] | select(.status=="waiting" or .status=="queued" or .status=="in_progress" or .status=="pending")] | sort_by(.created_at) | reverse | .[0].html_url // empty')"
-          test -n "$newest"
-          echo "NEWEST_ACTIVE=$newest"
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?event=workflow_dispatch&per_page=100")"
+
+          stale="$(printf '%s' "$runs" | jq -r --argjson n "$STALE_RUN_NUMBER" '[.workflow_runs[] | select(.run_number==$n)] | sort_by(.created_at) | reverse | .[0] // empty')"
+          target="$(printf '%s' "$runs" | jq -r --argjson n "$TARGET_RUN_NUMBER" '[.workflow_runs[] | select(.run_number==$n)] | sort_by(.created_at) | reverse | .[0] // empty')"
+          test -n "$stale"
+          test -n "$target"
+
+          stale_id="$(printf '%s' "$stale" | jq -r '.id')"
+          stale_sha="$(printf '%s' "$stale" | jq -r '.head_sha')"
+          stale_status="$(printf '%s' "$stale" | jq -r '.status')"
+          target_id="$(printf '%s' "$target" | jq -r '.id')"
+          target_sha="$(printf '%s' "$target" | jq -r '.head_sha')"
+
+          test "$stale_sha" = "$STALE_SHA"
+          test "$target_sha" = "$TARGET_SHA"
+          echo "STALE_RUN id=$stale_id status=$stale_status sha=$stale_sha"
+          echo "TARGET_RUN id=$target_id status=$(printf '%s' "$target" | jq -r '.status') sha=$target_sha url=$(printf '%s' "$target" | jq -r '.html_url')"
+
+          case "$stale_status" in
+            waiting|queued|in_progress|pending)
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${stale_id}/cancel" >/dev/null
+              ;;
+            completed)
+              stale_conclusion="$(printf '%s' "$stale" | jq -r '.conclusion // empty')"
+              test "$stale_conclusion" = cancelled
+              ;;
+            *)
+              echo "Unexpected stale run status: $stale_status" >&2
+              exit 1
+              ;;
+          esac
+
+          deadline=$((SECONDS + 300))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            stale_now="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${stale_id}" --jq '[.status,(.conclusion // "none")] | @tsv')"
+            stale_now_status="$(printf '%s' "$stale_now" | cut -f1)"
+            stale_now_conclusion="$(printf '%s' "$stale_now" | cut -f2)"
+            if [ "$stale_now_status" = completed ]; then
+              test "$stale_now_conclusion" = cancelled
+              break
+            fi
+            sleep 3
+          done
+
+          target_now="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${target_id}")"
+          target_status="$(printf '%s' "$target_now" | jq -r '.status')"
+          target_url="$(printf '%s' "$target_now" | jq -r '.html_url')"
+          echo "TARGET_AFTER_CANCEL status=$target_status url=$target_url"
