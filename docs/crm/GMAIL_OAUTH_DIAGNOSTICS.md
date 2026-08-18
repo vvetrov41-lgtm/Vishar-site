@@ -36,6 +36,8 @@ Allowed callback diagnostic codes:
 
 The token endpoint classifier may use only Google OAuth's machine-readable `error` field, bounded HTTP status classes, and local transport stage to select a fixed diagnostic code. It must never expose `error_description`, provider response bodies, authorization codes, or credentials.
 
+A bounded Cloudflare remote-preview probe confirmed the Worker runtime behavior for the Google token endpoint: the default redirect policy and `redirect: "manual"` return an HTTP response, while `redirect: "error"` throws a `TypeError` before a response is available. Google provider calls in the Gmail Worker therefore use `redirect: "manual"`. This preserves explicit redirect handling without automatic redirect following and avoids the Cloudflare runtime failure that previously surfaced as `gmail_oauth_token_fetch_failed`. Do not replace this with automatic redirect following for credential-bearing Google requests.
+
 If an unexpected runtime error is raised, the callback may expose only one of these fixed stage codes:
 
 - `gmail_oauth_code_exchange_failed`
@@ -55,7 +57,7 @@ Production investigation order:
 4. Run a new OAuth attempt and record only the bounded diagnostic code.
 5. For `gmail_oauth_invalid_client` or `gmail_oauth_token_http_401`, verify that the production Worker client ID and client secret belong to the same Web application OAuth client. Never paste the secret into chat or logs.
 6. For `gmail_oauth_invalid_grant` or `gmail_oauth_token_http_400`, verify a fresh authorization attempt, the exact redirect URI, and PKCE flow without reusing an authorization code.
-7. For `gmail_oauth_token_fetch_failed`, investigate Worker outbound transport to `https://oauth2.googleapis.com/token` before changing OAuth credentials.
+7. For `gmail_oauth_token_fetch_failed`, verify the Worker redirect policy remains `manual`, then investigate outbound transport to `https://oauth2.googleapis.com/token` before changing OAuth credentials.
 8. Check Supabase API logs for `service_set_gmail_integration`. If no call exists for the attempt, the failure occurred before the CRM binding step.
 9. Keep `GMAIL_DRAIN_ENABLED=false` until read-only OAuth and Gmail history E2E are proven.
 
