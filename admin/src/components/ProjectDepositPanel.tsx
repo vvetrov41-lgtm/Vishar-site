@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { formatDateTime, formatMoney } from '../lib/format';
+import { formatMoney } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import { useApi } from '../lib/session';
 import type { Appointment } from '../lib/appointment-api';
-import type { DepositRequestResult, ProjectPaymentRequest } from '../lib/payment-api';
+import type { ProjectPaymentRequest } from '../lib/payment-api';
 import type { Project, ProjectFinance } from '../lib/types';
 
 export function ProjectDepositPanel({
   project,
   finance,
-  appointments,
   onChanged,
 }: {
   project: Project;
@@ -24,7 +23,6 @@ export function ProjectDepositPanel({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<DepositRequestResult | null>(null);
   const [manualAmounts, setManualAmounts] = useState<Record<string, string>>({});
 
   const depositRequests = useMemo(
@@ -57,25 +55,6 @@ export function ProjectDepositPanel({
   useEffect(() => {
     void reloadPayments();
   }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function requestDeposit(appointment: Appointment) {
-    setBusy(`request:${appointment.id}`);
-    setError(null);
-    setResult(null);
-    try {
-      const next = await api.requestSessionDeposit({
-        sessionId: appointment.id,
-        deliveryChannel: 'copy_link',
-      });
-      setResult(next);
-      await reloadPayments();
-      onChanged();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : copy.requestFailed);
-    } finally {
-      setBusy(null);
-    }
-  }
 
   async function recordManual(request: ProjectPaymentRequest) {
     const amount = Number(manualAmounts[request.id]);
@@ -113,11 +92,6 @@ export function ProjectDepositPanel({
     }
   }
 
-  const eligibleAppointments = appointments.filter((appointment) =>
-    appointment.appointment_type === 'tattoo_session'
-    && !['completed', 'cancelled', 'no_show'].includes(appointment.status)
-  );
-
   return (
     <>
       <dl className="definition">
@@ -130,51 +104,8 @@ export function ProjectDepositPanel({
       {legacyPaid ? (
         <p className="notice ok">{copy.legacyPaidNotice}</p>
       ) : (
-        <p className="notice">{copy.realWorkflowNotice}</p>
+        <p className="notice warn">{copy.depositLinksDormant}</p>
       )}
-
-      {result ? (
-        <div className="notice ok" role="status">
-          <div>{copy.linkReady(formatMoney(result.amount, result.currency, language))}</div>
-          <div style={{ marginTop: 6, overflowWrap: 'anywhere' }}>
-            <a href={`https://vishartattoo.com${result.public_path}`} target="_blank" rel="noreferrer">
-              {`https://vishartattoo.com${result.public_path}`}
-            </a>
-          </div>
-        </div>
-      ) : null}
-
-      {!legacyPaid && eligibleAppointments.length > 0 ? (
-        <div className="list" style={{ marginTop: 12 }}>
-          {eligibleAppointments.map((appointment) => {
-            const existing = depositRequests.find((request) =>
-              request.session_id === appointment.id
-              && ['pending', 'partially_paid', 'paid'].includes(request.status)
-            );
-            return (
-              <div className="row" key={appointment.id}>
-                <div className="title">{formatDateTime(appointment.start_at, language)}</div>
-                <div className="meta">{copy.duration}: {durationValue(appointment.duration_hours, language)}</div>
-                {existing ? (
-                  <div className="meta">
-                    {copy.request}: {formatMoney(existing.amount, existing.currency, language)} · {requestStatus(existing.status, language)}
-                  </div>
-                ) : (
-                  <div className="actions">
-                    <button
-                      type="button"
-                      disabled={busy !== null}
-                      onClick={() => { void requestDeposit(appointment); }}
-                    >
-                      {busy === `request:${appointment.id}` ? copy.creating : copy.createLink}
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
 
       {loading ? <p className="notice">{copy.loading}</p> : null}
       {!loading && depositRequests.length > 0 ? (
@@ -234,12 +165,6 @@ export function ProjectDepositPanel({
   );
 }
 
-function durationValue(hours: number | null, language: 'en' | 'ru'): string {
-  if (hours === null) return '—';
-  if (hours < 1) return language === 'ru' ? `${Math.round(hours * 60)} мин` : `${Math.round(hours * 60)} min`;
-  return language === 'ru' ? `${hours} ч` : `${hours} h`;
-}
-
 function requestStatus(status: ProjectPaymentRequest['status'], language: 'en' | 'ru'): string {
   const labels = {
     en: { pending: 'pending', partially_paid: 'part paid', paid: 'paid', cancelled: 'cancelled', expired: 'expired' },
@@ -253,15 +178,9 @@ const COPY = {
     projectDeposit: 'Project deposit',
     projectDepositStatus: 'Project deposit status',
     legacyPaidNotice: 'This project already has a paid deposit recorded. New deposit requests are hidden to avoid charging the client twice.',
-    realWorkflowNotice: 'Create a real payment request from a tattoo appointment. The amount is chosen by the server from the appointment duration, not typed into this screen.',
-    duration: 'Duration',
-    request: 'Deposit request',
-    createLink: 'Create deposit link',
-    creating: 'Creating…',
-    linkReady: (amount: string) => `Deposit link created for ${amount}.`,
+    depositLinksDormant: 'Deposit-link creation is temporarily unavailable until the public bank-transfer redirect runtime is activated. Existing requests can still be reviewed, cancelled, or reconciled manually.',
     loading: 'Loading payment requests…',
     loadFailed: 'Could not load project payment requests.',
-    requestFailed: 'Could not create the deposit request.',
     requestsTitle: 'Payment requests',
     received: 'Received',
     outstanding: 'Outstanding',
@@ -279,15 +198,9 @@ const COPY = {
     projectDeposit: 'Депозит проекта',
     projectDepositStatus: 'Статус депозита проекта',
     legacyPaidNotice: 'Для этого проекта депозит уже зафиксирован как оплаченный. Новые запросы скрыты, чтобы случайно не запросить деньги повторно.',
-    realWorkflowNotice: 'Создавай реальный запрос на депозит из конкретной тату-записи. Сумму выбирает CRM по длительности записи, вручную вводить её здесь не нужно.',
-    duration: 'Длительность',
-    request: 'Запрос на депозит',
-    createLink: 'Создать ссылку на депозит',
-    creating: 'Создаём…',
-    linkReady: (amount: string) => `Ссылка на депозит ${amount} создана.`,
+    depositLinksDormant: 'Создание ссылок на депозит временно недоступно, пока не активирован публичный runtime банковского редиректа. Существующие запросы можно просматривать, отменять и сверять вручную.',
     loading: 'Загружаем платёжные запросы…',
     loadFailed: 'Не удалось загрузить платёжные запросы проекта.',
-    requestFailed: 'Не удалось создать запрос на депозит.',
     requestsTitle: 'Платёжные запросы',
     received: 'Получено',
     outstanding: 'Осталось',
