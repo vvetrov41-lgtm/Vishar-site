@@ -53,13 +53,13 @@ test('the entrypoint is the bounded gateway, never the bare API Worker', () => {
   assert.notEqual(value('main'), 'workers/monzo-api.js');
 });
 
-test('production routes are exactly the Monzo Custom Domain plus the first-party payment path', () => {
+test('production routes are exactly the Monzo Custom Domain plus the bounded first-party payment prefix', () => {
   const routes = body.match(/routes = \[[\s\S]*?\]/);
   assert.ok(routes, 'production routes must be declared so --strict can verify them');
   const patterns = [...routes[0].matchAll(/pattern = "([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(patterns, [
     'monzo.vishartattoo.com',
-    'vishartattoo.com/pay-by-bank-transfer/*',
+    'vishartattoo.com/pay-by-bank-transfer*',
   ]);
   assert.equal((routes[0].match(/custom_domain = true/g) || []).length, 1);
   assert.match(routes[0], /previews_enabled = false/);
