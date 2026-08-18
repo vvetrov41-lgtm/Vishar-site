@@ -85,6 +85,7 @@ jobs:
         run: |
           npm ci --ignore-scripts
           node scripts/test-gmail-production.mjs
+          node scripts/test-gmail-rollout-phases.mjs
           node scripts/test-gpt-gmail-openapi.mjs
           npm run validate:gpt-actions
           npm run scan:secrets
@@ -146,7 +147,14 @@ jobs:
               grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
               grep -Fq 'GMAIL_KRISTINA_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
               ;;
-            kristina-read|kristina-send)
+            kristina-read)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+            kristina-send)
               grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
               grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
               grep -Fq 'GMAIL_DRAIN_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
@@ -215,10 +223,12 @@ jobs:
           PHASE: ${{ steps.phase.outputs.phase }}
         run: |
           set -euo pipefail
+          start_slug='vladimir'
+          if [[ "$PHASE" == kristina-* ]]; then start_slug='kristina'; fi
           for attempt in $(seq 1 20); do
             privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/privacy" || true)"
             ops="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/enquiries/11111111-1111-4111-8111-111111111111/gmail/history" || true)"
-            start_headers="$(curl -sS -D - -o /dev/null --max-time 10 "https://$GMAIL_HOST/oauth/google/start/vladimir" || true)"
+            start_headers="$(curl -sS -D - -o /dev/null --max-time 10 "https://$GMAIL_HOST/oauth/google/start/$start_slug" || true)"
             start_status="$(printf '%s' "$start_headers" | awk 'toupper($1) ~ /^HTTP\// {status=$2} END {print status}')"
             if [ "$privacy" = 200 ]; then
               if [ "$PHASE" = 'bootstrap' ] && [ "$ops" = 404 ] && [ "$start_status" = 404 ]; then exit 0; fi
