@@ -72,15 +72,21 @@ describe('record edit API', () => {
     }]);
   });
 
-  it('archives clients and enquiries only through their named RPCs', async () => {
+  it('archives clients and enquiries through reserved commands on the canonical edit RPCs', async () => {
     const { api, rpcCalls } = harness();
 
     await api.archiveClient('client-1');
     await api.archiveEnquiry('enquiry-1');
 
     expect(rpcCalls).toEqual([
-      { name: 'archive_client', args: { p_client_id: 'client-1' } },
-      { name: 'archive_enquiry', args: { p_enquiry_id: 'enquiry-1' } },
+      {
+        name: 'update_client_details',
+        args: { p_client_id: 'client-1', p_client: { _archive: true } },
+      },
+      {
+        name: 'update_enquiry_details',
+        args: { p_enquiry_id: 'enquiry-1', p_enquiry: { _archive: true } },
+      },
     ]);
   });
 
