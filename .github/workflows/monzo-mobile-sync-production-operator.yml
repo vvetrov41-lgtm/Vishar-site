@@ -1,0 +1,156 @@
+name: Monzo mobile sync production operator
+
+# Worker-only production patch for the iOS/Safari recovery confirmation issue.
+# The database prerequisite is already deployed; this operator performs no DB mutation.
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc52-monzo-mobile-sync
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+
+env:
+  BASE_SNAPSHOT_SHA: c81b1732a7263830a608edae709d0a74357216ae
+  PRODUCT_SHA: a3002b319d57b7efa77e2c96a9bc50830eca8674
+  PRODUCT_BRANCH: agent/monzo-sync-mobile-confirmation
+  RELEASE_BRANCH: release/private-crm-rc52-monzo-mobile-sync
+  OPERATOR_WORKFLOW: .github/workflows/monzo-mobile-sync-production-operator.yml
+  MONZO_GATE_WORKFLOW: .github/workflows/deploy-private-production-monzo.yml
+
+concurrency:
+  group: monzo-mobile-sync-production-operator-rc52
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Authorize rc52 Monzo mobile sync patch
+    if: >-
+      github.actor == 'vvetrov41-lgtm' &&
+      github.ref == 'refs/heads/release/private-crm-rc52-monzo-mobile-sync' &&
+      contains(github.event.head_commit.message, '[RUN_MONZO_MOBILE_SYNC]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      approved_sha: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release tip and bounded release delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          release_tip="$(git ls-remote --heads origin "refs/heads/${RELEASE_BRANCH}" | awk '{print $1}')"
+          test "$release_tip" = "$GITHUB_SHA"
+          git cat-file -e "${BASE_SNAPSHOT_SHA}^{commit}"
+          git cat-file -e "${PRODUCT_SHA}^{commit}"
+          git merge-base --is-ancestor "$BASE_SNAPSHOT_SHA" "$PRODUCT_SHA"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+
+          product_tip="$(git ls-remote --heads origin "refs/heads/${PRODUCT_BRANCH}" | awk '{print $1}')"
+          test "$product_tip" = "$PRODUCT_SHA"
+
+          mapfile -t product_delta < <(git diff --name-only "$BASE_SNAPSHOT_SHA" "$PRODUCT_SHA")
+          test "${#product_delta[@]}" -eq 2
+          printf '%s\n' "${product_delta[@]}" | grep -Fxq 'workers/lib/monzo-setup-flow.js'
+          printf '%s\n' "${product_delta[@]}" | grep -Fxq 'scripts/test-monzo-reconciliation-sync.mjs'
+
+          mapfile -t release_delta < <(git diff --name-only "$PRODUCT_SHA" "$GITHUB_SHA")
+          test "${#release_delta[@]}" -eq 2
+          printf '%s\n' "${release_delta[@]}" | grep -Fxq "$OPERATOR_WORKFLOW"
+          printf '%s\n' "${release_delta[@]}" | grep -Fxq "$MONZO_GATE_WORKFLOW"
+
+      - name: Verify mobile confirmation security boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "vishar-monzo-sync-confirmation-v1" workers/lib/monzo-setup-flow.js
+          grep -Fq 'name="sync_token"' workers/lib/monzo-setup-flow.js
+          grep -Fq 'createSyncConfirmationToken' workers/lib/monzo-setup-flow.js
+          grep -Fq 'verifySyncConfirmationToken' workers/lib/monzo-setup-flow.js
+          grep -Fq "if (origin && origin !== connectorOrigin(env))" workers/lib/monzo-setup-flow.js
+          grep -Fq "sync_confirmation_invalid_or_expired" workers/lib/monzo-setup-flow.js
+          grep -Fq 'iOS-style missing Origin' scripts/test-monzo-reconciliation-sync.mjs
+          grep -Fxq 'MONZO_RECONCILIATION_ENABLED = "true"' wrangler.monzo-api.production.toml
+          grep -Fq '404|503|429' "$MONZO_GATE_WORKFLOW"
+          grep -Fq 'MONZO_RECONCILIATION_ENABLED=true' "$MONZO_GATE_WORKFLOW"
+
+      - name: Verify product PR remains Draft and exact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pr="$(gh api repos/${GITHUB_REPOSITORY}/pulls/337)"
+          test "$(printf '%s' "$pr" | jq -r '.state')" = open
+          test "$(printf '%s' "$pr" | jq -r '.draft')" = true
+          test "$(printf '%s' "$pr" | jq -r '.head.ref')" = "$PRODUCT_BRANCH"
+          test "$(printf '%s' "$pr" | jq -r '.head.sha')" = "$PRODUCT_SHA"
+          test "$(printf '%s' "$pr" | jq -r '.base.ref')" = agent/project-detail-operational-fixes
+          test "$(printf '%s' "$pr" | jq -r '.base.sha')" = "$BASE_SNAPSHOT_SHA"
+
+      - name: Require green normal CI on this exact release SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            checks="$(mktemp)"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name,.status,(.conclusion // "none"),.started_at] | @tsv' > "$checks"
+            waiting=''; failed=''
+            while IFS= read -r required; do
+              latest="$(awk -F'\t' -v n="$required" '$1==n {print $4"\t"$2"\t"$3}' "$checks" | sort -r | head -1)"
+              if [ -z "$latest" ]; then waiting="${waiting}${required}:absent;"; continue; fi
+              status="$(printf '%s' "$latest" | cut -f2)"
+              conclusion="$(printf '%s' "$latest" | cut -f3)"
+              if [ "$status" != completed ]; then waiting="${waiting}${required}:${status};"
+              elif [ "$conclusion" != success ]; then failed="${failed}${required}:${conclusion};"; fi
+            done <<'REQUIRED'
+          static-validation
+          Private CRM
+          Supabase migrations and pgTAP
+          Public site and Worker
+          REQUIRED
+            rm -f "$checks"
+            test -z "$failed" || { echo "Exact-head CI failed: $failed" >&2; exit 1; }
+            if [ -z "$waiting" ]; then exit 0; fi
+            sleep 10
+          done
+          echo 'Timed out waiting for exact-head CI.' >&2
+          exit 1
+
+      - name: Authorization summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc52 Monzo mobile sync patch'
+            echo "- Release SHA: \`${GITHUB_SHA}\`"
+            echo "- Product SHA: \`${PRODUCT_SHA}\`"
+            echo '- Database deployment: none'
+            echo '- CRM Pages deployment: none'
+            echo '- Secret creation/rotation: none'
+            echo '- Runtime scope after approval: vishar-monzo-api-production only'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  monzo:
+    name: Deploy mobile-safe Monzo reconciliation Worker
+    needs: authorize
+    uses: ./.github/workflows/deploy-private-production-monzo.yml
+    with:
+      approved_sha: ${{ needs.authorize.outputs.approved_sha }}
+      deploy: true
+      approval_phrase: DEPLOY_PRIVATE_CRM_MONZO_ONLY
+    secrets: inherit
