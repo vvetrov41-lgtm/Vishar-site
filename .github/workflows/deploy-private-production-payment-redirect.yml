@@ -29,13 +29,6 @@ on:
         required: false
         default: ''
         type: string
-    secrets:
-      CRM_PRODUCTION_CLOUDFLARE_API_TOKEN:
-        required: true
-      CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID:
-        required: true
-      CRM_PRODUCTION_SUPABASE_SECRET_KEY:
-        required: false
 
 permissions:
   contents: read
