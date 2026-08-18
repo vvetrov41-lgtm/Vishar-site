@@ -1,0 +1,158 @@
+name: Payment redirect production operator
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc54-payment-redirect
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+
+env:
+  PRODUCT_BRANCH: agent/payment-redirect-production-activation
+  PRODUCT_SHA: f60560d70c3b963d7444720718652a38e695049e
+  PRODUCT_BASE_SHA: 5752484466c83362ee1db373606c9c8e5bb144ea
+  RELEASE_BRANCH: release/private-crm-rc54-payment-redirect
+  OPERATOR_WORKFLOW: .github/workflows/payment-redirect-production-operator.yml
+
+concurrency:
+  group: payment-redirect-production-operator-rc54
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Authorize rc54 personalized deposit redirect rollout
+    if: >-
+      github.actor == 'vvetrov41-lgtm' &&
+      github.ref == 'refs/heads/release/private-crm-rc54-payment-redirect' &&
+      contains(github.event.head_commit.message, '[RUN_PAYMENT_REDIRECT]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      approved_sha: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release tip and bounded lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          release_tip="$(git ls-remote --heads origin "refs/heads/${RELEASE_BRANCH}" | awk '{print $1}')"
+          product_tip="$(git ls-remote --heads origin "refs/heads/${PRODUCT_BRANCH}" | awk '{print $1}')"
+          test "$release_tip" = "$GITHUB_SHA"
+          test "$product_tip" = "$PRODUCT_SHA"
+          git merge-base --is-ancestor "$PRODUCT_BASE_SHA" "$PRODUCT_SHA"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+
+          mapfile -t product_delta < <(git diff --name-only "$PRODUCT_BASE_SHA" "$PRODUCT_SHA")
+          test "${#product_delta[@]}" -eq 5
+          for path in \
+            '.github/workflows/deploy-private-production-payment-redirect.yml' \
+            'scripts/test-payment-redirect-worker.mjs' \
+            'workers/payment-redirect.js' \
+            'wrangler.payment-redirect.production-bootstrap.toml' \
+            'wrangler.payment-redirect.production.toml'
+          do
+            printf '%s\n' "${product_delta[@]}" | grep -Fxq "$path"
+          done
+
+          mapfile -t release_delta < <(git diff --name-only "$PRODUCT_SHA" "$GITHUB_SHA")
+          test "${#release_delta[@]}" -eq 1
+          test "${release_delta[0]}" = "$OPERATOR_WORKFLOW"
+
+      - name: Verify product and operator PRs remain Draft/open/unmerged
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for pr_number in 341 342; do
+            pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}")"
+            test "$(jq -r '.state' <<<"$pr")" = open
+            test "$(jq -r '.draft' <<<"$pr")" = true
+            test "$(jq -r '.merged' <<<"$pr")" = false
+          done
+          product="$(gh api repos/${GITHUB_REPOSITORY}/pulls/341)"
+          test "$(jq -r '.head.ref' <<<"$product")" = "$PRODUCT_BRANCH"
+          test "$(jq -r '.head.sha' <<<"$product")" = "$PRODUCT_SHA"
+          test "$(jq -r '.base.sha' <<<"$product")" = "$PRODUCT_BASE_SHA"
+
+      - name: Re-verify production payment redirect security boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'vishartattoo.com/pay-by-bank-transfer/*' wrangler.payment-redirect.production.toml
+          grep -Fq 'workers_dev = false' wrangler.payment-redirect.production.toml
+          grep -Fq 'preview_urls = false' wrangler.payment-redirect.production.toml
+          grep -Fq 'PAYMENT_REDIRECT_RATE_LIMIT' wrangler.payment-redirect.production.toml
+          grep -Fq "'resolve_monzo_deposit_redirect'" workers/lib/payment-supabase.js
+          grep -Fq 'DEPLOY_PRIVATE_CRM_PAYMENT_REDIRECT_ONLY' .github/workflows/deploy-private-production-payment-redirect.yml
+          if grep -Fq 'SUPABASE_SECRET_KEY =' wrangler.payment-redirect.production.toml; then
+            echo 'Tracked production config must not contain a Supabase secret.' >&2
+            exit 1
+          fi
+
+      - name: Require green normal CI on this exact release SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            checks="$(mktemp)"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name,.status,(.conclusion // "none"),.started_at] | @tsv' > "$checks"
+            waiting=''; failed=''
+            while IFS= read -r required; do
+              latest="$(awk -F'\t' -v n="$required" '$1==n {print $4"\t"$2"\t"$3}' "$checks" | sort -r | head -1)"
+              if [ -z "$latest" ]; then waiting="${waiting}${required}:absent;"; continue; fi
+              status="$(printf '%s' "$latest" | cut -f2)"
+              conclusion="$(printf '%s' "$latest" | cut -f3)"
+              if [ "$status" != completed ]; then waiting="${waiting}${required}:${status};"
+              elif [ "$conclusion" != success ]; then failed="${failed}${required}:${conclusion};"; fi
+            done <<'REQUIRED'
+          static-validation
+          Private CRM
+          Supabase migrations and pgTAP
+          Public site and Worker
+          REQUIRED
+            rm -f "$checks"
+            test -z "$failed" || { echo "Exact-head CI failed: $failed" >&2; exit 1; }
+            if [ -z "$waiting" ]; then exit 0; fi
+            sleep 10
+          done
+          echo 'Timed out waiting for exact-head CI.' >&2
+          exit 1
+
+      - name: Authorization summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc54 personalized deposit redirect operator'
+            echo "- Release SHA: \`${GITHUB_SHA}\`"
+            echo "- Product SHA: \`${PRODUCT_SHA}\`"
+            echo '- Database deployment: none'
+            echo '- CRM Pages deployment: none'
+            echo '- Monzo Worker deployment: none'
+            echo '- Runtime scope after approval: `vishar-payment-redirect-production` only'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  payment_redirect:
+    name: Deploy production personalized deposit redirect
+    needs: authorize
+    uses: ./.github/workflows/deploy-private-production-payment-redirect.yml
+    with:
+      approved_sha: ${{ needs.authorize.outputs.approved_sha }}
+      deploy: true
+      approval_phrase: DEPLOY_PRIVATE_CRM_PAYMENT_REDIRECT_ONLY
+    secrets: inherit
