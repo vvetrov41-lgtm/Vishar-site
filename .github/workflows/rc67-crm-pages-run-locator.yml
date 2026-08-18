@@ -1,4 +1,4 @@
-name: RC67 CRM Pages gate recovery
+name: RC67 CRM Pages gate cleanup
 
 on:
   pull_request:
@@ -9,68 +9,66 @@ permissions:
   actions: write
 
 jobs:
-  recover:
-    name: Cancel stale rc67 CRM gate and unblock run 24
+  cleanup:
+    name: Verify run 22 success and cancel redundant run 24
     if: github.actor == 'vvetrov41-lgtm'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Verify and cancel stale run 22
+      - name: Clean redundant protected CRM run
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           CRM_WORKFLOW: deploy-private-production-crm.yml
-          STALE_RUN_NUMBER: '22'
-          STALE_SHA: 61b572cc1c4775eb73dfcde06d32a818d28d890f
-          TARGET_RUN_NUMBER: '24'
-          TARGET_SHA: b1c236a635e7a6ba3d898d0a769b5f617af8f6b7
+          SUCCESS_RUN_NUMBER: '22'
+          SUCCESS_SHA: 61b572cc1c4775eb73dfcde06d32a818d28d890f
+          REDUNDANT_RUN_NUMBER: '24'
+          REDUNDANT_SHA: b1c236a635e7a6ba3d898d0a769b5f617af8f6b7
         run: |
           set -euo pipefail
           runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?event=workflow_dispatch&per_page=100")"
+          success="$(printf '%s' "$runs" | jq -r --argjson n "$SUCCESS_RUN_NUMBER" '[.workflow_runs[] | select(.run_number==$n)] | sort_by(.created_at) | reverse | .[0] // empty')"
+          redundant="$(printf '%s' "$runs" | jq -r --argjson n "$REDUNDANT_RUN_NUMBER" '[.workflow_runs[] | select(.run_number==$n)] | sort_by(.created_at) | reverse | .[0] // empty')"
+          test -n "$success" && test -n "$redundant"
 
-          stale="$(printf '%s' "$runs" | jq -r --argjson n "$STALE_RUN_NUMBER" '[.workflow_runs[] | select(.run_number==$n)] | sort_by(.created_at) | reverse | .[0] // empty')"
-          target="$(printf '%s' "$runs" | jq -r --argjson n "$TARGET_RUN_NUMBER" '[.workflow_runs[] | select(.run_number==$n)] | sort_by(.created_at) | reverse | .[0] // empty')"
-          test -n "$stale"
-          test -n "$target"
+          test "$(printf '%s' "$success" | jq -r '.head_sha')" = "$SUCCESS_SHA"
+          test "$(printf '%s' "$success" | jq -r '.status')" = completed
+          test "$(printf '%s' "$success" | jq -r '.conclusion')" = success
 
-          stale_id="$(printf '%s' "$stale" | jq -r '.id')"
-          stale_sha="$(printf '%s' "$stale" | jq -r '.head_sha')"
-          stale_status="$(printf '%s' "$stale" | jq -r '.status')"
-          target_id="$(printf '%s' "$target" | jq -r '.id')"
-          target_sha="$(printf '%s' "$target" | jq -r '.head_sha')"
+          redundant_id="$(printf '%s' "$redundant" | jq -r '.id')"
+          redundant_sha="$(printf '%s' "$redundant" | jq -r '.head_sha')"
+          redundant_status="$(printf '%s' "$redundant" | jq -r '.status')"
+          test "$redundant_sha" = "$REDUNDANT_SHA"
 
-          test "$stale_sha" = "$STALE_SHA"
-          test "$target_sha" = "$TARGET_SHA"
-          echo "STALE_RUN id=$stale_id status=$stale_status sha=$stale_sha"
-          echo "TARGET_RUN id=$target_id status=$(printf '%s' "$target" | jq -r '.status') sha=$target_sha url=$(printf '%s' "$target" | jq -r '.html_url')"
+          echo "SUCCESS_RUN id=$(printf '%s' "$success" | jq -r '.id') sha=$SUCCESS_SHA url=$(printf '%s' "$success" | jq -r '.html_url')"
+          echo "REDUNDANT_RUN id=$redundant_id status=$redundant_status sha=$redundant_sha url=$(printf '%s' "$redundant" | jq -r '.html_url')"
 
-          case "$stale_status" in
+          case "$redundant_status" in
             waiting|queued|in_progress|pending)
-              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${stale_id}/cancel" >/dev/null
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${redundant_id}/cancel" >/dev/null
               ;;
             completed)
-              stale_conclusion="$(printf '%s' "$stale" | jq -r '.conclusion // empty')"
-              test "$stale_conclusion" = cancelled
+              conclusion="$(printf '%s' "$redundant" | jq -r '.conclusion // empty')"
+              test "$conclusion" = cancelled
+              exit 0
               ;;
             *)
-              echo "Unexpected stale run status: $stale_status" >&2
+              echo "Unexpected redundant run status: $redundant_status" >&2
               exit 1
               ;;
           esac
 
           deadline=$((SECONDS + 300))
           while [ "$SECONDS" -lt "$deadline" ]; do
-            stale_now="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${stale_id}" --jq '[.status,(.conclusion // "none")] | @tsv')"
-            stale_now_status="$(printf '%s' "$stale_now" | cut -f1)"
-            stale_now_conclusion="$(printf '%s' "$stale_now" | cut -f2)"
-            if [ "$stale_now_status" = completed ]; then
-              test "$stale_now_conclusion" = cancelled
-              break
+            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${redundant_id}" --jq '[.status,(.conclusion // "none")] | @tsv')"
+            status="$(printf '%s' "$row" | cut -f1)"
+            conclusion="$(printf '%s' "$row" | cut -f2)"
+            if [ "$status" = completed ]; then
+              test "$conclusion" = cancelled
+              echo "REDUNDANT_RUN_CANCELLED id=$redundant_id"
+              exit 0
             fi
             sleep 3
           done
-
-          target_now="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${target_id}")"
-          target_status="$(printf '%s' "$target_now" | jq -r '.status')"
-          target_url="$(printf '%s' "$target_now" | jq -r '.html_url')"
-          echo "TARGET_AFTER_CANCEL status=$target_status url=$target_url"
+          echo 'Timed out waiting for redundant run cancellation.' >&2
+          exit 1
