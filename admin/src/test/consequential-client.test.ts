@@ -42,15 +42,16 @@ describe('consequential RPC confirmations', () => {
   });
 
   it.each([
-    ['archive_enquiry', 'archiveEnquiry', /retained for audit and recovery/i],
-    ['archive_client', 'archiveClient', /unconverted enquiries/i],
-  ] as const)('guards %s before the RPC is sent', async (rpcName, action, expectedMessage) => {
+    ['update_enquiry_details', 'p_enquiry', 'archiveEnquiry', /retained for audit and recovery/i],
+    ['update_client_details', 'p_client', 'archiveClient', /unconverted enquiries/i],
+  ] as const)('guards the archival command on %s before the RPC is sent', async (rpcName, payloadKey, action, expectedMessage) => {
     const confirm = vi.fn(() => false);
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     const client = wrappedClient(confirm, rpcCalls);
 
     const result = await client.rpc(rpcName, {
-      [rpcName === 'archive_enquiry' ? 'p_enquiry_id' : 'p_client_id']: 'record-id',
+      [rpcName === 'update_enquiry_details' ? 'p_enquiry_id' : 'p_client_id']: 'record-id',
+      [payloadKey]: { _archive: true },
     });
 
     expect(result).toEqual({ data: null, error: null });
@@ -144,6 +145,23 @@ describe('consequential RPC confirmations', () => {
     });
   });
 
+  it('does not prompt for ordinary detail edits', async () => {
+    const confirm = vi.fn(() => false);
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    const client = wrappedClient(confirm, rpcCalls);
+
+    await client.rpc('update_client_details', {
+      p_client_id: 'client-id',
+      p_client: { full_name: 'Updated client' },
+    });
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(rpcCalls).toContainEqual({
+      name: 'update_client_details',
+      args: { p_client_id: 'client-id', p_client: { full_name: 'Updated client' } },
+    });
+  });
+
   it('sends a consequential RPC after asynchronous confirmation', async () => {
     const confirm = vi.fn(async () => true);
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
@@ -165,8 +183,9 @@ describe('consequential RPC confirmations', () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     const client = wrappedClient(confirm, rpcCalls, 'ru');
 
-    await client.rpc('archive_client', {
+    await client.rpc('update_client_details', {
       p_client_id: 'client-id',
+      p_client: { _archive: true },
     });
 
     expect(confirm).toHaveBeenCalledWith(
