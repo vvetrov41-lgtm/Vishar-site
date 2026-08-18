@@ -79,6 +79,13 @@ await test('OAuth callback diagnostics expose only bounded backend codes', () =>
   assert.equal(worker.oauthStageFailureCode('not_a_stage', new Error('provider secret detail')), 'gmail_oauth_failed');
 });
 
+await test('Google provider fetches use manual redirect handling in Cloudflare Workers', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../workers/lib/google-gmail.js', import.meta.url), 'utf8');
+  assert.equal((source.match(/redirect: 'error'/g) || []).length, 0);
+  assert.equal((source.match(/redirect: 'manual'/g) || []).length, 3);
+});
+
 await test('OAuth token endpoint errors map to bounded diagnostics without provider descriptions', async () => {
   const base = {
     clientId: 'client-id-1234567890',
