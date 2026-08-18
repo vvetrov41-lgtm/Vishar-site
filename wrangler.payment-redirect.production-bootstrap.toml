@@ -1,0 +1,18 @@
+name = "vishar-payment-redirect-production"
+main = "workers/payment-redirect.js"
+compatibility_date = "2026-08-01"
+workers_dev = false
+preview_urls = false
+
+# Bootstrap is intentionally unreachable. It exists only so an encrypted
+# SUPABASE_SECRET_KEY can be installed before the exact public path route is
+# activated by the production config.
+
+[[ratelimits]]
+name = "PAYMENT_REDIRECT_RATE_LIMIT"
+namespace_id = "1201"
+simple = { limit = 120, period = 60 }
+
+[vars]
+VISHAR_ENVIRONMENT = "production"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
