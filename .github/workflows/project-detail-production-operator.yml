@@ -1,0 +1,264 @@
+name: Project detail production operator
+
+# Release-only production operator for project-detail product PR #326.
+# It owns no production credentials. The canonical protected database and
+# private-CRM workflows remain the only paths that can mutate production.
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc47-project-detail-operational
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+  actions: write
+
+concurrency:
+  group: project-detail-production-operator-rc47
+  cancel-in-progress: false
+
+env:
+  PRODUCT_PR: '326'
+  PRODUCT_HEAD_BRANCH: agent/project-detail-operational-fixes
+  PRODUCT_BASE_BRANCH: agent/monzo-reconciliation-route-recovery-v2
+  PRODUCT_BASE_SHA: 92464a958b05aeca4ac4f9d82b3ab208fc0f3ba8
+  RELEASE_BRANCH: release/private-crm-rc47-project-detail-operational
+  OPERATOR_WORKFLOW_PATH: .github/workflows/project-detail-production-operator.yml
+  DATABASE_WORKFLOW: deploy-private-production-database.yml
+  CRM_WORKFLOW: deploy-private-production-crm.yml
+  MONZO_RECOVERY_WORKFLOW: monzo-reconciliation-recovery-production-operator.yml
+  MONZO_RECOVERY_BRANCH: release/private-crm-rc46-monzo-reconciliation-recovery
+  MONZO_RECOVERY_ACTIVATION_SHA: c39453b80955de6cea7d95e1dacd6116d0d8bcb4
+
+jobs:
+  authorize:
+    name: Authorize project detail rollout
+    if: >-
+      github.actor == 'vvetrov41-lgtm' &&
+      github.ref == 'refs/heads/release/private-crm-rc47-project-detail-operational' &&
+      contains(github.event.head_commit.message, '[RUN_PROJECT_DETAIL_OPERATIONAL]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      approved_sha: ${{ github.sha }}
+      product_sha: ${{ steps.lineage.outputs.product_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release and product lineage
+        id: lineage
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+          release_tip="$(git ls-remote --heads origin "refs/heads/${RELEASE_BRANCH}" | awk '{print $1}')"
+          test "$release_tip" = "$APPROVED_SHA"
+
+          product="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PRODUCT_PR}" --jq '[.state, (.draft|tostring), (.merged|tostring), .head.ref, .head.sha, .base.ref, .base.sha] | @tsv')"
+          IFS=$'\t' read -r ps pd pm ph product_sha pb pbs <<< "$product"
+          test "$ps" = open && test "$pd" = true && test "$pm" = false
+          test "$ph" = "$PRODUCT_HEAD_BRANCH"
+          test "$pb" = "$PRODUCT_BASE_BRANCH" && test "$pbs" = "$PRODUCT_BASE_SHA"
+          git cat-file -e "${product_sha}^{commit}"
+          git merge-base --is-ancestor "$product_sha" "$APPROVED_SHA"
+
+          mapfile -t release_delta < <(git diff --name-only "$product_sha" "$APPROVED_SHA")
+          test "${#release_delta[@]}" -eq 1
+          test "${release_delta[0]}" = "$OPERATOR_WORKFLOW_PATH"
+
+          mapfile -t product_delta < <(git diff --name-only "$PRODUCT_BASE_SHA" "$product_sha")
+          allowed=(
+            admin/src/components/CollapsibleActivityLog.tsx
+            admin/src/components/ProjectAppointmentEditor.tsx
+            admin/src/components/ProjectDepositPanel.tsx
+            admin/src/components/ProjectEstimatePanel.tsx
+            admin/src/lib/operational-labels.ts
+            admin/src/lib/payment-api.ts
+            admin/src/lib/project-operations-api.ts
+            admin/src/lib/session.tsx
+            admin/src/pages/ProjectDetailPage.tsx
+            admin/src/test/project-estimate-panel.test.ts
+            admin/src/test/project-operations-api.test.ts
+            admin/src/test/project-payment-api.test.ts
+            admin/src/test/roles.test.tsx
+            admin/src/test/session-planning.test.tsx
+            admin/src/test/workflows.test.tsx
+            supabase/migrations/0061_project_status_management.sql
+            supabase/tests/050_rls_roles.sql
+            supabase/tests/212_project_status_management.sql
+          )
+          test "${#product_delta[@]}" -eq "${#allowed[@]}"
+          for path in "${product_delta[@]}"; do
+            ok=''
+            for expected in "${allowed[@]}"; do
+              if [ "$path" = "$expected" ]; then ok=yes; break; fi
+            done
+            test "$ok" = yes
+          done
+
+          test -f supabase/migrations/0059_gmail_production_integration.sql
+          test -f supabase/migrations/0060_monzo_reconciliation_route_recovery.sql
+          test -f supabase/migrations/0061_project_status_management.sql
+          test ! -e supabase/migrations/0059_project_status_management.sql
+          test ! -e supabase/migrations/0060_project_status_management.sql
+          grep -Fq 'create or replace function public.set_project_status' supabase/migrations/0061_project_status_management.sql
+          grep -Fq "('public.set_project_status(uuid,public.project_status)', false, true, false)" supabase/tests/050_rls_roles.sql
+          echo "product_sha=$product_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Require green exact-head product CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT_SHA: ${{ steps.lineage.outputs.product_sha }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            runs="$(mktemp)"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${PRODUCT_SHA}&per_page=100" \
+              --jq '.workflow_runs[] | [.name,.status,(.conclusion // "none"),.created_at] | @tsv' > "$runs"
+            waiting=''; failed=''
+            for workflow in 'Static Validation' 'CRM and booking validation'; do
+              latest="$(awk -F'\t' -v n="$workflow" '$1==n {print $4"\t"$2"\t"$3}' "$runs" | sort -r | head -1)"
+              if [ -z "$latest" ]; then waiting="${waiting}${workflow}:absent;"; continue; fi
+              status="$(printf '%s' "$latest" | cut -f2)"
+              conclusion="$(printf '%s' "$latest" | cut -f3)"
+              if [ "$status" != completed ]; then waiting="${waiting}${workflow}:${status};"
+              elif [ "$conclusion" != success ]; then failed="${failed}${workflow}:${conclusion};"; fi
+            done
+            rm -f "$runs"
+            test -z "$failed" || { echo "Exact-head product CI failed: $failed" >&2; exit 1; }
+            if [ -z "$waiting" ]; then exit 0; fi
+            sleep 10
+          done
+          echo 'Timed out waiting for exact-head product CI.' >&2
+          exit 1
+
+      - name: Require completed Monzo recovery production rollout first
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${MONZO_RECOVERY_WORKFLOW}/runs?branch=${MONZO_RECOVERY_BRANCH}&event=push&per_page=30" \
+            | jq -r --arg sha "$MONZO_RECOVERY_ACTIVATION_SHA" '[.workflow_runs[] | select(.head_sha==$sha and .status=="completed" and .conclusion=="success")] | sort_by(.created_at) | reverse | .[0].id // empty')"
+          if [ -z "$run_id" ]; then
+            echo 'Monzo reconciliation recovery production rollout has not completed successfully on the required activation SHA.' >&2
+            exit 1
+          fi
+          echo "Verified prior Monzo recovery production run: $run_id"
+
+      - name: Authorization summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Project detail production operator'
+            echo "- Release SHA: \`${GITHUB_SHA}\`"
+            echo '- Production before protected approvals: unchanged'
+            echo '- Prerequisite: successful rc46 Monzo reconciliation recovery rollout'
+            echo '- Ordered scope: production DB migration 0061, then private CRM Pages only'
+            echo '- Staging, public site, booking, Gmail, Monzo, Calendar, Telegram and WhatsApp deployments: none'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  database:
+    name: Deploy project status migration 0061
+    needs: authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Dispatch canonical production database workflow
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n --arg ref "$RELEASE_BRANCH" --arg sha "$APPROVED_SHA" \
+            '{ref:$ref,inputs:{approved_sha:$sha,deploy:"true",approval_phrase:"DEPLOY_PRIVATE_CRM_DATABASE"}}' \
+            | gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${DATABASE_WORKFLOW}/dispatches" --input -
+          echo "started_at=$started_at" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for canonical database workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
+          STARTED_AT: ${{ steps.dispatch.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 9600)); run_id=''
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${DATABASE_WORKFLOW}/runs?branch=${RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
+              | jq -r --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" '[.workflow_runs[] | select(.head_sha==$sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+            [ -n "$run_id" ] && break
+            sleep 3
+          done
+          test -n "$run_id"
+          echo "Database workflow run: $run_id"
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '[.status,(.conclusion // "none")] | @tsv')"
+            status="$(printf '%s' "$row" | cut -f1)"; conclusion="$(printf '%s' "$row" | cut -f2)"
+            if [ "$status" = completed ]; then test "$conclusion" = success; exit 0; fi
+            sleep 15
+          done
+          echo 'Timed out waiting for canonical production database workflow.' >&2
+          exit 1
+
+  crm:
+    name: Deploy private CRM project detail UI
+    needs: [authorize, database]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Dispatch canonical private CRM workflow
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n --arg ref "$RELEASE_BRANCH" --arg sha "$APPROVED_SHA" \
+            '{ref:$ref,inputs:{approved_sha:$sha,deploy:"true",approval_phrase:"DEPLOY_PRIVATE_CRM_ONLY"}}' \
+            | gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/dispatches" --input -
+          echo "started_at=$started_at" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for canonical private CRM workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ needs.authorize.outputs.approved_sha }}
+          STARTED_AT: ${{ steps.dispatch.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 9600)); run_id=''
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?branch=${RELEASE_BRANCH}&event=workflow_dispatch&per_page=20" \
+              | jq -r --arg sha "$APPROVED_SHA" --arg started "$STARTED_AT" '[.workflow_runs[] | select(.head_sha==$sha and .created_at >= $started)] | sort_by(.created_at) | reverse | .[0].id // empty')"
+            [ -n "$run_id" ] && break
+            sleep 3
+          done
+          test -n "$run_id"
+          echo "Private CRM workflow run: $run_id"
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '[.status,(.conclusion // "none")] | @tsv')"
+            status="$(printf '%s' "$row" | cut -f1)"; conclusion="$(printf '%s' "$row" | cut -f2)"
+            if [ "$status" = completed ]; then test "$conclusion" = success; exit 0; fi
+            sleep 15
+          done
+          echo 'Timed out waiting for canonical private CRM deployment.' >&2
+          exit 1
