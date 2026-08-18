@@ -1,74 +1,14 @@
 name: RC67 CRM Pages gate cleanup
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
-  cleanup:
-    name: Verify run 22 success and cancel redundant run 24
-    if: github.actor == 'vvetrov41-lgtm'
+  retired:
+    name: Retired temporary helper
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - name: Clean redundant protected CRM run
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CRM_WORKFLOW: deploy-private-production-crm.yml
-          SUCCESS_RUN_NUMBER: '22'
-          SUCCESS_SHA: 61b572cc1c4775eb73dfcde06d32a818d28d890f
-          REDUNDANT_RUN_NUMBER: '24'
-          REDUNDANT_SHA: b1c236a635e7a6ba3d898d0a769b5f617af8f6b7
-        run: |
-          set -euo pipefail
-          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CRM_WORKFLOW}/runs?event=workflow_dispatch&per_page=100")"
-          success="$(printf '%s' "$runs" | jq -r --argjson n "$SUCCESS_RUN_NUMBER" '[.workflow_runs[] | select(.run_number==$n)] | sort_by(.created_at) | reverse | .[0] // empty')"
-          redundant="$(printf '%s' "$runs" | jq -r --argjson n "$REDUNDANT_RUN_NUMBER" '[.workflow_runs[] | select(.run_number==$n)] | sort_by(.created_at) | reverse | .[0] // empty')"
-          test -n "$success" && test -n "$redundant"
-
-          test "$(printf '%s' "$success" | jq -r '.head_sha')" = "$SUCCESS_SHA"
-          test "$(printf '%s' "$success" | jq -r '.status')" = completed
-          test "$(printf '%s' "$success" | jq -r '.conclusion')" = success
-
-          redundant_id="$(printf '%s' "$redundant" | jq -r '.id')"
-          redundant_sha="$(printf '%s' "$redundant" | jq -r '.head_sha')"
-          redundant_status="$(printf '%s' "$redundant" | jq -r '.status')"
-          test "$redundant_sha" = "$REDUNDANT_SHA"
-
-          echo "SUCCESS_RUN id=$(printf '%s' "$success" | jq -r '.id') sha=$SUCCESS_SHA url=$(printf '%s' "$success" | jq -r '.html_url')"
-          echo "REDUNDANT_RUN id=$redundant_id status=$redundant_status sha=$redundant_sha url=$(printf '%s' "$redundant" | jq -r '.html_url')"
-
-          case "$redundant_status" in
-            waiting|queued|in_progress|pending)
-              gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${redundant_id}/cancel" >/dev/null
-              ;;
-            completed)
-              conclusion="$(printf '%s' "$redundant" | jq -r '.conclusion // empty')"
-              test "$conclusion" = cancelled
-              exit 0
-              ;;
-            *)
-              echo "Unexpected redundant run status: $redundant_status" >&2
-              exit 1
-              ;;
-          esac
-
-          deadline=$((SECONDS + 300))
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            row="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${redundant_id}" --jq '[.status,(.conclusion // "none")] | @tsv')"
-            status="$(printf '%s' "$row" | cut -f1)"
-            conclusion="$(printf '%s' "$row" | cut -f2)"
-            if [ "$status" = completed ]; then
-              test "$conclusion" = cancelled
-              echo "REDUNDANT_RUN_CANCELLED id=$redundant_id"
-              exit 0
-            fi
-            sleep 3
-          done
-          echo 'Timed out waiting for redundant run cancellation.' >&2
-          exit 1
+      - run: echo 'Temporary rc67 helper retired after successful production deployment.'
