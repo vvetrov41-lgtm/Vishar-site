@@ -32,7 +32,7 @@ async function callRpc(origin, name, args, headers, fetchImpl) {
     method: 'POST',
     headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(args || {}),
-    redirect: 'error',
+    redirect: 'manual',
   });
   const json = await safeJsonResponse(response);
   if (!response.ok) {

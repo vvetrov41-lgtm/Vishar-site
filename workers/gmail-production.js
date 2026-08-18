@@ -255,8 +255,11 @@ async function oauthCallback(url, env, fetchImpl) {
         p_scopes: String(tokens.scope || '').split(/\s+/).filter(Boolean),
       });
     } catch (error) {
-      stage = 'token_cleanup';
-      await deleteRefreshToken(env, config.artistId);
+      try {
+        await deleteRefreshToken(env, config.artistId);
+      } catch {
+        // Cleanup is best-effort. Never mask the primary bounded Supabase RPC failure.
+      }
       throw error;
     }
   } catch (error) {

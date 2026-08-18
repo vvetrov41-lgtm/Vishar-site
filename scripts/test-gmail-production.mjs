@@ -79,6 +79,20 @@ await test('OAuth callback diagnostics expose only bounded backend codes', () =>
   assert.equal(worker.oauthStageFailureCode('not_a_stage', new Error('provider secret detail')), 'gmail_oauth_failed');
 });
 
+await test('Gmail Supabase RPC fetches use manual redirect handling in Cloudflare Workers', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../workers/lib/gmail-supabase.js', import.meta.url), 'utf8');
+  assert.equal((source.match(/redirect: 'error'/g) || []).length, 0);
+  assert.equal((source.match(/redirect: 'manual'/g) || []).length, 1);
+});
+
+await test('OAuth RPC cleanup cannot mask the primary RPC diagnostic', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../workers/gmail-production.js', import.meta.url), 'utf8');
+  assert.equal(source.includes("stage = 'token_cleanup';"), false);
+  assert.match(source, /Cleanup is best-effort\. Never mask the primary bounded Supabase RPC failure\./);
+});
+
 await test('Google provider fetches use manual redirect handling in Cloudflare Workers', async () => {
   const { readFile } = await import('node:fs/promises');
   const source = await readFile(new URL('../workers/lib/google-gmail.js', import.meta.url), 'utf8');
