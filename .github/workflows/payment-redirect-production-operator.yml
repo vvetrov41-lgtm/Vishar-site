@@ -12,7 +12,7 @@ permissions:
 
 env:
   PRODUCT_BRANCH: agent/payment-redirect-production-activation
-  PRODUCT_SHA: f60560d70c3b963d7444720718652a38e695049e
+  PRODUCT_SHA: 06bd47a55928085f18bffc1ee73466e5196fe8f7
   PRODUCT_BASE_SHA: 5752484466c83362ee1db373606c9c8e5bb144ea
   RELEASE_BRANCH: release/private-crm-rc54-payment-redirect
   OPERATOR_WORKFLOW: .github/workflows/payment-redirect-production-operator.yml
@@ -155,4 +155,3 @@ jobs:
       approved_sha: ${{ needs.authorize.outputs.approved_sha }}
       deploy: true
       approval_phrase: DEPLOY_PRIVATE_CRM_PAYMENT_REDIRECT_ONLY
-    secrets: inherit
