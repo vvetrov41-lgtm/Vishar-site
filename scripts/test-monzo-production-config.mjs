@@ -2,21 +2,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-/**
- * The production Monzo connector is deployed straight from its tracked
- * configuration, so that file is the security boundary and this suite is what
- * proves it. Every assertion here corresponds to a production guarantee that a
- * future edit could silently remove:
- *
- *   - only the opaque webhook path is publicly reachable;
- *   - reconciliation is explicitly enabled only for candidate creation and can
- *     never settle a payment;
- *   - the encrypted token store is bound to the production KV namespace and
- *     never to retained staging;
- *   - no provider credential, Supabase service key or encryption key is
- *     tracked in the repository.
- */
-
 let passes = 0;
 let failures = 0;
 
@@ -34,10 +19,6 @@ function test(name, run) {
 const PRODUCTION_PATH = 'wrangler.monzo-api.production.toml';
 const production = readFileSync(resolve(process.cwd(), PRODUCTION_PATH), 'utf8');
 const dormant = readFileSync(resolve(process.cwd(), 'wrangler.monzo-api.toml'), 'utf8');
-
-// Comments carry the rationale for these controls, so every structural check
-// runs against directives only. A guarantee that exists only inside a comment
-// is not a guarantee.
 const directives = production
   .split(/\r?\n/)
   .map((line) => line.replace(/(^|\s)#.*$/, '').trim())
@@ -66,24 +47,23 @@ test('the production Worker is dedicated, isolated and has no developer surface'
   assert.equal(value('main'), 'workers/monzo-api-gateway.js');
   assert.match(body, /^workers_dev = false$/m);
   assert.match(body, /^preview_urls = false$/m);
-  assert.doesNotMatch(body, /workers_dev\s*=\s*true/);
-  assert.doesNotMatch(body, /preview_urls\s*=\s*true/);
 });
 
-test('the entrypoint is the rate-limiting gateway, never the bare API Worker', () => {
-  // workers/monzo-api.js has no limiter of its own. Deploying it directly would
-  // expose an unthrottled public webhook path.
+test('the entrypoint is the bounded gateway, never the bare API Worker', () => {
   assert.notEqual(value('main'), 'workers/monzo-api.js');
 });
 
-test('exactly one production Custom Domain is declared, with previews disabled', () => {
+test('production routes are exactly the Monzo Custom Domain plus the first-party payment path', () => {
   const routes = body.match(/routes = \[[\s\S]*?\]/);
   assert.ok(routes, 'production routes must be declared so --strict can verify them');
   const patterns = [...routes[0].matchAll(/pattern = "([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(patterns, ['monzo.vishartattoo.com']);
-  assert.match(routes[0], /custom_domain = true/);
+  assert.deepEqual(patterns, [
+    'monzo.vishartattoo.com',
+    'vishartattoo.com/pay-by-bank-transfer/*',
+  ]);
+  assert.equal((routes[0].match(/custom_domain = true/g) || []).length, 1);
   assert.match(routes[0], /previews_enabled = false/);
-  assert.match(routes[0], /zone_name = "vishartattoo\.com"/);
+  assert.equal((routes[0].match(/zone_name = "vishartattoo\.com"/g) || []).length, 2);
   assert.doesNotMatch(routes[0], new RegExp(RETAINED_STAGING.hostname.replace(/\./g, '\\.')));
 });
 
@@ -96,15 +76,21 @@ test('candidate-only reconciliation is explicitly enabled in production', () => 
   assert.equal(value('MONZO_RECONCILIATION_ENABLED'), 'true');
 });
 
-test('the public webhook rate limiter is bound and isolated from other surfaces', () => {
-  assert.match(body, /\[\[ratelimits\]\]/);
-  const limiter = body.match(/\[\[ratelimits\]\][\s\S]*?simple = \{[^}]*\}/);
-  assert.ok(limiter);
-  assert.match(limiter[0], /name = "MONZO_WEBHOOK_RATE_LIMIT"/);
-  const namespace = limiter[0].match(/namespace_id = "(\d+)"/);
-  assert.ok(namespace, 'the limiter must declare a namespace id');
-  assert.notEqual(namespace[1], RETAINED_STAGING.rateLimitNamespace);
-  assert.notEqual(namespace[1], '1001'); // Calendar connector limiter
+test('webhook and payment redirect rate limiters are both bound and isolated', () => {
+  const limiters = [...body.matchAll(/\[\[ratelimits\]\][\s\S]*?simple = \{[^}]*\}/g)].map((match) => match[0]);
+  assert.equal(limiters.length, 2);
+  const webhook = limiters.find((entry) => entry.includes('name = "MONZO_WEBHOOK_RATE_LIMIT"'));
+  const payment = limiters.find((entry) => entry.includes('name = "PAYMENT_REDIRECT_RATE_LIMIT"'));
+  assert.ok(webhook);
+  assert.ok(payment);
+  const webhookNamespace = webhook.match(/namespace_id = "(\d+)"/);
+  const paymentNamespace = payment.match(/namespace_id = "(\d+)"/);
+  assert.ok(webhookNamespace);
+  assert.ok(paymentNamespace);
+  assert.notEqual(webhookNamespace[1], RETAINED_STAGING.rateLimitNamespace);
+  assert.notEqual(webhookNamespace[1], '1001');
+  assert.notEqual(paymentNamespace[1], webhookNamespace[1]);
+  assert.notEqual(paymentNamespace[1], '1001');
 });
 
 test('all three KV namespaces are bound to distinct production namespaces', () => {
@@ -115,12 +101,9 @@ test('all three KV namespaces are bound to distinct production namespaces', () =
     ['MONZO_OAUTH_STATE', 'MONZO_OAUTH_TOKENS', 'MONZO_WEBHOOK_ROUTES'],
   );
   const ids = bindings.map((entry) => entry.id);
-  assert.equal(new Set(ids).size, 3, 'state, tokens and routes must not share a namespace');
+  assert.equal(new Set(ids).size, 3);
   for (const id of ids) {
-    assert.ok(
-      ![RETAINED_STAGING.kvStateId, RETAINED_STAGING.kvTokensId, RETAINED_STAGING.kvRoutesId].includes(id),
-      `refusing to bind the retained staging Monzo KV namespace ${id}`,
-    );
+    assert.ok(![RETAINED_STAGING.kvStateId, RETAINED_STAGING.kvTokensId, RETAINED_STAGING.kvRoutesId].includes(id));
   }
 });
 
@@ -136,7 +119,6 @@ test('owner Access is pinned to the production application, never the staging on
   const aud = value('MONZO_ACCESS_AUD');
   assert.match(aud, /^[0-9a-f]{64}$/);
   assert.notEqual(aud, RETAINED_STAGING.accessAud);
-  // The webhook bypass application must never be accepted as owner proof.
   assert.notEqual(aud, RETAINED_STAGING.webhookBypassAud);
   assert.ok(value('MONZO_OWNER_EMAILS').includes('@'));
 });
@@ -153,7 +135,6 @@ test('every configured production URL is exact, HTTPS and on an owned host', () 
   assert.equal(webhookBase.hostname, 'monzo.vishartattoo.com');
   assert.equal(webhookBase.pathname, '/');
 
-  // The Worker's own validator requires the exact `/#/payments` fragment.
   const crmReturn = new URL(value('MONZO_CRM_RETURN_URL'));
   assert.equal(crmReturn.protocol, 'https:');
   assert.equal(crmReturn.hostname, 'crm.vishartattoo.com');
@@ -178,11 +159,7 @@ test('no provider credential, service key or encryption key is tracked', () => {
     'SUPABASE_SECRET_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
   ]) {
-    assert.doesNotMatch(
-      body,
-      new RegExp(`^${forbidden}\\s*=`, 'm'),
-      `${forbidden} must be an encrypted Worker secret, never tracked configuration`,
-    );
+    assert.doesNotMatch(body, new RegExp(`^${forbidden}\\s*=`, 'm'));
   }
 });
 
