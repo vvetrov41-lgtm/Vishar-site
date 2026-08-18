@@ -3,7 +3,7 @@ name: Gmail Google token transport probe
 on:
   push:
     branches:
-      - 'agent/gmail-google-token-transport-probe'
+      - 'release/private-crm-rc*-gmail-transport-probe'
 
 permissions:
   contents: read
