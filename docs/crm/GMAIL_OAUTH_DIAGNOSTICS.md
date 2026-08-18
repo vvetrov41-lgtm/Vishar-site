@@ -16,7 +16,16 @@ Allowed callback diagnostic codes:
 - `gmail_rpc_forbidden`
 - `gmail_rpc_failed`
 
-All other errors are collapsed to `gmail_oauth_failed`.
+If an unexpected runtime error is raised, the callback may expose only one of these fixed stage codes:
+
+- `gmail_oauth_code_exchange_failed`
+- `gmail_oauth_profile_failed`
+- `gmail_oauth_supabase_client_failed`
+- `gmail_oauth_token_store_failed`
+- `gmail_oauth_supabase_rpc_failed`
+- `gmail_oauth_token_cleanup_failed`
+
+The stage value is selected only by backend control flow. Provider payloads and exception text are never interpolated into the response. Errors outside the allow-listed backend codes and fixed stages collapse to `gmail_oauth_failed`.
 
 Production investigation order:
 
