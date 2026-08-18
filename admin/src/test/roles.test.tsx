@@ -153,14 +153,15 @@ describe('route protection', () => {
 });
 
 describe('finance isolation', () => {
-  it('shows the owner the rate and total on a project', async () => {
+  it('shows the owner the rate, total and estimated balance on a project', async () => {
     renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}` });
     expect(await screen.findByText('Raven sleeve')).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByText('Hourly rate')).toBeInTheDocument();
     });
-    expect(screen.getByText(/£140\.00/)).toBeInTheDocument();
-    expect(screen.getByText(/£2,520\.00/)).toBeInTheDocument();
+    expect(screen.getByText('Hourly rate').nextElementSibling).toHaveTextContent('£140.00');
+    expect(screen.getByText('Estimated total').nextElementSibling).toHaveTextContent('£2,520.00');
+    expect(screen.getByText('Estimated balance after deposit').nextElementSibling).toHaveTextContent('£2,520.00');
   });
 
   it('shows a booking manager the project without any money', async () => {
