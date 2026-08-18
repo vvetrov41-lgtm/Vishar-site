@@ -204,3 +204,4 @@ jobs:
       approved_sha: ${{ needs.authorize.outputs.approved_sha }}
       deploy: true
       approval_phrase: DEPLOY_PRIVATE_CRM_MONZO_ONLY
+    secrets: inherit
