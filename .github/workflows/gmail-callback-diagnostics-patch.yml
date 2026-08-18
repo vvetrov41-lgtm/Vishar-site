@@ -69,21 +69,21 @@ jobs:
           text = text.replace(anchor, insertion, 1)
 
           old_catch = """  } catch (error) {
-            const reason = error instanceof Error ? error.message : 'gmail_oauth_failed';
-            const message = reason === 'gmail_oauth_scope_mismatch'
-              ? 'Google did not grant the required read and send Gmail scopes.'
-              : 'The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled.';
-            return html(400, 'Gmail connection failed', message);
-          }
+              const reason = error instanceof Error ? error.message : 'gmail_oauth_failed';
+              const message = reason === 'gmail_oauth_scope_mismatch'
+                ? 'Google did not grant the required read and send Gmail scopes.'
+                : 'The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled.';
+              return html(400, 'Gmail connection failed', message);
+            }
           """
           new_catch = """  } catch (error) {
-            const reason = error instanceof Error ? error.message : 'gmail_oauth_failed';
-            const diagnostic = oauthFailureCode(error);
-            const message = reason === 'gmail_oauth_scope_mismatch'
-              ? `Google did not grant the required read and send Gmail scopes. Diagnostic: ${diagnostic}.`
-              : `The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled. Diagnostic: ${diagnostic}.`;
-            return html(400, 'Gmail connection failed', message);
-          }
+              const reason = error instanceof Error ? error.message : 'gmail_oauth_failed';
+              const diagnostic = oauthFailureCode(error);
+              const message = reason === 'gmail_oauth_scope_mismatch'
+                ? `Google did not grant the required read and send Gmail scopes. Diagnostic: ${diagnostic}.`
+                : `The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled. Diagnostic: ${diagnostic}.`;
+              return html(400, 'Gmail connection failed', message);
+            }
           """
           if old_catch not in text:
             raise SystemExit('oauth catch anchor not found')
