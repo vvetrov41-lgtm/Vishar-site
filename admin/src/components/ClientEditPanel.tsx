@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { can } from '../lib/permissions';
 import type { RecordEditApi } from '../lib/record-edit-api';
+import { useRouter } from '../lib/router';
 import type { Client, CrmRole } from '../lib/types';
 
 function value(value: string | null | undefined) {
@@ -16,10 +17,11 @@ export function ClientEditPanel({
 }: {
   client: Client;
   role: CrmRole | null | undefined;
-  api: Pick<RecordEditApi, 'updateClientDetails'>;
+  api: Pick<RecordEditApi, 'updateClientDetails' | 'archiveClient'>;
   language: 'en' | 'ru';
   onSaved: () => void;
 }) {
+  const { navigate } = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export function ClientEditPanel({
 
   const copy = language === 'ru' ? {
     edit: 'Редактировать клиента',
+    delete: 'Удалить клиента',
     save: 'Сохранить',
     cancel: 'Отмена',
     name: 'Имя',
@@ -44,8 +47,10 @@ export function ClientEditPanel({
     travelling: 'Откуда приезжает',
     none: 'Не указано',
     failed: 'Не удалось сохранить изменения клиента.',
+    deleteFailed: 'Не удалось удалить клиента.',
   } : {
     edit: 'Edit client',
+    delete: 'Delete client',
     save: 'Save',
     cancel: 'Cancel',
     name: 'Name',
@@ -56,13 +61,35 @@ export function ClientEditPanel({
     travelling: 'Travelling from',
     none: 'Not specified',
     failed: 'Could not save the client changes.',
+    deleteFailed: 'Could not delete the client.',
   };
+
+  async function archive() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.archiveClient(client.id);
+      if (result) navigate('/clients');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.deleteFailed);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (!editing) {
     return (
-      <div className="actions" style={{ marginTop: 12 }}>
-        <button type="button" onClick={() => setEditing(true)}>{copy.edit}</button>
-      </div>
+      <>
+        {error ? <div className="notice warn" role="alert" style={{ marginTop: 12 }}>{error}</div> : null}
+        <div className="actions" style={{ marginTop: 12 }}>
+          <button type="button" disabled={busy} onClick={() => setEditing(true)}>{copy.edit}</button>
+          {role === 'owner' ? (
+            <button type="button" className="danger" disabled={busy} onClick={() => { void archive(); }}>
+              {copy.delete}
+            </button>
+          ) : null}
+        </div>
+      </>
     );
   }
 
