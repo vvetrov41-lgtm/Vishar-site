@@ -116,7 +116,21 @@ export function createPaymentApi(client: CrmClient) {
       );
     },
 
-    async configureMonzoDeposit(input: {
+    // Backward-compatible GBP 250 settings action used by the currently
+    // deployed Payments page. Tier rows live separately, so changing the
+    // compatibility URL cannot erase the GBP 50/100/150 destinations.
+    async configureMonzoDeposit(input: { artistId: string; paymentUrl: string; enabled: boolean }) {
+      return unwrap<Record<string, unknown>>(
+        await client.rpc('configure_monzo_easy_bank_transfer', {
+          p_artist_id: input.artistId,
+          p_payment_url: input.paymentUrl,
+          p_is_enabled: input.enabled,
+        }),
+        'save Monzo deposit settings'
+      );
+    },
+
+    async configureMonzoDepositTierUrls(input: {
       artistId: string;
       paymentUrls: MonzoDepositTierUrls;
       enabled: boolean;
@@ -137,7 +151,7 @@ export function createPaymentApi(client: CrmClient) {
           p_payment_url_250: paymentUrl250,
           p_is_enabled: input.enabled,
         }),
-        'save Monzo deposit settings'
+        'save Monzo deposit tier links'
       );
     },
 
