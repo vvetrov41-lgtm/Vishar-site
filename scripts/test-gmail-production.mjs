@@ -73,6 +73,9 @@ await test('OAuth callback diagnostics expose only bounded backend codes', () =>
   assert.equal(worker.oauthFailureCode(new Error('gmail_oauth_code_exchange_failed')), 'gmail_oauth_code_exchange_failed');
   assert.equal(worker.oauthFailureCode(new Error('gmail_api_error')), 'gmail_api_error');
   assert.equal(worker.oauthFailureCode(new Error('provider secret detail')), 'gmail_oauth_failed');
+  assert.equal(worker.oauthStageFailureCode('profile', new Error('gmail_api_error')), 'gmail_api_error');
+  assert.equal(worker.oauthStageFailureCode('token_store', new Error('provider secret detail')), 'gmail_oauth_token_store_failed');
+  assert.equal(worker.oauthStageFailureCode('not_a_stage', new Error('provider secret detail')), 'gmail_oauth_failed');
 });
 
 await test('OAuth start is Vladimir-bound, PKCE-backed and only served on the Gmail production host', async () => {

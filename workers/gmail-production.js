@@ -125,6 +125,21 @@ function oauthFailureCode(error) {
   return OAUTH_SAFE_FAILURE_CODES.has(reason) ? reason : 'gmail_oauth_failed';
 }
 
+const OAUTH_SAFE_FAILURE_STAGES = new Set([
+  'code_exchange',
+  'profile',
+  'supabase_client',
+  'token_store',
+  'supabase_rpc',
+  'token_cleanup',
+]);
+
+function oauthStageFailureCode(stage, error) {
+  const direct = oauthFailureCode(error);
+  if (direct !== 'gmail_oauth_failed') return direct;
+  return OAUTH_SAFE_FAILURE_STAGES.has(stage) ? `gmail_oauth_${stage}_failed` : direct;
+}
+
 async function startOAuth(url, env) {
   if (url.hostname !== GMAIL_PUBLIC_HOST) return null;
   if (env?.GMAIL_OAUTH_ENABLED !== 'true') return json(404, { error: 'not_found' });
@@ -186,6 +201,7 @@ async function oauthCallback(url, env, fetchImpl) {
   }
 
   let tokens;
+  let stage = 'code_exchange';
   try {
     tokens = await exchangeAuthorizationCode({
       clientId: env.GOOGLE_OAUTH_CLIENT_ID,
@@ -195,12 +211,15 @@ async function oauthCallback(url, env, fetchImpl) {
       verifier: pending.verifier,
       fetchImpl,
     });
+    stage = 'profile';
     const profile = await getProfile(tokens.access_token, fetchImpl);
     if (profile.emailAddress !== config.expectedEmail) {
       return html(403, 'Wrong Google account', 'This Gmail connector is bound to a different artist mailbox. Sign in with the expected production Google account.');
     }
 
+    stage = 'supabase_client';
     const db = createGmailSupabase(env, fetchImpl);
+    stage = 'token_store';
     await storeRefreshToken(env, {
       artist_id: config.artistId,
       integration_key: config.integrationKey,
@@ -209,6 +228,7 @@ async function oauthCallback(url, env, fetchImpl) {
       scope: tokens.scope,
       connected_at: new Date().toISOString(),
     });
+    stage = 'supabase_rpc';
     try {
       await db.backendRpc('service_set_gmail_integration', {
         p_artist_id: config.artistId,
@@ -217,12 +237,13 @@ async function oauthCallback(url, env, fetchImpl) {
         p_scopes: String(tokens.scope || '').split(/\s+/).filter(Boolean),
       });
     } catch (error) {
+      stage = 'token_cleanup';
       await deleteRefreshToken(env, config.artistId);
       throw error;
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'gmail_oauth_failed';
-    const diagnostic = oauthFailureCode(error);
+    const diagnostic = oauthStageFailureCode(stage, error);
     const message = reason === 'gmail_oauth_scope_mismatch'
       ? `Google did not grant the required read and send Gmail scopes. Diagnostic: ${diagnostic}.`
       : `The Gmail OAuth exchange or account verification failed. No Gmail integration was enabled. Diagnostic: ${diagnostic}.`;
@@ -579,6 +600,7 @@ export const __testing = Object.freeze({
   bearer,
   stateKey,
   oauthFailureCode,
+  oauthStageFailureCode,
   startOAuth,
   oauthCallback,
   handleGptAction,
