@@ -34,6 +34,7 @@ jobs:
       OPERATIONS_HOST: gpt-operations.vishartattoo.com
       GMAIL_KV_STATE_ID: 4bdea97be49c4ca8975f95391a7ffdf1
       GMAIL_KV_TOKENS_ID: 143c9044f0ff4acd93f6c9cf7d022a66
+      GMAIL_DEPLOY_CONFIG: ${{ github.workspace }}/.wrangler.gmail.production.deploy.toml
 
     steps:
       - name: Resolve phase and verify production branch boundary
@@ -118,25 +119,27 @@ jobs:
           GMAIL_KV_TOKENS_ID: ${{ steps.kv.outputs.tokens_id }}
         run: |
           set -euo pipefail
-          node scripts/generate-gmail-production-deploy-config.mjs "$RUNNER_TEMP/wrangler.gmail.deploy.toml" "$PHASE"
-          grep -Fq 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"' "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
-          grep -Fq "id = \"$GMAIL_KV_STATE_ID\"" "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
-          grep -Fq "id = \"$GMAIL_KV_TOKENS_ID\"" "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
+          test "$(dirname "$GMAIL_DEPLOY_CONFIG")" = "$GITHUB_WORKSPACE"
+          node scripts/generate-gmail-production-deploy-config.mjs "$GMAIL_DEPLOY_CONFIG" "$PHASE"
+          grep -Fq 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq "id = \"$GMAIL_KV_STATE_ID\"" "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq "id = \"$GMAIL_KV_TOKENS_ID\"" "$GMAIL_DEPLOY_CONFIG"
           if [ "$PHASE" = 'bootstrap' ]; then
-            grep -Fq 'GMAIL_OAUTH_ENABLED = "false"' "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
-            grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
+            grep -Fq 'GMAIL_OAUTH_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+            grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
           fi
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --dry-run --outdir .wrangler/gmail-production-generated-phase
 
       - name: Deploy bootstrap Gmail Worker and provision only generated encryption key
         if: ${{ steps.phase.outputs.phase == 'bootstrap' }}
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME" --strict
-          secrets_json="$(npx wrangler secret list --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME" --format json)"
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --strict
+          secrets_json="$(npx wrangler secret list --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --format json)"
           if ! jq -e 'any(.[]; .name == "GMAIL_TOKEN_ENCRYPTION_KEY")' <<<"$secrets_json" >/dev/null; then
             node -e "process.stdout.write(require('crypto').randomBytes(32).toString('base64url'))" \
-              | npx wrangler secret put GMAIL_TOKEN_ENCRYPTION_KEY --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME"
+              | npx wrangler secret put GMAIL_TOKEN_ENCRYPTION_KEY --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME"
           fi
 
       - name: Verify Gmail Worker secrets before OAuth/read activation
@@ -144,7 +147,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          secrets_json="$(npx wrangler secret list --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME" --format json)"
+          secrets_json="$(npx wrangler secret list --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --format json)"
           SECRET_LIST="$secrets_json" node <<'NODE'
           const entries = JSON.parse(process.env.SECRET_LIST || '[]');
           const names = new Set(entries.map((entry) => entry?.name).filter(Boolean));
@@ -161,7 +164,7 @@ jobs:
       - name: Deploy activated Gmail Worker phase
         if: ${{ steps.phase.outputs.phase != 'bootstrap' }}
         shell: bash
-        run: npx wrangler deploy --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME" --strict
+        run: npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --strict
 
       - name: Deploy GPT service binding without changing GPT OAuth/capability gates
         if: ${{ steps.phase.outputs.phase == 'bootstrap' }}
@@ -194,6 +197,11 @@ jobs:
           done
           echo 'Production Gmail/GPT edge did not reach the expected phase state.' >&2
           exit 1
+
+      - name: Remove generated Gmail deploy config
+        if: always()
+        shell: bash
+        run: rm -f "$GMAIL_DEPLOY_CONFIG"
 
       - name: Production Gmail rollout summary
         if: always()
