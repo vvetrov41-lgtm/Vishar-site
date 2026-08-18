@@ -1,0 +1,97 @@
+name: Gmail Supabase runtime fix
+
+on:
+  push:
+    branches:
+      - 'ops/gmail-supabase-runtime-fix'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PRODUCT_BRANCH: agent/gmail-crm-production-integration
+      EXPECTED_PRODUCT_SHA: ea0aaf1e91011eade8ba90f10f4bc8187c5fe271
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_BRANCH }}
+          fetch-depth: 0
+
+      - name: Verify exact product head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_PRODUCT_SHA"
+          test -z "$(git status --short)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Patch Supabase redirect handling and preserve primary RPC error
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          supabase = Path('workers/lib/gmail-supabase.js')
+          source = supabase.read_text()
+          old = "redirect: 'error'"
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one Gmail Supabase redirect:error call, found {source.count(old)}')
+          source = source.replace(old, "redirect: 'manual'", 1)
+          supabase.write_text(source)
+
+          worker = Path('workers/gmail-production.js')
+          source = worker.read_text()
+          old_block = """    } catch (error) {\n      stage = 'token_cleanup';\n      await deleteRefreshToken(env, config.artistId);\n      throw error;\n    }\n"""
+          new_block = """    } catch (error) {\n      try {\n        await deleteRefreshToken(env, config.artistId);\n      } catch {\n        // Cleanup is best-effort. Never mask the primary bounded Supabase RPC failure.\n      }\n      throw error;\n    }\n"""
+          if source.count(old_block) != 1:
+              raise SystemExit('expected OAuth token cleanup block was not found exactly once')
+          source = source.replace(old_block, new_block, 1)
+          worker.write_text(source)
+
+          tests = Path('scripts/test-gmail-production.mjs')
+          text = tests.read_text()
+          anchor = "await test('Google provider fetches use manual redirect handling in Cloudflare Workers', async () => {"
+          if anchor not in text:
+              raise SystemExit('manual redirect regression anchor missing')
+          regression = """await test('Gmail Supabase RPC fetches use manual redirect handling in Cloudflare Workers', async () => {\n  const { readFile } = await import('node:fs/promises');\n  const source = await readFile(new URL('../workers/lib/gmail-supabase.js', import.meta.url), 'utf8');\n  assert.equal((source.match(/redirect: 'error'/g) || []).length, 0);\n  assert.equal((source.match(/redirect: 'manual'/g) || []).length, 1);\n});\n\nawait test('OAuth RPC cleanup cannot mask the primary RPC diagnostic', async () => {\n  const { readFile } = await import('node:fs/promises');\n  const source = await readFile(new URL('../workers/gmail-production.js', import.meta.url), 'utf8');\n  assert.equal(source.includes("stage = 'token_cleanup';"), false);\n  assert.match(source, /Cleanup is best-effort\. Never mask the primary bounded Supabase RPC failure\./);\n});\n\n"""
+          text = text.replace(anchor, regression + anchor, 1)
+          tests.write_text(text)
+          PY
+
+          git diff --check
+          test "$(grep -c "redirect: 'manual'" workers/lib/gmail-supabase.js)" -eq 1
+          test "$(grep -c "redirect: 'error'" workers/lib/gmail-supabase.js || true)" -eq 0
+          ! grep -Fq "stage = 'token_cleanup';" workers/gmail-production.js
+
+      - name: Validate focused Gmail regression
+        run: |
+          npm ci --ignore-scripts
+          node --check workers/lib/gmail-supabase.js
+          node --check workers/gmail-production.js
+          node scripts/test-gmail-production.mjs
+          node scripts/test-gmail-mcp-ready.mjs
+          node scripts/scan-secrets.mjs
+          npx wrangler deploy --config wrangler.gmail.production.toml --dry-run --outdir .wrangler/gmail-supabase-runtime-fix
+
+      - name: Commit exact bounded fix to product branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | sort)"
+          expected=$'scripts/test-gmail-production.mjs\nworkers/gmail-production.js\nworkers/lib/gmail-supabase.js'
+          test "$changed" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/test-gmail-production.mjs workers/gmail-production.js workers/lib/gmail-supabase.js
+          git commit -m 'Fix Gmail Supabase fetch runtime handling'
+          git push origin "HEAD:$PRODUCT_BRANCH"
