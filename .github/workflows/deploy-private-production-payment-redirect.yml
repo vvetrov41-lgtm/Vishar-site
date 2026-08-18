@@ -1,0 +1,246 @@
+name: Deploy private production payment redirect
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+  workflow_call:
+    inputs:
+      approved_sha:
+        required: true
+        type: string
+      deploy:
+        required: true
+        type: boolean
+      approval_phrase:
+        required: false
+        default: ''
+        type: string
+    secrets:
+      CRM_PRODUCTION_CLOUDFLARE_API_TOKEN:
+        required: true
+      CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID:
+        required: true
+      CRM_PRODUCTION_SUPABASE_SECRET_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-payment-redirect
+  cancel-in-progress: false
+
+env:
+  WORKER_NAME: vishar-payment-redirect-production
+  PRODUCTION_CONFIG: wrangler.payment-redirect.production.toml
+  BOOTSTRAP_CONFIG: wrangler.payment-redirect.production-bootstrap.toml
+  PRODUCTION_ORIGIN: https://vishartattoo.com
+
+jobs:
+  validate:
+    name: Validate payment redirect production artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Verify approved SHA and requested phase
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$APPROVED_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            test "$APPROVAL_PHRASE" = 'DEPLOY_PRIVATE_CRM_PAYMENT_REDIRECT_ONLY'
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact approved release tip
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+          tips="$(git ls-remote --heads origin 'refs/heads/release/private-crm-rc*')"
+          printf '%s' "$tips" | awk '{print $1}' | grep -Fxq "$APPROVED_SHA"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate public redirect boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm audit --audit-level=moderate
+          node scripts/test-payment-redirect-worker.mjs
+          npm run check:payment-redirect-bundle
+          npx wrangler deploy --config "$PRODUCTION_CONFIG" --dry-run --outdir .wrangler/payment-redirect-production-dry-run
+          npm run scan:secrets
+          grep -Fq 'vishartattoo.com/pay-by-bank-transfer/*' "$PRODUCTION_CONFIG"
+          grep -Fq 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"' "$PRODUCTION_CONFIG"
+          grep -Fq 'workers_dev = false' "$PRODUCTION_CONFIG"
+          grep -Fq 'preview_urls = false' "$PRODUCTION_CONFIG"
+          if grep -R -F -q 'gwaliusblwrzisrwnsvs' .wrangler/payment-redirect-production-dry-run; then
+            echo 'Production payment redirect artifact contains retained staging material.' >&2
+            exit 1
+          fi
+          if grep -R -E -q 'sb_secret_[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.' .wrangler/payment-redirect-production-dry-run; then
+            echo 'Production payment redirect artifact contains credential-shaped material.' >&2
+            exit 1
+          fi
+
+      - name: Validation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Payment redirect production validation'
+            echo "- Approved SHA: \`${{ inputs.approved_sha }}\`"
+            echo '- Runtime: `vishar-payment-redirect-production` only'
+            echo '- Public route: `vishartattoo.com/pay-by-bank-transfer/*` only'
+            echo '- Backend surface: `resolve_monzo_deposit_redirect` only'
+            echo '- Automatic settlement: none'
+            echo '- Production mutation in this validation job: none'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Private CRM payment redirect production gate
+    needs: validate
+    if: ${{ inputs.deploy }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+
+    steps:
+      - name: Confirm explicit production gate
+        shell: bash
+        env:
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+        run: |
+          set -euo pipefail
+          test "$APPROVAL_PHRASE" = 'DEPLOY_PRIVATE_CRM_PAYMENT_REDIRECT_ONLY'
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+
+      - name: Verify exact approved SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ inputs.approved_sha }}'
+          test -z "$(git status --short)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Ensure dedicated Worker has the production Supabase secret before routing traffic
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          PROVISIONING_SECRET: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+          existing='[]'
+          if npx wrangler secret list --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME" --format json > "$RUNNER_TEMP/payment-redirect-secrets.json" 2>/dev/null; then
+            existing="$(cat "$RUNNER_TEMP/payment-redirect-secrets.json")"
+          fi
+
+          if SECRET_LIST="$existing" node -e "process.exit(JSON.parse(process.env.SECRET_LIST||'[]').some(e=>e&&e.name==='SUPABASE_SECRET_KEY')?0:1)"; then
+            echo 'Dedicated Worker already has SUPABASE_SECRET_KEY; leaving it untouched.'
+            exit 0
+          fi
+
+          if [ -z "$PROVISIONING_SECRET" ]; then
+            echo 'Dedicated payment redirect Worker has no SUPABASE_SECRET_KEY and crm-production does not expose CRM_PRODUCTION_SUPABASE_SECRET_KEY for one-time provisioning.' >&2
+            exit 1
+          fi
+
+          # Create/update the Worker while it is still unreachable, then install
+          # the encrypted secret. The public route is activated only afterwards.
+          npx wrangler deploy --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME" --strict
+          printf '%s' "$PROVISIONING_SECRET" \
+            | npx wrangler secret put SUPABASE_SECRET_KEY --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME"
+
+          secrets_json="$(npx wrangler secret list --config "$BOOTSTRAP_CONFIG" --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node -e "if(!JSON.parse(process.env.SECRET_LIST||'[]').some(e=>e&&e.name==='SUPABASE_SECRET_KEY')) process.exit(1)"
+
+      - name: Deploy only the exact public payment redirect route
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config "$PRODUCTION_CONFIG" --name "$WORKER_NAME" --strict
+
+      - name: Verify exact public boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          public_id="00000000-0000-4000-8000-000000000000"
+          for attempt in $(seq 1 20); do
+            payment_status="$(curl -sS -o /tmp/payment-body -w '%{http_code}' --max-time 10 "$PRODUCTION_ORIGIN/pay-by-bank-transfer/$public_id" || true)"
+            root_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$PRODUCTION_ORIGIN/" || true)"
+            echo "payment route -> $payment_status; public root -> $root_status"
+            if [ "$payment_status" = '404' ] && [[ "$root_status" =~ ^(200|301|302|307|308)$ ]]; then
+              if grep -Fq 'Payment link unavailable' /tmp/payment-body; then
+                exit 0
+              fi
+            fi
+            sleep 6
+          done
+          echo 'Production payment redirect boundary did not reach the expected state.' >&2
+          exit 1
+
+      - name: Production summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Private CRM payment redirect production gate'
+            echo "- Exact SHA: \`${{ inputs.approved_sha }}\`"
+            echo '- Worker: `vishar-payment-redirect-production`'
+            echo '- Route: `https://vishartattoo.com/pay-by-bank-transfer/*` only'
+            echo '- workers.dev / preview URLs: disabled'
+            echo '- Rate limit: Worker binding, 120 requests/minute global budget'
+            echo '- Backend RPC allow-list: `resolve_monzo_deposit_redirect` only'
+            echo '- Payment status/ledger mutation: none'
+            echo '- Database / CRM Pages / Monzo / Gmail / Calendar / Telegram / WhatsApp / staging deploy commands: none'
+          } >> "$GITHUB_STEP_SUMMARY"
