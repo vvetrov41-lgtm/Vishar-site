@@ -6,7 +6,7 @@ preview_urls = false
 
 routes = [
   { pattern = "monzo.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false },
-  { pattern = "vishartattoo.com/pay-by-bank-transfer/*", zone_name = "vishartattoo.com" }
+  { pattern = "vishartattoo.com/pay-by-bank-transfer*", zone_name = "vishartattoo.com" }
 ]
 
 # Deliberately no [triggers] block. Nothing about this connector is scheduled;
@@ -16,6 +16,11 @@ routes = [
 # Public surfaces are bounded to:
 #   POST /webhooks/monzo/<43-128 char opaque key> on monzo.vishartattoo.com
 #   GET  /pay-by-bank-transfer/<opaque UUID> on vishartattoo.com
+#
+# The Cloudflare Worker Route deliberately ends in `pay-by-bank-transfer*`
+# rather than `pay-by-bank-transfer/*`. Cloudflare documents a route-specificity
+# issue around trailing `/*`; the Worker itself remains stricter and accepts
+# only `/pay-by-bank-transfer/<opaque UUID>` through payment-redirect.js.
 # Everything else on the Monzo hostname — /health and every /oauth/monzo/*
 # management, setup, status, account and disconnect route — remains owner-
 # protected by Cloudflare Access and independently re-verified inside the
