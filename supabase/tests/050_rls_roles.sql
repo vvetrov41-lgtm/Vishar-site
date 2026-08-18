@@ -538,6 +538,13 @@ insert into expected_function_acl values
   ('public.authorize_calendar_actor(text,uuid)', false, false, true),
   ('public.resolve_monzo_deposit_redirect(uuid)', false, false, true),
   ('public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', false, false, true),
+  ('public.service_resolve_gmail_target(uuid,uuid,uuid)', false, false, true),
+  ('public.service_set_gmail_integration(uuid,text,text,text[])', false, false, true),
+  ('public.service_disable_gmail_integration(uuid,text,text)', false, false, true),
+  ('public.service_upsert_gmail_thread_context(uuid,uuid,uuid,text,text,text,text)', false, false, true),
+  ('public.service_get_gmail_thread_context(uuid,uuid,uuid,uuid)', false, false, true),
+  ('public.claim_email_outbox(text,integer,integer)', false, false, true),
+  ('public.record_email_outbox_result(uuid,text,boolean,text,text)', false, false, true),
   ('public.list_calendar_connection_status()', false, true, false),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.

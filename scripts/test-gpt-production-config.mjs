@@ -76,8 +76,8 @@ const expectedOperations = [
   'listPaymentRequests', 'requestSessionDeposit', 'cancelPaymentRequest',
   'recordManualPayment', 'getWhatsAppConversation', 'ensureWhatsAppConversation',
   'listWhatsAppMessages', 'sendWhatsAppMessage', 'listEmailMessages',
-  'createEmailDraft', 'approveEmailDraft', 'listEnquiryFiles',
-  'listProjectFiles', 'listActivity',
+  'createEmailDraft', 'approveEmailDraft', 'searchEmailHistory', 'getEmailThread',
+  'createGmailReplyDraft', 'listEnquiryFiles', 'listProjectFiles', 'listActivity',
 ];
 const consequentialReads = new Set([
   'listClients', 'searchAppointmentClients', 'getClient', 'listEnquiries', 'getEnquiry',
@@ -85,13 +85,13 @@ const consequentialReads = new Set([
   'getProjectFinance', 'listInternalNotes', 'listFollowUps', 'listAppointments',
   'checkAppointmentConflicts', 'getAppointment', 'getAppointmentFull',
   'listAvailability', 'listPaymentRequests', 'getWhatsAppConversation',
-  'listWhatsAppMessages', 'listEmailMessages', 'listEnquiryFiles',
-  'listProjectFiles', 'listActivity',
+  'listWhatsAppMessages', 'listEmailMessages', 'searchEmailHistory', 'getEmailThread',
+  'listEnquiryFiles', 'listProjectFiles', 'listActivity',
 ]);
 
 const operationIds = [...openapi.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 assert.deepEqual(operationIds.sort(), [...expectedOperations].sort());
-assert.equal(operationIds.length, 52, 'full production GPT contract must expose exactly 52 named operations');
+assert.equal(operationIds.length, 55, 'full production GPT contract must expose exactly 55 named operations');
 assert.equal(count(openapi, 'x-openai-isConsequential: false'), consequentialReads.size);
 assert.equal(count(openapi, 'x-openai-isConsequential: true'), expectedOperations.length - consequentialReads.size);
 
@@ -108,6 +108,7 @@ assert.match(openapi, /operationId: getEnquiryFull[\s\S]*?canonical client conta
 assert.match(openapi, /operationId: recordManualPayment[\s\S]*?Confirm exact amount with the user/);
 assert.match(openapi, /operationId: sendWhatsAppMessage[\s\S]*?explicitly requested the exact message/);
 assert.match(openapi, /operationId: approveEmailDraft[\s\S]*?explicitly approves the draft content/);
+assert.match(openapi, /operationId: createGmailReplyDraft[\s\S]*?draft/);
 assert.match(openapi, /operationId: listEnquiryFiles[\s\S]*?Does not expose Storage paths/);
 
 assert.match(runbook, /fresh live Supabase check/i,
@@ -121,4 +122,4 @@ assert.match(runbook, /can_manage_crm/);
 assert.match(runbook, /can_manage_finance/);
 assert.match(runbook, /can_manage_communications/);
 
-console.log('GPT production config tests passed: production-only OAuth edge and 52 fixed-artist operational CRM actions.');
+console.log('GPT production config tests passed: production-only OAuth edge and 55 fixed-artist operational CRM actions.');

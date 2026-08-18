@@ -1,0 +1,37 @@
+name = "vishar-gmail-production"
+main = "workers/gmail-production.js"
+compatibility_date = "2026-08-17"
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "gmail.vishartattoo.com", custom_domain = true }
+]
+
+[[ratelimits]]
+name = "GMAIL_RATE_LIMIT"
+namespace_id = "1005"
+simple = { limit = 30, period = 60 }
+
+[vars]
+VISHAR_ENVIRONMENT = "production"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
+GOOGLE_OAUTH_REDIRECT_URI = "https://gmail.vishartattoo.com/oauth/google/callback"
+GMAIL_OAUTH_ENABLED = "false"
+GMAIL_READ_ENABLED = "false"
+GMAIL_DRAIN_ENABLED = "false"
+GMAIL_VLADIMIR_ENABLED = "false"
+GMAIL_KRISTINA_ENABLED = "false"
+
+# Production KV bindings are appended only by the guarded production deploy
+# workflow. Gmail uses dedicated production OAuth-state and encrypted-token KV
+# namespaces, so this Worker has no binding to Calendar state or token storage.
+# Gmail refresh-token envelopes also use a distinct GMAIL_TOKEN_ENCRYPTION_KEY.
+#
+# Required Worker secrets before OAuth activation:
+#   GOOGLE_OAUTH_CLIENT_ID
+#   GOOGLE_OAUTH_CLIENT_SECRET
+#   GMAIL_TOKEN_ENCRYPTION_KEY
+#   SUPABASE_SECRET_KEY
+#   SUPABASE_PUBLISHABLE_KEY is supplied as a non-secret production variable by
+#   the guarded deploy workflow.
