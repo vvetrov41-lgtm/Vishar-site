@@ -127,7 +127,14 @@ jobs:
           trap 'rm -f "$deploy_config"' EXIT
           node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config"
           grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'GMAIL_SHARED_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'binding = "GMAIL_SERVICE"' "$deploy_config"
+          grep -Fq 'service = "vishar-gmail-production"' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
+          if grep -Eq 'GOOGLE_OAUTH_CLIENT_(ID|SECRET)|GMAIL_TOKEN_ENCRYPTION_KEY|GMAIL_OAUTH_(STATE|TOKENS)' "$deploy_config"; then
+            echo 'Telegram scheduler config must not carry Gmail credentials or token storage.' >&2
+            exit 1
+          fi
 
           XDG_CONFIG_HOME=.wrangler/config \
           WRANGLER_LOG_PATH=.wrangler/telegram-production-wrangler.log \
@@ -170,6 +177,8 @@ jobs:
             workers_dev: false,
             preview_urls: false,
             cron: '*/5 * * * *',
+            gmail_service_binding: 'vishar-gmail-production',
+            gmail_secret_custody: false,
             secret_names_only: true,
           }, null, 2));
           console.log(`TELEGRAM_WORKER_VERSION=${versions[0].id}`);
@@ -198,8 +207,9 @@ jobs:
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Worker: `vishar-telegram-drain-production` only'
             echo '- Public routes: none; workers.dev disabled; preview URLs disabled'
-            echo '- Tracked config: drain disabled and no cron'
-            echo '- Generated deploy config: drain enabled with exact `*/5 * * * *` cron'
+            echo '- Tracked config: Telegram/Gmail dispatch disabled, no cron, no service binding'
+            echo '- Generated deploy config: Telegram + Gmail RPC dispatch enabled with the existing exact `*/5 * * * *` cron'
+            echo '- Gmail binding: `GMAIL_SERVICE -> vishar-gmail-production`; no Gmail OAuth/token/encryption credential is copied to this Worker'
             echo '- Batch: default 10, DB hard maximum 20; lease-aware claim/ack and DB rollout cutoff remain authoritative'
             echo '- Required secret names: one production Supabase backend key plus Vladimir/Kristina artist-scoped Telegram bindings'
             echo '- Global Telegram token/chat bindings are forbidden and not provisioned by this workflow'
