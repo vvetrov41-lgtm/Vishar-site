@@ -31,13 +31,18 @@ function expectFlag(config, name, value) {
   assert.match(config, new RegExp(`${name} = "${value}"`));
 }
 
+function expectNoGmailCron(config) {
+  assert.match(config, /\[triggers\][\s\S]*crons = \[\]/);
+  assert.equal(config.includes('*/5 * * * *'), false, 'Gmail Worker must not own a Cron Trigger');
+}
+
 const bootstrap = render('bootstrap');
 expectFlag(bootstrap, 'GMAIL_OAUTH_ENABLED', 'false');
 expectFlag(bootstrap, 'GMAIL_READ_ENABLED', 'false');
 expectFlag(bootstrap, 'GMAIL_DRAIN_ENABLED', 'false');
 expectFlag(bootstrap, 'GMAIL_VLADIMIR_ENABLED', 'false');
 expectFlag(bootstrap, 'GMAIL_KRISTINA_ENABLED', 'false');
-assert.equal(bootstrap.includes('[triggers]'), false);
+expectNoGmailCron(bootstrap);
 
 const vladimirRead = render('vladimir-read');
 expectFlag(vladimirRead, 'GMAIL_OAUTH_ENABLED', 'true');
@@ -45,13 +50,13 @@ expectFlag(vladimirRead, 'GMAIL_READ_ENABLED', 'true');
 expectFlag(vladimirRead, 'GMAIL_DRAIN_ENABLED', 'false');
 expectFlag(vladimirRead, 'GMAIL_VLADIMIR_ENABLED', 'true');
 expectFlag(vladimirRead, 'GMAIL_KRISTINA_ENABLED', 'false');
-assert.equal(vladimirRead.includes('[triggers]'), false);
+expectNoGmailCron(vladimirRead);
 
 const vladimirSend = render('vladimir-send');
 expectFlag(vladimirSend, 'GMAIL_DRAIN_ENABLED', 'true');
 expectFlag(vladimirSend, 'GMAIL_VLADIMIR_ENABLED', 'true');
 expectFlag(vladimirSend, 'GMAIL_KRISTINA_ENABLED', 'false');
-assert.match(vladimirSend, /\[triggers\][\s\S]*crons = \["\*\/5 \* \* \* \*"\]/);
+expectNoGmailCron(vladimirSend);
 
 const kristinaRead = render('kristina-read');
 expectFlag(kristinaRead, 'GMAIL_OAUTH_ENABLED', 'true');
@@ -59,12 +64,12 @@ expectFlag(kristinaRead, 'GMAIL_READ_ENABLED', 'true');
 expectFlag(kristinaRead, 'GMAIL_DRAIN_ENABLED', 'false');
 expectFlag(kristinaRead, 'GMAIL_VLADIMIR_ENABLED', 'true');
 expectFlag(kristinaRead, 'GMAIL_KRISTINA_ENABLED', 'true');
-assert.equal(kristinaRead.includes('[triggers]'), false);
+expectNoGmailCron(kristinaRead);
 
 const kristinaSend = render('kristina-send');
 expectFlag(kristinaSend, 'GMAIL_DRAIN_ENABLED', 'true');
 expectFlag(kristinaSend, 'GMAIL_VLADIMIR_ENABLED', 'true');
 expectFlag(kristinaSend, 'GMAIL_KRISTINA_ENABLED', 'true');
-assert.match(kristinaSend, /\[triggers\][\s\S]*crons = \["\*\/5 \* \* \* \*"\]/);
+expectNoGmailCron(kristinaSend);
 
-console.log('Gmail rollout phase tests passed: 5');
+console.log('Gmail rollout phase tests passed: 5, direct Gmail cron disabled in every phase');
