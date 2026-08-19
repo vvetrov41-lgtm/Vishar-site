@@ -1,0 +1,96 @@
+name: Gmail cron recovery
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc70-gmail-cron-recovery
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gmail-production-cron-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    environment: crm-production
+    env:
+      PRODUCT_BRANCH: agent/gmail-crm-production-integration
+      EXPECTED_PRODUCT_SHA: 9677ee0edb0e70ce8376d684efcb002569aa53c8
+      GMAIL_WORKER_NAME: vishar-gmail-production
+    steps:
+      - name: Verify exact product boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc70-gmail-cron-recovery'
+          remote_sha="$(git ls-remote https://github.com/$GITHUB_REPOSITORY.git refs/heads/$PRODUCT_BRANCH | awk '{print $1}')"
+          test -n "$remote_sha"
+          test "$remote_sha" = "$EXPECTED_PRODUCT_SHA"
+
+      - name: Inspect deployed Gmail flags safely
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/settings"
+          status="$(curl -sS --max-time 30 -o "$RUNNER_TEMP/settings.json" -w '%{http_code}' "$url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          if [ "$status" != 200 ] || ! jq -e '.success == true' "$RUNNER_TEMP/settings.json" >/dev/null; then
+            echo "Worker settings API failed with HTTP $status" >&2
+            jq -r '.errors[]? | "Cloudflare error code=\(.code) message=\(.message)"' "$RUNNER_TEMP/settings.json" >&2
+            exit 1
+          fi
+          for name in GMAIL_OAUTH_ENABLED GMAIL_READ_ENABLED GMAIL_DRAIN_ENABLED GMAIL_VLADIMIR_ENABLED GMAIL_KRISTINA_ENABLED; do
+            value="$(jq -r --arg name "$name" '.result.bindings[]? | select(.name == $name and .type == "plain_text") | .text' "$RUNNER_TEMP/settings.json" | tail -n1)"
+            echo "$name=$value"
+            test "$value" = true
+          done
+
+      - name: Recover and verify Gmail cron trigger
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/schedules"
+          get_status="$(curl -sS --max-time 30 -o "$RUNNER_TEMP/schedules-before.json" -w '%{http_code}' "$url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          if [ "$get_status" != 200 ] || ! jq -e '.success == true' "$RUNNER_TEMP/schedules-before.json" >/dev/null; then
+            echo "Cron GET failed with HTTP $get_status" >&2
+            jq -r '.errors[]? | "Cloudflare error code=\(.code) message=\(.message)"' "$RUNNER_TEMP/schedules-before.json" >&2
+            exit 1
+          fi
+          before_count="$(jq '[.result.schedules[]? | select(.cron == "*/5 * * * *")] | length' "$RUNNER_TEMP/schedules-before.json")"
+          if [ "$before_count" -eq 0 ]; then
+            put_status="$(curl -sS --max-time 30 -o "$RUNNER_TEMP/schedules-put.json" -w '%{http_code}' -X PUT "$url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data '[{"cron":"*/5 * * * *"}]')"
+            if [ "$put_status" != 200 ] || ! jq -e '.success == true' "$RUNNER_TEMP/schedules-put.json" >/dev/null; then
+              echo "Cron PUT failed with HTTP $put_status" >&2
+              jq -r '.errors[]? | "Cloudflare error code=\(.code) message=\(.message)"' "$RUNNER_TEMP/schedules-put.json" >&2
+              exit 1
+            fi
+          fi
+          final_status="$(curl -sS --max-time 30 -o "$RUNNER_TEMP/schedules-after.json" -w '%{http_code}' "$url" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          test "$final_status" = 200
+          jq -e '.success == true' "$RUNNER_TEMP/schedules-after.json" >/dev/null
+          final_count="$(jq '[.result.schedules[]? | select(.cron == "*/5 * * * *")] | length' "$RUNNER_TEMP/schedules-after.json")"
+          test "$final_count" -eq 1
+          echo 'Gmail cron trigger verified: */5 * * * *'
+
+      - name: Verify production edge remains bounded
+        shell: bash
+        run: |
+          set -euo pipefail
+          privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 https://gpt-operations.vishartattoo.com/privacy)"
+          ops="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 https://gpt-operations.vishartattoo.com/v1/enquiries/11111111-1111-4111-8111-111111111111/gmail/history)"
+          vladimir_headers="$(curl -sS -D - -o /dev/null --max-time 15 https://gmail.vishartattoo.com/oauth/google/start/vladimir)"
+          kristina_headers="$(curl -sS -D - -o /dev/null --max-time 15 https://gmail.vishartattoo.com/oauth/google/start/kristina)"
+          test "$privacy" = 200
+          test "$ops" = 401
+          grep -qi '^location: https://accounts.google.com/' <<<"$vladimir_headers"
+          grep -qi '^location: https://accounts.google.com/' <<<"$kristina_headers"
