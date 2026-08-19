@@ -148,7 +148,7 @@ select ok(
   exists (
     select 1
     from jsonb_array_elements((select result from gpt_candidate_list)) item
-    where (item ->> 'candidate_id')::uuid =
+    where (item ->> 'id')::uuid =
       (select (result ->> 'candidate_id')::uuid from vladimir_candidate)
   ),
   'Vladimir GPT list includes the Vladimir candidate'
@@ -157,7 +157,7 @@ select ok(
   not exists (
     select 1
     from jsonb_array_elements((select result from gpt_candidate_list)) item
-    where (item ->> 'candidate_id')::uuid =
+    where (item ->> 'id')::uuid =
       (select (result ->> 'candidate_id')::uuid from kristina_candidate)
   ),
   'Vladimir GPT list excludes Kristina candidate'
