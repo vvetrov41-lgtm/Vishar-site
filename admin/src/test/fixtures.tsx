@@ -184,6 +184,69 @@ export const ACTIVITY = [
   },
 ];
 
+export const CONVERSATION_ID = '99999999-9999-4999-8999-999999999999';
+export const LINKED_CONVERSATION_ID = '88888888-8888-4888-8888-888888888888';
+
+/**
+ * One unmatched Instagram conversation and one linked WhatsApp conversation.
+ * Between them they exercise both inbox states without needing a second
+ * fixture set.
+ */
+export const CONVERSATIONS = [
+  {
+    id: CONVERSATION_ID,
+    artist_id: VLADIMIR_ARTIST_ID,
+    channel: 'instagram' as const,
+    link_state: 'unmatched' as const,
+    state: 'open' as const,
+    client_id: null,
+    client_name: null,
+    enquiry_id: null,
+    external_username: 'synthetic.sender',
+    external_display_label: null,
+    last_message_at: '2026-08-18T09:05:00Z',
+    last_inbound_at: '2026-08-18T09:05:00Z',
+    operator_read_at: null,
+    has_unread: true,
+    latest_preview: 'Do you do cover ups?',
+    latest_direction: 'inbound' as const,
+    latest_message_type: 'text',
+  },
+  {
+    id: LINKED_CONVERSATION_ID,
+    artist_id: VLADIMIR_ARTIST_ID,
+    channel: 'whatsapp' as const,
+    link_state: 'linked' as const,
+    state: 'open' as const,
+    client_id: CLIENT_ID,
+    client_name: 'Fixture Client',
+    enquiry_id: ENQUIRY_ID,
+    external_username: null,
+    external_display_label: null,
+    last_message_at: '2026-08-18T08:00:00Z',
+    last_inbound_at: '2026-08-18T08:00:00Z',
+    operator_read_at: '2026-08-18T08:01:00Z',
+    has_unread: false,
+    latest_preview: 'Thanks, see you then',
+    latest_direction: 'outbound' as const,
+    latest_message_type: 'text',
+  },
+];
+
+export const CONVERSATION_MESSAGES = [
+  {
+    id: 'm1111111-1111-4111-8111-111111111111'.replace('m', 'a'),
+    direction: 'inbound' as const,
+    origin: 'contact' as const,
+    status: 'received' as const,
+    message_type: 'text',
+    body: 'Do you do cover ups?',
+    attachments: [],
+    created_at: '2026-08-18T09:05:00Z',
+    error_code: null,
+  },
+];
+
 export interface FakeClientOptions {
   role: CrmRole | 'deactivated' | 'signed_out' | 'no_profile';
   /** Records every RPC the interface attempts, so tests can assert on writes. */
@@ -247,6 +310,10 @@ function tableResult(
       return { data: role === 'owner' ? [{ session_id: SESSION_ID, artist_id: VLADIMIR_ARTIST_ID, project_id: PROJECT_ID, currency: 'GBP', price: 840, payment_status: 'unpaid' }] : [], error: null };
     case 'internal_notes':
       return { data: canManage ? [{ id: 'note-1', author_profile_id: OWNER_ID, body: 'Internal note', created_at: '2026-07-02T09:00:00Z' }] : [], error: null };
+    case 'communication_conversations':
+      return { data: CONVERSATIONS, error: null };
+    case 'communication_messages':
+      return { data: CONVERSATION_MESSAGES, error: null };
     case 'email_messages':
       return { data: canManage ? [] : [], error: null };
     case 'follow_ups':
@@ -335,13 +402,24 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       // Role checks live in the database. The fake enforces the same ones, so a
       // component test cannot "pass" by calling something the real RPC refuses.
       const ownerOnly = ['list_profiles', 'list_team_memberships', 'set_profile_role', 'set_profile_active', 'upsert_artist_membership', 'approve_email_draft', 'update_project_deposit', 'update_project_estimate', 'update_retention_policy'];
-      const managerOrOwner = ['transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles'];
+      const managerOrOwner = ['queue_communication_message', 'link_communication_conversation_client', 'create_client_from_communication', 'create_enquiry_from_communication', 'set_communication_conversation_state', 'transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles'];
 
       if (ownerOnly.includes(name) && effectiveRole !== 'owner') return { data: null, error: DENIED };
       if (managerOrOwner.includes(name) && effectiveRole !== 'owner' && effectiveRole !== 'booking_manager') {
         return { data: null, error: DENIED };
       }
 
+      if (name === 'list_communication_conversations') {
+        const channel = (args as any)?.p_channel ?? null;
+        const linkState = (args as any)?.p_link_state ?? null;
+        return {
+          data: CONVERSATIONS.filter(
+            (conversation) => (!channel || conversation.channel === channel)
+              && (!linkState || conversation.link_state === linkState),
+          ),
+          error: null,
+        };
+      }
       if (name === 'list_accessible_artists') {
         return { data: ARTISTS.filter((artist) => accessibleArtistIds.includes(artist.id)), error: null };
       }

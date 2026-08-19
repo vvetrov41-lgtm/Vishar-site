@@ -110,23 +110,29 @@ insert into public.clients (id, full_name, email) values
   ('cd111111-1111-4111-8111-111111111111', 'Drain Vladimir Client', 'drain.v@example.test'),
   ('cd222222-2222-4222-8222-222222222222', 'Drain Kristina Client', 'drain.k@example.test');
 
-insert into public.whatsapp_conversations (
-  id, artist_id, client_id, integration_key, contact_wa_id
+-- Since migration 0070 the WhatsApp channel is stored in the neutral core, so
+-- fixtures are seeded there. Every assertion below still reads the WhatsApp
+-- compatibility views and calls the WhatsApp RPCs, because those are what the
+-- deployed drain Worker actually uses.
+insert into public.communication_conversations (
+  id, artist_id, channel, client_id, link_state, integration_key, external_contact_id
 ) values
 ('cb111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
- 'cd111111-1111-4111-8111-111111111111', 'vladimir-production', '447700900011'),
+ 'whatsapp', 'cd111111-1111-4111-8111-111111111111', 'linked',
+ 'vladimir-production', '447700900011'),
 ('cb222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
- 'cd222222-2222-4222-8222-222222222222', 'kristina-production', '447700900022');
+ 'whatsapp', 'cd222222-2222-4222-8222-222222222222', 'linked',
+ 'kristina-production', '447700900022');
 
-insert into public.whatsapp_messages (
-  id, conversation_id, artist_id, direction, origin, status, body
+insert into public.communication_messages (
+  id, conversation_id, artist_id, channel, direction, origin, status, body
 ) values
 ('cc111111-1111-4111-8111-111111111111', 'cb111111-1111-4111-8111-111111111111',
- 'a1111111-1111-4111-8111-111111111111', 'outbound', 'crm', 'queued', 'Vladimir queued reply'),
+ 'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'outbound', 'crm', 'queued', 'Vladimir queued reply'),
 ('cc222222-2222-4222-8222-222222222222', 'cb222222-2222-4222-8222-222222222222',
- 'a2222222-2222-4222-8222-222222222222', 'outbound', 'crm', 'queued', 'Kristina queued reply'),
+ 'a2222222-2222-4222-8222-222222222222', 'whatsapp', 'outbound', 'crm', 'queued', 'Kristina queued reply'),
 ('cc333333-3333-4333-8333-333333333333', 'cb111111-1111-4111-8111-111111111111',
- 'a1111111-1111-4111-8111-111111111111', 'outbound', 'crm', 'queued', 'Vladimir retry probe');
+ 'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'outbound', 'crm', 'queued', 'Vladimir retry probe');
 
 -- The rollout cutoff is DB-authoritative, so synthetic jobs are backdated past
 -- it exactly the way the Telegram suite does.
@@ -136,22 +142,22 @@ set automatic_after = now() - interval '1 day',
 where kind = 'whatsapp_message';
 
 insert into public.integration_outbox (
-  id, artist_id, kind, dedupe_key, payload, whatsapp_message_id,
+  id, artist_id, kind, dedupe_key, payload, communication_message_id,
   client_id, status, next_attempt_at, created_at
 ) values
 ('ce111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
  'whatsapp_message', 'whatsapp:send:drain-vladimir',
- '{"whatsapp_message_id":"cc111111-1111-4111-8111-111111111111"}'::jsonb,
+ '{"communication_message_id":"cc111111-1111-4111-8111-111111111111"}'::jsonb,
  'cc111111-1111-4111-8111-111111111111', 'cd111111-1111-4111-8111-111111111111',
  'pending', now() - interval '3 minutes', now() - interval '3 hours'),
 ('ce222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
  'whatsapp_message', 'whatsapp:send:drain-kristina',
- '{"whatsapp_message_id":"cc222222-2222-4222-8222-222222222222"}'::jsonb,
+ '{"communication_message_id":"cc222222-2222-4222-8222-222222222222"}'::jsonb,
  'cc222222-2222-4222-8222-222222222222', 'cd222222-2222-4222-8222-222222222222',
  'pending', now() - interval '2 minutes', now() - interval '2 hours'),
 ('ce333333-3333-4333-8333-333333333333', 'a1111111-1111-4111-8111-111111111111',
  'whatsapp_message', 'whatsapp:send:drain-retry',
- '{"whatsapp_message_id":"cc333333-3333-4333-8333-333333333333"}'::jsonb,
+ '{"communication_message_id":"cc333333-3333-4333-8333-333333333333"}'::jsonb,
  'cc333333-3333-4333-8333-333333333333', 'cd111111-1111-4111-8111-111111111111',
  'pending', now() - interval '1 minute', now() - interval '1 hour');
 
@@ -252,7 +258,7 @@ select is(
 select throws_ok(
   $$select public.record_whatsapp_outbox_result(
       'ce111111-1111-4111-8111-111111111111', 'whatsapp-worker-wrong', true, 'wamid.X0000001')$$,
-  '42501', 'WhatsApp outbox lease is not owned by this worker',
+  '42501', 'communication outbox lease is not owned by this worker',
   'a different worker cannot acknowledge the lease'
 );
 select throws_ok(
@@ -298,7 +304,7 @@ select throws_ok(
   $$select public.record_whatsapp_outbox_result(
       'ce111111-1111-4111-8111-111111111111', 'whatsapp-worker-impostor', true,
       'wamid.SYNTHETICSEND0001')$$,
-  '42501', 'WhatsApp outbox lease is not owned by this worker',
+  '42501', 'communication outbox lease is not owned by this worker',
   'a worker that never held the lease cannot replay a success'
 );
 

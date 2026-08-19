@@ -37,8 +37,38 @@ select enum_has_labels(
   'whatsapp_message_status covers the Meta delivery lifecycle'
 );
 
-select has_table('public', 'whatsapp_conversations', 'whatsapp_conversations exists');
-select has_table('public', 'whatsapp_messages', 'whatsapp_messages exists');
+-- Since migration 0070 the WhatsApp channel is stored in the provider-neutral
+-- core and the WhatsApp relations are compatibility views over it. Both the
+-- storage and the projection are asserted, because the deployed CRM, the
+-- production GPT read RPCs and the WhatsApp Workers all still address the old
+-- names.
+select has_table('public', 'communication_conversations',
+                 'communication_conversations is the channel-neutral store');
+select has_table('public', 'communication_messages',
+                 'communication_messages is the channel-neutral store');
+select has_view('public', 'whatsapp_conversations',
+                'whatsapp_conversations remains addressable as a compatibility view');
+select has_view('public', 'whatsapp_messages',
+                'whatsapp_messages remains addressable as a compatibility view');
+
+-- A compatibility projection must never become a second write path into the
+-- core. Every write still goes through a named RPC.
+select throws_ok(
+  $$insert into public.whatsapp_conversations
+    (artist_id, integration_key, contact_wa_id)
+    values ('a1111111-1111-4111-8111-111111111111', 'vladimir-whatsapp', '447700900009')$$,
+  '42501', null,
+  'the WhatsApp conversation compatibility view is read-only'
+);
+select throws_ok(
+  $$insert into public.whatsapp_messages
+    (conversation_id, artist_id, direction, origin, status, body)
+    values ('9c111111-1111-4111-8111-111111111111',
+            'a1111111-1111-4111-8111-111111111111',
+            'outbound', 'crm', 'queued', 'rewritten')$$,
+  '42501', null,
+  'the WhatsApp message compatibility view is read-only'
+);
 
 select has_column('public', 'whatsapp_conversations', c,
                   'whatsapp_conversations.' || c || ' exists')
@@ -57,16 +87,20 @@ from unnest(array[
 ]) as c;
 
 select col_is_unique(
-  'public', 'whatsapp_conversations', array['artist_id', 'contact_wa_id'],
-  'one artist has at most one conversation per WhatsApp contact'
+  'public', 'communication_conversations',
+  array['artist_id', 'channel', 'external_contact_id'],
+  'one artist has at most one conversation per contact on a channel'
 );
 select col_is_unique(
-  'public', 'whatsapp_messages', array['artist_id', 'provider_message_id'],
-  'a provider message id maps to one row per artist, so a coexistence echo deduplicates'
+  'public', 'communication_messages',
+  array['artist_id', 'channel', 'provider_message_id'],
+  'a provider message id maps to one row per artist and channel, so an echo deduplicates'
 );
 
-select has_column('public', 'integration_outbox', 'whatsapp_message_id',
-                  'the outbox links a WhatsApp job to its message');
+select has_column('public', 'integration_outbox', 'communication_message_id',
+                  'the outbox links a messaging job to its message');
+select hasnt_column('public', 'integration_outbox', 'whatsapp_message_id',
+                    'the channel-specific outbox column is retired');
 
 -- ---------------------------------------------------------------------------
 -- No credential may be stored in CRM-readable integration metadata
@@ -119,29 +153,33 @@ insert into public.clients (id, full_name, email) values
   ('c9111111-1111-4111-8111-111111111111', 'Vladimir WhatsApp Client', 'wa.vladimir@example.test'),
   ('c9222222-2222-4222-8222-222222222222', 'Kristina WhatsApp Client', 'wa.kristina@example.test');
 
-insert into public.whatsapp_conversations (
-  id, artist_id, client_id, integration_key, contact_wa_id, contact_label
+insert into public.communication_conversations (
+  id, artist_id, channel, client_id, link_state,
+  integration_key, external_contact_id, external_display_label
 ) values
 ('9c111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
- 'c9111111-1111-4111-8111-111111111111', 'vladimir-whatsapp', '447700900001', 'Vladimir contact'),
+ 'whatsapp', 'c9111111-1111-4111-8111-111111111111', 'linked',
+ 'vladimir-whatsapp', '447700900001', 'Vladimir contact'),
 ('9c222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
- 'c9222222-2222-4222-8222-222222222222', 'kristina-whatsapp', '447700900002', 'Kristina contact');
+ 'whatsapp', 'c9222222-2222-4222-8222-222222222222', 'linked',
+ 'kristina-whatsapp', '447700900002', 'Kristina contact');
 
 select throws_ok(
-  $$insert into public.whatsapp_conversations
-    (artist_id, client_id, integration_key, contact_wa_id)
-    values ('a1111111-1111-4111-8111-111111111111',
-            'c9111111-1111-4111-8111-111111111111', 'vladimir-whatsapp', '447700900001')$$,
+  $$insert into public.communication_conversations
+    (artist_id, channel, client_id, link_state, integration_key, external_contact_id)
+    values ('a1111111-1111-4111-8111-111111111111', 'whatsapp',
+            'c9111111-1111-4111-8111-111111111111', 'linked',
+            'vladimir-whatsapp', '447700900001')$$,
   '23505', null,
   'a second conversation for the same artist and contact is rejected'
 );
 
 -- A conversation row cannot claim a message that belongs to another artist.
 select throws_ok(
-  $$insert into public.whatsapp_messages
-    (conversation_id, artist_id, direction, origin, status, body)
+  $$insert into public.communication_messages
+    (conversation_id, artist_id, channel, direction, origin, status, body)
     values ('9c111111-1111-4111-8111-111111111111',
-            'a2222222-2222-4222-8222-222222222222',
+            'a2222222-2222-4222-8222-222222222222', 'whatsapp',
             'outbound', 'crm', 'queued', 'cross-artist attempt')$$,
   '23503', null,
   'a message cannot attach to a conversation owned by a different artist'
@@ -149,30 +187,30 @@ select throws_ok(
 
 -- Coexistence invariants.
 select throws_ok(
-  $$insert into public.whatsapp_messages
-    (conversation_id, artist_id, direction, origin, status, body)
+  $$insert into public.communication_messages
+    (conversation_id, artist_id, channel, direction, origin, status, body)
     values ('9c111111-1111-4111-8111-111111111111',
-            'a1111111-1111-4111-8111-111111111111',
+            'a1111111-1111-4111-8111-111111111111', 'whatsapp',
             'inbound', 'crm', 'received', 'inbound cannot be CRM-originated')$$,
   '23514', null,
   'an inbound message must originate from the contact'
 );
 select throws_ok(
-  $$insert into public.whatsapp_messages
-    (conversation_id, artist_id, direction, origin, status, body)
+  $$insert into public.communication_messages
+    (conversation_id, artist_id, channel, direction, origin, status, body)
     values ('9c111111-1111-4111-8111-111111111111',
-            'a1111111-1111-4111-8111-111111111111',
-            'outbound', 'business_app', 'queued', 'app sends are never queued here')$$,
+            'a1111111-1111-4111-8111-111111111111', 'whatsapp',
+            'outbound', 'provider_app', 'queued', 'app sends are never queued here')$$,
   '23514', null,
   'a WhatsApp Business App message can never sit in the CRM send queue'
 );
 select lives_ok(
-  $$insert into public.whatsapp_messages
-    (conversation_id, artist_id, direction, origin, status, body,
+  $$insert into public.communication_messages
+    (conversation_id, artist_id, channel, direction, origin, status, body,
      provider_message_id, provider_timestamp)
     values ('9c111111-1111-4111-8111-111111111111',
-            'a1111111-1111-4111-8111-111111111111',
-            'outbound', 'business_app', 'sent', 'Sent by hand from the Business App',
+            'a1111111-1111-4111-8111-111111111111', 'whatsapp',
+            'outbound', 'provider_app', 'sent', 'Sent by hand from the Business App',
             'wamid.SYNTHETICECHO0001', now())$$,
   'a coexistence echo of a Business App message is storable and attributable'
 );
@@ -181,24 +219,24 @@ select lives_ok(
 -- Backend-only routing
 -- ---------------------------------------------------------------------------
 
-insert into public.whatsapp_messages (
-  id, conversation_id, artist_id, direction, origin, status, body
+insert into public.communication_messages (
+  id, conversation_id, artist_id, channel, direction, origin, status, body
 ) values
 ('9d111111-1111-4111-8111-111111111111', '9c111111-1111-4111-8111-111111111111',
- 'a1111111-1111-4111-8111-111111111111', 'outbound', 'crm', 'queued', 'Vladimir route probe'),
+ 'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'outbound', 'crm', 'queued', 'Vladimir route probe'),
 ('9d222222-2222-4222-8222-222222222222', '9c222222-2222-4222-8222-222222222222',
- 'a2222222-2222-4222-8222-222222222222', 'outbound', 'crm', 'queued', 'Kristina route probe');
+ 'a2222222-2222-4222-8222-222222222222', 'whatsapp', 'outbound', 'crm', 'queued', 'Kristina route probe');
 
 insert into public.integration_outbox (
-  id, artist_id, kind, dedupe_key, payload, whatsapp_message_id
+  id, artist_id, kind, dedupe_key, payload, communication_message_id
 ) values
 ('9e111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
  'whatsapp_message', 'whatsapp:route-test:vladimir',
- '{"whatsapp_message_id":"9d111111-1111-4111-8111-111111111111"}'::jsonb,
+ '{"communication_message_id":"9d111111-1111-4111-8111-111111111111"}'::jsonb,
  '9d111111-1111-4111-8111-111111111111'),
 ('9e222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
  'whatsapp_message', 'whatsapp:route-test:kristina',
- '{"whatsapp_message_id":"9d222222-2222-4222-8222-222222222222"}'::jsonb,
+ '{"communication_message_id":"9d222222-2222-4222-8222-222222222222"}'::jsonb,
  '9d222222-2222-4222-8222-222222222222');
 
 -- The outbox payload may not carry the message text or the contact number.
@@ -518,14 +556,14 @@ select is(
 );
 select ok(
   (select payload = jsonb_build_object(
-     'whatsapp_message_id', payload ->> 'whatsapp_message_id')
+     'communication_message_id', payload ->> 'communication_message_id')
    from public.integration_outbox
    where dedupe_key = 'whatsapp:send:7a111111-1111-4111-8111-111111111111'),
   'the durable job payload carries only the message identifier'
 );
 select is(
   (select m.status::text from public.whatsapp_messages m
-   join public.integration_outbox o on o.whatsapp_message_id = m.id
+   join public.integration_outbox o on o.communication_message_id = m.id
    where o.dedupe_key = 'whatsapp:send:7a111111-1111-4111-8111-111111111111'),
   'queued',
   'the stored message is queued before any provider call'

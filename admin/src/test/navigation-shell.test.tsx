@@ -64,6 +64,7 @@ describe('responsive navigation shell', () => {
     const administration = within(dialog).getByRole('group', { name: 'Administration' });
 
     expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Communications',
       'Clients',
       'Time off',
       'Activity',
@@ -71,6 +72,7 @@ describe('responsive navigation shell', () => {
     expect(within(administration).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Calendar',
       'WhatsApp',
+      'Instagram',
       'Users',
     ]);
   });
@@ -83,6 +85,7 @@ describe('responsive navigation shell', () => {
     const operations = within(dialog).getByRole('group', { name: 'Operations' });
 
     expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Communications',
       'Clients',
       'Time off',
     ]);

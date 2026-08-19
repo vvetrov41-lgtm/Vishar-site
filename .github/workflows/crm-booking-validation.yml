@@ -51,6 +51,9 @@ jobs:
       - name: Validate WhatsApp production configuration
         run: npm run test:whatsapp-production
 
+      - name: Validate Instagram production configuration
+        run: npm run test:instagram-production
+
       - name: Validate Calendar staging configuration
         run: |
           npm run validate:calendar-staging
@@ -88,6 +91,9 @@ jobs:
 
       - name: Compile inert production WhatsApp drain Worker with Wrangler
         run: npm run check:whatsapp-production-bundle
+
+      - name: Compile inert production Instagram connector with Wrangler
+        run: npm run check:instagram-production-bundle
 
       - name: Test private production release workflow boundaries
         run: node scripts/test-private-production-release-workflows.mjs
@@ -155,6 +161,13 @@ jobs:
 
       - name: Run pgTAP suite
         run: supabase test db
+
+      # The pgTAP suite runs against a database where every migration has
+      # already been applied, so it cannot observe what a data migration does to
+      # rows that existed beforehand. This replays the history in stages against
+      # a throwaway database instead.
+      - name: Verify the communications migration preserves existing WhatsApp records
+        run: npm run test:communications-migration
 
       - name: Lint PostgreSQL functions
         run: supabase db lint --local --schema public,crm_private --level error --fail-on error

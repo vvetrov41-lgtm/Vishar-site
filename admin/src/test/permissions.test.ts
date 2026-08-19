@@ -105,6 +105,7 @@ describe('navigation', () => {
     const paths = navItemsFor('owner').map((item) => item.path);
     expect(paths).toEqual([
       '/',
+      '/inbox',
       '/enquiries',
       '/clients',
       '/projects',
@@ -113,6 +114,7 @@ describe('navigation', () => {
       '/payments',
       '/integrations',
       '/integrations/whatsapp',
+      '/integrations/instagram',
       '/users',
       '/activity',
     ]);
@@ -142,11 +144,14 @@ describe('navigation', () => {
     const paths = navItemsFor('booking_manager', [membership({ can_manage_integrations: true })]).map((item) => item.path);
     expect(paths).toContain('/integrations');
     expect(paths).toContain('/integrations/whatsapp');
+    expect(paths).toContain('/integrations/instagram');
   });
 
   it('leaves read_only with viewing sections only', () => {
     const paths = navItemsFor('read_only').map((item) => item.path);
-    expect(paths).toEqual(['/', '/enquiries', '/clients', '/projects', '/appointments', '/availability']);
+    expect(paths).toEqual([
+      '/', '/inbox', '/enquiries', '/clients', '/projects', '/appointments', '/availability',
+    ]);
   });
 
   it('shows nothing at all without an active profile', () => {

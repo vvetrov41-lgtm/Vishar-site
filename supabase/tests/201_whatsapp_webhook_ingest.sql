@@ -192,21 +192,25 @@ select throws_ok(
 );
 
 -- Synthetic outbound row for status lifecycle testing.
-insert into public.whatsapp_conversations (
-  id, artist_id, integration_key, contact_wa_id
+-- Seeded in the neutral core since migration 0070; every assertion below still
+-- reads the WhatsApp compatibility views and calls the WhatsApp webhook RPCs.
+insert into public.communication_conversations (
+  id, artist_id, channel, integration_key, external_contact_id
 ) values (
   '9c501111-1111-4111-8111-111111111111',
   'a1111111-1111-4111-8111-111111111111',
+  'whatsapp',
   'vladimir-production',
   '447700919999'
 );
-insert into public.whatsapp_messages (
-  id, conversation_id, artist_id, direction, origin, status,
+insert into public.communication_messages (
+  id, conversation_id, artist_id, channel, direction, origin, status,
   message_type, body, provider_message_id
 ) values (
   '9d501111-1111-4111-8111-111111111111',
   '9c501111-1111-4111-8111-111111111111',
   'a1111111-1111-4111-8111-111111111111',
+  'whatsapp',
   'outbound', 'crm', 'sent', 'text', 'Synthetic outbound text',
   'wamid.SYNTHETICSTATUS0001'
 );

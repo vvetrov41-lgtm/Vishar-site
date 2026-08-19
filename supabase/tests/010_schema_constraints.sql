@@ -42,7 +42,7 @@ select enum_has_labels('public', 'outbox_kind', array[
   'telegram_notification', 'transactional_email', 'approved_email',
   'calendar_create', 'calendar_update', 'calendar_cancel', 'reconciliation',
   'calendar_availability_create', 'calendar_availability_update',
-  'calendar_availability_cancel', 'whatsapp_message'
+  'calendar_availability_cancel', 'whatsapp_message', 'instagram_message'
 ], 'outbox_kind covers every integration job');
 select enum_has_labels('public', 'outbox_status', array['pending', 'leased', 'succeeded', 'failed', 'dead'],
   'outbox_status has the required labels');

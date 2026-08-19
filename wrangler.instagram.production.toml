@@ -1,0 +1,62 @@
+name = "vishar-instagram-production"
+main = "workers/instagram-production.js"
+compatibility_date = "2026-08-17"
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "instagram.vishartattoo.com", custom_domain = true }
+]
+
+[[ratelimits]]
+name = "INSTAGRAM_RATE_LIMIT"
+namespace_id = "1006"
+simple = { limit = 30, period = 60 }
+
+[vars]
+VISHAR_ENVIRONMENT = "production"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
+INSTAGRAM_OAUTH_ENABLED = "false"
+INSTAGRAM_DRAIN_ENABLED = "false"
+INSTAGRAM_ENRICHMENT_ENABLED = "false"
+
+# The tracked template is deliberately inert. Every capability is off, and the
+# guarded production deploy workflow is what flips a flag, appends the KV
+# bindings and adds the cron trigger.
+#
+# The Meta callback at instagram.vishartattoo.com/webhook must not sit behind
+# Cloudflare Access: authenticity is enforced by Meta's signed webhook contract
+# plus the backend-owned mapping from the signed Instagram professional account
+# id to exactly one artist integration. The Worker accepts only the exact
+# /webhook path for Meta and refuses every operator route without a Supabase
+# session bearer token.
+#
+# No cron trigger is declared here. This Worker is deployed inert first; the
+# five-minute schedule is added by the guarded release only once Meta App
+# Review and the artist connections are actually in place. That also keeps the
+# already-deployed shared cron on vishar-telegram-drain-production untouched by
+# this workstream.
+#
+# Production KV bindings are appended only by the guarded production deploy
+# workflow. Instagram uses dedicated OAuth-state and encrypted-token KV
+# namespaces, so this Worker has no binding to Gmail, Calendar or Monzo state,
+# and Instagram token envelopes use their own INSTAGRAM_TOKEN_ENCRYPTION_KEY:
+#   INSTAGRAM_OAUTH_STATE
+#   INSTAGRAM_OAUTH_TOKENS
+#
+# Required encrypted Worker secrets, intentionally absent from this tracked
+# file:
+#   INSTAGRAM_APP_SECRET
+#   INSTAGRAM_TOKEN_ENCRYPTION_KEY
+#   INSTAGRAM_WEBHOOK_VERIFY_TOKEN
+#   SUPABASE_SECRET_KEY
+#
+# Supplied as non-secret production variables by the guarded deploy workflow:
+#   INSTAGRAM_APP_ID
+#   SUPABASE_PUBLISHABLE_KEY
+#
+# Optional per-artist account pin, set once the owner knows the Instagram
+# professional account id. When present, a callback returning any other account
+# is refused:
+#   INSTAGRAM_ACCOUNT_VLADIMIR
+#   INSTAGRAM_ACCOUNT_KRISTINA

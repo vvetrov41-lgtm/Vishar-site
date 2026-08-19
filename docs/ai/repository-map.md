@@ -30,6 +30,10 @@ Current functional milestones in the active CRM stack include:
 - `0015`-`0025`: artists, artist-scoped records and RLS, trusted booking sources, integrations, payments, artist workflow RPCs, activity ownership history, and backend-only artist outbox routing.
 - `0026`-`0031`: appointment types, consultation bounds, Google Calendar projection, Calendar outbox drain, connection status, and five-minute appointment grid.
 - `0032`-`0034`: GPT appointment actions and OAuth/consent hardening.
+- `0046`-`0052`: WhatsApp Business Platform conversations, outbox drain,
+  webhook ingest and integration-key ownership.
+- `0068`-`0072`: the provider-neutral communications domain, the WhatsApp move
+  into it, the Instagram channel binding and the CRM inbox.
 
 For a database symbol, search all later migrations after finding its first definition.
 
@@ -103,6 +107,46 @@ OAuth, account, webhook and reconciliation observation — the connector Worker:
 - `docs/crm/monzo-production-runbook.md`
 
 Monzo does not sign webhooks. Never treat a webhook payload as evidence of payment; the transaction is refetched server-side and proven against the selected account. Deploying `workers/monzo-api.js` directly would bypass the rate limiter — the gateway is the entrypoint.
+
+## Communications: WhatsApp and Instagram
+
+Since migrations 0068-0072 there is one provider-neutral communications domain
+and channels attach to it as adapters. Do not look for a per-channel schema.
+
+Core and migration:
+
+- `supabase/migrations/0069_communications_core.sql` (tables, RLS, indexes)
+- `supabase/migrations/0070_whatsapp_communications_migration.sql` (data move,
+  compatibility views, neutral queue and claim, WhatsApp wrappers)
+- `supabase/migrations/0072_communications_inbox.sql` (inbox projection,
+  linking, enquiry promotion)
+
+`public.whatsapp_conversations` and `public.whatsapp_messages` are
+`security_invoker` **views** over `public.communication_conversations` and
+`public.communication_messages`, and are read-only by trigger. The WhatsApp
+RPCs still exist with their original signatures and delegate to the neutral
+engine, so the deployed WhatsApp Workers need no redeploy.
+
+Instagram adapter:
+
+- `supabase/migrations/0071_instagram_channel_binding.sql`
+- `workers/instagram-production.js`
+- `workers/lib/instagram.js`, `instagram-webhook.js`, `instagram-supabase.js`
+- `workers/lib/communications-drain.js` (channel-neutral drain loop)
+- `wrangler.instagram.production.toml` (inert template)
+- `docs/crm/adr/0007-communications-domain-and-provider-adapters.md`
+- `docs/crm/instagram-production-runbook.md`
+
+The artist that owns an inbound Instagram message is resolved by
+`public.service_resolve_instagram_route` from the signed Instagram professional
+account id, never from anything else in the payload. A single Meta app serves
+both artists, so the webhook signature alone does not narrow the route.
+
+CRM surfaces:
+
+- `admin/src/pages/InboxPage.tsx`, `ConversationPage.tsx`
+- `admin/src/pages/InstagramConnectionsPage.tsx`
+- `admin/src/lib/communications-api.ts`, `instagram-connections-api.ts`
 
 ## GPT / agent-facing appointment actions
 

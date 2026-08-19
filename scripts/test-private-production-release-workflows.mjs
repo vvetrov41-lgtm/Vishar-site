@@ -16,6 +16,7 @@ const database = read('.github/workflows/deploy-private-production-database.yml'
 const team = read('.github/workflows/deploy-private-production-team-admin.yml');
 const calendar = read('.github/workflows/deploy-private-production-calendar.yml');
 const whatsapp = read('.github/workflows/deploy-private-production-whatsapp.yml');
+const instagram = read('.github/workflows/deploy-private-production-instagram.yml');
 const teamConfig = read('wrangler.team-admin.toml');
 
 // Assertions about a TOML file must describe its directives, not its prose.
@@ -34,6 +35,7 @@ for (const [label, text] of [
   ['Team admin', team],
   ['Calendar connector', calendar],
   ['WhatsApp drain', whatsapp],
+  ['Instagram connector', instagram],
 ]) {
   expectIncludes(text, 'environment: crm-production', label);
   expectIncludes(text, 'release/private-crm-rc*', label);
@@ -268,3 +270,46 @@ expectExcludes(monzoProductionConfig, 'MONZO_TOKEN_ENCRYPTION_KEY', 'Monzo produ
 expectExcludes(monzoProductionConfig, 'SUPABASE_SECRET_KEY', 'Monzo production config');
 
 console.log('Private production release workflow boundaries: passed');
+
+// The Instagram connector is the only Worker that holds refreshable provider
+// user tokens, so its release gate is checked for the properties that keep that
+// store isolated: its own Worker, its own KV namespaces, no secret values in
+// the workflow, and no reach into any other production surface.
+const instagramConfig = directivesOf(read('wrangler.instagram.production.toml'));
+
+expectIncludes(instagram, 'WORKER_NAME: vishar-instagram-production', 'Instagram connector');
+expectIncludes(instagram, 'EXPOSE_PRIVATE_CRM_INSTAGRAM', 'Instagram connector');
+expectIncludes(instagram, 'CRM_PRODUCTION_INSTAGRAM_DEPLOY_ENABLED', 'Instagram connector');
+expectIncludes(instagram, 'generate-instagram-production-deploy-config.mjs', 'Instagram connector');
+expectIncludes(instagram, 'npm run scan:secrets', 'Instagram connector');
+
+// A release must never provision or print a credential, and must never reach
+// another production surface from this gate.
+for (const forbidden of [
+  'wrangler secret put',
+  'wrangler secret bulk',
+  'wrangler kv namespace create',
+  'supabase db push',
+  'wrangler pages deploy',
+  'wrangler.whatsapp',
+  'wrangler.gmail',
+  'wrangler.calendar',
+  'wrangler.monzo',
+]) {
+  expectExcludes(instagram, forbidden, 'Instagram connector');
+}
+
+// The tracked template stays inert. Everything that makes the connector live is
+// generated at release time from explicitly supplied, non-secret values.
+expectIncludes(instagramConfig, 'name = "vishar-instagram-production"', 'Instagram production config');
+expectIncludes(instagramConfig, 'main = "workers/instagram-production.js"', 'Instagram production config');
+expectIncludes(instagramConfig, 'workers_dev = false', 'Instagram production config');
+expectIncludes(instagramConfig, 'preview_urls = false', 'Instagram production config');
+expectIncludes(instagramConfig, 'pattern = "instagram.vishartattoo.com"', 'Instagram production config');
+expectIncludes(instagramConfig, 'INSTAGRAM_OAUTH_ENABLED = "false"', 'Instagram production config');
+expectIncludes(instagramConfig, 'INSTAGRAM_DRAIN_ENABLED = "false"', 'Instagram production config');
+expectExcludes(instagramConfig, '[triggers]', 'Instagram production config');
+expectExcludes(instagramConfig, '[[kv_namespaces]]', 'Instagram production config');
+expectExcludes(instagramConfig, 'INSTAGRAM_APP_SECRET', 'Instagram production config');
+expectExcludes(instagramConfig, 'SUPABASE_SECRET_KEY', 'Instagram production config');
+expectLineAbsent(instagramConfig, 'workers_dev = true', 'Instagram production config');

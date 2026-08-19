@@ -159,6 +159,56 @@ For private client images verify:
 - compensation does not delete an object whose database acknowledgement may already have committed;
 - no public URL or browser-held service credential is introduced.
 
+## 9A. Communications boundary (WhatsApp and Instagram)
+
+One provider-neutral domain serves every messaging channel. The boundaries that
+matter are the same for each channel, but the thing that establishes them is
+not.
+
+**Inbound.** A webhook body is untrusted input and can never choose an artist.
+
+- WhatsApp: each artist binding carries its own app secret, so a signature match
+  plus the exact `(wabaId, phoneNumberId)` pair narrows the route.
+- Instagram: a single Meta app serves both artists, so the `X-Hub-Signature-256`
+  check proves only that Meta sent the payload. The artist comes from
+  `public.service_resolve_instagram_route`, a backend-only lookup of the signed
+  Instagram professional account id against
+  `artist_integrations.configuration`. An unknown, disabled or ambiguous
+  account raises; there is no default artist and no fallback.
+
+Verify at the target ref that the resolution is server-owned and fails closed,
+that the account-to-artist mapping is unique across artists, and that an
+inbound message is rejected when the named artist does not own the integration.
+
+**Outbound.** A browser names a conversation and nothing else. Artist, channel,
+integration selector and recipient are all recomputed by
+`public.claim_communication_outbox` from the authoritative conversation and
+message rows, so a mutated outbox row cannot redirect a message. The Instagram
+adapter additionally refuses to send when the KV token's account does not equal
+the account the database route names.
+
+**Credential custody.** No provider token is ever stored in Postgres.
+
+- WhatsApp: static per-artist envelopes in encrypted Worker secrets, selected by
+  a binding name derived deterministically from the artist's integration key.
+  Migration 0071 keeps that key inside the owning artist's slug namespace for
+  Instagram too, so one artist cannot resolve another's binding.
+- Instagram: refreshable long-lived user tokens, sealed with AES-GCM under a
+  dedicated key and stored in a KV namespace keyed by artist. The token store is
+  separate from the OAuth state namespace.
+
+**Audit.** `activity_log` records the channel, the conversation and the outbox
+id. It must never contain a participant identifier or message content. There
+are tests that say so.
+
+**Media.** Provider media URLs expire and are deliberately not persisted. Only
+the ordered attachment types are stored. Treat any code that starts storing a
+provider URL as a boundary change.
+
+**Attribution.** `communication_conversations.provider_referral` is written only
+by the trusted webhook ingestion path, and enquiry provenance is typed columns
+plus a foreign key. A browser has no write path to either.
+
 ## 10. Required security report
 
 A security-sensitive investigation should explicitly state each applicable boundary as one of:

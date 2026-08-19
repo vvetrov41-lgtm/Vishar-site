@@ -14,7 +14,7 @@ select has_type('public', 'artist_integration_type',
                 'artist_integration_type exists');
 select enum_has_labels(
   'public', 'artist_integration_type',
-  array['telegram', 'calendar', 'email', 'payments', 'gpt', 'whatsapp'],
+  array['telegram', 'calendar', 'email', 'payments', 'gpt', 'whatsapp', 'instagram'],
   'artist integration types are explicit and provider-neutral'
 );
 

@@ -183,6 +183,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Dashboard', capability: 'viewEnquiries' },
+  { path: '/inbox', label: 'Communications', capability: 'viewEnquiries' },
   { path: '/enquiries', label: 'Enquiries', capability: 'viewEnquiries' },
   { path: '/clients', label: 'Clients', capability: 'viewClients' },
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
@@ -191,6 +192,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
   { path: '/integrations', label: 'common.calendar', capability: 'manageIntegrations' },
   { path: '/integrations/whatsapp', label: 'WhatsApp', capability: 'manageIntegrations' },
+  { path: '/integrations/instagram', label: 'Instagram', capability: 'manageIntegrations' },
   { path: '/users', label: 'Users', capability: 'manageUsers' },
   { path: '/activity', label: 'Activity', capability: 'viewActivity' },
 ];

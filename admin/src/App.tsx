@@ -19,10 +19,13 @@ import { AppointmentsPage } from './pages/AppointmentsPage';
 import { AvailabilityPage } from './pages/AvailabilityPage';
 import { CalendarConnectionsPage } from './pages/CalendarConnectionsPage';
 import { ClientDetailPage } from './pages/ClientDetailPage';
+import { ConversationPage } from './pages/ConversationPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { EnquiriesPage } from './pages/EnquiriesPage';
 import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
+import { InboxPage } from './pages/InboxPage';
+import { InstagramConnectionsPage } from './pages/InstagramConnectionsPage';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
 import { PasswordSetupPage } from './pages/PasswordSetupPage';
@@ -94,6 +97,15 @@ function Routes() {
     );
   }
 
+  const conversationDetail = matchRoute('/inbox/:id', path);
+  if (conversationDetail) {
+    return (
+      <RequireCapability capability="viewEnquiries">
+        <ConversationPage conversationId={conversationDetail.id} />
+      </RequireCapability>
+    );
+  }
+
   const clientDetail = matchRoute('/clients/:id', path);
   if (clientDetail) {
     return (
@@ -117,6 +129,8 @@ function Routes() {
       return <RequireCapability capability="viewEnquiries"><DashboardPage /></RequireCapability>;
     case '/oauth/consent':
       return <OAuthConsentPage />;
+    case '/inbox':
+      return <RequireCapability capability="viewEnquiries"><InboxPage /></RequireCapability>;
     case '/enquiries':
       return <RequireCapability capability="viewEnquiries"><EnquiriesPage /></RequireCapability>;
     case '/clients':
@@ -135,6 +149,8 @@ function Routes() {
       return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
     case '/integrations/whatsapp':
       return <RequireCapability capability="manageIntegrations"><WhatsAppConnectionsPage /></RequireCapability>;
+    case '/integrations/instagram':
+      return <RequireCapability capability="manageIntegrations"><InstagramConnectionsPage /></RequireCapability>;
     case '/users':
       return <RequireCapability capability="manageUsers"><UsersPage /></RequireCapability>;
     case '/activity':
