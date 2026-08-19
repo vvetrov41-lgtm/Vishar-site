@@ -1,0 +1,393 @@
+name: rc74 Monzo artists and Multiple Sessions production operator
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc74-monzo-artists-multiple-sessions
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: rc74-monzo-artists-multiple-sessions-production
+  cancel-in-progress: false
+
+env:
+  PRODUCT_PR: '368'
+  PRODUCT_BRANCH: agent/monzo-multiple-sessions-for-artists-v2
+  PRODUCT_SHA: 908a1d8108d0698fd68160f083cc275f6b70f90d
+  PARENT_PR: '366'
+  PARENT_BRANCH: agent/monzo-second-artist-readiness-reconcile
+  PARENT_SHA: 298ea2c465ed6737d9e7c76bd9d8c4e9c9a1cfd6
+  RELEASE_BRANCH: release/private-crm-rc74-monzo-artists-multiple-sessions
+  RELEASE_WORKFLOW: .github/workflows/monzo-artists-multiple-sessions-production-operator.yml
+  PRODUCTION_PROJECT_REF: vfjexhfdbrjmuxfdvbdx
+  RETAINED_STAGING_PROJECT_REF: gwaliusblwrzisrwnsvs
+  MONZO_WORKER_NAME: vishar-monzo-api-production
+  MONZO_HOSTNAME: monzo.vishartattoo.com
+  PAYMENT_HOSTNAME: pay.vishartattoo.com
+
+jobs:
+  validate:
+    name: Validate rc74 exact release
+    if: contains(github.event.head_commit.message, '[RUN_RC74_MONZO_ARTISTS_MULTIPLE_SESSIONS]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact release lineage and bounded delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$RELEASE_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+
+          release_tip="$(git ls-remote --heads origin "refs/heads/${RELEASE_BRANCH}" | awk '{print $1}')"
+          test "$release_tip" = "$GITHUB_SHA"
+
+          git cat-file -e "${PRODUCT_SHA}^{commit}"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+
+          mapfile -t changed < <(git diff --name-only "$PRODUCT_SHA...$GITHUB_SHA")
+          printf '%s\n' "${changed[@]}" | sed 's/^/release changed: /'
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$RELEASE_WORKFLOW"
+
+      - name: Verify product and parent PRs remain exact Draft open unmerged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PRODUCT_PR}")"
+          test "$(jq -r '.state' <<<"$product")" = open
+          test "$(jq -r '.draft' <<<"$product")" = true
+          test "$(jq -r '.merged_at' <<<"$product")" = null
+          test "$(jq -r '.head.ref' <<<"$product")" = "$PRODUCT_BRANCH"
+          test "$(jq -r '.head.sha' <<<"$product")" = "$PRODUCT_SHA"
+          test "$(jq -r '.base.ref' <<<"$product")" = "$PARENT_BRANCH"
+          test "$(jq -r '.base.sha' <<<"$product")" = "$PARENT_SHA"
+
+          parent="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PARENT_PR}")"
+          test "$(jq -r '.state' <<<"$parent")" = open
+          test "$(jq -r '.draft' <<<"$parent")" = true
+          test "$(jq -r '.merged_at' <<<"$parent")" = null
+          test "$(jq -r '.head.ref' <<<"$parent")" = "$PARENT_BRANCH"
+          test "$(jq -r '.head.sha' <<<"$parent")" = "$PARENT_SHA"
+
+      - name: Verify exact intended migration chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f supabase/migrations/0064_monzo_artist_payment_destinations.sql
+          test -f supabase/migrations/0065_monzo_multiple_session_deposits.sql
+          test ! -e supabase/migrations/0066_gpt_monzo_reconciliation.sql
+          test -f supabase/tests/215_monzo_artist_payment_destinations.sql
+          test -f supabase/tests/216_monzo_multiple_session_deposits.sql
+
+      - name: Confirm product exact-head CI is green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${PRODUCT_SHA}&per_page=100")"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            conclusion="$(jq -r --arg workflow "$workflow" '[.workflow_runs[] | select(.name==$workflow)] | sort_by(.created_at) | last | .conclusion // empty' <<<"$runs")"
+            echo "product ${workflow} -> ${conclusion:-missing}"
+            test "$conclusion" = success
+          done
+
+      - name: Wait for exact release-head normal CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&per_page=100")"
+            static="$(jq -r '[.workflow_runs[] | select(.name=="Static Validation")] | sort_by(.created_at) | last | ((.status // "missing") + "/" + (.conclusion // "none"))' <<<"$runs")"
+            crm="$(jq -r '[.workflow_runs[] | select(.name=="CRM and booking validation")] | sort_by(.created_at) | last | ((.status // "missing") + "/" + (.conclusion // "none"))' <<<"$runs")"
+            echo "release CI attempt ${attempt}: Static=${static}; CRM=${crm}"
+            if [ "$static" = 'completed/success' ] && [ "$crm" = 'completed/success' ]; then
+              exit 0
+            fi
+            case "$static $crm" in
+              *completed/failure*|*completed/cancelled*|*completed/timed_out*|*completed/action_required*) exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo 'Exact release-head normal CI did not become green in the bounded polling window.' >&2
+          exit 1
+
+      - name: Revalidate Monzo production source boundaries
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Run bounded production source checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/test-monzo-production-config.mjs
+          node scripts/test-monzo-artist-registry.mjs
+          node scripts/test-payment-redirect-worker.mjs
+          npm run check:monzo-production-bundle
+          npm run scan:secrets
+
+  deploy:
+    name: Deploy rc74 DB, Monzo Worker and CRM
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      VITE_MONZO_CONNECTOR_ORIGIN: https://monzo.vishartattoo.com
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Confirm all three production component gates
+        shell: bash
+        env:
+          DB_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
+          MONZO_ENABLED: ${{ vars.CRM_PRODUCTION_MONZO_DEPLOY_ENABLED }}
+          CRM_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          test "$DB_ENABLED" = true || { echo 'CRM_PRODUCTION_DB_DEPLOY_ENABLED is not true.' >&2; exit 1; }
+          test "$MONZO_ENABLED" = true || { echo 'CRM_PRODUCTION_MONZO_DEPLOY_ENABLED is not true.' >&2; exit 1; }
+          test "$CRM_ENABLED" = true || { echo 'CRM_PRODUCTION_DEPLOY_ENABLED is not true.' >&2; exit 1; }
+          test "$PROJECT_REF" = "$PRODUCTION_PROJECT_REF"
+          test "$PROJECT_REF" != "$RETAINED_STAGING_PROJECT_REF"
+          test "$PROJECT_URL" = "https://${PROJECT_REF}.supabase.co"
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_DB_PASSWORD"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          test "$VITE_MONZO_CONNECTOR_ORIGIN" = 'https://monzo.vishartattoo.com'
+          test "$VITE_CALENDAR_CONNECTOR_ORIGIN" = 'https://calendar.vishartattoo.com'
+          [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]
+
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify release remains exact and tree-bounded
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$RELEASE_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          mapfile -t changed < <(git diff --name-only "$PRODUCT_SHA...$GITHUB_SHA")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$RELEASE_WORKFLOW"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root tooling and recheck secrets
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm run scan:secrets
+          node scripts/test-monzo-production-config.mjs
+          node scripts/test-monzo-artist-registry.mjs
+          node scripts/test-payment-redirect-worker.mjs
+          npm run check:monzo-production-bundle
+
+      - name: Verify existing production Monzo Worker secret custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.monzo-api.production.toml --name "$MONZO_WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const names = new Set(values.map((entry) => entry?.name).filter(Boolean));
+          const required = [
+            'MONZO_OAUTH_CLIENT_ID',
+            'MONZO_OAUTH_CLIENT_SECRET',
+            'MONZO_TOKEN_ENCRYPTION_KEY',
+            'SUPABASE_SECRET_KEY',
+          ];
+          const missing = required.filter((name) => !names.has(name));
+          if (missing.length) throw new Error(`Missing production Worker secrets: ${missing.join(', ')}`);
+          console.log(`Required Monzo secret names present: ${required.length}`);
+          NODE
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact production database and verify pending chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$PROJECT_REF"
+          supabase migration list
+          dry_run="$(supabase db push --dry-run 2>&1)"
+          printf '%s\n' "$dry_run"
+          printf '%s\n' "$dry_run" | grep -Fq '0064_monzo_artist_payment_destinations.sql'
+          printf '%s\n' "$dry_run" | grep -Fq '0065_monzo_multiple_session_deposits.sql'
+          if printf '%s\n' "$dry_run" | grep -Fq '0066_'; then
+            echo 'Unexpected 0066 migration is pending; refusing rc74.' >&2
+            exit 1
+          fi
+
+      - name: Apply only the pending 0064 and 0065 production migrations
+        run: supabase db push
+
+      - name: Verify 0064 and 0065 are no longer pending
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list
+          post="$(supabase db push --dry-run 2>&1)"
+          printf '%s\n' "$post"
+          ! printf '%s\n' "$post" | grep -Fq '0064_monzo_artist_payment_destinations.sql'
+          ! printf '%s\n' "$post" | grep -Fq '0065_monzo_multiple_session_deposits.sql'
+
+      - name: Deploy only the existing Monzo production Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/rc74-monzo-production-wrangler.log \
+          WRANGLER_SEND_METRICS=false \
+            npx wrangler deploy \
+              --config wrangler.monzo-api.production.toml \
+              --name "$MONZO_WORKER_NAME" \
+              --strict
+
+      - name: Recheck Monzo Worker secret custody after deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.monzo-api.production.toml --name "$MONZO_WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const names = new Set(values.map((entry) => entry?.name).filter(Boolean));
+          for (const name of ['MONZO_OAUTH_CLIENT_ID','MONZO_OAUTH_CLIENT_SECRET','MONZO_TOKEN_ENCRYPTION_KEY','SUPABASE_SECRET_KEY']) {
+            if (!names.has(name)) throw new Error(`Production Worker lost required secret ${name}`);
+          }
+          console.log('Monzo secret custody preserved.');
+          NODE
+
+      - name: Verify owner, webhook and dedicated payment-host boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /health /oauth/monzo/start/vladimir /oauth/monzo/start/kristina /oauth/monzo/accounts/kristina; do
+            ok=''
+            for attempt in $(seq 1 20); do
+              status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "https://${MONZO_HOSTNAME}${path}" || true)"
+              echo "PROTECTED ${path} -> ${status}"
+              case "$status" in
+                302|303|307|401|403) ok=yes; break ;;
+                200) echo "Cloudflare Access is not gating ${path}." >&2; exit 1 ;;
+              esac
+              sleep 5
+            done
+            test "$ok" = yes
+          done
+
+          invalid='00000000-0000-4000-8000-000000000000'
+          payment_ok=''
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error --output /tmp/rc74-payment-body --write-out '%{http_code}' --max-time 10 "https://${PAYMENT_HOSTNAME}/pay-by-bank-transfer/${invalid}" || true)"
+            body="$(cat /tmp/rc74-payment-body 2>/dev/null || true)"
+            echo "PAYMENT invalid UUID -> ${status}"
+            if [ "$status" = 404 ] && [ "$body" = 'Payment link unavailable' ]; then payment_ok=yes; break; fi
+            case "$status" in 302|303|307|401|403) echo 'Payment hostname became Access-gated.' >&2; exit 1 ;; esac
+            sleep 5
+          done
+          test "$payment_ok" = yes
+
+          root_status="$(curl --silent --show-error --output /tmp/rc74-pay-root --write-out '%{http_code}' --max-time 10 "https://${PAYMENT_HOSTNAME}/" || true)"
+          test "$root_status" = 404
+
+          webhook_key="$(head -c 36 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
+          webhook_status="$(curl --silent --show-error --output /tmp/rc74-webhook-body --write-out '%{http_code}' --max-time 10 \
+            -X POST -H 'Content-Type: application/json' --data '{"type":"transaction.created","data":{"id":"tx_rc74_boundary"}}' \
+            "https://${MONZO_HOSTNAME}/webhooks/monzo/${webhook_key}" || true)"
+          echo "WEBHOOK unknown opaque key -> ${webhook_status}"
+          case "$webhook_status" in
+            404|429) ;;
+            302|303|307|401|403) echo 'Access is blocking the public webhook path.' >&2; exit 1 ;;
+            *) echo "Unexpected webhook status ${webhook_status}." >&2; exit 1 ;;
+          esac
+
+      - name: Install and build exact private CRM artifact
+        working-directory: admin
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify production CRM artifact contains only production configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq "$VITE_MONZO_CONNECTOR_ORIGIN" admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Deploy only admin/dist to production CRM Pages
+        run: >-
+          npx wrangler pages deploy admin/dist
+          --project-name "$CRM_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$GITHUB_SHA"
+          --commit-dirty=false
+
+      - name: rc74 production summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### rc74 Monzo second-artist + Multiple Sessions rollout'
+            echo
+            echo "- Release SHA: \`$GITHUB_SHA\`"
+            echo "- Product SHA: \`$PRODUCT_SHA\`"
+            echo '- Database target: production only; retained staging explicitly rejected'
+            echo '- Intended migrations: `0064_monzo_artist_payment_destinations.sql`, then `0065_monzo_multiple_session_deposits.sql`'
+            echo '- Monzo Worker: existing `vishar-monzo-api-production` only'
+            echo '- CRM Pages upload: `admin/dist` only'
+            echo '- Dedicated payment host preserved: `pay.vishartattoo.com`'
+            echo '- Gmail / GPT / Telegram / WhatsApp / Calendar deployment commands: none'
+            echo '- No OAuth flow, reusable URL provisioning, Match, Confirm or settlement is performed by this operator'
+          } >> "$GITHUB_STEP_SUMMARY"
