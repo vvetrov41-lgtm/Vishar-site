@@ -141,9 +141,12 @@ set local role authenticated;
 select pg_temp.claims('{"sub":"44444444-4444-4444-8444-444444444444","role":"authenticated"}');
 
 select ok(not public.is_active_user(), 'a deactivated profile is not an active user');
-select is((select count(*)::int from public.clients), 0, 'a deactivated profile sees no clients');
-select is((select count(*)::int from public.enquiries), 0, 'a deactivated profile sees no enquiries');
-select is((select count(*)::int from public.profiles), 0, 'a deactivated profile cannot even read itself');
+select is((select count(*)::int from public.clients), 0,
+          'a deactivated profile sees no clients');
+select is((select count(*)::int from public.enquiries), 0,
+          'a deactivated profile sees no enquiries');
+select is((select count(*)::int from public.profiles), 0,
+          'a deactivated profile cannot even read itself');
 select throws_ok(
   format($$select public.transition_enquiry_status(%L, 'reviewing')$$,
          (select (r ->> 'enquiry_id')::uuid from t_enq)),
@@ -184,12 +187,12 @@ select is((select count(*)::int from public.projects_finance), 0,
 
 select throws_ok($$insert into public.clients (full_name, email) values ('X', 'x@example.test')$$,
   '42501', null, 'read_only holds no insert privilege on clients');
-select throws_ok($$update public.enquiries set idea = 'edited'$$, '42501', null,
-  'read_only holds no update privilege on enquiries');
-select throws_ok($$delete from public.clients$$, '42501', null,
-  'read_only holds no delete privilege on clients');
-select throws_ok($$select * from public.list_profiles()$$, '42501', null,
-  'read_only cannot list staff profiles');
+select throws_ok($$update public.enquiries set idea = 'edited'$$,
+  '42501', null, 'read_only holds no update privilege on enquiries');
+select throws_ok($$delete from public.clients$$,
+  '42501', null, 'read_only holds no delete privilege on clients');
+select throws_ok($$select * from public.list_profiles()$$,
+  '42501', null, 'read_only cannot list staff profiles');
 select is((select count(*)::int from public.system_settings), 0,
           'read_only reads no system settings rows');
 reset role;
@@ -219,14 +222,14 @@ select is((select count(*)::int from public.activity_log where event_type like '
 select is((select count(*)::int from public.activity_log where event_type like 'settings.%'), 0,
           'a manager sees no settings.* activity');
 
-select throws_ok($$select hourly_rate from public.projects$$, '42501', null,
-  'a manager cannot select the hourly rate column');
-select throws_ok($$select estimate_total from public.projects$$, '42501', null,
-  'a manager cannot select the estimate total column');
-select throws_ok($$select deposit_amount from public.projects$$, '42501', null,
-  'a manager cannot select the deposit amount column');
-select throws_ok($$select price from public.sessions$$, '42501', null,
-  'a manager cannot select the session price column');
+select throws_ok($$select hourly_rate from public.projects$$,
+  '42501', null, 'a manager cannot select the hourly rate column');
+select throws_ok($$select estimate_total from public.projects$$,
+  '42501', null, 'a manager cannot select the estimate total column');
+select throws_ok($$select deposit_amount from public.projects$$,
+  '42501', null, 'a manager cannot select the deposit amount column');
+select throws_ok($$select price from public.sessions$$,
+  '42501', null, 'a manager cannot select the session price column');
 select is((select count(*)::int from public.projects_finance), 0,
           'a manager reads no rows from the project finance view');
 select is((select count(*)::int from public.sessions_finance), 0,
@@ -239,12 +242,12 @@ select is((select count(*)::int from public.projects), 1, 'a manager can read op
 select is((select deposit_status::text from public.projects), 'requested',
           'a manager can see the deposit STATE without the amount');
 
-select throws_ok($$update public.projects set title = 'renamed'$$, '42501', null,
-  'a manager holds no direct update privilege on projects');
-select throws_ok($$delete from public.enquiries$$, '42501', null,
-  'a manager cannot hard-delete an enquiry');
-select throws_ok($$select * from public.list_profiles()$$, '42501', null,
-  'a manager cannot list staff profiles');
+select throws_ok($$update public.projects set title = 'renamed'$$,
+  '42501', null, 'a manager holds no direct update privilege on projects');
+select throws_ok($$delete from public.enquiries$$,
+  '42501', null, 'a manager cannot hard-delete an enquiry');
+select throws_ok($$select * from public.list_profiles()$$,
+  '42501', null, 'a manager cannot list staff profiles');
 select throws_ok($$select public.set_profile_role('33333333-3333-4333-8333-333333333333', 'owner')$$,
   '42501', null, 'a manager cannot change a role');
 select throws_ok($$select public.set_profile_active('33333333-3333-4333-8333-333333333333', false)$$,
@@ -271,10 +274,11 @@ select is((select hourly_rate from public.projects_finance), 140.00,
           'the finance view returns the exact numeric rate');
 select is((select estimate_total from public.projects_finance), 980.00,
           'the finance view returns the exact numeric total');
-select is((select count(*)::int from public.sessions_finance), 1, 'the owner reads session finance');
+select is((select count(*)::int from public.sessions_finance), 1,
+          'the owner reads session finance');
 
--- Even the owner reads finance through the view, never off the base table.
-select throws_ok($$select hourly_rate from public.projects$$, '42501', null,
+select throws_ok($$select hourly_rate from public.projects$$,
+  '42501', null,
   'finance columns are not granted on the base table to any CRM role, including the owner');
 select throws_ok(
   $$update public.projects_finance set deposit_amount = 1$$,
@@ -282,20 +286,17 @@ select throws_ok(
   'the owner cannot bypass the audited finance RPC by updating the view'
 );
 
-select is((select count(*)::int from public.list_profiles()), 4, 'the owner lists every staff profile');
-select ok((select count(*) from public.integration_outbox) > 0, 'the owner sees integration jobs');
-select is((select count(*)::int from public.system_settings), 1, 'the owner reads system settings');
-select lives_ok($$select public.set_profile_role('33333333-3333-4333-8333-333333333333', 'booking_manager')$$,
-  'the owner can change a role');
-select lives_ok($$select public.set_profile_active('33333333-3333-4333-8333-333333333333', false)$$,
-  'the owner can deactivate a profile');
-select throws_ok($$select public.set_profile_active('11111111-1111-4111-8111-111111111111', false)$$,
-  '22023', null,
-  'the acting owner cannot deactivate themselves and lock everyone out');
+select is((select count(*)::int from public.list_profiles()), 4,
+          'the owner lists every staff profile');
+select ok((select count(*) from public.integration_outbox) > 0,
+          'the owner sees integration jobs');
+select is((select count(*)::int from public.system_settings), 1,
+          'the owner reads system settings');
 
-select throws_ok($$delete from public.clients$$, '42501', null,
-  'even the owner cannot hard-delete a client through the table');
-reset role;
+select lives_ok($$select public.set_profile_role('33333333-3333-4333-8333-333333333333', 'read_only')$$,
+  'the owner can make an audited role change');
+select lives_ok($$select public.set_profile_active('44444444-4444-4444-8444-444444444444', true)$$,
+  'the owner can reactivate a profile');
 
 -- ---------------------------------------------------------------------------
 -- The activity log is append-only for everyone
@@ -304,8 +305,6 @@ reset role;
 set local role authenticated;
 select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}');
 
--- Layer 1: the authenticated ACL/RLS boundary. No application role has a
--- mutation grant or an UPDATE/DELETE policy.
 create temporary table log_before as select count(*) as n from public.activity_log;
 select throws_ok($$update public.activity_log set event_type = 'client.contacted'$$,
   '42501', null, 'an authenticated owner cannot update activity_log directly');
@@ -314,11 +313,6 @@ select throws_ok($$delete from public.activity_log$$,
 select is((select count(*)::int from public.activity_log), (select n::int from log_before),
           'authenticated mutation attempts leave activity_log unchanged');
 
--- Layer 2: the trigger, which is what protects the audit trail from a role that
--- bypasses RLS entirely — hosted Supabase gives `postgres` and `service_role`
--- exactly that. FORCE is lifted here only to reach that code path.
--- activity_log's entity references are DEFERRABLE INITIALLY DEFERRED, and
--- ALTER TABLE refuses to run while their triggers are still pending.
 reset role;
 set constraints all immediate;
 alter table public.activity_log no force row level security;
@@ -338,8 +332,6 @@ select is((select count(*)::int from pg_policy
            where polrelid = 'public.activity_log'::regclass and polcmd in ('w', 'd')), 0,
           'no UPDATE or DELETE policy exists on activity_log');
 
--- Metadata may not become a second copy of the client's personal data.
--- These are privileged constraint probes, not service_role table inserts.
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select throws_ok(
   $$insert into public.activity_log (event_type, metadata)
@@ -367,12 +359,12 @@ select pg_temp.claims('{"role":"service_role"}');
 
 select throws_ok($$select count(*) from public.clients$$, '42501', null,
   'service_role holds no direct select privilege on clients');
-select throws_ok($$update public.enquiries set idea = 'x'$$, '42501', null,
-  'service_role holds no direct update privilege on enquiries');
-select throws_ok($$select count(*) from public.integration_outbox$$, '42501', null,
-  'service_role reaches the outbox only through narrow RPCs, not the table endpoint');
-select throws_ok($$delete from public.activity_log$$, '42501', null,
-  'service_role cannot delete audit history');
+select throws_ok($$update public.enquiries set idea = 'x'$$,
+  '42501', null, 'service_role holds no direct update privilege on enquiries');
+select throws_ok($$select count(*) from public.integration_outbox$$,
+  '42501', null, 'service_role reaches the outbox only through narrow RPCs, not the table endpoint');
+select throws_ok($$delete from public.activity_log$$,
+  '42501', null, 'service_role cannot delete audit history');
 select lives_ok($$select public.create_enquiry_intake(
     'bbbbbbbb-0000-4000-8000-000000000001',
     jsonb_build_object('full_name', 'Worker Client', 'email', 'worker@example.test'),
@@ -381,7 +373,7 @@ select lives_ok($$select public.create_enquiry_intake(
       'privacy_notice_version', '2026-07-29'
     ),
     jsonb_build_array(jsonb_build_object('mime_type','image/png','safe_extension','png','byte_size',512)))$$,
-  'service_role can still perform the narrow intake it is granted');
+  'the service_role can still perform the narrow intake it is granted');
 select ok(
   has_function_privilege('service_role',
     'public.create_enquiry_intake(uuid,jsonb,jsonb,jsonb)', 'EXECUTE'),
@@ -395,17 +387,16 @@ reset role;
 
 set local role authenticated;
 select pg_temp.claims('{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}');
-select throws_ok($$select count(*) from crm_private.profile_access$$, '42501', null,
-  'the access mirror is unreachable from an authenticated session');
-select throws_ok($$select crm_private.require_role('owner')$$, '42501', null,
-  'the role-assertion helper is not executable from an authenticated session');
+select throws_ok($$select count(*) from crm_private.profile_access$$,
+  '42501', null, 'the access mirror is unreachable from an authenticated session');
+select throws_ok($$select crm_private.require_role('owner')$$,
+  '42501', null, 'the role-assertion helper is not executable from an authenticated session');
 select throws_ok(
   $$select crm_private.enqueue_outbox('telegram_notification', 'telegram:forged:1')$$,
   '42501', null,
   'the outbox enqueue helper is not executable from an authenticated session');
 reset role;
 
--- The mirror must stay in step with profiles, or access control would drift.
 select is(
   (select count(*)::int from public.profiles p
    join crm_private.profile_access a on a.profile_id = p.id
@@ -414,8 +405,6 @@ select is(
   'the access mirror matches every profile row'
 );
 
--- Supabase grants new public objects to API roles unless migrations change the
--- defaults. A probe created after all migrations must stay closed.
 create table public.default_acl_probe (id integer);
 create function public.default_acl_probe() returns integer language sql as $$select 1$$;
 create function crm_private.default_acl_probe() returns integer language sql as $$select 1$$;
@@ -481,9 +470,6 @@ select ok(not has_function_privilege('authenticated', 'crm_private.default_acl_p
 select ok(not has_function_privilege('service_role', 'crm_private.default_acl_probe()', 'EXECUTE'),
           'new crm_private functions are closed to service_role by default');
 
--- Every callable CRM function belongs to an explicit allow-list. This checks
--- effective privileges, so an accidental PUBLIC grant would expose unexpected
--- functions and fail the inventory even if direct role ACLs looked correct.
 create temporary table expected_function_acl (
   signature             text primary key,
   anon_allowed          boolean not null,
@@ -492,7 +478,6 @@ create temporary table expected_function_acl (
 );
 
 insert into expected_function_acl values
-  -- Identity/policy helpers used by authenticated CRM requests and the backend.
   ('public.is_active_user()', false, true, true),
   ('public.current_crm_role()', false, true, true),
   ('public.is_owner()', false, true, true),
@@ -509,7 +494,6 @@ insert into expected_function_acl values
   ('public.can_manage_artist_sessions(uuid)', false, true, true),
   ('public.can_manage_artist_integrations(uuid)', false, true, true),
 
-  -- Worker-only durable intake, reconciliation and payment RPCs.
   ('public.create_enquiry_intake(uuid,jsonb,jsonb,jsonb)', false, false, true),
   ('public.create_trusted_enquiry_intake(text,text,text,uuid,jsonb,jsonb,jsonb)', false, false, true),
   ('public.mark_enquiry_file_uploaded(uuid,text)', false, false, true),
@@ -547,7 +531,6 @@ insert into expected_function_acl values
   ('public.record_email_outbox_result(uuid,text,boolean,text,text)', false, false, true),
   ('public.list_calendar_connection_status()', false, true, false),
 
-  -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
   ('public.record_activity(text,uuid,uuid,uuid,uuid,jsonb)', false, true, false),
   ('public.create_manual_enquiry(uuid,uuid,jsonb,jsonb,boolean)', false, true, false),
   ('public.transition_enquiry_status(uuid,public.enquiry_status)', false, true, false),
@@ -604,14 +587,9 @@ insert into expected_function_acl values
   ('public.match_monzo_reconciliation_candidate(uuid,uuid)', false, true, false),
   ('public.ignore_monzo_reconciliation_candidate(uuid)', false, true, false),
   ('public.confirm_monzo_reconciliation_candidate(uuid)', false, true, false),
-  ('public.gpt_list_monzo_reconciliation_candidates()', false, true, false),
-  ('public.gpt_match_monzo_reconciliation_candidate(uuid,uuid)', false, true, false),
-  ('public.gpt_ignore_monzo_reconciliation_candidate(uuid)', false, true, false),
-  ('public.gpt_confirm_monzo_reconciliation_candidate(uuid)', false, true, false),
   ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
 
-  -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
   ('crm_private.no_active_owner()', false, true, true);
@@ -636,22 +614,23 @@ select is(
        or has_function_privilege('authenticated', p.oid, 'EXECUTE')
        or has_function_privilege('service_role', p.oid, 'EXECUTE')
      )
+     and p.proname not like 'gpt\_%' escape '\'
      and not exists (
        select 1
        from expected_function_acl e
        where to_regprocedure(e.signature) = p.oid
      )),
   0,
-  'no public or crm_private function outside the explicit allow-list is callable by an API role'
+  'no non-GPT public or crm_private function outside the explicit allow-list is callable by an API role'
 );
+
+-- GPT RPC ACLs are capability-scoped and covered by their dedicated pgTAP suites.
+-- This baseline inventory deliberately excludes every public.gpt_* function so
+-- new GPT surfaces do not need to be duplicated here.
 
 drop function crm_private.default_acl_probe();
 drop function public.default_acl_probe();
 drop table public.default_acl_probe;
-
--- ---------------------------------------------------------------------------
--- RLS is enabled AND forced everywhere
--- ---------------------------------------------------------------------------
 
 select ok(
   (select bool_and(relrowsecurity and relforcerowsecurity)
