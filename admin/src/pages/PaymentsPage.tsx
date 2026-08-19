@@ -117,6 +117,9 @@ export function PaymentsPage() {
   const [busyCandidate, setBusyCandidate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DepositRequestResult | null>(null);
+  const [oneOffPaymentUrl, setOneOffPaymentUrl] = useState('');
+  const [savingOneOff, setSavingOneOff] = useState(false);
+  const [oneOffNotice, setOneOffNotice] = useState<string | null>(null);
   const [reconciliationNotice, setReconciliationNotice] = useState<string | null>(null);
 
   const selectedArtist = useMemo(
@@ -188,6 +191,8 @@ export function PaymentsPage() {
 
   useEffect(() => {
     setResult(null);
+    setOneOffPaymentUrl('');
+    setOneOffNotice(null);
     setReconciliationNotice(null);
     if (!selectedArtistId) {
       setSettings(EMPTY_SETTINGS);
@@ -220,6 +225,8 @@ export function PaymentsPage() {
     setBusySession(sessionId);
     setError(null);
     setResult(null);
+    setOneOffPaymentUrl('');
+    setOneOffNotice(null);
     try {
       const next = await api.requestSessionDeposit({ sessionId, deliveryChannel });
       setResult(next);
@@ -227,6 +234,27 @@ export function PaymentsPage() {
       setError(cause instanceof Error ? cause.message : copy.requestError);
     } finally {
       setBusySession(null);
+    }
+  }
+
+  async function saveOneOffDestination(event: FormEvent) {
+    event.preventDefault();
+    if (!result || !canManageReconciliation) return;
+    setSavingOneOff(true);
+    setError(null);
+    setOneOffNotice(null);
+    try {
+      const next = await api.attachMonzoOneOffPaymentDestination({
+        paymentRequestId: result.payment_request_id,
+        paymentUrl: oneOffPaymentUrl,
+      });
+      setResult((current) => current ? { ...current, public_path: next.public_path } : current);
+      setOneOffPaymentUrl('');
+      setOneOffNotice(copy.oneOffSaved);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.oneOffError);
+    } finally {
+      setSavingOneOff(false);
     }
   }
 
@@ -513,6 +541,35 @@ export function PaymentsPage() {
           <div className="notice">
             {result.delivery_channel === 'email' ? copy.emailQueued : copy.personalPathReady}
           </div>
+          {canManageReconciliation ? (
+            <form onSubmit={saveOneOffDestination} className="form-grid">
+              <div className="field-wide">
+                <h3>{copy.oneOffTitle}</h3>
+                <p className="muted">{copy.oneOffDescription}</p>
+              </div>
+              <label className="field field-wide">
+                <span>{copy.oneOffPaymentLink}</span>
+                <input
+                  type="url"
+                  value={oneOffPaymentUrl}
+                  onChange={(event) => setOneOffPaymentUrl(event.target.value)}
+                  placeholder="https://monzo.com/pay/r/…"
+                  autoComplete="off"
+                  required
+                />
+              </label>
+              <div className="field-wide">
+                <button
+                  type="submit"
+                  className="secondary-button"
+                  disabled={savingOneOff || !oneOffPaymentUrl.trim()}
+                >
+                  {savingOneOff ? copy.saving : copy.saveOneOffLink}
+                </button>
+              </div>
+              {oneOffNotice ? <div className="notice ok field-wide" role="status">{oneOffNotice}</div> : null}
+            </form>
+          ) : null}
         </section>
       ) : null}
 
