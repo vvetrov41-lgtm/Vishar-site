@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import worker from '../workers/gpt-actions-production-full.js';
+import worker, { __testing } from '../workers/gpt-actions-production-full.js';
 
 {
   const response = await worker.fetch(
@@ -37,4 +37,29 @@ import worker from '../workers/gpt-actions-production-full.js';
   assert.deepEqual(seen, ['privacy:203.0.113.70']);
 }
 
-console.log('GPT full production wrapper tests passed: accurate privacy boundary and preserved rate limit.');
+for (const host of ['gpt-communications.vishartattoo.com', 'gpt-operations.vishartattoo.com']) {
+  const request = new Request(`https://${host}/v1/enquiries/00000000-0000-4000-8000-000000000001/gmail/history`);
+  assert.equal(__testing.isGmailActionRoute(request), true, `${host} must route Gmail through the provider service during Builder migration`);
+
+  const seen = [];
+  const response = await worker.fetch(request, {
+    GMAIL_SERVICE: {
+      async fetch(forwarded) {
+        seen.push(new URL(forwarded.url).hostname);
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.deepEqual(seen, [host]);
+}
+
+assert.equal(__testing.isGmailActionRoute(
+  new Request('https://gpt-actions.vishartattoo.com/v1/enquiries/00000000-0000-4000-8000-000000000001/gmail/history'),
+), false, 'Core host must not proxy Gmail actions');
+
+console.log('GPT full production wrapper tests passed: privacy boundary, rate limit and Communications Gmail routing with legacy Operations compatibility.');

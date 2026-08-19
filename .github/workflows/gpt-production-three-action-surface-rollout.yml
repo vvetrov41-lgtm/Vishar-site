@@ -1,0 +1,168 @@
+name: GPT production three action surface rollout
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc69-gpt-three-action-surface
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: gpt-production-three-action-surface-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.sha }}
+      PRODUCT_BRANCH: agent/gpt-three-action-surface
+      EXPECTED_PR: '364'
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: vishar-gpt-actions-production
+      CORE_HOST: gpt-actions.vishartattoo.com
+      OPERATIONS_HOST: gpt-operations.vishartattoo.com
+      COMMUNICATIONS_HOST: gpt-communications.vishartattoo.com
+
+    steps:
+      - name: Verify exact release operator and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc69-gpt-three-action-surface'
+          test "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co'
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify operator SHA equals Draft product head and exact-head CI is green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+
+          product_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test -n "$product_sha"
+          test "$product_sha" = "$APPROVED_SHA"
+
+          pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$EXPECTED_PR")"
+          jq -e --arg branch "$PRODUCT_BRANCH" --arg sha "$APPROVED_SHA" '
+            .state == "open"
+            and .draft == true
+            and .head.ref == $branch
+            and .head.sha == $sha
+            and .merged_at == null
+          ' <<<"$pr_json" >/dev/null
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha,event}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation'; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate exact three-action GPT runtime
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          npm run test:gpt-production
+          node scripts/test-gpt-gmail-openapi.mjs
+          npm run validate:gpt-actions
+          npm run check:gpt-production-bundle
+          npm run scan:secrets
+
+      - name: Fresh-check existing production GPT edge before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/privacy")"
+          ops_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/privacy")"
+          test "$core_privacy" = 200
+          test "$ops_privacy" = 200
+          comm_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$COMMUNICATIONS_HOST/privacy" || true)"
+          echo "communications_before=${comm_privacy:-unreachable}" >> "$GITHUB_ENV"
+
+      - name: Deploy existing production GPT Worker on three custom domains
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var GPT_OAUTH_RELAY_ENABLED:true \
+            --var GPT_ACTIONS_ENABLED:true
+
+      - name: Verify all three production action domains remain OAuth-gated
+        shell: bash
+        run: |
+          set -euo pipefail
+          fake='11111111-1111-4111-8111-111111111111'
+          for attempt in $(seq 1 30); do
+            core_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/privacy" || true)"
+            core_oauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/oauth/authorize" || true)"
+            core_clients="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/v1/clients" || true)"
+            ops_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/privacy" || true)"
+            ops_activity="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/activity" || true)"
+            comm_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$COMMUNICATIONS_HOST/privacy" || true)"
+            comm_whatsapp="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$COMMUNICATIONS_HOST/v1/enquiries/$fake/whatsapp" || true)"
+            comm_gmail="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$COMMUNICATIONS_HOST/v1/enquiries/$fake/gmail/history" || true)"
+            legacy_gmail="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/enquiries/$fake/gmail/history" || true)"
+            if [ "$core_privacy" = 200 ] \
+              && [ "$core_oauth" = 400 ] \
+              && [ "$core_clients" = 401 ] \
+              && [ "$ops_privacy" = 200 ] \
+              && [ "$ops_activity" = 401 ] \
+              && [ "$comm_privacy" = 200 ] \
+              && [ "$comm_whatsapp" = 401 ] \
+              && [ "$comm_gmail" = 401 ] \
+              && [ "$legacy_gmail" = 401 ]; then
+              exit 0
+            fi
+            sleep 6
+          done
+          echo 'Production GPT three-action edge did not reach the expected OAuth-gated state.' >&2
+          exit 1
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### GPT production three-action surface rollout'
+            echo "- Exact SHA: \`$APPROVED_SHA\`"
+            echo "- Operator branch: \`$GITHUB_REF_NAME\`"
+            echo '- Worker: `vishar-gpt-actions-production` (reused, no duplicate Worker)'
+            echo '- Core Action domain: `gpt-actions.vishartattoo.com`'
+            echo '- Operations Action domain: `gpt-operations.vishartattoo.com`'
+            echo '- Communications Action domain: `gpt-communications.vishartattoo.com`'
+            echo '- OAuth authorization/token origin: unchanged (`gpt-actions.vishartattoo.com`)'
+            echo "- Communications privacy before deploy: \`${communications_before:-not-recorded}\`"
+            echo '- Production DB migrations: none'
+            echo '- GPT OAuth client/binding/capability mutations: none'
+            echo '- Gmail provider runtime/credentials: unchanged'
+            echo '- Retained staging targeted: no'
+          } >> "$GITHUB_STEP_SUMMARY"

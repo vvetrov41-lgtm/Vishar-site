@@ -604,6 +604,10 @@ insert into expected_function_acl values
   ('public.match_monzo_reconciliation_candidate(uuid,uuid)', false, true, false),
   ('public.ignore_monzo_reconciliation_candidate(uuid)', false, true, false),
   ('public.confirm_monzo_reconciliation_candidate(uuid)', false, true, false),
+  ('public.gpt_list_monzo_reconciliation_candidates()', false, true, false),
+  ('public.gpt_match_monzo_reconciliation_candidate(uuid,uuid)', false, true, false),
+  ('public.gpt_ignore_monzo_reconciliation_candidate(uuid)', false, true, false),
+  ('public.gpt_confirm_monzo_reconciliation_candidate(uuid)', false, true, false),
   ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
 
