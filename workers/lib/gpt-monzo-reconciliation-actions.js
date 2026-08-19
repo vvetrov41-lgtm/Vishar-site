@@ -16,31 +16,27 @@ function isUuid(value) {
 }
 
 function exactObject(body, allowedFields) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { error: 'invalid_json_body' };
-  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('invalid_json_object');
   const allowed = new Set(allowedFields);
   for (const field of Object.keys(body)) {
-    if (FORBIDDEN_FIELDS.has(field)) return { error: 'forbidden_field', field };
-    if (!allowed.has(field)) return { error: 'unexpected_field', field };
+    if (FORBIDDEN_FIELDS.has(field)) throw new Error(`forbidden_field:${field}`);
+    if (!allowed.has(field)) throw new Error(`unexpected_field:${field}`);
   }
-  return { value: body };
+  return body;
 }
 
-function noSearchParams(url) {
+function exactSearch(url) {
   for (const key of url.searchParams.keys()) {
-    if (FORBIDDEN_FIELDS.has(key)) return { error: 'forbidden_field', field: key };
-    return { error: 'unexpected_query_parameter', field: key };
+    if (FORBIDDEN_FIELDS.has(key)) throw new Error(`forbidden_field:${key}`);
+    throw new Error(`unexpected_field:${key}`);
   }
-  return { value: true };
 }
 
-export async function routeForGptMonzoReconciliationAction(request, url) {
+export function routeForGptMonzoReconciliationAction(request, url, body = {}) {
   const method = request.method.toUpperCase();
 
   if (method === 'GET' && url.pathname === '/v1/payments/monzo/reconciliation') {
-    const query = noSearchParams(url);
-    if (query.error) return query;
+    exactSearch(url);
     return {
       rpc: 'gpt_list_monzo_reconciliation_candidates',
       payload: {},
@@ -51,15 +47,14 @@ export async function routeForGptMonzoReconciliationAction(request, url) {
   let match = url.pathname.match(/^\/v1\/payments\/monzo\/reconciliation\/([^/]+)\/match$/);
   if (method === 'POST' && match) {
     const candidateId = match[1];
-    if (!isUuid(candidateId)) return { error: 'invalid_candidate_id' };
-    const body = exactObject(await request.json().catch(() => null), ['payment_request_id']);
-    if (body.error) return body;
-    if (!isUuid(body.value.payment_request_id)) return { error: 'invalid_payment_request_id' };
+    if (!isUuid(candidateId)) throw new Error('invalid_field:candidate_id');
+    const parsed = exactObject(body, ['payment_request_id']);
+    if (!isUuid(parsed.payment_request_id)) throw new Error('invalid_field:payment_request_id');
     return {
       rpc: 'gpt_match_monzo_reconciliation_candidate',
       payload: {
         p_candidate_id: candidateId,
-        p_payment_request_id: body.value.payment_request_id,
+        p_payment_request_id: parsed.payment_request_id,
       },
       responseKind: 'object',
     };
@@ -69,9 +64,8 @@ export async function routeForGptMonzoReconciliationAction(request, url) {
   if (method === 'POST' && match) {
     const candidateId = match[1];
     const action = match[2];
-    if (!isUuid(candidateId)) return { error: 'invalid_candidate_id' };
-    const body = exactObject(await request.json().catch(() => null), []);
-    if (body.error) return body;
+    if (!isUuid(candidateId)) throw new Error('invalid_field:candidate_id');
+    exactObject(body, []);
     return {
       rpc: action === 'ignore'
         ? 'gpt_ignore_monzo_reconciliation_candidate'
