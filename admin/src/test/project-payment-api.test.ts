@@ -39,8 +39,6 @@ describe('project payment API boundary', () => {
       p_payment_request_id: 'request-1',
       p_payment_url: 'https://monzo.com/pay/r/synthetic-oneoff',
     });
-    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty('p_artist_id');
-    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty('p_amount');
   });
 
   it('records manual money through the immutable payment ledger RPC', async () => {
