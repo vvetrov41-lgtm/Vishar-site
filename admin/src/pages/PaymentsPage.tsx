@@ -170,7 +170,7 @@ export function PaymentsPage() {
       depositAmountForAppointment(appointment, settings.deposit_tiers)
     );
     if (amounts.some((amount) => amount == null)) return null;
-    return amounts.reduce((sum, amount) => sum + (amount ?? 0), 0);
+    return (amounts as number[]).reduce((sum, amount) => sum + amount, 0);
   }, [selectedGroupAppointments, settings.deposit_tiers]);
 
   function setCandidateDefaults(candidates: MonzoReconciliationCandidate[]) {
