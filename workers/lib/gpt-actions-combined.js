@@ -63,6 +63,42 @@ function clientListRoute(request, url) {
   return { rpc: 'gpt_list_clients', payload: { p_limit: limit }, responseKind: 'list' };
 }
 
+function artistContextRoute(request, url, body) {
+  const method = request.method.toUpperCase();
+  const path = url.pathname.replace(/\/+$/, '');
+
+  if (method === 'GET' && path === '/v1/artists') {
+    if ([...url.searchParams.keys()].length > 0) throw new Error('unexpected_field:query');
+    return { rpc: 'gpt_list_accessible_artists', payload: {}, responseKind: 'list' };
+  }
+
+  if (method === 'GET' && path === '/v1/context') {
+    if ([...url.searchParams.keys()].length > 0) throw new Error('unexpected_field:query');
+    return { rpc: 'gpt_get_artist_context', payload: {}, responseKind: 'object' };
+  }
+
+  if (method === 'POST' && path === '/v1/context/artist') {
+    const keys = Object.keys(body || {});
+    if (!keys.includes('artist_key')) throw new Error('required_field:artist_key');
+    for (const key of keys) {
+      if (['artist_id', 'profile_id', 'oauth_client_id', 'integration_key'].includes(key)) {
+        throw new Error(`forbidden_field:${key}`);
+      }
+      if (key !== 'artist_key') throw new Error(`unexpected_field:${key}`);
+    }
+    if (typeof body.artist_key !== 'string' || !/^[a-z][a-z0-9-]{1,62}$/.test(body.artist_key)) {
+      throw new Error('invalid_field:artist_key');
+    }
+    return {
+      rpc: 'gpt_set_active_artist',
+      payload: { p_artist_key: body.artist_key },
+      responseKind: 'object',
+    };
+  }
+
+  return null;
+}
+
 function safeRpcError(status, text) {
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = null; }
@@ -94,7 +130,8 @@ async function handleFullRequest(request, env, fetchImpl) {
   let body = {};
   try {
     if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) body = await readJson(request);
-    const route = clientListRoute(request, url)
+    const route = artistContextRoute(request, url, body)
+      || clientListRoute(request, url)
       || routeForGptMonzoReconciliationAction(request, url, body)
       || routeForFullGptAction(request, url, body);
     if (!route) return null;
@@ -150,4 +187,10 @@ export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
   return handleCoreGptActionsRequest(request, env, fetchImpl);
 }
 
-export const __testing = Object.freeze({ configured, bearer, clientListRoute, handleFullRequest });
+export const __testing = Object.freeze({
+  configured,
+  bearer,
+  artistContextRoute,
+  clientListRoute,
+  handleFullRequest,
+});

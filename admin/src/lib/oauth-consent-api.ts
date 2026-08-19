@@ -13,10 +13,12 @@ interface OAuthCapableClient extends CrmClient {
 export interface GptConsentSummary {
   integration_key: string;
   client_display_name: string;
-  artist_id: string;
+  artist_id: string | null;
   artist_display_name: string;
   can_read_appointments: boolean;
   can_manage_appointments: boolean;
+  identity_mode: 'legacy_fixed' | 'unified_user';
+  accessible_artists: Array<{ key: string; display_name: string }>;
 }
 
 export interface PendingGptConsent {
@@ -110,10 +112,18 @@ function consentSummary(data: any): GptConsentSummary {
   if (
     typeof row.integration_key !== 'string'
     || typeof row.client_display_name !== 'string'
-    || typeof row.artist_id !== 'string'
+    || !(row.artist_id === null || typeof row.artist_id === 'string')
     || typeof row.artist_display_name !== 'string'
     || typeof row.can_read_appointments !== 'boolean'
     || typeof row.can_manage_appointments !== 'boolean'
+    || !['legacy_fixed', 'unified_user'].includes(String(row.identity_mode))
+    || !Array.isArray(row.accessible_artists)
+    || row.accessible_artists.length < 1
+    || row.accessible_artists.some((artist) => (
+      !artist
+      || typeof artist.key !== 'string'
+      || typeof artist.display_name !== 'string'
+    ))
   ) {
     throw new ApiError('This GPT is not enabled for your CRM access.');
   }

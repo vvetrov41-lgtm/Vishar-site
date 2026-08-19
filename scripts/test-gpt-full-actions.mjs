@@ -271,4 +271,4 @@ for (const [action, rpc] of [
   assert.equal(called, false);
 }
 
-console.log('GPT full CRM Actions tests passed: named RPCs, fixed artist routing, bounded PII/finance/communications and Monzo reconciliation.');
+console.log('GPT full CRM Actions tests passed: named RPCs, server-resolved artist routing, bounded PII/finance/communications and Monzo reconciliation.');

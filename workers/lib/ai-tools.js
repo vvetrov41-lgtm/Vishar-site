@@ -10,7 +10,8 @@
 //
 //   * named tools only, with no arbitrary SQL or generic table endpoint;
 //   * the caller's Supabase OAuth identity remains authoritative;
-//   * appointment GPTs are additionally bound by OAuth client_id to one artist;
+//   * GPT artist scope is resolved server-side from OAuth user membership and
+//     active context, with legacy fixed-client compatibility during migration;
 //   * every read declares exactly which fields it may return;
 //   * every read is paginated with a hard row cap;
 //   * appointment writes are idempotent, version-checked and AI-audited;
@@ -122,7 +123,7 @@ export const AI_TOOLS = Object.freeze([
   {
     name: 'search_appointment_clients',
     kind: 'read',
-    summary: 'Find client IDs by name only inside the GPT client’s fixed artist scope.',
+    summary: 'Find client IDs by name only inside the server-resolved artist context.',
     requiresRole: ['owner', 'booking_manager'],
     artistCapability: 'view',
     oauthClientBound: true,
@@ -133,7 +134,7 @@ export const AI_TOOLS = Object.freeze([
   {
     name: 'list_appointments',
     kind: 'read',
-    summary: 'List appointments in the GPT client’s fixed artist scope.',
+    summary: 'List appointments in the server-resolved artist context.',
     requiresRole: ['owner', 'booking_manager'],
     artistCapability: 'view',
     oauthClientBound: true,
@@ -148,7 +149,7 @@ export const AI_TOOLS = Object.freeze([
   {
     name: 'get_appointment',
     kind: 'read',
-    summary: 'Read one appointment only inside the GPT client’s fixed artist scope.',
+    summary: 'Read one appointment only inside the server-resolved artist context.',
     requiresRole: ['owner', 'booking_manager'],
     artistCapability: 'view',
     oauthClientBound: true,
@@ -163,7 +164,7 @@ export const AI_TOOLS = Object.freeze([
   {
     name: 'check_appointment_conflicts',
     kind: 'read',
-    summary: 'Check a proposed time range against active appointments for the fixed artist.',
+    summary: 'Check a proposed time range against appointments in the active artist context.',
     requiresRole: ['owner', 'booking_manager'],
     artistCapability: 'view',
     oauthClientBound: true,
@@ -174,7 +175,7 @@ export const AI_TOOLS = Object.freeze([
   {
     name: 'schedule_appointment',
     kind: 'write',
-    summary: 'Create an appointment for the fixed artist with idempotency protection.',
+    summary: 'Create an appointment in the active artist context with idempotency protection.',
     requiresRole: ['owner', 'booking_manager'],
     artistCapability: 'manage_sessions',
     oauthClientBound: true,
@@ -186,7 +187,7 @@ export const AI_TOOLS = Object.freeze([
   {
     name: 'reschedule_appointment',
     kind: 'write',
-    summary: 'Move an appointment for the fixed artist after an optimistic version check.',
+    summary: 'Move an appointment in the active artist context after an optimistic version check.',
     requiresRole: ['owner', 'booking_manager'],
     artistCapability: 'manage_sessions',
     oauthClientBound: true,
@@ -198,7 +199,7 @@ export const AI_TOOLS = Object.freeze([
   {
     name: 'cancel_appointment',
     kind: 'write',
-    summary: 'Cancel an appointment for the fixed artist after an optimistic version check.',
+    summary: 'Cancel an appointment in the active artist context after an optimistic version check.',
     requiresRole: ['owner', 'booking_manager'],
     artistCapability: 'manage_sessions',
     oauthClientBound: true,

@@ -22,10 +22,12 @@ function versionAtLeast(actual, minimum) {
 
 const tools = read('workers/lib/ai-tools.js');
 const proxy = read('workers/lib/gpt-actions.js');
+const combinedProxy = read('workers/lib/gpt-actions-combined.js');
 const entrypoint = read('workers/gpt-actions.js');
 const migration = read('supabase/migrations/0032_gpt_appointment_actions.sql');
 const hardening = read('supabase/migrations/0033_gpt_appointment_actions_hardening.sql');
-const consentGuard = read('supabase/migrations/0034_gpt_oauth_consent_guard.sql');
+const legacyConsentGuard = read('supabase/migrations/0034_gpt_oauth_consent_guard.sql');
+const unifiedContext = read('supabase/migrations/0069_gpt_unified_user_context.sql');
 const openapi = read('docs/gpt-actions/openapi.staging.yaml');
 const runbook = read('docs/crm/gpt-appointment-actions.md');
 const consentApi = read('admin/src/lib/oauth-consent-api.ts');
@@ -71,6 +73,10 @@ assert.match(proxy, /MAX_RESPONSE_BYTES = 128 \* 1024/, 'response body must rema
 assert.match(proxy, /boundedQueryInteger\(url\.searchParams\.get\('limit'\), 'limit', 20, 25\)/,
   'appointment listing must remain capped to 25 at the edge');
 assert.match(entrypoint, /omitNullFields/, 'public entrypoint must remove optional null fields');
+assert.match(combinedProxy, /gpt_list_accessible_artists/, 'combined production proxy must expose accessible artists');
+assert.match(combinedProxy, /gpt_get_artist_context/, 'combined production proxy must expose current artist context');
+assert.match(combinedProxy, /gpt_set_active_artist/, 'combined production proxy must expose validated context switching');
+assert.doesNotMatch(combinedProxy, /p_artist_id\s*:/, 'context proxy must never forward an artist UUID');
 
 for (const key of ['vladimir-gpt-actions', 'kristina-gpt-actions']) {
   assert.match(migration, new RegExp(`'${key}'`), `missing logical GPT integration ${key}`);
@@ -99,17 +105,17 @@ assert.match(hardening, /digest\([\s\S]*'sha256'/, 'idempotency receipts must us
 assert.doesNotMatch(hardening, /md5\(/, 'GPT idempotency must not use MD5');
 
 assert.match(
-  consentGuard,
+  legacyConsentGuard,
   /create or replace function public\.get_gpt_action_consent_summary/,
   'consent page must use a database-owned OAuth client guard',
 );
 assert.match(
-  consentGuard,
+  legacyConsentGuard,
   /require_artist_access\(v_client\.artist_id, 'manage_sessions'\)/,
   'write-capable consent must require human appointment-management access',
 );
 assert.match(
-  consentGuard,
+  legacyConsentGuard,
   /grant execute on function public\.get_gpt_action_consent_summary\(text\)[\s\S]*to authenticated/,
   'only authenticated CRM users may call the consent summary',
 );
@@ -130,8 +136,23 @@ assert.match(
 );
 assert.match(app, /case '\/oauth\/consent':/, 'active CRM routing must include the OAuth consent path');
 assert.match(consentPage, /can_manage_appointments/, 'consent UI must display read versus write access');
-assert.match(consentPage, /cannot switch artist|не может переключить артиста/,
-  'consent UI must state the fixed artist boundary');
+assert.match(consentPage, /current CRM membership|повторно проверяет ваш membership/,
+  'consent UI must explain the membership-authoritative unified artist boundary');
+
+assert.match(unifiedContext, /create table crm_private\.gpt_oauth_applications/,
+  'unified GPT OAuth applications must be separate from artist policy rows');
+assert.match(unifiedContext, /create table crm_private\.gpt_user_artist_contexts/,
+  'active artist context must remain server-owned');
+assert.match(unifiedContext, /crm_private\.require_gpt_identity_context/,
+  'all GPT capability categories must share one canonical operational resolver');
+assert.match(unifiedContext, /crm_private\.has_artist_capability\(c\.artist_id, 'view'\)/,
+  'unified accessible artists must derive from current CRM access');
+assert.match(unifiedContext, /p\.artist_key = v_key/,
+  'artist key selection must be revalidated against accessible policies');
+assert.doesNotMatch(unifiedContext, /oauth_client_id\s*=\s*'[^']+'/,
+  'no real unified OAuth client id may be committed');
+assert.match(unifiedContext, /grant execute on function public\.gpt_list_accessible_artists\(\)/,
+  'only the narrow artist-context RPC surface may be public');
 
 const supabaseVersion = adminLock.packages?.['node_modules/@supabase/supabase-js']?.version;
 assert.equal(typeof supabaseVersion, 'string', 'admin lockfile must pin supabase-js');
@@ -217,4 +238,4 @@ assert.match(
   'normal Worker tests must include GPT static validation',
 );
 
-console.log('GPT Actions validation passed: disabled, OAuth-bound, artist-scoped and staging-only.');
+console.log('GPT Actions validation passed: disabled-by-default, user-centric OAuth, server-resolved artist scope and staging isolation.');

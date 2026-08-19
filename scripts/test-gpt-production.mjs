@@ -37,7 +37,8 @@ function authorizeUrl(overrides = {}) {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /private production integration/);
-  assert.match(html, /does not accept an artist identifier from ChatGPT/);
+  assert.match(html, /OAuth client identifies the Vishar GPT application/);
+  assert.match(html, /membership, selected artist context and operation permissions/);
   assert.doesNotMatch(html, /retained-staging|service_role|SUPABASE_SECRET_KEY|sb_secret_/);
 }
 

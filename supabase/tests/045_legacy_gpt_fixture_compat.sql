@@ -22,6 +22,8 @@ begin
           'configure_gpt_action_client',
           'configure_gpt_enquiry_read_access',
           'configure_gpt_full_management',
+          'configure_gpt_oauth_application',
+          'configure_gpt_artist_policy',
           'get_gpt_action_consent_summary'
         )
       )

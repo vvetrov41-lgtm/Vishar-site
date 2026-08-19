@@ -228,14 +228,14 @@ const PRIVACY_HTML = `<!doctype html>
 </head>
 <body>
 <h1>Vishar CRM Private GPT Actions Privacy Notice</h1>
-<p>This private production integration connects an authorised Vishar CRM user to artist-scoped appointment actions. It is not a public booking service.</p>
+<p>This private production integration connects an authorised Vishar CRM user to membership-scoped CRM actions. It is not a public booking service.</p>
 <h2>What the private GPT can access</h2>
-<p>After CRM sign-in, the action service can access only appointment functions for the single artist permanently bound to that GPT OAuth client. The action API does not accept an artist identifier from ChatGPT.</p>
+<p>After CRM sign-in, the action service can access only artist workspaces available through the user's current CRM memberships and server-controlled artist context.</p>
 <ul><li>Search existing client names, returning only client ID and name.</li><li>List and read appointments.</li><li>Check appointment conflicts.</li><li>Create, reschedule or cancel appointments when the signed-in CRM user also has the required permission.</li></ul>
 <h2>Data deliberately excluded</h2>
 <p>The action surface does not expose client email addresses, phone numbers, Instagram handles, addresses, finance, payments, arbitrary database queries or privileged Supabase credentials. It does not provide a client-messaging action.</p>
 <h2>Authentication and artist separation</h2>
-<p>Authentication uses the production Supabase OAuth server. A separate OAuth client is registered for each private GPT and bound in the CRM database to exactly one artist. CRM identity, active membership and appointment permissions are checked again for every action.</p>
+<p>Authentication uses the production Supabase OAuth server. The OAuth client identifies the Vishar GPT application. CRM identity, active membership, selected artist context and operation permissions are checked again for every action.</p>
 <h2>Changes made through the GPT</h2>
 <p>Writes use idempotency request IDs. Reschedule and cancellation require the current calendar version. AI-assisted mutations are recorded in the CRM activity log and Calendar synchronisation follows the same CRM outbox used by human CRM actions.</p>
 <h2>Providers</h2>

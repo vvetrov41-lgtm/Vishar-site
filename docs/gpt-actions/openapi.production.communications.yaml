@@ -1,17 +1,49 @@
 openapi: 3.1.0
 info:
   title: Vishar CRM Communications Actions
-  version: 1.0.0-production-communications
+  version: 1.1.0-production-communications
   description: >-
-    Artist-scoped WhatsApp, CRM email and Gmail communication actions. The artist,
-    provider mailbox and provider routing are fixed by the OAuth client binding and
-    server-side CRM configuration and cannot be selected in a request.
+    Artist-scoped WhatsApp, CRM email and Gmail communication actions. The active
+    artist is verified from the signed-in user's CRM membership. Provider mailbox
+    and routing remain server-owned and cannot be selected in a request.
 servers:
   - url: https://gpt-communications.vishartattoo.com
     description: Vishar CRM production communications action edge.
 security:
   - supabaseOAuth: [email]
 paths:
+  /v1/notes:
+    get:
+      operationId: listInternalNotes
+      summary: List internal notes linked to specific CRM records
+      x-openai-isConsequential: false
+      parameters:
+        - {name: client_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: enquiry_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: project_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: session_id, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses: {'200': {description: Internal notes}}
+    post:
+      operationId: createInternalNote
+      summary: Create an internal CRM note
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [body]
+              properties:
+                body: {type: string, maxLength: 8000}
+                client_id: {type: string, format: uuid}
+                enquiry_id: {type: string, format: uuid}
+                project_id: {type: string, format: uuid}
+                session_id: {type: string, format: uuid}
+      responses: {'200': {description: Created note}}
+
   /v1/enquiries/{enquiry_id}/whatsapp:
     get:
       operationId: getWhatsAppConversation
@@ -155,4 +187,4 @@ components:
           authorizationUrl: https://gpt-actions.vishartattoo.com/oauth/authorize
           tokenUrl: https://gpt-actions.vishartattoo.com/oauth/token
           scopes:
-            email: Authenticate the CRM user. CRM membership, fixed OAuth artist binding and operation capabilities remain authoritative.
+            email: Authenticate the CRM user. CRM membership, active artist context and operation capabilities remain authoritative.

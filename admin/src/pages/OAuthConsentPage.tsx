@@ -11,13 +11,13 @@ const COPY = {
     invalid: 'This authorization request is invalid, expired, or not available for your CRM access.',
     requestedBy: 'Requesting application',
     signedInAs: 'Signed in as',
-    artist: 'Fixed artist scope',
+    artist: 'Available artist workspaces',
     permission: 'Appointment access',
     write: 'View, create, reschedule and cancel appointments.',
     read: 'View appointments only.',
     scope: 'OAuth scope',
     boundaryTitle: 'What this does not allow',
-    boundary: 'This action surface cannot switch artist, run arbitrary database queries, access finance, send client messages, or manage payments.',
+    boundary: 'The GPT can switch only between the artist workspaces listed above. Every action still requires your current CRM membership and the operation-specific capability. It cannot run arbitrary database queries or access provider credentials.',
     approve: 'Approve access',
     deny: 'Deny',
     approving: 'Approving…',
@@ -31,13 +31,13 @@ const COPY = {
     invalid: 'Запрос недействителен, истёк или недоступен для ваших прав в CRM.',
     requestedBy: 'Запрашивающее приложение',
     signedInAs: 'Вы вошли как',
-    artist: 'Фиксированный артист',
+    artist: 'Доступные мастера',
     permission: 'Доступ к записям',
     write: 'Просмотр, создание, перенос и отмена записей.',
     read: 'Только просмотр записей.',
     scope: 'OAuth-разрешение',
     boundaryTitle: 'Что этот доступ не разрешает',
-    boundary: 'GPT не может переключить артиста, выполнять произвольные запросы к базе, видеть финансы, отправлять сообщения клиентам или управлять платежами.',
+    boundary: 'GPT может переключаться только между указанными мастерами. Каждое действие повторно проверяет ваш membership и разрешение на конкретную операцию. GPT не может выполнять произвольные запросы к базе или получать ключи интеграций.',
     approve: 'Разрешить доступ',
     deny: 'Отклонить',
     approving: 'Разрешаем…',
@@ -137,7 +137,9 @@ export function OAuthConsentPage() {
             <dd style={{ margin: 0 }}>{profile?.display_name ?? 'CRM staff'}</dd>
 
             <dt style={{ color: 'var(--muted)' }}>{copy.artist}</dt>
-            <dd style={{ margin: 0 }}>{consent.summary.artist_display_name}</dd>
+            <dd style={{ margin: 0 }}>
+              {consent.summary.accessible_artists.map((artist) => artist.display_name).join(', ')}
+            </dd>
 
             <dt style={{ color: 'var(--muted)' }}>{copy.permission}</dt>
             <dd style={{ margin: 0 }}>

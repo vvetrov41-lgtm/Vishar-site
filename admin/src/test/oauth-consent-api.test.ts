@@ -32,6 +32,8 @@ function client(overrides: {
       artist_display_name: 'Kristina Vishar',
       can_read_appointments: true,
       can_manage_appointments: true,
+      identity_mode: 'legacy_fixed',
+      accessible_artists: [{ key: 'kristina', display_name: 'Kristina Vishar' }],
     }],
     error: null,
   }));
@@ -72,12 +74,43 @@ describe('GPT OAuth consent API', () => {
           artist_display_name: 'Kristina Vishar',
           can_read_appointments: true,
           can_manage_appointments: true,
+          identity_mode: 'legacy_fixed',
+          accessible_artists: [{ key: 'kristina', display_name: 'Kristina Vishar' }],
         },
       },
     });
     expect(mock.rpc).toHaveBeenCalledWith('get_gpt_action_consent_summary', {
       p_oauth_client_id: 'oauth-kristina-client',
     });
+  });
+
+  it('accepts one unified GPT application with multiple membership-scoped artists', async () => {
+    const mock = client({
+      summary: {
+        data: [{
+          integration_key: 'vishar-unified-gpt',
+          client_display_name: 'Vishar CRM GPT',
+          artist_id: null,
+          artist_display_name: 'Multiple artists',
+          can_read_appointments: true,
+          can_manage_appointments: true,
+          identity_mode: 'unified_user',
+          accessible_artists: [
+            { key: 'kristina', display_name: 'Kristina Vishar' },
+            { key: 'vladimir', display_name: 'Vladimir Vishar' },
+          ],
+        }],
+        error: null,
+      },
+    });
+
+    const result = await createOAuthConsentApi(mock.value).loadGptOAuthConsent('authorization-123');
+    expect(result.kind).toBe('consent');
+    if (result.kind === 'consent') {
+      expect(result.consent.summary.identity_mode).toBe('unified_user');
+      expect(result.consent.summary.accessible_artists).toHaveLength(2);
+      expect(result.consent.summary.artist_id).toBeNull();
+    }
   });
 
   it('uses the validated redirect when consent was already granted', async () => {

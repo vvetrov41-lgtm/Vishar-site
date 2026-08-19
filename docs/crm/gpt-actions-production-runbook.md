@@ -1,6 +1,6 @@
 # GPT Actions production rollout
 
-This runbook covers the private artist-bound GPT production edge from OAuth bootstrap through the full operational CRM surface. Production remains separate from retained staging and every production code/migration rollout uses the protected `crm-production` environment.
+This runbook covers the production GPT edge from OAuth bootstrap through the unified user-centric CRM surface. Production remains separate from retained staging and every production code/migration rollout uses the protected `crm-production` environment. The target architecture is recorded in ADR 0007.
 
 ## Fixed boundaries
 
@@ -13,13 +13,15 @@ This runbook covers the private artist-bound GPT production edge from OAuth boot
 - Full management branch: `agent/gpt-full-crm-management`.
 - Retained staging is never targeted by a production rollout.
 - The Worker carries no Supabase service-role or secret key. It forwards the signed-in user's OAuth bearer token plus only the production publishable key.
-- Artist scope is never accepted from ChatGPT. `auth.jwt()->>'client_id'` resolves through `crm_private.gpt_action_clients` to exactly one artist.
+- The OAuth `client_id` identifies the Vishar GPT application. It does not select an artist.
+- Artist scope is resolved from `auth.uid()`, the active CRM profile, current memberships and the server-owned active artist context.
+- A requested artist key is only a candidate and becomes active only after a fresh membership check. No GPT Action accepts an artist UUID.
 - There is no generic SQL, table or arbitrary RPC Action.
 - Team/role administration, OAuth/integration credentials, RLS controls and Storage policies are never GPT Actions.
 
 ## OAuth and fixed Worker callback
 
-Each private GPT has its own confidential Supabase OAuth client with `client_secret_basic`. Configure the GPT with:
+The unified production GPT uses one confidential Supabase OAuth client with `client_secret_basic` across all three Action sets. Configure each Action set with the same credentials and these central OAuth endpoints:
 
 - authorization URL: `https://gpt-actions.vishartattoo.com/oauth/authorize`
 - token URL: `https://gpt-actions.vishartattoo.com/oauth/token`
@@ -34,7 +36,7 @@ Supabase receives only the fixed Worker callback:
 
 `https://gpt-actions.vishartattoo.com/oauth/callback`
 
-The fixed Worker callback must be registered on each production OAuth client. A later GPT-editor callback change therefore does not require changing the Supabase redirect URI.
+The fixed Worker callback must be registered on the unified production OAuth client. A later GPT-editor callback change therefore does not require changing the Supabase redirect URI.
 
 The client secret is shown only during OAuth client creation/rotation and must be copied directly into the GPT editor. Never place it in GitHub, CRM data, logs, documentation or chat messages.
 
@@ -55,16 +57,23 @@ The bridge secret is a Cloudflare Worker secret named `GPT_OAUTH_BRIDGE_SECRET`.
 
 Historical PKCE production operator: `release/private-crm-rc28-gpt-pkce-bridge`.
 
-## Artist binding
+## Application identity and artist context
 
-Bind only the non-secret OAuth Client ID through the owner-only `configure_gpt_action_client(...)` RPC.
+Bind only the new unified application's non-secret OAuth Client ID through:
 
-Required production rows:
+`configure_gpt_oauth_application('vishar-unified-gpt', <client-id>, true)`
 
-- `vladimir-gpt-actions` -> Vladimir production OAuth client
-- `kristina-gpt-actions` -> Kristina production OAuth client
+Never store or pass the client secret to this RPC. The secret exists only in Supabase Auth and the GPT Builder authentication settings.
 
-Both clients must be distinct, confidential, non-deleted and must not reuse a retained-staging OAuth Client ID.
+The existing `vladimir-gpt-actions` and `kristina-gpt-actions` rows remain per-artist capability policies. During transition, their current `oauth_client_id` values also preserve the old fixed-artist GPTs. A cross-table trigger prevents the unified client ID from being reused as a legacy client ID.
+
+The context Actions are:
+
+- `listAccessibleArtists`: safe key, display name and current-selection flag only;
+- `getActiveArtist`: current context and whether a selection is required;
+- `setActiveArtist`: accepts a safe artist key, then revalidates membership in the database.
+
+One accessible artist is selected automatically. Several artists with no saved context produce a selection-required response rather than guessing. Saved context is revalidated on every later action, so membership removal closes access immediately.
 
 Immediately before every activation or expansion, perform a **fresh live Supabase check** of the production project rather than trusting a handoff SHA or prior database snapshot.
 
@@ -87,7 +96,7 @@ Full management adds three default-off controls:
 - `can_manage_finance`
 - `can_manage_communications`
 
-Only the owner can change these through `configure_gpt_full_management(...)`. Capability changes are written to `activity_log` as `gpt.client_configured`.
+Only the owner can change these. Existing policies remain configurable through the legacy configuration RPCs; new artists use `configure_gpt_artist_policy(...)`. Capability changes are written to `activity_log`.
 
 `can_manage_crm` covers daily artist operations such as specific-client detail/update, full enquiry detail/update/status/assignment/conversion, projects, internal notes, follow-ups and full appointment/availability operations. It does not grant team/security administration.
 
@@ -116,6 +125,19 @@ For high-impact operations:
 - idempotent operations use a generated UUID request ID reused only for an identical retry.
 
 The GPT does not bypass human CRM role checks or the canonical RPC business rules.
+
+## Unified rollout after migration 0069
+
+1. Keep the product PR Draft/open/unmerged and require exact-head Static, CRM/booking and Gmail validation green.
+2. Fresh-check production migration head and the three live GPT domains. Production must not already contain `0069`.
+3. Apply the exact pending migration chain only through a protected production operator. Migration `0069` seeds the unified application disabled and changes no provider connection.
+4. Deploy the existing GPT Worker. Verify unauthenticated Actions return 401 and all three privacy routes return 200.
+5. In Supabase Auth, create one confidential OAuth client named for the unified Vishar GPT. Register only the fixed Worker callback `https://gpt-actions.vishartattoo.com/oauth/callback`.
+6. Bind and enable only the non-secret client ID with `configure_gpt_oauth_application`. Do not disable legacy bindings yet.
+7. Configure one private Vishar GPT with the Core, Operations and Communications schemas. Use the same OAuth client ID and secret for all three Action sets.
+8. Sign in first as a one-membership user and prove automatic selection. Then sign in as a two-membership user, list both artists, switch both directions and prove cross-artist denials for Gmail and finance.
+9. Keep old Vladimir and Kristina GPTs available during observation. If containment is needed, disable the unified application first.
+10. Retire legacy GPTs only after a separately approved cleanup. Disable legacy bindings before revoking or deleting their OAuth clients.
 
 ## Historical rollout phases
 

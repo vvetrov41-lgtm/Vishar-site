@@ -1,16 +1,51 @@
 openapi: 3.1.0
 info:
   title: Vishar CRM Core Actions
-  version: 2.2.0-production-core
+  version: 2.3.0-production-core
   description: >-
-    Core private OAuth-authenticated CRM actions for one artist. The artist is
-    fixed by the OAuth client binding and cannot be selected in a request.
+    Core private OAuth-authenticated CRM actions for the signed-in CRM user.
+    Artist context is selected only from current server-verified memberships.
 servers:
   - url: https://gpt-actions.vishartattoo.com
     description: Vishar CRM production core action edge.
 security:
   - supabaseOAuth: [email]
 paths:
+  /v1/artists:
+    get:
+      operationId: listAccessibleArtists
+      summary: List artist workspaces available to the signed-in CRM user
+      description: Returns only a safe artist key, display name and current selection state.
+      x-openai-isConsequential: false
+      responses: {'200': {description: Accessible artist contexts}}
+
+  /v1/context:
+    get:
+      operationId: getActiveArtist
+      summary: Get the current server-controlled artist context
+      x-openai-isConsequential: false
+      responses: {'200': {description: Active artist context and whether selection is required}}
+
+  /v1/context/artist:
+    post:
+      operationId: setActiveArtist
+      summary: Switch to an accessible artist workspace
+      description: The requested key is checked against current CRM membership and never acts as authority by itself.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artist_key]
+              properties:
+                artist_key: {type: string, pattern: '^[a-z][a-z0-9-]{1,62}$'}
+      responses:
+        '200': {description: Selected artist context}
+        '403': {description: Artist is not available to this user}
+
   /v1/clients:
     get:
       operationId: listClients
@@ -67,7 +102,7 @@ paths:
   /v1/enquiries/manual:
     post:
       operationId: createManualEnquiry
-      summary: Create a manual enquiry for this fixed artist
+      summary: Create a manual enquiry in the active artist context
       description: Requires confirmed privacy acknowledgement. Generate one UUID request_id and reuse it only for an identical retry.
       x-openai-isConsequential: true
       requestBody:
@@ -256,59 +291,6 @@ paths:
                 currency: {type: string, minLength: 3, maxLength: 3}
       responses: {'200': {description: Estimate update result}}
 
-  /v1/projects/{project_id}/deposit:
-    patch:
-      operationId: updateProjectDeposit
-      summary: Update project deposit amount and status
-      x-openai-isConsequential: true
-      parameters:
-        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [amount, status]
-              properties:
-                amount: {type: number, minimum: 0}
-                status: {$ref: '#/components/schemas/DepositStatus'}
-                currency: {type: string, minLength: 3, maxLength: 3}
-      responses: {'200': {description: Deposit update result}}
-
-  /v1/notes:
-    get:
-      operationId: listInternalNotes
-      summary: List internal notes linked to specific CRM records
-      x-openai-isConsequential: false
-      parameters:
-        - {name: client_id, in: query, required: false, schema: {type: string, format: uuid}}
-        - {name: enquiry_id, in: query, required: false, schema: {type: string, format: uuid}}
-        - {name: project_id, in: query, required: false, schema: {type: string, format: uuid}}
-        - {name: session_id, in: query, required: false, schema: {type: string, format: uuid}}
-        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
-      responses: {'200': {description: Internal notes}}
-    post:
-      operationId: createInternalNote
-      summary: Create an internal CRM note
-      x-openai-isConsequential: true
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [body]
-              properties:
-                body: {type: string, maxLength: 8000}
-                client_id: {type: string, format: uuid}
-                enquiry_id: {type: string, format: uuid}
-                project_id: {type: string, format: uuid}
-                session_id: {type: string, format: uuid}
-      responses: {'200': {description: Created note}}
-
   /v1/follow-ups:
     get:
       operationId: listFollowUps
@@ -371,7 +353,7 @@ components:
           authorizationUrl: https://gpt-actions.vishartattoo.com/oauth/authorize
           tokenUrl: https://gpt-actions.vishartattoo.com/oauth/token
           scopes:
-            email: Authenticate the CRM user. CRM membership, fixed OAuth artist binding and operation capabilities remain authoritative.
+            email: Authenticate the CRM user. CRM membership, active artist context and operation capabilities remain authoritative.
   schemas:
     ClientEditableFields:
       type: object

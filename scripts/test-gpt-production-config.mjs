@@ -49,7 +49,7 @@ assert.doesNotMatch(activate, /configure_gpt_action_client|update\s+crm_private\
   'activation workflow must never create or mutate GPT bindings');
 
 assert.match(openapi, /^openapi: 3\.1\.0$/m);
-assert.match(openapi, /^  version: 2\.2\.0-production$/m);
+assert.match(openapi, /^  version: 2\.3\.0-production$/m);
 assert.match(openapi, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(openapi, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
 assert.match(openapi, /tokenUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/token/);
@@ -62,6 +62,7 @@ assert.doesNotMatch(openapi, /#\/components\/parameters\//,
   'ChatGPT path parameters must remain inlined in the production schema');
 
 const expectedOperations = [
+  'listAccessibleArtists', 'getActiveArtist', 'setActiveArtist',
   'listClients', 'searchAppointmentClients', 'getClient', 'updateClient',
   'listEnquiries', 'createManualEnquiry', 'getEnquiry', 'updateEnquiry',
   'getEnquiryFull', 'setEnquiryStatus', 'listArtistStaff', 'assignEnquiry',
@@ -83,6 +84,7 @@ const expectedOperations = [
   'listEnquiryFiles', 'listProjectFiles', 'listActivity',
 ];
 const consequentialReads = new Set([
+  'listAccessibleArtists', 'getActiveArtist',
   'listClients', 'searchAppointmentClients', 'getClient', 'listEnquiries', 'getEnquiry',
   'getEnquiryFull', 'listArtistStaff', 'listProjects', 'getProject',
   'getProjectFinance', 'listInternalNotes', 'listFollowUps', 'listAppointments',
@@ -95,7 +97,7 @@ const consequentialReads = new Set([
 
 const operationIds = [...openapi.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 assert.deepEqual(operationIds.sort(), [...expectedOperations].sort());
-assert.equal(operationIds.length, 59, 'full production GPT contract must expose exactly 59 named operations');
+assert.equal(operationIds.length, 62, 'full production GPT contract must expose exactly 62 named operations');
 assert.equal(count(openapi, 'x-openai-isConsequential: false'), consequentialReads.size);
 assert.equal(count(openapi, 'x-openai-isConsequential: true'), expectedOperations.length - consequentialReads.size);
 
@@ -128,4 +130,4 @@ assert.match(runbook, /can_manage_crm/);
 assert.match(runbook, /can_manage_finance/);
 assert.match(runbook, /can_manage_communications/);
 
-console.log('GPT production config tests passed: production-only OAuth edge and 59 fixed-artist operational CRM actions, including four artist-bound Monzo reconciliation actions.');
+console.log('GPT production config tests passed: production-only OAuth edge and 62 user-centric operational CRM actions, including three server-controlled artist-context operations.');

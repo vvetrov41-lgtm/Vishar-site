@@ -1,17 +1,52 @@
 openapi: 3.1.0
 info:
   title: Vishar CRM Private Artist Actions
-  version: 2.2.0-production
+  version: 2.3.0-production
   description: >-
-    Private OAuth-authenticated operational CRM actions for one artist. The artist
-    is fixed by the OAuth client binding and cannot be selected in a request.
-    CRM, finance and communications management are independently owner-enabled.
+    Private OAuth-authenticated operational CRM actions for the signed-in CRM
+    user. Artist context is selected only from current server-verified
+    memberships. CRM, finance and communications management remain independent.
 servers:
   - url: https://gpt-actions.vishartattoo.com
     description: Vishar CRM production action edge.
 security:
   - supabaseOAuth: [email]
 paths:
+  /v1/artists:
+    get:
+      operationId: listAccessibleArtists
+      summary: List artist workspaces available to the signed-in CRM user
+      description: Returns only a safe artist key, display name and current selection state.
+      x-openai-isConsequential: false
+      responses: {'200': {description: Accessible artist contexts}}
+
+  /v1/context:
+    get:
+      operationId: getActiveArtist
+      summary: Get the current server-controlled artist context
+      x-openai-isConsequential: false
+      responses: {'200': {description: Active artist context and whether selection is required}}
+
+  /v1/context/artist:
+    post:
+      operationId: setActiveArtist
+      summary: Switch to an accessible artist workspace
+      description: The requested key is checked against current CRM membership and never acts as authority by itself.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artist_key]
+              properties:
+                artist_key: {type: string, pattern: '^[a-z][a-z0-9-]{1,62}$'}
+      responses:
+        '200': {description: Selected artist context}
+        '403': {description: Artist is not available to this user}
+
   /v1/clients:
     get:
       operationId: listClients
@@ -68,7 +103,7 @@ paths:
   /v1/enquiries/manual:
     post:
       operationId: createManualEnquiry
-      summary: Create a manual enquiry for this fixed artist
+      summary: Create a manual enquiry in the active artist context
       description: Requires confirmed privacy acknowledgement. Generate one UUID request_id and reuse it only for an identical retry.
       x-openai-isConsequential: true
       requestBody:
@@ -384,7 +419,7 @@ paths:
       responses: {'200': {description: Appointments}}
     post:
       operationId: scheduleAppointment
-      summary: Create an appointment for this fixed artist
+      summary: Create an appointment in the active artist context
       description: Check conflicts first. Generate one UUID request_id and reuse it only for an identical retry.
       x-openai-isConsequential: true
       requestBody:
@@ -826,7 +861,7 @@ components:
           authorizationUrl: https://gpt-actions.vishartattoo.com/oauth/authorize
           tokenUrl: https://gpt-actions.vishartattoo.com/oauth/token
           scopes:
-            email: Authenticate the CRM user. CRM membership, fixed OAuth artist binding and operation capabilities remain authoritative.
+            email: Authenticate the CRM user. CRM membership, active artist context and operation capabilities remain authoritative.
   schemas:
     ClientEditableFields:
       type: object

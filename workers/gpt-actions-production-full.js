@@ -22,9 +22,9 @@ const PRIVACY_HTML = `<!doctype html>
 </head>
 <body>
 <h1>Vishar CRM Private GPT Actions Privacy Notice</h1>
-<p>This private production integration connects an authorised Vishar CRM user to one artist-scoped operational CRM. It is not a public booking service.</p>
+<p>This private production integration connects an authorised Vishar CRM user to the artist workspaces available through that user's current CRM memberships. It is not a public booking service.</p>
 <h2>Artist scope and authentication</h2>
-<p>A separate confidential OAuth client is bound in the CRM database to exactly one artist. The action API never accepts an artist identifier from ChatGPT. The signed-in CRM identity, active membership and operation-specific permissions are checked again by the database for every action.</p>
+<p>The confidential OAuth client identifies the Vishar GPT application, not an artist. A user may select only an artist returned by the CRM for that signed-in profile. The database checks the active profile, current artist membership, stored artist context and operation-specific permission again for every action. A model-supplied artist choice is never authority.</p>
 <h2>Operational CRM access</h2>
 <p>When independently enabled by the CRM owner, the private GPT may read and manage the bound artist's enquiries, clients, projects, appointments, availability, internal notes and follow-ups. A specific linked client or enquiry detail may include canonical contact information such as email, phone, Instagram, preferred contact method and travelling-from information. Bulk lists remain minimised.</p>
 <h2>Finance and communications</h2>

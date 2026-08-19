@@ -1,5 +1,10 @@
 # Private GPT appointment actions
 
+> Historical staging design. Production migration `0069` and ADR 0007 replace
+> the per-artist OAuth identity model with one user-centric GPT application.
+> The legacy client path described here remains temporarily supported for
+> rollback and migration compatibility.
+
 This stage prepares one private appointment-action GPT for Vladimir and one for Kristina. It does not change production. Retained staging uses synthetic data only.
 
 ## User-facing capability
