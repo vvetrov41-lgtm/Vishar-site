@@ -61,6 +61,7 @@ for this snapshot; therefore each open PR has exactly one primary category.
 | --- | --- | --- | --- |
 | Current payment-spine bases | #174, #176-179, #181-182, #184, #189-205, #208, #211, #213-216, #219, #229, #231, #233, #235, #244, #257, #264, #270, #272-273, #278-280, #287, #289, #294, #303-304, #310, #315, #317, #319, #322, #326, #329, #337, #339, #341, #343, #352, #358, #362, #366, #368 | They form the Git ancestry beneath #375. Several represent product changes already released without being merged to `main`. | Freeze: do not merge, rebase, or close while #375/#376 remains the working lineage. |
 | Parallel production lineages | #180, #185-187, #228, #250-253, #255, #260-262, #265-269, #271, #276-277, #281, #308-309, #313, #325, #350, #353, #355, #364, #367 | Calendar, Telegram, WhatsApp, Gmail, GPT, payment-route and rollout-documentation branches that are not ancestors of #375 but retain deployed or diagnostic context. | Keep as reference. Reconcile only by a separately validated canonicalization change. |
+| Governance record | #378 | This manifest itself, stacked on #375 at `397cb90`; it changes documentation only. | Keep Draft until the canonical product-lineage reconciliation is separately planned. |
 
 ### Important reference heads
 
