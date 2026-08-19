@@ -49,7 +49,7 @@ assert.doesNotMatch(activate, /configure_gpt_action_client|update\s+crm_private\
   'activation workflow must never create or mutate GPT bindings');
 
 assert.match(openapi, /^openapi: 3\.1\.0$/m);
-assert.match(openapi, /^  version: 2\.1\.0-production$/m);
+assert.match(openapi, /^  version: 2\.2\.0-production$/m);
 assert.match(openapi, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(openapi, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
 assert.match(openapi, /tokenUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/token/);
@@ -74,24 +74,28 @@ const expectedOperations = [
   'cancelAppointment', 'setAppointmentStatus', 'listAvailability',
   'createAvailability', 'updateAvailability', 'cancelAvailability',
   'listPaymentRequests', 'requestSessionDeposit', 'cancelPaymentRequest',
-  'recordManualPayment', 'getWhatsAppConversation', 'ensureWhatsAppConversation',
-  'listWhatsAppMessages', 'sendWhatsAppMessage', 'listEmailMessages',
-  'createEmailDraft', 'approveEmailDraft', 'searchEmailHistory', 'getEmailThread',
-  'createGmailReplyDraft', 'listEnquiryFiles', 'listProjectFiles', 'listActivity',
+  'recordManualPayment', 'listMonzoReconciliationCandidates',
+  'matchMonzoReconciliationCandidate', 'ignoreMonzoReconciliationCandidate',
+  'confirmMonzoReconciliationCandidate', 'getWhatsAppConversation',
+  'ensureWhatsAppConversation', 'listWhatsAppMessages', 'sendWhatsAppMessage',
+  'listEmailMessages', 'createEmailDraft', 'approveEmailDraft',
+  'searchEmailHistory', 'getEmailThread', 'createGmailReplyDraft',
+  'listEnquiryFiles', 'listProjectFiles', 'listActivity',
 ];
 const consequentialReads = new Set([
   'listClients', 'searchAppointmentClients', 'getClient', 'listEnquiries', 'getEnquiry',
   'getEnquiryFull', 'listArtistStaff', 'listProjects', 'getProject',
   'getProjectFinance', 'listInternalNotes', 'listFollowUps', 'listAppointments',
   'checkAppointmentConflicts', 'getAppointment', 'getAppointmentFull',
-  'listAvailability', 'listPaymentRequests', 'getWhatsAppConversation',
-  'listWhatsAppMessages', 'listEmailMessages', 'searchEmailHistory', 'getEmailThread',
-  'listEnquiryFiles', 'listProjectFiles', 'listActivity',
+  'listAvailability', 'listPaymentRequests', 'listMonzoReconciliationCandidates',
+  'getWhatsAppConversation', 'listWhatsAppMessages', 'listEmailMessages',
+  'searchEmailHistory', 'getEmailThread', 'listEnquiryFiles', 'listProjectFiles',
+  'listActivity',
 ]);
 
 const operationIds = [...openapi.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 assert.deepEqual(operationIds.sort(), [...expectedOperations].sort());
-assert.equal(operationIds.length, 55, 'full production GPT contract must expose exactly 55 named operations');
+assert.equal(operationIds.length, 59, 'full production GPT contract must expose exactly 59 named operations');
 assert.equal(count(openapi, 'x-openai-isConsequential: false'), consequentialReads.size);
 assert.equal(count(openapi, 'x-openai-isConsequential: true'), expectedOperations.length - consequentialReads.size);
 
@@ -106,6 +110,8 @@ for (const operationId of expectedOperations) {
 
 assert.match(openapi, /operationId: getEnquiryFull[\s\S]*?canonical client contact details/);
 assert.match(openapi, /operationId: recordManualPayment[\s\S]*?Confirm exact amount with the user/);
+assert.match(openapi, /operationId: matchMonzoReconciliationCandidate[\s\S]*?does not mark any payment paid/);
+assert.match(openapi, /operationId: confirmMonzoReconciliationCandidate[\s\S]*?explicit user confirmation/);
 assert.match(openapi, /operationId: sendWhatsAppMessage[\s\S]*?explicitly requested the exact message/);
 assert.match(openapi, /operationId: approveEmailDraft[\s\S]*?explicitly approves the draft content/);
 assert.match(openapi, /operationId: createGmailReplyDraft[\s\S]*?draft/);
@@ -122,4 +128,4 @@ assert.match(runbook, /can_manage_crm/);
 assert.match(runbook, /can_manage_finance/);
 assert.match(runbook, /can_manage_communications/);
 
-console.log('GPT production config tests passed: production-only OAuth edge and 55 fixed-artist operational CRM actions.');
+console.log('GPT production config tests passed: production-only OAuth edge and 59 fixed-artist operational CRM actions, including four artist-bound Monzo reconciliation actions.');
