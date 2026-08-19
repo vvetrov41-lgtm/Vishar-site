@@ -1,6 +1,6 @@
 import { monzoCrmReturnUrl, MonzoSecurityError } from './monzo-oauth-security.js';
+import { isMonzoArtistAlias, monzoArtistDisplayName } from './monzo-artist-registry.js';
 
-const ALIASES = new Set(['vladimir', 'kristina']);
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
 const CONFIRMATION_TTL_SECONDS = 600;
 
@@ -15,7 +15,7 @@ function escapeHtml(value) {
 
 export function buildMonzoDisconnectState(alias, ownerEmail) {
   const email = String(ownerEmail || '').trim().toLowerCase();
-  if (!ALIASES.has(alias) || !email) {
+  if (!isMonzoArtistAlias(alias) || !email) {
     throw new MonzoSecurityError('disconnect_confirmation_invalid_or_expired');
   }
   return { alias, ownerEmail: email, createdAt: new Date().toISOString() };
@@ -31,7 +31,7 @@ export async function storeMonzoDisconnectState(namespace, token, record) {
 }
 
 export async function consumeMonzoDisconnectState(namespace, alias, token, ownerEmail) {
-  if (!namespace || !ALIASES.has(alias) || !TOKEN_PATTERN.test(String(token || ''))) {
+  if (!namespace || !isMonzoArtistAlias(alias) || !TOKEN_PATTERN.test(String(token || ''))) {
     throw new MonzoSecurityError('disconnect_confirmation_invalid_or_expired');
   }
   const key = `disconnect:${token}`;
@@ -48,13 +48,13 @@ export async function consumeMonzoDisconnectState(namespace, alias, token, owner
 }
 
 export function monzoDisconnectConfirmationPage(alias, actionUrl, env, token) {
-  if (!ALIASES.has(alias)) throw new MonzoSecurityError('artist_route_unconfigured', 404);
+  if (!isMonzoArtistAlias(alias)) throw new MonzoSecurityError('artist_route_unconfigured', 404);
   if (!TOKEN_PATTERN.test(String(token || ''))) {
     throw new MonzoSecurityError('disconnect_confirmation_invalid_or_expired');
   }
   const returnUrl = monzoCrmReturnUrl(env);
   if (!returnUrl) throw new MonzoSecurityError('monzo_not_configured', 503);
-  const artistName = alias === 'vladimir' ? 'Vladimir' : 'Kristina';
+  const artistName = monzoArtistDisplayName(alias);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -96,7 +96,7 @@ export async function monzoDisconnectConfirmationToken(request) {
 }
 
 export function monzoDisconnectReturnUrl(env, alias) {
-  if (!ALIASES.has(alias)) throw new MonzoSecurityError('artist_route_unconfigured', 404);
+  if (!isMonzoArtistAlias(alias)) throw new MonzoSecurityError('artist_route_unconfigured', 404);
   const destination = new URL(monzoCrmReturnUrl(env));
   destination.searchParams.set('monzo', 'disconnected');
   destination.searchParams.set('artist', alias);

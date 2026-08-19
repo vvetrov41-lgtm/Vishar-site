@@ -1,5 +1,6 @@
+import { isMonzoArtistAlias } from './monzo-artist-registry.js';
+
 const TOKEN_ENVELOPE_VERSION = 1;
-const ALIASES = new Set(['vladimir', 'kristina']);
 const CONNECTION_STATES = new Set([
   'oauth_authorized',
   'approval_pending',
@@ -66,7 +67,7 @@ function validateRecord(record) {
   if (
     !record
     || typeof record !== 'object'
-    || !ALIASES.has(record.alias)
+    || !isMonzoArtistAlias(record.alias)
     || !CONNECTION_STATES.has(record.connectionState)
     || typeof record.artistId !== 'string'
     || !record.artistId

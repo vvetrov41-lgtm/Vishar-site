@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canManageMonzoConnection,
+  MONZO_CONNECTOR_ALIASES,
   monzoConnectionResultNotice,
   monzoConnectorAlias,
   monzoSetupUrl,
@@ -58,17 +59,40 @@ describe('Monzo CRM connector boundary', () => {
   });
 
   it('accepts only closed safe CRM return notices for the selected artist', () => {
-    expect(monzoConnectionResultNotice('?monzo=authorized&artist=vladimir', 'vladimir')).toMatch(
-      /Monzo login is authorised/,
-    );
-    expect(monzoConnectionResultNotice('?monzo=connected&artist=kristina', 'kristina')).toBe(
-      'Kristina’s Monzo account connection is active.',
-    );
-    expect(monzoConnectionResultNotice('?monzo=disconnected&artist=vladimir', 'vladimir')).toBe(
-      'Vladimir’s Monzo account connection is disconnected.',
-    );
-    expect(monzoConnectionResultNotice('?monzo=connected&artist=kristina', 'vladimir')).toBeNull();
-    expect(monzoConnectionResultNotice('?monzo=token&artist=vladimir', 'vladimir')).toBeNull();
-    expect(monzoConnectionResultNotice('?monzo=connected&artist=unknown', 'vladimir')).toBeNull();
+    expect(
+      monzoConnectionResultNotice('?monzo=authorized&artist=vladimir', 'vladimir', 'Vladimir'),
+    ).toMatch(/Monzo login is authorised/);
+    expect(
+      monzoConnectionResultNotice('?monzo=connected&artist=kristina', 'kristina', 'Kristina'),
+    ).toBe('Kristina’s Monzo account connection is active.');
+    expect(
+      monzoConnectionResultNotice('?monzo=disconnected&artist=vladimir', 'vladimir', 'Vladimir'),
+    ).toBe('Vladimir’s Monzo account connection is disconnected.');
+    expect(
+      monzoConnectionResultNotice('?monzo=connected&artist=kristina', 'vladimir', 'Vladimir'),
+    ).toBeNull();
+    expect(
+      monzoConnectionResultNotice('?monzo=token&artist=vladimir', 'vladimir', 'Vladimir'),
+    ).toBeNull();
+    expect(
+      monzoConnectionResultNotice('?monzo=connected&artist=unknown', 'vladimir', 'Vladimir'),
+    ).toBeNull();
+  });
+
+  it('never invents an artist name when the CRM record has none', () => {
+    expect(
+      monzoConnectionResultNotice('?monzo=connected&artist=kristina', 'kristina', '   '),
+    ).toBeNull();
+  });
+
+  it('exposes every routable alias without naming one artist as the default', () => {
+    expect([...MONZO_CONNECTOR_ALIASES]).toEqual(['vladimir', 'kristina']);
+    for (const alias of MONZO_CONNECTOR_ALIASES) {
+      expect(monzoConnectorAlias(alias)).toBe(alias);
+      expect(monzoSetupUrl('https://monzo.vishartattoo.com', alias)).toBe(
+        `https://monzo.vishartattoo.com/oauth/monzo/setup/${alias}`,
+      );
+    }
+    expect(monzoConnectorAlias('someone-else')).toBeNull();
   });
 });

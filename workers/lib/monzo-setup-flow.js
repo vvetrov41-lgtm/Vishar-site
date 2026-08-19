@@ -16,6 +16,7 @@ import {
   verifiedMonzoOwnerEmail,
   MonzoSecurityError,
 } from './monzo-oauth-security.js';
+import { isMonzoArtistAlias, monzoArtistDisplayName } from './monzo-artist-registry.js';
 import { syncRecentMonzoReconciliation } from './monzo-reconciliation-sync.js';
 import {
   loadMonzoTokenRecord,
@@ -32,7 +33,6 @@ const SYNC_TOKEN_VERSION = 1;
 const SYNC_TOKEN_CONTEXT = new TextEncoder().encode('vishar-monzo-sync-confirmation-v1');
 const ACCOUNT_ID_PATTERN = /^acc_[A-Za-z0-9]+$/;
 const FORM_BODY_LIMIT = 4096;
-const ALIASES = new Set(['vladimir', 'kristina']);
 
 const htmlHeaders = {
   'Content-Type': 'text/html; charset=utf-8',
@@ -56,7 +56,7 @@ function escapeHtml(value) {
 }
 
 function artistName(alias) {
-  return alias === 'vladimir' ? 'Vladimir' : 'Kristina';
+  return monzoArtistDisplayName(alias);
 }
 
 function connectorOrigin(env) {
@@ -66,7 +66,7 @@ function connectorOrigin(env) {
 }
 
 export function monzoSetupUrl(env, alias) {
-  if (!ALIASES.has(alias)) throw new MonzoSecurityError('artist_route_unconfigured', 404);
+  if (!isMonzoArtistAlias(alias)) throw new MonzoSecurityError('artist_route_unconfigured', 404);
   return `${connectorOrigin(env)}/oauth/monzo/setup/${alias}`;
 }
 
@@ -98,12 +98,12 @@ function routeRecord(alias, config, accountId) {
   });
 }
 
-function assertRecordRoute(record, config, alias, env) {
+function assertRecordRoute(record, config, alias) {
   if (
     record.alias !== alias
     || record.artistId !== config.artistId
     || record.providerAccountKey !== config.providerAccountKey
-    || record.clientId !== env.MONZO_OAUTH_CLIENT_ID
+    || record.clientId !== config.oauthClientId
   ) {
     throw new MonzoSecurityError('provider_route_invalid', 503);
   }
@@ -227,7 +227,7 @@ function normalizedOwnerEmail(value) {
 
 export async function createSetupConfirmationToken(env, alias, ownerEmail, record, now = Date.now()) {
   if (
-    !ALIASES.has(alias)
+    !isMonzoArtistAlias(alias)
     || !record
     || record.alias !== alias
     || typeof record.clientId !== 'string'
@@ -266,7 +266,7 @@ export async function createSetupConfirmationToken(env, alias, ownerEmail, recor
 }
 
 export async function verifySetupConfirmationToken(env, token, alias, ownerEmail, record, now = Date.now()) {
-  if (!SETUP_TOKEN_PATTERN.test(String(token || '')) || !ALIASES.has(alias) || !record) {
+  if (!SETUP_TOKEN_PATTERN.test(String(token || '')) || !isMonzoArtistAlias(alias) || !record) {
     throw new MonzoSecurityError('setup_confirmation_invalid_or_expired');
   }
 
@@ -308,7 +308,7 @@ export async function verifySetupConfirmationToken(env, token, alias, ownerEmail
 
 export async function createSyncConfirmationToken(env, alias, ownerEmail, record, now = Date.now()) {
   if (
-    !ALIASES.has(alias)
+    !isMonzoArtistAlias(alias)
     || !record
     || record.alias !== alias
     || typeof record.clientId !== 'string'
@@ -353,7 +353,7 @@ export async function createSyncConfirmationToken(env, alias, ownerEmail, record
 }
 
 export async function verifySyncConfirmationToken(env, token, alias, ownerEmail, record, now = Date.now()) {
-  if (!SETUP_TOKEN_PATTERN.test(String(token || '')) || !ALIASES.has(alias) || !record) {
+  if (!SETUP_TOKEN_PATTERN.test(String(token || '')) || !isMonzoArtistAlias(alias) || !record) {
     throw new MonzoSecurityError('sync_confirmation_invalid_or_expired');
   }
 
@@ -460,10 +460,10 @@ async function accessForSetup(env, record, fetchImpl) {
 
 async function selectAndRegister(alias, accountId, env, record, fetchImpl) {
   const config = artistMonzoConfig(alias, env);
-  assertRecordRoute(record, config, alias, env);
+  assertRecordRoute(record, config, alias);
   if (record.webhookId) return record;
 
-  const access = await accessForSetup(env, record, fetchImpl);
+  const access = await accessForSetup(config.oauthEnv, record, fetchImpl);
   const accounts = await listMonzoAccounts(access.accessToken, fetchImpl);
   const selected = accounts.find((account) => account.id === accountId);
   if (!selected) throw new MonzoSecurityError('monzo_account_not_allowed', 400);
@@ -521,8 +521,8 @@ async function selectAndRegister(alias, accountId, env, record, fetchImpl) {
 
 export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
   const ownerEmail = await verifiedMonzoOwnerEmail(request, env, fetchImpl);
-  assertMonzoAccountConfiguration(env);
   const config = artistMonzoConfig(alias, env);
+  assertMonzoAccountConfiguration(config.oauthEnv);
 
   let record;
   try {
@@ -533,7 +533,7 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
     }
     throw error;
   }
-  assertRecordRoute(record, config, alias, env);
+  assertRecordRoute(record, config, alias);
 
   if (request.method === 'GET') {
     if (record.webhookId) {
@@ -543,7 +543,7 @@ export async function handleMonzoSetup(request, alias, env, fetchImpl = fetch) {
 
     let accounts;
     try {
-      const access = await accessForSetup(env, record, fetchImpl);
+      const access = await accessForSetup(config.oauthEnv, record, fetchImpl);
       record = access.record;
       accounts = await listMonzoAccounts(access.accessToken, fetchImpl);
     } catch (error) {

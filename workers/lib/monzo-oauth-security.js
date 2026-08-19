@@ -1,6 +1,13 @@
 import { OAuthSecurityError, verifiedOwnerEmail } from './calendar-oauth-security.js';
+import {
+  MONZO_ARTIST_ALIASES,
+  isMonzoArtistAlias,
+  monzoArtistDisplayName,
+  monzoArtistIdFromEnv,
+  monzoArtistOAuthCredentials,
+  monzoArtistOAuthEnv,
+} from './monzo-artist-registry.js';
 
-const ALIASES = new Set(['vladimir', 'kristina']);
 const ARTIST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATE_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
 const WEBHOOK_KEY_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
@@ -63,19 +70,25 @@ export function monzoCrmReturnUrl(env) {
   }
 }
 
+// Everything artist-scoped is derived here from the registry and the deployed
+// configuration: the CRM artist id, the deterministic provider account key, the
+// display name and the OAuth client this artist authorises against. No caller
+// may pass any of these in from a browser.
 export function artistMonzoConfig(alias, env) {
-  const artistId = alias === 'vladimir'
-    ? env?.VLADIMIR_ARTIST_ID
-    : alias === 'kristina'
-      ? env?.KRISTINA_ARTIST_ID
-      : '';
-  if (!ALIASES.has(alias) || !ARTIST_ID_PATTERN.test(String(artistId || ''))) {
+  const artistId = monzoArtistIdFromEnv(alias, env);
+  if (!isMonzoArtistAlias(alias) || !ARTIST_ID_PATTERN.test(artistId)) {
     throw new MonzoSecurityError('artist_route_unconfigured', 404);
   }
+  const { clientId } = monzoArtistOAuthCredentials(alias, env);
   return {
     alias,
+    displayName: monzoArtistDisplayName(alias),
     artistId,
-    providerAccountKey: `monzo_ebt_${String(artistId).replace(/-/g, '')}`,
+    providerAccountKey: `monzo_ebt_${artistId.replace(/-/g, '')}`,
+    oauthClientId: clientId,
+    // Provider calls for this artist must use this env view, never the raw
+    // Worker env, so a future per-artist OAuth client needs no code change.
+    oauthEnv: monzoArtistOAuthEnv(alias, env),
   };
 }
 
@@ -138,7 +151,7 @@ export function randomMonzoToken(size = 32) {
 
 export function buildMonzoOAuthState(alias, ownerEmail, clientId) {
   if (
-    !ALIASES.has(alias)
+    !isMonzoArtistAlias(alias)
     || typeof ownerEmail !== 'string'
     || !ownerEmail.trim()
     || typeof clientId !== 'string'
@@ -163,21 +176,40 @@ export async function storeMonzoOAuthState(namespace, state, record) {
   });
 }
 
-export async function consumeMonzoOAuthState(namespace, state, ownerEmail, clientId) {
+// `expectedClientId` is either the OAuth client id itself or a resolver taking
+// the alias recorded in the stored state. The resolver form exists because the
+// artist is only known once the single-use state has been read, and each artist
+// may in future authorise against its own OAuth client. Either way the stored
+// state stays bound to owner, alias and the client that started the flow.
+export async function consumeMonzoOAuthState(namespace, state, ownerEmail, expectedClientId) {
   if (!namespace || !STATE_PATTERN.test(String(state || ''))) {
     throw new MonzoSecurityError('oauth_state_invalid_or_expired');
   }
   const key = `state:${state}`;
   const stored = await namespace.get(key, 'json');
   await namespace.delete(key);
+  if (!stored || !isMonzoArtistAlias(stored.alias)) {
+    throw new MonzoSecurityError('oauth_state_invalid_or_expired');
+  }
+
+  let expected = '';
+  if (typeof expectedClientId === 'function') {
+    try {
+      expected = String(expectedClientId(stored.alias) || '').trim();
+    } catch {
+      expected = '';
+    }
+  } else {
+    expected = String(expectedClientId || '').trim();
+  }
+
   if (
-    !stored
-    || !ALIASES.has(stored.alias)
+    !expected
     || typeof stored.ownerEmail !== 'string'
     || stored.ownerEmail !== String(ownerEmail || '').trim().toLowerCase()
     || typeof stored.clientId !== 'string'
     || !stored.clientId
-    || stored.clientId !== String(clientId || '').trim()
+    || stored.clientId !== expected
   ) {
     throw new MonzoSecurityError('oauth_state_invalid_or_expired');
   }
@@ -217,9 +249,8 @@ export function monzoWebhookCallbackUrl(env, webhookKey) {
 export function monzoReadiness(env) {
   let artists = false;
   try {
-    const vladimir = artistMonzoConfig('vladimir', env);
-    const kristina = artistMonzoConfig('kristina', env);
-    artists = vladimir.artistId !== kristina.artistId;
+    const ids = MONZO_ARTIST_ALIASES.map((alias) => artistMonzoConfig(alias, env).artistId);
+    artists = ids.length > 0 && new Set(ids).size === ids.length;
   } catch {
     artists = false;
   }

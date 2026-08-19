@@ -42,11 +42,14 @@ import {
   saveMonzoTokenRecord,
   MonzoTokenError,
 } from './lib/monzo-token-store.js';
+import { monzoAliasPathPattern } from './lib/monzo-artist-registry.js';
 import { createMonzoSupabaseClient, MonzoSupabaseError } from './lib/monzo-supabase.js';
 
 const MONZO_AUTH_URL = 'https://auth.monzo.com/';
 const WEBHOOK_PATH = /^\/webhooks\/monzo\/([A-Za-z0-9_-]{43,128})$/;
-const ALIAS_PATH = '(vladimir|kristina)';
+// Built from the artist registry so a newly configured artist becomes routable
+// in exactly one place.
+const ALIAS_PATH = monzoAliasPathPattern();
 const WEBHOOK_BODY_LIMIT = 32 * 1024;
 
 const securityHeaders = {
@@ -103,12 +106,12 @@ function validStoredRoute(route, record, config, alias) {
   );
 }
 
-function assertRecordRoute(record, config, alias, env) {
+function assertRecordRoute(record, config, alias) {
   if (
     record.alias !== alias
     || record.artistId !== config.artistId
     || record.providerAccountKey !== config.providerAccountKey
-    || record.clientId !== env.MONZO_OAUTH_CLIENT_ID
+    || record.clientId !== config.oauthClientId
   ) {
     throw new MonzoSecurityError('provider_route_invalid', 503);
   }
@@ -135,18 +138,18 @@ async function accessFor(env, record, fetchImpl = fetch) {
 
 async function startOAuth(request, alias, env, fetchImpl = fetch) {
   const ownerEmail = await verifiedMonzoOwnerEmail(request, env, fetchImpl);
-  artistMonzoConfig(alias, env);
-  assertMonzoOAuthStartConfiguration(env);
+  const config = artistMonzoConfig(alias, env);
+  assertMonzoOAuthStartConfiguration(config.oauthEnv);
 
   const state = randomMonzoToken();
   await storeMonzoOAuthState(
     env.MONZO_OAUTH_STATE,
     state,
-    buildMonzoOAuthState(alias, ownerEmail, env.MONZO_OAUTH_CLIENT_ID),
+    buildMonzoOAuthState(alias, ownerEmail, config.oauthClientId),
   );
 
   const params = new URLSearchParams({
-    client_id: env.MONZO_OAUTH_CLIENT_ID,
+    client_id: config.oauthClientId,
     redirect_uri: monzoOAuthRedirectUri(env),
     response_type: 'code',
     state,
@@ -178,15 +181,16 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
     env.MONZO_OAUTH_STATE,
     state,
     ownerEmail,
-    env.MONZO_OAUTH_CLIENT_ID,
+    (alias) => artistMonzoConfig(alias, env).oauthClientId,
   );
   if (providerError) throw new MonzoSecurityError('monzo_authorisation_denied');
   if (!code) throw new MonzoSecurityError('oauth_callback_invalid');
 
   const config = artistMonzoConfig(stored.alias, env);
+  assertMonzoOAuthCallbackConfiguration(config.oauthEnv);
   const previous = await previousTokenRecord(env, config.artistId);
   if (previous) {
-    assertRecordRoute(previous, config, stored.alias, env);
+    assertRecordRoute(previous, config, stored.alias);
     if (previous.accountId || previous.webhookId) assertMonzoAccountConfiguration(env);
     if (previous.webhookId) {
       const route = await env.MONZO_WEBHOOK_ROUTES.get(routeKey(previous.webhookKey), 'json');
@@ -196,11 +200,11 @@ async function oauthCallback(request, env, fetchImpl = fetch) {
     }
   }
 
-  const tokens = await exchangeMonzoAuthorizationCode(env, code, fetchImpl);
+  const tokens = await exchangeMonzoAuthorizationCode(config.oauthEnv, code, fetchImpl);
   try {
     await monzoWhoAmI(
       tokens.access_token,
-      env.MONZO_OAUTH_CLIENT_ID,
+      config.oauthClientId,
       tokens.user_id,
       fetchImpl,
     );
@@ -287,7 +291,7 @@ async function connectionStatus(request, alias, env, fetchImpl = fetch) {
     throw error;
   }
 
-  assertRecordRoute(record, config, alias, env);
+  assertRecordRoute(record, config, alias);
 
   return json({
     ok: true,
@@ -303,8 +307,8 @@ async function listAccounts(request, alias, env, fetchImpl = fetch) {
   assertMonzoAccountConfiguration(env);
   const config = artistMonzoConfig(alias, env);
   let record = await loadMonzoTokenRecord(env, config.artistId);
-  assertRecordRoute(record, config, alias, env);
-  const access = await accessFor(env, record, fetchImpl);
+  assertRecordRoute(record, config, alias);
+  const access = await accessFor(config.oauthEnv, record, fetchImpl);
   record = access.record;
   try {
     await monzoWhoAmI(access.accessToken, record.clientId, record.userId, fetchImpl);
@@ -341,10 +345,10 @@ async function selectAccount(request, alias, env, fetchImpl = fetch) {
   const input = await readJsonBody(request, 4096);
   const proposedAccountId = typeof input?.account_id === 'string' ? input.account_id : '';
   const previous = await loadMonzoTokenRecord(env, config.artistId);
-  assertRecordRoute(previous, config, alias, env);
+  assertRecordRoute(previous, config, alias);
   if (previous.webhookId) throw new MonzoSecurityError('monzo_account_locked', 409);
 
-  const access = await accessFor(env, previous, fetchImpl);
+  const access = await accessFor(config.oauthEnv, previous, fetchImpl);
   const accounts = await listMonzoAccounts(access.accessToken, fetchImpl);
   const selected = accounts.find((account) => account.id === proposedAccountId);
   if (!selected) throw new MonzoSecurityError('monzo_account_not_allowed', 400);
@@ -391,7 +395,7 @@ async function registerSelectedAccountWebhook(request, alias, env, fetchImpl = f
   assertMonzoAccountConfiguration(env);
   const config = artistMonzoConfig(alias, env);
   let record = await loadMonzoTokenRecord(env, config.artistId);
-  assertRecordRoute(record, config, alias, env);
+  assertRecordRoute(record, config, alias);
   if (!record.accountId || !record.webhookKey) {
     throw new MonzoSecurityError('monzo_account_not_selected', 409);
   }
@@ -411,7 +415,7 @@ async function registerSelectedAccountWebhook(request, alias, env, fetchImpl = f
     throw new MonzoSecurityError('provider_route_invalid', 503);
   }
 
-  const access = await accessFor(env, record, fetchImpl);
+  const access = await accessFor(config.oauthEnv, record, fetchImpl);
   record = access.record;
   await monzoWhoAmI(access.accessToken, record.clientId, record.userId, fetchImpl);
   const accounts = await listMonzoAccounts(access.accessToken, fetchImpl);
@@ -479,10 +483,10 @@ async function disconnect(request, alias, env, fetchImpl = fetch) {
     }
     throw error;
   }
-  assertRecordRoute(record, config, alias, env);
+  assertRecordRoute(record, config, alias);
 
   try {
-    const access = await accessFor(env, record, fetchImpl);
+    const access = await accessFor(config.oauthEnv, record, fetchImpl);
     record = access.record;
     if (record.webhookId) {
       await deleteMonzoWebhook(access.accessToken, record.webhookId, fetchImpl).catch(() => false);
@@ -543,7 +547,7 @@ async function handleWebhook(request, webhookKey, env, fetchImpl = fetch) {
     return json({ ok: false, code: 'provider_route_invalid' }, 503);
   }
 
-  const access = await accessFor(env, record, fetchImpl);
+  const access = await accessFor(config.oauthEnv, record, fetchImpl);
 
   // Monzo does not sign webhook deliveries, so nothing in the request body is
   // evidence. Prove the credential still belongs to the expected Monzo identity

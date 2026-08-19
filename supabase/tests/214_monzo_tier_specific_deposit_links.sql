@@ -60,9 +60,9 @@ select lives_ok(
 );
 reset role;
 
--- Tier destinations model protected operational provisioning, not a browser
+-- Reusable destinations model protected operational provisioning, not a browser
 -- API. Fixture setup therefore uses the privileged migration/test owner.
-insert into public.monzo_easy_bank_transfer_tier_urls (
+insert into public.monzo_payment_destinations (
   artist_id, amount, currency, payment_url
 ) values
   ('a1111111-1111-4111-8111-111111111111',  50.00, 'GBP', 'https://monzo.com/pay/r/synthetic-tier-50'),
@@ -71,7 +71,7 @@ insert into public.monzo_easy_bank_transfer_tier_urls (
   ('a1111111-1111-4111-8111-111111111111', 250.00, 'GBP', 'https://monzo.com/pay/r/synthetic-tier-250');
 
 select throws_ok(
-  $$insert into public.monzo_easy_bank_transfer_tier_urls
+  $$insert into public.monzo_payment_destinations
       (artist_id, amount, currency, payment_url)
     values
       ('a1111111-1111-4111-8111-111111111111', 50.00, 'GBP',
@@ -127,18 +127,20 @@ select is(
 reset role;
 
 select ok(
-  not has_table_privilege('authenticated', 'public.monzo_easy_bank_transfer_tier_urls', 'select')
-  and not has_table_privilege('authenticated', 'public.monzo_easy_bank_transfer_tier_urls', 'insert')
-  and not has_table_privilege('authenticated', 'public.monzo_easy_bank_transfer_tier_urls', 'update')
-  and not has_table_privilege('authenticated', 'public.monzo_easy_bank_transfer_tier_urls', 'delete')
-  and not has_table_privilege('service_role', 'public.monzo_easy_bank_transfer_tier_urls', 'select'),
-  'tier destination rows have no direct browser or service-role table grants'
+  not has_table_privilege('authenticated', 'public.monzo_payment_destinations', 'select')
+  and not has_table_privilege('authenticated', 'public.monzo_payment_destinations', 'insert')
+  and not has_table_privilege('authenticated', 'public.monzo_payment_destinations', 'update')
+  and not has_table_privilege('authenticated', 'public.monzo_payment_destinations', 'delete')
+  and not has_table_privilege('service_role', 'public.monzo_payment_destinations', 'select'),
+  'reusable destination rows have no direct browser or service-role table grants'
 );
 
 select ok(
   to_regprocedure('public.configure_monzo_easy_bank_transfer_tier_urls(uuid,text,text,text,text,boolean)') is null
-  and to_regprocedure('public.get_monzo_easy_bank_transfer_tier_urls(uuid)') is null,
-  'tier routing adds no new public CRM configuration or read RPC'
+  and to_regprocedure('public.get_monzo_easy_bank_transfer_tier_urls(uuid)') is null
+  and to_regprocedure('public.configure_monzo_payment_destination(uuid,numeric,text,text)') is null
+  and to_regprocedure('public.list_monzo_payment_destinations(uuid)') is null,
+  'reusable destination routing adds no public CRM configuration or read RPC'
 );
 
 select ok(

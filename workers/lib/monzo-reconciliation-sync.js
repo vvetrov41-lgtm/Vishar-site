@@ -33,6 +33,7 @@ function assertConnectedRecord(record, config, alias) {
     || record.alias !== alias
     || record.artistId !== config.artistId
     || record.providerAccountKey !== config.providerAccountKey
+    || record.clientId !== config.oauthClientId
     || !ACCOUNT_ID_PATTERN.test(String(record.accountId || ''))
     || typeof record.webhookId !== 'string'
     || !record.webhookId
@@ -104,7 +105,7 @@ export async function syncRecentMonzoReconciliation(alias, env, fetchImpl = fetc
   const initial = await loadMonzoTokenRecord(env, config.artistId);
   assertConnectedRecord(initial, config, alias);
 
-  const access = await ensureMonzoAccessToken(env, initial, fetchImpl, now);
+  const access = await ensureMonzoAccessToken(config.oauthEnv, initial, fetchImpl, now);
   assertConnectedRecord(access.record, config, alias);
   const identity = await monzoWhoAmI(
     access.accessToken,
