@@ -1,0 +1,211 @@
+name: Gmail shared cron production operator rc72
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc72-gmail-shared-cron'
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: gmail-shared-cron-production-operator
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[RUN_GMAIL_SHARED_CRON_RC72]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: crm-production
+    env:
+      PRODUCT_SHA: cf231f1a7939b24684fa2678f456522a268777f1
+      PRODUCT_BRANCH: agent/gmail-shared-cron-drain
+      PRODUCT_PR: '367'
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      GMAIL_WORKER_NAME: vishar-gmail-production
+      TELEGRAM_WORKER_NAME: vishar-telegram-drain-production
+      GMAIL_HOST: gmail.vishartattoo.com
+      GMAIL_KV_STATE_ID: 4bdea97be49c4ca8975f95391a7ffdf1
+      GMAIL_KV_TOKENS_ID: 143c9044f0ff4acd93f6c9cf7d022a66
+
+    steps:
+      - name: Checkout operator
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify bounded operator and green product head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'release/private-crm-rc72-gmail-shared-cron'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          product_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PRODUCT_PR")"
+          jq -e --arg sha "$PRODUCT_SHA" --arg branch "$PRODUCT_BRANCH" '
+            .state == "open" and .draft == true and .merged == false and
+            .head.ref == $branch and .head.sha == $sha
+          ' <<<"$product_json" >/dev/null
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
+          mapfile -t changed < <(git diff --name-only "$PRODUCT_SHA".."$GITHUB_SHA")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = '.github/workflows/gmail-shared-cron-production-operator-rc72.yml'
+          product_remote="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test "$product_remote" = "$PRODUCT_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$PRODUCT_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/product-runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation'; do
+            jq -e --arg name "$workflow" --arg sha "$PRODUCT_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/product-runs.json" >/dev/null
+          done
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+
+      - name: Checkout exact product SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate exact product artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+          npm ci --ignore-scripts
+          node scripts/test-gmail-production.mjs
+          node scripts/test-gmail-rollout-phases.mjs
+          node scripts/test-telegram-drain-worker.mjs
+          node scripts/test-telegram-production-config.mjs
+          npm run scan:secrets
+
+      - name: Verify existing Worker secret custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          gmail_secrets="$(npx wrangler secret list --config wrangler.gmail.production.toml --name "$GMAIL_WORKER_NAME" --format json)"
+          GMAIL_SECRET_LIST="$gmail_secrets" node <<'NODE'
+          const rows = JSON.parse(process.env.GMAIL_SECRET_LIST || '[]');
+          const names = new Set(rows.map((row) => row?.name).filter(Boolean));
+          const required = ['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_TOKEN_ENCRYPTION_KEY','SUPABASE_SECRET_KEY'];
+          const missing = required.filter((name) => !names.has(name));
+          if (missing.length) throw new Error(`Gmail Worker missing required secret names: ${missing.join(', ')}`);
+          NODE
+          telegram_secrets="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$TELEGRAM_WORKER_NAME" --format json)"
+          TELEGRAM_SECRET_LIST="$telegram_secrets" node <<'NODE'
+          const rows = JSON.parse(process.env.TELEGRAM_SECRET_LIST || '[]');
+          const actual = rows.map((row) => row?.name).filter(Boolean).sort();
+          const expected = ['ARTIST_TELEGRAM_KRISTINA_HPRODUCTION','ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION','SUPABASE_SECRET_KEY'].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Telegram Worker secret-name set is not exact');
+          NODE
+
+      - name: Deploy Gmail Worker and normalize direct schedules to zero
+        shell: bash
+        run: |
+          set -euo pipefail
+          gmail_config="$GITHUB_WORKSPACE/.wrangler.gmail.rc72.deploy.toml"
+          trap 'rm -f "$gmail_config"' EXIT
+          GMAIL_KV_STATE_ID="$GMAIL_KV_STATE_ID" \
+          GMAIL_KV_TOKENS_ID="$GMAIL_KV_TOKENS_ID" \
+          SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" \
+            node scripts/generate-gmail-production-deploy-config.mjs "$gmail_config" kristina-send
+          grep -Fq 'main = "workers/gmail-production-entrypoint.js"' "$gmail_config"
+          grep -Fq 'GMAIL_DRAIN_ENABLED = "true"' "$gmail_config"
+          grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$gmail_config"
+          grep -Fq 'GMAIL_KRISTINA_ENABLED = "true"' "$gmail_config"
+          grep -Fq 'crons = []' "$gmail_config"
+          ! grep -Fq '*/5 * * * *' "$gmail_config"
+          npx wrangler deploy --config "$gmail_config" --name "$GMAIL_WORKER_NAME" --dry-run --outdir .wrangler/rc72-gmail-generated
+          npx wrangler deploy --config "$gmail_config" --name "$GMAIL_WORKER_NAME"
+
+          update="$(curl -fsS -X PUT \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '[]' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
+          UPDATE="$update" node <<'NODE'
+          const payload = JSON.parse(process.env.UPDATE || '{}');
+          if (payload.success !== true) throw new Error('Cloudflare refused Gmail schedule normalization');
+          NODE
+
+          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
+          SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const result = payload.result;
+          const schedules = Array.isArray(result) ? result : Array.isArray(result?.schedules) ? result.schedules : null;
+          if (payload.success !== true || schedules === null || schedules.length !== 0) {
+            throw new Error('Gmail Worker direct Cron Trigger count is not zero');
+          }
+          console.log('Gmail direct cron count: 0');
+          NODE
+          rm -f "$gmail_config"
+          trap - EXIT
+
+      - name: Deploy Gmail RPC binding onto existing Telegram scheduler
+        shell: bash
+        run: |
+          set -euo pipefail
+          telegram_config="$GITHUB_WORKSPACE/.wrangler.telegram.rc72.deploy.toml"
+          trap 'rm -f "$telegram_config"' EXIT
+          node scripts/generate-telegram-production-deploy-config.mjs "$telegram_config"
+          grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$telegram_config"
+          grep -Fq 'GMAIL_SHARED_DRAIN_ENABLED = "true"' "$telegram_config"
+          grep -Fq 'binding = "GMAIL_SERVICE"' "$telegram_config"
+          grep -Fq 'service = "vishar-gmail-production"' "$telegram_config"
+          grep -Fq 'crons = ["*/5 * * * *"]' "$telegram_config"
+          ! grep -Eq 'GOOGLE_OAUTH_CLIENT_(ID|SECRET)|GMAIL_TOKEN_ENCRYPTION_KEY|GMAIL_OAUTH_(STATE|TOKENS)' "$telegram_config"
+          npx wrangler deploy --config "$telegram_config" --name "$TELEGRAM_WORKER_NAME" --dry-run --outdir .wrangler/rc72-telegram-generated
+          npx wrangler deploy --config "$telegram_config" --name "$TELEGRAM_WORKER_NAME"
+
+          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TELEGRAM_WORKER_NAME/schedules")"
+          SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const result = payload.result;
+          const schedules = Array.isArray(result) ? result : Array.isArray(result?.schedules) ? result.schedules : null;
+          if (payload.success !== true || schedules === null || schedules.length !== 1 || schedules[0]?.cron !== '*/5 * * * *') {
+            throw new Error('Shared scheduler does not own exactly the existing five-minute cron');
+          }
+          console.log('Shared scheduler cron count: 1');
+          NODE
+
+          settings="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TELEGRAM_WORKER_NAME/settings")"
+          SETTINGS="$settings" node <<'NODE'
+          const payload = JSON.parse(process.env.SETTINGS || '{}');
+          const bindings = payload?.result?.bindings;
+          if (payload.success !== true || !Array.isArray(bindings)) throw new Error('Unable to inspect shared scheduler bindings');
+          const service = bindings.find((row) => row?.name === 'GMAIL_SERVICE');
+          if (!service || service.type !== 'service' || service.service !== 'vishar-gmail-production') throw new Error('Gmail service binding is absent or incorrect');
+          const forbidden = new Set(['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_TOKEN_ENCRYPTION_KEY','GMAIL_OAUTH_STATE','GMAIL_OAUTH_TOKENS']);
+          if (bindings.some((row) => forbidden.has(row?.name))) throw new Error('Gmail credential/token binding leaked into scheduler');
+          NODE
+          rm -f "$telegram_config"
+          trap - EXIT
+
+      - name: Verify Gmail edge remains active
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            headers="$(curl -sS -D - -o /dev/null --max-time 10 "https://$GMAIL_HOST/oauth/google/start/vladimir" || true)"
+            status="$(printf '%s' "$headers" | awk 'toupper($1) ~ /^HTTP\// {s=$2} END {print s}')"
+            if [ "$status" = 302 ] && grep -qi '^location: https://accounts.google.com/' <<<"$headers"; then exit 0; fi
+            sleep 6
+          done
+          exit 1
