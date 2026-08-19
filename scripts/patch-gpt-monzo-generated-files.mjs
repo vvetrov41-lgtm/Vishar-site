@@ -48,6 +48,7 @@ patch('scripts/test-gpt-openapi-split.mjs', (text) => {
     .replace("assert.deepEqual([...combined].sort(), [...canonical].sort(), 'split schemas must cover the exact canonical 55-operation surface');", "assert.deepEqual([...combined].sort(), [...canonical].sort(), 'split schemas must cover the exact canonical 59-operation surface');")
     .replace("  'cancelPaymentRequest',\n  'ensureWhatsAppConversation',", "  'cancelPaymentRequest',\n  'ignoreMonzoReconciliationCandidate',\n  'confirmMonzoReconciliationCandidate',\n  'ensureWhatsAppConversation',")
     .replace("for (const id of ['listAppointments', 'recordManualPayment', 'getProjectFinance', 'listActivity']) assert.ok(operationsIds.includes(id));", "for (const id of ['listAppointments', 'recordManualPayment', 'getProjectFinance', 'listActivity', ...monzoIds]) assert.ok(operationsIds.includes(id));\nfor (const id of monzoIds) {\n  assert.ok(!coreIds.includes(id), `${id} must not appear in Core`);\n  assert.ok(!communicationsIds.includes(id), `${id} must not appear in Communications`);\n}")
+    .replace("[\\s\\S]{0,500}?properties", "[\\s\\S]{0,900}?properties")
     .replace("console.log('GPT OpenAPI split tests passed: 25 core + 20 operations + 10 communications, three domains, exact 55-operation coverage, five-slot minimum headroom and guarded DB-free rollout.');", "console.log('GPT OpenAPI split tests passed: 25 core + 24 operations + 10 communications, three domains, exact 59-operation coverage and guarded rollout separation.');");
 
   if (!next.includes('const monzoIds = [')) {
