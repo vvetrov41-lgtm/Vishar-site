@@ -1,4 +1,4 @@
-# rc71 propagation-safe recovery operator. A commit with [RUN_GMAIL_SHARED_CRON] activates production.
+# rc71 propagation-safe recovery operator. Activation marker after green release CI.
 name: Gmail shared cron production operator
 
 on:
