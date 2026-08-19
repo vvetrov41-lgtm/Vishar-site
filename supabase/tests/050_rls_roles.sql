@@ -600,6 +600,21 @@ insert into expected_function_acl values
   ('public.request_grouped_session_deposit(uuid[],uuid,text)', false, true, false),
   ('public.get_session_deposit_group(uuid)', false, true, false),
   ('public.attach_monzo_one_off_payment_destination(uuid,text)', false, true, false),
+
+  -- Reusable destination catalogue administration. Finance-authorised browser
+  -- callers only; the reads return fingerprints rather than provider URLs, and
+  -- the public redirect resolver stays service-role only.
+  ('public.list_monzo_payment_destinations(uuid)', false, true, false),
+  ('public.upsert_monzo_payment_destination(uuid,numeric,text)', false, true, false),
+  ('public.archive_monzo_payment_destination(uuid)', false, true, false),
+
+  -- Project deposit policy and the authoritative project deposit request. The
+  -- request RPC takes no amount; the server recalculates it.
+  ('public.configure_project_deposit_policy(uuid,text,numeric,numeric,numeric,numeric)', false, true, false),
+  ('public.get_project_deposit_policy(uuid)', false, true, false),
+  ('public.preview_project_deposit(uuid)', false, true, false),
+  ('public.set_project_deposit_override(uuid,numeric)', false, true, false),
+  ('public.request_project_deposit(uuid,uuid,text)', false, true, false),
   ('public.list_monzo_reconciliation_candidates(uuid)', false, true, false),
   ('public.match_monzo_reconciliation_candidate(uuid,uuid)', false, true, false),
   ('public.ignore_monzo_reconciliation_candidate(uuid)', false, true, false),

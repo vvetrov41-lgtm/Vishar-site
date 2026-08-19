@@ -1047,6 +1047,7 @@ begin
   if exists (
     select 1 from public.payment_request_payment_destinations d
     where d.payment_url = p_payment_url
+      and d.source = 'one_off'
       and d.payment_request_id <> v_request.id
   ) then
     raise exception 'this Monzo URL is already attached to another payment request'

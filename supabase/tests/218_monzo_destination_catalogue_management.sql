@@ -310,7 +310,23 @@ insert into cat_results (label, payment_request_id) values
   ('after_replace', (public.request_session_deposit(
      'f1712222-2222-4222-8222-222222222222',
      'f1812222-2222-4222-8222-222222222222', 'copy_link') ->> 'payment_request_id')::uuid);
+
+-- A reusable destination is shared by design: every request for that artist and
+-- amount snapshots the same URL. Only a request-specific one-off is exclusive.
+insert into cat_results (label, payment_request_id) values
+  ('shares_after_replace', (public.request_session_deposit(
+     'f1714444-4444-4444-8444-444444444444',
+     'f1814444-4444-4444-8444-444444444444', 'copy_link') ->> 'payment_request_id')::uuid);
 reset role;
+
+select is(
+  (select count(distinct d.payment_request_id)::int
+   from public.payment_request_payment_destinations d
+   where d.payment_url = 'https://monzo.com/pay/r/synthetic-cat-v-50-b'
+     and d.source = 'reusable'),
+  2,
+  'two requests for the same amount both snapshot the same reusable destination'
+);
 
 update cat_results d
 set public_id = l.public_id
