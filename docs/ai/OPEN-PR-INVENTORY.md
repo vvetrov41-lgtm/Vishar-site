@@ -98,8 +98,8 @@ migration renumbering belongs in housekeeping.
 Closed without merge, branches retained:
 
 - Validation/diagnostic: #183, #188, #234, #241, #275, #284, #286, #292, #296, #298, #300, #302.
-- One-time operator/provisioning/recovery: #242, #243, #282, #283, #290, #291, #293, #295, #297, #299, #301.
-- Release/RC operator: #249, #256, #268, #307, #312, #314, #316, #318, #320, #323, #324, #330, #332-336, #338, #340, #342, #344-345, #348, #351, #354, #359, #369-370.
+- One-time operator/provisioning/recovery: #242, #243, #274, #282, #283, #290, #291, #293, #295, #297, #299, #301.
+- Release/RC operator: #249, #256, #258, #268, #307, #312, #314, #316, #318, #320, #323, #324, #330, #332-336, #338, #340, #342, #344-345, #348, #351, #354, #359, #369-370.
 - Historical documentation: #160.
 
 Each closed PR had no remaining open child at the time of closure, or was an
