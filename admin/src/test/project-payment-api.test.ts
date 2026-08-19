@@ -26,6 +26,23 @@ describe('project payment API boundary', () => {
     });
   });
 
+  it('attaches a one-off Monzo URL without allowing the browser to supply artist or amount', async () => {
+    const { client, rpc } = clientWithRpc();
+    const api = createPaymentApi(client);
+
+    await api.attachMonzoOneOffPaymentDestination({
+      paymentRequestId: 'request-1',
+      paymentUrl: 'https://monzo.com/pay/r/synthetic-oneoff',
+    });
+
+    expect(rpc).toHaveBeenCalledWith('attach_monzo_one_off_payment_destination', {
+      p_payment_request_id: 'request-1',
+      p_payment_url: 'https://monzo.com/pay/r/synthetic-oneoff',
+    });
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty('p_artist_id');
+    expect(rpc.mock.calls[0]?.[1]).not.toHaveProperty('p_amount');
+  });
+
   it('records manual money through the immutable payment ledger RPC', async () => {
     const { client, rpc } = clientWithRpc();
     const api = createPaymentApi(client);
