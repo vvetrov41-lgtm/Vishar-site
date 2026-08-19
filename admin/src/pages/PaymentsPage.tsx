@@ -114,6 +114,8 @@ export function PaymentsPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busySession, setBusySession] = useState<string | null>(null);
+  const [busyGroup, setBusyGroup] = useState(false);
+  const [selectedGroupSessionIds, setSelectedGroupSessionIds] = useState<string[]>([]);
   const [busyCandidate, setBusyCandidate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DepositRequestResult | null>(null);
@@ -155,6 +157,22 @@ export function PaymentsPage() {
     );
   }, [appointments]);
 
+  const selectedGroupAppointments = useMemo(
+    () => selectedGroupSessionIds
+      .map((id) => eligibleAppointments.find((appointment) => appointment.id === id))
+      .filter((appointment): appointment is Appointment => Boolean(appointment)),
+    [eligibleAppointments, selectedGroupSessionIds]
+  );
+  const groupAnchor = selectedGroupAppointments[0] ?? null;
+  const groupPreviewTotal = useMemo(() => {
+    if (selectedGroupAppointments.length === 0) return null;
+    const amounts = selectedGroupAppointments.map((appointment) =>
+      depositAmountForAppointment(appointment, settings.deposit_tiers)
+    );
+    if (amounts.some((amount) => amount == null)) return null;
+    return amounts.reduce((sum, amount) => sum + (amount ?? 0), 0);
+  }, [selectedGroupAppointments, settings.deposit_tiers]);
+
   function setCandidateDefaults(candidates: MonzoReconciliationCandidate[]) {
     const next: Record<string, string> = {};
     for (const candidate of candidates) {
@@ -194,6 +212,7 @@ export function PaymentsPage() {
     setOneOffPaymentUrl('');
     setOneOffNotice(null);
     setReconciliationNotice(null);
+    setSelectedGroupSessionIds([]);
     if (!selectedArtistId) {
       setSettings(EMPTY_SETTINGS);
       setPaymentUrl('');
@@ -234,6 +253,39 @@ export function PaymentsPage() {
       setError(cause instanceof Error ? cause.message : copy.requestError);
     } finally {
       setBusySession(null);
+    }
+  }
+
+  function toggleGroupAppointment(appointment: Appointment) {
+    setSelectedGroupSessionIds((current) => {
+      if (current.includes(appointment.id)) return current.filter((id) => id !== appointment.id);
+      const anchor = eligibleAppointments.find((candidate) => candidate.id === current[0]);
+      if (anchor && (anchor.project_id !== appointment.project_id || anchor.client_id !== appointment.client_id)) {
+        return current;
+      }
+      if (current.length >= 12) return current;
+      return [...current, appointment.id];
+    });
+  }
+
+  async function requestGroupedDeposit(deliveryChannel: 'email' | 'copy_link') {
+    if (selectedGroupSessionIds.length < 2 || selectedGroupSessionIds.length > 12) return;
+    setBusyGroup(true);
+    setError(null);
+    setResult(null);
+    setOneOffPaymentUrl('');
+    setOneOffNotice(null);
+    try {
+      const next = await api.requestGroupedSessionDeposit({
+        sessionIds: selectedGroupSessionIds,
+        deliveryChannel,
+      });
+      setResult(next);
+      setSelectedGroupSessionIds([]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.requestError);
+    } finally {
+      setBusyGroup(false);
     }
   }
 
@@ -434,6 +486,88 @@ export function PaymentsPage() {
           </div>
         )}
       </section>
+
+      {canManageReconciliation && eligibleAppointments.length >= 2 ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>{language === 'ru' ? 'Multiple Sessions' : 'Multiple Sessions'}</h2>
+              <p>
+                {language === 'ru'
+                  ? 'Выберите 2-12 сеансов одного клиента и проекта. Итоговый депозит CRM рассчитывает на сервере как сумму депозитов выбранных сеансов.'
+                  : 'Select 2-12 sessions from the same client and project. CRM calculates the final deposit on the server as the sum of the selected session deposits.'}
+              </p>
+            </div>
+          </div>
+          <div className="notice">
+            {language === 'ru'
+              ? 'Предварительная сумма ниже только для удобства. Браузер не отправляет сумму или artist ID в финансовый RPC.'
+              : 'The preview below is informational only. The browser does not send an amount or artist ID to the financial RPC.'}
+          </div>
+          <div className="list-stack">
+            {eligibleAppointments.map((appointment) => {
+              const selected = selectedGroupSessionIds.includes(appointment.id);
+              const compatible = !groupAnchor
+                || (groupAnchor.project_id === appointment.project_id && groupAnchor.client_id === appointment.client_id);
+              const depositAmount = depositAmountForAppointment(appointment, settings.deposit_tiers);
+              return (
+                <label className="list-row" key={`group-${appointment.id}`}>
+                  <div>
+                    <strong>{new Date(appointment.start_at).toLocaleString(locale)}</strong>
+                    <div className="muted">
+                      {depositAmount == null ? '' : money(depositAmount, 'GBP', locale)}
+                      {appointment.project_id ? ` · ${appointment.project_id.slice(0, 8)}` : ''}
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={!settings.enabled || depositAmount == null || (!selected && (!compatible || selectedGroupSessionIds.length >= 12))}
+                    onChange={() => toggleGroupAppointment(appointment)}
+                    aria-label={`${language === 'ru' ? 'Выбрать сеанс' : 'Select session'} ${new Date(appointment.start_at).toLocaleString(locale)}`}
+                  />
+                </label>
+              );
+            })}
+          </div>
+          <div className="notice">
+            {language === 'ru' ? 'Выбрано' : 'Selected'}: {selectedGroupSessionIds.length}
+            {groupPreviewTotal == null ? '' : ` · ${language === 'ru' ? 'предварительно' : 'preview'} ${money(groupPreviewTotal, 'GBP', locale)}`}
+          </div>
+          <div className="button-row">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busyGroup || !settings.enabled || selectedGroupSessionIds.length < 2 || selectedGroupSessionIds.length > 12}
+              onClick={() => void requestGroupedDeposit('copy_link')}
+            >
+              {busyGroup
+                ? copy.working
+                : language === 'ru' ? 'Создать общую ссылку' : 'Create combined link'}
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busyGroup || !settings.enabled || selectedGroupSessionIds.length < 2 || selectedGroupSessionIds.length > 12}
+              onClick={() => void requestGroupedDeposit('email')}
+            >
+              {busyGroup
+                ? copy.working
+                : language === 'ru' ? 'Отправить общий депозит' : 'Send combined deposit'}
+            </button>
+            {selectedGroupSessionIds.length ? (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={busyGroup}
+                onClick={() => setSelectedGroupSessionIds([])}
+              >
+                {language === 'ru' ? 'Очистить выбор' : 'Clear selection'}
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {canViewReconciliation ? (
         <section className="panel">
