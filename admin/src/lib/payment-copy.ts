@@ -28,6 +28,12 @@ export interface PaymentCopy {
   createAmountLink: (amount: number) => string;
   queueDepositEmail: string;
   queueAmountEmail: (amount: number) => string;
+  oneOffTitle: string;
+  oneOffDescription: string;
+  oneOffPaymentLink: string;
+  saveOneOffLink: string;
+  oneOffSaved: string;
+  oneOffError: string;
   reconciliationTitle: string;
   reconciliationDescription: string;
   reconciliationSecurity: string;
@@ -99,6 +105,12 @@ const EN: PaymentCopy = {
   createAmountLink: (amount) => `Create £${amount} link`,
   queueDepositEmail: 'Queue deposit email',
   queueAmountEmail: (amount) => `Queue £${amount} email`,
+  oneOffTitle: 'One-off Monzo link for this request',
+  oneOffDescription: 'Use this only when the calculated amount has no reusable Monzo destination. It applies to this request only and never replaces an existing reusable link.',
+  oneOffPaymentLink: 'One-off Monzo payment link',
+  saveOneOffLink: 'Save one-off link',
+  oneOffSaved: 'One-off link saved for this payment request. It did not change the amount or mark anything paid.',
+  oneOffError: 'Could not attach that one-off Monzo link.',
   reconciliationTitle: 'Monzo reconciliation',
   reconciliationDescription: 'Review independently verified incoming bank transfers before they affect the payment ledger.',
   reconciliationSecurity: 'A Monzo webhook is only a hint. The server re-fetches the transaction from Monzo before it can appear here. Match does not mark anything paid. Confirm payment is a separate human action.',
@@ -170,6 +182,12 @@ const RU: PaymentCopy = {
   createAmountLink: (amount) => `Создать ссылку на £${amount}`,
   queueDepositEmail: 'Поставить письмо с депозитом в очередь',
   queueAmountEmail: (amount) => `Поставить письмо на £${amount} в очередь`,
+  oneOffTitle: 'Одноразовая ссылка Monzo для этого запроса',
+  oneOffDescription: 'Используйте это поле только если для рассчитанной суммы нет многоразовой ссылки Monzo. Ссылка привязывается только к этому запросу и никогда не заменяет существующую многоразовую ссылку.',
+  oneOffPaymentLink: 'Одноразовая ссылка Monzo для оплаты',
+  saveOneOffLink: 'Сохранить одноразовую ссылку',
+  oneOffSaved: 'Одноразовая ссылка сохранена для этого запроса. Сумма не изменилась, и платёж не был отмечен оплаченным.',
+  oneOffError: 'Не удалось привязать эту одноразовую ссылку Monzo.',
   reconciliationTitle: 'Сверка платежей Monzo',
   reconciliationDescription: 'Проверяйте независимо подтверждённые входящие банковские переводы до их записи в платёжный журнал.',
   reconciliationSecurity: 'Webhook Monzo служит только сигналом. Перед появлением платежа здесь сервер повторно получает транзакцию из Monzo. Сопоставление само по себе ничего не отмечает оплаченным. Подтверждение платежа выполняется отдельным действием.',
