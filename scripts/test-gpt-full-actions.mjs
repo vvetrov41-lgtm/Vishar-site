@@ -170,6 +170,71 @@ async function capture(request, upstreamBody = {}) {
   assert.equal(captured.payload.p_amount, 140);
 }
 
+// Monzo reconciliation is four fixed named RPCs. The edge never accepts artist or provider routing input.
+{
+  const upstream = [{ candidate_id: A, amount: 250, currency: 'GBP', status: 'candidate', confirmed: false }];
+  const { result, captured } = await capture(
+    new Request('https://gpt.example/v1/payments/monzo/reconciliation', { headers: auth }),
+    upstream,
+  );
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, upstream);
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_list_monzo_reconciliation_candidates');
+  assert.deepEqual(captured.payload, {});
+}
+
+{
+  const { captured } = await capture(new Request(`https://gpt.example/v1/payments/monzo/reconciliation/${A}/match`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ payment_request_id: P }),
+  }));
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_match_monzo_reconciliation_candidate');
+  assert.deepEqual(captured.payload, { p_candidate_id: A, p_payment_request_id: P });
+  assert.equal('p_artist_id' in captured.payload, false);
+}
+
+for (const [action, rpc] of [
+  ['ignore', 'gpt_ignore_monzo_reconciliation_candidate'],
+  ['confirm', 'gpt_confirm_monzo_reconciliation_candidate'],
+]) {
+  const { captured } = await capture(new Request(`https://gpt.example/v1/payments/monzo/reconciliation/${A}/${action}`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({}),
+  }));
+  assert.equal(captured.url, `https://exampleproject.supabase.co/rest/v1/rpc/${rpc}`);
+  assert.deepEqual(captured.payload, { p_candidate_id: A });
+}
+
+{
+  let called = false;
+  const response = await handleGptActionsRequest(new Request(`https://gpt.example/v1/payments/monzo/reconciliation/${A}/match`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ payment_request_id: P, artist_id: V }),
+  }), env, async () => { called = true; throw new Error('unexpected'); });
+  assert.deepEqual(await parsed(response), {
+    status: 400,
+    body: { error: 'forbidden_field', field: 'artist_id' },
+  });
+  assert.equal(called, false);
+}
+
+{
+  let called = false;
+  const response = await handleGptActionsRequest(new Request(`https://gpt.example/v1/payments/monzo/reconciliation/${A}/confirm`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ provider_transaction_id: 'tx-secret' }),
+  }), env, async () => { called = true; throw new Error('unexpected'); });
+  assert.deepEqual(await parsed(response), {
+    status: 400,
+    body: { error: 'forbidden_field', field: 'provider_transaction_id' },
+  });
+  assert.equal(called, false);
+}
+
 // Communication sends are explicit named consequential routes with idempotency.
 {
   const { captured } = await capture(new Request(`https://gpt.example/v1/whatsapp/conversations/${A}/messages`, {
@@ -206,4 +271,4 @@ async function capture(request, upstreamBody = {}) {
   assert.equal(called, false);
 }
 
-console.log('GPT full CRM Actions tests passed: named RPCs, fixed artist routing, bounded PII/finance/communications.');
+console.log('GPT full CRM Actions tests passed: named RPCs, fixed artist routing, bounded PII/finance/communications and Monzo reconciliation.');
