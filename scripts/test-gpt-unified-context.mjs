@@ -64,6 +64,7 @@ for (const body of [
   { profile_id: 'f1111111-1111-4111-8111-111111111111', artist_key: 'vladimir' },
   { oauth_client_id: 'forged-client', artist_key: 'vladimir' },
   { artist_key: 'vladimir', unexpected: true },
+  { artist_key: 'a3333333-3333-4333-8333-333333333333' },
   { artist_key: '../vladimir' },
   {},
 ]) {

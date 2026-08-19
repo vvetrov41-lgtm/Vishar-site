@@ -500,7 +500,8 @@ declare
   v_policy record;
   v_previous_artist uuid;
 begin
-  if v_key !~ '^[a-z][a-z0-9-]{1,62}$' then
+  if v_key !~ '^[a-z][a-z0-9-]{1,62}$'
+     or v_key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     raise exception 'a valid artist key is required' using errcode = '22023';
   end if;
 

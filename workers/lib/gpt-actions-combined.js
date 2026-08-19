@@ -86,7 +86,11 @@ function artistContextRoute(request, url, body) {
       }
       if (key !== 'artist_key') throw new Error(`unexpected_field:${key}`);
     }
-    if (typeof body.artist_key !== 'string' || !/^[a-z][a-z0-9-]{1,62}$/.test(body.artist_key)) {
+    if (
+      typeof body.artist_key !== 'string'
+      || !/^[a-z][a-z0-9-]{1,62}$/.test(body.artist_key)
+      || /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(body.artist_key)
+    ) {
       throw new Error('invalid_field:artist_key');
     }
     return {
