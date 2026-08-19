@@ -48,22 +48,18 @@ join public.monzo_payment_destinations other
  and other.artist_id <> mine.artist_id
 where a.slug = :'artist_slug';
 
--- Grouped deposits and one-off destinations currently in play for this artist.
-select g.session_count,
-       g.total_amount,
-       g.currency,
-       r.status as payment_request_status
-from public.session_deposit_groups g
-join public.artists a on a.id = g.artist_id
-join public.payment_requests r on r.id = g.payment_request_id
-where a.slug = :'artist_slug'
-order by g.created_at desc
-limit 20;
-
+-- Request-specific one-offs are counted without printing their URLs. They are
+-- never reusable catalogue rows and never imply settlement.
 select count(*) as one_off_destinations
 from public.payment_request_payment_destinations d
 join public.artists a on a.id = d.artist_id
 where a.slug = :'artist_slug';
+
+-- This workstream deliberately does not implement grouped deposits.
+select to_regclass('public.session_deposit_groups') is null
+   and to_regclass('public.session_deposit_group_members') is null
+   and to_regprocedure('public.request_grouped_session_deposit(uuid[],uuid,text)') is null
+   as grouped_deposits_not_implemented;
 
 -- Onboarding alone must never have settled anything.
 select count(*) as provider_ledger_entries
