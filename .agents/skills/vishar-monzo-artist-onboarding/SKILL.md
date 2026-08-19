@@ -1,15 +1,15 @@
 ---
 name: vishar-monzo-artist-onboarding
-description: Safely onboard or recover an artist-scoped Monzo Business connection in Vishar CRM. Covers shared OAuth client usage, per-artist encrypted token/account/webhook isolation, reusable payment destinations, request-specific one-off links, dedicated payment redirects, reconciliation and production verification. Never auto-settle payments or reuse one artist's payment URLs for another artist.
+description: Safely onboard, recover and extend an artist-scoped Monzo Business connection in Vishar CRM. Covers shared OAuth client usage, per-artist encrypted token/account/webhook isolation, reusable payment destinations, Multiple Sessions deposits, request-specific one-off links, dedicated payment redirects, reconciliation and production verification. Never auto-settle payments or reuse one artist's payment URLs for another artist.
 ---
 
 # Vishar Monzo Artist Onboarding
 
-Use this skill when preparing, connecting, recovering or verifying Monzo for a Vishar CRM artist, especially Kristina.
+Use this skill when preparing, connecting, recovering or verifying Monzo for a Vishar CRM artist, especially Kristina, or when extending the shared payment system to another artist.
 
-The target architecture is one shared Monzo runtime with artist-scoped configuration and state. Do not create a second Worker, second token store or separate payment stack merely because another artist is being connected.
+The target architecture is one shared Monzo runtime with artist-scoped configuration and state. Do not create a second Worker, token store or payment stack merely because another artist is being connected.
 
-This is payment/security-sensitive work. Before substantial investigation or any mutation, read:
+This is payment/security-sensitive work. Before substantial investigation or mutation read:
 
 - repository root `AGENTS.md`;
 - `docs/ai/README.md`;
@@ -19,21 +19,19 @@ This is payment/security-sensitive work. Before substantial investigation or any
 
 ## 1. Fresh-state rule
 
-Never execute onboarding from an old handoff alone.
+Never execute onboarding from an old handoff alone. Before every stage verify:
 
-Before every stage verify:
-
-1. current PR, branch, exact head SHA and exact base SHA;
+1. current PR, branch, exact head and base SHAs;
 2. current production Supabase migration head;
-3. retained staging migration head if staging is relevant;
+3. retained staging migration head if relevant;
 4. current deployed `vishar-monzo-api-production` Worker configuration and routes;
-5. current artist rows and artist IDs;
+5. current artists and artist IDs;
 6. current `artist_integrations` Monzo rows;
-7. current target-artist connection status;
-8. current reusable destination state without printing URLs;
-9. current CI for the exact product SHA.
+7. target artist connection status;
+8. reusable destination state without printing URLs;
+9. exact-head CI.
 
-Documentation records intent. Current code, migrations, grants, RLS, Worker configuration and live environment evidence win.
+Current code, migrations, grants, RLS, Worker configuration and live evidence override historical documentation.
 
 ## 2. Non-negotiable boundaries
 
@@ -46,34 +44,30 @@ Preserve all of these:
 - `Match` does not settle payment;
 - `Confirm payment` is a separate human action;
 - opening a payment link never settles payment;
-- reusable payment URLs belong to one artist and one amount;
+- reusable URLs belong to one artist and exact amount;
 - a one-off URL belongs to exactly one payment request;
 - no cross-artist payment-URL fallback;
 - no weakening of RLS, RPC ACL, Cloudflare Access or rate limits;
-- no secret values in tracked source, PR descriptions or logs;
+- no real payment URLs, credentials or tokens in tracked source or PR text;
 - retained staging is not automatically advanced with production.
 
-## 3. Artist-scoped runtime
+## 3. Runtime and public routing
 
-The shared production Worker is:
+Shared production Worker:
 
 `vishar-monzo-api-production`
 
-Management/OAuth hostname:
+Owner-protected management/OAuth hostname:
 
 `monzo.vishartattoo.com`
 
-Public payment hostname:
+Public customer payment hostname:
 
 `pay.vishartattoo.com`
 
-The payment hostname is a dedicated Custom Domain. Do not restore the failed apex routing design on `vishartattoo.com/pay-by-bank-transfer/*`.
-
-The dedicated host exists because the apex Worker Route competed with the public Pages application and real iPhone navigation reached the Pages 404. The final gateway must fail closed on `pay.vishartattoo.com` except strict GET requests matching:
+Do not restore the failed apex Worker Route on `vishartattoo.com/pay-by-bank-transfer/*`. Real iPhone navigation proved that the public Pages application could win that route. The dedicated payment Custom Domain must fail closed except strict GET requests matching:
 
 `/pay-by-bank-transfer/<opaque UUID>`
-
-The Monzo management hostname remains separate and owner-protected.
 
 ## 4. Artist registry
 
@@ -81,55 +75,49 @@ Routable Monzo artists are defined centrally in:
 
 `workers/lib/monzo-artist-registry.js`
 
-Current intended aliases are:
-
-- `vladimir`;
-- `kristina`.
-
-The registry controls:
-
-- owner-protected route matching;
-- artist ID environment binding;
-- OAuth client resolution;
-- display name;
-- OAuth state validation;
-- encrypted token-record alias validation;
-- setup and disconnect flows;
-- readiness checks.
-
-The CRM carries a matching alias list in:
+The CRM carries the matching alias list in:
 
 `admin/src/lib/monzo-connector.ts`
 
-`script/test-monzo-artist-registry.mjs` or its current equivalent must prove Worker and CRM aliases do not drift.
+Current intended aliases are `vladimir` and `kristina`.
 
-A third artist should require only a small bounded code/config addition: registry entry, CRM alias entry, `<ALIAS>_ARTIST_ID`, then that artist's own connection and destinations. Do not claim third-artist onboarding is literally zero-code while aliases remain tracked source.
+The registry controls route matching, artist-ID bindings, OAuth client resolution, display name, OAuth state validation, token-record alias validation, setup/disconnect and readiness checks.
+
+Adding another artist is a small bounded code/config change, not literally configuration-only while aliases remain tracked source. Expect at least:
+
+- one registry entry;
+- one CRM alias entry;
+- one `<ALIAS>_ARTIST_ID` Worker binding;
+- that artist's own OAuth/account/webhook state;
+- that artist's own reusable payment destinations.
+
+Do not create a second Worker or KV namespace set for an ordinary additional artist.
 
 ## 5. Artist IDs and provider account keys
 
-Current historical IDs when this skill was revised on 2026-08-19 were:
+Historical IDs when revised on 2026-08-19:
 
 - Vladimir: `a1111111-1111-4111-8111-111111111111`;
 - Kristina: `a2222222-2222-4222-8222-222222222222`.
 
 Fresh-check before use.
 
-The provider account key is deterministic and server-derived:
+Provider account key is deterministic and server-derived:
 
 `monzo_ebt_<artist UUID with hyphens removed>`
 
-The browser must never provide this key as routing authority.
+The browser never supplies it as routing authority.
 
 ## 6. OAuth client model
 
 Do not create a separate Monzo Developer OAuth application for Kristina by default.
 
-The correct default is the existing shared confidential OAuth client. Monzo tokens are bound to the OAuth client and the individual Monzo user, so different artists can independently authorize the same confidential client while retaining separate user/token/account state.
+The correct default is one shared confidential OAuth client. Monzo tokens remain bound to the OAuth client and the individual Monzo user, so different artists authorize the same confidential client while retaining separate user/token/account state.
 
 Shared:
 
 - OAuth client ID/secret;
-- exact callback URI;
+- callback URI;
 - Worker runtime;
 - encryption key;
 - KV namespaces;
@@ -137,109 +125,60 @@ Shared:
 
 Artist-specific:
 
-- alias;
-- CRM artist ID;
+- alias and CRM artist ID;
 - Monzo user ID;
 - encrypted token envelope;
 - selected bank account;
 - provider account key;
-- webhook key;
-- webhook ID and route;
-- reusable payment destinations;
+- webhook key/ID/route;
+- reusable destinations;
 - one-off request destinations;
 - reconciliation provenance.
 
-The runtime may support optional per-artist OAuth client overrides. If so, both ID and secret must be configured together and a half-configured override must fail closed. Do not mix one client ID with another client secret.
+Optional per-artist client overrides may exist, but ID and secret must be configured together. A half-configured override must fail closed.
 
-## 7. Token custody
+## 7. Token custody and OAuth incident fixes
 
-Production uses Workers KV namespaces for separate concerns, including OAuth state, encrypted artist tokens and webhook routes.
+Tokens are AES-GCM encrypted before Workers KV storage and bound to the artist route and identity facts. A Vladimir token may never satisfy a Kristina route and vice versa.
 
-Token records must be encrypted with AES-GCM before storage. The token key is artist-scoped, normally based on the CRM artist ID.
+Do not regress these historical fixes:
 
-A token record must remain bound to at least:
+- Bearer token type validation is case-insensitive;
+- do not invent an `expires_in <= 86400` maximum;
+- when Monzo issues a token before in-app SCA approval completes, preserve the token and retry after approval rather than restarting OAuth;
+- setup confirmation must not depend on immediate KV read-after-write consistency;
+- signed iOS recovery may legitimately carry `Origin: null`; the signed confirmation remains anti-CSRF authority while concrete foreign origins remain rejected.
 
-- artist alias;
-- artist ID;
-- OAuth client ID;
-- Monzo user ID;
-- provider account key;
-- connection state;
-- selected account when selected;
-- webhook metadata when registered.
+## 8. Account selection and webhooks
 
-Every load/reconnect/sync/disconnect path must re-check those bindings. A Vladimir token may never satisfy a Kristina route and vice versa.
+The browser may propose an account ID, but the Worker re-lists eligible Monzo accounts with that artist's token and accepts only a server-observed account.
 
-## 8. Historical OAuth incidents that must not regress
+Webhook flow remains:
 
-### Token response validator
+1. resolve opaque artist-bound route;
+2. load that artist's encrypted token;
+3. validate client/user/account/provider binding;
+4. re-fetch the transaction from Monzo;
+5. verify selected account ownership;
+6. accept only intended incoming GBP credit shape;
+7. create/replay a reconciliation candidate only.
 
-Do not restore overly strict assumptions that previously rejected a valid Monzo token response.
+A webhook never proves settlement.
 
-Preserve:
+## 9. Single-session deposit policy
 
-- case-insensitive handling of Bearer token type;
-- no invented `expires_in <= 86400` maximum;
-- required-field and client/user binding validation;
-- no raw token/provider payload in browser responses or logs.
-
-### Monzo SCA race
-
-Monzo can issue an access token before separate in-app Strong Customer Authentication approval is complete.
-
-If `/ping/whoami` or account access is temporarily permission-blocked because approval is pending:
-
-- preserve the encrypted token;
-- mark/retain an approval-pending state;
-- do not select an account yet;
-- do not register a webhook yet;
-- instruct the owner to approve access in the Monzo app;
-- retry identity/account access afterward.
-
-Do not destroy the token and restart OAuth merely because the first post-exchange identity call returns the known pending-approval condition.
-
-### Workers KV read-after-write
-
-Do not depend on immediately reading a just-written one-time KV confirmation.
-
-Setup confirmation uses a short-lived cryptographically sealed server-issued confirmation bound to the relevant owner/artist/client/user facts. Account selection is re-fetched server-side before use.
-
-### Mobile opaque Origin
-
-The signed mobile recovery flow may receive `Origin: null` on iOS navigation POSTs. The signed confirmation remains the anti-CSRF authority. Concrete foreign origins and cross-site fetch metadata remain rejected. Do not remove the signed confirmation or broaden origin trust.
-
-## 9. Account selection and webhook registration
-
-The browser may submit a proposed account ID, but the Worker must re-list Monzo accounts with that artist's token and accept only a server-observed eligible account.
-
-After selection:
-
-1. verify the token still belongs to the configured artist/client/user;
-2. verify the selected account appears in the server-fetched Monzo account list;
-3. derive/retain the artist provider key;
-4. generate the opaque webhook route key server-side;
-5. register the Monzo webhook for the selected account;
-6. persist the webhook route and encrypted artist connection state;
-7. compensate safely if provider registration succeeds but local persistence fails.
-
-On reconnect, never silently cross over to another artist's account or token record.
-
-## 10. Duration-based deposit policy
-
-Current single-session policy is server-owned:
+Current server-owned session policy:
 
 - up to 60 minutes: GBP 50;
 - up to 180 minutes: GBP 100;
 - up to 300 minutes: GBP 150;
-- over 300 minutes / full day: GBP 250.
+- over 300 minutes/full day: GBP 250.
 
-`request_session_deposit(...)` derives the amount from the persisted appointment duration. The resulting `payment_requests.amount` is an immutable pricing snapshot.
+`request_session_deposit(...)` derives the amount from persisted appointment duration. `payment_requests.amount` is then immutable. A later reschedule or duration edit must not silently reprice that old request.
 
-Important: if the appointment is later rescheduled or its duration changes, do not silently reprice an already-created payment request. Reusable or one-off destination selection must use the immutable request amount.
+## 10. Reusable Monzo destinations
 
-## 11. Reusable Monzo payment destinations
-
-The generic closed catalogue is:
+Closed catalogue:
 
 `public.monzo_payment_destinations`
 
@@ -249,337 +188,250 @@ Key:
 - `amount`;
 - `currency`.
 
-Migration `0064_monzo_artist_payment_destinations.sql` is designed to rename the earlier `monzo_easy_bank_transfer_tier_urls` table **in place** rather than recreate it. This preserves existing Vladimir rows and URLs.
+Migration `0064_monzo_artist_payment_destinations.sql` renames the earlier tier table in place. This preserves Vladimir's already provisioned production GBP 50/100/150/250 rows and URLs.
 
-This distinction is critical:
+Critical isolation:
 
-- Vladimir's already provisioned production GBP 50/100/150/250 URLs stay his;
-- Kristina must later receive her own URLs;
-- never copy Vladimir's payment URLs into Kristina rows;
-- absence of a Kristina row must fail closed, never borrow Vladimir's row.
+- Vladimir's existing URLs stay his;
+- Kristina later receives her own URLs;
+- never copy Vladimir URLs into Kristina rows;
+- missing Kristina amount fails closed rather than borrowing Vladimir's;
+- real URLs never belong in Git.
 
-The catalogue can store additional positive amounts without another schema change. That only means the routing table is future-ready. It does **not** mean grouped deposits are implemented.
+The catalogue is amount-generic. Standard single-session values and high-value Multiple Sessions values are ordinary rows. For example, GBP 500, 750, 1000, 1250, 1500, 1750 and 2000 require no schema change. Mixed totals such as GBP 350, 550 or 600 are also valid exact amounts if a reusable destination exists.
 
-No real reusable URL belongs in tracked source.
-
-Provision reusable destinations through the guarded operator statement:
+Provision through:
 
 `scripts/monzo/provision-artist-payment-destinations.sql`
 
-Validate its runtime JSON first:
+Validate runtime input first with:
 
 `node scripts/validate-monzo-destination-plan.mjs <plan.json>`
 
-The plan contains amount + URL only. Artist selection comes separately from the protected operator invocation, so the plan itself cannot redirect another artist.
+The plan contains amount + URL only; artist selection is a separate protected operator input.
 
-Provisioning must reject:
+## 11. Multiple Sessions deposits
 
-- inactive/unknown artist;
-- artist without the exact enabled Monzo payment integration;
-- malformed Monzo URL;
-- duplicate amount;
-- duplicate URL;
-- URL belonging to another artist;
-- URL already used as a request-specific one-off.
+Migration `0065_monzo_multiple_session_deposits.sql` adds normalized group coverage.
 
-The operator may update only that artist's `(artist_id, amount, currency)` rows.
+Tables:
 
-## 12. Request-specific one-off Monzo links
+- `public.session_deposit_groups`;
+- `public.session_deposit_group_members`.
 
-The CRM supports a one-off link for a payment request when that artist has no reusable destination for the request's immutable amount.
+Both use FORCE RLS with no direct browser/service-role table grant.
+
+Authenticated finance RPC:
+
+`request_grouped_session_deposit(p_session_ids uuid[], p_idempotency_key uuid, p_delivery_channel text)`
+
+Required behavior:
+
+- 2-12 distinct appointments;
+- exactly one artist, one client and one project;
+- project-backed `tattoo_session` appointments only;
+- no completed/cancelled/no-show appointment;
+- each component amount comes from `crm_private.resolve_session_deposit_tier`;
+- all components share one active policy version/currency;
+- total is the exact sum of server-derived component amounts;
+- browser never submits authoritative artist/project/amount;
+- deterministic session locking prevents overlapping concurrent group races;
+- a session with a pending/partially-paid/paid individual deposit cannot enter a group;
+- a session in a live group cannot receive an individual deposit;
+- one live group per session is also enforced by a partial unique index;
+- replaying the same idempotency key with the same normalized session set returns the same group/request;
+- reusing that key with another set is rejected.
+
+A group request is one ordinary immutable `payment_requests` row whose `session_id` is null and whose project/artist/client are fixed. Coverage is answered from normalized member rows, not hidden JSON.
+
+`get_session_deposit_group(p_payment_request_id)` returns finance-scoped evidence: covered sessions, their frozen component amounts/durations, total, net paid, outstanding and request status. It returns no payment URL, account ID or provider transaction identifier.
+
+Cancelling/expiring an unpaid group releases its live member allocations by setting `released_at`, while retaining historical rows. Paid groups do not silently release coverage.
+
+## 12. Multiple Sessions destination selection
+
+Group amount determines destination exactly the same way as a single-session immutable request.
+
+Examples:
+
+- two GBP 250 components -> total GBP 500 -> this artist's reusable GBP 500 row if present;
+- three GBP 250 components -> GBP 750 -> this artist's reusable GBP 750 row if present;
+- GBP 250 + GBP 250 + GBP 50 -> GBP 550 -> this artist's reusable GBP 550 row if present, otherwise fail closed until a one-off is attached.
+
+There is no meaning encoded as "three sessions" inside the payment destination. Routing remains exact `(artist_id, amount, currency)`.
+
+Vladimir's high-value reusable links remain Vladimir's. Kristina must create/provision her own high-value links if she wants those totals to resolve reusable instead of one-off.
+
+## 13. Request-specific one-off Monzo links
 
 RPC:
 
 `attach_monzo_one_off_payment_destination(p_payment_request_id uuid, p_payment_url text)`
 
-The browser supplies only:
+Browser supplies only payment request ID + proposed clean Monzo URL. Database derives artist, provider route, immutable amount and currency.
 
-- payment request ID;
-- proposed Monzo URL.
+Permitted request provenance:
 
-The database derives and verifies:
+- a normal server-priced single-session deposit with policy snapshot; or
+- a normalized Multiple Sessions deposit whose group row proves artist/client/project/total/currency.
 
-- artist;
-- provider;
-- provider account key;
-- amount;
-- currency;
-- request purpose/status;
-- session-backed pricing provenance.
+Arbitrary project-level payment requests are not accepted as a shortcut.
 
-Required behavior:
+A one-off:
 
-- request is an open GBP Monzo session deposit;
-- request carries the server-created payment-policy snapshot;
-- amount comes from immutable `payment_requests.amount`;
-- exact artist Monzo route remains enabled;
-- URL matches clean `https://monzo.com/pay/r/...` shape;
-- one-off is rejected if this artist already has a reusable destination for the amount;
-- one-off is rejected if the URL is already reusable for any artist;
-- one-off is rejected if the URL belongs to another payment request;
-- saved row copies artist/amount/currency from the request;
-- one-off is never promoted into the reusable catalogue;
-- attaching/replacing the URL does not create a ledger entry or mark anything paid.
+- applies only to an open GBP Monzo deposit;
+- is rejected when that same artist already has a reusable destination for the exact amount;
+- cannot reuse any catalogue URL;
+- cannot be shared by another payment request;
+- never enters the reusable catalogue;
+- never changes request amount;
+- never creates a payment ledger row or paid status.
 
-Do **not** recalculate an old payment request from today's appointment duration when attaching a one-off. The request amount was guarded at creation and remains authoritative.
+Do not reprice an old single-session request from today's appointment duration when attaching one-off. The immutable request amount remains authoritative.
 
-The Payments CRM may display the one-off input after creating a request. Backend validation remains authoritative; hiding/showing the input is not a security boundary.
+## 14. Public redirect
 
-## 13. Group deposits are a separate future workstream
-
-Do not infer group-deposit capability from the generic destination catalogue.
-
-This Monzo artist-readiness workstream does **not** implement:
-
-- `session_deposit_groups`;
-- `session_deposit_group_members`;
-- `request_grouped_session_deposit(...)`;
-- `get_session_deposit_group(...)`;
-- multi-session allocation/release logic.
-
-The owner has separately discussed one payment covering several sessions and may already have manually created higher-value reusable Monzo links. Those links must not be committed or provisioned merely because the catalogue can technically store their amounts.
-
-Group deposits require a separate explicit product decision and dedicated tests/UI/rollout.
-
-## 14. Public payment redirect
-
-The public customer path is opaque and first-party:
+Customer path:
 
 `https://pay.vishartattoo.com/pay-by-bank-transfer/<opaque UUID>`
 
-The Worker accepts strict GET only, applies its own rate limiter, calls only the backend redirect resolver, validates the returned Monzo URL, and redirects.
+Backend resolver uses immutable request facts. Destination order:
 
-All unrelated paths on `pay.vishartattoo.com` fail closed.
+1. request-specific one-off for same request/artist/amount;
+2. reusable catalogue row for same artist/amount/currency;
+3. same-artist legacy GBP 250 compatibility destination only.
 
-`resolve_monzo_deposit_redirect(uuid)` remains backend-only and resolves from the immutable request facts.
-
-Resolution order may be:
-
-1. request-specific one-off for the same request/artist/amount;
-2. reusable catalogue row for the same artist/amount/currency;
-3. same-artist legacy GBP 250 compatibility URL only.
-
-There is never a cross-artist or wrong-amount fallback.
-
-Opening a payment URL records at most navigation metadata. It never proves bank settlement.
+There is no cross-artist or wrong-amount fallback. Opening the link never proves payment.
 
 ## 15. Reconciliation boundary
 
-Monzo does not make the webhook body trusted payment evidence.
-
-The Worker must:
-
-1. resolve opaque webhook route;
-2. load the corresponding artist encrypted token record;
-3. verify alias/artist/client/provider/account binding;
-4. ensure/refresh access token for that same artist;
-5. re-check Monzo identity;
-6. re-fetch the transaction from Monzo;
-7. verify selected account ownership;
-8. accept only the intended incoming GBP credit shape;
-9. create/replay only a reconciliation candidate.
-
-Human flow:
+Human flow remains:
 
 `verified candidate -> Match -> Confirm payment -> immutable payment transaction`
 
 `Ignore` stays separate.
 
-Never auto-settle based on:
+Never auto-settle from webhook data, amount equality, client guess, link opening, candidate creation, recovery sync, group creation or Match.
 
-- webhook payload;
-- amount equality;
-- client guess;
-- payment-link opening;
-- candidate creation;
-- Match.
+Only explicit Confirm, or a deliberate manual-payment RPC, may write settlement into the immutable ledger.
 
-## 16. Kristina readiness and later onboarding
+## 16. Kristina onboarding
 
-Before Kristina has a Monzo Business account, code readiness may be prepared but no fake credentials/account/token/webhook should be created.
+Before Kristina has a real Monzo Business account, do not create fake token/account/webhook/payment URLs.
 
-When her account exists, expected sequence is:
+When her account exists:
 
-1. fresh-check repo, PR, CI, production Supabase and deployed Worker;
-2. confirm `public.artists.slug = 'kristina'` and deployed `KRISTINA_ARTIST_ID` match;
-3. confirm registry and CRM alias include `kristina`;
-4. confirm shared confidential OAuth client remains valid;
-5. pass Cloudflare Access on the protected Monzo management page;
-6. start `/oauth/monzo/setup/kristina`;
-7. log in with Kristina's Monzo identity;
-8. complete in-app SCA approval if requested;
-9. select her receiving Monzo account;
-10. let the Worker re-fetch and validate it server-side;
-11. register her webhook and persist her encrypted connection state;
-12. configure/enable her CRM Monzo payment integration;
-13. create her own reusable Monzo Business payment links manually in Monzo;
-14. validate a runtime destination plan without putting URLs in Git;
-15. provision **Kristina's** GBP 50/100/150/250 rows through the protected operator;
-16. run read-only verification;
-17. prove a Kristina request resolves only to a Kristina destination;
-18. prove a missing Kristina destination fails closed instead of using Vladimir's;
-19. verify reconciliation remains candidate-only.
+1. fresh-check repo, CI, production DB and Worker;
+2. confirm `kristina` artist ID and deployed binding;
+3. confirm registry/CRM alias;
+4. use the existing shared confidential OAuth client;
+5. pass Cloudflare Access and start `/oauth/monzo/setup/kristina`;
+6. complete Kristina Monzo login and in-app SCA;
+7. select her receiving account and let Worker re-fetch it;
+8. register her artist-bound webhook;
+9. configure/enable her CRM Monzo integration;
+10. create her own standard reusable links GBP 50/100/150/250;
+11. create any high-value reusable links she wants for Multiple Sessions, such as GBP 500/750/1000/etc.;
+12. provision only Kristina URLs through the protected operator;
+13. verify no URL is shared with Vladimir;
+14. verify both single and Multiple Sessions requests resolve only Kristina destinations;
+15. verify a missing exact amount fails closed or uses only a request-specific one-off;
+16. verify reconciliation remains candidate-only until human Confirm.
 
-No new Monzo Developer Client ID/Secret is required unless provider requirements have changed or the architecture is deliberately changed.
+No new Monzo Developer Client ID/Secret is required by default.
 
 ## 17. Read-only verification
 
-Use:
-
-`scripts/monzo/verify-artist-payment-destinations.sql`
-
-Verification output should expose only safe metadata such as:
+Use the repository verification script and current SQL schema inspection. Safe output may include:
 
 - artist slug;
-- active/enabled booleans;
-- whether provider key is artist-derived;
-- active policy version and tier count;
+- integration enabled state;
+- artist-derived provider-key boolean;
+- active policy version/tier count;
 - configured amounts;
-- short URL fingerprints, not URLs;
+- short URL fingerprints, never URLs;
 - cross-artist URL violation count;
 - one-off count;
-- absence of group-deposit schema in this workstream;
-- provider-ledger count as a settlement sanity check.
+- Multiple Sessions group counts/amounts/status without URL values;
+- provider-ledger count as settlement sanity check.
 
-For Kristina readiness, expected before her real onboarding:
+Expected before Kristina onboarding: artist exists, no Monzo integration, no Kristina destinations, Vladimir rows untouched.
 
-- artist exists;
-- no Monzo integration yet;
-- no reusable Kristina destination rows yet;
-- Vladimir rows remain untouched.
+After onboarding: Kristina has her own enabled route and own destinations, no shared URL, resolver is backend-only and reconciliation boundaries are unchanged.
 
-After onboarding, expected:
+## 18. Disconnect/reconnect
 
-- Kristina has her own enabled provider route;
-- four canonical reusable amounts exist for her;
-- their URL fingerprints differ as required;
-- no URL is shared across artists;
-- no direct browser/service-role table access exists;
-- redirect resolver remains backend-only;
-- reconciliation candidate RPC remains backend-only;
-- human Match/Ignore/Confirm RPC permissions remain unchanged.
+Disconnect affects only target artist encrypted token, webhook route/provider registration and connection state. It must never remove another artist's token/account/webhook/destination state.
 
-## 18. Disconnect and reconnect
+Reusable destination configuration is separate operator-owned routing data. Do not delete it casually during OAuth reconnect.
 
-Disconnect must be artist-specific.
+## 19. Production/staging boundaries
 
-A Kristina disconnect may remove only Kristina's:
+Historical snapshot at this revision:
 
-- encrypted token envelope;
-- webhook route;
-- provider webhook registration where possible;
-- active connection state.
+- production project `vfjexhfdbrjmuxfdvbdx` was through migration `0063_monzo_tier_specific_deposit_links`;
+- retained staging `gwaliusblwrzisrwnsvs` was through `0044_monzo_payment_url_validator`.
 
-It must not remove or rewrite Vladimir's token/account/webhook/destination state.
+Fresh-check every time. Do not advance retained staging merely to make versions match.
 
-Reusable payment configuration is separate from OAuth token custody. Decide explicitly whether reusable rows should stay available for a reconnect; do not casually delete operator-owned routing data.
+Before production rollout:
 
-Reconnect must safely replace the target artist connection without token crossover.
+- confirm exact product head and current parallel PRs;
+- confirm migration numbers are still canonical;
+- run exact-head CI including clean reset, pgTAP and PostgreSQL lint;
+- use existing protected production operator/environment approval;
+- apply only bounded Monzo/database/CRM pieces needed;
+- preserve Vladimir connection and all his existing destinations;
+- preserve `pay.vishartattoo.com` dedicated routing;
+- keep Kristina unconnected until her real onboarding;
+- perform no real-money verification unless deliberately approved;
+- do not merge or mark Ready unless separately instructed.
 
-## 19. Production and staging boundaries
+## 20. Common failure states
 
-Production and retained staging are intentionally allowed to have different migration heads.
+`artist_route_unconfigured`: missing/invalid artist registry binding. Fix it; never fall back to another artist.
 
-Historical snapshot when revised:
+`approval_pending`: token exists but Monzo in-app SCA is incomplete. Preserve token, approve in app, then continue.
 
-- production project: `vfjexhfdbrjmuxfdvbdx`;
-- retained staging project: `gwaliusblwrzisrwnsvs`;
-- production was through migration `0063_monzo_tier_specific_deposit_links`;
-- retained staging was through `0044_monzo_payment_url_validator`.
+`monzo_not_connected`: target artist has no encrypted connection. Run only that artist's setup flow.
 
-This snapshot is not authority. Fresh-check every time.
+`Payment link unavailable`: request is closed/expired or same artist has no exact destination. Provision correct reusable row or attach one-off. Never borrow another artist URL.
 
-Do not advance retained staging merely to make versions match if the workstream intentionally targets production.
+`this amount already has a reusable Monzo destination`: use reusable destination rather than one-off.
 
-## 20. Production rollout safety
+`an appointment already has its own deposit request`: cancel the unpaid individual request or remove that appointment from group.
 
-Before applying a new Monzo migration or Worker change:
+`the appointment is already covered by a grouped deposit`: settle/cancel that group or choose another appointment.
 
-- confirm the exact product head;
-- confirm parallel Gmail/GPT/other workstreams have not advanced the product stack;
-- confirm migration number is still available and canonical;
-- run exact-head CI;
-- use the existing protected production operator boundary;
-- require the existing environment approval if the repository workflow requires it;
-- apply only the bounded Monzo/database/CRM pieces actually needed;
-- never rotate existing secrets unless rotation is the explicit task;
-- verify Vladimir's existing connection/destination state survives;
-- verify dedicated `pay.vishartattoo.com` routing survives;
-- verify Kristina remains unconnected until her real onboarding;
-- verify no real payment is settled as a side effect.
+## 21. Secret rules
 
-Do not merge or mark product PR Ready unless separately instructed.
-
-## 21. Common failure states
-
-`artist_route_unconfigured`
-: registry/artist-ID binding missing or invalid. Fix configuration; do not fall back to another artist.
-
-`approval_pending`
-: Monzo token exists but in-app SCA is incomplete. Approve in the app, then continue; do not throw the token away.
-
-`monzo_not_connected`
-: target artist has no encrypted token connection. Run that artist's setup flow.
-
-`Payment link unavailable`
-: request is invalid/closed/expired or the same artist has no valid destination for the immutable amount. Provision the correct artist destination or attach a request-specific one-off. Never borrow another artist URL.
-
-`this amount already has a reusable Monzo destination`
-: one-off was attempted where reusable routing already exists. Use the reusable destination instead.
-
-`provider_route_invalid`
-: stored artist/client/account/provider bindings no longer match deployed configuration. Fail closed and investigate before reconnecting.
-
-## 22. Secret rules
-
-Never print, paste, commit or place in PR text:
+Never print, paste, commit or put in PR text:
 
 - Monzo Client Secret;
-- access token;
-- refresh token;
+- access/refresh token;
 - token-encryption key;
 - Supabase secret/service credential;
 - real reusable payment URLs;
-- real request-specific one-off URLs;
+- real one-off URLs;
 - OAuth authorization codes;
 - cookies or Cloudflare Access session material.
 
-Client ID is not a secret, but do not duplicate it unnecessarily in tracked docs when configuration lookup suffices.
+## 22. Final settlement invariant
 
-## 23. Fast path for Kristina
-
-If the architecture still matches this skill, Kristina later needs operational provisioning rather than new payment architecture:
-
-1. confirm artist ID;
-2. pass Cloudflare Access;
-3. OAuth with Kristina's Monzo identity using the shared client;
-4. complete SCA;
-5. select receiving account;
-6. register webhook;
-7. enable her artist integration;
-8. create her own GBP 50/100/150/250 Monzo payment links;
-9. provision only those Kristina URLs;
-10. verify no cross-artist routing;
-11. verify candidate-only reconciliation.
-
-Vladimir's existing URLs remain untouched throughout.
-
-## 24. Final settlement invariant
-
-These actions must never write `public.payment_transactions` by themselves:
+These actions do not settle payment:
 
 - OAuth authorization;
 - account selection;
 - webhook registration;
 - reusable destination provisioning;
-- creating a deposit request;
-- opening a reusable payment link;
-- attaching/opening a one-off payment link;
-- receiving a webhook;
-- provider transaction refetch;
-- candidate creation;
+- single-session deposit request;
+- Multiple Sessions deposit request;
+- opening reusable or one-off link;
+- attaching one-off link;
+- webhook receipt/refetch;
+- reconciliation candidate creation;
 - recovery sync;
 - Match;
 - Ignore.
 
-Only the explicit human settlement boundary, such as `confirm_monzo_reconciliation_candidate` or a deliberate manual-payment RPC, may write the immutable payment ledger and derive paid status.
+Only an explicit human settlement boundary, such as `confirm_monzo_reconciliation_candidate` or deliberate manual-payment RPC, may write `public.payment_transactions` and derive paid status.
