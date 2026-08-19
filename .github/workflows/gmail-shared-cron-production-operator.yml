@@ -1,3 +1,4 @@
+# rc71 activation marker: deploy the already-green product through the protected gate.
 name: Gmail shared cron production operator
 
 on:
