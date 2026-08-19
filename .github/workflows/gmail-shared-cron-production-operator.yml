@@ -1,4 +1,4 @@
-# rc71 activation marker: deploy the already-green product through the protected gate.
+# rc71 propagation-safe recovery operator. A commit with [RUN_GMAIL_SHARED_CRON] activates production.
 name: Gmail shared cron production operator
 
 on:
@@ -78,7 +78,7 @@ jobs:
   deploy:
     needs: authorize
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     environment: crm-production
     env:
       PRODUCT_SHA: ${{ needs.authorize.outputs.product_sha }}
@@ -90,6 +90,7 @@ jobs:
       GMAIL_HOST: gmail.vishartattoo.com
       GMAIL_KV_STATE_ID: 4bdea97be49c4ca8975f95391a7ffdf1
       GMAIL_KV_TOKENS_ID: 143c9044f0ff4acd93f6c9cf7d022a66
+      EXPECTED_PARTIAL_GMAIL_VERSION: ad8d4ab6-0080-4fed-a2a4-ea4e60cdd0b4
     steps:
       - name: Verify protected production inputs
         shell: bash
@@ -101,6 +102,7 @@ jobs:
           test "$GMAIL_KV_STATE_ID" != "$GMAIL_KV_TOKENS_ID"
           [[ "$GMAIL_KV_STATE_ID" =~ ^[0-9a-f]{32}$ ]]
           [[ "$GMAIL_KV_TOKENS_ID" =~ ^[0-9a-f]{32}$ ]]
+          [[ "$EXPECTED_PARTIAL_GMAIL_VERSION" =~ ^[0-9a-f-]{36}$ ]]
 
       - uses: actions/checkout@v4
         with:
@@ -150,45 +152,194 @@ jobs:
           }
           NODE
 
-      - name: Deploy Gmail Worker with no direct Cron Trigger
+      - name: Inspect current production Worker state before mutation
+        id: preflight
         shell: bash
         run: |
           set -euo pipefail
-          gmail_config="$GITHUB_WORKSPACE/.wrangler.gmail.rc71.deploy.toml"
-          trap 'rm -f "$gmail_config"' EXIT
-          GMAIL_KV_STATE_ID="$GMAIL_KV_STATE_ID" \
-          GMAIL_KV_TOKENS_ID="$GMAIL_KV_TOKENS_ID" \
-          SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" \
-            node scripts/generate-gmail-production-deploy-config.mjs "$gmail_config" kristina-send
 
-          grep -Fq 'main = "workers/gmail-production-entrypoint.js"' "$gmail_config"
-          grep -Fq 'GMAIL_DRAIN_ENABLED = "true"' "$gmail_config"
-          grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$gmail_config"
-          grep -Fq 'GMAIL_KRISTINA_ENABLED = "true"' "$gmail_config"
-          grep -Fq 'crons = []' "$gmail_config"
-          if grep -Fq '*/5 * * * *' "$gmail_config"; then
-            echo 'Gmail deploy must not allocate a Cron Trigger.' >&2
+          cf_get() {
+            curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID$1"
+          }
+
+          gmail_schedules="$(cf_get "/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
+          telegram_schedules="$(cf_get "/workers/scripts/$TELEGRAM_WORKER_NAME/schedules")"
+          gmail_deployments="$(cf_get "/workers/scripts/$GMAIL_WORKER_NAME/deployments")"
+          telegram_deployments="$(cf_get "/workers/scripts/$TELEGRAM_WORKER_NAME/deployments")"
+          telegram_settings="$(cf_get "/workers/scripts/$TELEGRAM_WORKER_NAME/settings")"
+
+          GMAIL_SCHEDULES="$gmail_schedules" \
+          TELEGRAM_SCHEDULES="$telegram_schedules" \
+          GMAIL_DEPLOYMENTS="$gmail_deployments" \
+          TELEGRAM_DEPLOYMENTS="$telegram_deployments" \
+          TELEGRAM_SETTINGS="$telegram_settings" \
+          GITHUB_OUTPUT="$GITHUB_OUTPUT" node <<'NODE'
+          const fs = require('node:fs');
+
+          function parse(name) {
+            const payload = JSON.parse(process.env[name] || '{}');
+            if (payload.success !== true) throw new Error(`${name} Cloudflare API call failed`);
+            return payload;
+          }
+
+          function schedules(payload) {
+            if (Array.isArray(payload.result)) return payload.result;
+            if (Array.isArray(payload.result?.schedules)) return payload.result.schedules;
+            throw new Error('Unable to parse Cloudflare schedule response');
+          }
+
+          function activeVersion(payload) {
+            const deployments = Array.isArray(payload.result)
+              ? payload.result
+              : payload.result?.deployments;
+            if (!Array.isArray(deployments) || !deployments.length) {
+              throw new Error('Unable to inspect active Worker deployment');
+            }
+            const versions = deployments[0]?.versions;
+            if (!Array.isArray(versions) || !versions.length) {
+              throw new Error('Unable to inspect active Worker version');
+            }
+            const active = versions.find((row) => Number(row?.percentage) === 100) || versions[0];
+            if (!active?.version_id) throw new Error('Active Worker version id is unavailable');
+            return active.version_id;
+          }
+
+          const gmailSchedules = schedules(parse('GMAIL_SCHEDULES'));
+          const telegramSchedules = schedules(parse('TELEGRAM_SCHEDULES'));
+          const gmailVersion = activeVersion(parse('GMAIL_DEPLOYMENTS'));
+          const telegramVersion = activeVersion(parse('TELEGRAM_DEPLOYMENTS'));
+
+          const settings = parse('TELEGRAM_SETTINGS');
+          const bindings = settings.result?.bindings;
+          if (!Array.isArray(bindings)) throw new Error('Unable to inspect Telegram Worker bindings');
+
+          const telegramCrons = telegramSchedules.map((row) => row?.cron).filter(Boolean);
+          if (telegramCrons.length !== 1 || telegramCrons[0] !== '*/5 * * * *') {
+            throw new Error('Existing Telegram scheduler cron is not exactly the expected five-minute trigger');
+          }
+
+          const forbidden = new Set([
+            'GOOGLE_OAUTH_CLIENT_ID',
+            'GOOGLE_OAUTH_CLIENT_SECRET',
+            'GMAIL_TOKEN_ENCRYPTION_KEY',
+            'GMAIL_OAUTH_STATE',
+            'GMAIL_OAUTH_TOKENS'
+          ]);
+          if (bindings.some((row) => forbidden.has(row?.name))) {
+            throw new Error('Gmail credential/token binding is present on Telegram Worker');
+          }
+
+          const service = bindings.find((row) => row?.name === 'GMAIL_SERVICE');
+          if (service && (service.type !== 'service' || service.service !== 'vishar-gmail-production')) {
+            throw new Error('Existing Gmail service binding is malformed');
+          }
+
+          const sharedFlag = bindings.find((row) => row?.name === 'GMAIL_SHARED_DRAIN_ENABLED');
+          const telegramFlag = bindings.find((row) => row?.name === 'TELEGRAM_DRAIN_ENABLED');
+          const sharedReady = Boolean(
+            service &&
+            sharedFlag?.type === 'plain_text' && sharedFlag?.text === 'true' &&
+            telegramFlag?.type === 'plain_text' && telegramFlag?.text === 'true'
+          );
+
+          const lines = [
+            `gmail_cron_count=${gmailSchedules.length}`,
+            `gmail_version=${gmailVersion}`,
+            `telegram_cron_count=${telegramSchedules.length}`,
+            `telegram_version=${telegramVersion}`,
+            `telegram_shared_ready=${sharedReady ? 'true' : 'false'}`
+          ];
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `${lines.join('\n')}\n`);
+          NODE
+
+      - name: Summarize pre-mutation Cloudflare state
+        shell: bash
+        env:
+          GMAIL_VERSION: ${{ steps.preflight.outputs.gmail_version }}
+          GMAIL_CRON_COUNT: ${{ steps.preflight.outputs.gmail_cron_count }}
+          TELEGRAM_VERSION: ${{ steps.preflight.outputs.telegram_version }}
+          TELEGRAM_CRON_COUNT: ${{ steps.preflight.outputs.telegram_cron_count }}
+          TELEGRAM_SHARED_READY: ${{ steps.preflight.outputs.telegram_shared_ready }}
+        run: |
+          {
+            echo '### rc71 pre-mutation Cloudflare state'
+            echo "- Gmail active version: \`$GMAIL_VERSION\`"
+            echo "- Gmail direct cron count: \`$GMAIL_CRON_COUNT\`"
+            echo "- Telegram active version: \`$TELEGRAM_VERSION\`"
+            echo "- Telegram cron count: \`$TELEGRAM_CRON_COUNT\`"
+            echo "- Telegram shared Gmail drain already ready: \`$TELEGRAM_SHARED_READY\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ensure Gmail Worker artifact and zero direct Cron Triggers
+        shell: bash
+        env:
+          GMAIL_BEFORE_VERSION: ${{ steps.preflight.outputs.gmail_version }}
+          GMAIL_BEFORE_CRON_COUNT: ${{ steps.preflight.outputs.gmail_cron_count }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GMAIL_BEFORE_VERSION" != "$EXPECTED_PARTIAL_GMAIL_VERSION" ]; then
+            echo "Gmail Worker changed after the partial rc71 deployment; refusing to overwrite concurrent production state." >&2
             exit 1
           fi
 
-          npx wrangler deploy --config "$gmail_config" --name "$GMAIL_WORKER_NAME" --dry-run --outdir .wrangler/rc71-gmail-generated
-          npx wrangler deploy --config "$gmail_config" --name "$GMAIL_WORKER_NAME"
-
-          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
-          SCHEDULES="$schedules" node <<'NODE'
-          const payload = JSON.parse(process.env.SCHEDULES || '{}');
-          if (payload.success !== true || !Array.isArray(payload.result) || payload.result.length !== 0) {
-            throw new Error('Gmail Worker still owns a Cron Trigger');
-          }
+          if [ "$GMAIL_BEFORE_CRON_COUNT" != "0" ]; then
+            update_response="$(curl -fsS -X PUT \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --data '[]' \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
+            UPDATE_RESPONSE="$update_response" node <<'NODE'
+          const payload = JSON.parse(process.env.UPDATE_RESPONSE || '{}');
+          if (payload.success !== true) throw new Error('Cloudflare rejected Gmail Cron Trigger removal');
           NODE
-          rm -f "$gmail_config"
-          trap - EXIT
+          fi
+
+          for attempt in $(seq 1 61); do
+            schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
+            if SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const rows = Array.isArray(payload.result)
+            ? payload.result
+            : Array.isArray(payload.result?.schedules)
+              ? payload.result.schedules
+              : null;
+          if (payload.success !== true || !rows) process.exit(2);
+          process.exit(rows.length === 0 ? 0 : 1);
+          NODE
+            then
+              echo "Gmail direct cron removal confirmed."
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo 'Gmail direct Cron Trigger did not converge to zero within the Cloudflare propagation window.' >&2
+          exit 1
 
       - name: Deploy shared scheduler on existing Telegram cron slot
+        if: ${{ steps.preflight.outputs.telegram_shared_ready != 'true' }}
         shell: bash
+        env:
+          TELEGRAM_BEFORE_VERSION: ${{ steps.preflight.outputs.telegram_version }}
         run: |
           set -euo pipefail
+
+          current_deployments="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TELEGRAM_WORKER_NAME/deployments")"
+          CURRENT_DEPLOYMENTS="$current_deployments" EXPECTED_VERSION="$TELEGRAM_BEFORE_VERSION" node <<'NODE'
+          const payload = JSON.parse(process.env.CURRENT_DEPLOYMENTS || '{}');
+          const deployments = Array.isArray(payload.result) ? payload.result : payload.result?.deployments;
+          const versions = deployments?.[0]?.versions;
+          const active = Array.isArray(versions)
+            ? (versions.find((row) => Number(row?.percentage) === 100) || versions[0])
+            : null;
+          if (payload.success !== true || !active?.version_id || active.version_id !== process.env.EXPECTED_VERSION) {
+            throw new Error('Telegram Worker changed during rc71 preflight; refusing to overwrite concurrent production state');
+          }
+          NODE
+
           telegram_config="$GITHUB_WORKSPACE/.wrangler.telegram.rc71.deploy.toml"
           trap 'rm -f "$telegram_config"' EXIT
           node scripts/generate-telegram-production-deploy-config.mjs "$telegram_config"
@@ -204,31 +355,84 @@ jobs:
 
           npx wrangler deploy --config "$telegram_config" --name "$TELEGRAM_WORKER_NAME" --dry-run --outdir .wrangler/rc71-telegram-generated
           npx wrangler deploy --config "$telegram_config" --name "$TELEGRAM_WORKER_NAME"
-
-          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TELEGRAM_WORKER_NAME/schedules")"
-          SCHEDULES="$schedules" node <<'NODE'
-          const payload = JSON.parse(process.env.SCHEDULES || '{}');
-          if (payload.success !== true || !Array.isArray(payload.result) || payload.result.length !== 1 || payload.result[0]?.cron !== '*/5 * * * *') {
-            throw new Error('Shared scheduler does not own exactly the existing five-minute cron');
-          }
-          NODE
-
-          settings="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TELEGRAM_WORKER_NAME/settings")"
-          SETTINGS="$settings" node <<'NODE'
-          const payload = JSON.parse(process.env.SETTINGS || '{}');
-          const bindings = payload?.result?.bindings;
-          if (payload.success !== true || !Array.isArray(bindings)) throw new Error('Unable to inspect shared scheduler bindings');
-          const service = bindings.find((row) => row?.name === 'GMAIL_SERVICE');
-          if (!service || service.type !== 'service' || service.service !== 'vishar-gmail-production') {
-            throw new Error('Gmail service binding is absent or incorrect');
-          }
-          const forbidden = new Set(['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_TOKEN_ENCRYPTION_KEY','GMAIL_OAUTH_STATE','GMAIL_OAUTH_TOKENS']);
-          if (bindings.some((row) => forbidden.has(row?.name))) throw new Error('Gmail credential/token binding leaked into scheduler');
-          NODE
           rm -f "$telegram_config"
           trap - EXIT
+
+      - name: Verify shared scheduler state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 21); do
+            schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TELEGRAM_WORKER_NAME/schedules")"
+            settings="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TELEGRAM_WORKER_NAME/settings")"
+
+            if SCHEDULES="$schedules" SETTINGS="$settings" node <<'NODE'
+          const schedulePayload = JSON.parse(process.env.SCHEDULES || '{}');
+          const rows = Array.isArray(schedulePayload.result)
+            ? schedulePayload.result
+            : Array.isArray(schedulePayload.result?.schedules)
+              ? schedulePayload.result.schedules
+              : null;
+          if (schedulePayload.success !== true || !rows || rows.length !== 1 || rows[0]?.cron !== '*/5 * * * *') process.exit(1);
+
+          const settingsPayload = JSON.parse(process.env.SETTINGS || '{}');
+          const bindings = settingsPayload?.result?.bindings;
+          if (settingsPayload.success !== true || !Array.isArray(bindings)) process.exit(1);
+
+          const service = bindings.find((row) => row?.name === 'GMAIL_SERVICE');
+          if (!service || service.type !== 'service' || service.service !== 'vishar-gmail-production') process.exit(1);
+
+          const sharedFlag = bindings.find((row) => row?.name === 'GMAIL_SHARED_DRAIN_ENABLED');
+          const telegramFlag = bindings.find((row) => row?.name === 'TELEGRAM_DRAIN_ENABLED');
+          if (sharedFlag?.type !== 'plain_text' || sharedFlag?.text !== 'true') process.exit(1);
+          if (telegramFlag?.type !== 'plain_text' || telegramFlag?.text !== 'true') process.exit(1);
+
+          const forbidden = new Set([
+            'GOOGLE_OAUTH_CLIENT_ID',
+            'GOOGLE_OAUTH_CLIENT_SECRET',
+            'GMAIL_TOKEN_ENCRYPTION_KEY',
+            'GMAIL_OAUTH_STATE',
+            'GMAIL_OAUTH_TOKENS'
+          ]);
+          if (bindings.some((row) => forbidden.has(row?.name))) process.exit(1);
+          process.exit(0);
+          NODE
+            then
+              echo 'Shared scheduler cron and Gmail service binding confirmed.'
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo 'Shared scheduler state did not converge to the expected binding and cron.' >&2
+          exit 1
+
+      - name: Reconfirm Worker secret-name custody after scheduler rollout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gmail_secrets="$(npx wrangler secret list --config wrangler.gmail.production.toml --name "$GMAIL_WORKER_NAME" --format json)"
+          GMAIL_SECRET_LIST="$gmail_secrets" node <<'NODE'
+          const rows = JSON.parse(process.env.GMAIL_SECRET_LIST || '[]');
+          const names = new Set(rows.map((row) => row?.name).filter(Boolean));
+          const required = ['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_TOKEN_ENCRYPTION_KEY','SUPABASE_SECRET_KEY'];
+          const missing = required.filter((name) => !names.has(name));
+          if (missing.length) throw new Error(`Gmail Worker missing required secret names after rollout: ${missing.join(', ')}`);
+          NODE
+
+          telegram_secrets="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$TELEGRAM_WORKER_NAME" --format json)"
+          TELEGRAM_SECRET_LIST="$telegram_secrets" node <<'NODE'
+          const rows = JSON.parse(process.env.TELEGRAM_SECRET_LIST || '[]');
+          const actual = rows.map((row) => row?.name).filter(Boolean).sort();
+          const expected = ['ARTIST_TELEGRAM_KRISTINA_HPRODUCTION','ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION','SUPABASE_SECRET_KEY'].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error('Telegram Worker secret-name set changed during shared scheduler rollout');
+          }
+          NODE
 
       - name: Verify Gmail edge remains active
         shell: bash
@@ -252,7 +456,8 @@ jobs:
           {
             echo '### Gmail shared-cron production operator'
             echo "- Product SHA: \`$PRODUCT_SHA\`"
-            echo '- Gmail Worker direct cron: zero'
+            echo '- Gmail Worker artifact: preserved from successful partial rc71 deployment'
+            echo '- Gmail direct cron target: zero, with propagation-aware verification'
             echo '- Shared scheduler: `vishar-telegram-drain-production`'
             echo '- Shared scheduler cron: existing `*/5 * * * *`'
             echo '- Gmail Service Binding: `GMAIL_SERVICE -> vishar-gmail-production`'
