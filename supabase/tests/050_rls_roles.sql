@@ -622,6 +622,34 @@ insert into expected_function_acl values
   ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
 
+  -- Provider-neutral communications core. The browser surface names a
+  -- conversation and nothing else; the trusted connector surface is
+  -- backend-only and never reachable from an authenticated session.
+  ('public.queue_communication_message(uuid,text,uuid)', false, true, false),
+  ('public.list_communication_conversations(text,text,integer,timestamptz)', false, true, false),
+  ('public.mark_communication_conversation_read(uuid)', false, true, false),
+  ('public.set_communication_conversation_state(uuid,text)', false, true, false),
+  ('public.link_communication_conversation_client(uuid,uuid)', false, true, false),
+  ('public.create_client_from_communication(uuid,text,text,text,text)', false, true, false),
+  ('public.create_enquiry_from_communication(uuid,uuid,jsonb,jsonb,boolean)', false, true, false),
+  ('public.authorize_instagram_connection(uuid)', false, true, false),
+
+  ('public.claim_communication_outbox(text,text,integer,integer)', false, false, true),
+  ('public.claim_communication_outbox_by_id(uuid,text,integer)', false, false, true),
+  ('public.record_communication_outbox_result(uuid,text,boolean,text,text)', false, false, true),
+  ('public.record_communication_inbound_message(uuid,text,text,text,text,timestamptz,text,text,jsonb,jsonb)', false, false, true),
+  ('public.record_communication_message_status(uuid,text,text,text,text,timestamptz)', false, false, true),
+  ('public.record_communication_read_receipt(uuid,text,text,text,text,timestamptz)', false, false, true),
+  ('public.record_communication_outbound_echo(uuid,text,text,text,text,timestamptz,text,text,jsonb)', false, false, true),
+  ('public.service_update_communication_participant(uuid,text,text,text,text)', false, false, true),
+  ('public.service_list_unenriched_participants(text,integer)', false, false, true),
+
+  -- Instagram connection lifecycle. Written only by the connector after it has
+  -- verified the account server-side; no token is ever stored in Postgres.
+  ('public.service_set_instagram_integration(uuid,text,text,text,text[])', false, false, true),
+  ('public.service_disable_instagram_integration(uuid,text,text)', false, false, true),
+  ('public.service_resolve_instagram_route(text)', false, false, true),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),

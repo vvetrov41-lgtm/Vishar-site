@@ -131,8 +131,11 @@ revoke all on function public.can_access_client(uuid)
   from public, anon, authenticated, service_role;
 revoke all on function public.can_manage_client(uuid)
   from public, anon, authenticated, service_role;
-grant execute on function public.can_access_client(uuid) to authenticated;
-grant execute on function public.can_manage_client(uuid) to authenticated;
+-- Replacing a function resets its ACL, so the original grants from migration
+-- 0019 are restored exactly. The trusted backend short-circuits both helpers
+-- through `is_service_backend()`, but it still needs EXECUTE to call them.
+grant execute on function public.can_access_client(uuid) to authenticated, service_role;
+grant execute on function public.can_manage_client(uuid) to authenticated, service_role;
 
 -- A client belongs to a conversation's artist scope only when that artist's
 -- own records reach it. This is stricter than `can_manage_client`, which is
