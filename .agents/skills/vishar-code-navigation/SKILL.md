@@ -1,6 +1,6 @@
 ---
 name: vishar-code-navigation
-description: Navigate and investigate Vishar-site engineering code safely across stacked PRs, Workers, Supabase migrations, CRM, outbox integrations, Calendar, GPT actions, and related repositories. Use for code tracing, RPC investigation, security review, CI diagnosis, branch/ref validation, migration history, or cross-repository contract analysis. Do not use for GEO/AEO research or ordinary copy/site-content work.
+description: Navigate and investigate Vishar-site engineering code safely across stacked PRs, Workers, Supabase migrations, CRM, outbox integrations, Calendar, GPT actions, Cloudflare runtime state, and related repositories. Use for code tracing, RPC investigation, security review, CI diagnosis, branch/ref validation, migration history, Cloudflare Worker/Pages inspection, or cross-repository contract analysis. Do not use for GEO/AEO research or ordinary copy/site-content work.
 ---
 
 # Vishar Code Navigation
@@ -83,6 +83,29 @@ For booking/artist routing, explicitly prove that browser data cannot authoritat
 
 Read `docs/ai/security-boundaries.md`.
 
+## 4A. Cloudflare MCP live-state procedure
+
+When the task touches Cloudflare Workers, Pages, routes, Custom Domains, DNS, deployments, versions, bindings, Service Bindings, Cron Triggers, KV/R2/D1 resources, logs, or production runtime state, use the connected Cloudflare MCP as the preferred live-state interface when it is available in the current Claude Code runtime.
+
+Treat repository configuration as intended state and Cloudflare MCP observations as evidence of actual Cloudflare state. Do not infer live deployment state from `wrangler.toml`, generated config, an old GitHub Actions log, or remembered deployment history when MCP can read the current account directly.
+
+Before a Cloudflare-sensitive implementation or release step:
+
+1. use Cloudflare MCP to identify the exact Worker/Pages project and account-visible resource;
+2. read the current active deployment/version where the MCP surface supports it;
+3. inspect relevant routes or Custom Domains;
+4. inspect non-secret binding metadata, Service Bindings, and Cron Trigger state relevant to the task;
+5. compare observed runtime state with the exact repository ref and planned patch;
+6. after deployment, read the live state again and verify the intended resource changed while unrelated Cloudflare resources did not.
+
+For Cloudflare production preflight, prefer MCP over ad hoc `curl` calls to the Cloudflare API or dashboard assumptions. Use `wrangler` and repository scripts for local build, dry-run, generated-config validation, or deployment through the repository's approved workflow, not as a substitute for live-state inspection when MCP is available.
+
+If Cloudflare MCP is unavailable, lacks the required read operation, or returns insufficient evidence, use the narrowest safe fallback available and state the limitation. Do not silently switch to a weaker source of truth.
+
+Never request, print, paste, commit, or log secret values through MCP. Secret names or binding existence may be inspected only when needed for custody verification. Provider tokens, OAuth secrets, API tokens, encryption keys, and credential payloads remain out of prompts and reports.
+
+Cloudflare MCP access does not expand mutation authority. Unless the task explicitly authorizes a Cloudflare production mutation, MCP usage is read-only. Even when production deployment is authorized, prefer the repository's protected exact-SHA GitHub Actions workflow and use MCP for preflight and post-deploy verification rather than making direct dashboard/API mutations that bypass the release gate.
+
 ## 5. Migration tracing procedure
 
 When a symbol is defined in SQL, search every later migration for the symbol and related object. A later migration may replace a function, change a grant, add a trigger, harden a constraint, or alter an enum/policy.
@@ -150,6 +173,7 @@ For substantial engineering investigations, report:
 - observed implementation chain;
 - security/authorization boundaries checked;
 - migrations/tests/CI evidence;
+- Cloudflare MCP evidence when Cloudflare runtime state is relevant;
 - unknowns or unverified external state;
 - whether any mutation was performed.
 
