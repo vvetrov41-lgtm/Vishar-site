@@ -34,6 +34,42 @@ export interface PaymentCopy {
   saveOneOffLink: string;
   oneOffSaved: string;
   oneOffError: string;
+  catalogueTitle: string;
+  catalogueDescription: (artist: string) => string;
+  catalogueSecurity: string;
+  loadingCatalogue: string;
+  noDestinations: string;
+  destinationConfigured: string;
+  destinationFingerprint: string;
+  destinationIssuedRequests: (count: number) => string;
+  addDestination: string;
+  destinationAmount: string;
+  destinationUrl: string;
+  saveDestination: string;
+  replaceDestination: string;
+  removeDestination: string;
+  removeDestinationPrompt: (amount: string) => string;
+  destinationSaved: (amount: string) => string;
+  destinationReplaced: (amount: string) => string;
+  destinationArchived: (amount: string) => string;
+  destinationInvalidAmount: string;
+  destinationError: string;
+  archiveError: string;
+  policyTitle: string;
+  policyDescription: (artist: string) => string;
+  policyNotConfigured: string;
+  policyCurrent: (summary: string) => string;
+  policyMode: string;
+  policyModeFixed: string;
+  policyModePercentage: string;
+  policyFixedAmount: string;
+  policyPercentage: string;
+  policyMinimum: string;
+  policyRounding: string;
+  savePolicy: string;
+  policySaved: string;
+  policyError: string;
+  policyInvalid: string;
   reconciliationTitle: string;
   reconciliationDescription: string;
   reconciliationSecurity: string;
@@ -111,6 +147,42 @@ const EN: PaymentCopy = {
   saveOneOffLink: 'Save one-off link',
   oneOffSaved: 'One-off link saved for this payment request. It did not change the amount or mark anything paid.',
   oneOffError: 'Could not attach that one-off Monzo link.',
+  catalogueTitle: 'Reusable payment links',
+  catalogueDescription: (artist) => `${artist}: one reusable Monzo link per exact amount. Any positive amount is allowed.`,
+  catalogueSecurity: 'A reusable link is looked up by artist, amount and currency only. It carries no hours, session length, session count, project or client. Replacing or removing a link only affects requests created afterwards: a request already sent to a client keeps the destination it was issued with.',
+  loadingCatalogue: 'Loading reusable payment links…',
+  noDestinations: 'No reusable payment links yet.',
+  destinationConfigured: 'Configured',
+  destinationFingerprint: 'fingerprint',
+  destinationIssuedRequests: (count) => `${count} issued request${count === 1 ? '' : 's'}`,
+  addDestination: 'Add payment link',
+  destinationAmount: 'Amount',
+  destinationUrl: 'Monzo URL',
+  saveDestination: 'Save',
+  replaceDestination: 'Replace',
+  removeDestination: 'Remove',
+  removeDestinationPrompt: (amount) => `Remove the reusable ${amount} link from future use? Requests already sent to clients keep working.`,
+  destinationSaved: (amount) => `Reusable ${amount} link saved. No payment request was created or repriced.`,
+  destinationReplaced: (amount) => `Reusable ${amount} link replaced. Requests already issued keep their original destination.`,
+  destinationArchived: (amount) => `Reusable ${amount} link removed from future use. Requests already issued keep working.`,
+  destinationInvalidAmount: 'Enter a positive amount.',
+  destinationError: 'Could not save that reusable payment link.',
+  archiveError: 'Could not remove that reusable payment link.',
+  policyTitle: 'Project deposit policy',
+  policyDescription: (artist) => `${artist}: how a project deposit is calculated from the project estimate.`,
+  policyNotConfigured: 'No project deposit policy yet. Projects cannot request a project deposit until one exists.',
+  policyCurrent: (summary) => `Current policy: ${summary}`,
+  policyMode: 'Deposit rule',
+  policyModeFixed: 'Fixed amount per project',
+  policyModePercentage: 'Percentage of project estimate',
+  policyFixedAmount: 'Fixed deposit amount',
+  policyPercentage: 'Percentage of estimate',
+  policyMinimum: 'Minimum deposit (optional)',
+  policyRounding: 'Round up to a multiple of',
+  savePolicy: 'Save deposit policy',
+  policySaved: 'Project deposit policy saved as a new version. Payment requests already issued keep the version they were priced with.',
+  policyError: 'Could not save the project deposit policy.',
+  policyInvalid: 'Enter a valid amount or percentage for the chosen rule.',
   reconciliationTitle: 'Monzo reconciliation',
   reconciliationDescription: 'Review independently verified incoming bank transfers before they affect the payment ledger.',
   reconciliationSecurity: 'A Monzo webhook is only a hint. The server re-fetches the transaction from Monzo before it can appear here. Match does not mark anything paid. Confirm payment is a separate human action.',
@@ -139,7 +211,7 @@ const EN: PaymentCopy = {
   viewOnly: 'View only. Finance management permission is required to match, confirm or ignore.',
   requestCreated: 'Deposit request created',
   emailQueued: 'Email is queued, but it will not send until an email provider is deliberately connected.',
-  personalPathReady: 'The personal path is ready in CRM. A public Worker route still has to be deliberately deployed before this path can be sent to clients.',
+  personalPathReady: 'The personal path is ready to send. Opening it redirects the client to this artist payment destination for the exact requested amount; opening it never marks the deposit paid.',
   loadError: 'Could not load payment settings.',
   saveError: 'Could not save payment settings.',
   requestError: 'Could not create the deposit request.',
@@ -188,6 +260,42 @@ const RU: PaymentCopy = {
   saveOneOffLink: 'Сохранить одноразовую ссылку',
   oneOffSaved: 'Одноразовая ссылка сохранена для этого запроса. Сумма не изменилась, и платёж не был отмечен оплаченным.',
   oneOffError: 'Не удалось привязать эту одноразовую ссылку Monzo.',
+  catalogueTitle: 'Многоразовые ссылки для оплаты',
+  catalogueDescription: (artist) => `${artist}: одна многоразовая ссылка Monzo на каждую точную сумму. Допустима любая положительная сумма.`,
+  catalogueSecurity: 'Многоразовая ссылка ищется только по мастеру, сумме и валюте. Она не связана с часами, длительностью сеанса, количеством сеансов, проектом или клиентом. Замена или удаление ссылки влияет только на запросы, созданные позже: уже отправленный клиенту запрос сохраняет своё платёжное назначение.',
+  loadingCatalogue: 'Загружаем многоразовые ссылки…',
+  noDestinations: 'Многоразовых ссылок пока нет.',
+  destinationConfigured: 'Настроена',
+  destinationFingerprint: 'отпечаток',
+  destinationIssuedRequests: (count) => `запросов создано: ${count}`,
+  addDestination: 'Добавить ссылку',
+  destinationAmount: 'Сумма',
+  destinationUrl: 'Ссылка Monzo',
+  saveDestination: 'Сохранить',
+  replaceDestination: 'Заменить',
+  removeDestination: 'Удалить',
+  removeDestinationPrompt: (amount) => `Убрать многоразовую ссылку на ${amount} из дальнейшего использования? Уже отправленные клиентам запросы продолжат работать.`,
+  destinationSaved: (amount) => `Многоразовая ссылка на ${amount} сохранена. Платёжный запрос не создан и не пересчитан.`,
+  destinationReplaced: (amount) => `Многоразовая ссылка на ${amount} заменена. Уже созданные запросы сохраняют прежнее назначение.`,
+  destinationArchived: (amount) => `Многоразовая ссылка на ${amount} убрана из дальнейшего использования. Уже созданные запросы продолжают работать.`,
+  destinationInvalidAmount: 'Введите положительную сумму.',
+  destinationError: 'Не удалось сохранить многоразовую ссылку.',
+  archiveError: 'Не удалось удалить многоразовую ссылку.',
+  policyTitle: 'Правило депозита проекта',
+  policyDescription: (artist) => `${artist}: как депозит проекта рассчитывается от сметы проекта.`,
+  policyNotConfigured: 'Правило депозита проекта пока не настроено. Пока его нет, депозит по проекту запросить нельзя.',
+  policyCurrent: (summary) => `Текущее правило: ${summary}`,
+  policyMode: 'Способ расчёта',
+  policyModeFixed: 'Фиксированная сумма на проект',
+  policyModePercentage: 'Процент от сметы проекта',
+  policyFixedAmount: 'Фиксированная сумма депозита',
+  policyPercentage: 'Процент от сметы',
+  policyMinimum: 'Минимальный депозит (необязательно)',
+  policyRounding: 'Округлять вверх до кратного',
+  savePolicy: 'Сохранить правило депозита',
+  policySaved: 'Правило депозита проекта сохранено как новая версия. Уже созданные запросы сохраняют версию, по которой были рассчитаны.',
+  policyError: 'Не удалось сохранить правило депозита проекта.',
+  policyInvalid: 'Введите корректную сумму или процент для выбранного способа расчёта.',
   reconciliationTitle: 'Сверка платежей Monzo',
   reconciliationDescription: 'Проверяйте независимо подтверждённые входящие банковские переводы до их записи в платёжный журнал.',
   reconciliationSecurity: 'Webhook Monzo служит только сигналом. Перед появлением платежа здесь сервер повторно получает транзакцию из Monzo. Сопоставление само по себе ничего не отмечает оплаченным. Подтверждение платежа выполняется отдельным действием.',
@@ -216,7 +324,7 @@ const RU: PaymentCopy = {
   viewOnly: 'Только просмотр. Для сопоставления, подтверждения или игнорирования нужны права управления финансами.',
   requestCreated: 'Запрос депозита создан',
   emailQueued: 'Письмо поставлено в очередь, но оно не будет отправлено, пока почтовый провайдер не будет отдельно подключён.',
-  personalPathReady: 'Персональный путь создан в CRM. Прежде чем отправлять его клиентам, нужно отдельно развернуть публичный маршрут Worker.',
+  personalPathReady: 'Персональный путь готов к отправке. При открытии клиент перенаправляется на платёжное назначение этого мастера для точной запрошенной суммы; само открытие никогда не отмечает депозит оплаченным.',
   loadError: 'Не удалось загрузить настройки платежей.',
   saveError: 'Не удалось сохранить настройки платежей.',
   requestError: 'Не удалось создать запрос депозита.',

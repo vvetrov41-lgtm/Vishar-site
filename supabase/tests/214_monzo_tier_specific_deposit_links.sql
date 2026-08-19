@@ -137,10 +137,30 @@ select ok(
 
 select ok(
   to_regprocedure('public.configure_monzo_easy_bank_transfer_tier_urls(uuid,text,text,text,text,boolean)') is null
-  and to_regprocedure('public.get_monzo_easy_bank_transfer_tier_urls(uuid)') is null
-  and to_regprocedure('public.configure_monzo_payment_destination(uuid,numeric,text,text)') is null
-  and to_regprocedure('public.list_monzo_payment_destinations(uuid)') is null,
-  'reusable destination routing adds no public CRM configuration or read RPC'
+  and to_regprocedure('public.get_monzo_easy_bank_transfer_tier_urls(uuid)') is null,
+  'the superseded per-tier configuration and read RPCs never existed'
+);
+
+-- Migration 0067 deliberately replaced "no management surface at all" with a
+-- narrow finance-authorised one. The management RPCs stay closed to anon and
+-- to service_role, and 0067 has separate coverage proving the catalogue read
+-- returns no provider URL.
+select ok(
+  to_regprocedure('public.list_monzo_payment_destinations(uuid)') is not null
+  and not has_function_privilege('anon', 'public.list_monzo_payment_destinations(uuid)', 'execute')
+  and has_function_privilege('authenticated', 'public.list_monzo_payment_destinations(uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.list_monzo_payment_destinations(uuid)', 'execute'),
+  'the reusable catalogue read is an authenticated finance RPC only'
+);
+
+select ok(
+  not has_function_privilege('anon', 'public.upsert_monzo_payment_destination(uuid,numeric,text)', 'execute')
+  and has_function_privilege('authenticated', 'public.upsert_monzo_payment_destination(uuid,numeric,text)', 'execute')
+  and not has_function_privilege('service_role', 'public.upsert_monzo_payment_destination(uuid,numeric,text)', 'execute')
+  and not has_function_privilege('anon', 'public.archive_monzo_payment_destination(uuid)', 'execute')
+  and has_function_privilege('authenticated', 'public.archive_monzo_payment_destination(uuid)', 'execute')
+  and not has_function_privilege('service_role', 'public.archive_monzo_payment_destination(uuid)', 'execute'),
+  'the reusable catalogue mutations are an authenticated finance RPC only'
 );
 
 select ok(
