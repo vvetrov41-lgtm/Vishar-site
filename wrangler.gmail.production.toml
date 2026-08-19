@@ -1,5 +1,5 @@
 name = "vishar-gmail-production"
-main = "workers/gmail-production.js"
+main = "workers/gmail-production-entrypoint.js"
 compatibility_date = "2026-08-17"
 workers_dev = false
 preview_urls = false
@@ -27,6 +27,12 @@ GMAIL_KRISTINA_ENABLED = "false"
 # workflow. Gmail uses dedicated production OAuth-state and encrypted-token KV
 # namespaces, so this Worker has no binding to Calendar state or token storage.
 # Gmail refresh-token envelopes also use a distinct GMAIL_TOKEN_ENCRYPTION_KEY.
+#
+# Automatic drain scheduling is deliberately external to this Worker. Production
+# deploy configs explicitly set crons = [] and the existing scheduled-only
+# Telegram Worker invokes drainApprovedEmailOutbox() through a same-account
+# Cloudflare Service Binding. The Telegram Worker receives no Gmail credential,
+# token, KV or Supabase binding from this arrangement.
 #
 # Required Worker secrets before OAuth activation:
 #   GOOGLE_OAUTH_CLIENT_ID
