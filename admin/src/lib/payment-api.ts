@@ -33,6 +33,15 @@ export interface DepositRequestResult {
   replayed: boolean;
 }
 
+export interface OneOffPaymentDestinationResult {
+  payment_request_id: string;
+  public_path: string;
+  amount: number;
+  currency: string;
+  replaced: boolean;
+  confirmed: false;
+}
+
 export interface ProjectPaymentRequest {
   id: string;
   session_id: string | null;
@@ -126,6 +135,19 @@ export function createPaymentApi(client: CrmClient) {
           p_delivery_channel: input.deliveryChannel,
         }),
         'request that deposit'
+      );
+    },
+
+    async attachMonzoOneOffPaymentDestination(input: {
+      paymentRequestId: string;
+      paymentUrl: string;
+    }): Promise<OneOffPaymentDestinationResult> {
+      return unwrap<OneOffPaymentDestinationResult>(
+        await client.rpc('attach_monzo_one_off_payment_destination', {
+          p_payment_request_id: input.paymentRequestId,
+          p_payment_url: input.paymentUrl,
+        }),
+        'attach that one-off Monzo payment link'
       );
     },
 
