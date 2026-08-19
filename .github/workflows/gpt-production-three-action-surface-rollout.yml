@@ -89,6 +89,7 @@ jobs:
           npm ci --ignore-scripts
           npm audit --audit-level=moderate
           npm run test:gpt-production
+          node scripts/test-gpt-gmail-openapi.mjs
           npm run validate:gpt-actions
           npm run check:gpt-production-bundle
           npm run scan:secrets
@@ -125,7 +126,7 @@ jobs:
             core_oauth="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/oauth/authorize" || true)"
             core_clients="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$CORE_HOST/v1/clients" || true)"
             ops_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/privacy" || true)"
-            ops_appointments="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/appointments" || true)"
+            ops_activity="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/activity" || true)"
             comm_privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$COMMUNICATIONS_HOST/privacy" || true)"
             comm_whatsapp="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$COMMUNICATIONS_HOST/v1/enquiries/$fake/whatsapp" || true)"
             comm_gmail="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$COMMUNICATIONS_HOST/v1/enquiries/$fake/gmail/history" || true)"
@@ -134,7 +135,7 @@ jobs:
               && [ "$core_oauth" = 400 ] \
               && [ "$core_clients" = 401 ] \
               && [ "$ops_privacy" = 200 ] \
-              && [ "$ops_appointments" = 401 ] \
+              && [ "$ops_activity" = 401 ] \
               && [ "$comm_privacy" = 200 ] \
               && [ "$comm_whatsapp" = 401 ] \
               && [ "$comm_gmail" = 401 ] \
