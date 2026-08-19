@@ -53,17 +53,19 @@ test('the entrypoint is the bounded gateway, never the bare API Worker', () => {
   assert.notEqual(value('main'), 'workers/monzo-api.js');
 });
 
-test('production routes are exactly the Monzo Custom Domain plus the first-party payment path', () => {
+test('production routes are exactly two isolated Custom Domains', () => {
   const routes = body.match(/routes = \[[\s\S]*?\]/);
   assert.ok(routes, 'production routes must be declared so --strict can verify them');
   const patterns = [...routes[0].matchAll(/pattern = "([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(patterns, [
     'monzo.vishartattoo.com',
-    'vishartattoo.com/pay-by-bank-transfer/*',
+    'pay.vishartattoo.com',
   ]);
-  assert.equal((routes[0].match(/custom_domain = true/g) || []).length, 1);
-  assert.match(routes[0], /previews_enabled = false/);
+  assert.equal((routes[0].match(/custom_domain = true/g) || []).length, 2);
+  assert.equal((routes[0].match(/enabled = true/g) || []).length, 2);
+  assert.equal((routes[0].match(/previews_enabled = false/g) || []).length, 2);
   assert.equal((routes[0].match(/zone_name = "vishartattoo\.com"/g) || []).length, 2);
+  assert.doesNotMatch(routes[0], /vishartattoo\.com\/pay-by-bank-transfer/);
   assert.doesNotMatch(routes[0], new RegExp(RETAINED_STAGING.hostname.replace(/\./g, '\\.')));
 });
 
