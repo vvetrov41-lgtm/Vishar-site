@@ -1,3 +1,4 @@
+# rc72 activation marker: corrected Cloudflare schedules response parsing.
 name: Gmail shared cron production operator rc72
 
 on:
