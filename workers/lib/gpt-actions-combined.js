@@ -1,5 +1,6 @@
 import { handleGptActionsRequest as handleCoreGptActionsRequest } from './gpt-actions.js';
 import { routeForFullGptAction } from './gpt-full-actions.js';
+import { routeForGptMonzoReconciliationAction } from './gpt-monzo-reconciliation-actions.js';
 
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_RESPONSE_BYTES = 128 * 1024;
@@ -93,7 +94,9 @@ async function handleFullRequest(request, env, fetchImpl) {
   let body = {};
   try {
     if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) body = await readJson(request);
-    const route = clientListRoute(request, url) || routeForFullGptAction(request, url, body);
+    const route = clientListRoute(request, url)
+      || routeForGptMonzoReconciliationAction(request, url, body)
+      || routeForFullGptAction(request, url, body);
     if (!route) return null;
 
     const response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${route.rpc}`, {
