@@ -1,7 +1,7 @@
 # Project deposits and reusable payment destinations
 
-Migrations `0067_monzo_destination_catalogue_management.sql` and
-`0068_project_deposit_policy.sql`.
+Migrations `0066_monzo_destination_catalogue_management.sql` and
+`0067_project_deposit_policy.sql`.
 
 This document describes the deposit architecture after the reusable Monzo
 destination catalogue became a CRM-managed surface and deposit pricing moved
@@ -37,7 +37,7 @@ There is exactly one session pricing rule and exactly one project pricing rule.
 | --- | --- | --- |
 | Single session | `crm_private.resolve_session_deposit_tier` (duration schedule, migration 0057) | `payment_requests.policy_id` / `policy_version` |
 | Multiple Sessions | the sum of the same per-session duration tiers | `session_deposit_groups` + `session_deposit_group_members` |
-| Project | `crm_private.resolve_project_deposit` (project policy, migration 0068) | `project_deposit_requests` |
+| Project | `crm_private.resolve_project_deposit` (project policy, migration 0067) | `project_deposit_requests` |
 
 Multiple Sessions deliberately keeps using the per-session schedule. Moving it
 onto the project policy would have created a second copy of session pricing and
@@ -96,7 +96,7 @@ This is what makes catalogue management safe:
 | Tuesday | request Y is issued for `£500` | Y snapshots URL B |
 | Any day | the `£500` entry is archived | X still resolves to A, Y still to B |
 
-Migration 0067 backfills a snapshot for every already-issued open Monzo deposit
+Migration 0066 backfills a snapshot for every already-issued open Monzo deposit
 request, so requests created before the migration become immutable too. The
 backfill copies existing URLs byte-for-byte and provisions nothing.
 
@@ -131,7 +131,7 @@ snapshot and binds the destination.
 
 `public.create_payment_request` is a general finance RPC that accepts an amount.
 Migration 0057 already forced session-backed deposits to match the duration
-schedule. Migration 0068 adds the project-level equivalent: a deferred
+schedule. Migration 0067 adds the project-level equivalent: a deferred
 constraint trigger requires every project-level deposit request to be backed by
 either `session_deposit_groups` or `project_deposit_requests`, both of which are
 written only by server-side workflows.

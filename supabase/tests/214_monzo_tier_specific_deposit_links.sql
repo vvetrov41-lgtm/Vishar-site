@@ -141,9 +141,9 @@ select ok(
   'the superseded per-tier configuration and read RPCs never existed'
 );
 
--- Migration 0067 deliberately replaced "no management surface at all" with a
+-- Migration 0066 deliberately replaced "no management surface at all" with a
 -- narrow finance-authorised one. The management RPCs stay closed to anon and
--- to service_role, and 0067 has separate coverage proving the catalogue read
+-- to service_role, and 0066 has separate coverage proving the catalogue read
 -- returns no provider URL.
 select ok(
   to_regprocedure('public.list_monzo_payment_destinations(uuid)') is not null

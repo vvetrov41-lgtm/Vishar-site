@@ -1,4 +1,4 @@
--- 0068_project_deposit_policy.sql
+-- 0067_project_deposit_policy.sql
 --
 -- Move deposit pricing above the Monzo layer.
 --
@@ -15,7 +15,7 @@
 --     -> optional authorised project override
 --     -> authoritative project deposit amount
 --     -> immutable payment request
---     -> immutable request-bound destination snapshot (migration 0067)
+--     -> immutable request-bound destination snapshot (migration 0066)
 --
 -- Multiple Sessions is deliberately left on the per-session duration schedule
 -- it already shares with single-session deposits, so there is exactly one

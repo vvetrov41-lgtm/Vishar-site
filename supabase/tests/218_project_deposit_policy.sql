@@ -1,6 +1,6 @@
 -- 219_project_deposit_policy.sql
 --
--- Synthetic validation of migration 0068: the project deposit amount is
+-- Synthetic validation of migration 0067: the project deposit amount is
 -- calculated server-side from project facts, the artist policy and an
 -- authorised override, and only that authoritative amount can become an
 -- immutable payment request.

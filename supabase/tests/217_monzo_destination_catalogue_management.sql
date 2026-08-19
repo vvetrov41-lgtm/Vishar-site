@@ -1,6 +1,6 @@
 -- 218_monzo_destination_catalogue_management.sql
 --
--- Synthetic validation of migration 0067: the reusable Monzo destination
+-- Synthetic validation of migration 0066: the reusable Monzo destination
 -- catalogue is managed from CRM, any positive supported GBP amount is an
 -- ordinary catalogue row, and every issued payment request keeps the exact
 -- destination it was issued with.

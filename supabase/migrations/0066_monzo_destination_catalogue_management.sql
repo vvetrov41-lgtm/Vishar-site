@@ -1,4 +1,4 @@
--- 0067_monzo_destination_catalogue_management.sql
+-- 0066_monzo_destination_catalogue_management.sql
 --
 -- Make the reusable Monzo destination catalogue an artist-managed CRM surface
 -- and make every payment request keep the destination it was issued with.
