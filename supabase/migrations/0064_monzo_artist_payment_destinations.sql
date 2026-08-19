@@ -257,7 +257,6 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   v_request public.payment_requests%rowtype;
-  v_tier record;
   v_replaced boolean := false;
   v_public_id uuid;
 begin
@@ -282,23 +281,19 @@ begin
      or v_request.purpose <> 'deposit'
      or v_request.currency <> 'GBP'
      or v_request.status not in ('pending', 'partially_paid')
-     or v_request.session_id is null then
-    raise exception 'a one-off Monzo destination applies only to an open session deposit request'
+     or v_request.session_id is null
+     or v_request.policy_id is null
+     or v_request.policy_version is null then
+    raise exception 'a one-off Monzo destination applies only to an open server-priced session deposit request'
       using errcode = '22023';
   end if;
 
-  -- Re-prove the amount from the authoritative appointment duration. The
-  -- browser supplies only the URL; it cannot create or replace the amount.
-  select * into v_tier
-  from crm_private.resolve_session_deposit_tier(v_request.artist_id, v_request.session_id);
-
-  if v_request.amount <> v_tier.amount
-     or v_request.currency <> v_tier.currency
-     or v_request.policy_id is distinct from v_tier.policy_id
-     or v_request.policy_version is distinct from v_tier.policy_version then
-    raise exception 'payment request terms no longer match the server duration policy'
-      using errcode = '22023';
-  end if;
+  -- The immutable payment request is the authoritative pricing snapshot. Its
+  -- amount was guarded against the duration policy when the request was
+  -- created. Do not reprice it here from today's appointment duration: a later
+  -- reschedule must not silently invalidate an already-issued payment request.
+  -- The browser supplies only the URL; it cannot supply artist, amount,
+  -- currency, provider account or policy version.
 
   if not exists (
     select 1
@@ -413,4 +408,4 @@ grant execute on function public.attach_monzo_one_off_payment_destination(uuid,t
   to authenticated;
 
 comment on function public.attach_monzo_one_off_payment_destination(uuid,text) is
-  'Attaches one clean Monzo URL to one open server-priced session deposit when that artist has no reusable destination for the request amount. The caller cannot supply amount or artist; attaching the URL never settles payment.';
+  'Attaches one clean Monzo URL to one open server-priced session deposit when that artist has no reusable destination for the immutable request amount. The caller cannot supply amount or artist; attaching the URL never settles payment.';
