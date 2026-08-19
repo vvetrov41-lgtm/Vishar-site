@@ -31,6 +31,12 @@ See [branch-workflow.md](branch-workflow.md).
 - [investigation-playbook.md](investigation-playbook.md): repeatable procedures for RPC, Worker, migration, outbox, Calendar, and security tracing.
 - [benchmark.md](benchmark.md): how to measure whether this navigation layer actually improves agent work.
 
+## Repository skills
+
+- [`vishar-code-navigation`](../../.agents/skills/vishar-code-navigation/SKILL.md): exact-ref engineering navigation plus Cloudflare MCP live-state procedure.
+- [`vishar-gpt-production-onboarding`](../../.agents/skills/vishar-gpt-production-onboarding/SKILL.md): unified CRM-user-centric production Custom GPT onboarding, migration, repair, OAuth, active-artist context, Builder, and verification procedure.
+- [`vishar-monzo-artist-onboarding`](../../.agents/skills/vishar-monzo-artist-onboarding/SKILL.md): artist-scoped Monzo onboarding and provider-isolation procedure.
+
 ## Current reference snapshot
 
 This navigation layer was introduced from the top of the active CRM stack represented by PR #186, `agent/kristina-crm-intake-staging`, at exact head `3085d382f7f6bf39442a5f5e90ae27ae6435cf58` on 2026-08-10.
