@@ -1,8 +1,8 @@
 -- Read-only verification of one artist's Monzo payment routing.
 --
--- Prints no payment URL, no provider credential and no token material: only
--- amounts, counts and fingerprints. Safe to run against production and safe to
--- paste the output into a pull request.
+-- Prints no payment URL, provider credential or token material: only amounts,
+-- counts and fingerprints. Safe to run against production and safe to paste
+-- into a pull request.
 --
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v artist_slug="kristina" \
 --     -f scripts/monzo/verify-artist-payment-destinations.sql
@@ -39,7 +39,6 @@ join public.artists a on a.id = d.artist_id
 where a.slug = :'artist_slug'
 order by d.amount;
 
--- Isolation evidence: this artist must share no reusable URL with any other.
 select count(*) as cross_artist_url_violations
 from public.monzo_payment_destinations mine
 join public.artists a on a.id = mine.artist_id
@@ -48,20 +47,28 @@ join public.monzo_payment_destinations other
  and other.artist_id <> mine.artist_id
 where a.slug = :'artist_slug';
 
--- Request-specific one-offs are counted without printing their URLs. They are
--- never reusable catalogue rows and never imply settlement.
 select count(*) as one_off_destinations
 from public.payment_request_payment_destinations d
 join public.artists a on a.id = d.artist_id
 where a.slug = :'artist_slug';
 
--- This workstream deliberately does not implement grouped deposits.
-select to_regclass('public.session_deposit_groups') is null
-   and to_regclass('public.session_deposit_group_members') is null
-   and to_regprocedure('public.request_grouped_session_deposit(uuid[],uuid,text)') is null
-   as grouped_deposits_not_implemented;
+-- Multiple Sessions evidence contains only amounts/counts/status, never URLs.
+select g.session_count,
+       g.total_amount,
+       g.currency,
+       r.status as payment_request_status,
+       count(m.session_id) filter (where m.released_at is null) as live_members,
+       count(m.session_id) filter (where m.released_at is not null) as released_members
+from public.session_deposit_groups g
+join public.artists a on a.id = g.artist_id
+join public.payment_requests r on r.id = g.payment_request_id
+left join public.session_deposit_group_members m on m.group_id = g.id
+where a.slug = :'artist_slug'
+group by g.id, g.session_count, g.total_amount, g.currency, r.status, g.created_at
+order by g.created_at desc
+limit 20;
 
--- Onboarding alone must never have settled anything.
+-- Onboarding/group creation alone must never have settled anything.
 select count(*) as provider_ledger_entries
 from public.payment_transactions t
 join public.artists a on a.id = t.artist_id
