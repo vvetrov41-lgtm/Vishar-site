@@ -135,11 +135,24 @@ jobs:
           supabase link --project-ref "$SUPABASE_PROJECT_REF"
           supabase migration list | tee "$RUNNER_TEMP/migrations-before.txt"
 
-          grep -Eq '^\s*0063\s*\|\s*0063\s*\|' "$RUNNER_TEMP/migrations-before.txt"
-          grep -Eq '^\s*0064\s*\|\s*\|' "$RUNNER_TEMP/migrations-before.txt"
-          grep -Eq '^\s*0065\s*\|\s*\|' "$RUNNER_TEMP/migrations-before.txt"
-          grep -Eq '^\s*0066\s*\|\s*\|' "$RUNNER_TEMP/migrations-before.txt"
-          ! awk -F'|' '$2 ~ /[0-9]/ {gsub(/[[:space:]]/, "", $2); if (($2+0) > 63) found=1} END {exit found ? 0 : 1}' "$RUNNER_TEMP/migrations-before.txt"
+          awk -F'|' '
+            function trim(value) {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+              return value
+            }
+            $0 ~ /\|/ {
+              local_version = trim($1)
+              remote_version = trim($2)
+              if (local_version == "0063" && remote_version == "0063") seen_0063 = 1
+              if (local_version == "0064" && remote_version == "") pending_0064 = 1
+              if (local_version == "0065" && remote_version == "") pending_0065 = 1
+              if (local_version == "0066" && remote_version == "") pending_0066 = 1
+              if (remote_version ~ /^[0-9]+$/ && (remote_version + 0) > 63) newer_remote = 1
+            }
+            END {
+              exit (seen_0063 && pending_0064 && pending_0065 && pending_0066 && !newer_remote) ? 0 : 1
+            }
+          ' "$RUNNER_TEMP/migrations-before.txt"
 
       - name: Dry-run exact 0064 to 0066 migration chain
         shell: bash
@@ -163,9 +176,24 @@ jobs:
           set -euo pipefail
           supabase db push
           supabase migration list | tee "$RUNNER_TEMP/migrations-after.txt"
-          grep -Eq '^\s*0064\s*\|\s*0064\s*\|' "$RUNNER_TEMP/migrations-after.txt"
-          grep -Eq '^\s*0065\s*\|\s*0065\s*\|' "$RUNNER_TEMP/migrations-after.txt"
-          grep -Eq '^\s*0066\s*\|\s*0066\s*\|' "$RUNNER_TEMP/migrations-after.txt"
+
+          awk -F'|' '
+            function trim(value) {
+              gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+              return value
+            }
+            $0 ~ /\|/ {
+              local_version = trim($1)
+              remote_version = trim($2)
+              if (local_version == "0064" && remote_version == "0064") deployed_0064 = 1
+              if (local_version == "0065" && remote_version == "0065") deployed_0065 = 1
+              if (local_version == "0066" && remote_version == "0066") deployed_0066 = 1
+            }
+            END {
+              exit (deployed_0064 && deployed_0065 && deployed_0066) ? 0 : 1
+            }
+          ' "$RUNNER_TEMP/migrations-after.txt"
+
           post="$(supabase db push --dry-run 2>&1)"
           printf '%s\n' "$post"
           ! printf '%s\n' "$post" | grep -Eq '006[456]_.*\.sql'
