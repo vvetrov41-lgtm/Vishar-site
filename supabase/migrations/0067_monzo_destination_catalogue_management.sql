@@ -110,6 +110,18 @@ create index payment_request_payment_destinations_catalogue_idx
   on public.payment_request_payment_destinations (catalogue_destination_id)
   where catalogue_destination_id is not null;
 
+-- The inherited constraint made a URL unique across the whole table, which was
+-- right while the table only held one-off destinations. A reusable or legacy
+-- destination is shared by design: every request for that artist and amount
+-- snapshots the same URL. Keep the original invariant exactly where it belongs
+-- — a request-specific one-off still belongs to exactly one request.
+alter table public.payment_request_payment_destinations
+  drop constraint payment_request_payment_destinations_unique_url;
+
+create unique index payment_request_payment_destinations_one_off_url_idx
+  on public.payment_request_payment_destinations (payment_url)
+  where source = 'one_off';
+
 comment on table public.payment_request_payment_destinations is
   'Immutable destination snapshot bound to exactly one payment request. It copies the artist, the authoritative request amount, the currency and the provider URL in force when the request was issued. Later catalogue edits and archival never rewrite an issued snapshot, and binding a destination never settles payment.';
 comment on column public.payment_request_payment_destinations.source is
@@ -1015,6 +1027,7 @@ begin
   if exists (
     select 1 from public.payment_request_payment_destinations d
     where d.payment_url = p_payment_url
+      and d.source = 'one_off'
       and d.payment_request_id <> v_request.id
   ) then
     raise exception 'this Monzo URL is already attached to another payment request'
@@ -1215,9 +1228,14 @@ begin
       using errcode = '22023';
   end if;
 
+  -- A request-specific one-off is never promoted into the reusable catalogue.
+  -- Reusable and legacy snapshots are excluded deliberately: they repeat the
+  -- catalogue or integration URL by design, and the catalogue check above
+  -- already owns the reusable case.
   if exists (
     select 1 from public.payment_request_payment_destinations d
     where d.payment_url = p_payment_url
+      and d.source = 'one_off'
   ) then
     raise exception 'this Monzo URL is already bound to a payment request'
       using errcode = '22023';
