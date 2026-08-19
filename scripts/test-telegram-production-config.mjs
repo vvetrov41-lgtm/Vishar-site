@@ -83,6 +83,7 @@ for (const needle of [
   'GMAIL_SHARED_DRAIN_ENABLED = "true"',
   'binding = "GMAIL_SERVICE"',
   'service = "vishar-gmail-production"',
+  'GOOGLE_OAUTH_CLIENT_(ID|SECRET)|GMAIL_TOKEN_ENCRYPTION_KEY|GMAIL_OAUTH_(STATE|TOKENS)',
   'npm run check:telegram-production-bundle',
   'npm run scan:secrets',
   'wrangler secret list',
@@ -100,8 +101,6 @@ for (const needle of [
   'gwaliusblwrzisrwnsvs',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',
-  'GOOGLE_OAUTH_CLIENT_SECRET',
-  'GMAIL_TOKEN_ENCRYPTION_KEY',
   '--route',
   '--domain',
 ]) expectExcludes(workflow, needle, 'production workflow');
