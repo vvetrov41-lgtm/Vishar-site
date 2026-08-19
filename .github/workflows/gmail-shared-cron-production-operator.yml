@@ -48,11 +48,14 @@ jobs:
             .head.ref == $branch and .head.sha == $sha
           ' <<<"$product_json" >/dev/null
 
-          release_prs="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&head=$(cut -d/ -f1 <<<"$GITHUB_REPOSITORY"):$GITHUB_REF_NAME")"
-          test "$(jq 'length' <<<"$release_prs")" -eq 1
-          jq -e --arg base "$PRODUCT_BRANCH" '
-            .[0].draft == true and .[0].merged == false and .[0].base.ref == $base
-          ' <<<"$release_prs" >/dev/null
+          release_prs="$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f per_page=100)"
+          release_matches="$(jq --arg head "$GITHUB_REF_NAME" --arg base "$PRODUCT_BRANCH" '
+            [.[] | select(.head.ref == $head and .base.ref == $base)]
+          ' <<<"$release_prs")"
+          test "$(jq 'length' <<<"$release_matches")" -eq 1
+          jq -e '
+            .[0].draft == true and .[0].merged_at == null
+          ' <<<"$release_matches" >/dev/null
 
           git merge-base --is-ancestor "$PRODUCT_SHA" "$GITHUB_SHA"
           mapfile -t changed < <(git diff --name-only "$PRODUCT_SHA".."$GITHUB_SHA")
