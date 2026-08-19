@@ -33,6 +33,18 @@ export interface DepositRequestResult {
   replayed: boolean;
 }
 
+export interface GroupedDepositRequestResult extends DepositRequestResult {
+  deposit_group_id: string;
+  session_count: number;
+  sessions?: Array<{
+    session_id: string;
+    amount: number;
+    currency: string;
+    duration_minutes: number;
+    tier_max_minutes: number | null;
+  }>;
+}
+
 export interface OneOffPaymentDestinationResult {
   payment_request_id: string;
   public_path: string;
@@ -135,6 +147,22 @@ export function createPaymentApi(client: CrmClient) {
           p_delivery_channel: input.deliveryChannel,
         }),
         'request that deposit'
+      );
+    },
+
+    async requestGroupedSessionDeposit(input: {
+      sessionIds: string[];
+      deliveryChannel: 'email' | 'copy_link';
+      idempotencyKey?: string;
+    }): Promise<GroupedDepositRequestResult> {
+      const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID();
+      return unwrap<GroupedDepositRequestResult>(
+        await client.rpc('request_grouped_session_deposit', {
+          p_session_ids: input.sessionIds,
+          p_idempotency_key: idempotencyKey,
+          p_delivery_channel: input.deliveryChannel,
+        }),
+        'request that multiple-session deposit'
       );
     },
 
