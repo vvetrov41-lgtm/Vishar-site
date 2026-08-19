@@ -13,8 +13,11 @@ import type {
   DepositRequestResult,
   DepositTier,
   MonzoDepositSettings,
+  MonzoPaymentDestination,
   MonzoReconciliationCandidate,
   MonzoReconciliationRequestSummary,
+  ProjectDepositMode,
+  ProjectDepositPolicy,
 } from '../lib/payment-api';
 import { useApi, useSession } from '../lib/session';
 import { useLanguage, type Language } from '../lib/i18n';
@@ -80,6 +83,17 @@ function candidateStatusLabel(
   return language === 'ru' ? 'Не сопоставлен' : 'Unmatched';
 }
 
+function policySummary(policy: ProjectDepositPolicy, locale: string, copy: PaymentCopy): string {
+  if (policy.mode === 'fixed') {
+    return `${copy.policyModeFixed} · ${money(policy.fixed_amount ?? 0, policy.currency, locale)}`;
+  }
+  const parts = [`${copy.policyModePercentage} · ${policy.percentage ?? 0}%`];
+  if (policy.minimum_amount != null) {
+    parts.push(`${copy.policyMinimum}: ${money(policy.minimum_amount, policy.currency, locale)}`);
+  }
+  return parts.join(' · ');
+}
+
 function paymentRequestStatusLabel(status: string | undefined, language: Language): string | null {
   if (!status) return null;
   const ru: Record<string, string> = {
@@ -123,6 +137,20 @@ export function PaymentsPage() {
   const [savingOneOff, setSavingOneOff] = useState(false);
   const [oneOffNotice, setOneOffNotice] = useState<string | null>(null);
   const [reconciliationNotice, setReconciliationNotice] = useState<string | null>(null);
+  const [destinations, setDestinations] = useState<MonzoPaymentDestination[]>([]);
+  const [destinationAmount, setDestinationAmount] = useState('');
+  const [destinationUrl, setDestinationUrl] = useState('');
+  const [savingDestination, setSavingDestination] = useState(false);
+  const [busyDestination, setBusyDestination] = useState<string | null>(null);
+  const [destinationNotice, setDestinationNotice] = useState<string | null>(null);
+  const [policy, setPolicy] = useState<ProjectDepositPolicy | null>(null);
+  const [policyMode, setPolicyMode] = useState<ProjectDepositMode>('percentage_of_estimate');
+  const [policyFixed, setPolicyFixed] = useState('');
+  const [policyPercentage, setPolicyPercentage] = useState('');
+  const [policyMinimum, setPolicyMinimum] = useState('');
+  const [policyRounding, setPolicyRounding] = useState('1');
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const [policyNotice, setPolicyNotice] = useState<string | null>(null);
 
   const selectedArtist = useMemo(
     () => artists.find((artist) => artist.id === selectedArtistId) ?? null,
@@ -189,15 +217,30 @@ export function PaymentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [nextSettings, nextAppointments, nextCandidates] = await Promise.all([
+      const [nextSettings, nextAppointments, nextCandidates, nextCatalogue, nextPolicy] = await Promise.all([
         api.getMonzoDepositSettings(artistId),
         api.listAppointments({ artistId, appointmentType: 'tattoo_session' }),
         canViewReconciliation ? api.listMonzoReconciliationCandidates(artistId) : Promise.resolve([]),
+        canManageReconciliation
+          ? api.listMonzoPaymentDestinations(artistId).then((value) => value.destinations).catch(() => [])
+          : Promise.resolve([]),
+        canViewReconciliation
+          ? api.getProjectDepositPolicy(artistId).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setSettings(nextSettings);
       setPaymentUrl(nextSettings.payment_url ?? '');
       setEnabled(nextSettings.enabled);
       setAppointments(nextAppointments);
+      setDestinations(nextCatalogue);
+      setPolicy(nextPolicy);
+      if (nextPolicy?.configured) {
+        setPolicyMode(nextPolicy.mode ?? 'percentage_of_estimate');
+        setPolicyFixed(nextPolicy.fixed_amount != null ? String(nextPolicy.fixed_amount) : '');
+        setPolicyPercentage(nextPolicy.percentage != null ? String(nextPolicy.percentage) : '');
+        setPolicyMinimum(nextPolicy.minimum_amount != null ? String(nextPolicy.minimum_amount) : '');
+        setPolicyRounding(nextPolicy.rounding_step != null ? String(nextPolicy.rounding_step) : '1');
+      }
       setReconciliationCandidates(nextCandidates);
       setCandidateDefaults(nextCandidates);
     } catch (cause) {
@@ -213,6 +256,10 @@ export function PaymentsPage() {
     setOneOffNotice(null);
     setReconciliationNotice(null);
     setSelectedGroupSessionIds([]);
+    setDestinationNotice(null);
+    setDestinationAmount('');
+    setDestinationUrl('');
+    setPolicyNotice(null);
     if (!selectedArtistId) {
       setSettings(EMPTY_SETTINGS);
       setPaymentUrl('');
@@ -220,6 +267,8 @@ export function PaymentsPage() {
       setAppointments([]);
       setReconciliationCandidates([]);
       setMatchSelection({});
+      setDestinations([]);
+      setPolicy(null);
       return;
     }
     void reload(selectedArtistId);
@@ -237,6 +286,98 @@ export function PaymentsPage() {
       setError(cause instanceof Error ? cause.message : copy.saveError);
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * Catalogue administration. The amount here configures a reusable entry; it
+   * is never the amount of a client payment request, which the server derives
+   * from the deposit policy.
+   */
+  async function saveDestination(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedArtistId || !canManageReconciliation) return;
+    const amount = Number(destinationAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError(copy.destinationInvalidAmount);
+      return;
+    }
+    setSavingDestination(true);
+    setError(null);
+    setDestinationNotice(null);
+    try {
+      const next = await api.upsertMonzoPaymentDestination({
+        artistId: selectedArtistId,
+        amount,
+        paymentUrl: destinationUrl,
+      });
+      setDestinationNotice(
+        next.replaced
+          ? copy.destinationReplaced(money(next.amount, next.currency, locale))
+          : copy.destinationSaved(money(next.amount, next.currency, locale))
+      );
+      setDestinationAmount('');
+      setDestinationUrl('');
+      await reload(selectedArtistId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.destinationError);
+    } finally {
+      setSavingDestination(false);
+    }
+  }
+
+  async function archiveDestination(destination: MonzoPaymentDestination) {
+    if (!selectedArtistId || !canManageReconciliation) return;
+    const amountLabel = money(destination.amount, destination.currency, locale);
+    if (!window.confirm(copy.removeDestinationPrompt(amountLabel))) return;
+    setBusyDestination(destination.destination_id);
+    setError(null);
+    setDestinationNotice(null);
+    try {
+      await api.archiveMonzoPaymentDestination(destination.destination_id);
+      setDestinationNotice(copy.destinationArchived(amountLabel));
+      await reload(selectedArtistId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.archiveError);
+    } finally {
+      setBusyDestination(null);
+    }
+  }
+
+  async function savePolicy(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedArtistId || !canManageReconciliation) return;
+    const fixed = policyMode === 'fixed' ? Number(policyFixed) : null;
+    const percentage = policyMode === 'percentage_of_estimate' ? Number(policyPercentage) : null;
+    if (policyMode === 'fixed' && (!Number.isFinite(fixed as number) || (fixed as number) <= 0)) {
+      setError(copy.policyInvalid);
+      return;
+    }
+    if (policyMode === 'percentage_of_estimate'
+        && (!Number.isFinite(percentage as number) || (percentage as number) <= 0 || (percentage as number) > 100)) {
+      setError(copy.policyInvalid);
+      return;
+    }
+    const minimum = policyMinimum.trim() === '' ? null : Number(policyMinimum);
+    const rounding = policyRounding.trim() === '' ? 1 : Number(policyRounding);
+    setSavingPolicy(true);
+    setError(null);
+    setPolicyNotice(null);
+    try {
+      await api.configureProjectDepositPolicy({
+        artistId: selectedArtistId,
+        mode: policyMode,
+        fixedAmount: fixed,
+        percentage,
+        minimumAmount: minimum,
+        roundingStep: rounding,
+      });
+      setPolicyNotice(copy.policySaved);
+      await reload(selectedArtistId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.policyError);
+    } finally {
+      setSavingPolicy(false);
     }
   }
 
@@ -441,6 +582,167 @@ export function PaymentsPage() {
           </form>
         )}
       </section>
+
+      {canManageReconciliation ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>{copy.catalogueTitle}</h2>
+              <p>{copy.catalogueDescription(selectedArtist.display_name)}</p>
+            </div>
+          </div>
+          <div className="notice">{copy.catalogueSecurity}</div>
+          {destinationNotice ? <div className="notice ok" role="status">{destinationNotice}</div> : null}
+
+          {loading ? <LoadingState label={copy.loadingCatalogue} /> : destinations.length === 0 ? (
+            <div className="notice">{copy.noDestinations}</div>
+          ) : (
+            <div className="list-stack">
+              {destinations.map((destination) => (
+                <div className="list-row" key={destination.destination_id}>
+                  <div>
+                    <strong>{money(destination.amount, destination.currency, locale)}</strong>
+                    <div className="muted">
+                      {copy.destinationConfigured} · {copy.destinationFingerprint} {destination.fingerprint}
+                      {destination.issued_request_count > 0
+                        ? ` · ${copy.destinationIssuedRequests(destination.issued_request_count)}`
+                        : ''}
+                    </div>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={busyDestination !== null || savingDestination}
+                      onClick={() => {
+                        setDestinationAmount(String(destination.amount));
+                        setDestinationUrl('');
+                      }}
+                    >
+                      {copy.replaceDestination}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={busyDestination !== null || savingDestination}
+                      onClick={() => void archiveDestination(destination)}
+                    >
+                      {busyDestination === destination.destination_id ? copy.working : copy.removeDestination}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={saveDestination} className="form-grid">
+            <label className="field">
+              <span>{copy.destinationAmount}</span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputMode="decimal"
+                value={destinationAmount}
+                onChange={(event) => setDestinationAmount(event.target.value)}
+                required
+              />
+            </label>
+            <label className="field field-wide">
+              <span>{copy.destinationUrl}</span>
+              <input
+                type="url"
+                value={destinationUrl}
+                onChange={(event) => setDestinationUrl(event.target.value)}
+                placeholder="https://monzo.com/pay/r/…"
+                autoComplete="off"
+                required
+              />
+            </label>
+            <div className="field-wide">
+              <button type="submit" className="primary-button" disabled={savingDestination}>
+                {savingDestination ? copy.saving : copy.addDestination}
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
+      {canViewReconciliation ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>{copy.policyTitle}</h2>
+              <p>{copy.policyDescription(selectedArtist.display_name)}</p>
+            </div>
+          </div>
+          {policy?.configured ? (
+            <div className="notice">{copy.policyCurrent(policySummary(policy, locale, copy))}</div>
+          ) : (
+            <div className="notice warn">{copy.policyNotConfigured}</div>
+          )}
+          {policyNotice ? <div className="notice ok" role="status">{policyNotice}</div> : null}
+
+          {canManageReconciliation ? (
+            <form onSubmit={savePolicy} className="form-grid">
+              <label className="field field-wide">
+                <span>{copy.policyMode}</span>
+                <select
+                  value={policyMode}
+                  onChange={(event) => setPolicyMode(event.target.value as ProjectDepositMode)}
+                >
+                  <option value="percentage_of_estimate">{copy.policyModePercentage}</option>
+                  <option value="fixed">{copy.policyModeFixed}</option>
+                </select>
+              </label>
+              {policyMode === 'fixed' ? (
+                <label className="field">
+                  <span>{copy.policyFixedAmount}</span>
+                  <input
+                    type="number" min="0.01" step="0.01" inputMode="decimal"
+                    value={policyFixed}
+                    onChange={(event) => setPolicyFixed(event.target.value)}
+                    required
+                  />
+                </label>
+              ) : (
+                <label className="field">
+                  <span>{copy.policyPercentage}</span>
+                  <input
+                    type="number" min="0.01" max="100" step="0.01" inputMode="decimal"
+                    value={policyPercentage}
+                    onChange={(event) => setPolicyPercentage(event.target.value)}
+                    required
+                  />
+                </label>
+              )}
+              <label className="field">
+                <span>{copy.policyMinimum}</span>
+                <input
+                  type="number" min="0.01" step="0.01" inputMode="decimal"
+                  value={policyMinimum}
+                  onChange={(event) => setPolicyMinimum(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>{copy.policyRounding}</span>
+                <input
+                  type="number" min="0.01" step="0.01" inputMode="decimal"
+                  value={policyRounding}
+                  onChange={(event) => setPolicyRounding(event.target.value)}
+                />
+              </label>
+              <div className="field-wide">
+                <button type="submit" className="primary-button" disabled={savingPolicy}>
+                  {savingPolicy ? copy.saving : copy.savePolicy}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="notice">{copy.viewOnly}</div>
+          )}
+        </section>
+      ) : null}
 
       <section className="panel">
         <div className="panel-heading">

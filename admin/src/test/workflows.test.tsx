@@ -121,14 +121,36 @@ describe('appointment workflow', () => {
     });
   });
 
-  it('keeps deposit-link creation fail-closed while the public redirect runtime is dormant', async () => {
+  it('requests a project deposit from the server-calculated amount, never a browser amount', async () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}`, rpcCalls });
 
-    expect(await screen.findByText(/deposit-link creation is temporarily unavailable/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /create deposit link/i })).not.toBeInTheDocument();
-    expect(rpcCalls.some((entry) => entry.name === 'request_session_deposit')).toBe(false);
+    // The panel renders the server preview rather than recomputing the policy.
+    expect(await screen.findByText('£700.00')).toBeInTheDocument();
+    expect(rpcCalls.some((entry) => entry.name === 'preview_project_deposit')).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /create deposit request/i }));
+
+    await waitFor(() => {
+      const call = rpcCalls.find((entry) => entry.name === 'request_project_deposit');
+      expect(call).toBeDefined();
+      expect(call!.args.p_project_id).toBe(PROJECT_ID);
+      // The authoritative amount is recalculated server-side. The browser must
+      // not be able to state an amount, an artist or a policy version.
+      expect(call!.args).not.toHaveProperty('p_amount');
+      expect(call!.args).not.toHaveProperty('p_artist_id');
+      expect(call!.args).not.toHaveProperty('p_policy_id');
+    });
+
     expect(rpcCalls.some((entry) => entry.name === 'update_project_deposit')).toBe(false);
+  });
+
+  it('no longer claims the public bank-transfer redirect runtime is dormant', async () => {
+    renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}` });
+
+    await screen.findByText('£700.00');
+    expect(screen.queryByText(/temporarily unavailable/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/redirect runtime is activated/i)).not.toBeInTheDocument();
   });
 
   it('confirms an appointment through set_appointment_status', async () => {

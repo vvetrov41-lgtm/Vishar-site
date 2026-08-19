@@ -351,6 +351,51 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         return { data: [PROFILES.owner, PROFILES.booking_manager].map((p) => ({ id: p.id, display_name: p.display_name, role: p.role })), error: null };
       }
       if (name === 'convert_enquiry_to_project') return { data: { project_id: PROJECT_ID }, error: null };
+      // The project deposit amount is calculated by the server. The fake mirrors
+      // that contract: the browser reads a preview and never sends an amount.
+      if (name === 'preview_project_deposit') {
+        return {
+          data: {
+            project_id: PROJECT_ID,
+            artist_id: VLADIMIR_ARTIST_ID,
+            currency: 'GBP',
+            estimate_total: 2800,
+            estimated_hours: 7,
+            estimated_sessions: 3,
+            policy_configured: true,
+            calculable: true,
+            mode: 'percentage_of_estimate',
+            percentage: 25,
+            rounding_step: 1,
+            suggested_amount: 700,
+            override_amount: null,
+            amount: 700,
+            reusable_destination_configured: true,
+            open_payment_request_id: null,
+            open_payment_request_status: null,
+          },
+          error: null,
+        };
+      }
+      if (name === 'request_project_deposit') {
+        return {
+          data: {
+            payment_request_id: 'ppr-1',
+            payment_link_id: 'ppl-1',
+            public_path: '/pay-by-bank-transfer/11111111-1111-4111-8111-111111111111',
+            amount: 700,
+            currency: 'GBP',
+            suggested_amount: 700,
+            override_amount: null,
+            destination_source: 'reusable',
+            destination_ready: true,
+            delivery_channel: 'copy_link',
+            delivery_status: 'link_created',
+            replayed: false,
+          },
+          error: null,
+        };
+      }
       return { data: { ok: true }, error: null };
     },
     storage: {

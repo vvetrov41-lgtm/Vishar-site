@@ -45,6 +45,108 @@ export interface GroupedDepositRequestResult extends DepositRequestResult {
   }>;
 }
 
+/**
+ * One reusable destination catalogue entry. The provider URL is deliberately
+ * absent: the server returns only a non-reversible fingerprint so the CRM can
+ * show that an entry exists and has or has not changed.
+ */
+export interface MonzoPaymentDestination {
+  destination_id: string;
+  amount: number;
+  currency: string;
+  configured: true;
+  fingerprint: string;
+  created_at: string;
+  updated_at: string;
+  issued_request_count: number;
+}
+
+export interface MonzoPaymentDestinationCatalogue {
+  artist_id: string;
+  currency: string;
+  destinations: MonzoPaymentDestination[];
+}
+
+export interface UpsertMonzoPaymentDestinationResult {
+  destination_id: string;
+  artist_id: string;
+  amount: number;
+  currency: string;
+  fingerprint: string;
+  replaced: boolean;
+  unchanged: boolean;
+  confirmed: false;
+}
+
+export interface ArchiveMonzoPaymentDestinationResult {
+  destination_id: string;
+  artist_id: string;
+  amount: number;
+  currency: string;
+  archived: boolean;
+  unchanged: boolean;
+}
+
+export type ProjectDepositMode = 'fixed' | 'percentage_of_estimate';
+
+export interface ProjectDepositPolicy {
+  artist_id: string;
+  configured: boolean;
+  policy_id?: string;
+  version?: number;
+  mode?: ProjectDepositMode;
+  fixed_amount?: number | null;
+  percentage?: number | null;
+  minimum_amount?: number | null;
+  rounding_step?: number;
+  currency: string;
+}
+
+/**
+ * Server-calculated preview. It is explicitly non-authoritative for display
+ * only; the amount a request is actually created with is recalculated by the
+ * server inside `request_project_deposit`.
+ */
+export interface ProjectDepositPreview {
+  project_id: string;
+  artist_id?: string;
+  currency: string;
+  estimate_total: number | null;
+  estimated_hours: number | null;
+  estimated_sessions: number | null;
+  policy_configured: boolean;
+  calculable: boolean;
+  reason?: string;
+  policy_id?: string;
+  policy_version?: number;
+  mode?: ProjectDepositMode;
+  fixed_amount?: number | null;
+  percentage?: number | null;
+  minimum_amount?: number | null;
+  rounding_step?: number;
+  suggested_amount?: number;
+  override_amount: number | null;
+  amount?: number;
+  reusable_destination_configured?: boolean;
+  open_payment_request_id: string | null;
+  open_payment_request_status: string | null;
+}
+
+export interface ProjectDepositRequestResult {
+  payment_request_id: string;
+  payment_link_id: string;
+  public_path: string;
+  amount: number;
+  currency: string;
+  suggested_amount: number;
+  override_amount: number | null;
+  destination_source: 'reusable' | 'one_off' | 'legacy_integration' | null;
+  destination_ready: boolean;
+  delivery_channel: 'email' | 'copy_link';
+  delivery_status: 'queued_provider_not_connected' | 'link_created';
+  replayed: boolean;
+}
+
 export interface OneOffPaymentDestinationResult {
   payment_request_id: string;
   public_path: string;
@@ -131,6 +233,108 @@ export function createPaymentApi(client: CrmClient) {
           p_is_enabled: input.enabled,
         }),
         'save Monzo deposit settings'
+      );
+    },
+
+    async listMonzoPaymentDestinations(artistId: string): Promise<MonzoPaymentDestinationCatalogue> {
+      return unwrap<MonzoPaymentDestinationCatalogue>(
+        await client.rpc('list_monzo_payment_destinations', { p_artist_id: artistId }),
+        'load reusable payment links'
+      );
+    },
+
+    /**
+     * Configures one reusable catalogue entry. The amount here is catalogue
+     * configuration only: it never becomes the amount of a client payment
+     * request, which the server derives from the deposit policy.
+     */
+    async upsertMonzoPaymentDestination(input: {
+      artistId: string;
+      amount: number;
+      paymentUrl: string;
+    }): Promise<UpsertMonzoPaymentDestinationResult> {
+      return unwrap<UpsertMonzoPaymentDestinationResult>(
+        await client.rpc('upsert_monzo_payment_destination', {
+          p_artist_id: input.artistId,
+          p_amount: input.amount,
+          p_payment_url: input.paymentUrl,
+        }),
+        'save that reusable payment link'
+      );
+    },
+
+    async archiveMonzoPaymentDestination(destinationId: string): Promise<ArchiveMonzoPaymentDestinationResult> {
+      return unwrap<ArchiveMonzoPaymentDestinationResult>(
+        await client.rpc('archive_monzo_payment_destination', {
+          p_destination_id: destinationId,
+        }),
+        'remove that reusable payment link'
+      );
+    },
+
+    async getProjectDepositPolicy(artistId: string): Promise<ProjectDepositPolicy> {
+      return unwrap<ProjectDepositPolicy>(
+        await client.rpc('get_project_deposit_policy', { p_artist_id: artistId }),
+        'load the project deposit policy'
+      );
+    },
+
+    async configureProjectDepositPolicy(input: {
+      artistId: string;
+      mode: ProjectDepositMode;
+      fixedAmount?: number | null;
+      percentage?: number | null;
+      minimumAmount?: number | null;
+      roundingStep?: number;
+    }) {
+      return unwrap<Record<string, unknown>>(
+        await client.rpc('configure_project_deposit_policy', {
+          p_artist_id: input.artistId,
+          p_mode: input.mode,
+          p_fixed_amount: input.fixedAmount ?? null,
+          p_percentage: input.percentage ?? null,
+          p_minimum_amount: input.minimumAmount ?? null,
+          p_rounding_step: input.roundingStep ?? 1,
+        }),
+        'save the project deposit policy'
+      );
+    },
+
+    async previewProjectDeposit(projectId: string): Promise<ProjectDepositPreview> {
+      return unwrap<ProjectDepositPreview>(
+        await client.rpc('preview_project_deposit', { p_project_id: projectId }),
+        'calculate the project deposit'
+      );
+    },
+
+    async setProjectDepositOverride(input: { projectId: string; amount: number | null }) {
+      return unwrap<Record<string, unknown>>(
+        await client.rpc('set_project_deposit_override', {
+          p_project_id: input.projectId,
+          p_amount: input.amount,
+        }),
+        'save the project deposit override'
+      );
+    },
+
+    /**
+     * The browser deliberately sends no amount. The server recalculates the
+     * authoritative deposit from project facts, the artist policy and any
+     * authorised override before creating the immutable request.
+     */
+    async requestProjectDeposit(input: {
+      projectId: string;
+      deliveryChannel: 'email' | 'copy_link';
+      idempotencyKey?: string;
+    }): Promise<ProjectDepositRequestResult> {
+      const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID();
+      return unwrap<ProjectDepositRequestResult>(
+        await client.rpc('request_project_deposit', {
+          p_project_id: input.projectId,
+          p_idempotency_key: idempotencyKey,
+          p_delivery_channel: input.deliveryChannel,
+        }),
+        'create that project deposit request'
       );
     },
 
