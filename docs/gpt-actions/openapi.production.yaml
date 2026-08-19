@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Vishar CRM Private Artist Actions
-  version: 2.1.0-production
+  version: 2.2.0-production
   description: >-
     Private OAuth-authenticated operational CRM actions for one artist. The artist
     is fixed by the OAuth client binding and cannot be selected in a request.
@@ -601,6 +601,56 @@ paths:
                 occurred_at: {type: string, format: date-time}
                 safe_note_code: {type: string, maxLength: 120}
       responses: {'200': {description: Manual payment result}}
+
+  /v1/payments/monzo/reconciliation:
+    get:
+      operationId: listMonzoReconciliationCandidates
+      summary: List Monzo payments that require reconciliation review
+      description: Returns only artist-scoped, PII-minimised CRM candidate context. Raw Monzo transaction, event and account identifiers are never exposed.
+      x-openai-isConsequential: false
+      responses: {'200': {description: Monzo reconciliation candidates}}
+
+  /v1/payments/monzo/reconciliation/{candidate_id}/match:
+    post:
+      operationId: matchMonzoReconciliationCandidate
+      summary: Match a Monzo candidate to a CRM payment request without settling it
+      description: This action only records the proposed candidate-to-request match. It does not mark any payment paid. Settlement requires a separate explicit Confirm action.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: candidate_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [payment_request_id]
+              properties:
+                payment_request_id: {type: string, format: uuid}
+      responses: {'200': {description: Non-financial match result}, '403': {description: Candidate or request is outside the GPT artist scope}}
+
+  /v1/payments/monzo/reconciliation/{candidate_id}/ignore:
+    post:
+      operationId: ignoreMonzoReconciliationCandidate
+      summary: Explicitly ignore a Monzo reconciliation candidate
+      description: Ignore is non-financial and never creates a payment ledger transaction.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: candidate_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
+      responses: {'200': {description: Ignored candidate result}, '403': {description: Candidate is outside the GPT artist scope}}
+
+  /v1/payments/monzo/reconciliation/{candidate_id}/confirm:
+    post:
+      operationId: confirmMonzoReconciliationCandidate
+      summary: Confirm an already matched Monzo payment
+      description: Separate settlement action. Use only after explicit user confirmation; the backend revalidates verified Monzo evidence before recording the immutable ledger transaction.
+      x-openai-isConsequential: true
+      parameters:
+        - {name: candidate_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
+      responses: {'200': {description: Confirmed payment result}, '403': {description: Candidate is outside the GPT artist scope}}
 
   /v1/enquiries/{enquiry_id}/whatsapp:
     get:

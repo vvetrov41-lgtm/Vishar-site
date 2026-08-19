@@ -17,17 +17,23 @@ const coreIds = operationIds(core);
 const operationsIds = operationIds(operations);
 const communicationsIds = operationIds(communications);
 const combined = [...coreIds, ...operationsIds, ...communicationsIds];
+const monzoIds = [
+  'listMonzoReconciliationCandidates',
+  'matchMonzoReconciliationCandidate',
+  'ignoreMonzoReconciliationCandidate',
+  'confirmMonzoReconciliationCandidate',
+];
 
-assert.equal(canonical.length, 55, 'canonical GPT schema must keep exactly 55 operations');
+assert.equal(canonical.length, 59, 'canonical GPT schema must keep exactly 59 operations');
 assert.equal(coreIds.length, 25, 'core ChatGPT-import schema must contain exactly 25 operations');
-assert.equal(operationsIds.length, 20, 'operations ChatGPT-import schema must contain exactly 20 operations');
+assert.equal(operationsIds.length, 24, 'operations ChatGPT-import schema must contain exactly 24 operations');
 assert.equal(communicationsIds.length, 10, 'communications ChatGPT-import schema must contain exactly 10 operations');
 for (const [name, ids] of [['core', coreIds], ['operations', operationsIds], ['communications', communicationsIds]]) {
   assert.ok(ids.length < 30, `${name} ChatGPT-import schema must stay below the editor 30-operation limit`);
   assert.ok(ids.length <= 25, `${name} ChatGPT-import schema should preserve at least five operation slots of headroom`);
 }
-assert.equal(new Set(combined).size, 55, 'split schemas must not duplicate operation IDs');
-assert.deepEqual([...combined].sort(), [...canonical].sort(), 'split schemas must cover the exact canonical 55-operation surface');
+assert.equal(new Set(combined).size, 59, 'split schemas must not duplicate operation IDs');
+assert.deepEqual([...combined].sort(), [...canonical].sort(), 'split schemas must cover the exact canonical 59-operation surface');
 
 assert.match(core, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(operations, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
@@ -78,7 +84,11 @@ for (const operationId of noPayloadOperations) {
 for (const id of ['listEnquiries', 'updateClient', 'updateProjectDeposit']) assert.ok(coreIds.includes(id));
 assert.ok(!coreIds.includes('getProjectFinance'));
 
-for (const id of ['listAppointments', 'recordManualPayment', 'getProjectFinance', 'listActivity']) assert.ok(operationsIds.includes(id));
+for (const id of ['listAppointments', 'recordManualPayment', 'getProjectFinance', 'listActivity', ...monzoIds]) assert.ok(operationsIds.includes(id));
+for (const id of monzoIds) {
+  assert.ok(!coreIds.includes(id), `${id} must not appear in Core`);
+  assert.ok(!communicationsIds.includes(id), `${id} must not appear in Communications`);
+}
 for (const id of ['getWhatsAppConversation', 'ensureWhatsAppConversation', 'listWhatsAppMessages', 'sendWhatsAppMessage',
   'listEmailMessages', 'createEmailDraft', 'approveEmailDraft', 'searchEmailHistory', 'getEmailThread', 'createGmailReplyDraft']) {
   assert.ok(communicationsIds.includes(id), `${id} must live in Communications`);
@@ -106,4 +116,4 @@ assert.match(rollout, /wrangler deploy --config wrangler\.gpt-actions\.productio
 assert.doesNotMatch(rollout, /supabase db push|STAGING_SUPABASE|gwaliusblwrzisrwnsvs|service_role|SUPABASE_SECRET_KEY|sb_secret_/i,
   'three-action rollout must not mutate the database, target staging or carry privileged credentials');
 
-console.log('GPT OpenAPI split tests passed: 25 core + 20 operations + 10 communications, three domains, exact 55-operation coverage, five-slot minimum headroom and guarded DB-free rollout.');
+console.log('GPT OpenAPI split tests passed: 25 core + 24 operations + 10 communications, three domains, exact 59-operation coverage and guarded rollout separation.');
