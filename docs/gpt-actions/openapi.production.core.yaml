@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: Vishar CRM Core Actions
-  version: 2.1.1-production-core
+  version: 2.2.0-production-core
   description: >-
     Core private OAuth-authenticated CRM actions for one artist. The artist is
     fixed by the OAuth client binding and cannot be selected in a request.
 servers:
   - url: https://gpt-actions.vishartattoo.com
-    description: Vishar CRM production action edge.
+    description: Vishar CRM production core action edge.
 security:
   - supabaseOAuth: [email]
 paths:
@@ -232,15 +232,6 @@ paths:
               required: [status]
               properties: {status: {$ref: '#/components/schemas/ProjectStatus'}}
       responses: {'200': {description: Project status result}}
-
-  /v1/projects/{project_id}/finance:
-    get:
-      operationId: getProjectFinance
-      summary: Read project estimate and deposit fields when finance capability is enabled
-      x-openai-isConsequential: false
-      parameters:
-        - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
-      responses: {'200': {description: Project finance detail}}
 
   /v1/projects/{project_id}/estimate:
     patch:
