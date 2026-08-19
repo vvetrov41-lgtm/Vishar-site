@@ -5,40 +5,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  gpt-monzo-canonical-patch:
-    if: ${{ github.head_ref == 'agent/gpt-monzo-reconciliation' && !contains(github.event.pull_request.head.label, 'fork') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout branch for deterministic canonical patch
-        uses: actions/checkout@v4
-        with:
-          ref: agent/gpt-monzo-reconciliation
-          fetch-depth: 1
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Patch canonical files
-        run: node scripts/patch-gpt-monzo-generated-files.mjs
-      - name: Verify and commit canonical patch
-        shell: bash
-        run: |
-          git diff --check
-          node scripts/test-gpt-openapi-split.mjs
-          if git diff --quiet; then
-            echo "Canonical files already patched."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add supabase/tests/050_rls_roles.sql docs/gpt-actions/openapi.production.yaml docs/gpt-actions/openapi.production.operations.yaml scripts/test-gpt-openapi-split.mjs
-          git commit -m "Apply GPT Monzo generated patches"
-          git push origin HEAD:agent/gpt-monzo-reconciliation
-
   static-validation:
     runs-on: ubuntu-latest
 
