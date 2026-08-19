@@ -6,6 +6,7 @@ const core = readFileSync(new URL('../docs/gpt-actions/openapi.production.core.y
 const operations = readFileSync(new URL('../docs/gpt-actions/openapi.production.operations.yaml', import.meta.url), 'utf8');
 const communications = readFileSync(new URL('../docs/gpt-actions/openapi.production.communications.yaml', import.meta.url), 'utf8');
 const wrangler = readFileSync(new URL('../wrangler.gpt-actions.production.toml', import.meta.url), 'utf8');
+const rollout = readFileSync(new URL('../.github/workflows/gpt-production-three-action-surface-rollout.yml', import.meta.url), 'utf8');
 
 function operationIds(text) {
   return [...text.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
@@ -69,7 +70,7 @@ for (const operationId of noPayloadOperations) {
       : communications;
   assert.match(
     schema,
-    new RegExp(`operationId: ${operationId}[\\s\\S]{0,500}?properties: \\{\\}`),
+    new RegExp(`operationId: ${operationId}\\n[\\s\\S]{0,500}?properties: \\{\\}`),
     `${operationId} must expose explicit empty properties for ChatGPT schema compatibility`,
   );
 }
@@ -85,4 +86,24 @@ for (const id of ['getWhatsAppConversation', 'ensureWhatsAppConversation', 'list
   assert.ok(!coreIds.includes(id), `${id} must not appear in Core`);
 }
 
-console.log('GPT OpenAPI split tests passed: 25 core + 20 operations + 10 communications, three domains, exact 55-operation coverage and five-slot minimum headroom.');
+assert.match(rollout, /^name: GPT production three action surface rollout$/m);
+assert.match(rollout, /release\/private-crm-rc69-gpt-three-action-surface/);
+assert.match(rollout, /PRODUCT_BRANCH: agent\/gpt-three-action-surface/);
+assert.match(rollout, /EXPECTED_PR: '364'/);
+assert.match(rollout, /environment: crm-production/);
+assert.match(rollout, /\.draft == true/);
+for (const workflow of ['Static Validation', 'CRM and booking validation', 'Gmail production validation']) {
+  assert.ok(rollout.includes(`'${workflow}'`), `rollout must gate on ${workflow}`);
+}
+for (const domain of ['gpt-actions.vishartattoo.com', 'gpt-operations.vishartattoo.com', 'gpt-communications.vishartattoo.com']) {
+  assert.ok(rollout.includes(domain), `rollout must verify ${domain}`);
+}
+assert.match(rollout, /npm run test:gpt-production/);
+assert.match(rollout, /npm run validate:gpt-actions/);
+assert.match(rollout, /npm run check:gpt-production-bundle/);
+assert.match(rollout, /npm run scan:secrets/);
+assert.match(rollout, /wrangler deploy --config wrangler\.gpt-actions\.production\.toml/);
+assert.doesNotMatch(rollout, /supabase db push|STAGING_SUPABASE|gwaliusblwrzisrwnsvs|service_role|SUPABASE_SECRET_KEY|sb_secret_/i,
+  'three-action rollout must not mutate the database, target staging or carry privileged credentials');
+
+console.log('GPT OpenAPI split tests passed: 25 core + 20 operations + 10 communications, three domains, exact 55-operation coverage, five-slot minimum headroom and guarded DB-free rollout.');
