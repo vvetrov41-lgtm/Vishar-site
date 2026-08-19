@@ -110,11 +110,11 @@ function selfTest() {
     [
       [
         { amount: 250, payment_url: 'https://monzo.com/pay/r/dddd4444' },
-        { amount: 500, payment_url: 'https://monzo.com/pay/r/eeee5555' },
+        { amount: 600, payment_url: 'https://monzo.com/pay/r/eeee5555' },
         { amount: 750, payment_url: 'https://monzo.com/pay/r/ffff6666' },
       ],
       true,
-      'grouped totals need no schema change',
+      'additional future amounts need no catalogue schema change',
     ],
   ];
 
