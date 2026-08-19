@@ -35,7 +35,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add supabase/tests/050_rls_roles.sql docs/gpt-actions/openapi.production.yaml scripts/test-gpt-openapi-split.mjs
+          git add supabase/tests/050_rls_roles.sql docs/gpt-actions/openapi.production.yaml docs/gpt-actions/openapi.production.operations.yaml scripts/test-gpt-openapi-split.mjs
           git commit -m "Apply GPT Monzo generated patches"
           git push origin HEAD:agent/gpt-monzo-reconciliation
 
