@@ -1,4 +1,4 @@
-name: Verify RC76 Instagram CRM live boundaries
+name: Apply RC76 Instagram operator authorization fix
 
 on:
   push:
@@ -8,56 +8,93 @@ on:
       - .github/workflows/dispatch-rc76-instagram-oauth.yml
 
 permissions:
-  actions: read
-  contents: read
+  contents: write
   issues: write
 
+concurrency:
+  group: rc76-instagram-operator-auth-fix
+  cancel-in-progress: true
+
 jobs:
-  verify:
+  patch:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      TARGET_BRANCH: claude/instagram-communications-integration-po9a1e
+      EXPECTED_SHA: 1c2c31bcf115779f9e97b415477444b90d0b97f3
     steps:
-      - name: Verify exact protected Pages run and live CSP/CORS
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          TARGET_OPERATOR_SHA: acf77918ecf1a6736d469f3c1e40193f54a6f0cb
-          PRODUCT_SHA: 1c2c31bcf115779f9e97b415477444b90d0b97f3
+      - name: Checkout exact Instagram PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact clean source
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --short)"
+          remote="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote" = "$EXPECTED_SHA"
 
-          json="$(gh api "repos/$REPO/actions/workflows/rc76-instagram-crm-pages-release-operator.yml/runs?branch=release/private-crm-rc76-instagram-crm-pages-operator&event=push&per_page=20")"
-          RUN_JSON="$json" node <<'NODE' > "$RUNNER_TEMP/run.txt"
-          const payload = JSON.parse(process.env.RUN_JSON || '{}');
-          const target = process.env.TARGET_OPERATOR_SHA;
-          const run = (payload.workflow_runs || []).find((entry) => entry.head_sha === target);
-          if (!run) process.exit(2);
-          console.log(`${run.html_url}\n${run.status}\n${run.conclusion || 'n/a'}\n${run.id}`);
-          NODE
-          mapfile -t fields < "$RUNNER_TEMP/run.txt"
-          test "${fields[1]}" = completed
-          test "${fields[2]}" = success
+      - name: Checkout bounded patcher
+        uses: actions/checkout@v4
+        with:
+          ref: ops/rc76-instagram-auth-fix
+          path: .operator
+          fetch-depth: 1
 
-          crm_headers="$(mktemp)"
-          curl --fail --silent --show-error --location --max-redirs 0 -D "$crm_headers" -o /dev/null https://crm.vishartattoo.com/ || true
-          csp="$(tr -d '\r' < "$crm_headers" | grep -i '^content-security-policy:' | tail -n1 || true)"
-          test -n "$csp"
-          printf '%s\n' "$csp" | grep -Fq "connect-src"
-          printf '%s\n' "$csp" | grep -Fq "https://instagram.vishartattoo.com"
+      - name: Apply bounded patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .operator/scripts/rc76-instagram-auth-fix.py
+          rm -rf .operator
+          git diff --check
+          changed="$(git status --short | awk '{print $2}' | sort)"
+          expected="$(printf '%s\n' \
+            scripts/test-instagram-connector.mjs \
+            supabase/migrations/0073_instagram_operator_authorization.sql \
+            supabase/tests/220_instagram_channel.sql \
+            workers/instagram-production.js \
+            workers/lib/instagram-supabase.js | sort)"
+          test "$changed" = "$expected"
 
-          cors_headers="$(mktemp)"
-          curl --fail --silent --show-error \
-            -X OPTIONS \
-            -H 'Origin: https://crm.vishartattoo.com' \
-            -H 'Access-Control-Request-Method: GET' \
-            -H 'Access-Control-Request-Headers: authorization' \
-            -D "$cors_headers" -o /dev/null \
-            https://instagram.vishartattoo.com/v1/connections/status
-          tr -d '\r' < "$cors_headers" | grep -Eiq '^HTTP/[^ ]+ 204'
-          tr -d '\r' < "$cors_headers" | grep -Eiq '^access-control-allow-origin: https://crm\.vishartattoo\.com$'
-          tr -d '\r' < "$cors_headers" | grep -Eiq '^access-control-allow-methods: GET, OPTIONS$'
-          tr -d '\r' < "$cors_headers" | grep -Eiq '^access-control-allow-headers: .*authorization'
+      - name: Install pinned tooling
+        run: npm ci
 
-          body=$(printf 'RC76 live browser-boundary verification:\nproduction_pages=%s status=%s conclusion=%s operator_head=%s product_sha=%s\nlive_csp=ok\nlive_instagram_cors_preflight=ok\n' "${fields[0]}" "${fields[1]}" "${fields[2]}" "$TARGET_OPERATOR_SHA" "$PRODUCT_SHA")
-          gh api -X POST "repos/$REPO/issues/379/comments" -f body="$body" >/dev/null
+      - name: Run focused Instagram regression tests
+        run: |
+          set -euo pipefail
+          node scripts/test-instagram-connector.mjs
+          npm run test:instagram-production
+          npm run check:instagram-production-bundle
+          npm run scan:secrets
+
+      - name: Commit bounded fix to PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote" = "$EXPECTED_SHA"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            scripts/test-instagram-connector.mjs \
+            supabase/migrations/0073_instagram_operator_authorization.sql \
+            supabase/tests/220_instagram_channel.sql \
+            workers/instagram-production.js \
+            workers/lib/instagram-supabase.js
+          git diff --cached --check
+          git commit -m 'Verify Instagram operators before backend authorization'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+
+      - name: Report result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          body=$(printf 'RC76 Instagram operator authorization patcher: %s\nsource=%s\n' "${{ job.status }}" "$EXPECTED_SHA")
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/379/comments" -f body="$body" >/dev/null
