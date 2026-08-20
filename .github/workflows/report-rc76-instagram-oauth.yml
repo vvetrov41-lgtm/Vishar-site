@@ -1,0 +1,39 @@
+name: Report RC76 Instagram OAuth dispatch
+
+on:
+  push:
+    branches:
+      - ops/rc76-instagram-oauth-dispatch
+    paths:
+      - .github/workflows/report-rc76-instagram-oauth.yml
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Locate dispatched protected run and report it on PR 379
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sleep 10
+          run_json="$(gh run list --repo "$REPO" --workflow deploy-private-production-instagram.yml --branch release/private-crm-rc76-instagram-communications --event workflow_dispatch --limit 1 --json databaseId,url,status,conclusion,headSha,createdAt)"
+          RUN_JSON="$run_json" node <<'NODE' > /tmp/report.md
+          const rows = JSON.parse(process.env.RUN_JSON || '[]');
+          if (!rows.length) {
+            console.log('RC76 Instagram OAuth operator: no dispatched production run was found yet.');
+            process.exit(0);
+          }
+          const r = rows[0];
+          console.log(`RC76 Instagram OAuth operator run: ${r.url}`);
+          console.log(`status=${r.status}, conclusion=${r.conclusion || 'n/a'}, head=${r.headSha}, created=${r.createdAt}`);
+          NODE
+          gh pr comment 379 --repo "$REPO" --body-file /tmp/report.md
