@@ -24,7 +24,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          sleep 8
+          sleep 2
           rows="$(gh run list --repo "$REPO" --workflow rc76-instagram-crm-pages-operator.yml --branch ops/rc76-instagram-oauth-dispatch --event push --limit 1 --json databaseId,url,status,conclusion,headSha,createdAt)"
           ROWS="$rows" node <<'NODE' > /tmp/report.md
           const rows = JSON.parse(process.env.ROWS || '[]');
