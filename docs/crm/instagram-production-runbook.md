@@ -220,6 +220,12 @@ CRM_PRODUCTION_INSTAGRAM_OAUTH_STATE_ID
 CRM_PRODUCTION_INSTAGRAM_OAUTH_TOKENS_ID
 ```
 
+The Instagram app id belongs in the same place, as a non-secret variable:
+
+```
+CRM_PRODUCTION_INSTAGRAM_APP_ID
+```
+
 They must be different namespaces. The release generator refuses to proceed if
 they are the same, because short-lived CSRF state and long-lived encrypted
 tokens must not share a keyspace.
@@ -263,9 +269,13 @@ The order matters. Each step is safe to stop at.
    and the WhatsApp relations remain readable under their existing names.
 
 2. **CRM.** Deploy the private CRM Pages project. The Communications inbox
-   immediately shows existing WhatsApp conversations. The Instagram screen shows
-   "not configured" until `VITE_INSTAGRAM_CONNECTOR_ORIGIN` is set in the build
-   environment to `https://instagram.vishartattoo.com`.
+   immediately shows existing WhatsApp conversations. The Instagram screen
+   reports "not configured", because the `crm-production` variable
+   `CRM_PRODUCTION_INSTAGRAM_CONNECTOR_ORIGIN` is still empty. Leave it empty
+   here: the connector is not serving yet, and an empty value is what stops the
+   CRM sending an operator's Supabase session to a host that cannot answer. It
+   is set at step 5, and the build accepts no value other than
+   `https://instagram.vishartattoo.com`.
 
 3. **Connector, inert.** Section 3 must already be complete: the Worker, the
    Custom Domain, both KV namespaces and all four secrets exist before this
@@ -277,9 +287,12 @@ The order matters. Each step is safe to stop at.
 
 4. **Meta webhook.** Perform steps 2.4 and 2.5.
 
-5. **Onboarding.** Re-run the workflow with `enable_oauth=true`. Perform step
-   2.7 for each artist. Inbound Instagram messages now appear in the CRM inbox;
-   replies queue but are not delivered yet.
+5. **Onboarding.** Re-run the workflow with `enable_oauth=true`. Set
+   `CRM_PRODUCTION_INSTAGRAM_CONNECTOR_ORIGIN` to
+   `https://instagram.vishartattoo.com` and redeploy the CRM so the Instagram
+   screen can reach the connector. Perform step 2.7 for each artist. Inbound
+   Instagram messages now appear in the CRM inbox; replies queue but are not
+   delivered yet.
 
 6. **Outbound.** Re-run the workflow with `enable_oauth=true` and
    `enable_drain=true`. This adds the five-minute cron. Queued replies are

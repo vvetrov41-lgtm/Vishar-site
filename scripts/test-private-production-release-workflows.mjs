@@ -48,6 +48,11 @@ expectIncludes(crm, '--project-name "$CRM_PAGES_PROJECT"', 'CRM Pages');
 expectExcludes(crm, 'supabase db push', 'CRM Pages');
 expectExcludes(crm, 'wrangler deploy --env', 'CRM Pages');
 expectExcludes(crm, 'wrangler.team-admin.toml', 'CRM Pages');
+// The Instagram connector origin is supplied by an environment variable rather
+// than hardcoded, so the CRM can ship before the connector serves. Whatever the
+// variable holds, the build accepts only the exact production connector origin.
+expectIncludes(crm, 'vars.CRM_PRODUCTION_INSTAGRAM_CONNECTOR_ORIGIN', 'CRM Pages');
+expectIncludes(crm, "!= 'https://instagram.vishartattoo.com'", 'CRM Pages');
 
 expectIncludes(database, 'supabase db reset --local --no-seed', 'production database');
 expectIncludes(database, 'supabase db push --dry-run', 'production database');

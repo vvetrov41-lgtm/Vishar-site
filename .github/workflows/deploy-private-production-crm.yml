@@ -37,6 +37,10 @@ jobs:
       VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
       VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
       VITE_MONZO_CONNECTOR_ORIGIN: https://monzo.vishartattoo.com
+      # Left unset until the Instagram connector is actually serving. An empty
+      # value makes the CRM Instagram screen report "not configured" instead of
+      # sending an operator session to a host that is not answering yet.
+      VITE_INSTAGRAM_CONNECTOR_ORIGIN: ${{ vars.CRM_PRODUCTION_INSTAGRAM_CONNECTOR_ORIGIN }}
       CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
 
     steps:
@@ -115,6 +119,12 @@ jobs:
             exit 1
           fi
 
+          if [ -n "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" ] \
+            && [ "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" != 'https://instagram.vishartattoo.com' ]; then
+            echo 'The private production CRM may use only the exact production Instagram connector origin.' >&2
+            exit 1
+          fi
+
           if ! [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]; then
             echo 'CRM_PRODUCTION_PAGES_PROJECT must be a dedicated private CRM project name.' >&2
             exit 1
@@ -168,6 +178,9 @@ jobs:
           grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
           grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
           grep -R -Fq "$VITE_MONZO_CONNECTOR_ORIGIN" admin/dist
+          if [ -n "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" ]; then
+            grep -R -Fq "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" admin/dist
+          fi
           node scripts/check-private-crm-artifact.mjs admin/dist
 
       - name: Install pinned root deployment tooling
