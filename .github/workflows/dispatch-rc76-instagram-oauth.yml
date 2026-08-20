@@ -9,8 +9,7 @@ on:
 
 permissions:
   actions: read
-  contents: read
-  issues: write
+  contents: write
 
 jobs:
   locate:
@@ -20,6 +19,9 @@ jobs:
       RELEASE_BRANCH: release/private-crm-rc76-instagram-communications
       RELEASE_SHA: 0b9b71a0a995611308e72ea3251249362699adec
     steps:
+      - name: Checkout ops branch
+        uses: actions/checkout@v4
+
       - name: Locate protected database rollout without dispatching
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,19 +38,21 @@ jobs:
           const runs = JSON.parse(process.env.RUN_JSON || '[]');
           const run = runs.find((r) => r.headSha === process.env.RELEASE_SHA);
           if (!run) {
-            console.log('none');
+            console.log(`found=false\nrelease_sha=${process.env.RELEASE_SHA}`);
             process.exit(0);
           }
-          console.log(run.databaseId);
-          console.log(run.url);
-          console.log(run.status);
-          console.log(run.conclusion || 'n/a');
-          console.log(run.createdAt);
+          console.log('found=true');
+          console.log(`run_id=${run.databaseId}`);
+          console.log(`url=${run.url}`);
+          console.log(`status=${run.status}`);
+          console.log(`conclusion=${run.conclusion || 'n/a'}`);
+          console.log(`created_at=${run.createdAt}`);
+          console.log(`release_sha=${process.env.RELEASE_SHA}`);
           NODE
-          mapfile -t result < "$RUNNER_TEMP/result.txt"
-          if [ "${result[0]}" = none ]; then
-            body=$(printf 'RC76 Instagram auth DB locator: no production database run found for release_sha=%s\n' "$RELEASE_SHA")
-          else
-            body=$(printf 'RC76 Instagram auth DB locator:\nrun=%s\nstatus=%s conclusion=%s created=%s\nrelease_sha=%s\n' "${result[1]}" "${result[2]}" "${result[3]}" "${result[4]}" "$RELEASE_SHA")
-          fi
-          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/379/comments" -f body="$body" >/dev/null
+          mkdir -p .operator-status
+          cp "$RUNNER_TEMP/result.txt" .operator-status/instagram-auth-db.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .operator-status/instagram-auth-db.txt
+          git commit -m 'Record RC76 Instagram auth DB rollout status'
+          git push
