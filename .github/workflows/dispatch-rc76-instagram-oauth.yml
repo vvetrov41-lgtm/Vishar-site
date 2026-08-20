@@ -1,4 +1,4 @@
-name: Dispatch RC76 Instagram auth database rollout
+name: Locate RC76 Instagram auth database rollout
 
 on:
   push:
@@ -8,60 +8,47 @@ on:
       - .github/workflows/dispatch-rc76-instagram-oauth.yml
 
 permissions:
-  actions: write
+  actions: read
   contents: read
   issues: write
 
-concurrency:
-  group: rc76-instagram-auth-database-dispatch
-  cancel-in-progress: true
-
 jobs:
-  dispatch:
+  locate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       RELEASE_BRANCH: release/private-crm-rc76-instagram-communications
       RELEASE_SHA: 0b9b71a0a995611308e72ea3251249362699adec
     steps:
-      - name: Verify exact release branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')"
-          test "$remote" = "$RELEASE_SHA"
-
-      - name: Dispatch protected database rollout
+      - name: Locate protected database rollout without dispatching
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh workflow run deploy-private-production-database.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "$RELEASE_BRANCH" \
-            -f approved_sha="$RELEASE_SHA" \
-            -f deploy=true \
-            -f approval_phrase=DEPLOY_PRIVATE_CRM_DATABASE
-          sleep 4
           run_json="$(gh run list --repo "$GITHUB_REPOSITORY" \
             --workflow deploy-private-production-database.yml \
             --branch "$RELEASE_BRANCH" \
             --event workflow_dispatch \
-            --limit 10 \
+            --limit 20 \
             --json databaseId,url,status,conclusion,headSha,createdAt)"
-          RUN_JSON="$run_json" BEFORE="$before" node <<'NODE' > "$RUNNER_TEMP/result.txt"
+          RUN_JSON="$run_json" node <<'NODE' > "$RUNNER_TEMP/result.txt"
           const runs = JSON.parse(process.env.RUN_JSON || '[]');
-          const target = process.env.RELEASE_SHA;
-          const before = Date.parse(process.env.BEFORE || 0);
-          const run = runs.find((r) => r.headSha === target && Date.parse(r.createdAt) >= before - 5000);
-          if (!run) process.exit(2);
+          const run = runs.find((r) => r.headSha === process.env.RELEASE_SHA);
+          if (!run) {
+            console.log('none');
+            process.exit(0);
+          }
           console.log(run.databaseId);
           console.log(run.url);
           console.log(run.status);
           console.log(run.conclusion || 'n/a');
+          console.log(run.createdAt);
           NODE
           mapfile -t result < "$RUNNER_TEMP/result.txt"
-          body=$(printf 'RC76 Instagram auth DB rollout dispatched:\nrun=%s\nstatus=%s conclusion=%s\nrelease_sha=%s\n' "${result[1]}" "${result[2]}" "${result[3]}" "$RELEASE_SHA")
+          if [ "${result[0]}" = none ]; then
+            body=$(printf 'RC76 Instagram auth DB locator: no production database run found for release_sha=%s\n' "$RELEASE_SHA")
+          else
+            body=$(printf 'RC76 Instagram auth DB locator:\nrun=%s\nstatus=%s conclusion=%s created=%s\nrelease_sha=%s\n' "${result[1]}" "${result[2]}" "${result[3]}" "${result[4]}" "$RELEASE_SHA")
+          fi
           gh api -X POST "repos/$GITHUB_REPOSITORY/issues/379/comments" -f body="$body" >/dev/null
