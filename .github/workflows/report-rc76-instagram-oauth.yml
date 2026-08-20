@@ -1,5 +1,6 @@
 name: Report RC76 Instagram OAuth dispatch
 
+# Re-triggerable locator for the latest RC76 dispatcher and protected run.
 on:
   push:
     branches:
