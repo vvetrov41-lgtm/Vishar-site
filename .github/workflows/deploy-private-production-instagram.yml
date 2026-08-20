@@ -1,0 +1,222 @@
+name: Deploy private production Instagram connector
+
+# This workflow never performs Meta onboarding and never provisions secrets or
+# KV namespaces. The Worker, its exact Custom Domain, the two KV namespaces and
+# the exact encrypted secret names must already exist before deploy=true is
+# allowed to touch production.
+#
+# Capabilities are activated in order: onboarding first, so the artists can
+# connect their accounts, and only then the outbound drain. Enabling the drain
+# without onboarding would create a queue that can never obtain a token, so the
+# generator refuses that combination rather than documenting it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation. Leave false for validation-only runs.
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+      enable_oauth:
+        description: Allow artists to connect their Instagram account
+        required: true
+        default: false
+        type: boolean
+      enable_drain:
+        description: Allow queued CRM replies to be delivered to Instagram
+        required: true
+        default: false
+        type: boolean
+      enable_enrichment:
+        description: Allow participant handles to be resolved outside the webhook path
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-instagram
+  cancel-in-progress: false
+
+jobs:
+  instagram:
+    name: Private CRM Instagram connector production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-instagram-production
+      CONNECTOR_HOSTNAME: instagram.vishartattoo.com
+
+    steps:
+      - name: Verify exact release branch and explicit production gate
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_INSTAGRAM_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *) echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
+          esac
+          [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          }
+          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+            if [ "$DEPLOY_ENABLED" != 'true' ]; then
+              echo 'CRM_PRODUCTION_INSTAGRAM_DEPLOY_ENABLED is not explicitly enabled.' >&2
+              exit 1
+            fi
+            if [ "$APPROVAL_PHRASE" != 'EXPOSE_PRIVATE_CRM_INSTAGRAM' ]; then
+              echo 'The exact Instagram production approval phrase is required for deploy=true.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact checkout and public surface
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          grep -Fq 'name = "vishar-instagram-production"' wrangler.instagram.production.toml
+          grep -Fq 'pattern = "instagram.vishartattoo.com"' wrangler.instagram.production.toml
+          grep -Fq 'custom_domain = true' wrangler.instagram.production.toml
+          grep -Fq 'workers_dev = false' wrangler.instagram.production.toml
+          grep -Fq 'preview_urls = false' wrangler.instagram.production.toml
+          ! grep -Fq 'pattern = "*' wrangler.instagram.production.toml
+          # The tracked template must remain inert; the release generates the
+          # active configuration rather than committing it.
+          ! grep -Eq '^\s*\[triggers\]' wrangler.instagram.production.toml
+          ! grep -Eq '^\s*\[\[kv_namespaces\]\]' wrangler.instagram.production.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and audit locked dependencies
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+
+      - name: Re-run Instagram security boundaries at the exact SHA
+        run: |
+          node scripts/test-instagram-webhook.mjs
+          node scripts/test-instagram-connector.mjs
+          node scripts/test-instagram-production-config.mjs
+          npm run check:instagram-production-bundle
+          npm run scan:secrets
+
+      - name: Verify exact pre-provisioned production Worker secret names
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.instagram.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
+          const expected = [
+            'INSTAGRAM_APP_SECRET',
+            'INSTAGRAM_TOKEN_ENCRYPTION_KEY',
+            'INSTAGRAM_WEBHOOK_VERIFY_TOKEN',
+            'SUPABASE_SECRET_KEY',
+          ].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Production Instagram secret-name set is not exact; expected ${expected.join(', ')}`);
+          }
+          NODE
+
+      - name: Generate and deploy only the Instagram connector Worker
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          INSTAGRAM_OAUTH_STATE_ID: ${{ vars.CRM_PRODUCTION_INSTAGRAM_OAUTH_STATE_ID }}
+          INSTAGRAM_OAUTH_TOKENS_ID: ${{ vars.CRM_PRODUCTION_INSTAGRAM_OAUTH_TOKENS_ID }}
+          INSTAGRAM_APP_ID: ${{ vars.CRM_PRODUCTION_INSTAGRAM_APP_ID }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+          INSTAGRAM_ACCOUNT_VLADIMIR: ${{ vars.CRM_PRODUCTION_INSTAGRAM_ACCOUNT_VLADIMIR }}
+          INSTAGRAM_ACCOUNT_KRISTINA: ${{ vars.CRM_PRODUCTION_INSTAGRAM_ACCOUNT_KRISTINA }}
+          ENABLE_INSTAGRAM_OAUTH: ${{ inputs.enable_oauth }}
+          ENABLE_INSTAGRAM_DRAIN: ${{ inputs.enable_drain }}
+          ENABLE_INSTAGRAM_ENRICHMENT: ${{ inputs.enable_enrichment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy_config="$GITHUB_WORKSPACE/.wrangler.instagram.production.deploy.toml"
+          deploy_output="$RUNNER_TEMP/instagram-production-wrangler-output.ndjson"
+          trap 'rm -f "$deploy_config"' EXIT
+          rm -f "$deploy_output"
+
+          node scripts/generate-instagram-production-deploy-config.mjs "$deploy_config"
+          grep -Fq 'binding = "INSTAGRAM_OAUTH_STATE"' "$deploy_config"
+          grep -Fq 'binding = "INSTAGRAM_OAUTH_TOKENS"' "$deploy_config"
+
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/instagram-production-wrangler.log \
+          WRANGLER_SEND_METRICS=false \
+            npx wrangler deploy \
+              --config "$deploy_config" \
+              --name "$WORKER_NAME" \
+              --dry-run \
+              --outdir .wrangler/instagram-production-generated
+
+          WRANGLER_OUTPUT_FILE_PATH="$deploy_output" \
+            npx wrangler deploy \
+              --config "$deploy_config" \
+              --name "$WORKER_NAME" \
+              --strict
+
+          rm -f "$deploy_config"
+
+      - name: Production boundary summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          ENABLE_OAUTH: ${{ inputs.enable_oauth }}
+          ENABLE_DRAIN: ${{ inputs.enable_drain }}
+          ENABLE_ENRICHMENT: ${{ inputs.enable_enrichment }}
+        run: |
+          {
+            echo '### Private CRM Instagram connector production gate'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo "- OAuth onboarding enabled: \`$ENABLE_OAUTH\`"
+            echo "- Outbound drain enabled: \`$ENABLE_DRAIN\`"
+            echo "- Participant enrichment enabled: \`$ENABLE_ENRICHMENT\`"
+            echo '- Deploy scope: `wishar-instagram-production` Worker only, generated from the tracked inert template'
+            echo '- Secret values are never read or printed; no secret put/bulk command exists here'
+          } >> "$GITHUB_STEP_SUMMARY"
