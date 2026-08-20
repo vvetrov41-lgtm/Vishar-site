@@ -299,4 +299,23 @@ describe('Instagram connector configuration', () => {
     await expect(api.startInstagramConnection('a1111111-1111-4111-8111-111111111111'))
       .rejects.toThrow(/session has expired/i);
   });
+
+
+  it('keeps a backend-only permission RPC outage distinct from a generic connector failure', async () => {
+    const client = {
+      auth: { getSession: async () => ({ data: { session: { access_token: 'session-token-value' } }, error: null }) },
+    } as unknown as CrmClient;
+    const api = createInstagramConnectionsApi(client, {
+      connectorOrigin: 'https://instagram.vishartattoo.com',
+      fetcher: (async () => new Response(JSON.stringify({
+        error: 'authorization_backend_unavailable',
+      }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof globalThis.fetch,
+    });
+
+    await expect(api.startInstagramConnection('a1111111-1111-4111-8111-111111111111'))
+      .rejects.toThrow(/permission check/i);
+  });
 });
