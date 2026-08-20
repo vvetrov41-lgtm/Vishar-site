@@ -305,6 +305,16 @@ await test('an authorization backend failure is unavailable, not a false 403', a
     { db: dbDouble({ throwOn: 'service_authorize_instagram_connection' }) },
   );
   assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'authorization_backend_unavailable' });
+});
+
+await test('a Supabase Auth verification failure remains distinct from the scope RPC', async () => {
+  const { response } = await startConnection(
+    { artist_id: V_ARTIST },
+    { db: dbDouble({ throwOn: 'verifyUser' }) },
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'session_verification_unavailable' });
 });
 
 await test('a browser cannot smuggle its own integration selector', async () => {
