@@ -4,6 +4,7 @@ name: RC76 Instagram runtime diagnosis
 # deliberately contains no deployment, secret mutation, KV mutation, database
 # mutation, route mutation, or Pages command. It verifies the exact public
 # edge surface that a browser must reach before its CRM session can be checked.
+# Latest execution: post-deploy runtime probe for release c50a1aae4afbee7fb9f4640500697e1c24aa71c5.
 
 on:
   push:
