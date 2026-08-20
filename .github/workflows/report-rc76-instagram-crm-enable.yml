@@ -1,0 +1,38 @@
+name: Report RC76 Instagram CRM enable operator
+
+on:
+  push:
+    branches:
+      - ops/rc76-instagram-oauth-dispatch
+    paths:
+      - .github/workflows/report-rc76-instagram-crm-enable.yml
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report operator and protected CRM run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sleep 8
+          operator="$(gh run list --repo "$REPO" --workflow rc76-instagram-crm-enable.yml --branch ops/rc76-instagram-oauth-dispatch --event push --limit 1 --json databaseId,url,status,conclusion,headSha,createdAt)"
+          crm="$(gh run list --repo "$REPO" --workflow deploy-private-production-crm.yml --branch release/private-crm-rc76-instagram-communications --event workflow_dispatch --limit 1 --json databaseId,url,status,conclusion,headSha,createdAt)"
+          OPERATOR="$operator" CRM="$crm" node <<'NODE' > /tmp/report.md
+          const op = JSON.parse(process.env.OPERATOR || '[]')[0];
+          const crm = JSON.parse(process.env.CRM || '[]')[0];
+          if (op) console.log(`RC76 Instagram CRM operator: ${op.url} status=${op.status} conclusion=${op.conclusion || 'n/a'} head=${op.headSha}`);
+          else console.log('RC76 Instagram CRM operator: no run found');
+          if (crm) console.log(`RC76 protected CRM run: ${crm.url} status=${crm.status} conclusion=${crm.conclusion || 'n/a'} head=${crm.headSha} created=${crm.createdAt}`);
+          else console.log('RC76 protected CRM run: no run found');
+          NODE
+          gh pr comment 379 --repo "$REPO" --body-file /tmp/report.md
