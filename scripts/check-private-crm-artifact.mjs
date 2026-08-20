@@ -13,6 +13,13 @@ const bannedText = [
   'tattooai-preview',
 ];
 
+const requiredProductionConnectOrigins = [
+  'https://team.vishartattoo.com',
+  'https://calendar.vishartattoo.com',
+  'https://monzo.vishartattoo.com',
+  'https://instagram.vishartattoo.com',
+];
+
 // The retained staging Supabase project ref is deliberately NOT banned here.
 // `admin/src/lib/whatsapp-connections-api.ts` carries both project origins as
 // constants so it can classify which environment the CRM is pointed at and
@@ -66,6 +73,23 @@ for (const file of files) {
     if (pattern.test(content)) {
       findings.push(`${path.relative(root, file)} contains a ${name}`);
     }
+  }
+}
+
+const headersPath = path.join(root, '_headers');
+if (!fs.existsSync(headersPath)) {
+  findings.push('_headers is missing from the private CRM artifact');
+} else {
+  const headers = fs.readFileSync(headersPath, 'utf8');
+  const cspLine = headers.split(/\r?\n/).find((line) => line.trim().startsWith('Content-Security-Policy:')) ?? '';
+  const connectSrc = /(?:^|;)\s*connect-src\s+([^;]+)/.exec(cspLine)?.[1] ?? '';
+  for (const origin of requiredProductionConnectOrigins) {
+    if (!connectSrc.split(/\s+/).includes(origin)) {
+      findings.push(`_headers connect-src is missing reviewed production origin ${origin}`);
+    }
+  }
+  if (connectSrc.includes('https://*.vishartattoo.com')) {
+    findings.push('_headers connect-src must not wildcard Vishar connector hosts');
   }
 }
 
