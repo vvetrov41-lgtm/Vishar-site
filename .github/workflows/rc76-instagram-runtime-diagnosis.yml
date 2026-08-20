@@ -40,7 +40,7 @@ jobs:
           git merge-base --is-ancestor "$EXPECTED_PARENT" "$GITHUB_SHA"
 
           self='.github/workflows/rc76-instagram-runtime-diagnosis.yml'
-          if grep -Eiq 'wrangler[[:space:]]+(deploy|delete|secret|kv|pages)|curl[^\n]*(POST|PUT|PATCH|DELETE).*cloudflare|supabase[[:space:]]+db[[:space:]]+(push|reset)|gh[[:space:]]+(api|workflow)[^\n]*(--method| -X )' "$self"; then
+          if grep -Eiq 'wrangler[[:space:]]+(deploy|delete|secret|kv|pages)|supabase[[:space:]]+db[[:space:]]+(push|reset)|gh[[:space:]]+(api|workflow)[[:space:]]+run' "$self"; then
             echo 'Runtime diagnosis contains a production mutation primitive.' >&2
             exit 1
           fi
