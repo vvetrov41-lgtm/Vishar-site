@@ -30,7 +30,7 @@ jobs:
           DISPATCHER="$dispatcher" PRODUCTION="$production" node <<'NODE' > /tmp/report.md
           const d = JSON.parse(process.env.DISPATCHER || '[]')[0];
           const p = JSON.parse(process.env.PRODUCTION || '[]')[0];
-          console.log('RC76 Instagram OAuth operator status:');
+          console.log('RC76 Instagram CORS-fix OAuth operator status:');
           if (d) console.log(`dispatcher=${d.url} status=${d.status} conclusion=${d.conclusion || 'n/a'} head=${d.headSha}`);
           else console.log('dispatcher=not-found');
           if (p) console.log(`production=${p.url} status=${p.status} conclusion=${p.conclusion || 'n/a'} head=${p.headSha} created=${p.createdAt}`);
