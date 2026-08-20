@@ -191,6 +191,27 @@ function authorizationFailure(error) {
   if (error?.code === 'instagram_permission_denied' || error?.pgcode === '42501') {
     return json(403, { error: 'not_permitted' });
   }
+
+  // These codes are deliberately narrow, stable operational categories. They
+  // reveal neither a CRM session nor a database response, but let the CRM and
+  // Worker logs distinguish Auth verification from the backend-only scope RPC.
+  const code = typeof error?.code === 'string' ? error.code : 'unknown';
+  const pgcode = typeof error?.pgcode === 'string' ? error.pgcode : null;
+  console.warn(JSON.stringify({
+    event: 'instagram_connection_authorization_failed',
+    code,
+    pgcode,
+  }));
+  if (
+    code === 'instagram_session_verification_unavailable'
+    || code === 'instagram_supabase_url_invalid'
+    || code === 'instagram_supabase_secret_unavailable'
+  ) {
+    return json(503, { error: 'session_verification_unavailable' });
+  }
+  if (code === 'instagram_rpc_unavailable' || code === 'instagram_rpc_failed') {
+    return json(503, { error: 'authorization_backend_unavailable' });
+  }
   return json(503, { error: 'authorization_unavailable' });
 }
 
