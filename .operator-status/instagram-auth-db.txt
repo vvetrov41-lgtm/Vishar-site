@@ -1,0 +1,7 @@
+found=true
+run_id=32420477029
+url=https://github.com/vvetrov41-lgtm/Vishar-site/actions/runs/32420477029
+status=waiting
+conclusion=n/a
+created_at=2026-08-20T21:39:14Z
+release_sha=0b9b71a0a995611308e72ea3251249362699adec
