@@ -1,0 +1,37 @@
+name: Report RC76 Instagram CRM Pages release operator
+
+on:
+  push:
+    branches:
+      - ops/rc76-instagram-oauth-dispatch
+    paths:
+      - .github/workflows/report-rc76-instagram-crm-pages-release-operator.yml
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Locate release operator and report on PR 379
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sleep 4
+          rows="$(gh run list --repo "$REPO" --workflow rc76-instagram-crm-pages-release-operator.yml --branch release/private-crm-rc76-instagram-crm-pages-operator --event push --limit 1 --json databaseId,url,status,conclusion,headSha,createdAt)"
+          ROWS="$rows" node <<'NODE' > /tmp/report.md
+          const rows = JSON.parse(process.env.ROWS || '[]');
+          if (!rows.length) throw new Error('No protected RC76 CRM Pages release operator run found');
+          const r = rows[0];
+          console.log(`RC76 Instagram CRM Pages release operator: ${r.url}`);
+          console.log(`status=${r.status}, conclusion=${r.conclusion || 'n/a'}, operator_head=${r.headSha}, created=${r.createdAt}`);
+          console.log('Product source is pinned inside the job to 93f1bb9f3869b3bba63a8d6a56ef499e0106174c.');
+          NODE
+          gh pr comment 379 --repo "$REPO" --body-file /tmp/report.md
