@@ -22,9 +22,9 @@ from the database rather than from the webhook body.
 | `wrangler.instagram.production.toml` | Inert: no cron, no KV binding, every capability `"false"` |
 | Migrations `0068`–`0072` | Communications core, WhatsApp migration, Instagram binding, inbox |
 | CRM `Communications` and `Instagram` screens | Complete |
-| Cloudflare Worker `vishar-instagram-production` | **Does not exist yet** |
-| Custom Domain `instagram.vishartattoo.com` | **Does not exist yet** |
-| KV namespaces | **Do not exist yet** |
+| Cloudflare Worker `vishar-instagram-production` | **Pre-provisioned in section 3, never by the release** |
+| Custom Domain `instagram.vishartattoo.com` | **Pre-provisioned in section 3, never by the release** |
+| KV namespaces | **Pre-provisioned in section 3, never by the release** |
 | Meta app Instagram product | **Not configured yet** |
 
 Nothing is live. The connector cannot reach Meta and Meta cannot reach the
@@ -111,9 +111,9 @@ What happens next: Meta issues a `GET` to the callback URL with
 `hub.mode=subscribe`. The Worker compares the supplied token in constant time
 and echoes `hub.challenge` only on an exact match.
 
-**This step must be performed after step 4** (the Worker must already be
-deployed with the verify token secret), otherwise the verification request has
-nothing to answer it.
+**This step must be performed after rollout step 3** (the Worker must already
+be deployed, with the verify token secret stored on it beforehand by section 3),
+otherwise the verification request has nothing to answer it.
 
 ### 2.5 Subscribe to the messaging fields
 
@@ -160,7 +160,7 @@ instagram_business_manage_messages
 
 ### 2.7 Each artist connects their own account
 
-Once step 5 has enabled onboarding, each artist signs in themselves. Nobody
+Once rollout step 5 has enabled onboarding, each artist signs in themselves. Nobody
 connects on behalf of another artist, and there is no shared connection.
 
 1. Open **https://crm.vishartattoo.com/#/integrations/instagram**
@@ -179,8 +179,25 @@ password and, where enabled, their second factor.
 
 ## 3. Cloudflare provisioning
 
-These are one-off, performed once before the first deploy. They are deliberately
-outside the release workflow, so a release can never create infrastructure.
+These are one-off, performed once **before** the first deploy. They are
+deliberately outside the release workflow, so a release can never create
+infrastructure.
+
+`deploy-private-production-instagram.yml` creates none of the resources in this
+section. It contains no `kv namespace create`, no `secret put` and no Custom
+Domain call. It generates the active Wrangler configuration from resources that
+already exist and runs `wrangler deploy --strict` onto them, then verifies the
+secret-name set is exactly the four names below. If the Worker, the Custom
+Domain, either KV namespace or any of the four secrets is missing, the release
+fails rather than provisioning it.
+
+Order matters, because a Custom Domain and a secret both attach to an existing
+Worker service:
+
+1. create the two KV namespaces;
+2. create the Worker `vishar-instagram-production`;
+3. attach the Custom Domain `instagram.vishartattoo.com` to it;
+4. store the four Worker secrets.
 
 Create the two KV namespaces:
 
@@ -214,11 +231,12 @@ the Worker secret `INSTAGRAM_TOKEN_ENCRYPTION_KEY`:
 openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
 ```
 
-The Custom Domain `instagram.vishartattoo.com` must be pre-provisioned once
-against the Cloudflare dashboard for this Worker, exactly as
-`whatsapp.vishartattoo.com` was. The release runs `wrangler deploy --strict`,
-which compares routes; a route that does not already exist reads as a route
-change and aborts the deploy.
+The Worker `vishar-instagram-production` and its Custom Domain
+`instagram.vishartattoo.com` must both be pre-provisioned once, exactly as
+`whatsapp.vishartattoo.com` was. A Custom Domain attaches to a Worker service,
+so the Worker has to exist first; it is created empty and the release replaces
+its code. The release runs `wrangler deploy --strict`, which compares routes
+against what is already there.
 
 Required Worker secrets, exactly four, no more:
 
@@ -249,11 +267,13 @@ The order matters. Each step is safe to stop at.
    "not configured" until `VITE_INSTAGRAM_CONNECTOR_ORIGIN` is set in the build
    environment to `https://instagram.vishartattoo.com`.
 
-3. **Connector, inert.** Run `deploy-private-production-instagram.yml` with
-   `enable_oauth=false`, `enable_drain=false`, `enable_enrichment=false`. This
-   creates the Worker and its bindings with every capability off. The webhook
-   verification challenge answers from here on, so Meta step 2.4 can now be
-   completed.
+3. **Connector, inert.** Section 3 must already be complete: the Worker, the
+   Custom Domain, both KV namespaces and all four secrets exist before this
+   step. Run `deploy-private-production-instagram.yml` with
+   `enable_oauth=false`, `enable_drain=false`, `enable_enrichment=false`. The
+   release deploys the connector code and binds it to those existing resources
+   with every capability off; it creates none of them. The webhook verification
+   challenge answers from here on, so Meta step 2.4 can now be completed.
 
 4. **Meta webhook.** Perform steps 2.4 and 2.5.
 
