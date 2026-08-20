@@ -17,6 +17,7 @@ import instagramEntry, { __testing as corsTesting } from '../workers/instagram-p
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const configPath = join(root, 'wrangler.instagram.production.toml');
 const config = readFileSync(configPath, 'utf8');
+const generator = readFileSync(join(root, 'scripts/generate-instagram-production-deploy-config.mjs'), 'utf8');
 
 let passes = 0;
 let failures = 0;
@@ -46,6 +47,11 @@ async function asyncTest(name, run) {
 test('the Worker name and entry point are the reviewed ones', () => {
   assert.match(config, /^name = "vishar-instagram-production"$/m);
   assert.match(config, /^main = "workers\/instagram-production-entry\.js"$/m);
+});
+
+test('the release generator pins the same reviewed entry point', () => {
+  assert.ok(generator.includes('main = "workers/instagram-production-entry.js"'));
+  assert.ok(!generator.includes('main = "workers/instagram-production.js"'));
 });
 
 test('no preview or workers.dev hostname is exposed', () => {
