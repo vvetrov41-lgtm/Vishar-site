@@ -1,9 +1,22 @@
 name: Deploy private production Instagram connector
 
 # This workflow never performs Meta onboarding and never provisions secrets or
-# KV namespaces. The Worker, its exact Custom Domain, the two KV namespaces and
-# the exact encrypted secret names must already exist before deploy=true is
-# allowed to touch production.
+# KV namespaces. The two KV namespaces and the exact encrypted secret names
+# must already exist before deploy=true is allowed to touch production.
+#
+# The Worker and its Custom Domain are the opposite: on the very first deploy
+# they must NOT already exist. `wrangler deploy --strict` compares the
+# Worker's remote route state against wrangler.instagram.production.toml; when
+# nothing exists yet that comparison is a pure addition and --strict creates
+# the Worker and attaches the Custom Domain together. A Custom Domain attached
+# by hand ahead of time (dashboard or a direct Cloudflare API call) is not
+# adoptable by that first --strict deploy: the Custom Domains API returns
+# management fields (zone_name, enabled, previews_enabled) the local `routes`
+# entry never declares, so --strict reports them as a conflict and aborts
+# before uploading. See docs/crm/instagram-production-runbook.md section 3.
+# Once this workflow has deployed the Worker once, its Custom Domain is
+# wrangler-managed and every later deploy compares cleanly, the same as
+# whatsapp.vishartattoo.com and gmail.vishartattoo.com.
 #
 # Capabilities are activated in order: onboarding first, so the artists can
 # connect their accounts, and only then the outbound drain. Enabling the drain
@@ -273,7 +286,7 @@ jobs:
             echo "- Outbound drain enabled: \`$ENABLE_DRAIN\`"
             echo "- Participant enrichment enabled: \`$ENABLE_ENRICHMENT\`"
             echo '- Worker: `vishar-instagram-production` only'
-            echo '- Pre-provisioned Custom Domain: `instagram.vishartattoo.com`'
+            echo '- Custom Domain: `instagram.vishartattoo.com` (created by this deploy on first run)'
             echo '- Accepted Meta callback path: `/webhook` only'
             echo '- workers.dev disabled; preview URLs disabled'
             echo '- Required secret names: Instagram app secret, token encryption key, webhook verify token, production Supabase backend key'

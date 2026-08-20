@@ -22,8 +22,8 @@ from the database rather than from the webhook body.
 | `wrangler.instagram.production.toml` | Inert: no cron, no KV binding, every capability `"false"` |
 | Migrations `0068`–`0072` | Communications core, WhatsApp migration, Instagram binding, inbox |
 | CRM `Communications` and `Instagram` screens | Complete |
-| Cloudflare Worker `vishar-instagram-production` | **Pre-provisioned in section 3, never by the release** |
-| Custom Domain `instagram.vishartattoo.com` | **Pre-provisioned in section 3, never by the release** |
+| Cloudflare Worker `vishar-instagram-production` | **Does not exist yet — created by the release's own first deploy, never pre-provisioned** |
+| Custom Domain `instagram.vishartattoo.com` | **Does not exist yet — created by the release's own first deploy, never pre-provisioned** |
 | KV namespaces | **Pre-provisioned in section 3, never by the release** |
 | Meta app Instagram product | **Not configured yet** |
 
@@ -179,25 +179,29 @@ password and, where enabled, their second factor.
 
 ## 3. Cloudflare provisioning
 
-These are one-off, performed once **before** the first deploy. They are
-deliberately outside the release workflow, so a release can never create
-infrastructure.
+The two KV namespaces and the four Worker secrets are one-off, performed once
+**before** the first deploy. They are deliberately outside the release
+workflow, so a release can never create them.
 
-`deploy-private-production-instagram.yml` creates none of the resources in this
-section. It contains no `kv namespace create`, no `secret put` and no Custom
-Domain call. It generates the active Wrangler configuration from resources that
-already exist and runs `wrangler deploy --strict` onto them, then verifies the
-secret-name set is exactly the four names below. If the Worker, the Custom
-Domain, either KV namespace or any of the four secrets is missing, the release
-fails rather than provisioning it.
+`deploy-private-production-instagram.yml` contains no `kv namespace create` and
+no `secret put`. It generates the active Wrangler configuration from the KV
+namespace ids and app id supplied as `crm-production` variables, and verifies
+the secret-name set is exactly the four names below before it deploys. If
+either KV namespace or any of the four secrets is missing, the release fails
+rather than provisioning it.
 
-Order matters, because a Custom Domain and a secret both attach to an existing
-Worker service:
+The Worker `vishar-instagram-production` and its Custom Domain
+`instagram.vishartattoo.com` are the opposite: **do not** create them ahead of
+time. The connector's own first deploy (rollout step 3) creates both, and must
+be the thing that creates the Custom Domain — see the warning below.
+
+Provisioning order:
 
 1. create the two KV namespaces;
-2. create the Worker `vishar-instagram-production`;
-3. attach the Custom Domain `instagram.vishartattoo.com` to it;
-4. store the four Worker secrets.
+2. store the four Worker secrets on the Worker name `vishar-instagram-production`
+   (the release's secret-name check runs before the deploy step, so the
+   secrets may be stored before the Worker exists; Cloudflare accepts a secret
+   write for a script name that has not been uploaded yet).
 
 Create the two KV namespaces:
 
@@ -237,12 +241,27 @@ the Worker secret `INSTAGRAM_TOKEN_ENCRYPTION_KEY`:
 openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
 ```
 
-The Worker `vishar-instagram-production` and its Custom Domain
-`instagram.vishartattoo.com` must both be pre-provisioned once, exactly as
-`whatsapp.vishartattoo.com` was. A Custom Domain attaches to a Worker service,
-so the Worker has to exist first; it is created empty and the release replaces
-its code. The release runs `wrangler deploy --strict`, which compares routes
-against what is already there.
+**Do not pre-create the Custom Domain**, by dashboard or by API, and do not
+pre-create the Worker script either. `wrangler deploy --strict` compares the
+Worker's *remote* route state against what `wrangler.instagram.production.toml`
+declares. When the Worker and its Custom Domain do not exist yet, that
+comparison is a pure addition and `--strict` deploys cleanly — this is how
+`whatsapp.vishartattoo.com` and `gmail.vishartattoo.com` actually got their
+Custom Domains: their earliest Cloudflare-recorded Worker version for each is
+`source: wrangler`, not a dashboard or API upload that predates it.
+
+A Custom Domain created outside of `wrangler deploy` — by the dashboard, or by
+a direct Cloudflare API call — is not adoptable by a later `--strict` deploy.
+Cloudflare's Custom Domains API returns management fields
+(`zone_name`, `enabled`, `previews_enabled`) that the local `routes` entry
+never declares, so `wrangler deploy --strict` reports them as a conflict and
+aborts *before uploading*, leaving the Worker and the Custom Domain exactly as
+they were. This was discovered during the first live rollout of this runbook.
+If it happens: delete the Custom Domain (`workers/domains` API, not the
+Worker) and re-run the same `deploy=true` release input unchanged; the
+recreated `--strict` deploy has nothing pre-existing to conflict with and
+succeeds, uploading the Worker and creating the Custom Domain together in one
+step.
 
 Required Worker secrets, exactly four, no more:
 
@@ -277,13 +296,16 @@ The order matters. Each step is safe to stop at.
    is set at step 5, and the build accepts no value other than
    `https://instagram.vishartattoo.com`.
 
-3. **Connector, inert.** Section 3 must already be complete: the Worker, the
-   Custom Domain, both KV namespaces and all four secrets exist before this
-   step. Run `deploy-private-production-instagram.yml` with
-   `enable_oauth=false`, `enable_drain=false`, `enable_enrichment=false`. The
-   release deploys the connector code and binds it to those existing resources
-   with every capability off; it creates none of them. The webhook verification
-   challenge answers from here on, so Meta step 2.4 can now be completed.
+3. **Connector, inert.** Section 3 must already be complete for the two KV
+   namespaces and all four secrets — but **not** for the Worker or its Custom
+   Domain, which do not exist yet. Run `deploy-private-production-instagram.yml`
+   with `enable_oauth=false`, `enable_drain=false`, `enable_enrichment=false`.
+   This first deploy creates the Worker and attaches the Custom Domain to it in
+   the same `wrangler deploy --strict` call, binding both to the pre-provisioned
+   KV namespaces, with every capability off. If a Custom Domain already exists
+   here — because someone attached it by hand ahead of time — delete it first;
+   see the warning in section 3. The webhook verification challenge answers
+   from here on, so Meta step 2.4 can now be completed.
 
 4. **Meta webhook.** Perform steps 2.4 and 2.5.
 
