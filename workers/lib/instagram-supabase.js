@@ -4,7 +4,7 @@
 // accepted from the browser body: the Worker verifies the supplied CRM session
 // with Supabase Auth and only then passes the verified user id to the backend
 // authorization RPC. Supabase Auth establishes identity only; artist membership
-// and integration capability are still decided by the backend-only database RPC.
+// and integration capability are still decided by the backend-only database authorization RPC.
 //
 // The allow-list is the point. A Worker that could call any RPC with the
 // service secret would be a general-purpose database credential wherever it
