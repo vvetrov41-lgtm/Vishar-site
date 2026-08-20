@@ -1,4 +1,4 @@
-name: Locate RC76 Instagram CSP Pages rollout
+name: Verify RC76 Instagram CRM live boundaries
 
 on:
   push:
@@ -13,26 +13,51 @@ permissions:
   issues: write
 
 jobs:
-  locate:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Locate exact protected CRM Pages run
+      - name: Verify exact protected Pages run and live CSP/CORS
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TARGET_SHA: acf77918ecf1a6736d469f3c1e40193f54a6f0cb
+          TARGET_OPERATOR_SHA: acf77918ecf1a6736d469f3c1e40193f54a6f0cb
+          PRODUCT_SHA: 1c2c31bcf115779f9e97b415477444b90d0b97f3
         shell: bash
         run: |
           set -euo pipefail
+
           json="$(gh api "repos/$REPO/actions/workflows/rc76-instagram-crm-pages-release-operator.yml/runs?branch=release/private-crm-rc76-instagram-crm-pages-operator&event=push&per_page=20")"
           RUN_JSON="$json" node <<'NODE' > "$RUNNER_TEMP/run.txt"
           const payload = JSON.parse(process.env.RUN_JSON || '{}');
-          const target = process.env.TARGET_SHA;
+          const target = process.env.TARGET_OPERATOR_SHA;
           const run = (payload.workflow_runs || []).find((entry) => entry.head_sha === target);
           if (!run) process.exit(2);
           console.log(`${run.html_url}\n${run.status}\n${run.conclusion || 'n/a'}\n${run.id}`);
           NODE
           mapfile -t fields < "$RUNNER_TEMP/run.txt"
-          body=$(printf 'RC76 Instagram CSP Pages operator status:\nproduction=%s status=%s conclusion=%s head=%s run_id=%s\n' "${fields[0]}" "${fields[1]}" "${fields[2]}" "$TARGET_SHA" "${fields[3]}")
+          test "${fields[1]}" = completed
+          test "${fields[2]}" = success
+
+          crm_headers="$(mktemp)"
+          curl --fail --silent --show-error --location --max-redirs 0 -D "$crm_headers" -o /dev/null https://crm.vishartattoo.com/ || true
+          csp="$(tr -d '\r' < "$crm_headers" | grep -i '^content-security-policy:' | tail -n1 || true)"
+          test -n "$csp"
+          printf '%s\n' "$csp" | grep -Fq "connect-src"
+          printf '%s\n' "$csp" | grep -Fq "https://instagram.vishartattoo.com"
+
+          cors_headers="$(mktemp)"
+          curl --fail --silent --show-error \
+            -X OPTIONS \
+            -H 'Origin: https://crm.vishartattoo.com' \
+            -H 'Access-Control-Request-Method: GET' \
+            -H 'Access-Control-Request-Headers: authorization' \
+            -D "$cors_headers" -o /dev/null \
+            https://instagram.vishartattoo.com/v1/connections/status
+          tr -d '\r' < "$cors_headers" | grep -Eiq '^HTTP/[^ ]+ 204'
+          tr -d '\r' < "$cors_headers" | grep -Eiq '^access-control-allow-origin: https://crm\.vishartattoo\.com$'
+          tr -d '\r' < "$cors_headers" | grep -Eiq '^access-control-allow-methods: GET, OPTIONS$'
+          tr -d '\r' < "$cors_headers" | grep -Eiq '^access-control-allow-headers: .*authorization'
+
+          body=$(printf 'RC76 live browser-boundary verification:\nproduction_pages=%s status=%s conclusion=%s operator_head=%s product_sha=%s\nlive_csp=ok\nlive_instagram_cors_preflight=ok\n' "${fields[0]}" "${fields[1]}" "${fields[2]}" "$TARGET_OPERATOR_SHA" "$PRODUCT_SHA")
           gh api -X POST "repos/$REPO/issues/379/comments" -f body="$body" >/dev/null
