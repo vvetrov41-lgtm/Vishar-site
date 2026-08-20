@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 20
     environment: crm-production
     env:
-      APPROVED_SHA: 93f1bb9f3869b3bba63a8d6a56ef499e0106174c
+      APPROVED_SHA: 1c2c31bcf115779f9e97b415477444b90d0b97f3
       PRODUCT_RELEASE_BRANCH: release/private-crm-rc76-instagram-communications
       VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
