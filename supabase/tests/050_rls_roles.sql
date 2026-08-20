@@ -646,6 +646,7 @@ insert into expected_function_acl values
 
   -- Instagram connection lifecycle. Written only by the connector after it has
   -- verified the account server-side; no token is ever stored in Postgres.
+  ('public.service_authorize_instagram_connection(uuid,uuid)', false, false, true),
   ('public.service_set_instagram_integration(uuid,text,text,text,text[])', false, false, true),
   ('public.service_disable_instagram_integration(uuid,text,text)', false, false, true),
   ('public.service_resolve_instagram_route(text)', false, false, true),
