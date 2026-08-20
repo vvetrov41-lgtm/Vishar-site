@@ -307,7 +307,7 @@ for (const forbidden of [
 // The tracked template stays inert. Everything that makes the connector live is
 // generated at release time from explicitly supplied, non-secret values.
 expectIncludes(instagramConfig, 'name = "vishar-instagram-production"', 'Instagram production config');
-expectIncludes(instagramConfig, 'main = "workers/instagram-production.js"', 'Instagram production config');
+expectIncludes(instagramConfig, 'main = "workers/instagram-production-entry.js"', 'Instagram production config');
 expectIncludes(instagramConfig, 'workers_dev = false', 'Instagram production config');
 expectIncludes(instagramConfig, 'preview_urls = false', 'Instagram production config');
 expectIncludes(instagramConfig, 'pattern = "instagram.vishartattoo.com"', 'Instagram production config');
