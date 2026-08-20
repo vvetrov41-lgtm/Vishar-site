@@ -1,0 +1,116 @@
+name: RC76 Instagram CRM Pages operator
+
+on:
+  push:
+    branches:
+      - ops/rc76-instagram-oauth-dispatch
+    paths:
+      - .github/workflows/rc76-instagram-crm-pages-operator.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc76-instagram-crm-pages-operator
+  cancel-in-progress: false
+
+jobs:
+  private-crm:
+    name: RC76 private CRM Instagram origin production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      APPROVED_SHA: 93f1bb9f3869b3bba63a8d6a56ef499e0106174c
+      RELEASE_BRANCH: release/private-crm-rc76-instagram-communications
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      VITE_MONZO_CONNECTOR_ORIGIN: https://monzo.vishartattoo.com
+      VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
+      CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+
+    steps:
+      - name: Checkout exact RC76 SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact approved source and production-only browser configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          test -z "$(git status --short)"
+          remote_release="$(git rev-parse "origin/$RELEASE_BRANCH")"
+          test "$remote_release" = "$APPROVED_SHA"
+          case "$VITE_SUPABASE_URL" in https://*.supabase.co) ;; *) exit 1 ;; esac
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          test "$VITE_CALENDAR_CONNECTOR_ORIGIN" = 'https://calendar.vishartattoo.com'
+          test "$VITE_MONZO_CONNECTOR_ORIGIN" = 'https://monzo.vishartattoo.com'
+          test "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" = 'https://instagram.vishartattoo.com'
+          [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install, audit, test, typecheck and build only the private CRM
+        working-directory: admin
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify exact private CRM artifact includes all production connector origins
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
+          grep -R -Fq "$VITE_MONZO_CONNECTOR_ORIGIN" admin/dist
+          grep -R -Fq "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Install pinned root deployment tooling
+        run: npm ci
+
+      - name: Deploy only admin/dist to dedicated CRM Pages project
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx wrangler pages deploy admin/dist
+          --project-name "$CRM_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$APPROVED_SHA"
+          --commit-dirty=false
+
+      - name: Production boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC76 private CRM Instagram origin production gate'
+            echo
+            echo "- Exact product SHA: \`$APPROVED_SHA\`"
+            echo "- Release branch: \`$RELEASE_BRANCH\`"
+            echo '- Build/upload scope: `admin/` -> `admin/dist` only'
+            echo '- Instagram connector origin: `https://instagram.vishartattoo.com`'
+            echo '- Calendar connector origin unchanged: `https://calendar.vishartattoo.com`'
+            echo '- Monzo connector origin unchanged: `https://monzo.vishartattoo.com`'
+            echo '- Database migrations: none'
+            echo '- Worker deploys: none'
+            echo '- Public site deploys: none'
+          } >> "$GITHUB_STEP_SUMMARY"
