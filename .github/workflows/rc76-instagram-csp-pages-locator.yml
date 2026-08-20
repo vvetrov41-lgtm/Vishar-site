@@ -23,6 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Read-only locator for the exact protected Pages rollout created by the operator push.
           json="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/rc76-instagram-crm-pages-release-operator.yml/runs?branch=release/private-crm-rc76-instagram-crm-pages-operator&event=push&per_page=10")"
           RUN_JSON="$json" node <<'NODE' > "$RUNNER_TEMP/run.txt"
           const payload = JSON.parse(process.env.RUN_JSON || '{}');
