@@ -85,6 +85,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          header_value() {
+            local file="$1"
+            local expected_name="$2"
+            awk -v expected_name="$expected_name" '
+              tolower($1) == tolower(expected_name) ":" {
+                value = $0
+                sub(/^[^:]*:[[:space:]]*/, "", value)
+                sub(/\r$/, "", value)
+                print value
+                exit
+              }
+            ' "$file"
+          }
+
           request() {
             local label="$1"
             shift
@@ -94,7 +108,7 @@ jobs:
               --dump-header "/tmp/${label}.headers" \
               --write-out '%{http_code}' "$@")"
             local content_type
-            content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub("\\r", "", $2); print $2; exit}' "/tmp/${label}.headers")"
+            content_type="$(header_value "/tmp/${label}.headers" content-type)"
             local body
             body="$(head -c 160 "/tmp/${label}.body" | tr '\n\r' '  ')"
             echo "${label}_STATUS=${code}"
@@ -118,7 +132,11 @@ jobs:
 
           test "$(tail -n 1 /tmp/status.body)" = '{"error":"session_required"}'
           test "$(tail -n 1 /tmp/start.body)" = '{"error":"session_required"}'
-          test "$(awk -F': *' 'tolower($1)=="access-control-allow-origin" {gsub("\\r", "", $2); print $2; exit}' /tmp/preflight.headers)" = 'https://crm.vishartattoo.com'
+          preflight_origin="$(header_value /tmp/preflight.headers access-control-allow-origin)"
+          preflight_vary="$(header_value /tmp/preflight.headers vary)"
+          echo "PREFLIGHT_ALLOW_ORIGIN=${preflight_origin}"
+          echo "PREFLIGHT_VARY=${preflight_vary}"
+          test "$preflight_origin" = 'https://crm.vishartattoo.com'
 
       - name: Runtime diagnosis summary
         if: always()
