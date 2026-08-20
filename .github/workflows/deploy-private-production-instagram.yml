@@ -199,7 +199,62 @@ jobs:
 
           rm -f "$deploy_config"
 
-      - name: Production boundary summary
+      - name: Record active connector version and safe evidence
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/instagram-production-evidence"
+          npx wrangler versions list --name "$WORKER_NAME" --json > "$RUNNER_TEMP/instagram-production-evidence/versions.json"
+          node <<'NODE'
+          const fs = require('fs');
+          const root = process.env.RUNNER_TEMP + '/instagram-production-evidence';
+          const outputPath = process.env.RUNNER_TEMP + '/instagram-production-wrangler-output.ndjson';
+          const versions = JSON.parse(fs.readFileSync(root + '/versions.json', 'utf8'));
+          const events = fs.readFileSync(outputPath, 'utf8')
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line));
+          const deployEvents = events.filter((entry) => (
+            entry?.type === 'deploy'
+            && entry?.worker_name === process.env.WORKER_NAME
+            && typeof entry?.version_id === 'string'
+            && entry.version_id.length > 0
+          ));
+          if (deployEvents.length !== 1) {
+            throw new Error('Unable to resolve exactly one deployed Instagram Worker version from Wrangler structured output');
+          }
+          const versionId = deployEvents[0].version_id;
+          if (!Array.isArray(versions) || !versions.some((entry) => entry?.id === versionId)) {
+            throw new Error('Structured deploy version id is not present in the current Worker version list');
+          }
+          fs.writeFileSync(root + '/safe-summary.json', JSON.stringify({
+            worker: process.env.WORKER_NAME,
+            version_id: versionId,
+            version_source: 'wrangler_deploy_event',
+            hostname: process.env.CONNECTOR_HOSTNAME,
+            callback_path: '/webhook',
+            oauth_callback_path: '/oauth/instagram/callback',
+            workers_dev: false,
+            preview_urls: false,
+            secret_names_only: true,
+          }, null, 2));
+          console.log(`INSTAGRAM_WORKER_VERSION=${versionId}`);
+          NODE
+
+      - name: Upload safe Instagram production evidence
+        if: ${{ always() && inputs.deploy }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: instagram-production-${{ inputs.approved_sha }}
+          path: ${{ runner.temp }}/instagram-production-evidence/safe-summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Production Instagram boundary summary
         if: always()
         shell: bash
         env:
@@ -214,9 +269,16 @@ jobs:
             echo "- Exact SHA: \`$GITHUB_SHA\`"
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
-            echo "- OAuth onboarding enabled: \`$ENABLE_OAUTH\`"
+            echo "- Onboarding enabled: \`$ENABLE_OAUTH\`"
             echo "- Outbound drain enabled: \`$ENABLE_DRAIN\`"
             echo "- Participant enrichment enabled: \`$ENABLE_ENRICHMENT\`"
-            echo '- Deploy scope: `wishar-instagram-production` Worker only, generated from the tracked inert template'
+            echo '- Worker: `vishar-instagram-production` only'
+            echo '- Pre-provisioned Custom Domain: `instagram.vishartattoo.com`'
+            echo '- Accepted Meta callback path: `/webhook` only'
+            echo '- workers.dev disabled; preview URLs disabled'
+            echo '- Required secret names: Instagram app secret, token encryption key, webhook verify token, production Supabase backend key'
+            echo '- Instagram access tokens live only in the encrypted KV token store; none is written to Postgres or returned to a browser'
             echo '- Secret values are never read or printed; no secret put/bulk command exists here'
+            echo '- Meta actions not performed: no App Review submission, permission change, account connection or message send'
+            echo '- WhatsApp / Database / Pages / Calendar / Telegram / GPT / booking deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"
