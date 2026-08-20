@@ -56,6 +56,7 @@ const CONVERSATION_ID = 'b3333333-3333-4333-8333-333333333333';
 // 32 zero bytes, base64url. Synthetic: this is not a key for anything.
 const ENCRYPTION_KEY = 'A'.repeat(43);
 const SESSION = 'synthetic.session.token-abcdefghijklmnop';
+const TEST_PROFILE = 'c1111111-1111-4111-8111-111111111111';
 // Assembled at runtime so the repository secret scanner is never asked to tell
 // a fabricated key from a real one.
 const SYNTHETIC_SECRET_KEY = ['sb', 'secret', 'synthetic_value_for_tests'].join('_');
@@ -198,19 +199,39 @@ await test('a staging-shaped environment is refused', () => {
 // Onboarding
 // ---------------------------------------------------------------------------
 
-function dbDouble({ authorize = null, throwOn = null, calls = [] } = {}) {
+function dbDouble({ authorize = null, session = 'allow', throwOn = null, calls = [] } = {}) {
   return {
     calls,
+    async verifyUser(bearer) {
+      calls.push({ name: 'verifyUser', bearer });
+      if (throwOn === 'verifyUser') {
+        const error = new Error('instagram_session_verification_unavailable');
+        error.code = 'instagram_session_verification_unavailable';
+        throw error;
+      }
+      if (session === 'deny') {
+        const error = new Error('instagram_session_invalid');
+        error.code = 'instagram_session_invalid';
+        error.status = 401;
+        throw error;
+      }
+      return { id: TEST_PROFILE };
+    },
     async rpc(name, args) {
       calls.push({ name, args });
-      if (throwOn === name) throw new Error('synthetic_rpc_failure');
-      return { ok: true };
-    },
-    async userRpc(name, args, bearer) {
-      calls.push({ name, args, bearer });
-      if (throwOn === name) throw new Error('synthetic_rpc_failure');
-      if (name === 'authorize_instagram_connection') {
-        if (authorize === 'deny') throw new Error('instagram_rpc_forbidden');
+      if (throwOn === name) {
+        const error = new Error('synthetic_rpc_failure');
+        error.code = 'instagram_rpc_unavailable';
+        throw error;
+      }
+      if (name === 'service_authorize_instagram_connection') {
+        if (authorize === 'deny') {
+          const error = new Error('instagram_permission_denied');
+          error.code = 'instagram_permission_denied';
+          error.pgcode = '42501';
+          error.status = 403;
+          throw error;
+        }
         return [authorize ?? {
           artist_id: args.p_artist_id,
           artist_slug: args.p_artist_id === K_ARTIST ? 'kristina' : 'vladimir',
@@ -219,7 +240,7 @@ function dbDouble({ authorize = null, throwOn = null, calls = [] } = {}) {
           is_enabled: false,
         }];
       }
-      return null;
+      return { ok: true };
     },
   };
 }
@@ -241,15 +262,18 @@ await test('starting a connection requires an operator session', async () => {
   assert.equal(response.status, 401);
 });
 
-await test('starting a connection asks the database which artist the operator may connect', async () => {
+await test('starting a connection verifies the CRM session before authorizing its artist', async () => {
   const { response, db, environment } = await startConnection({ artist_id: V_ARTIST });
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.ok(payload.authorize_url.startsWith('https://www.instagram.com/oauth/authorize'));
 
-  const authorised = db.calls.find((call) => call.name === 'authorize_instagram_connection');
-  assert.equal(authorised.bearer, SESSION);
+  const verified = db.calls.find((call) => call.name === 'verifyUser');
+  assert.equal(verified.bearer, SESSION);
+  const authorised = db.calls.find((call) => call.name === 'service_authorize_instagram_connection');
+  assert.equal(authorised.args.p_profile_id, TEST_PROFILE);
   assert.equal(authorised.args.p_artist_id, V_ARTIST);
+  assert.ok(db.calls.indexOf(verified) < db.calls.indexOf(authorised));
 
   // The state is bound to the artist the database returned, not to anything
   // the browser said beyond naming the artist.
@@ -267,15 +291,34 @@ await test('an operator without integration rights is refused', async () => {
   assert.equal(response.status, 403);
 });
 
+await test('an expired or invalid CRM session is a 401, not an artist permission error', async () => {
+  const { response } = await startConnection(
+    { artist_id: V_ARTIST },
+    { db: dbDouble({ session: 'deny' }) },
+  );
+  assert.equal(response.status, 401);
+});
+
+await test('an authorization backend failure is unavailable, not a false 403', async () => {
+  const { response } = await startConnection(
+    { artist_id: V_ARTIST },
+    { db: dbDouble({ throwOn: 'service_authorize_instagram_connection' }) },
+  );
+  assert.equal(response.status, 503);
+});
+
 await test('a browser cannot smuggle its own integration selector', async () => {
-  const { response, environment } = await startConnection({
+  const { response, environment, db } = await startConnection({
     artist_id: V_ARTIST,
+    profile_id: 'c2222222-2222-4222-8222-222222222222',
     integration_key: 'kristina-instagram',
     instagram_user_id: K_ACCOUNT,
   });
   assert.equal(response.status, 200);
   const [stateValue] = [...environment.INSTAGRAM_OAUTH_STATE.store.values()];
   assert.equal(JSON.parse(stateValue).integration_key, 'vladimir-instagram');
+  const authorised = db.calls.find((call) => call.name === 'service_authorize_instagram_connection');
+  assert.equal(authorised.args.p_profile_id, TEST_PROFILE);
 });
 
 await test('a malformed artist id is refused before any database call', async () => {
@@ -466,7 +509,7 @@ await test('disconnect disables the route before destroying the token', async ()
   assert.equal(response.status, 200);
 
   const order = db.calls.map((call) => call.name);
-  assert.ok(order.indexOf('authorize_instagram_connection') < order.indexOf('service_disable_instagram_integration'));
+  assert.ok(order.indexOf('service_authorize_instagram_connection') < order.indexOf('service_disable_instagram_integration'));
   assert.equal(environment.INSTAGRAM_OAUTH_TOKENS.store.size, 0);
 });
 
@@ -734,13 +777,14 @@ await test('the connector service credential can call only the intended RPCs', (
     'record_communication_outbox_result',
     'record_communication_read_receipt',
     'resolve_outbox_route',
+    'service_authorize_instagram_connection',
     'service_disable_instagram_integration',
     'service_list_unenriched_participants',
     'service_resolve_instagram_route',
     'service_set_instagram_integration',
     'service_update_communication_participant',
   ]);
-  assert.deepEqual([...supabaseTesting.USER_RPCS], ['authorize_instagram_connection']);
+  assert.deepEqual([...supabaseTesting.USER_RPCS], []);
 });
 
 await test('the connector cannot use its service credential for CRM finance or user management', () => {

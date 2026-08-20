@@ -157,25 +157,41 @@ function firstRow(value) {
 }
 
 /**
- * Proves the caller may manage this artist's integrations, using their own
- * Supabase session rather than anything they asserted in the request body.
+ * Proves the caller may manage this artist's integrations without trusting a
+ * profile id from the browser.
  *
- * The selector comes back from the database, derived from the artist slug. The
- * browser names an artist; it never names a binding.
+ * First Supabase Auth verifies the CRM bearer and returns the authoritative
+ * user/profile id. Only then does the backend-only RPC evaluate that profile's
+ * active role and artist membership. The selector still comes back from the
+ * database, derived from the artist slug.
  */
 async function authorizeConnection(db, token, artistId) {
-  const row = firstRow(await db.userRpc('authorize_instagram_connection', {
+  const actor = await db.verifyUser(token);
+  const row = firstRow(await db.rpc('service_authorize_instagram_connection', {
+    p_profile_id: actor.id,
     p_artist_id: artistId,
-  }, token));
+  }));
   if (
     !row
     || row.artist_id !== artistId
     || typeof row.integration_key !== 'string'
     || !INTEGRATION_KEY.test(row.integration_key)
   ) {
-    throw new Error('instagram_connection_scope_invalid');
+    const error = new Error('instagram_connection_scope_invalid');
+    error.code = 'instagram_authorization_unavailable';
+    throw error;
   }
   return row;
+}
+
+function authorizationFailure(error) {
+  if (error?.code === 'instagram_session_invalid') {
+    return json(401, { error: 'session_required' });
+  }
+  if (error?.code === 'instagram_permission_denied' || error?.pgcode === '42501') {
+    return json(403, { error: 'not_permitted' });
+  }
+  return json(503, { error: 'authorization_unavailable' });
 }
 
 // ---------------------------------------------------------------------------
@@ -207,8 +223,8 @@ async function startConnection(request, url, env, db) {
   let authorised;
   try {
     authorised = await authorizeConnection(db, token, artistId);
-  } catch {
-    return json(403, { error: 'not_permitted' });
+  } catch (error) {
+    return authorizationFailure(error);
   }
 
   const state = randomB64url(32);
@@ -380,8 +396,8 @@ async function connectionStatus(request, url, env, db) {
   let authorised;
   try {
     authorised = await authorizeConnection(db, token, artistId);
-  } catch {
-    return json(403, { error: 'not_permitted' });
+  } catch (error) {
+    return authorizationFailure(error);
   }
 
   // Token lifetime lives only in the connector's own store, so the CRM cannot
@@ -431,8 +447,8 @@ async function disconnect(request, url, env, db) {
   let authorised;
   try {
     authorised = await authorizeConnection(db, token, artistId);
-  } catch {
-    return json(403, { error: 'not_permitted' });
+  } catch (error) {
+    return authorizationFailure(error);
   }
 
   await db.rpc('service_disable_instagram_integration', {

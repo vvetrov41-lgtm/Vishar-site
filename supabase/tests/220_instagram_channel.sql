@@ -23,6 +23,9 @@ select has_function('public', 'service_resolve_instagram_route', array['text'],
 select has_function('public', 'service_set_instagram_integration',
                     array['uuid', 'text', 'text', 'text', 'text[]'],
                     'the backend Instagram connection binder exists');
+select has_function('public', 'service_authorize_instagram_connection',
+                    array['uuid', 'uuid'],
+                    'the backend Instagram operator authorizer exists');
 
 select ok(
   not has_function_privilege('anon', 'public.service_resolve_instagram_route(text)', 'EXECUTE'),
@@ -35,6 +38,18 @@ select ok(
 select ok(
   has_function_privilege('service_role', 'public.service_resolve_instagram_route(text)', 'EXECUTE'),
   'only the trusted connector resolves an Instagram route'
+);
+select ok(
+  not has_function_privilege('anon', 'public.service_authorize_instagram_connection(uuid,uuid)', 'EXECUTE'),
+  'anon cannot authorize an Instagram operator'
+);
+select ok(
+  not has_function_privilege('authenticated', 'public.service_authorize_instagram_connection(uuid,uuid)', 'EXECUTE'),
+  'a browser session cannot call the backend Instagram operator authorizer'
+);
+select ok(
+  has_function_privilege('service_role', 'public.service_authorize_instagram_connection(uuid,uuid)', 'EXECUTE'),
+  'only the trusted connector can call the backend Instagram operator authorizer'
 );
 select ok(
   not has_function_privilege('authenticated', 'public.service_set_instagram_integration(uuid,text,text,text,text[])', 'EXECUTE'),
@@ -58,6 +73,7 @@ select ok(
    join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in (
+       'service_authorize_instagram_connection',
        'service_set_instagram_integration',
        'service_disable_instagram_integration',
        'service_resolve_instagram_route',
@@ -73,6 +89,25 @@ select ok(
 -- ---------------------------------------------------------------------------
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+
+select is(
+  (select integration_key
+   from public.service_authorize_instagram_connection(
+     (select profile_id from crm_private.profile_access where role = 'owner' and is_active limit 1),
+     'a1111111-1111-4111-8111-111111111111'
+   )),
+  'vladimir-instagram',
+  'the trusted connector can authorize an active owner membership without a browser-supplied profile id'
+);
+
+select throws_ok(
+  $$select * from public.service_authorize_instagram_connection(
+      'c9999999-9999-4999-8999-999999999999',
+      'a1111111-1111-4111-8111-111111111111')$$,
+  '42501', null,
+  'an unknown profile fails closed even when the backend calls the RPC'
+);
 
 select is(
   (public.service_set_instagram_integration(
