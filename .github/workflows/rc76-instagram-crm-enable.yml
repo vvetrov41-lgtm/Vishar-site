@@ -1,0 +1,68 @@
+name: RC76 Instagram CRM enable operator
+
+on:
+  push:
+    branches:
+      - ops/rc76-instagram-oauth-dispatch
+    paths:
+      - .github/workflows/rc76-instagram-crm-enable.yml
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  enable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set exact crm-production Instagram connector origin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ENVIRONMENT: crm-production
+          VARIABLE: CRM_PRODUCTION_INSTAGRAM_CONNECTOR_ORIGIN
+          VALUE: https://instagram.vishartattoo.com
+        run: |
+          set -euo pipefail
+          endpoint="repos/$REPO/environments/$ENVIRONMENT/variables/$VARIABLE"
+          if gh api "$endpoint" >/dev/null 2>&1; then
+            gh api --method PATCH "$endpoint" -f name="$VARIABLE" -f value="$VALUE" >/dev/null
+          else
+            gh api --method POST "repos/$REPO/environments/$ENVIRONMENT/variables" -f name="$VARIABLE" -f value="$VALUE" >/dev/null
+          fi
+          actual="$(gh api "$endpoint" --jq .value)"
+          test "$actual" = "$VALUE"
+
+      - name: Dispatch the standard protected private CRM workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            "repos/$REPO/actions/workflows/deploy-private-production-crm.yml/dispatches" \
+            -f ref='release/private-crm-rc76-instagram-communications' \
+            -F 'inputs[approved_sha]=93f1bb9f3869b3bba63a8d6a56ef499e0106174c' \
+            -F 'inputs[deploy]=true' \
+            -F 'inputs[approval_phrase]=DEPLOY_PRIVATE_CRM_ONLY'
+
+      - name: Report protected run on PR 379
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sleep 12
+          rows="$(gh run list --repo "$REPO" --workflow deploy-private-production-crm.yml --branch release/private-crm-rc76-instagram-communications --event workflow_dispatch --limit 1 --json databaseId,url,status,conclusion,headSha,createdAt)"
+          ROWS="$rows" node <<'NODE' > /tmp/report.md
+          const rows = JSON.parse(process.env.ROWS || '[]');
+          if (!rows.length) throw new Error('No protected CRM run found after dispatch');
+          const r = rows[0];
+          console.log(`RC76 Instagram CRM onboarding deploy: ${r.url}`);
+          console.log(`status=${r.status}, conclusion=${r.conclusion || 'n/a'}, head=${r.headSha}, created=${r.createdAt}`);
+          console.log('CRM_PRODUCTION_INSTAGRAM_CONNECTOR_ORIGIN=https://instagram.vishartattoo.com verified before dispatch.');
+          NODE
+          gh pr comment 379 --repo "$REPO" --body-file /tmp/report.md
