@@ -1,0 +1,135 @@
+name: RC76 Instagram runtime diagnosis
+
+# Read-only production evidence for the Instagram connector. This workflow
+# deliberately contains no deployment, secret mutation, KV mutation, database
+# mutation, route mutation, or Pages command. It verifies the exact public
+# edge surface that a browser must reach before its CRM session can be checked.
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc76-instagram-runtime-diagnosis
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_PARENT: 0b9b71a0a995611308e72ea3251249362699adec
+  WORKER_NAME: vishar-instagram-production
+  CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
+
+jobs:
+  inspect:
+    name: Inspect Instagram connector runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: crm-production
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact lineage and read-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          git merge-base --is-ancestor "$EXPECTED_PARENT" "$GITHUB_SHA"
+
+          self='.github/workflows/rc76-instagram-runtime-diagnosis.yml'
+          if grep -Eiq 'wrangler[[:space:]]+(deploy|delete|secret|kv|pages)|supabase[[:space:]]+db[[:space:]]+(push|reset)|gh[[:space:]]+(api|workflow)[[:space:]]+run' "$self"; then
+            echo 'Runtime diagnosis contains a production mutation primitive.' >&2
+            exit 1
+          fi
+
+      - name: Inspect deployed Worker metadata without values
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+          XDG_CONFIG_HOME=.wrangler/config WRANGLER_SEND_METRICS=false \
+            npx wrangler versions list --name "$WORKER_NAME" --json > /tmp/versions.json
+          VERSION_COUNT="$(jq 'length' /tmp/versions.json)"
+          echo "WORKER_VERSION_COUNT=${VERSION_COUNT}"
+          jq -r '.[0] | [.id, (.metadata.created_on // "unknown")] | @tsv' /tmp/versions.json \
+            | sed 's/^/CURRENT_VERSION /'
+
+          api='https://api.cloudflare.com/client/v4'
+          settings="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "${api}/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/settings")"
+          test "$(jq -r '.success' <<<"$settings")" = true
+          jq -r '.result.bindings[]? | [.name, .type] | @tsv' <<<"$settings" \
+            | sort | sed 's/^/BINDING /'
+
+          for required in \
+            INSTAGRAM_APP_SECRET \
+            INSTAGRAM_TOKEN_ENCRYPTION_KEY \
+            INSTAGRAM_WEBHOOK_VERIFY_TOKEN \
+            SUPABASE_SECRET_KEY \
+            INSTAGRAM_OAUTH_STATE \
+            INSTAGRAM_OAUTH_TOKENS; do
+            count="$(jq -r --arg n "$required" '[.result.bindings[]? | select(.name==$n)] | length' <<<"$settings")"
+            echo "BINDING_${required}=${count}"
+          done
+
+      - name: Recheck live operator edge surface from the runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          request() {
+            local label="$1"
+            shift
+            local code
+            code="$(curl --silent --show-error --max-time 20 \
+              --output "/tmp/${label}.body" \
+              --dump-header "/tmp/${label}.headers" \
+              --write-out '%{http_code}' "$@")"
+            local content_type
+            content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub("\\r", "", $2); print $2; exit}' "/tmp/${label}.headers")"
+            local body
+            body="$(head -c 160 "/tmp/${label}.body" | tr '\n\r' '  ')"
+            echo "${label}_STATUS=${code}"
+            echo "${label}_CONTENT_TYPE=${content_type}"
+            echo "${label}_BODY_PREFIX=${body}"
+          }
+
+          request root "$CONNECTOR_ORIGIN/"
+          request status "$CONNECTOR_ORIGIN/v1/connections/status?artist_id=a1111111-1111-4111-8111-111111111111" \
+            -H 'Origin: https://crm.vishartattoo.com'
+          request start "$CONNECTOR_ORIGIN/v1/connections/start" \
+            -X POST \
+            -H 'Origin: https://crm.vishartattoo.com' \
+            -H 'content-type: application/json' \
+            --data '{"artist_id":"a1111111-1111-4111-8111-111111111111}'
+          request preflight "$CONNECTOR_ORIGIN/v1/connections/start" \
+            -X OPTIONS \
+            -H 'Origin: https://crm.vishartattoo.com' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: authorization, content-type'
+
+          test "$(tail -n 1 /tmp/status.body)" = '{"error":"session_required"}'
+          test "$(tail -n 1 /tmp/start.body)" = '{"error":"session_required"}'
+          test "$(awk -F': *' 'tolower($1)=="access-control-allow-origin" {gsub("\\r", "", $2); print $2; exit}' /tmp/preflight.headers)" = 'https://crm.vishartattoo.com'
+
+      - name: Runtime diagnosis summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### RC76 Instagram runtime diagnosis'
+            echo
+            echo "- Inspection SHA: \`$GITHUB_SHA\`"
+            echo '- Production mutation: none'
+            echo '- Secret values and binding values: never read or printed'
+            echo '- Browser bearer token: none sent'
+            echo '- Expected operator edge result without a session: `401 session_required`'
+          } >> "$GITHUB_STEP_SUMMARY"
