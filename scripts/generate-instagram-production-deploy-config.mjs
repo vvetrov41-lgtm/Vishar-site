@@ -28,7 +28,7 @@ let text = fs.readFileSync(source, 'utf8');
 
 const required = [
   'name = "vishar-instagram-production"',
-  'main = "workers/instagram-production.js"',
+  'main = "workers/instagram-production-entry.js"',
   'workers_dev = false',
   'preview_urls = false',
   'VISHAR_ENVIRONMENT = "production"',
