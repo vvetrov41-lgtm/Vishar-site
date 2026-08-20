@@ -1,4 +1,4 @@
-name: Apply RC76 Instagram operator authorization fix
+name: Dispatch RC76 Instagram auth database rollout
 
 on:
   push:
@@ -8,93 +8,60 @@ on:
       - .github/workflows/dispatch-rc76-instagram-oauth.yml
 
 permissions:
-  contents: write
+  actions: write
+  contents: read
   issues: write
 
 concurrency:
-  group: rc76-instagram-operator-auth-fix
+  group: rc76-instagram-auth-database-dispatch
   cancel-in-progress: true
 
 jobs:
-  patch:
+  dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     env:
-      TARGET_BRANCH: claude/instagram-communications-integration-po9a1e
-      EXPECTED_SHA: 1c2c31bcf115779f9e97b415477444b90d0b97f3
+      RELEASE_BRANCH: release/private-crm-rc76-instagram-communications
+      RELEASE_SHA: 0b9b71a0a995611308e72ea3251249362699adec
     steps:
-      - name: Checkout exact Instagram PR head
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.EXPECTED_SHA }}
-          fetch-depth: 0
-
-      - name: Verify exact clean source
+      - name: Verify exact release branch
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          test -z "$(git status --short)"
-          remote="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
-          test "$remote" = "$EXPECTED_SHA"
+          remote="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')"
+          test "$remote" = "$RELEASE_SHA"
 
-      - name: Checkout bounded patcher
-        uses: actions/checkout@v4
-        with:
-          ref: ops/rc76-instagram-auth-fix
-          path: .operator
-          fetch-depth: 1
-
-      - name: Apply bounded patch
-        shell: bash
-        run: |
-          set -euo pipefail
-          python .operator/scripts/rc76-instagram-auth-fix.py
-          rm -rf .operator
-          git diff --check
-          changed="$(git status --short | awk '{print $2}' | sort)"
-          expected="$(printf '%s\n' \
-            scripts/test-instagram-connector.mjs \
-            supabase/migrations/0073_instagram_operator_authorization.sql \
-            supabase/tests/220_instagram_channel.sql \
-            workers/instagram-production.js \
-            workers/lib/instagram-supabase.js | sort)"
-          test "$changed" = "$expected"
-
-      - name: Install pinned tooling
-        run: npm ci
-
-      - name: Run focused Instagram regression tests
-        run: |
-          set -euo pipefail
-          node scripts/test-instagram-connector.mjs
-          npm run test:instagram-production
-          npm run check:instagram-production-bundle
-          npm run scan:secrets
-
-      - name: Commit bounded fix to PR branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
-          test "$remote" = "$EXPECTED_SHA"
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            scripts/test-instagram-connector.mjs \
-            supabase/migrations/0073_instagram_operator_authorization.sql \
-            supabase/tests/220_instagram_channel.sql \
-            workers/instagram-production.js \
-            workers/lib/instagram-supabase.js
-          git diff --cached --check
-          git commit -m 'Verify Instagram operators before backend authorization'
-          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
-
-      - name: Report result
-        if: always()
+      - name: Dispatch protected database rollout
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          body=$(printf 'RC76 Instagram operator authorization patcher: %s\nsource=%s\n' "${{ job.status }}" "$EXPECTED_SHA")
+          set -euo pipefail
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run deploy-private-production-database.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$RELEASE_BRANCH" \
+            -f approved_sha="$RELEASE_SHA" \
+            -f deploy=true \
+            -f approval_phrase=DEPLOY_PRIVATE_CRM_DATABASE
+          sleep 4
+          run_json="$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow deploy-private-production-database.yml \
+            --branch "$RELEASE_BRANCH" \
+            --event workflow_dispatch \
+            --limit 10 \
+            --json databaseId,url,status,conclusion,headSha,createdAt)"
+          RUN_JSON="$run_json" BEFORE="$before" node <<'NODE' > "$RUNNER_TEMP/result.txt"
+          const runs = JSON.parse(process.env.RUN_JSON || '[]');
+          const target = process.env.RELEASE_SHA;
+          const before = Date.parse(process.env.BEFORE || 0);
+          const run = runs.find((r) => r.headSha === target && Date.parse(r.createdAt) >= before - 5000);
+          if (!run) process.exit(2);
+          console.log(run.databaseId);
+          console.log(run.url);
+          console.log(run.status);
+          console.log(run.conclusion || 'n/a');
+          NODE
+          mapfile -t result < "$RUNNER_TEMP/result.txt"
+          body=$(printf 'RC76 Instagram auth DB rollout dispatched:\nrun=%s\nstatus=%s conclusion=%s\nrelease_sha=%s\n' "${result[1]}" "${result[2]}" "${result[3]}" "$RELEASE_SHA")
           gh api -X POST "repos/$GITHUB_REPOSITORY/issues/379/comments" -f body="$body" >/dev/null
