@@ -25,7 +25,7 @@ jobs:
           gh workflow run deploy-private-production-instagram.yml \
             --repo "$REPO" \
             --ref release/private-crm-rc76-instagram-communications \
-            -f approved_sha=93f1bb9f3869b3bba63a8d6a56ef499e0106174c \
+            -f approved_sha=bf5159e5a07e4cca285112611d1faf8935b48f24 \
             -f deploy=true \
             -f approval_phrase=EXPOSE_PRIVATE_CRM_INSTAGRAM \
             -f enable_oauth=true \
