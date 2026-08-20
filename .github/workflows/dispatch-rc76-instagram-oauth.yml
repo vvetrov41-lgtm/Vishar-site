@@ -1,4 +1,4 @@
-name: Locate RC76 Instagram auth database rollout
+name: Dispatch RC76 Instagram auth Worker rollout
 
 on:
   push:
@@ -8,11 +8,15 @@ on:
       - .github/workflows/dispatch-rc76-instagram-oauth.yml
 
 permissions:
-  actions: read
+  actions: write
   contents: write
 
+concurrency:
+  group: rc76-instagram-auth-worker-dispatch
+  cancel-in-progress: true
+
 jobs:
-  locate:
+  dispatch:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -22,24 +26,56 @@ jobs:
       - name: Checkout ops branch
         uses: actions/checkout@v4
 
-      - name: Locate protected database rollout without dispatching
+      - name: Verify exact release branch and dispatch once
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          run_json="$(gh run list --repo "$GITHUB_REPOSITORY" \
-            --workflow deploy-private-production-database.yml \
+          remote="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/heads/$RELEASE_BRANCH" | awk '{print $1}')"
+          test "$remote" = "$RELEASE_SHA"
+
+          runs="$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow deploy-private-production-instagram.yml \
             --branch "$RELEASE_BRANCH" \
             --event workflow_dispatch \
-            --limit 20 \
+            --limit 30 \
             --json databaseId,url,status,conclusion,headSha,createdAt)"
-          RUN_JSON="$run_json" node <<'NODE' > "$RUNNER_TEMP/result.txt"
-          const runs = JSON.parse(process.env.RUN_JSON || '[]');
-          const run = runs.find((r) => r.headSha === process.env.RELEASE_SHA);
+
+          exists="$(RUNS="$runs" node <<'NODE'
+          const runs = JSON.parse(process.env.RUNS || '[]');
+          console.log(runs.some((r) => r.headSha === process.env.RELEASE_SHA) ? 'true' : 'false');
+          NODE
+          )"
+
+          if [ "$exists" != 'true' ]; then
+            gh workflow run deploy-private-production-instagram.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$RELEASE_BRANCH" \
+              -f approved_sha="$RELEASE_SHA" \
+              -f deploy=true \
+              -f approval_phrase=EXPOSE_PRIVATE_CRM_INSTAGRAM \
+              -f enable_oauth=true \
+              -f enable_drain=false \
+              -f enable_enrichment=false
+            sleep 5
+          fi
+
+          runs="$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow deploy-private-production-instagram.yml \
+            --branch "$RELEASE_BRANCH" \
+            --event workflow_dispatch \
+            --limit 30 \
+            --json databaseId,url,status,conclusion,headSha,createdAt)"
+
+          RUNS="$runs" node <<'NODE' > "$RUNNER_TEMP/result.txt"
+          const runs = JSON.parse(process.env.RUNS || '[]');
+          const matches = runs.filter((r) => r.headSha === process.env.RELEASE_SHA)
+            .sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+          const run = matches[0];
           if (!run) {
             console.log(`found=false\nrelease_sha=${process.env.RELEASE_SHA}`);
-            process.exit(0);
+            process.exit(2);
           }
           console.log('found=true');
           console.log(`run_id=${run.databaseId}`);
@@ -48,11 +84,15 @@ jobs:
           console.log(`conclusion=${run.conclusion || 'n/a'}`);
           console.log(`created_at=${run.createdAt}`);
           console.log(`release_sha=${process.env.RELEASE_SHA}`);
+          console.log('oauth=true');
+          console.log('drain=false');
+          console.log('enrichment=false');
           NODE
+
           mkdir -p .operator-status
-          cp "$RUNNER_TEMP/result.txt" .operator-status/instagram-auth-db.txt
+          cp "$RUNNER_TEMP/result.txt" .operator-status/instagram-auth-worker.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .operator-status/instagram-auth-db.txt
-          git commit -m 'Record RC76 Instagram auth DB rollout status'
+          git add .operator-status/instagram-auth-worker.txt
+          git commit -m 'Record RC76 Instagram auth Worker rollout status'
           git push
