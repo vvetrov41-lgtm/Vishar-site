@@ -1,5 +1,5 @@
 name = "vishar-instagram-production"
-main = "workers/instagram-production.js"
+main = "workers/instagram-production-entry.js"
 compatibility_date = "2026-08-17"
 workers_dev = false
 preview_urls = false
@@ -30,6 +30,11 @@ INSTAGRAM_ENRICHMENT_ENABLED = "false"
 # id to exactly one artist integration. The Worker accepts only the exact
 # /webhook path for Meta and refuses every operator route without a Supabase
 # session bearer token.
+#
+# The production entry point wraps only the three browser-facing operator routes
+# with a CORS policy pinned to https://crm.vishartattoo.com. Meta webhook and
+# OAuth callback traffic bypass that wrapper behavior and continues through the
+# reviewed provider worker unchanged.
 #
 # No cron trigger is declared here. This Worker is deployed inert first; the
 # five-minute schedule is added by the guarded release only once Meta App
