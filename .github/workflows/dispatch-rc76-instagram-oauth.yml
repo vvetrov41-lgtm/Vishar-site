@@ -1,0 +1,33 @@
+name: Dispatch RC76 Instagram OAuth activation
+
+on:
+  push:
+    branches:
+      - ops/rc76-instagram-oauth-dispatch
+    paths:
+      - .github/workflows/dispatch-rc76-instagram-oauth.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch standard protected Instagram production workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy-private-production-instagram.yml \
+            --repo "$REPO" \
+            --ref release/private-crm-rc76-instagram-communications \
+            -f approved_sha=93f1bb9f3869b3bba63a8d6a56ef499e0106174c \
+            -f deploy=true \
+            -f approval_phrase=EXPOSE_PRIVATE_CRM_INSTAGRAM \
+            -f enable_oauth=true \
+            -f enable_drain=false \
+            -f enable_enrichment=false
