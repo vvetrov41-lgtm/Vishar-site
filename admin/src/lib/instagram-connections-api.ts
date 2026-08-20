@@ -99,6 +99,23 @@ function assertMetadata(value: unknown): InstagramIntegrationMetadata[] {
   });
 }
 
+function connectorFailureMessage(status: number, payload: unknown): string {
+  if (status === 401) return 'Your CRM session has expired. Sign in again.';
+  if (status === 403) return 'You cannot manage this artist Instagram connection.';
+  if (status === 429) return 'Too many attempts. Try again shortly.';
+
+  const code = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as { error?: unknown }).error
+    : null;
+  if (code === 'session_verification_unavailable') {
+    return 'CRM could not verify your session with its authorization service. Try again shortly.';
+  }
+  if (code === 'authorization_backend_unavailable') {
+    return 'CRM could not complete the Instagram permission check. Try again shortly.';
+  }
+  return 'The Instagram connector is unavailable right now.';
+}
+
 export function createInstagramConnectionsApi(
   client: CrmClient,
   options: {
@@ -135,10 +152,7 @@ export function createInstagramConnectionsApi(
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      if (response.status === 401) throw new ApiError('Your CRM session has expired. Sign in again.');
-      if (response.status === 403) throw new ApiError('You cannot manage this artist Instagram connection.');
-      if (response.status === 429) throw new ApiError('Too many attempts. Try again shortly.');
-      throw new ApiError('The Instagram connector is unavailable right now.');
+      throw new ApiError(connectorFailureMessage(response.status, payload));
     }
     return payload;
   }
