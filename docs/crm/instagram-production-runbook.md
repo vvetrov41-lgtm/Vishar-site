@@ -55,6 +55,12 @@ From **Instagram → API setup with Instagram login → 3. Set up Instagram busi
 copy these two values. Keep the secret out of chat, tickets and commit
 messages.
 
+The Instagram app ID is a numeric identifier. A 32-character hexadecimal
+value is the app secret, not the app ID, and must never be stored in the GitHub
+environment variable below. If a secret is ever placed there, rotate it in
+Meta immediately because ordinary Worker variables and deployment logs are not
+secret storage.
+
 Instagram app ID → GitHub environment variable name:
 
 ```

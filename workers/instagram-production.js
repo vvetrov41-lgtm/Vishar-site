@@ -110,7 +110,8 @@ export function configured(env) {
   return Boolean(
     env?.VISHAR_ENVIRONMENT === 'production'
     && env?.SUPABASE_URL === PRODUCTION_SUPABASE_ORIGIN
-    && typeof env?.INSTAGRAM_APP_ID === 'string' && env.INSTAGRAM_APP_ID.length >= 8
+    && typeof env?.INSTAGRAM_APP_ID === 'string'
+    && /^[0-9]{5,40}$/.test(env.INSTAGRAM_APP_ID)
     && typeof env?.INSTAGRAM_APP_SECRET === 'string' && env.INSTAGRAM_APP_SECRET.length >= 16
     && typeof env?.INSTAGRAM_TOKEN_ENCRYPTION_KEY === 'string'
     && env.INSTAGRAM_TOKEN_ENCRYPTION_KEY.length >= 43

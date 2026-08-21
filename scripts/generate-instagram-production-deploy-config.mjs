@@ -85,7 +85,7 @@ if (stateNamespace === tokensNamespace) {
   throw new Error('OAuth state and token KV namespaces must be different');
 }
 
-const appId = requireEnv('INSTAGRAM_APP_ID', /^[0-9A-Za-z_-]{8,64}$/, 'the Instagram app id');
+const appId = requireEnv('INSTAGRAM_APP_ID', /^[0-9]{5,40}$/, 'the numeric Instagram app id');
 const publishableKey = requireEnv(
   'SUPABASE_PUBLISHABLE_KEY',
   /^sb_publishable_[A-Za-z0-9_-]{16,512}$/,

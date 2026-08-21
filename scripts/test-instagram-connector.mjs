@@ -81,7 +81,7 @@ function env(overrides = {}) {
     SUPABASE_URL: 'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
     SUPABASE_SECRET_KEY: SYNTHETIC_SECRET_KEY,
     SUPABASE_PUBLISHABLE_KEY: SYNTHETIC_PUBLISHABLE_KEY,
-    INSTAGRAM_APP_ID: 'synthetic-app-id',
+    INSTAGRAM_APP_ID: '123456789012345',
     INSTAGRAM_APP_SECRET: 'synthetic-instagram-app-secret',
     INSTAGRAM_TOKEN_ENCRYPTION_KEY: ENCRYPTION_KEY,
     INSTAGRAM_WEBHOOK_VERIFY_TOKEN: 'synthetic-instagram-verify-token',
@@ -150,7 +150,7 @@ await test('the token store keys are namespaced per artist', async () => {
 
 await test('the authorization URL uses the documented Instagram Login endpoint', () => {
   const url = new URL(authorizationUrl({
-    clientId: 'synthetic-app-id',
+    clientId: '123456789012345',
     redirectUri: workerTesting.REDIRECT_URI,
     state: 'A'.repeat(43),
   }));
@@ -197,6 +197,15 @@ await test('a staging-shaped environment is refused', () => {
     false,
   );
   assert.equal(workerTesting.configured(env({ VISHAR_ENVIRONMENT: 'staging' })), false);
+});
+
+await test('a secret-shaped value cannot be deployed as the Instagram app id', () => {
+  assert.equal(
+    workerTesting.configured(env({
+      INSTAGRAM_APP_ID: 'a'.repeat(32),
+    })),
+    false,
+  );
 });
 
 await test('the backend key must be safe to place in an HTTP header', () => {
