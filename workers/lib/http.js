@@ -7,6 +7,7 @@
 // their original permissive behaviour.
 
 export const PRODUCTION_ORIGINS = ['https://vishartattoo.com', 'https://www.vishartattoo.com'];
+const PUBLIC_SOURCE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** 3 files x 4 MB, plus room for the text fields and multipart framing. */
 export const MAX_REQUEST_BYTES = 13 * 1024 * 1024;
@@ -21,6 +22,9 @@ export function isAllowedOrigin(origin) {
  * and production cannot accept each other's traffic. Remote origins must use
  * HTTPS; loopback HTTP is accepted for local `wrangler dev` only when it is
  * named explicitly.
+ *
+ * This is retained for the rollout fallback. Registry-backed booking requests
+ * use the database mapping instead of this deployment-level list.
  */
 export function allowedOriginsFromEnv(env) {
   const raw = typeof env?.ALLOWED_ORIGINS === 'string' ? env.ALLOWED_ORIGINS : '';
@@ -57,8 +61,43 @@ export function isAllowedOriginFor(origin, env) {
   return isAllowedOrigin(origin);
 }
 
-export function getCorsHeaders(origin, env) {
-  const allowOrigin = isAllowedOriginFor(origin, env) ? origin : PRODUCTION_ORIGINS[0];
+/** Exact canonical HTTPS Origin syntax used for registry-backed forms. */
+export function isCanonicalHttpsOrigin(origin) {
+  if (!origin) return false;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === 'https:'
+      && !parsed.username
+      && !parsed.password
+      && (parsed.pathname === '/' || parsed.pathname === '')
+      && !parsed.search
+      && !parsed.hash
+      && parsed.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * CORS may reflect a canonical Origin for a syntactically valid registry
+ * booking URL so browser preflight can reach the Worker before any request
+ * body exists. This is deliberately not authorization. The POST route still
+ * resolves (public source id + observed Origin) in Supabase before persistence.
+ */
+export function isRegistryBookingRequest(request) {
+  if (!request) return false;
+  let publicSourceId = '';
+  try { publicSourceId = new URL(request.url).searchParams.get('source') || ''; } catch { return false; }
+  if (!PUBLIC_SOURCE_ID.test(publicSourceId)) return false;
+  if (request.method === 'OPTIONS') return true;
+  return isMultipartRequest(request);
+}
+
+export function getCorsHeaders(origin, env, request = null) {
+  const allowRegistryOrigin = isRegistryBookingRequest(request) && isCanonicalHttpsOrigin(origin);
+  const allowOrigin = allowRegistryOrigin || isAllowedOriginFor(origin, env)
+    ? origin
+    : PRODUCTION_ORIGINS[0];
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
