@@ -1,9 +1,9 @@
 # Vishar CRM platform refactor — architecture audit and staged plan
 
-Status: **Phases A–D complete.** Migrations `0074`–`0076` and pgTAP files
-`222`–`224` are on `claude/vishar-platform-refactor-f6cno8`. The full history
-(76 migrations) replays cleanly and all 62 pgTAP files pass. **Nothing here is
-deployed**, and the frozen Instagram rollout is untouched.
+Status: **Phases A–D and K/L/M complete.** Migrations `0074`–`0077` and pgTAP
+files `222`–`225` are on `claude/vishar-platform-refactor-f6cno8`. The full
+history (77 migrations) replays cleanly and all 63 pgTAP files pass.
+**Nothing here is deployed**, and the frozen Instagram rollout is untouched.
 
 This document is the design anchor for moving Vishar CRM from a system that
 serves two named artists to a platform where adding an artist, a manager or a
@@ -377,18 +377,52 @@ bounded release.
 | Phase | Scope | First migration | Notes |
 | --- | --- | --- | --- |
 | E | Unified `/integrations` screen; collapse the three nav entries | none | UI only; reads `public.list_integration_status()` |
+| — | Notification Center UI | none | UI only; reads `public.list_notifications()` |
 | F | `crm_private.telegram_destinations` + single-use linking sessions | `0077` | chat ids server-only, never in `public` |
 | G | Telegram delivery migration | none | resolver added behind a fallback; static bindings removed only after proof |
 | H | Booking source registry: public opaque id, origin check at runtime | `0078` | replaces `env.BOOKING_SOURCE_KEY` |
 | I–J | Hosted forms and external websites | `0079` | template/schema based, no form builder |
-| K | `public.notifications` + Notification Center | `0080` | new outbox kind `internal_notification` |
-| L | Follow-up due scheduler | `0081` | dedupe key `followup_due:{id}:{schedule_version}` |
-| M | Personal notification destinations and preferences | `0082` | distinct from artist Telegram integration |
-| N | Domain events + automation engine | `0083` | one engine, not a cron per scenario |
-| O–P | Templates, client reminders, workspace defaults | `0084`–`0085` | service vs marketing split enforced here |
+| K–M | **Done** — `public.notifications`, the follow-up sweep, personal destinations and preferences | `0077` | see §6.1 |
+| N | Domain events + automation engine | `0078` | one engine, not a cron per scenario |
+| O–P | Templates, client reminders, workspace defaults | `0079`–`0080` | service vs marketing split enforced here |
 | Q–R | MCP domain contracts and surface | none | transport over the same capability layer |
-| S–T | Unified GPT: OAuth client → profile, not artist | `0086` | `gpt_action_clients` gains a profile-bound mode |
+| S–T | Unified GPT: OAuth client → profile, not artist | `0081` | `gpt_action_clients` gains a profile-bound mode |
 | U | Full golden-path validation | none | §77–§82 of the brief |
+
+### 6.1 What `0077` actually fixed
+
+`public.follow_ups` has existed since migration `0005`, carries `due_at` and
+`assigned_to`, and is written by both the CRM and the production GPT. Nothing
+had ever read `due_at`. A follow-up that came due produced no notification, no
+message and no record — somebody had to open the right screen and notice.
+
+`0077` adds `public.notifications` (addressed to one profile, unique
+`dedupe_key`), `public.notification_preferences`, the server-only
+`crm_private.profile_notification_targets`, and
+`public.service_sweep_due_follow_ups()`.
+
+Four properties are pinned by pgTAP `225`:
+
+- **Idempotent.** A second sweep over the same due follow-ups produces nothing.
+  The unique `dedupe_key` is the arbiter, so two schedulers running
+  concurrently cannot both win.
+- **Snooze reschedules, it does not fork.** `snooze_follow_up` moves `due_at`;
+  a trigger bumps `schedule_version`; the dedupe key changes, so the next
+  notification is legitimate rather than a duplicate. No second task is
+  created, and the first notification stays as the record of the first attempt.
+- **Recipients are re-derived at due time, not trusted from write time.** The
+  assignee gets it if they can still reach the work. If they cannot — a
+  membership revoked in between — it falls back to the people who actually run
+  that artist, not to "all managers".
+- **A notification is addressed to a person, not to a scope.** The RLS policy
+  is `recipient_profile_id = auth.uid()`. An artist cannot read their manager's
+  private reminder merely because it arose inside their artist scope, which is
+  the same property that will stop it being delivered into a shared group chat.
+
+Delivery to a person's own Telegram or email is deliberately still absent:
+that needs the private destination store and the linking flow from Phase F.
+`set_notification_preference` refuses to enable a channel with no destination,
+so a preference can never be on while silently delivering nothing.
 
 ### Telegram migration order (Phase F/G), stated once
 

@@ -669,6 +669,15 @@ insert into expected_function_acl values
   ('public.select_artist_integration_route(uuid,public.artist_integration_type,public.integration_route_kind,uuid,uuid)', false, true, false),
   ('public.list_integration_status()', false, true, false),
 
+  -- Internal notifications and the follow-up sweep (migration 0077). The
+  -- sweep is backend-only; every browser surface reports or edits only the
+  -- caller's own notifications and takes no recipient argument.
+  ('public.service_sweep_due_follow_ups(integer)', false, false, true),
+  ('public.list_notifications(public.notification_status,integer)', false, true, false),
+  ('public.mark_notification_read(uuid)', false, true, false),
+  ('public.snooze_follow_up(uuid,timestamptz)', false, true, false),
+  ('public.set_notification_preference(public.notification_channel,boolean)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
@@ -721,7 +730,11 @@ select ok(
        'project_files', 'sessions', 'activity_log', 'internal_notes',
        'email_messages', 'follow_ups', 'integration_outbox',
        'enquiry_status_transitions', 'system_settings', 'retention_holds',
-       'artist_availability_blocks')),
+       'artist_availability_blocks',
+       -- Platform layer, migrations 0074-0077.
+       'capability_registry', 'workspaces', 'workspace_memberships',
+       'workspace_integrations', 'integration_assignments',
+       'artist_integration_routes', 'notifications', 'notification_preferences')),
   'every CRM table has row level security enabled and forced'
 );
 
