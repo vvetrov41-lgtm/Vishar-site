@@ -1,9 +1,8 @@
 // Narrow Supabase client for the trusted Worker.
 //
-// This client can call exactly the RPCs listed in ALLOWED_RPCS. It has no
-// generic table endpoint, no query builder and no way to send arbitrary SQL —
-// the backend key it carries is powerful, so the call surface is kept
-// deliberately small.
+// This client can call only the RPCs listed below. It has no generic table
+// endpoint, no query builder and no way to send arbitrary SQL — the backend key
+// it carries is powerful, so the call surface is kept deliberately small.
 //
 // The key is never logged, never echoed in an error, and never returned to a
 // caller.
@@ -11,13 +10,8 @@
 import { ConfigurationError, RequestError } from './http.js';
 import { statusClass } from './logging.js';
 
-/**
- * The complete set of database entry points the Worker may use. Anything not
- * on this list cannot be reached from the public edge, whatever a future caller
- * asks for.
- */
+/** Existing durable intake / delivery operations. Kept stable for compatibility. */
 export const ALLOWED_RPCS = new Set([
-  'resolve_booking_source_public',
   'create_trusted_enquiry_intake',
   'mark_enquiry_file_uploaded',
   'finalize_enquiry_intake',
@@ -37,6 +31,11 @@ export const ALLOWED_RPCS = new Set([
   'record_whatsapp_inbound_message',
   'record_whatsapp_message_status',
   'record_whatsapp_outbox_result',
+]);
+
+/** Read-only public-edge lookups added by the platform registry. */
+export const READ_ONLY_RPCS = new Set([
+  'resolve_booking_source_public',
 ]);
 
 export class SupabaseError extends Error {
@@ -132,7 +131,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
   const { url, authHeaders, keyKind } = readSupabaseConfig(env);
 
   async function rpc(name, args) {
-    if (!ALLOWED_RPCS.has(name)) {
+    if (!ALLOWED_RPCS.has(name) && !READ_ONLY_RPCS.has(name)) {
       throw new ConfigurationError('rpc_not_allowed', 'That database operation is not available.');
     }
 
