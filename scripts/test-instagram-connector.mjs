@@ -158,8 +158,20 @@ await test('the authorization URL uses the documented Instagram Login endpoint',
   assert.equal(url.origin, 'https://www.instagram.com');
   assert.equal(url.pathname, '/oauth/authorize');
   assert.equal(url.searchParams.get('response_type'), 'code');
+  assert.equal(url.searchParams.get('force_reauth'), 'true');
+  assert.equal(url.searchParams.has('force_authentication'), false);
   assert.equal(url.searchParams.get('scope'), INSTAGRAM_SCOPES.join(','));
   assert.equal(url.searchParams.get('redirect_uri'), workerTesting.REDIRECT_URI);
+});
+
+await test('mobile OAuth requires fresh professional-account authentication', () => {
+  const url = new URL(authorizationUrl({
+    clientId: '123456789012345',
+    redirectUri: workerTesting.REDIRECT_URI,
+    state: 'B'.repeat(43),
+  }));
+  assert.equal(url.searchParams.get('force_reauth'), 'true');
+  assert.equal(url.searchParams.get('state'), 'B'.repeat(43));
 });
 
 await test('only the scopes this CRM needs are requested', () => {
@@ -395,6 +407,7 @@ await test('starting a connection verifies the CRM session before authorizing it
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.ok(payload.authorize_url.startsWith('https://www.instagram.com/oauth/authorize'));
+  assert.equal(new URL(payload.authorize_url).searchParams.get('force_reauth'), 'true');
 
   const verified = db.calls.find((call) => call.name === 'verifyUser');
   assert.equal(verified.bearer, SESSION);

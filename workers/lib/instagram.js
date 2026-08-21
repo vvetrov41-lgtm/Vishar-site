@@ -186,6 +186,10 @@ export function authorizationUrl({ clientId, redirectUri, state }) {
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
+  // Do not let the Instagram iOS app silently reuse whichever account is
+  // already active. Meta documents force_reauth for this exact case: the app
+  // user must authenticate with the professional account being connected.
+  url.searchParams.set('force_reauth', 'true');
   // Meta documents this list as comma separated for Instagram Business Login.
   url.searchParams.set('scope', INSTAGRAM_SCOPES.join(','));
   url.searchParams.set('state', state);
