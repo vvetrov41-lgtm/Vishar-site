@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/kristina-whatsapp-production-onboarding
+      - agent/kristina-self-service-whatsapp-connect
       - release/private-crm-rc*
     paths:
       - .github/workflows/whatsapp-production-onboarding-validation.yml
@@ -47,7 +48,7 @@ jobs:
           set -euo pipefail
           branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           case "$branch" in
-            agent/kristina-whatsapp-production-onboarding|release/private-crm-rc*) ;;
+            agent/kristina-whatsapp-production-onboarding|agent/kristina-self-service-whatsapp-connect|release/private-crm-rc*) ;;
             *) echo "Unexpected WhatsApp onboarding branch: $branch" >&2; exit 1 ;;
           esac
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
