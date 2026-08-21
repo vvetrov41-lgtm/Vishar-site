@@ -16,6 +16,7 @@ on:
       - admin/src/test/meta-whatsapp-embedded-signup.test.ts
       - admin/src/test/whatsapp-connections.test.ts
       - scripts/test-whatsapp-production-onboarding.mjs
+      - scripts/test-private-production-release-workflows.mjs
   pull_request:
     paths:
       - .github/workflows/whatsapp-production-onboarding-validation.yml
@@ -28,6 +29,7 @@ on:
       - admin/src/test/meta-whatsapp-embedded-signup.test.ts
       - admin/src/test/whatsapp-connections.test.ts
       - scripts/test-whatsapp-production-onboarding.mjs
+      - scripts/test-private-production-release-workflows.mjs
 
 permissions:
   contents: read

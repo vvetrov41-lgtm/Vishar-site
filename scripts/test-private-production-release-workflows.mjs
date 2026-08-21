@@ -43,7 +43,10 @@ for (const [label, text] of [
   expectExcludes(text, 'environment: production\n', label);
 }
 
-expectIncludes(crm, 'npx wrangler pages deploy admin/dist', 'CRM Pages');
+expectIncludes(crm, 'working-directory: admin', 'CRM Pages');
+expectIncludes(crm, '../node_modules/.bin/wrangler pages deploy dist', 'CRM Pages');
+expectIncludes(crm, 'test -f admin/functions/api/whatsapp/embedded-signup/provision.js', 'CRM Pages');
+expectExcludes(crm, 'npx wrangler pages deploy admin/dist', 'CRM Pages');
 expectIncludes(crm, '--project-name "$CRM_PAGES_PROJECT"', 'CRM Pages');
 expectExcludes(crm, 'supabase db push', 'CRM Pages');
 expectExcludes(crm, 'wrangler deploy --env', 'CRM Pages');
