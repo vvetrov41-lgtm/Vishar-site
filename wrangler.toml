@@ -1,5 +1,5 @@
 name = "tattooai"
-main = "workers/tattooai.js"
+main = "workers/tattooai-entry.js"
 compatibility_date = "2026-05-25"
 workers_dev = true
 
