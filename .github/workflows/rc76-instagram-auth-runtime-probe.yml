@@ -14,10 +14,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Compare a deliberately invalid Supabase API key
+        shell: bash
+        run: |
+          set -euo pipefail
+          token='synthetic.session.token-abcdefghijklmnop'
+          fake_key='sb_secret_deliberately_invalid_runtime_probe'
+          body_file="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 20 \
+            --output "$body_file" \
+            --write-out '%{http_code}' \
+            --header "apikey: ${fake_key}" \
+            --header "authorization: Bearer ${token}" \
+            --header 'accept: application/json' \
+            'https://vfjexhfdbrjmuxfdvbdx.supabase.co/auth/v1/user')"
+          error_code="$(jq -r 'if type=="object" then (.code // .error_code // .error // "none") else "invalid_json" end' "$body_file")"
+          echo "INVALID_KEY_STATUS=${status}"
+          echo "INVALID_KEY_ERROR=${error_code}"
+
       - name: Exercise the live Worker with a synthetic invalid session
         shell: bash
         run: |
           set -euo pipefail
+          header_value() {
+            local file="$1"
+            local expected_name="$2"
+            awk -v expected_name="$expected_name" '
+              tolower($1) == tolower(expected_name) ":" {
+                value = $0
+                sub(/^[^:]*:[[:space:]]*/, "", value)
+                sub(/\r$/, "", value)
+                print value
+                exit
+              }
+            ' "$file"
+          }
+
           token='synthetic.session.token-abcdefghijklmnop'
           body_file="$(mktemp)"
           headers_file="$(mktemp)"
@@ -32,8 +64,8 @@ jobs:
             --data '{"artist_id":"a1111111-1111-4111-8111-111111111111"}' \
             'https://instagram.vishartattoo.com/v1/connections/start')"
           body="$(tr -d '\r\n' < "$body_file")"
-          content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub("\r", "", $2); print $2; exit}' "$headers_file")"
-          allow_origin="$(awk -F': *' 'tolower($1)=="access-control-allow-origin" {gsub("\r", "", $2); print $2; exit}' "$headers_file")"
+          content_type="$(header_value "$headers_file" content-type)"
+          allow_origin="$(header_value "$headers_file" access-control-allow-origin)"
 
           echo "AUTH_CANARY_STATUS=${status}"
           echo "AUTH_CANARY_CONTENT_TYPE=${content_type}"
