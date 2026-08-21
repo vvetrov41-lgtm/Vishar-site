@@ -1,0 +1,52 @@
+name: RC76 Instagram Auth runtime probe
+
+on:
+  push:
+    branches:
+      - ops/rc76-instagram-auth-runtime-probe
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe deployed Auth verification path
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Exercise the live Worker with a synthetic invalid session
+        shell: bash
+        run: |
+          set -euo pipefail
+          token='synthetic.session.token-abcdefghijklmnop'
+          body_file="$(mktemp)"
+          headers_file="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 20 \
+            --output "$body_file" \
+            --dump-header "$headers_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Origin: https://crm.vishartattoo.com' \
+            --header 'content-type: application/json' \
+            --header "authorization: Bearer ${token}" \
+            --data '{"artist_id":"a1111111-1111-4111-8111-111111111111"}' \
+            'https://instagram.vishartattoo.com/v1/connections/start')"
+          body="$(tr -d '\r\n' < "$body_file")"
+          content_type="$(awk -F': *' 'tolower($1)=="content-type" {gsub("\r", "", $2); print $2; exit}' "$headers_file")"
+          allow_origin="$(awk -F': *' 'tolower($1)=="access-control-allow-origin" {gsub("\r", "", $2); print $2; exit}' "$headers_file")"
+
+          echo "AUTH_CANARY_STATUS=${status}"
+          echo "AUTH_CANARY_CONTENT_TYPE=${content_type}"
+          echo "AUTH_CANARY_ALLOW_ORIGIN=${allow_origin}"
+          echo "AUTH_CANARY_BODY=${body}"
+
+          test "$content_type" = 'application/json; charset=utf-8'
+          test "$allow_origin" = 'https://crm.vishartattoo.com'
+          case "$body" in
+            '{"error":"session_required"}'|'{"error":"session_verification_unavailable"}')
+              ;;
+            *)
+              echo 'Unexpected production response.' >&2
+              exit 1
+              ;;
+          esac
