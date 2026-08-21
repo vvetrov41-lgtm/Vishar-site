@@ -246,6 +246,7 @@ await test('session Auth uses the publishable key while backend RPC keeps the se
   assert.notEqual(calls[0].init.headers.apikey, SYNTHETIC_SECRET_KEY);
   assert.equal(calls[0].init.redirect, 'manual');
   assert.equal(calls[1].init.headers.apikey, SYNTHETIC_SECRET_KEY);
+  assert.equal(calls[1].init.redirect, undefined);
 });
 
 await test('session verification distinguishes a fetch failure before Supabase responds', async () => {

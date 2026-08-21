@@ -87,7 +87,10 @@ async function callRpc(origin, name, args, headers, fetchImpl) {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(args || {}),
-      redirect: 'error',
+      // Use the same default redirect handling as the live WhatsApp Supabase
+      // client. Rejecting redirects at the Workers transport layer prevents
+      // Supabase's edge from completing the request and leaves no PostgREST
+      // event to diagnose.
     });
   } catch {
     throw new InstagramSupabaseError('instagram_rpc_unavailable');
