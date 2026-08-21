@@ -206,6 +206,25 @@ async function readJson(response, errorCode) {
 }
 
 /**
+ * Instagram Business Login wraps a successful code exchange in a single-item
+ * `data` array. Older examples and test tools returned the token object at the
+ * top level, so accept that legacy shape too without weakening validation.
+ */
+function authorizationTokenRecord(parsed) {
+  if (!Object.prototype.hasOwnProperty.call(parsed, 'data')) return parsed;
+  if (
+    !Array.isArray(parsed.data)
+    || parsed.data.length !== 1
+    || !parsed.data[0]
+    || typeof parsed.data[0] !== 'object'
+    || Array.isArray(parsed.data[0])
+  ) {
+    throw new InstagramError('instagram_oauth_response_invalid');
+  }
+  return parsed.data[0];
+}
+
+/**
  * Exchanges the one-time authorization code for a short-lived token.
  *
  * The response also carries the Instagram professional account id and the
@@ -241,12 +260,13 @@ export async function exchangeAuthorizationCode({
   if (!response.ok) throw new InstagramError('instagram_oauth_exchange_failed');
 
   const parsed = await readJson(response, 'instagram_oauth_response_invalid');
-  const accessToken = typeof parsed.access_token === 'string' ? parsed.access_token : '';
-  const userId = parsed.user_id === undefined ? '' : String(parsed.user_id);
-  const permissions = Array.isArray(parsed.permissions)
-    ? parsed.permissions.filter((value) => typeof value === 'string')
-    : typeof parsed.permissions === 'string'
-      ? parsed.permissions.split(',').map((value) => value.trim()).filter(Boolean)
+  const record = authorizationTokenRecord(parsed);
+  const accessToken = typeof record.access_token === 'string' ? record.access_token : '';
+  const userId = record.user_id === undefined ? '' : String(record.user_id);
+  const permissions = Array.isArray(record.permissions)
+    ? record.permissions.filter((value) => typeof value === 'string')
+    : typeof record.permissions === 'string'
+      ? record.permissions.split(',').map((value) => value.trim()).filter(Boolean)
       : [];
 
   if (!accessToken || !INSTAGRAM_USER_ID.test(userId)) {

@@ -508,19 +508,24 @@ await test('the onboarding route is closed while the connector is disabled', asy
 // ---------------------------------------------------------------------------
 
 function metaFetchDouble({
-  permissions = ['instagram_business_basic', 'instagram_business_manage_messages'],
+  permissions = 'instagram_business_basic,instagram_business_manage_messages',
   account = V_ACCOUNT,
   meAccount = null,
   username = 'vladimir.synthetic',
+  wrappedTokenResponse = true,
 } = {}) {
   return async (input) => {
     const url = typeof input === 'string' ? input : input.url;
     if (url.startsWith('https://api.instagram.com/oauth/access_token')) {
-      return new Response(JSON.stringify({
+      const token = {
         access_token: 'synthetic-short-lived',
         user_id: account,
         permissions,
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      };
+      return new Response(JSON.stringify(wrappedTokenResponse ? { data: [token] } : token), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     if (url.includes('/access_token?') || url.includes('grant_type=ig_exchange_token')) {
       return new Response(JSON.stringify({
@@ -563,7 +568,7 @@ async function callback(state, { environment = env(), db = dbDouble(), fetchImpl
   };
 }
 
-await test('a completed callback binds the account and stores the token only in the connector', async () => {
+await test('an official wrapped Business Login response binds the account and stores only the token', async () => {
   const environment = env();
   const state = await seedState(environment);
   const { response, db } = await callback(state, { environment });
@@ -581,6 +586,40 @@ await test('a completed callback binds the account and stores the token only in 
 
   const body = await response.text();
   assert.ok(!body.includes('synthetic-long-lived'));
+});
+
+await test('a legacy bare token response remains accepted', async () => {
+  const environment = env();
+  const state = await seedState(environment);
+  const { response } = await callback(state, {
+    environment,
+    fetchImpl: metaFetchDouble({ wrappedTokenResponse: false }),
+  });
+  assert.equal(response.status, 200);
+});
+
+await test('a malformed wrapped token response fails with a safe diagnostic reference', async () => {
+  const environment = env();
+  const state = await seedState(environment);
+  const fetchImpl = async (input) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (url.startsWith('https://api.instagram.com/oauth/access_token')) {
+      return Response.json({ data: [] });
+    }
+    return new Response('{}', { status: 404 });
+  };
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  let response;
+  try {
+    ({ response } = await callback(state, { environment, fetchImpl }));
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(response.status, 400);
+  const body = await response.text();
+  assert.ok(body.includes('instagram_oauth_response_invalid'));
+  assert.ok(!body.includes('synthetic-short-lived'));
 });
 
 await test('the state is single use', async () => {

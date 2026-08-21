@@ -412,9 +412,15 @@ async function oauthCallback(request, url, env, db, fetchImpl) {
     return html(200, 'Instagram connected',
       `The Instagram professional account @${account.username} is now connected to this artist. `
       + 'Messages will appear in the CRM inbox.');
-  } catch {
+  } catch (error) {
+    const code = safeFailureCode(error);
+    console.warn(JSON.stringify({
+      event: 'instagram_oauth_callback_failed',
+      code,
+    }));
     return html(400, 'Instagram connection failed',
-      'The Instagram exchange or account verification failed. No connection was enabled.');
+      'The Instagram exchange or account verification failed. No connection was enabled. '
+      + `Error reference: ${code}.`);
   }
 }
 
