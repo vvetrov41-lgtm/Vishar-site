@@ -302,6 +302,7 @@ expectIncludes(instagram, 'npm run scan:secrets', 'Instagram connector');
 expectIncludes(instagram, 'secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY', 'Instagram connector');
 expectIncludes(instagram, 'secrets.CRM_PRODUCTION_INSTAGRAM_APP_ID', 'Instagram connector');
 expectIncludes(instagram, 'secrets.CRM_PRODUCTION_INSTAGRAM_APP_SECRET', 'Instagram connector');
+expectIncludes(instagram, 'CANONICAL_INSTAGRAM_APP_ID', 'Instagram connector');
 expectIncludes(instagram, 'SUPABASE_AUTH_CANARY_STATUS', 'Instagram connector');
 expectIncludes(instagram, 'SUPABASE_PUBLISHABLE_AUTH_CANARY_STATUS', 'Instagram connector');
 expectIncludes(instagram, 'WORKER_AUTH_CANARY_STATUS', 'Instagram connector');

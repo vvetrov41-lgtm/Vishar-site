@@ -180,6 +180,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
           CANONICAL_SUPABASE_SECRET_KEY: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
           CANONICAL_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+          CANONICAL_INSTAGRAM_APP_ID: ${{ secrets.CRM_PRODUCTION_INSTAGRAM_APP_ID }}
           CANONICAL_INSTAGRAM_APP_SECRET: ${{ secrets.CRM_PRODUCTION_INSTAGRAM_APP_SECRET }}
         shell: bash
         run: |
@@ -201,6 +202,11 @@ jobs:
           if ! printf '%s' "$CANONICAL_INSTAGRAM_APP_SECRET" \
             | grep -Eq '^[0-9A-Fa-f]{32}$'; then
             echo 'The canonical production Instagram app secret is absent or malformed.' >&2
+            exit 1
+          fi
+          if ! printf '%s' "$CANONICAL_INSTAGRAM_APP_ID" \
+            | grep -Eq '^[0-9]{5,40}$'; then
+            echo 'The canonical production Instagram app id is absent or is not numeric.' >&2
             exit 1
           fi
 
