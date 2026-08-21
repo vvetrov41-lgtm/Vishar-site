@@ -110,7 +110,7 @@ select is(
   'the manager can list the hosted source they created for their artist'
 );
 
-select like(
+select alike(
   (select public_path from public.list_booking_sources('a1111111-1111-4111-8111-111111111111')
    where source_kind = 'hosted' and display_label = 'Vladimir hosted booking form'),
   '/forms/%',
@@ -297,12 +297,24 @@ select public.create_hosted_enquiry_intake(
   pg_temp.files(1)
 ) as r;
 
-grant select on t_intake to service_role;
+grant select on t_intake to public;
 
 select is(
   (select r ->> 'artist_id' from t_intake),
   'a1111111-1111-4111-8111-111111111111',
   'hosted intake returns the database-derived artist'
+);
+
+-- The Worker credential writes enquiries through RPCs and holds no SELECT on
+-- the table itself, which is deliberate. Verifying what actually landed is a
+-- test-owner read, not something service_role should be able to do - asserting
+-- it from inside the service_role context would have quietly required widening
+-- that grant.
+reset role;
+
+select ok(
+  not has_table_privilege('service_role', 'public.enquiries', 'SELECT'),
+  'the backend credential still cannot read the enquiry table directly'
 );
 select is(
   (select e.artist_id
@@ -319,7 +331,6 @@ select is(
   'hosted intake pins the durable enquiry to the exact hosted source'
 );
 
-reset role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- Deactivation removes the public hosted route and intake authority immediately.

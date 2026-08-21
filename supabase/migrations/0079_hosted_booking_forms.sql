@@ -553,7 +553,9 @@ begin
   end if;
 
   if p_artist_id is not null then
-    perform crm_private.require_artist_access(p_artist_id, 'view_booking_sources');
+    -- Same rule as the table policy above: listing routing configuration is a
+    -- manage-level right, not an ordinary artist-scope read.
+    perform crm_private.require_artist_access(p_artist_id, 'manage_booking_sources');
   end if;
 
   return query
@@ -653,7 +655,7 @@ begin
   perform crm_private.log_artist_activity(
     p_artist_id,
     'booking_source.created',
-    'profile',
+    case when public.is_owner() then 'owner' else 'staff' end,
     auth.uid(),
     null, null, null, null, null,
     jsonb_build_object(
@@ -724,7 +726,7 @@ begin
   perform crm_private.log_artist_activity(
     v_source.artist_id,
     'booking_source.updated',
-    'profile',
+    case when public.is_owner() then 'owner' else 'staff' end,
     auth.uid(),
     null, null, null, null, null,
     jsonb_build_object(
@@ -756,14 +758,46 @@ grant execute on function public.update_booking_source(uuid,text,text,boolean)
 -- 7. Precise booking-source RLS vocabulary
 -- ---------------------------------------------------------------------------
 
+-- A policy expression is evaluated with the *caller's* privileges, so it may
+-- only name functions that caller may execute. `crm_private.has_artist_capability`
+-- is a private helper with no grant to `authenticated`: naming it directly in a
+-- policy turns every ordinary read of this table into `permission denied for
+-- function has_artist_capability`, which is how it broke migration 0017's own
+-- pgTAP coverage.
+--
+-- This thin wrapper is the booking-source member of the existing
+-- `public.can_*_artist_*` family from migration 0019. It adds no authority:
+-- it is one call into the same resolver, and the capability decision stays in
+-- exactly one place.
+
+create or replace function public.can_manage_artist_booking_sources(p_artist_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+  select crm_private.has_artist_capability(p_artist_id, 'manage_booking_sources');
+$$;
+
+revoke all on function public.can_manage_artist_booking_sources(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.can_manage_artist_booking_sources(uuid)
+  to authenticated, service_role;
+
 -- Direct browser writes remain ungranted. These policies protect owner-context
 -- probes and any future narrow table read without turning policy visibility into
 -- the write API.
+-- Migration 0017 gated *reading* this table on can_manage_artist_integrations,
+-- and that is not an accident: a booking source row is the Origin -> artist
+-- routing map, so seeing it is a manage-level right rather than an ordinary
+-- read. Keeping `view_booking_sources` here would have handed that map to every
+-- read_only membership, which pgTAP 100 catches by name.
 drop policy if exists booking_sources_select on public.booking_sources;
 create policy booking_sources_select on public.booking_sources
   for select
   using (
-    crm_private.has_artist_capability(artist_id, 'view_booking_sources')
+    public.can_manage_artist_booking_sources(artist_id)
     or crm_private.is_service_backend()
   );
 
@@ -771,7 +805,7 @@ drop policy if exists booking_sources_insert on public.booking_sources;
 create policy booking_sources_insert on public.booking_sources
   for insert
   with check (
-    crm_private.has_artist_capability(artist_id, 'manage_booking_sources')
+    public.can_manage_artist_booking_sources(artist_id)
     or crm_private.is_service_backend()
   );
 
@@ -779,10 +813,10 @@ drop policy if exists booking_sources_update on public.booking_sources;
 create policy booking_sources_update on public.booking_sources
   for update
   using (
-    crm_private.has_artist_capability(artist_id, 'manage_booking_sources')
+    public.can_manage_artist_booking_sources(artist_id)
     or crm_private.is_service_backend()
   )
   with check (
-    crm_private.has_artist_capability(artist_id, 'manage_booking_sources')
+    public.can_manage_artist_booking_sources(artist_id)
     or crm_private.is_service_backend()
   );

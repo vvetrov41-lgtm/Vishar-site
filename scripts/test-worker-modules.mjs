@@ -312,6 +312,10 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'claim_telegram_outbox_by_id',
     'claim_whatsapp_outbox',
     'claim_whatsapp_outbox_by_id',
+    // Hosted forms reuse the same durable intake pipeline; the only difference
+    // is that the artist comes from the hosted source resolver rather than from
+    // an Origin match, so it is a second entry point, not a second stack.
+    'create_hosted_enquiry_intake',
     'create_trusted_enquiry_intake',
     'fail_enquiry_intake',
     'finalize_enquiry_intake',

@@ -180,9 +180,17 @@ await test('legacy deployed forms remain compatible during the rollout',async()=
   assert.equal(called,false);
 });
 
-await test('the privileged Worker surface isolates one read-only resolver from the legacy RPC set',()=>{
-  assert.deepEqual([...READ_ONLY_RPCS],['resolve_booking_source_public']);
-  assert.equal(ALLOWED_RPCS.has('resolve_booking_source_public'),false);
+await test('the privileged Worker surface keeps its read-only resolvers out of the legacy RPC set',()=>{
+  // Both resolvers answer the same question — which artist owns this public
+  // source — for the two transport modes. They are read-only and deliberately
+  // separate from ALLOWED_RPCS, which is the durable-write surface.
+  assert.deepEqual(
+    [...READ_ONLY_RPCS].sort(),
+    ['resolve_booking_source_public','resolve_hosted_booking_source'],
+  );
+  for(const resolver of READ_ONLY_RPCS){
+    assert.equal(ALLOWED_RPCS.has(resolver),false);
+  }
   for(const forbidden of ['sql','query','select','insert','update','delete']){
     assert.equal(ALLOWED_RPCS.has(forbidden),false);
     assert.equal(READ_ONLY_RPCS.has(forbidden),false);

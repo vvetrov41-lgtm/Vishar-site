@@ -508,6 +508,7 @@ insert into expected_function_acl values
   ('public.can_manage_artist_finance(uuid)', false, true, true),
   ('public.can_manage_artist_sessions(uuid)', false, true, true),
   ('public.can_manage_artist_integrations(uuid)', false, true, true),
+  ('public.can_manage_artist_booking_sources(uuid)', false, true, true),
 
   -- Worker-only durable intake, reconciliation and payment RPCs.
   ('public.create_enquiry_intake(uuid,jsonb,jsonb,jsonb)', false, false, true),
