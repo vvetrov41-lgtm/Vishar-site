@@ -32,6 +32,16 @@ describe('Team and access management', () => {
     const managerRole = await screen.findByLabelText('Role for Manager');
     const managerCard = managerRole.closest('.team-member-card') as HTMLElement;
     const membershipCard = within(managerCard).getByText('Vladimir Vishar').closest('fieldset') as HTMLElement;
+
+    // The role select renders before the membership read settles, so clicking a
+    // toggle straight away races the state update that applies the loaded
+    // membership and can silently discard the click. This manager's fixture
+    // grants can_manage_sessions, so waiting for that toggle to come back
+    // checked is a real "the loaded values are on screen now" signal rather
+    // than an arbitrary delay.
+    const sessionsToggle = within(membershipCard).getByLabelText('Manage appointments');
+    await waitFor(() => expect(sessionsToggle).toBeChecked());
+
     const integrationsToggle = within(membershipCard).getByLabelText('Manage integrations');
     fireEvent.click(integrationsToggle);
     await waitFor(() => expect(integrationsToggle).toBeChecked());
