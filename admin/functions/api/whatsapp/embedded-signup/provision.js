@@ -49,7 +49,7 @@ async function responseJson(response) {
   return response.json().catch(() => ({}));
 }
 
-async function requireOwner(request, env) {
+async function requireCrmOperator(request, env) {
   const token = bearerToken(request);
   if (!token) throw Object.assign(new Error('crm_auth_required'), { status: 401 });
   if (!env.SUPABASE_PUBLISHABLE_KEY) throw Object.assign(new Error('server_not_configured'), { status: 503 });
@@ -81,13 +81,55 @@ async function requireOwner(request, env) {
     },
     redirect: 'error',
   });
-  if (!profileResponse.ok) throw Object.assign(new Error('crm_owner_check_failed'), { status: 403 });
+  if (!profileResponse.ok) throw Object.assign(new Error('crm_profile_check_failed'), { status: 503 });
   const profiles = await responseJson(profileResponse);
   const profile = Array.isArray(profiles) && profiles.length === 1 ? profiles[0] : null;
-  if (!profile || profile.id !== userId || profile.role !== 'owner' || profile.is_active !== true) {
-    throw Object.assign(new Error('crm_owner_required'), { status: 403 });
+  if (
+    !profile
+    || profile.id !== userId
+    || !['owner', 'booking_manager'].includes(profile.role)
+    || profile.is_active !== true
+  ) {
+    throw Object.assign(new Error('crm_operator_required'), { status: 403 });
   }
-  return token;
+  return { token, userId, role: profile.role };
+}
+
+async function requireArtistIntegrationCapability(operator, env, artistId) {
+  const membershipUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_memberships`);
+  membershipUrl.searchParams.set('profile_id', `eq.${operator.userId}`);
+  membershipUrl.searchParams.set('artist_id', `eq.${artistId}`);
+  membershipUrl.searchParams.set(
+    'select',
+    'profile_id,artist_id,access_level,can_manage_integrations,is_active',
+  );
+  membershipUrl.searchParams.set('limit', '2');
+  const membershipResponse = await fetch(membershipUrl.toString(), {
+    method: 'GET',
+    headers: {
+      apikey: env.SUPABASE_PUBLISHABLE_KEY,
+      authorization: `Bearer ${operator.token}`,
+      accept: 'application/json',
+    },
+    redirect: 'error',
+  });
+  if (!membershipResponse.ok) {
+    throw Object.assign(new Error('crm_membership_check_failed'), { status: 503 });
+  }
+  const memberships = await responseJson(membershipResponse);
+  const membership = Array.isArray(memberships) && memberships.length === 1
+    ? memberships[0]
+    : null;
+  if (
+    !membership
+    || membership.profile_id !== operator.userId
+    || membership.artist_id !== artistId
+    || membership.access_level === 'read_only'
+    || membership.can_manage_integrations !== true
+    || membership.is_active !== true
+  ) {
+    throw Object.assign(new Error('crm_artist_integration_not_permitted'), { status: 403 });
+  }
 }
 
 async function requireApprovedRoute(token, env, artistId, approvedArtist) {
@@ -237,7 +279,7 @@ export async function onRequestPost(context) {
 
   try {
     requireServerConfiguration(env);
-    const token = await requireOwner(request, env);
+    const operator = await requireCrmOperator(request, env);
     const body = await boundedJson(request);
     const code = typeof body?.code === 'string' ? body.code.trim() : '';
     const artistId = typeof body?.artist_id === 'string' ? body.artist_id : '';
@@ -255,7 +297,8 @@ export async function onRequestPost(context) {
       return json({ ok: false, error: 'invalid_signup_session' }, 400);
     }
 
-    await requireApprovedRoute(token, env, artistId, approvedArtist);
+    await requireArtistIntegrationCapability(operator, env, artistId);
+    await requireApprovedRoute(operator.token, env, artistId, approvedArtist);
     const accessToken = await exchangeCode(code, env.META_APP_SECRET);
     const safeMeta = await verifyMetaSelection(accessToken, wabaId, phoneNumberId || null);
     const envelope = JSON.stringify({

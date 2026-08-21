@@ -6,6 +6,7 @@ import {
 
 const ENDPOINT = 'https://crm.vishartattoo.com/api/whatsapp/embedded-signup/provision';
 const OWNER_ID = '11111111-1111-4111-8111-111111111111';
+const KRISTINA_MANAGER_ID = '22222222-2222-4222-8222-222222222222';
 const VLADIMIR_ID = 'a1111111-1111-4111-8111-111111111111';
 const KRISTINA_ID = 'a2222222-2222-4222-8222-222222222222';
 
@@ -45,6 +46,11 @@ function bodyFor(artistId) {
 
 function authorizedFetch(calls, {
   artistId = KRISTINA_ID,
+  actorId = OWNER_ID,
+  actorRole = 'owner',
+  membershipArtistId = artistId,
+  canManageIntegrations = true,
+  membershipActive = true,
   routeEnabled = true,
   phoneRows = [{
     id: '10987654322',
@@ -57,9 +63,21 @@ function authorizedFetch(calls, {
     const target = String(url);
     calls.push({ target, init });
 
-    if (target.includes('/auth/v1/user')) return Response.json({ id: OWNER_ID });
+    if (target.includes('/auth/v1/user')) return Response.json({ id: actorId });
     if (target.includes('/rest/v1/profiles')) {
-      return Response.json([{ id: OWNER_ID, role: 'owner', is_active: true }]);
+      return Response.json([{ id: actorId, role: actorRole, is_active: true }]);
+    }
+    if (target.includes('/rest/v1/artist_memberships')) {
+      const membershipUrl = new URL(target);
+      assert.equal(membershipUrl.searchParams.get('profile_id'), `eq.${actorId}`);
+      assert.equal(membershipUrl.searchParams.get('artist_id'), `eq.${artistId}`);
+      return Response.json(membershipArtistId ? [{
+        profile_id: actorId,
+        artist_id: membershipArtistId,
+        access_level: actorRole === 'owner' ? 'owner' : 'manager',
+        can_manage_integrations: canManageIntegrations,
+        is_active: membershipActive,
+      }] : []);
     }
     if (target.includes('/rest/v1/artist_integrations')) {
       return Response.json([{
@@ -143,14 +161,58 @@ assert.deepEqual(__testing.approvedArtists, {
   globalThis.fetch = async (url) => {
     if (String(url).includes('/auth/v1/user')) return Response.json({ id: OWNER_ID });
     if (String(url).includes('/rest/v1/profiles')) {
-      return Response.json([{ id: OWNER_ID, role: 'booking_manager', is_active: true }]);
+      return Response.json([{ id: OWNER_ID, role: 'read_only', is_active: true }]);
     }
     throw new Error(`Unexpected network call: ${url}`);
   };
   try {
     const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
     assert.equal(response.status, 403);
-    assert.deepEqual(await response.json(), { ok: false, error: 'crm_owner_required' });
+    assert.deepEqual(await response.json(), { ok: false, error: 'crm_operator_required' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, {
+    actorId: KRISTINA_MANAGER_ID,
+    actorRole: 'booking_manager',
+    canManageIntegrations: false,
+  });
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: 'crm_artist_integration_not_permitted',
+    });
+    assert.equal(calls.some((call) => call.target.includes('/oauth/access_token')), false);
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, {
+    actorId: KRISTINA_MANAGER_ID,
+    actorRole: 'booking_manager',
+    membershipArtistId: VLADIMIR_ID,
+  });
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: 'crm_artist_integration_not_permitted',
+    });
+    assert.equal(calls.some((call) => call.target.includes('/oauth/access_token')), false);
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -174,7 +236,10 @@ assert.deepEqual(__testing.approvedArtists, {
 {
   const originalFetch = globalThis.fetch;
   const calls = [];
-  globalThis.fetch = authorizedFetch(calls);
+  globalThis.fetch = authorizedFetch(calls, {
+    actorId: KRISTINA_MANAGER_ID,
+    actorRole: 'booking_manager',
+  });
   try {
     const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
     assert.equal(response.status, 200);
@@ -186,12 +251,14 @@ assert.deepEqual(__testing.approvedArtists, {
       verified_name: 'Kristina',
     });
 
+    const membershipIndex = calls.findIndex((call) => call.target.includes('/rest/v1/artist_memberships'));
     const routeIndex = calls.findIndex((call) => call.target.includes('/rest/v1/artist_integrations'));
     const exchangeIndex = calls.findIndex((call) => call.target.includes('/oauth/access_token'));
     const drainIndex = calls.findIndex((call) => call.target.includes('vishar-whatsapp-drain-production/secrets'));
     const webhookIndex = calls.findIndex((call) => call.target.includes('vishar-whatsapp-webhook-production/secrets'));
     const subscribeIndex = calls.findIndex((call) => call.target.endsWith('/subscribed_apps'));
-    assert.ok(routeIndex > -1);
+    assert.ok(membershipIndex > -1);
+    assert.ok(routeIndex > membershipIndex);
     assert.ok(exchangeIndex > routeIndex);
     assert.ok(drainIndex > exchangeIndex);
     assert.ok(webhookIndex > drainIndex);

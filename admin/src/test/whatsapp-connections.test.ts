@@ -5,6 +5,7 @@ import {
   whatsappCrmEnvironment,
   whatsappIntegrationKey,
 } from '../lib/whatsapp-connections-api';
+import { canManageArtist } from '../pages/WhatsAppConnectionsPage';
 
 const VLADIMIR = {
   id: 'a1111111-1111-4111-8111-111111111111',
@@ -40,6 +41,23 @@ function clientFor(rows: unknown[] = []) {
 }
 
 describe('WhatsApp Connections safety', () => {
+  it('lets a manager connect only the artist whose active membership grants integration management', () => {
+    const kristinaMembership = [{
+      profile_id: '22222222-2222-4222-8222-222222222222',
+      artist_id: KRISTINA.id,
+      access_level: 'manager' as const,
+      can_view_finance: false,
+      can_manage_finance: false,
+      can_manage_sessions: true,
+      can_manage_integrations: true,
+      is_active: true,
+    }];
+
+    expect(canManageArtist('booking_manager', KRISTINA.id, kristinaMembership)).toBe(true);
+    expect(canManageArtist('booking_manager', VLADIMIR.id, kristinaMembership)).toBe(false);
+    expect(canManageArtist('read_only', KRISTINA.id, kristinaMembership)).toBe(false);
+  });
+
   it('derives routing keys only for the two known CRM Supabase environments', () => {
     expect(whatsappCrmEnvironment('https://vfjexhfdbrjmuxfdvbdx.supabase.co')).toBe('production');
     expect(whatsappCrmEnvironment('https://gwaliusblwrzisrwnsvs.supabase.co/')).toBe('staging');

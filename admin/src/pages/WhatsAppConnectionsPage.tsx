@@ -21,12 +21,13 @@ interface ConnectionsData {
   environment: 'production' | 'staging';
 }
 
-function canManageArtist(
+export function canManageArtist(
   role: string | null | undefined,
   artistId: string,
   memberships: ReturnType<typeof useSession>['memberships'],
 ): boolean {
   if (role === 'owner') return true;
+  if (role !== 'booking_manager') return false;
   return memberships.some(
     (membership) => membership.artist_id === artistId
       && membership.is_active
@@ -44,9 +45,13 @@ export function WhatsAppConnectionsPage() {
   const [metaSdkReady, setMetaSdkReady] = useState(false);
   const [metaSdkError, setMetaSdkError] = useState<string | null>(null);
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
+  const canManageAnyArtist = profile?.role === 'owner'
+    || (profile?.role === 'booking_manager' && memberships.some(
+      (membership) => membership.is_active && membership.can_manage_integrations,
+    ));
 
   useEffect(() => {
-    if (profile?.role !== 'owner') return undefined;
+    if (!canManageAnyArtist) return undefined;
     let environment: 'production' | 'staging';
     try {
       environment = whatsappCrmEnvironment(supabaseUrl);
@@ -70,7 +75,7 @@ export function WhatsAppConnectionsPage() {
     return () => {
       active = false;
     };
-  }, [profile?.role, supabaseUrl]);
+  }, [canManageAnyArtist, supabaseUrl]);
 
   const { data, loading, error, reload } = useAsync<ConnectionsData>(async () => {
     if (!api) throw new Error('CRM API unavailable.');
@@ -122,7 +127,12 @@ export function WhatsAppConnectionsPage() {
     setActionError(null);
     setMetaMessage(null);
     try {
-      if (!api || !data || data.environment !== 'production' || profile?.role !== 'owner') {
+      if (
+        !api
+        || !data
+        || data.environment !== 'production'
+        || !canManageArtist(profile?.role, artist.id, memberships)
+      ) {
         throw new Error('Production WhatsApp onboarding is unavailable in this CRM session.');
       }
       if (!metaSdkReady) throw new Error('Meta SDK is not ready yet.');
@@ -184,7 +194,7 @@ export function WhatsAppConnectionsPage() {
           : `CRM environment: ${data.environment}. Enable a route only after the Meta account and encrypted Worker bindings have been verified separately.`}
       </div>
 
-      {profile?.role === 'owner' && data.environment === 'production' && metaSdkError ? (
+      {canManageAnyArtist && data.environment === 'production' && metaSdkError ? (
         <div className="notice warn" role="alert">
           <p>{metaSdkError}</p>
           <button type="button" disabled={metaBusyArtistId !== null} onClick={retryMetaSdk}>
@@ -213,8 +223,8 @@ export function WhatsAppConnectionsPage() {
           const integration = !inconsistent && exact.length === 1 ? exact[0] : null;
           const busy = busyArtistId === artist.id;
           const metaBusy = metaBusyArtistId === artist.id;
-          const productionOnboardingAvailable = profile?.role === 'owner'
-            && data.environment === 'production'
+          const productionOnboardingAvailable = data.environment === 'production'
+            && canManageArtist(profile?.role, artist.id, memberships)
             && integration?.is_enabled === true
             && (artist.slug === 'vladimir' || artist.slug === 'kristina');
 
@@ -304,8 +314,8 @@ export function WhatsAppConnectionsPage() {
 
               <p className="notice" style={{ marginTop: 12 }}>
                 {language === 'ru'
-                  ? 'Подключение через Meta доступно только owner. Токены остаются в encrypted Worker bindings и не сохраняются в браузере или Postgres.'
-                  : 'Meta connection is owner-only. Tokens remain in encrypted Worker bindings and are never stored in the browser or Postgres.'}
+                  ? 'Подключение через Meta доступно пользователю с правом управления интеграциями этого мастера. Токены остаются в encrypted Worker bindings и не сохраняются в браузере или Postgres.'
+                  : 'Meta connection is available to a user who can manage this artist\'s integrations. Tokens remain in encrypted Worker bindings and are never stored in the browser or Postgres.'}
               </p>
             </Section>
           );
