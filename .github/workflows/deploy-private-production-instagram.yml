@@ -1,8 +1,12 @@
 name: Deploy private production Instagram connector
 
-# This workflow never performs Meta onboarding and never provisions secrets or
-# KV namespaces. The two KV namespaces and the exact encrypted secret names
-# must already exist before deploy=true is allowed to touch production.
+# This workflow never performs Meta onboarding and never provisions provider
+# secrets, token-encryption material, webhook secrets, or KV namespaces. The
+# two KV namespaces and the exact encrypted secret names must already exist
+# before deploy=true is allowed to touch production. The production Supabase
+# backend key is the sole exception: a protected deploy validates the canonical
+# crm-production value against Auth, then reconciles that one Worker binding so
+# an unusable manually pasted header value cannot survive a code rollout.
 #
 # The Worker and its Custom Domain are the opposite: on the very first deploy
 # they must NOT already exist. `wrangler deploy --strict` compares the
@@ -169,6 +173,44 @@ jobs:
           }
           NODE
 
+      - name: Validate and reconcile the production Supabase backend key
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          CANONICAL_SUPABASE_SECRET_KEY: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$CANONICAL_SUPABASE_SECRET_KEY" in
+            sb_secret_*) ;;
+            *) echo 'The canonical production Supabase backend key is absent or malformed.' >&2; exit 1 ;;
+          esac
+          if ! printf '%s' "$CANONICAL_SUPABASE_SECRET_KEY" \
+            | grep -Eq '^sb_secret_[A-Za-z0-9._~-]{16,512}$'; then
+            echo 'The canonical production Supabase backend key is not safe as an HTTP header.' >&2
+            exit 1
+          fi
+
+          probe_body="$RUNNER_TEMP/instagram-supabase-auth-probe.json"
+          probe_status="$(curl --silent --show-error --max-time 20 \
+            --output "$probe_body" \
+            --write-out '%{http_code}' \
+            --header "apikey: $CANONICAL_SUPABASE_SECRET_KEY" \
+            --header 'authorization: Bearer synthetic.session.token-abcdefghijklmnop' \
+            --header 'accept: application/json' \
+            'https://vfjexhfdbrjmuxfdvbdx.supabase.co/auth/v1/user')"
+          echo "SUPABASE_AUTH_CANARY_STATUS=$probe_status"
+          if [ "$probe_status" != '401' ]; then
+            echo 'The protected Supabase backend key did not reach the expected production Auth project.' >&2
+            exit 1
+          fi
+
+          printf '%s' "$CANONICAL_SUPABASE_SECRET_KEY" \
+            | npx wrangler secret put SUPABASE_SECRET_KEY \
+                --config wrangler.instagram.production.toml \
+                --name "$WORKER_NAME"
+
       - name: Generate and deploy only the Instagram connector Worker
         if: ${{ inputs.deploy }}
         env:
@@ -258,6 +300,27 @@ jobs:
           console.log(`INSTAGRAM_WORKER_VERSION=${versionId}`);
           NODE
 
+      - name: Verify the deployed Worker can reach Supabase Auth
+        if: ${{ inputs.deploy }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body_file="$RUNNER_TEMP/instagram-auth-runtime-canary.json"
+          status="$(curl --silent --show-error --max-time 20 \
+            --output "$body_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Origin: https://crm.vishartattoo.com' \
+            --header 'content-type: application/json' \
+            --header 'authorization: Bearer synthetic.session.token-abcdefghijklmnop' \
+            --data '{"artist_id":"a1111111-1111-4111-8111-111111111111"}' \
+            'https://instagram.vishartattoo.com/v1/connections/start')"
+          body="$(tr -d '\r\n' < "$body_file")"
+          echo "WORKER_AUTH_CANARY_STATUS=$status"
+          echo "WORKER_AUTH_CANARY_BODY=$body"
+          test "$status" = '401'
+          test "$body" = '{"error":"session_required"}'
+
       - name: Upload safe Instagram production evidence
         if: ${{ always() && inputs.deploy }}
         uses: actions/upload-artifact@v4
@@ -291,7 +354,7 @@ jobs:
             echo '- workers.dev disabled; preview URLs disabled'
             echo '- Required secret names: Instagram app secret, token encryption key, webhook verify token, production Supabase backend key'
             echo '- Instagram access tokens live only in the encrypted KV token store; none is written to Postgres or returned to a browser'
-            echo '- Secret values are never read or printed; no secret put/bulk command exists here'
+            echo '- Secret values are never printed; the protected production Supabase backend key is validated and reconciled without exposing it'
             echo '- Meta actions not performed: no App Review submission, permission change, account connection or message send'
             echo '- WhatsApp / Database / Pages / Calendar / Telegram / GPT / booking deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"

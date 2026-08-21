@@ -318,4 +318,22 @@ describe('Instagram connector configuration', () => {
     await expect(api.startInstagramConnection('a1111111-1111-4111-8111-111111111111'))
       .rejects.toThrow(/permission check/i);
   });
+
+  it('reports a Worker-to-Auth request failure without blaming the CRM session', async () => {
+    const client = {
+      auth: { getSession: async () => ({ data: { session: { access_token: 'session-token-value' } }, error: null }) },
+    } as unknown as CrmClient;
+    const api = createInstagramConnectionsApi(client, {
+      connectorOrigin: 'https://instagram.vishartattoo.com',
+      fetcher: (async () => new Response(JSON.stringify({
+        error: 'session_verification_request_failed',
+      }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof globalThis.fetch,
+    });
+
+    await expect(api.startInstagramConnection('a1111111-1111-4111-8111-111111111111'))
+      .rejects.toThrow(/could not reach its session verification service/i);
+  });
 });

@@ -110,6 +110,15 @@ function connectorFailureMessage(status: number, payload: unknown): string {
   if (code === 'session_verification_unavailable') {
     return 'CRM could not verify your session with its authorization service. Try again shortly.';
   }
+  if (code === 'session_verification_request_failed') {
+    return 'CRM could not reach its session verification service. Try again shortly.';
+  }
+  if (code === 'session_verification_upstream_failed') {
+    return 'CRM received an unexpected response from its session verification service. Try again shortly.';
+  }
+  if (code === 'session_verification_response_invalid') {
+    return 'CRM received an invalid session verification response. Try again shortly.';
+  }
   if (code === 'authorization_backend_unavailable') {
     return 'CRM could not complete the Instagram permission check. Try again shortly.';
   }

@@ -299,11 +299,23 @@ expectIncludes(instagram, 'EXPOSE_PRIVATE_CRM_INSTAGRAM', 'Instagram connector')
 expectIncludes(instagram, 'CRM_PRODUCTION_INSTAGRAM_DEPLOY_ENABLED', 'Instagram connector');
 expectIncludes(instagram, 'generate-instagram-production-deploy-config.mjs', 'Instagram connector');
 expectIncludes(instagram, 'npm run scan:secrets', 'Instagram connector');
+expectIncludes(instagram, 'secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY', 'Instagram connector');
+expectIncludes(instagram, 'SUPABASE_AUTH_CANARY_STATUS', 'Instagram connector');
+expectIncludes(instagram, 'WORKER_AUTH_CANARY_STATUS', 'Instagram connector');
+expectIncludes(
+  instagram,
+  'npx wrangler secret put SUPABASE_SECRET_KEY',
+  'Instagram connector',
+);
+if ((instagram.match(/wrangler secret put/g) ?? []).length !== 1) {
+  throw new Error('Instagram connector: only the production Supabase backend key may be reconciled');
+}
 
-// A release must never provision or print a credential, and must never reach
-// another production surface from this gate.
+// A release must never provision or print a provider credential. The one
+// narrowly allowed secret mutation reconciles the production Supabase backend
+// key from the protected environment after a live Auth canary. The connector
+// must never reach another production surface from this gate.
 for (const forbidden of [
-  'wrangler secret put',
   'wrangler secret bulk',
   'wrangler kv namespace create',
   'supabase db push',

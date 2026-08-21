@@ -41,7 +41,7 @@ import {
   sendInstagramMessage,
   storeToken,
 } from './lib/instagram.js';
-import { createInstagramSupabase } from './lib/instagram-supabase.js';
+import { createInstagramSupabase, isSupabaseSecretKey } from './lib/instagram-supabase.js';
 import {
   INSTAGRAM_WEBHOOK_PATH,
   handleInstagramWebhook,
@@ -112,8 +112,7 @@ export function configured(env) {
     && env.INSTAGRAM_TOKEN_ENCRYPTION_KEY.length >= 43
     && typeof env?.INSTAGRAM_WEBHOOK_VERIFY_TOKEN === 'string'
     && env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN.length >= 16
-    && typeof env?.SUPABASE_SECRET_KEY === 'string'
-    && env.SUPABASE_SECRET_KEY.startsWith('sb_secret_')
+    && isSupabaseSecretKey(env?.SUPABASE_SECRET_KEY)
     && typeof env?.SUPABASE_PUBLISHABLE_KEY === 'string'
     && env.SUPABASE_PUBLISHABLE_KEY.startsWith('sb_publishable_')
     && env?.INSTAGRAM_OAUTH_STATE
@@ -197,17 +196,29 @@ function authorizationFailure(error) {
   // Worker logs distinguish Auth verification from the backend-only scope RPC.
   const code = typeof error?.code === 'string' ? error.code : 'unknown';
   const pgcode = typeof error?.pgcode === 'string' ? error.pgcode : null;
+  const status = Number.isInteger(error?.status) && error.status >= 100 && error.status <= 599
+    ? error.status
+    : null;
   console.warn(JSON.stringify({
     event: 'instagram_connection_authorization_failed',
     code,
     pgcode,
+    status,
   }));
   if (
-    code === 'instagram_session_verification_unavailable'
-    || code === 'instagram_supabase_url_invalid'
+    code === 'instagram_supabase_url_invalid'
     || code === 'instagram_supabase_secret_unavailable'
   ) {
     return json(503, { error: 'session_verification_unavailable' });
+  }
+  if (code === 'instagram_session_verification_request_failed') {
+    return json(503, { error: 'session_verification_request_failed' });
+  }
+  if (code === 'instagram_session_verification_upstream_failed') {
+    return json(503, { error: 'session_verification_upstream_failed' });
+  }
+  if (code === 'instagram_session_verification_response_invalid') {
+    return json(503, { error: 'session_verification_response_invalid' });
   }
   if (code === 'instagram_rpc_unavailable' || code === 'instagram_rpc_failed') {
     return json(503, { error: 'authorization_backend_unavailable' });

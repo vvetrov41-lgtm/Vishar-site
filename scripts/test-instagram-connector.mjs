@@ -195,18 +195,93 @@ await test('a staging-shaped environment is refused', () => {
   assert.equal(workerTesting.configured(env({ VISHAR_ENVIRONMENT: 'staging' })), false);
 });
 
+await test('the backend key must be safe to place in an HTTP header', () => {
+  assert.equal(supabaseTesting.SECRET_KEY.test(SYNTHETIC_SECRET_KEY), true);
+  assert.equal(supabaseTesting.SECRET_KEY.test(`${SYNTHETIC_SECRET_KEY}\nsecond-line`), false);
+  assert.equal(supabaseTesting.SECRET_KEY.test('sb_secret_too-short'), false);
+  assert.equal(
+    workerTesting.configured(env({
+      SUPABASE_SECRET_KEY: `${SYNTHETIC_SECRET_KEY}\nsecond-line`,
+    })),
+    false,
+  );
+});
+
+await test('session verification distinguishes a fetch failure before Supabase responds', async () => {
+  await assert.rejects(
+    () => supabaseTesting.verifySession(
+      'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+      SYNTHETIC_SECRET_KEY,
+      SESSION,
+      async () => { throw new TypeError('synthetic fetch failure'); },
+    ),
+    (error) => error.code === 'instagram_session_verification_request_failed'
+      && error.status === null,
+  );
+});
+
+await test('session verification preserves a safe unexpected upstream status', async () => {
+  await assert.rejects(
+    () => supabaseTesting.verifySession(
+      'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+      SYNTHETIC_SECRET_KEY,
+      SESSION,
+      async () => Response.json({ message: 'synthetic upstream failure' }, { status: 502 }),
+    ),
+    (error) => error.code === 'instagram_session_verification_upstream_failed'
+      && error.status === 502,
+  );
+});
+
+await test('session verification rejects a successful response without a user id', async () => {
+  await assert.rejects(
+    () => supabaseTesting.verifySession(
+      'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+      SYNTHETIC_SECRET_KEY,
+      SESSION,
+      async () => Response.json({}),
+    ),
+    (error) => error.code === 'instagram_session_verification_response_invalid'
+      && error.status === 200,
+  );
+});
+
+await test('session verification keeps an Auth rejection as an expired session', async () => {
+  await assert.rejects(
+    () => supabaseTesting.verifySession(
+      'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+      SYNTHETIC_SECRET_KEY,
+      SESSION,
+      async (_url, init) => {
+        assert.equal(init.headers.apikey, SYNTHETIC_SECRET_KEY);
+        assert.equal(init.headers.authorization, `Bearer ${SESSION}`);
+        return Response.json({ message: 'synthetic invalid session' }, { status: 401 });
+      },
+    ),
+    (error) => error.code === 'instagram_session_invalid' && error.status === 401,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Onboarding
 // ---------------------------------------------------------------------------
 
-function dbDouble({ authorize = null, session = 'allow', throwOn = null, calls = [] } = {}) {
+function dbDouble({
+  authorize = null,
+  session = 'allow',
+  throwOn = null,
+  verifyErrorCode = 'instagram_session_verification_request_failed',
+  verifyStatus = null,
+  calls = [],
+} = {}) {
   return {
     calls,
     async verifyUser(bearer) {
       calls.push({ name: 'verifyUser', bearer });
       if (throwOn === 'verifyUser') {
-        const error = new Error('instagram_session_verification_unavailable');
-        error.code = 'instagram_session_verification_unavailable';
+        const error = new Error(verifyErrorCode);
+        error.code = verifyErrorCode;
+        error.status = verifyStatus;
         throw error;
       }
       if (session === 'deny') {
@@ -308,13 +383,43 @@ await test('an authorization backend failure is unavailable, not a false 403', a
   assert.deepEqual(await response.json(), { error: 'authorization_backend_unavailable' });
 });
 
-await test('a Supabase Auth verification failure remains distinct from the scope RPC', async () => {
+await test('a Supabase Auth request failure remains distinct from the scope RPC', async () => {
   const { response } = await startConnection(
     { artist_id: V_ARTIST },
     { db: dbDouble({ throwOn: 'verifyUser' }) },
   );
   assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: 'session_verification_unavailable' });
+  assert.deepEqual(await response.json(), { error: 'session_verification_request_failed' });
+});
+
+await test('an unexpected Supabase Auth status remains distinct from a fetch failure', async () => {
+  const { response } = await startConnection(
+    { artist_id: V_ARTIST },
+    {
+      db: dbDouble({
+        throwOn: 'verifyUser',
+        verifyErrorCode: 'instagram_session_verification_upstream_failed',
+        verifyStatus: 502,
+      }),
+    },
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'session_verification_upstream_failed' });
+});
+
+await test('an invalid Supabase Auth payload has its own safe failure category', async () => {
+  const { response } = await startConnection(
+    { artist_id: V_ARTIST },
+    {
+      db: dbDouble({
+        throwOn: 'verifyUser',
+        verifyErrorCode: 'instagram_session_verification_response_invalid',
+        verifyStatus: 200,
+      }),
+    },
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'session_verification_response_invalid' });
 });
 
 await test('a browser cannot smuggle its own integration selector', async () => {

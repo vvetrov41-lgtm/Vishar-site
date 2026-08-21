@@ -30,6 +30,16 @@ const BACKEND_RPCS = new Set([
 const USER_RPCS = new Set();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SESSION_TOKEN = /^[A-Za-z0-9._~-]{16,8192}$/;
+// Secret bindings become HTTP header values. A prefix-only check allowed a
+// pasted newline or other non-header byte to survive configuration validation,
+// making fetch() throw before Supabase could log the request. Keep this
+// deliberately format-focused: the live release gate separately proves the
+// key belongs to the production project without ever printing it.
+const SECRET_KEY = /^sb_secret_[A-Za-z0-9._~-]{16,512}$/;
+
+export function isSupabaseSecretKey(value) {
+  return typeof value === 'string' && SECRET_KEY.test(value.trim());
+}
 
 class InstagramSupabaseError extends Error {
   constructor(code, { status = null, pgcode = null } = {}) {
@@ -106,15 +116,20 @@ async function verifySession(origin, secret, bearer, fetchImpl) {
       redirect: 'error',
     });
   } catch {
-    throw new InstagramSupabaseError('instagram_session_verification_unavailable');
+    throw new InstagramSupabaseError('instagram_session_verification_request_failed');
   }
 
   const json = await safeJsonResponse(response);
   if (response.status === 401 || response.status === 403) {
     throw new InstagramSupabaseError('instagram_session_invalid', { status: 401 });
   }
-  if (!response.ok || !UUID.test(json?.id || '')) {
-    throw new InstagramSupabaseError('instagram_session_verification_unavailable', {
+  if (!response.ok) {
+    throw new InstagramSupabaseError('instagram_session_verification_upstream_failed', {
+      status: response.status,
+    });
+  }
+  if (!UUID.test(json?.id || '')) {
+    throw new InstagramSupabaseError('instagram_session_verification_response_invalid', {
       status: response.status,
     });
   }
@@ -124,7 +139,7 @@ async function verifySession(origin, secret, bearer, fetchImpl) {
 export function createInstagramSupabase(env, fetchImpl = fetch) {
   const origin = projectOrigin(env);
   const secret = String(env?.SUPABASE_SECRET_KEY || '').trim();
-  if (!secret.startsWith('sb_secret_')) {
+  if (!isSupabaseSecretKey(secret)) {
     throw new InstagramSupabaseError('instagram_supabase_secret_unavailable');
   }
 
@@ -144,6 +159,7 @@ export function createInstagramSupabase(env, fetchImpl = fetch) {
 export const __testing = Object.freeze({
   BACKEND_RPCS,
   USER_RPCS,
+  SECRET_KEY,
   projectOrigin,
   verifySession,
   InstagramSupabaseError,
