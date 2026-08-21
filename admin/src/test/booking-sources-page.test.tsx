@@ -138,4 +138,24 @@ describe('Forms and websites management', () => {
     expect(screen.getByText('No access to form settings')).toBeInTheDocument();
     expect(platform.listBookingSources).not.toHaveBeenCalled();
   });
+
+  it('never sends a stale selected Artist that is no longer manageable', async () => {
+    const platform = api();
+    vi.mocked(useApi).mockReturnValue(platform);
+    vi.mocked(useSession).mockReturnValue({
+      profile: { role: 'booking_manager' },
+      memberships: [{
+        artist_id: ARTIST_ONE,
+        is_active: true,
+        can_manage_integrations: true,
+      }],
+    } as any);
+    vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_TWO));
+
+    render(<BookingSourcesPage />);
+
+    expect(await screen.findByText('Add source')).toBeInTheDocument();
+    expect(platform.listBookingSources).toHaveBeenCalledWith(undefined);
+    expect(platform.listBookingSources).not.toHaveBeenCalledWith(ARTIST_TWO);
+  });
 });

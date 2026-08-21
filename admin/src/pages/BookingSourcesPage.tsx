@@ -33,6 +33,14 @@ export function BookingSourcesPage() {
     return artists.filter((artist) => allowed.has(artist.id));
   }, [artists, memberships, profile?.role]);
 
+  // A persisted Artist selector may outlive a membership downgrade. Never send
+  // that stale id to the manage-only RPC even for one render: collapse it to
+  // the all-manageable view before the request is constructed.
+  const effectiveScopeArtistId = scopeArtistId
+    && manageableArtists.some((artist) => artist.id === scopeArtistId)
+    ? scopeArtistId
+    : null;
+
   useEffect(() => {
     const selectedIsManageable = selectedArtistId !== null
       && manageableArtists.some((artist) => artist.id === selectedArtistId);
@@ -40,8 +48,8 @@ export function BookingSourcesPage() {
   }, [manageableArtists, selectedArtistId]);
 
   useEffect(() => {
-    if (scopeArtistId && manageableArtists.some((artist) => artist.id === scopeArtistId)) {
-      setCreateArtistId(scopeArtistId);
+    if (effectiveScopeArtistId) {
+      setCreateArtistId(effectiveScopeArtistId);
       return;
     }
     if (manageableArtists.length === 1) {
@@ -51,13 +59,13 @@ export function BookingSourcesPage() {
     setCreateArtistId((current) => (
       manageableArtists.some((artist) => artist.id === current) ? current : ''
     ));
-  }, [manageableArtists, scopeArtistId]);
+  }, [effectiveScopeArtistId, manageableArtists]);
 
   const state = useAsync(
     () => manageableArtists.length > 0
-      ? api.listBookingSources(scopeArtistId ?? undefined)
+      ? api.listBookingSources(effectiveScopeArtistId ?? undefined)
       : Promise.resolve([]),
-    [api, manageableArtists.length, scopeArtistId],
+    [api, manageableArtists.length, effectiveScopeArtistId],
   );
 
   if (manageableArtists.length === 0) {
@@ -129,7 +137,7 @@ export function BookingSourcesPage() {
           <span>{language === 'ru' ? 'Показать источники' : 'Show sources for'}</span>
           <select
             aria-label={language === 'ru' ? 'Фильтр источников по мастеру' : 'Booking source artist filter'}
-            value={scopeArtistId ?? ''}
+            value={effectiveScopeArtistId ?? ''}
             onChange={(event) => setScopeArtistId(event.target.value || null)}
           >
             <option value="">{language === 'ru' ? 'Все доступные для управления' : 'All manageable artists'}</option>
