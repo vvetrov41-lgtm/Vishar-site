@@ -61,13 +61,20 @@ environment variable below. If a secret is ever placed there, rotate it in
 Meta immediately because ordinary Worker variables and deployment logs are not
 secret storage.
 
-Instagram app ID → GitHub environment variable name:
+Instagram app ID → protected GitHub environment secret name:
 
 ```
 CRM_PRODUCTION_INSTAGRAM_APP_ID
 ```
 
-Instagram app secret → Cloudflare Worker secret name:
+Instagram app secret → protected GitHub environment secret name:
+
+```
+CRM_PRODUCTION_INSTAGRAM_APP_SECRET
+```
+
+The protected rollout reconciles it into this Cloudflare Worker secret without
+printing the value:
 
 ```
 INSTAGRAM_APP_SECRET
@@ -185,16 +192,16 @@ password and, where enabled, their second factor.
 
 ## 3. Cloudflare provisioning
 
-The two KV namespaces and the four Worker secrets are one-off, performed once
-**before** the first deploy. They are deliberately outside the release
-workflow, so a release can never create them.
+The two KV namespaces and four Worker secret names are provisioned once
+**before** the first deploy. A release can never create namespaces or add an
+unreviewed secret name.
 
 `deploy-private-production-instagram.yml` contains no `kv namespace create` and
-no `secret put`. It generates the active Wrangler configuration from the KV
-namespace ids and app id supplied as `crm-production` variables, and verifies
-the secret-name set is exactly the four names below before it deploys. If
-either KV namespace or any of the four secrets is missing, the release fails
-rather than provisioning it.
+generates the active Wrangler configuration from the KV namespace ids and
+protected app ID supplied by `crm-production`. It verifies the secret-name set
+is exactly the four names below, then reconciles only the rotated app secret
+and canonical Supabase backend key. If either KV namespace or any secret name
+is missing, the release fails rather than provisioning it.
 
 The Worker `vishar-instagram-production` and its Custom Domain
 `instagram.vishartattoo.com` are the opposite: **do not** create them ahead of
@@ -230,7 +237,9 @@ CRM_PRODUCTION_INSTAGRAM_OAUTH_STATE_ID
 CRM_PRODUCTION_INSTAGRAM_OAUTH_TOKENS_ID
 ```
 
-The Instagram app id belongs in the same place, as a non-secret variable:
+The Instagram app id belongs in the same environment as a protected secret.
+It is public when correct, but keeping it masked prevents a mistakenly pasted
+app secret from leaking into deployment logs:
 
 ```
 CRM_PRODUCTION_INSTAGRAM_APP_ID
@@ -279,8 +288,10 @@ SUPABASE_SECRET_KEY
 ```
 
 The release workflow verifies this set exactly and fails on any extra or
-missing name. It never reads a secret value and contains no
-`wrangler secret put`.
+missing name. It reconciles only `INSTAGRAM_APP_SECRET` and
+`SUPABASE_SECRET_KEY` from protected GitHub environment secrets without
+printing either value. It cannot mutate the token-encryption key or webhook
+verify token.
 
 ---
 

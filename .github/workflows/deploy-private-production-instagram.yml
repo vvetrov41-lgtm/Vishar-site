@@ -4,9 +4,9 @@ name: Deploy private production Instagram connector
 # secrets, token-encryption material, webhook secrets, or KV namespaces. The
 # two KV namespaces and the exact encrypted secret names must already exist
 # before deploy=true is allowed to touch production. The production Supabase
-# backend key is the sole exception: a protected deploy validates the canonical
-# crm-production value against Auth, then reconciles that one Worker binding so
-# an unusable manually pasted header value cannot survive a code rollout.
+# Supabase backend key and Instagram app secret are the two exceptions: a
+# protected deploy validates their canonical crm-production values, then
+# reconciles only those encrypted Worker bindings without printing either one.
 #
 # The Worker and its Custom Domain are the opposite: on the very first deploy
 # they must NOT already exist. `wrangler deploy --strict` compares the
@@ -173,13 +173,14 @@ jobs:
           }
           NODE
 
-      - name: Validate and reconcile the production Supabase backend key
+      - name: Validate and reconcile production backend secrets
         if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
           CANONICAL_SUPABASE_SECRET_KEY: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
           CANONICAL_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+          CANONICAL_INSTAGRAM_APP_SECRET: ${{ secrets.CRM_PRODUCTION_INSTAGRAM_APP_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
@@ -195,6 +196,11 @@ jobs:
           if ! printf '%s' "$CANONICAL_SUPABASE_PUBLISHABLE_KEY" \
             | grep -Eq '^sb_publishable_[A-Za-z0-9_-]{16,512}$'; then
             echo 'The canonical production Supabase publishable key is not safe as an HTTP header.' >&2
+            exit 1
+          fi
+          if ! printf '%s' "$CANONICAL_INSTAGRAM_APP_SECRET" \
+            | grep -Eq '^[0-9A-Fa-f]{32}$'; then
+            echo 'The canonical production Instagram app secret is absent or malformed.' >&2
             exit 1
           fi
 
@@ -236,6 +242,10 @@ jobs:
             | npx wrangler secret put SUPABASE_SECRET_KEY \
                 --config wrangler.instagram.production.toml \
                 --name "$WORKER_NAME"
+          printf '%s' "$CANONICAL_INSTAGRAM_APP_SECRET" \
+            | npx wrangler secret put INSTAGRAM_APP_SECRET \
+                --config wrangler.instagram.production.toml \
+                --name "$WORKER_NAME"
 
       - name: Generate and deploy only the Instagram connector Worker
         if: ${{ inputs.deploy }}
@@ -244,7 +254,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
           INSTAGRAM_OAUTH_STATE_ID: ${{ vars.CRM_PRODUCTION_INSTAGRAM_OAUTH_STATE_ID }}
           INSTAGRAM_OAUTH_TOKENS_ID: ${{ vars.CRM_PRODUCTION_INSTAGRAM_OAUTH_TOKENS_ID }}
-          INSTAGRAM_APP_ID: ${{ vars.CRM_PRODUCTION_INSTAGRAM_APP_ID }}
+          INSTAGRAM_APP_ID: ${{ secrets.CRM_PRODUCTION_INSTAGRAM_APP_ID }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
           INSTAGRAM_ACCOUNT_VLADIMIR: ${{ vars.CRM_PRODUCTION_INSTAGRAM_ACCOUNT_VLADIMIR }}
           INSTAGRAM_ACCOUNT_KRISTINA: ${{ vars.CRM_PRODUCTION_INSTAGRAM_ACCOUNT_KRISTINA }}
@@ -387,7 +397,7 @@ jobs:
             echo '- workers.dev disabled; preview URLs disabled'
             echo '- Required secret names: Instagram app secret, token encryption key, webhook verify token, production Supabase backend key'
             echo '- Instagram access tokens live only in the encrypted KV token store; none is written to Postgres or returned to a browser'
-            echo '- Secret values are never printed; the protected production Supabase backend key is validated and reconciled without exposing it'
+            echo '- Secret values are never printed; the protected Supabase backend key and Instagram app secret are validated and reconciled without exposing them'
             echo '- Meta actions not performed: no App Review submission, permission change, account connection or message send'
             echo '- WhatsApp / Database / Pages / Calendar / Telegram / GPT / booking deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"

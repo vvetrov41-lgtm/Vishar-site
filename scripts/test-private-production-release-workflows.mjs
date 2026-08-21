@@ -300,6 +300,8 @@ expectIncludes(instagram, 'CRM_PRODUCTION_INSTAGRAM_DEPLOY_ENABLED', 'Instagram 
 expectIncludes(instagram, 'generate-instagram-production-deploy-config.mjs', 'Instagram connector');
 expectIncludes(instagram, 'npm run scan:secrets', 'Instagram connector');
 expectIncludes(instagram, 'secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY', 'Instagram connector');
+expectIncludes(instagram, 'secrets.CRM_PRODUCTION_INSTAGRAM_APP_ID', 'Instagram connector');
+expectIncludes(instagram, 'secrets.CRM_PRODUCTION_INSTAGRAM_APP_SECRET', 'Instagram connector');
 expectIncludes(instagram, 'SUPABASE_AUTH_CANARY_STATUS', 'Instagram connector');
 expectIncludes(instagram, 'SUPABASE_PUBLISHABLE_AUTH_CANARY_STATUS', 'Instagram connector');
 expectIncludes(instagram, 'WORKER_AUTH_CANARY_STATUS', 'Instagram connector');
@@ -311,14 +313,19 @@ expectIncludes(
   'npx wrangler secret put SUPABASE_SECRET_KEY',
   'Instagram connector',
 );
-if ((instagram.match(/wrangler secret put/g) ?? []).length !== 1) {
-  throw new Error('Instagram connector: only the production Supabase backend key may be reconciled');
+expectIncludes(
+  instagram,
+  'npx wrangler secret put INSTAGRAM_APP_SECRET',
+  'Instagram connector',
+);
+if ((instagram.match(/wrangler secret put/g) ?? []).length !== 2) {
+  throw new Error('Instagram connector: only the production Supabase backend key and Instagram app secret may be reconciled');
 }
 
-// A release must never provision or print a provider credential. The one
-// narrowly allowed secret mutation reconciles the production Supabase backend
-// key from the protected environment after a live Auth canary. The connector
-// must never reach another production surface from this gate.
+// A release must never provision or print a provider credential. The two
+// narrowly allowed secret mutations reconcile the production Supabase backend
+// key and rotated Instagram app secret from the protected environment. The
+// connector must never reach another production surface from this gate.
 for (const forbidden of [
   'wrangler secret bulk',
   'wrangler kv namespace create',
