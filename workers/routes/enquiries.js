@@ -4,18 +4,9 @@
 // in the private bucket, every manifest is marked ready, and intake is
 // finalised. Nothing else counts — least of all a Telegram message.
 //
-// Ordering matters and is deliberate:
-//
-//   1. validate source + exact Origin, then validate the payload;
-//   2. commit the enquiry and its pending file manifests in one transaction;
-//   3. upload the objects;
-//   4. mark each manifest ready;
-//   5. finalise;
-//   6. only then, notify.
-//
-// A failure at step 3 or 4 deletes only an upload that was not yet committed to
-// a ready manifest, records a safe failure code, and returns a retryable error.
-// Ready object/manifest pairs stay intact for the retry.
+// External and Vishar-hosted forms deliberately converge here after their
+// transport-specific source resolution. The upload/finalise/outbox pipeline is
+// shared so a hosted form cannot drift into a second booking stack.
 
 import {
   RequestError,
@@ -36,17 +27,81 @@ import {
   SUPPORTED_BOOKING_FORM_VERSION,
 } from '../lib/provider-routing.js';
 
-export async function handleEnquiryIntake(request, env, { cors, logger, fetchImpl = fetch }) {
+const SUPPORTED_HOSTED_FORM_TEMPLATE = 'tattoo-enquiry';
+
+export async function handleEnquiryIntake(request, env, options) {
+  return handleEnquiryIntakeInternal(request, env, { ...options, hostedSourceId: null });
+}
+
+export async function handleHostedEnquiryIntake(request, env, hostedSourceId, options) {
+  return handleEnquiryIntakeInternal(request, env, { ...options, hostedSourceId });
+}
+
+async function handleEnquiryIntakeInternal(
+  request,
+  env,
+  { cors = {}, logger, fetchImpl = fetch, hostedSourceId = null }
+) {
   const startedAt = Date.now();
+  const hostedMode = Boolean(hostedSourceId);
   let responseCors = cors;
 
   try {
     const origin = request.headers.get('Origin') || '';
-    const publicSourceId = readBookingSourcePublicId(request);
+    const publicSourceId = hostedMode ? null : readBookingSourcePublicId(request);
     let bookingConfig;
     let supabase = null;
 
-    if (publicSourceId) {
+    if (hostedMode) {
+      // A hosted form is served by this same trusted Worker. It does not use an
+      // external Origin as authority. The opaque URL id selects a source and
+      // the database derives the Artist/source/template from that id.
+      supabase = createSupabaseClient(env, fetchImpl);
+      let resolved;
+      try {
+        const result = await supabase.rpc('resolve_hosted_booking_source', {
+          p_public_source_id: hostedSourceId,
+        });
+        resolved = Array.isArray(result) ? result[0] : result;
+      } catch (error) {
+        if (
+          error instanceof SupabaseError
+          && error.status >= 400
+          && error.status < 500
+          && error.status !== 429
+        ) {
+          logger.info('enquiry.hosted_source_rejected', {
+            route: 'enquiries',
+            errorCode: 'booking_form_unavailable',
+          });
+          throw new RequestError(
+            'booking_form_unavailable',
+            'This booking form is not available.',
+            404
+          );
+        }
+        throw error;
+      }
+
+      if (!resolved?.source_key || !resolved?.form_version || !resolved?.form_template) {
+        throw new RequestError('booking_form_unavailable', 'This booking form is not available.', 404);
+      }
+      if (
+        resolved.form_version !== SUPPORTED_BOOKING_FORM_VERSION
+        || resolved.form_template !== SUPPORTED_HOSTED_FORM_TEMPLATE
+      ) {
+        throw new ConfigurationError(
+          'booking_form_version_unsupported',
+          'This booking form needs to be updated before it can accept enquiries.'
+        );
+      }
+      bookingConfig = {
+        publicSourceId: hostedSourceId,
+        sourceKey: resolved.source_key,
+        formVersion: resolved.form_version,
+        formTemplate: resolved.form_template,
+      };
+    } else if (publicSourceId) {
       // CORS reflection is only browser plumbing. This RPC is the authority:
       // it requires the opaque public id AND the exact observed HTTPS Origin.
       responseCors = getCorsHeaders(origin, env, request);
@@ -110,8 +165,8 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
     const { honeypot, idempotencyKey, enquiry } = parseEnquiryFields(form);
     if (honeypot) {
       // Answer exactly as a success would, so a bot learns nothing, and record
-      // nothing. Registry mode may already have performed its read-only source
-      // resolution; it never writes a client or enquiry for a honeypot hit.
+      // nothing. Source resolution may already have performed a read-only
+      // lookup; it never writes a client or enquiry for a honeypot hit.
       logger.info('enquiry.honeypot', { route: 'enquiries', outcome: 'ignored' });
       return jsonResponse({ ok: true }, 200, responseCors);
     }
@@ -124,17 +179,11 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
     logger.info('enquiry.validated', {
       route: 'enquiries',
       stage: 'validated',
+      sourceMode: hostedMode ? 'hosted' : 'external',
       fileCount: files.length,
     });
 
-    // ---- Commit the record first -------------------------------------------
-    // create_trusted_enquiry_intake resolves the source tuple again inside the
-    // transaction. That second check closes the window where a source is
-    // deactivated after the read-only registry lookup but before persistence.
-    const intake = await supabase.rpc('create_trusted_enquiry_intake', {
-      p_source_key: bookingConfig.sourceKey,
-      p_origin: origin,
-      p_form_version: bookingConfig.formVersion,
+    const commonIntakeArgs = {
       p_idempotency_key: idempotencyKey,
       p_client: {
         full_name: enquiry.name,
@@ -169,7 +218,22 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
         checksum: file.checksum,
         original_filename: file.original_filename,
       })),
-    });
+    };
+
+    // Both paths resolve their source again inside the persistence transaction.
+    // This closes the window where an operator deactivates a source after the
+    // read-only page/request lookup but before the enquiry commits.
+    const intake = hostedMode
+      ? await supabase.rpc('create_hosted_enquiry_intake', {
+          p_public_source_id: bookingConfig.publicSourceId,
+          ...commonIntakeArgs,
+        })
+      : await supabase.rpc('create_trusted_enquiry_intake', {
+          p_source_key: bookingConfig.sourceKey,
+          p_origin: origin,
+          p_form_version: bookingConfig.formVersion,
+          ...commonIntakeArgs,
+        });
 
     const enquiryId = intake?.enquiry_id;
     const referenceNumber = intake?.reference_number;
@@ -203,8 +267,6 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       fileCount: manifests.length,
     });
 
-    // A completed replay is finished business: return the original reference
-    // without re-uploading anything.
     if (intake.replayed && intake.intake_state === 'complete') {
       logger.info('enquiry.replayed', {
         route: 'enquiries',
@@ -216,7 +278,6 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       return jsonResponse({ ok: true, reference: referenceNumber, replayed: true }, 200, responseCors);
     }
 
-    // ---- Upload the objects -------------------------------------------------
     const cleanupPaths = new Set();
     let finalization;
 
@@ -225,12 +286,7 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
         const manifest = manifests[index];
         const file = files[index];
 
-        // A replay that already stored this object skips it. Re-uploading would
-        // be harmless but pointless.
-        if (manifest.upload_state === 'ready') {
-          continue;
-        }
-
+        if (manifest.upload_state === 'ready') continue;
         if (!file) {
           throw new RequestError('manifest_mismatch', 'We could not save your images. Please try again.', 503);
         }
@@ -243,11 +299,6 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
             p_checksum: file.checksum,
           });
         } catch (markError) {
-          // A 4xx is a definitive database rejection: the manifest transaction
-          // did not commit, so this object is safe to compensate. A 5xx or
-          // network loss is ambiguous — Postgres may already have marked it
-          // ready. Retain the object in that case; an exact retry either skips
-          // the ready pair or safely upserts the same checked bytes.
           if (
             markError instanceof SupabaseError
             && markError.status >= 400
@@ -271,9 +322,6 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
 
       finalization = await supabase.rpc('finalize_enquiry_intake', { p_enquiry_id: enquiryId });
     } catch (uploadError) {
-      // Compensating cleanup, then a safe operational failure. The enquiry row
-      // survives so the same idempotency key can resume it, and reconciliation
-      // can find it, but it does not appear in the normal new-enquiry queue.
       let cleanedUp = 0;
       for (const path of cleanupPaths) {
         if (await storage.remove(path)) cleanedUp += 1;
@@ -289,8 +337,7 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
           p_error_code: errorCode,
         });
       } catch {
-        // Recording the failure is itself best-effort; the enquiry is already
-        // outside the queue because intake never completed.
+        // Best effort only; the incomplete enquiry remains outside normal queue.
       }
 
       logger.error('enquiry.intake_failed', {
@@ -311,11 +358,6 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       );
     }
 
-    // ---- Notify, after the point of no return -------------------------------
-    // Everything below this line is best-effort. The enquiry is already durable
-    // and the outbox row created during finalisation preserves the provider
-    // outcome for the future drain, so nothing here can turn a saved enquiry
-    // into a failed submission.
     const outboxId = finalization?.outbox_id;
     let notification = { delivered: false, errorCode: 'outbox_route_missing' };
     if (outboxId) {
@@ -340,9 +382,6 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
           p_error_code: notification.delivered ? null : notification.errorCode,
         });
       } catch {
-        // The durable job remains pending/failed for the planned drain. A provider
-        // may have accepted the message before this acknowledgement failed, so
-        // delivery is explicitly at-least-once.
         logger.warn('enquiry.notification_outcome_unrecorded', {
           route: 'enquiries',
           enquiryId,
