@@ -527,6 +527,7 @@ insert into expected_function_acl values
   ('public.resolve_outbox_route(uuid)', false, false, true),
   ('public.list_incomplete_intakes(integer,integer)', false, false, true),
   ('public.resolve_booking_source(text,text,text)', false, false, true),
+  ('public.resolve_booking_source_public(uuid,text)', false, false, true),
   ('public.register_payment_webhook_event(text,text,text,text)', false, false, true),
   ('public.record_provider_payment(uuid,uuid,uuid,text,numeric,boolean,timestamptz)', false, false, true),
   ('public.record_calendar_sync_result(uuid,integer,boolean,public.calendar_provider,text,text)', false, false, true),
