@@ -12,19 +12,30 @@ const VLADIMIR = {
   display_name: 'Vladimir',
 };
 
+const KRISTINA = {
+  id: 'a2222222-2222-4222-8222-222222222222',
+  slug: 'kristina',
+  display_name: 'Kristina',
+};
+
 function clientFor(rows: unknown[] = []) {
   const order = vi.fn(async () => ({ data: rows, error: null }));
   const eq = vi.fn((_column: string, _value: string) => ({ order }));
   const select = vi.fn((_columns: string) => ({ eq }));
   const from = vi.fn((_table: string) => ({ select }));
   const rpc = vi.fn(async (_name: string, _args?: Record<string, unknown>) => ({ data: { ok: true }, error: null }));
+  const getSession = vi.fn(async () => ({
+    data: { session: { access_token: 'crm-owner-session-token-for-test' } },
+    error: null,
+  }));
   return {
-    client: { from, rpc } as unknown as CrmClient,
+    client: { from, rpc, auth: { getSession } } as unknown as CrmClient,
     from,
     select,
     eq,
     order,
     rpc,
+    getSession,
   };
 }
 
@@ -93,6 +104,77 @@ describe('WhatsApp Connections safety', () => {
     });
   });
 
+  it('provisions Kristina through the same-origin backend without trusting a browser routing key', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      ok: true,
+      integration_key: 'kristina-production',
+      waba_name: 'Kristina WABA',
+      display_phone_number: '+44 7000 000002',
+      verified_name: 'Kristina',
+    }));
+
+    try {
+      await expect(api.provisionProductionWhatsApp(
+        KRISTINA,
+        'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+        {
+          authorizationCode: 'one-time-meta-code-for-test',
+          wabaId: '12345678902',
+          phoneNumberId: '10987654322',
+          event: 'FINISH',
+        },
+      )).resolves.toMatchObject({
+        integration_key: 'kristina-production',
+        verified_name: 'Kristina',
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('/api/whatsapp/embedded-signup/provision');
+      expect(init?.credentials).toBe('same-origin');
+      expect(init?.headers).toMatchObject({
+        authorization: 'Bearer crm-owner-session-token-for-test',
+        'content-type': 'application/json',
+      });
+      const body = JSON.parse(String(init?.body));
+      expect(body).toEqual({
+        artist_id: KRISTINA.id,
+        code: 'one-time-meta-code-for-test',
+        session: {
+          waba_id: '12345678902',
+          phone_number_id: '10987654322',
+        },
+      });
+      expect(body).not.toHaveProperty('integration_key');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('rejects an arbitrary production artist before opening a backend provisioning request', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    try {
+      await expect(api.provisionProductionWhatsApp(
+        { id: 'a3333333-3333-4333-8333-333333333333', slug: 'other', display_name: 'Other' },
+        'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+        {
+          authorizationCode: 'one-time-meta-code-for-test',
+          wabaId: '12345678903',
+          phoneNumberId: '10987654323',
+          event: 'FINISH',
+        },
+      )).rejects.toThrow(/unavailable for this artist/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('rejects malformed or non-Meta integration rows before the page can render them', async () => {
     const badProvider = clientFor([{
       id: 'd1111111-1111-4111-8111-111111111111',
@@ -114,6 +196,7 @@ describe('WhatsApp Connections safety', () => {
     expect(Object.keys(api).sort()).toEqual([
       'listWhatsAppIntegrations',
       'prepareWhatsAppIntegration',
+      'provisionProductionWhatsApp',
       'setWhatsAppIntegrationEnabled',
     ].sort());
 

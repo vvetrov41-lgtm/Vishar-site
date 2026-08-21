@@ -1,4 +1,5 @@
 import { ApiError, type CrmClient } from './api';
+import type { WhatsAppEmbeddedSignupResult } from './meta-whatsapp-embedded-signup';
 import type { Artist } from './types';
 
 export interface WhatsAppIntegrationMetadata {
@@ -11,10 +12,22 @@ export interface WhatsAppIntegrationMetadata {
   updated_at: string;
 }
 
+export interface WhatsAppProvisioningResult {
+  ok: true;
+  integration_key: string;
+  waba_name: string | null;
+  display_phone_number: string | null;
+  verified_name: string | null;
+}
+
 type WhatsAppArtist = Pick<Artist, 'id' | 'slug' | 'display_name'>;
 
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const STAGING_SUPABASE_ORIGIN = 'https://gwaliusblwrzisrwnsvs.supabase.co';
+const PRODUCTION_ONBOARDING_ARTISTS = new Map([
+  ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
+  ['a2222222-2222-4222-8222-222222222222', 'kristina'],
+]);
 
 export type WhatsAppCrmEnvironment = 'production' | 'staging';
 
@@ -58,6 +71,26 @@ function assertSafeMetadata(value: unknown): WhatsAppIntegrationMetadata[] {
     }
     return row as WhatsAppIntegrationMetadata;
   });
+}
+
+function assertProvisioningResponse(
+  value: unknown,
+  expectedIntegrationKey: string,
+): WhatsAppProvisioningResult {
+  if (!value || typeof value !== 'object') {
+    throw new ApiError('WhatsApp provisioning returned an invalid response.');
+  }
+  const row = value as Record<string, unknown>;
+  if (
+    row.ok !== true
+    || row.integration_key !== expectedIntegrationKey
+    || (row.waba_name !== null && typeof row.waba_name !== 'string')
+    || (row.display_phone_number !== null && typeof row.display_phone_number !== 'string')
+    || (row.verified_name !== null && typeof row.verified_name !== 'string')
+  ) {
+    throw new ApiError('WhatsApp provisioning returned an invalid response.');
+  }
+  return value as WhatsAppProvisioningResult;
 }
 
 export function createWhatsAppConnectionsApi(client: CrmClient) {
@@ -108,6 +141,53 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       enabled: boolean,
     ) {
       return configure(artist, supabaseUrl, enabled);
+    },
+
+    async provisionProductionWhatsApp(
+      artist: WhatsAppArtist,
+      supabaseUrl: string,
+      signup: WhatsAppEmbeddedSignupResult,
+    ): Promise<WhatsAppProvisioningResult> {
+      if (whatsappCrmEnvironment(supabaseUrl) !== 'production') {
+        throw new ApiError('Production WhatsApp provisioning is unavailable in this CRM environment.');
+      }
+      const approvedSlug = PRODUCTION_ONBOARDING_ARTISTS.get(artist.id);
+      if (!approvedSlug || artist.slug !== approvedSlug) {
+        throw new ApiError('Production WhatsApp onboarding is unavailable for this artist.');
+      }
+      if (signup.event !== 'FINISH') throw new ApiError('Meta Embedded Signup did not finish.');
+
+      const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, approvedSlug);
+      const session = await client.auth.getSession();
+      const accessToken = session.data?.session?.access_token;
+      if (!accessToken) {
+        throw new ApiError('Your CRM session expired. Sign in again before connecting WhatsApp.');
+      }
+
+      const response = await fetch('/api/whatsapp/embedded-signup/provision', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          artist_id: artist.id,
+          code: signup.authorizationCode,
+          session: {
+            waba_id: signup.wabaId,
+            phone_number_id: signup.phoneNumberId,
+          },
+        }),
+      });
+
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok) {
+        const error = payload && typeof payload.error === 'string' ? payload.error : 'provisioning_failed';
+        throw new ApiError(`WhatsApp provisioning failed: ${error}.`);
+      }
+      return assertProvisioningResponse(payload, expectedIntegrationKey);
     },
   };
 }

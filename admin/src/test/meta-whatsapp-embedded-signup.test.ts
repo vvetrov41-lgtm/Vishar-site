@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest';
+import {
+  FACEBOOK_ALLOWED_MESSAGE_ORIGINS,
+  launchWhatsAppEmbeddedSignup,
+  parseEmbeddedSignupMessage,
+  prepareWhatsAppEmbeddedSignup,
+} from '../lib/meta-whatsapp-embedded-signup';
+
+describe('Meta WhatsApp Embedded Signup event boundary', () => {
+  it('accepts only the exact desktop, web and mobile Facebook origins', () => {
+    expect([...FACEBOOK_ALLOWED_MESSAGE_ORIGINS].sort()).toEqual([
+      'https://m.facebook.com',
+      'https://web.facebook.com',
+      'https://www.facebook.com',
+    ]);
+  });
+
+  it('extracts WABA and phone-number ids from a standard FINISH event', () => {
+    expect(parseEmbeddedSignupMessage('https://m.facebook.com', {
+      type: 'WA_EMBEDDED_SIGNUP',
+      event: 'FINISH',
+      data: { waba_id: '12345678901', phone_number_id: '10987654321' },
+    })).toEqual({
+      event: 'FINISH',
+      wabaId: '12345678901',
+      phoneNumberId: '10987654321',
+    });
+  });
+
+  it('accepts the WhatsApp Business App coexistence completion with WABA only', () => {
+    expect(parseEmbeddedSignupMessage('https://www.facebook.com', {
+      type: 'WA_EMBEDDED_SIGNUP',
+      event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+      version: 3,
+      data: { waba_id: '12345678901' },
+    })).toEqual({
+      event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+      wabaId: '12345678901',
+      phoneNumberId: null,
+    });
+  });
+
+  it('rejects spoofed origins and malformed provider ids', () => {
+    expect(parseEmbeddedSignupMessage('https://evil.example', {
+      type: 'WA_EMBEDDED_SIGNUP',
+      event: 'FINISH',
+      data: { waba_id: '12345678901', phone_number_id: '10987654321' },
+    })).toBeNull();
+
+    expect(parseEmbeddedSignupMessage('https://www.facebook.com', JSON.stringify({
+      type: 'WA_EMBEDDED_SIGNUP',
+      event: 'FINISH',
+      data: { waba_id: '../bad', phone_number_id: 'phone' },
+    }))).toEqual({ event: 'FINISH', wabaId: null, phoneNumberId: null });
+  });
+
+  it('preserves CANCEL and ERROR as terminal Meta events', () => {
+    expect(parseEmbeddedSignupMessage('https://web.facebook.com', {
+      type: 'WA_EMBEDDED_SIGNUP', event: 'CANCEL', data: {},
+    })).toEqual({ event: 'CANCEL', wabaId: null, phoneNumberId: null });
+    expect(parseEmbeddedSignupMessage('https://web.facebook.com', {
+      type: 'WA_EMBEDDED_SIGNUP', event: 'ERROR', data: {},
+    })).toEqual({ event: 'ERROR', wabaId: null, phoneNumberId: null });
+  });
+
+  it('calls FB.login synchronously after the SDK has been prepared', async () => {
+    const originalFb = window.FB;
+    const originalAsyncInit = window.fbAsyncInit;
+    let loginCalls = 0;
+
+    window.FB = {
+      init() {},
+      login(callback) {
+        loginCalls += 1;
+        callback({ status: 'not_authorized' });
+      },
+    };
+
+    try {
+      await prepareWhatsAppEmbeddedSignup();
+      const result = launchWhatsAppEmbeddedSignup();
+      expect(loginCalls).toBe(1);
+      await expect(result).rejects.toThrow('Meta authorization was not granted.');
+    } finally {
+      window.FB = originalFb;
+      window.fbAsyncInit = originalAsyncInit;
+    }
+  });
+});

@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useAsync } from '../components/AsyncData';
 import { useLanguage } from '../lib/i18n';
+import {
+  launchWhatsAppEmbeddedSignup,
+  prepareWhatsAppEmbeddedSignup,
+} from '../lib/meta-whatsapp-embedded-signup';
 import { Link } from '../lib/router';
 import { useSession } from '../lib/session';
 import type { Artist } from '../lib/types';
@@ -35,7 +39,38 @@ export function WhatsAppConnectionsPage() {
   const { language } = useLanguage();
   const [busyArtistId, setBusyArtistId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [metaBusyArtistId, setMetaBusyArtistId] = useState<string | null>(null);
+  const [metaMessage, setMetaMessage] = useState<string | null>(null);
+  const [metaSdkReady, setMetaSdkReady] = useState(false);
+  const [metaSdkError, setMetaSdkError] = useState<string | null>(null);
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
+
+  useEffect(() => {
+    if (profile?.role !== 'owner') return undefined;
+    let environment: 'production' | 'staging';
+    try {
+      environment = whatsappCrmEnvironment(supabaseUrl);
+    } catch {
+      return undefined;
+    }
+    if (environment !== 'production') return undefined;
+
+    let active = true;
+    setMetaSdkReady(false);
+    setMetaSdkError(null);
+    void prepareWhatsAppEmbeddedSignup()
+      .then(() => {
+        if (active) setMetaSdkReady(true);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setMetaSdkError(cause instanceof Error ? cause.message : 'Could not load Meta SDK.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [profile?.role, supabaseUrl]);
 
   const { data, loading, error, reload } = useAsync<ConnectionsData>(async () => {
     if (!api) throw new Error('CRM API unavailable.');
@@ -72,6 +107,52 @@ export function WhatsAppConnectionsPage() {
     }
   }
 
+  function retryMetaSdk() {
+    setMetaSdkReady(false);
+    setMetaSdkError(null);
+    void prepareWhatsAppEmbeddedSignup()
+      .then(() => setMetaSdkReady(true))
+      .catch((cause) => {
+        setMetaSdkError(cause instanceof Error ? cause.message : 'Could not load Meta SDK.');
+      });
+  }
+
+  async function startMetaOnboarding(artist: Artist) {
+    setMetaBusyArtistId(artist.id);
+    setActionError(null);
+    setMetaMessage(null);
+    try {
+      if (!api || !data || data.environment !== 'production' || profile?.role !== 'owner') {
+        throw new Error('Production WhatsApp onboarding is unavailable in this CRM session.');
+      }
+      if (!metaSdkReady) throw new Error('Meta SDK is not ready yet.');
+
+      // This call must remain synchronous with the tap so iOS/WebKit permits
+      // the Meta window. The one-time code is exchanged only by the backend.
+      const signup = await launchWhatsAppEmbeddedSignup();
+      const provisioned = await api.provisionProductionWhatsApp(artist, supabaseUrl, signup);
+      const identity = [provisioned.verified_name, provisioned.display_phone_number]
+        .filter(Boolean)
+        .join(' · ');
+      setMetaMessage(
+        language === 'ru'
+          ? `WhatsApp ${artist.display_name} подключён${identity ? `: ${identity}` : ''}. Оба encrypted Worker bindings записаны.`
+          : `${artist.display_name} WhatsApp connected${identity ? `: ${identity}` : ''}. Both encrypted Worker bindings were written.`,
+      );
+      reload();
+    } catch (cause) {
+      setActionError(
+        cause instanceof Error
+          ? cause.message
+          : language === 'ru'
+            ? 'Не удалось подключить WhatsApp через Meta.'
+            : 'Could not connect WhatsApp through Meta.',
+      );
+    } finally {
+      setMetaBusyArtistId(null);
+    }
+  }
+
   if (loading) {
     return <LoadingState label={language === 'ru' ? 'Загрузка WhatsApp…' : 'Loading WhatsApp…'} />;
   }
@@ -103,6 +184,17 @@ export function WhatsAppConnectionsPage() {
           : `CRM environment: ${data.environment}. Enable a route only after the Meta account and encrypted Worker bindings have been verified separately.`}
       </div>
 
+      {profile?.role === 'owner' && data.environment === 'production' && metaSdkError ? (
+        <div className="notice warn" role="alert">
+          <p>{metaSdkError}</p>
+          <button type="button" disabled={metaBusyArtistId !== null} onClick={retryMetaSdk}>
+            {language === 'ru' ? 'Повторить загрузку Meta' : 'Retry Meta SDK'}
+          </button>
+        </div>
+      ) : null}
+
+      {metaMessage ? <div className="notice" role="status">{metaMessage}</div> : null}
+
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 
       {data.artists.length === 0 ? (
@@ -120,6 +212,11 @@ export function WhatsAppConnectionsPage() {
           const inconsistent = rows.length > 1 || rows.some((row) => row.integration_key !== expectedKey);
           const integration = !inconsistent && exact.length === 1 ? exact[0] : null;
           const busy = busyArtistId === artist.id;
+          const metaBusy = metaBusyArtistId === artist.id;
+          const productionOnboardingAvailable = profile?.role === 'owner'
+            && data.environment === 'production'
+            && integration?.is_enabled === true
+            && (artist.slug === 'vladimir' || artist.slug === 'kristina');
 
           return (
             <Section key={artist.id} title={artist.display_name}>
@@ -186,10 +283,29 @@ export function WhatsAppConnectionsPage() {
                 </div>
               )}
 
+              {productionOnboardingAvailable ? (
+                <div className="actions" style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={metaBusyArtistId !== null || !metaSdkReady}
+                    onClick={() => { void startMetaOnboarding(artist); }}
+                  >
+                    {metaBusy
+                      ? (language === 'ru' ? 'Подключаю…' : 'Connecting…')
+                      : !metaSdkReady
+                        ? (language === 'ru' ? 'Загрузка Meta…' : 'Loading Meta…')
+                        : (language === 'ru'
+                            ? `Подключить WhatsApp ${artist.display_name}`
+                            : `Connect ${artist.display_name} WhatsApp`)}
+                  </button>
+                </div>
+              ) : null}
+
               <p className="notice" style={{ marginTop: 12 }}>
                 {language === 'ru'
-                  ? 'Статус Enabled означает только, что CRM может выбрать этот artist-scoped маршрут. Наличие Meta credentials подтверждается отдельно в Cloudflare и production rollout.'
-                  : 'Enabled means only that CRM may select this artist-scoped route. Meta credentials are verified separately in Cloudflare and the production rollout.'}
+                  ? 'Подключение через Meta доступно только owner. Токены остаются в encrypted Worker bindings и не сохраняются в браузере или Postgres.'
+                  : 'Meta connection is owner-only. Tokens remain in encrypted Worker bindings and are never stored in the browser or Postgres.'}
               </p>
             </Section>
           );

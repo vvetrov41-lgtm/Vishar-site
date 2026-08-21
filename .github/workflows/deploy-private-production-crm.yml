@@ -179,6 +179,7 @@ jobs:
           grep -R -Fq "$VITE_MONZO_CONNECTOR_ORIGIN" admin/dist
           grep -R -Fq "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" admin/dist
           node scripts/check-private-crm-artifact.mjs admin/dist
+          test -f admin/functions/api/whatsapp/embedded-signup/provision.js
 
       - name: Install pinned root deployment tooling
         if: ${{ inputs.deploy }}
@@ -264,13 +265,14 @@ jobs:
           }
           NODE
 
-      - name: Deploy only admin/dist to dedicated CRM Pages project
+      - name: Deploy CRM Pages project with its Functions
         if: ${{ inputs.deploy }}
+        working-directory: admin
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
         run: >-
-          npx wrangler pages deploy admin/dist
+          ../node_modules/.bin/wrangler pages deploy dist
           --project-name "$CRM_PAGES_PROJECT"
           --branch production
           --commit-hash "$GITHUB_SHA"
@@ -289,9 +291,10 @@ jobs:
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Source build scope: `admin/` only'
-            echo '- Upload scope: `admin/dist` only'
+            echo '- Upload scope: `admin/dist` plus `admin/functions` discovered from the Pages project root'
             echo '- Production Auth site URL target: `https://crm.vishartattoo.com`'
             echo '- Calendar connector in this build: `https://calendar.vishartattoo.com`'
             echo '- Monzo connector in this build: `https://monzo.vishartattoo.com` (owner-only launcher; no token, account id or webhook key reaches the browser)'
+            echo '- WhatsApp onboarding: owner-only Meta Embedded Signup for exact Vladimir/Kristina routes; credentials go only to encrypted Worker bindings'
             echo '- Public site / booking Worker deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"
