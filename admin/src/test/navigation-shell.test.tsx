@@ -67,12 +67,11 @@ describe('responsive navigation shell', () => {
       'Communications',
       'Clients',
       'Time off',
+      'Notifications',
       'Activity',
     ]);
     expect(within(administration).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Calendar',
-      'WhatsApp',
-      'Instagram',
+      'Integrations',
       'Users',
     ]);
   });
@@ -88,6 +87,7 @@ describe('responsive navigation shell', () => {
       'Communications',
       'Clients',
       'Time off',
+      'Notifications',
     ]);
     expect(within(dialog).queryByRole('group', { name: 'Administration' })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('group', { name: 'Finance' })).not.toBeInTheDocument();

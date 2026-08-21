@@ -113,8 +113,7 @@ describe('navigation', () => {
       '/availability',
       '/payments',
       '/integrations',
-      '/integrations/whatsapp',
-      '/integrations/instagram',
+      '/notifications',
       '/users',
       '/activity',
     ]);
@@ -140,17 +139,23 @@ describe('navigation', () => {
     expect(paths).not.toContain('/integrations');
   });
 
-  it('shows Calendar for a booking manager with integration membership', () => {
+  it('shows the integrations hub for a booking manager with integration membership', () => {
     const paths = navItemsFor('booking_manager', [membership({ can_manage_integrations: true })]).map((item) => item.path);
     expect(paths).toContain('/integrations');
-    expect(paths).toContain('/integrations/whatsapp');
-    expect(paths).toContain('/integrations/instagram');
+    // Calendar, WhatsApp and Instagram are reached through the hub now, so
+    // they are deliberately no longer navigation peers.
+    expect(paths).not.toContain('/integrations/whatsapp');
+    expect(paths).not.toContain('/integrations/instagram');
   });
 
   it('leaves read_only with viewing sections only', () => {
     const paths = navItemsFor('read_only').map((item) => item.path);
+    // The notification centre is reachable by everyone: it shows only the
+    // signed-in profile's own rows, so there is nothing here for a role to
+    // widen.
     expect(paths).toEqual([
       '/', '/inbox', '/enquiries', '/clients', '/projects', '/appointments', '/availability',
+      '/notifications',
     ]);
   });
 

@@ -26,6 +26,8 @@ import { EnquiriesPage } from './pages/EnquiriesPage';
 import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
 import { InboxPage } from './pages/InboxPage';
 import { InstagramConnectionsPage } from './pages/InstagramConnectionsPage';
+import { IntegrationsPage } from './pages/IntegrationsPage';
+import { NotificationsPage } from './pages/NotificationsPage';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
 import { PasswordSetupPage } from './pages/PasswordSetupPage';
@@ -145,8 +147,11 @@ function Routes() {
     case '/payments':
       return <RequireCapability capability="manageFinance"><PaymentsPage /></RequireCapability>;
     case '/integrations':
+      return <RequireCapability capability="manageIntegrations"><IntegrationsPage /></RequireCapability>;
     case '/integrations/calendar':
       return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
+    case '/notifications':
+      return <RequireCapability capability="viewNotifications"><NotificationsPage /></RequireCapability>;
     case '/integrations/whatsapp':
       return <RequireCapability capability="manageIntegrations"><WhatsAppConnectionsPage /></RequireCapability>;
     case '/integrations/instagram':

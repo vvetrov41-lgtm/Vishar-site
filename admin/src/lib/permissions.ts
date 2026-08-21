@@ -41,6 +41,7 @@ export type Capability =
   | 'viewActivity'
   | 'viewIntegrationJobs'
   | 'manageIntegrations'
+  | 'viewNotifications'
   | 'manageUsers'
   | 'manageSettings';
 
@@ -52,6 +53,7 @@ const OWNER: Capability[] = [
   'viewSessions', 'manageSessions', 'viewFinance', 'manageFinance',
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft', 'approveEmail', 'viewActivity', 'viewIntegrationJobs', 'manageIntegrations',
+  'viewNotifications',
   'manageUsers', 'manageSettings',
 ];
 
@@ -63,7 +65,7 @@ const BOOKING_MANAGER: Capability[] = [
   'viewSessions', 'manageSessions',
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft',
-  'viewActivity', 'manageIntegrations',
+  'viewActivity', 'manageIntegrations', 'viewNotifications',
   // The frontend can only express the coarse global role. The database narrows
   // finance and Calendar Connections to memberships whose capability flags are
   // true. Deliberately absent: viewFinance, manageFinance, approveEmail,
@@ -76,6 +78,7 @@ const READ_ONLY: Capability[] = [
   'viewProjects',
   'viewSessions',
   'viewFollowUps',
+  'viewNotifications',
   // Deliberately absent: every write, all finance, files, notes, emails,
   // activity, integration jobs, integration management, users and settings.
 ];
@@ -190,9 +193,11 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/appointments', label: 'Appointments', capability: 'viewSessions' },
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
-  { path: '/integrations', label: 'common.calendar', capability: 'manageIntegrations' },
-  { path: '/integrations/whatsapp', label: 'WhatsApp', capability: 'manageIntegrations' },
-  { path: '/integrations/instagram', label: 'Instagram', capability: 'manageIntegrations' },
+  // One entry. Calendar, WhatsApp and Instagram were three peers here, which
+  // stopped scaling at three; the hub at /integrations lists every channel and
+  // links on to the per-provider screens.
+  { path: '/integrations', label: 'nav.integrations', capability: 'manageIntegrations' },
+  { path: '/notifications', label: 'nav.notifications', capability: 'viewNotifications' },
   { path: '/users', label: 'Users', capability: 'manageUsers' },
   { path: '/activity', label: 'Activity', capability: 'viewActivity' },
 ];

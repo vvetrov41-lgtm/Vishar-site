@@ -30,6 +30,91 @@ export const ARTISTS = [
   { id: KRISTINA_ARTIST_ID, slug: 'kristina', display_name: 'Kristina Vishar', timezone: 'Europe/London', default_currency: 'GBP', is_active: true },
 ];
 
+// Integration status as public.list_integration_status() returns it: safe
+// metadata only. There is deliberately no token, chat id, provider account id
+// or configuration blob here, because the function does not return one.
+export const INTEGRATION_STATUS = [
+  {
+    integration_id: 'i1111111-1111-4111-8111-111111111111',
+    owner_kind: 'artist' as const,
+    owner_id: VLADIMIR_ARTIST_ID,
+    owner_label: 'Vladimir Vishar',
+    integration_type: 'telegram' as const,
+    provider: 'telegram',
+    display_label: 'Vladimir (private chat)',
+    is_enabled: true,
+    connected_at: '2026-08-01T09:00:00Z',
+    last_success_at: '2026-08-20T18:00:00Z',
+    last_error_at: null,
+    last_error_category: 'none' as const,
+    assigned_artist_ids: [] as string[],
+    is_selected_route: true,
+  },
+  {
+    integration_id: 'i2222222-2222-4222-8222-222222222222',
+    owner_kind: 'artist' as const,
+    owner_id: KRISTINA_ARTIST_ID,
+    owner_label: 'Kristina Vishar',
+    integration_type: 'calendar' as const,
+    provider: 'google',
+    display_label: 'kristina@example.test',
+    is_enabled: true,
+    connected_at: '2026-08-02T09:00:00Z',
+    last_success_at: null,
+    last_error_at: '2026-08-21T07:00:00Z',
+    last_error_category: 'credential_expired' as const,
+    assigned_artist_ids: [] as string[],
+    is_selected_route: false,
+  },
+  {
+    integration_id: 'i3333333-3333-4333-8333-333333333333',
+    owner_kind: 'workspace' as const,
+    owner_id: 'w1111111-1111-4111-8111-111111111111',
+    owner_label: 'Example Studio',
+    integration_type: 'whatsapp' as const,
+    provider: 'meta_cloud_api',
+    display_label: 'Studio reception',
+    is_enabled: false,
+    connected_at: null,
+    last_success_at: null,
+    last_error_at: null,
+    last_error_category: 'not_connected' as const,
+    assigned_artist_ids: [VLADIMIR_ARTIST_ID],
+    is_selected_route: false,
+  },
+];
+
+export const NOTIFICATIONS = [
+  {
+    id: 'n1111111-1111-4111-8111-111111111111',
+    artist_id: VLADIMIR_ARTIST_ID,
+    artist_label: 'Vladimir Vishar',
+    notification_type: 'follow_up.due',
+    title: 'Reply to Charlie',
+    body: 'He asked about the sleeve.',
+    entity_type: 'follow_up',
+    entity_id: 'fu111111-1111-4111-8111-111111111111',
+    priority: 'high' as const,
+    status: 'delivered' as const,
+    scheduled_at: '2026-08-20T09:00:00Z',
+    read_at: null,
+  },
+  {
+    id: 'n2222222-2222-4222-8222-222222222222',
+    artist_id: KRISTINA_ARTIST_ID,
+    artist_label: 'Kristina Vishar',
+    notification_type: 'follow_up.due',
+    title: 'Check references',
+    body: null,
+    entity_type: 'enquiry',
+    entity_id: ENQUIRY_ID,
+    priority: 'normal' as const,
+    status: 'read' as const,
+    scheduled_at: '2026-08-19T09:00:00Z',
+    read_at: '2026-08-19T10:00:00Z',
+  },
+];
+
 export const PROFILES = {
   owner: { id: OWNER_ID, email: 'owner@example.test', display_name: 'Owner', role: 'owner' as CrmRole, is_active: true, created_at: '2026-01-01T00:00:00Z' },
   booking_manager: { id: MANAGER_ID, email: 'manager@example.test', display_name: 'Manager', role: 'booking_manager' as CrmRole, is_active: true, created_at: '2026-01-02T00:00:00Z' },
@@ -423,6 +508,20 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       if (name === 'list_accessible_artists') {
         return { data: ARTISTS.filter((artist) => accessibleArtistIds.includes(artist.id)), error: null };
       }
+      if (name === 'list_integration_status') return { data: INTEGRATION_STATUS, error: null };
+      if (name === 'list_notifications') {
+        const status = (args as any)?.p_status ?? null;
+        return {
+          data: NOTIFICATIONS.filter((row) => !status || row.status === status),
+          error: null,
+        };
+      }
+      if (name === 'mark_notification_read') return { data: true, error: null };
+      if (name === 'snooze_follow_up') {
+        return { data: { follow_up_id: (args as any)?.p_follow_up_id, schedule_version: 2 }, error: null };
+      }
+      if (name === 'list_capabilities') return { data: [], error: null };
+      if (name === 'list_workspaces') return { data: [], error: null };
       if (name === 'list_profiles') return { data: Object.values(PROFILES), error: null };
       if (name === 'list_team_memberships') return { data: MEMBERSHIPS, error: null };
       if (name === 'list_assignable_profiles') {

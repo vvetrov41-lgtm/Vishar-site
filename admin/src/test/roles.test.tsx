@@ -82,7 +82,7 @@ describe('navigation by role', () => {
     expect(screen.queryByRole('link', { name: 'Calendar' })).not.toBeInTheDocument();
   });
 
-  it('shows Calendar to a booking manager whose membership grants can_manage_integrations', async () => {
+  it('shows the integrations hub to a booking manager whose membership grants can_manage_integrations', async () => {
     renderWithSession(<App />, {
       role: 'booking_manager',
       membershipOverrides: [{
@@ -96,7 +96,7 @@ describe('navigation by role', () => {
         is_active: true,
       }],
     });
-    expect(await screen.findByRole('link', { name: 'Calendar' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Integrations' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Payments' })).not.toBeInTheDocument();
   });
 

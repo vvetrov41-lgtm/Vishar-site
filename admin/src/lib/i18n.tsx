@@ -51,6 +51,8 @@ const EN = {
   'nav.clients': 'Clients',
   'nav.projects': 'Projects',
   'nav.sessions': 'Sessions',
+  'nav.integrations': 'Integrations',
+  'nav.notifications': 'Notifications',
   'nav.users': 'Users',
   'nav.activity': 'Activity',
 
@@ -346,6 +348,8 @@ const RU: Record<TranslationKey, string> = {
   'nav.clients': 'Клиенты',
   'nav.projects': 'Проекты',
   'nav.sessions': 'Сеансы',
+  'nav.integrations': 'Интеграции',
+  'nav.notifications': 'Уведомления',
   'nav.users': 'Сотрудники',
   'nav.activity': 'Журнал',
 
