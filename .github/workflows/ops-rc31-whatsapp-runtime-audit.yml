@@ -54,6 +54,7 @@ jobs:
           const safe = bindings.map(b => `${b.name}:${b.type}`).sort();
           console.log(`${process.env.WORKER}:BINDINGS=${safe.join(',')}`);
           console.log(`${process.env.WORKER}:VLADIMIR_BINDING=${bindings.some(b => b.name === 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION') ? 'present' : 'missing'}`);
+          console.log(`${process.env.WORKER}:KRISTINA_BINDING=${bindings.some(b => b.name === 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION') ? 'present' : 'missing'}`);
           NODE
 
             schedules="$(curl -fsS "${auth[@]}" "$account/workers/scripts/$worker/schedules" || printf '{"success":false,"result":[]}')"
