@@ -371,13 +371,12 @@ async function oauthCallback(request, url, env, db, fetchImpl) {
       fetchImpl,
     });
 
-    // Never trust the account id from the redirect alone: re-read it with the
-    // token that was actually issued.
+    // The code exchange returns an Instagram App-scoped User ID. It is a
+    // different namespace from the professional account ID returned by `/me`,
+    // so comparing the two rejects valid Business Login grants. Re-read the
+    // account with the issued token and use that token-bound professional ID
+    // as the canonical database, KV and webhook-routing identity.
     const account = await getConnectedAccount(longLived.accessToken, fetchImpl);
-    if (account.instagramUserId !== exchanged.instagramUserId) {
-      return html(400, 'Instagram connection failed',
-        'The Instagram account could not be verified. Nothing was connected.');
-    }
 
     const pinned = pinnedAccountFor(env, pending.artist_slug);
     if (pinned && pinned !== account.instagramUserId) {

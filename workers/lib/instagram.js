@@ -227,9 +227,9 @@ function authorizationTokenRecord(parsed) {
 /**
  * Exchanges the one-time authorization code for a short-lived token.
  *
- * The response also carries the Instagram professional account id and the
- * permissions Meta actually granted, which is what the connector verifies
- * against before enabling anything.
+ * The response also carries the app user's Instagram App-scoped User ID and
+ * the permissions Meta actually granted. The app-scoped ID is not the
+ * professional account ID returned by `/me` and used in webhook `entry.id`.
  */
 export async function exchangeAuthorizationCode({
   clientId,
@@ -275,7 +275,7 @@ export async function exchangeAuthorizationCode({
   if (!accessToken || !INSTAGRAM_USER_ID.test(userId)) {
     throw new InstagramError('instagram_oauth_response_invalid');
   }
-  return { accessToken, instagramUserId: userId, permissions };
+  return { accessToken, appScopedUserId: userId, permissions };
 }
 
 /** Exchanges the short-lived token for the 60 day long-lived token. */

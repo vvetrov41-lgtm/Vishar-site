@@ -52,6 +52,7 @@ const V_ARTIST = 'a1111111-1111-4111-8111-111111111111';
 const K_ARTIST = 'a2222222-2222-4222-8222-222222222222';
 const V_ACCOUNT = '17841400000000001';
 const K_ACCOUNT = '17841400000000002';
+const APP_SCOPED_USER = '10200000000000001';
 const RECIPIENT = '9876543210001';
 const OUTBOX_ID = 'b1111111-1111-4111-8111-111111111111';
 const MESSAGE_ID = 'b2222222-2222-4222-8222-222222222222';
@@ -510,7 +511,7 @@ await test('the onboarding route is closed while the connector is disabled', asy
 function metaFetchDouble({
   permissions = 'instagram_business_basic,instagram_business_manage_messages',
   account = V_ACCOUNT,
-  meAccount = null,
+  appScopedUserId = APP_SCOPED_USER,
   username = 'vladimir.synthetic',
   wrappedTokenResponse = true,
 } = {}) {
@@ -519,7 +520,7 @@ function metaFetchDouble({
     if (url.startsWith('https://api.instagram.com/oauth/access_token')) {
       const token = {
         access_token: 'synthetic-short-lived',
-        user_id: account,
+        user_id: appScopedUserId,
         permissions,
       };
       return new Response(JSON.stringify(wrappedTokenResponse ? { data: [token] } : token), {
@@ -535,7 +536,7 @@ function metaFetchDouble({
     }
     if (url.includes('/me?') || url.endsWith('/me')) {
       return new Response(JSON.stringify({
-        user_id: meAccount ?? account,
+        user_id: account,
         username,
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
@@ -568,7 +569,7 @@ async function callback(state, { environment = env(), db = dbDouble(), fetchImpl
   };
 }
 
-await test('an official wrapped Business Login response binds the account and stores only the token', async () => {
+await test('an official wrapped Business Login response binds the token-verified professional account', async () => {
   const environment = env();
   const state = await seedState(environment);
   const { response, db } = await callback(state, { environment });
@@ -578,6 +579,7 @@ await test('an official wrapped Business Login response binds the account and st
   assert.equal(bind.args.p_artist_id, V_ARTIST);
   assert.equal(bind.args.p_integration_key, 'vladimir-instagram');
   assert.equal(bind.args.p_instagram_user_id, V_ACCOUNT);
+  assert.notEqual(APP_SCOPED_USER, V_ACCOUNT);
   // No token ever reaches the database.
   assert.ok(!JSON.stringify(bind.args).includes('synthetic-long-lived'));
 
@@ -747,15 +749,31 @@ await test('a connection without messaging permission is refused', async () => {
   assert.equal(environment.INSTAGRAM_OAUTH_TOKENS.store.size, 0);
 });
 
-await test('an account that does not verify against the issued token is refused', async () => {
+await test('the App-scoped code-exchange ID is not mistaken for the webhook account ID', async () => {
   const environment = env();
   const state = await seedState(environment);
   const { response, db } = await callback(state, {
     environment,
-    fetchImpl: metaFetchDouble({ account: V_ACCOUNT, meAccount: K_ACCOUNT }),
+    fetchImpl: metaFetchDouble({ appScopedUserId: K_ACCOUNT, account: V_ACCOUNT }),
   });
-  assert.equal(response.status, 400);
-  assert.ok(!db.calls.some((call) => call.name === 'service_set_instagram_integration'));
+  assert.equal(response.status, 200);
+  const bind = db.calls.find((call) => call.name === 'service_set_instagram_integration');
+  assert.equal(bind.args.p_instagram_user_id, V_ACCOUNT);
+  const stored = await loadToken(environment, V_ARTIST);
+  assert.equal(stored.instagram_user_id, V_ACCOUNT);
+  assert.notEqual(stored.instagram_user_id, K_ACCOUNT);
+});
+
+await test('the pinned-account guard uses the token-verified professional account ID', async () => {
+  const environment = env({ INSTAGRAM_ACCOUNT_VLADIMIR: V_ACCOUNT });
+  const state = await seedState(environment);
+  const { response, db } = await callback(state, {
+    environment,
+    fetchImpl: metaFetchDouble({ appScopedUserId: K_ACCOUNT, account: V_ACCOUNT }),
+  });
+  assert.equal(response.status, 200);
+  const bind = db.calls.find((call) => call.name === 'service_set_instagram_integration');
+  assert.equal(bind.args.p_instagram_user_id, V_ACCOUNT);
 });
 
 await test('a pinned artist account refuses any other Instagram profile', async () => {
