@@ -74,11 +74,7 @@ jobs:
 
           test "$content_type" = 'application/json; charset=utf-8'
           test "$allow_origin" = 'https://crm.vishartattoo.com'
-          case "$body" in
-            '{"error":"session_required"}'|'{"error":"session_verification_unavailable"}')
-              ;;
-            *)
-              echo 'Unexpected production response.' >&2
-              exit 1
-              ;;
-          esac
+          test "$status" = '401'
+          test "$body" = '{"error":"session_required"}'
+
+# Probe after Worker version 76a92269-4dfe-4ada-b4cb-4798f6345e85 propagated.
