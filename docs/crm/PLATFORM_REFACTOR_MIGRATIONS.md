@@ -13,14 +13,15 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0076` | Phase D, integration ownership and assignment | claimed in PR #382 |
 | `0077` | Phases K-M, internal notifications and follow-up sweep | claimed in PR #382 |
 | `0078` | Phase H, dynamic booking source registry | claimed in PR #383 |
+| `0079` | Phases I-J, hosted forms and external websites | claimed on `agent/platform-hosted-booking-forms` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0079`
+`0080`
 
 ## Allocation rule for unfinished phases
 
-Do not pre-assign fixed migration numbers to Telegram self-service, hosted forms, automations, templates, MCP/GPT support, or any other unfinished phase.
+Do not pre-assign fixed migration numbers to Telegram self-service, automations, templates, MCP/GPT support, or any other unfinished phase.
 
 Before an unfinished phase creates its first migration:
 
@@ -28,7 +29,7 @@ Before an unfinished phase creates its first migration:
 2. fresh-check the production Supabase migration head;
 3. enumerate migration filenames already present in every active ancestor/stacked branch that the new work depends on;
 4. claim the lowest next unused forward-only migration number on that actual lineage;
-5. record the claim in this ledger in the same commit that introduces the migration.
+5. record the claim in this ledger in the same workstream that introduces the migration.
 
 This avoids two failure modes present in the original roadmap table: two future phases claiming the same number, and a blocked/deferred phase reserving a lower number that later has to be inserted behind already-applied production migrations.
 
@@ -37,11 +38,10 @@ This avoids two failure modes present in the original roadmap table: two future 
 The following phases intentionally have **no fixed migration number yet**:
 
 - F-G: Telegram self-service linking and delivery migration;
-- I-J: hosted forms and external websites;
 - N: domain events and automation engine;
 - O-P: templates, reminders and workspace defaults;
 - Q-R: MCP domain contracts and surface, currently expected to need no migration unless implementation proves otherwise;
 - S-T: unified GPT profile-bound authorization;
 - U: golden-path validation, no migration unless validation exposes a required schema fix.
 
-The first of these phases that actually begins on top of the current `0078` lineage may claim `0079`. Later phases claim the next free number from the then-current repository state, not from the stale planning table.
+The first unfinished phase that actually begins after the current `0079` lineage may claim `0080`. Later phases claim the next free number from the then-current repository state, not from the stale planning table.
