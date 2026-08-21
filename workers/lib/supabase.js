@@ -17,6 +17,7 @@ import { statusClass } from './logging.js';
  * asks for.
  */
 export const ALLOWED_RPCS = new Set([
+  'resolve_booking_source_public',
   'create_trusted_enquiry_intake',
   'mark_enquiry_file_uploaded',
   'finalize_enquiry_intake',
