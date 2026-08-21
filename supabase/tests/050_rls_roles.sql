@@ -651,6 +651,16 @@ insert into expected_function_acl values
   ('public.service_disable_instagram_integration(uuid,text,text)', false, false, true),
   ('public.service_resolve_instagram_route(text)', false, false, true),
 
+  -- Platform capability registry and workspace layer (migrations 0074-0075).
+  -- list_capabilities reports only the caller's own rights and takes no profile
+  -- argument, so it cannot be used to enumerate somebody else's access.
+  ('public.list_capabilities(uuid)', false, true, false),
+  ('public.can_access_workspace(uuid)', false, true, true),
+  ('public.can_manage_workspace(uuid)', false, true, true),
+  ('public.list_workspaces()', false, true, false),
+  ('public.upsert_workspace_membership(uuid,uuid,public.workspace_role,boolean,boolean,boolean,boolean)', false, true, false),
+  ('public.grant_workspace_artist_membership(uuid,uuid,public.artist_access_level,boolean,boolean,boolean,boolean,boolean)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
