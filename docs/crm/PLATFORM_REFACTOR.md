@@ -1,7 +1,9 @@
 # Vishar CRM platform refactor — architecture audit and staged plan
 
-Status: **Phase A complete. Phases B–D implemented as migrations `0074`–`0076`.
-Nothing in this document is deployed.**
+Status: **Phases A–D complete.** Migrations `0074`–`0076` and pgTAP files
+`222`–`224` are on `claude/vishar-platform-refactor-f6cno8`. The full history
+(76 migrations) replays cleanly and all 62 pgTAP files pass. **Nothing here is
+deployed**, and the frozen Instagram rollout is untouched.
 
 This document is the design anchor for moving Vishar CRM from a system that
 serves two named artists to a platform where adding an artist, a manager or a
@@ -342,7 +344,28 @@ a provider message, so no provider detail leaks into a browser-readable column.
 
 The safe read contract for the dashboard is one function,
 `public.list_integration_status()`, returning provider-neutral rows with no
-secret, no chat id, no token and no raw provider identifier.
+secret, no chat id, no token, no raw provider identifier and — deliberately —
+no `configuration` column at all. The three new tables grant `SELECT` to
+`service_role` only; a browser session reads through the function or not at
+all, which is also why `224` seeds workspace integrations with known ids
+rather than looking them up.
+
+Two rules the tests pin, because a shared provider account is where artist
+isolation usually breaks:
+
+- **An assignment is a row somebody wrote.** Connecting a studio account
+  assigns it to nobody. Choosing a studio route requires an active assignment,
+  not merely workspace power, and withdrawing the assignment deletes the route
+  rather than leaving it dangling.
+- **A workspace boundary holds at the table, not only at the RPC.** A direct
+  insert naming a Workspace A integration and a Workspace B artist is refused
+  by trigger.
+
+`public.assign_workspace_integration` requires *both* rights, and they are
+different: `manage_integrations` on the workspace (owning the account is not
+permission to point somebody else's work at it) and `manage_integrations` on
+the artist (being able to manage an artist is not permission to spend the
+studio's account).
 
 ---
 
@@ -353,7 +376,7 @@ bounded release.
 
 | Phase | Scope | First migration | Notes |
 | --- | --- | --- | --- |
-| E | Unified `/integrations` screen; collapse the three nav entries | none | UI only |
+| E | Unified `/integrations` screen; collapse the three nav entries | none | UI only; reads `public.list_integration_status()` |
 | F | `crm_private.telegram_destinations` + single-use linking sessions | `0077` | chat ids server-only, never in `public` |
 | G | Telegram delivery migration | none | resolver added behind a fallback; static bindings removed only after proof |
 | H | Booking source registry: public opaque id, origin check at runtime | `0078` | replaces `env.BOOKING_SOURCE_KEY` |
@@ -392,7 +415,7 @@ as a delivery failure, not as a reason to try another destination.
 | --- | --- |
 | `0074` | Registry table and new capability names are additive; legacy strings unchanged. Dropping the new rows restores today's behaviour exactly. |
 | `0075` | `artists.workspace_id` is nullable until backfill is verified. Workspace memberships grant nothing on their own, so disabling the tables removes no existing access. |
-| `0076` | New tables only. With no rows, `resolve_outbox_route` behaves exactly as it does today. |
+| `0076` | New tables only, plus four additive status columns on `artist_integrations`. Nothing reads the route table yet, so `resolve_outbox_route` behaves exactly as it does today. |
 | Telegram | Static bindings stay in place through Phase G; the resolver is a preference, not a replacement, until step 7. |
 | Forms | Per-source `is_active = false` disables one source without touching others. |
 | Notifications | Delivery can be disabled without deleting follow-ups or notifications. |

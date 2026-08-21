@@ -661,6 +661,14 @@ insert into expected_function_acl values
   ('public.upsert_workspace_membership(uuid,uuid,public.workspace_role,boolean,boolean,boolean,boolean)', false, true, false),
   ('public.grant_workspace_artist_membership(uuid,uuid,public.artist_access_level,boolean,boolean,boolean,boolean,boolean)', false, true, false),
 
+  -- Workspace-owned integrations, assignments and route selection
+  -- (migration 0076). The dashboard read returns no configuration blob, and
+  -- the Worker credential cannot assign or re-route anything.
+  ('public.configure_workspace_integration(uuid,public.artist_integration_type,text,text,text,jsonb,boolean)', false, true, false),
+  ('public.assign_workspace_integration(uuid,uuid,text,boolean)', false, true, false),
+  ('public.select_artist_integration_route(uuid,public.artist_integration_type,public.integration_route_kind,uuid,uuid)', false, true, false),
+  ('public.list_integration_status()', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
