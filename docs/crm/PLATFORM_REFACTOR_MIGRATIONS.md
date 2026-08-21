@@ -14,10 +14,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0077` | Phases K-M, internal notifications and follow-up sweep | claimed in PR #382 |
 | `0078` | Phase H, dynamic booking source registry | claimed in PR #383 |
 | `0079` | Phases I-J, hosted forms and external websites | claimed on `agent/platform-hosted-booking-forms` |
+| `0080` | Phases I-J, booking-source list scope hardening | claimed on `agent/platform-hosted-booking-forms` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0080`
+`0081`
 
 ## Allocation rule for unfinished phases
 
@@ -44,4 +45,4 @@ The following phases intentionally have **no fixed migration number yet**:
 - S-T: unified GPT profile-bound authorization;
 - U: golden-path validation, no migration unless validation exposes a required schema fix.
 
-The first unfinished phase that actually begins after the current `0079` lineage may claim `0080`. Later phases claim the next free number from the then-current repository state, not from the stale planning table.
+The first unfinished phase that actually begins after the current `0080` lineage may claim `0081`. Later phases claim the next free number from the then-current repository state, not from the stale planning table.
