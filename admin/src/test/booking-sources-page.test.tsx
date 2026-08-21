@@ -14,7 +14,7 @@ vi.mock('../lib/artist-scope', () => ({
 }));
 
 vi.mock('../lib/i18n', () => ({
-  useLanguage: () => ({ language: 'en' }),
+  useLanguage: () => ({ language: 'en', t: (key: string) => key }),
 }));
 
 const ARTIST_ONE = 'a1111111-1111-4111-8111-111111111111';
