@@ -6,7 +6,7 @@
 //
 // Ordering matters and is deliberate:
 //
-//   1. validate everything before touching a provider;
+//   1. validate source + exact Origin, then validate the payload;
 //   2. commit the enquiry and its pending file manifests in one transaction;
 //   3. upload the objects;
 //   4. mark each manifest ready;
@@ -22,28 +22,82 @@ import {
   ConfigurationError,
   parseBoundedMultipartFormData,
   isAllowedOriginFor,
+  isCanonicalHttpsOrigin,
+  getCorsHeaders,
   jsonResponse,
 } from '../lib/http.js';
 import { parseEnquiryFields, parseEnquiryFiles } from '../lib/validation.js';
 import { createSupabaseClient, SupabaseError, toRequestError } from '../lib/supabase.js';
 import { createStorageClient } from '../lib/storage.js';
 import { buildEnquiryNotification, sendNotification } from '../lib/telegram.js';
-import { readTrustedBookingConfig } from '../lib/provider-routing.js';
+import {
+  readBookingSourcePublicId,
+  readTrustedBookingConfig,
+  SUPPORTED_BOOKING_FORM_VERSION,
+} from '../lib/provider-routing.js';
 
 export async function handleEnquiryIntake(request, env, { cors, logger, fetchImpl = fetch }) {
   const startedAt = Date.now();
+  let responseCors = cors;
 
   try {
-    // An absent or unrecognised Origin is refused outright. A CORS response
-    // header only stops a browser from *reading* the reply; it does not stop
-    // the request from being processed, and this route writes to a database.
     const origin = request.headers.get('Origin') || '';
-    if (!isAllowedOriginFor(origin, env)) {
-      logger.warn('enquiry.origin_rejected', { route: 'enquiries', errorCode: 'origin_not_allowed' });
-      throw new RequestError('origin_not_allowed', 'This request could not be accepted.', 403);
-    }
+    const publicSourceId = readBookingSourcePublicId(request);
+    let bookingConfig;
+    let supabase = null;
 
-    const bookingConfig = readTrustedBookingConfig(env);
+    if (publicSourceId) {
+      // CORS reflection is only browser plumbing. This RPC is the authority:
+      // it requires the opaque public id AND the exact observed HTTPS Origin.
+      responseCors = getCorsHeaders(origin, env, request);
+      if (!isCanonicalHttpsOrigin(origin)) {
+        logger.warn('enquiry.origin_rejected', { route: 'enquiries', errorCode: 'origin_not_allowed' });
+        throw new RequestError('origin_not_allowed', 'This request could not be accepted.', 403);
+      }
+
+      supabase = createSupabaseClient(env, fetchImpl);
+      let resolved;
+      try {
+        const result = await supabase.rpc('resolve_booking_source_public', {
+          p_public_source_id: publicSourceId,
+          p_origin: origin,
+        });
+        resolved = Array.isArray(result) ? result[0] : result;
+      } catch (error) {
+        if (
+          error instanceof SupabaseError
+          && error.status >= 400
+          && error.status < 500
+          && error.status !== 429
+        ) {
+          logger.warn('enquiry.origin_rejected', { route: 'enquiries', errorCode: 'origin_not_allowed' });
+          throw new RequestError('origin_not_allowed', 'This request could not be accepted.', 403);
+        }
+        throw error;
+      }
+
+      if (!resolved?.source_key || !resolved?.form_version) {
+        throw new RequestError('origin_not_allowed', 'This request could not be accepted.', 403);
+      }
+      if (resolved.form_version !== SUPPORTED_BOOKING_FORM_VERSION) {
+        throw new ConfigurationError(
+          'booking_form_version_unsupported',
+          'This booking form needs to be updated before it can accept enquiries.'
+        );
+      }
+      bookingConfig = {
+        sourceKey: resolved.source_key,
+        formVersion: resolved.form_version,
+      };
+    } else {
+      // Rollout fallback for the two already-deployed website Workers. This path
+      // can be removed only after every live form carries a registry source id.
+      if (!isAllowedOriginFor(origin, env)) {
+        logger.warn('enquiry.origin_rejected', { route: 'enquiries', errorCode: 'origin_not_allowed' });
+        throw new RequestError('origin_not_allowed', 'This request could not be accepted.', 403);
+      }
+      bookingConfig = readTrustedBookingConfig(env);
+    }
 
     let form;
     try {
@@ -56,14 +110,15 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
     const { honeypot, idempotencyKey, enquiry } = parseEnquiryFields(form);
     if (honeypot) {
       // Answer exactly as a success would, so a bot learns nothing, and record
-      // nothing.
+      // nothing. Registry mode may already have performed its read-only source
+      // resolution; it never writes a client or enquiry for a honeypot hit.
       logger.info('enquiry.honeypot', { route: 'enquiries', outcome: 'ignored' });
-      return jsonResponse({ ok: true }, 200, cors);
+      return jsonResponse({ ok: true }, 200, responseCors);
     }
 
     const files = await parseEnquiryFiles(form);
 
-    const supabase = createSupabaseClient(env, fetchImpl);
+    if (!supabase) supabase = createSupabaseClient(env, fetchImpl);
     const storage = createStorageClient(supabase, fetchImpl);
 
     logger.info('enquiry.validated', {
@@ -73,6 +128,9 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
     });
 
     // ---- Commit the record first -------------------------------------------
+    // create_trusted_enquiry_intake resolves the source tuple again inside the
+    // transaction. That second check closes the window where a source is
+    // deactivated after the read-only registry lookup but before persistence.
     const intake = await supabase.rpc('create_trusted_enquiry_intake', {
       p_source_key: bookingConfig.sourceKey,
       p_origin: origin,
@@ -155,7 +213,7 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
         outcome: 'already_complete',
         durationMs: Date.now() - startedAt,
       });
-      return jsonResponse({ ok: true, reference: referenceNumber, replayed: true }, 200, cors);
+      return jsonResponse({ ok: true, reference: referenceNumber, replayed: true }, 200, responseCors);
     }
 
     // ---- Upload the objects -------------------------------------------------
@@ -313,7 +371,7 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       durationMs: Date.now() - startedAt,
     });
 
-    return jsonResponse({ ok: true, reference: referenceNumber }, 200, cors);
+    return jsonResponse({ ok: true, reference: referenceNumber }, 200, responseCors);
   } catch (error) {
     const safe = error instanceof RequestError || error instanceof ConfigurationError
       ? error
@@ -335,6 +393,6 @@ export async function handleEnquiryIntake(request, env, { cors, logger, fetchImp
       });
     }
 
-    return jsonResponse({ ok: false, error: safe.message, code: safe.code }, safe.status, cors);
+    return jsonResponse({ ok: false, error: safe.message, code: safe.code }, safe.status, responseCors);
   }
 }
