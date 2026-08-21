@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import tattooaiEntry from '../workers/tattooai-entry.js';
 import { handleEnquiryIntake } from '../workers/routes/enquiries.js';
 import {
   getCorsHeaders,
@@ -81,6 +82,30 @@ await test('dynamic CORS is browser plumbing, limited to registry booking reques
   });
   assert.equal(isRegistryBookingRequest(json),false);
   assert.notEqual(getCorsHeaders(ORIGIN,{},json)['Access-Control-Allow-Origin'],ORIGIN);
+});
+
+await test('production entrypoint handles external registry preflight without a static Origin binding',async()=>{
+  const preflight=new Request(ENDPOINT,{
+    method:'OPTIONS',
+    headers:{
+      Origin:ORIGIN,
+      'Access-Control-Request-Method':'POST',
+      'Access-Control-Request-Headers':'Content-Type',
+    },
+  });
+  const response=await tattooaiEntry.fetch(preflight,{});
+  assert.equal(response.status,204);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'),ORIGIN);
+  assert.match(response.headers.get('Access-Control-Allow-Methods')||'',/POST/);
+});
+
+await test('production entrypoint does not broaden non-registry preflight CORS',async()=>{
+  const request=new Request('https://tattooai.example/',{
+    method:'OPTIONS',
+    headers:{Origin:ORIGIN},
+  });
+  const response=await tattooaiEntry.fetch(request,{});
+  assert.notEqual(response.headers.get('Access-Control-Allow-Origin'),ORIGIN);
 });
 
 await test('registry intake resolves source plus exact Origin before parsing or persistence',async()=>{
