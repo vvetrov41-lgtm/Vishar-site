@@ -10,9 +10,10 @@
 import { ConfigurationError, RequestError } from './http.js';
 import { statusClass } from './logging.js';
 
-/** Existing durable intake / delivery operations. Kept stable for compatibility. */
+/** Existing durable intake / delivery operations plus the hosted durable intake. */
 export const ALLOWED_RPCS = new Set([
   'create_trusted_enquiry_intake',
+  'create_hosted_enquiry_intake',
   'mark_enquiry_file_uploaded',
   'finalize_enquiry_intake',
   'fail_enquiry_intake',
@@ -36,6 +37,7 @@ export const ALLOWED_RPCS = new Set([
 /** Read-only public-edge lookups added by the platform registry. */
 export const READ_ONLY_RPCS = new Set([
   'resolve_booking_source_public',
+  'resolve_hosted_booking_source',
 ]);
 
 export class SupabaseError extends Error {
