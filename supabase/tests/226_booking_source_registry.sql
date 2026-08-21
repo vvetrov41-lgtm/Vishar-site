@@ -71,7 +71,17 @@ select isnt(
 -- Runtime resolution: public id + observed Origin, never artist_id
 -- ---------------------------------------------------------------------------
 
--- Make both existing sources active for the isolated resolver assertions.
+-- Canonical migration fixtures intentionally do not carry production website
+-- origins. Give this isolated transaction deterministic valid origins before
+-- activating the sources so the resolver assertions do not depend on seed data.
+update public.booking_sources
+set allowed_origin = case source_key
+  when 'vladimir-website' then 'https://vishartattoo.com'
+  when 'kristina-website' then 'https://www.kristinavishar.com'
+  else allowed_origin
+end
+where source_key in ('vladimir-website', 'kristina-website');
+
 update public.booking_sources
 set is_active = true
 where source_key in ('vladimir-website', 'kristina-website');
