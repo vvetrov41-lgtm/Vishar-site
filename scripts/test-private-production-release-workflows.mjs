@@ -301,7 +301,9 @@ expectIncludes(instagram, 'generate-instagram-production-deploy-config.mjs', 'In
 expectIncludes(instagram, 'npm run scan:secrets', 'Instagram connector');
 expectIncludes(instagram, 'secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY', 'Instagram connector');
 expectIncludes(instagram, 'SUPABASE_AUTH_CANARY_STATUS', 'Instagram connector');
+expectIncludes(instagram, 'SUPABASE_PUBLISHABLE_AUTH_CANARY_STATUS', 'Instagram connector');
 expectIncludes(instagram, 'WORKER_AUTH_CANARY_STATUS', 'Instagram connector');
+expectIncludes(instagram, 'CANONICAL_SUPABASE_PUBLISHABLE_KEY', 'Instagram connector');
 expectIncludes(instagram, '401|403) ;;', 'Instagram connector');
 expectExcludes(instagram, 'if [ "$probe_status" != \'401\' ]', 'Instagram connector');
 expectIncludes(

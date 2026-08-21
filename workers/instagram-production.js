@@ -41,7 +41,11 @@ import {
   sendInstagramMessage,
   storeToken,
 } from './lib/instagram.js';
-import { createInstagramSupabase, isSupabaseSecretKey } from './lib/instagram-supabase.js';
+import {
+  createInstagramSupabase,
+  isSupabasePublishableKey,
+  isSupabaseSecretKey,
+} from './lib/instagram-supabase.js';
 import {
   INSTAGRAM_WEBHOOK_PATH,
   handleInstagramWebhook,
@@ -113,8 +117,7 @@ export function configured(env) {
     && typeof env?.INSTAGRAM_WEBHOOK_VERIFY_TOKEN === 'string'
     && env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN.length >= 16
     && isSupabaseSecretKey(env?.SUPABASE_SECRET_KEY)
-    && typeof env?.SUPABASE_PUBLISHABLE_KEY === 'string'
-    && env.SUPABASE_PUBLISHABLE_KEY.startsWith('sb_publishable_')
+    && isSupabasePublishableKey(env?.SUPABASE_PUBLISHABLE_KEY)
     && env?.INSTAGRAM_OAUTH_STATE
     && env?.INSTAGRAM_OAUTH_TOKENS,
   );
@@ -208,6 +211,7 @@ function authorizationFailure(error) {
   if (
     code === 'instagram_supabase_url_invalid'
     || code === 'instagram_supabase_secret_unavailable'
+    || code === 'instagram_supabase_publishable_unavailable'
   ) {
     return json(503, { error: 'session_verification_unavailable' });
   }

@@ -30,6 +30,7 @@ const BACKEND_RPCS = new Set([
 const USER_RPCS = new Set();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SESSION_TOKEN = /^[A-Za-z0-9._~-]{16,8192}$/;
+const PUBLISHABLE_KEY = /^sb_publishable_[A-Za-z0-9_-]{16,512}$/;
 // Secret bindings become HTTP header values. A prefix-only check allowed a
 // pasted newline or other non-header byte to survive configuration validation,
 // making fetch() throw before Supabase could log the request. Keep this
@@ -39,6 +40,10 @@ const SECRET_KEY = /^sb_secret_[A-Za-z0-9._~-]{16,512}$/;
 
 export function isSupabaseSecretKey(value) {
   return typeof value === 'string' && SECRET_KEY.test(value.trim());
+}
+
+export function isSupabasePublishableKey(value) {
+  return typeof value === 'string' && PUBLISHABLE_KEY.test(value.trim());
 }
 
 class InstagramSupabaseError extends Error {
@@ -99,7 +104,7 @@ async function callRpc(origin, name, args, headers, fetchImpl) {
   return json;
 }
 
-async function verifySession(origin, secret, bearer, fetchImpl) {
+async function verifySession(origin, publishable, bearer, fetchImpl) {
   if (typeof bearer !== 'string' || !SESSION_TOKEN.test(bearer)) {
     throw new InstagramSupabaseError('instagram_session_invalid', { status: 401 });
   }
@@ -109,11 +114,18 @@ async function verifySession(origin, secret, bearer, fetchImpl) {
     response = await fetchImpl(`${origin}/auth/v1/user`, {
       method: 'GET',
       headers: {
-        apikey: secret,
+        // A CRM session is a user-scoped Auth request. Supabase's publishable
+        // key selects the anonymous gateway consumer while the bearer remains
+        // the authoritative user session. The backend secret is reserved for
+        // the allow-listed service RPC surface below.
+        apikey: publishable,
         authorization: `Bearer ${bearer}`,
         accept: 'application/json',
       },
-      redirect: 'error',
+      // Keep redirect responses observable as an upstream failure. `error`
+      // turns a redirect into a rejected fetch promise and hides the actual
+      // HTTP status behind a transport error in the Workers runtime.
+      redirect: 'manual',
     });
   } catch {
     throw new InstagramSupabaseError('instagram_session_verification_request_failed');
@@ -142,10 +154,14 @@ export function createInstagramSupabase(env, fetchImpl = fetch) {
   if (!isSupabaseSecretKey(secret)) {
     throw new InstagramSupabaseError('instagram_supabase_secret_unavailable');
   }
+  const publishable = String(env?.SUPABASE_PUBLISHABLE_KEY || '').trim();
+  if (!isSupabasePublishableKey(publishable)) {
+    throw new InstagramSupabaseError('instagram_supabase_publishable_unavailable');
+  }
 
   return {
     async verifyUser(bearer) {
-      return verifySession(origin, secret, bearer, fetchImpl);
+      return verifySession(origin, publishable, bearer, fetchImpl);
     },
     async rpc(name, args) {
       if (!BACKEND_RPCS.has(name)) {
@@ -160,6 +176,7 @@ export const __testing = Object.freeze({
   BACKEND_RPCS,
   USER_RPCS,
   SECRET_KEY,
+  PUBLISHABLE_KEY,
   projectOrigin,
   verifySession,
   InstagramSupabaseError,

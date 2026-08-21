@@ -88,7 +88,7 @@ if (stateNamespace === tokensNamespace) {
 const appId = requireEnv('INSTAGRAM_APP_ID', /^[0-9A-Za-z_-]{8,64}$/, 'the Instagram app id');
 const publishableKey = requireEnv(
   'SUPABASE_PUBLISHABLE_KEY',
-  /^sb_publishable_[A-Za-z0-9_-]{8,}$/,
+  /^sb_publishable_[A-Za-z0-9_-]{16,512}$/,
   'the production Supabase publishable key',
 );
 

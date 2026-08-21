@@ -28,7 +28,10 @@ import {
   validateClaimedJob,
   validateRoute,
 } from '../workers/lib/communications-drain.js';
-import { __testing as supabaseTesting } from '../workers/lib/instagram-supabase.js';
+import {
+  __testing as supabaseTesting,
+  createInstagramSupabase,
+} from '../workers/lib/instagram-supabase.js';
 import worker, { __testing as workerTesting } from '../workers/instagram-production.js';
 
 let passes = 0;
@@ -175,6 +178,7 @@ await test('a partially configured connector serves nothing', async () => {
     'INSTAGRAM_TOKEN_ENCRYPTION_KEY',
     'INSTAGRAM_WEBHOOK_VERIFY_TOKEN',
     'SUPABASE_SECRET_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
     'INSTAGRAM_OAUTH_TOKENS',
   ]) {
     const environment = env({ [missing]: undefined });
@@ -207,11 +211,48 @@ await test('the backend key must be safe to place in an HTTP header', () => {
   );
 });
 
+await test('the Auth key must be a header-safe publishable key', () => {
+  assert.equal(supabaseTesting.PUBLISHABLE_KEY.test(SYNTHETIC_PUBLISHABLE_KEY), true);
+  assert.equal(supabaseTesting.PUBLISHABLE_KEY.test(`${SYNTHETIC_PUBLISHABLE_KEY}\nsecond-line`), false);
+  assert.equal(supabaseTesting.PUBLISHABLE_KEY.test('sb_publishable_too-short'), false);
+  assert.equal(
+    workerTesting.configured(env({
+      SUPABASE_PUBLISHABLE_KEY: `${SYNTHETIC_PUBLISHABLE_KEY}\nsecond-line`,
+    })),
+    false,
+  );
+});
+
+await test('session Auth uses the publishable key while backend RPC keeps the secret key', async () => {
+  const calls = [];
+  const db = createInstagramSupabase(env(), async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/auth/v1/user')) {
+      return Response.json({ message: 'synthetic invalid session' }, { status: 401 });
+    }
+    return Response.json({ ok: true });
+  });
+
+  await assert.rejects(
+    () => db.verifyUser(SESSION),
+    (error) => error.code === 'instagram_session_invalid',
+  );
+  await db.rpc('service_authorize_instagram_connection', {
+    p_profile_id: TEST_PROFILE,
+    p_artist_id: V_ARTIST,
+  });
+
+  assert.equal(calls[0].init.headers.apikey, SYNTHETIC_PUBLISHABLE_KEY);
+  assert.notEqual(calls[0].init.headers.apikey, SYNTHETIC_SECRET_KEY);
+  assert.equal(calls[0].init.redirect, 'manual');
+  assert.equal(calls[1].init.headers.apikey, SYNTHETIC_SECRET_KEY);
+});
+
 await test('session verification distinguishes a fetch failure before Supabase responds', async () => {
   await assert.rejects(
     () => supabaseTesting.verifySession(
       'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
-      SYNTHETIC_SECRET_KEY,
+      SYNTHETIC_PUBLISHABLE_KEY,
       SESSION,
       async () => { throw new TypeError('synthetic fetch failure'); },
     ),
@@ -224,7 +265,7 @@ await test('session verification preserves a safe unexpected upstream status', a
   await assert.rejects(
     () => supabaseTesting.verifySession(
       'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
-      SYNTHETIC_SECRET_KEY,
+      SYNTHETIC_PUBLISHABLE_KEY,
       SESSION,
       async () => Response.json({ message: 'synthetic upstream failure' }, { status: 502 }),
     ),
@@ -237,7 +278,7 @@ await test('session verification rejects a successful response without a user id
   await assert.rejects(
     () => supabaseTesting.verifySession(
       'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
-      SYNTHETIC_SECRET_KEY,
+      SYNTHETIC_PUBLISHABLE_KEY,
       SESSION,
       async () => Response.json({}),
     ),
@@ -250,11 +291,12 @@ await test('session verification keeps an Auth rejection as an expired session',
   await assert.rejects(
     () => supabaseTesting.verifySession(
       'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
-      SYNTHETIC_SECRET_KEY,
+      SYNTHETIC_PUBLISHABLE_KEY,
       SESSION,
       async (_url, init) => {
-        assert.equal(init.headers.apikey, SYNTHETIC_SECRET_KEY);
+        assert.equal(init.headers.apikey, SYNTHETIC_PUBLISHABLE_KEY);
         assert.equal(init.headers.authorization, `Bearer ${SESSION}`);
+        assert.equal(init.redirect, 'manual');
         return Response.json({ message: 'synthetic invalid session' }, { status: 401 });
       },
     ),
