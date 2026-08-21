@@ -88,7 +88,10 @@ begin
       using errcode = '23514';
   end if;
 
-  new.display_label := btrim(new.display_label);
+  -- Older migrations/tests and the legacy provisioning path predate the label
+  -- column. Keep those inserts forward-compatible without giving the browser a
+  -- new routing input: an omitted label becomes the immutable source_key.
+  new.display_label := coalesce(nullif(btrim(new.display_label), ''), new.source_key);
 
   if new.source_kind = 'external' then
     if new.allowed_origin is not null then
