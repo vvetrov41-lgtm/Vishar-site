@@ -9,7 +9,7 @@ import {
   readBookingSourcePublicId,
   SUPPORTED_BOOKING_FORM_VERSION,
 } from '../workers/lib/provider-routing.js';
-import { ALLOWED_RPCS } from '../workers/lib/supabase.js';
+import { ALLOWED_RPCS, READ_ONLY_RPCS } from '../workers/lib/supabase.js';
 
 const SOURCE_ID='39680fe5-6da0-48c0-bb6b-b543928747e2';
 const ORIGIN='https://artist.example';
@@ -155,10 +155,12 @@ await test('legacy deployed forms remain compatible during the rollout',async()=
   assert.equal(called,false);
 });
 
-await test('the privileged Worker surface contains the resolver but no generic database escape hatch',()=>{
-  assert.equal(ALLOWED_RPCS.has('resolve_booking_source_public'),true);
+await test('the privileged Worker surface isolates one read-only resolver from the legacy RPC set',()=>{
+  assert.deepEqual([...READ_ONLY_RPCS],['resolve_booking_source_public']);
+  assert.equal(ALLOWED_RPCS.has('resolve_booking_source_public'),false);
   for(const forbidden of ['sql','query','select','insert','update','delete']){
     assert.equal(ALLOWED_RPCS.has(forbidden),false);
+    assert.equal(READ_ONLY_RPCS.has(forbidden),false);
   }
 });
 
