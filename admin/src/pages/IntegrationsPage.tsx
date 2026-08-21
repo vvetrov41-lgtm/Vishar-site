@@ -1,15 +1,8 @@
 // The integrations hub.
 //
-// Until now Calendar, WhatsApp and Instagram were three peers in the
-// navigation, which worked while there were three of them. This screen is one
-// entry point that lists every channel the signed-in person can actually see,
-// artist-owned and workspace-owned together, and hands off to the existing
-// per-provider screens for the connect flows.
-//
-// Everything rendered here comes from public.list_integration_status(), which
-// returns no token, no chat id, no provider account identifier and no
-// configuration blob. There is deliberately nothing on this page that could
-// leak one.
+// Provider connections and booking entry points share one administration hub.
+// Safe status metadata comes from list_integration_status(); forms/websites
+// have their own capability-scoped management RPCs and screen.
 
 import { useMemo } from 'react';
 import { useAsync } from '../components/AsyncData';
@@ -24,8 +17,6 @@ import {
 import { Link } from '../lib/router';
 import { useApi } from '../lib/session';
 
-// Channel order is by how often somebody comes here to deal with it, not
-// alphabetical. Forms and websites will join this list when hosted forms land.
 const CHANNEL_ORDER: IntegrationChannel[] = [
   'telegram',
   'calendar',
@@ -46,8 +37,6 @@ const CHANNEL_LABELS: Record<IntegrationChannel, { en: string; ru: string }> = {
   gpt: { en: 'Assistant', ru: 'Ассистент' },
 };
 
-// Where the connect flow for a channel lives today. A channel with no entry
-// has no self-service flow yet and says so rather than offering a dead button.
 const CHANNEL_ROUTES: Partial<Record<IntegrationChannel, string>> = {
   calendar: '/integrations/calendar',
   whatsapp: '/integrations/whatsapp',
@@ -82,20 +71,32 @@ export function IntegrationsPage() {
 
   const channels = CHANNEL_ORDER.filter((channel) => byChannel.has(channel));
 
-  if (channels.length === 0) {
-    return (
-      <EmptyState
-        title={language === 'ru' ? 'Интеграций пока нет' : 'No integrations yet'}
-        hint={language === 'ru'
-          ? 'Подключите первый канал, чтобы заявки и напоминания доходили до вас.'
-          : 'Connect your first channel so enquiries and reminders reach you.'}
-      />
-    );
-  }
-
   return (
     <div className="stack">
-      {channels.map((channel) => (
+      <Section title={language === 'ru' ? 'Формы и сайты' : 'Forms and websites'}>
+        <div className="card">
+          <div className="card-header">
+            <strong>{language === 'ru' ? 'Источники заявок' : 'Booking sources'}</strong>
+          </div>
+          <p className="muted">
+            {language === 'ru'
+              ? 'Создавайте hosted-формы Vishar или подключайте существующие сайты без ручной настройки Artist routing.'
+              : 'Create Vishar-hosted forms or connect existing websites without manual Artist-routing configuration.'}
+          </p>
+          <div className="actions">
+            <Link to="/integrations/forms">{language === 'ru' ? 'Управлять' : 'Manage'}</Link>
+          </div>
+        </div>
+      </Section>
+
+      {channels.length === 0 ? (
+        <EmptyState
+          title={language === 'ru' ? 'Провайдеры пока не подключены' : 'No providers connected yet'}
+          hint={language === 'ru'
+            ? 'Формами и сайтами уже можно управлять выше.'
+            : 'Forms and websites can already be managed above.'}
+        />
+      ) : channels.map((channel) => (
         <Section key={channel} title={CHANNEL_LABELS[channel][language]}>
           <ul className="card-list">
             {(byChannel.get(channel) ?? []).map((row) => (
@@ -130,8 +131,6 @@ function IntegrationCard({
         <span className={`badge badge-${health}`}>{HEALTH_LABELS[health][language]}</span>
       </div>
 
-      {/* Safe metadata only: an account label the provider itself shows the
-          user. Never an account id, a chat id or a token. */}
       {status.display_label ? <p className="muted">{status.display_label}</p> : null}
 
       <dl className="meta">

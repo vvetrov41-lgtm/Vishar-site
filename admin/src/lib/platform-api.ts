@@ -1,10 +1,8 @@
-// Platform reads: integration status, notifications, capabilities, workspaces.
+// Platform reads and narrow platform-management RPCs.
 //
-// Every function here is a named RPC introduced by migrations 0074-0077. None
-// of them takes a profile argument, and none returns a token, a chat id, a
-// provider account identifier or an integration configuration blob. That is a
-// property of the database functions, not of this module - a page cannot widen
-// it by asking differently.
+// No method in this module exposes provider credentials, chat ids or internal
+// routing keys. Booking-source mutations are named RPCs introduced by 0079;
+// database capability checks remain authoritative.
 
 import { ApiError, type CrmClient } from './api';
 
@@ -48,13 +46,6 @@ export interface IntegrationStatus {
   is_selected_route: boolean;
 }
 
-/**
- * What a card shows at a glance.
- *
- * `needs_attention` is deliberately distinct from `error`: an expired
- * credential is a thing the artist can fix themselves in a minute, and calling
- * it an error sends people to a developer instead of to the reconnect button.
- */
 export type IntegrationHealth =
   | 'connected'
   | 'not_connected'
@@ -75,10 +66,6 @@ export function integrationHealth(status: IntegrationStatus): IntegrationHealth 
     case 'destination_unavailable':
     case 'configuration_invalid':
       return 'needs_attention';
-    // A rate limit or a provider outage is the provider having a bad minute.
-    // It resolves without anybody touching the connection, so it is reported
-    // rather than escalated - unless it is the most recent thing that happened
-    // and nothing has succeeded since.
     case 'rate_limited':
     case 'provider_unavailable':
       return hasRecoveredSinceError(status) ? 'connected' : 'error';
@@ -133,13 +120,55 @@ export interface Workspace {
   artist_count: number;
 }
 
-/**
- * Snooze offsets, as durations rather than absolute times.
- *
- * "Tomorrow" resolves against the viewer's own clock to 09:00 local, which is
- * what somebody choosing it means. Everything crosses the wire as an instant,
- * so a snooze set in London and read in Lisbon still fires at the same moment.
- */
+export type BookingSourceKind = 'external' | 'hosted';
+
+export interface BookingSource {
+  id: string;
+  artist_id: string;
+  public_source_id: string;
+  source_kind: BookingSourceKind;
+  display_label: string;
+  allowed_origin: string | null;
+  form_template: 'tattoo-enquiry';
+  form_version: 'booking-v1';
+  is_active: boolean;
+  public_path: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateBookingSourceInput {
+  artistId: string;
+  sourceKind: BookingSourceKind;
+  displayLabel: string;
+  allowedOrigin?: string | null;
+}
+
+export interface UpdateBookingSourceInput {
+  bookingSourceId: string;
+  displayLabel: string;
+  allowedOrigin?: string | null;
+  isActive: boolean;
+}
+
+// Public, non-secret production intake origin. Keeping construction here makes
+// the CRM surface consistent with the already-deployed public booking form and
+// leaves one place to replace when a custom Worker domain is introduced.
+export const BOOKING_FORMS_ORIGIN = 'https://tattooai.vvetrov41.workers.dev';
+
+export function bookingSourcePublicUrl(
+  source: Pick<BookingSource, 'source_kind' | 'public_source_id' | 'public_path'>,
+  origin = BOOKING_FORMS_ORIGIN,
+): string {
+  if (source.source_kind === 'hosted') {
+    if (!source.public_path) return '';
+    return new URL(source.public_path, `${origin.replace(/\/$/, '')}/`).toString();
+  }
+  const url = new URL(`${origin.replace(/\/$/, '')}/`);
+  url.searchParams.set('source', source.public_source_id);
+  return url.toString();
+}
+
 export function snoozeUntil(choice: '15m' | '1h' | 'tomorrow', from = new Date()): Date {
   if (choice === '15m') return new Date(from.getTime() + 15 * 60_000);
   if (choice === '1h') return new Date(from.getTime() + 60 * 60_000);
@@ -147,8 +176,6 @@ export function snoozeUntil(choice: '15m' | '1h' | 'tomorrow', from = new Date()
   const tomorrow = new Date(from);
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(9, 0, 0, 0);
-  // A snooze must move forward. Choosing "tomorrow" at 23:30 on a device whose
-  // clock is ahead must not resolve into the past.
   if (tomorrow.getTime() <= from.getTime()) {
     return new Date(from.getTime() + 60 * 60_000);
   }
@@ -205,6 +232,38 @@ export function createPlatformApi(client: CrmClient) {
 
     async listWorkspaces(): Promise<Workspace[]> {
       return unwrap<Workspace[]>(await client.rpc('list_workspaces'), 'load workspaces');
+    },
+
+    async listBookingSources(artistId?: string): Promise<BookingSource[]> {
+      return unwrap<BookingSource[]>(
+        await client.rpc('list_booking_sources', { p_artist_id: artistId ?? null }),
+        'load forms and websites',
+      );
+    },
+
+    async createBookingSource(input: CreateBookingSourceInput): Promise<string> {
+      const result = await client.rpc('create_booking_source', {
+        p_artist_id: input.artistId,
+        p_source_kind: input.sourceKind,
+        p_display_label: input.displayLabel,
+        p_allowed_origin: input.sourceKind === 'external' ? (input.allowedOrigin ?? null) : null,
+        p_form_template: 'tattoo-enquiry',
+        p_activate: false,
+      });
+      if (result.error) throw new ApiError('Could not create that form or website source.', result.error);
+      if (typeof result.data !== 'string') throw new ApiError('The booking source was not created.', null);
+      return result.data;
+    },
+
+    async updateBookingSource(input: UpdateBookingSourceInput): Promise<boolean> {
+      const result = await client.rpc('update_booking_source', {
+        p_booking_source_id: input.bookingSourceId,
+        p_display_label: input.displayLabel,
+        p_allowed_origin: input.allowedOrigin ?? null,
+        p_is_active: input.isActive,
+      });
+      if (result.error) throw new ApiError('Could not update that form or website source.', result.error);
+      return result.data === true;
     },
   };
 }

@@ -17,6 +17,7 @@ import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
 import { AvailabilityPage } from './pages/AvailabilityPage';
+import { BookingSourcesPage } from './pages/BookingSourcesPage';
 import { CalendarConnectionsPage } from './pages/CalendarConnectionsPage';
 import { ClientDetailPage } from './pages/ClientDetailPage';
 import { ConversationPage } from './pages/ConversationPage';
@@ -148,6 +149,8 @@ function Routes() {
       return <RequireCapability capability="manageFinance"><PaymentsPage /></RequireCapability>;
     case '/integrations':
       return <RequireCapability capability="manageIntegrations"><IntegrationsPage /></RequireCapability>;
+    case '/integrations/forms':
+      return <RequireCapability capability="manageIntegrations"><BookingSourcesPage /></RequireCapability>;
     case '/integrations/calendar':
       return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
     case '/notifications':
