@@ -622,6 +622,99 @@ await test('a malformed wrapped token response fails with a safe diagnostic refe
   assert.ok(!body.includes('synthetic-short-lived'));
 });
 
+await test('the callback identifies an unreachable authorization-code exchange without leaking credentials', async () => {
+  const environment = env();
+  const state = await seedState(environment);
+  const fetchImpl = async () => {
+    throw new TypeError('synthetic network failure containing synthetic-short-lived');
+  };
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.join(' '));
+  let response;
+  try {
+    ({ response } = await callback(state, { environment, fetchImpl }));
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(response.status, 400);
+  const body = await response.text();
+  assert.ok(body.includes('instagram_code_exchange_unreachable'));
+  assert.ok(warnings.some((line) => line.includes('instagram_code_exchange_unreachable')));
+  assert.ok(!body.includes('synthetic-short-lived'));
+  assert.ok(!warnings.join('\n').includes('synthetic-short-lived'));
+});
+
+await test('the callback identifies an unreachable long-lived-token exchange', async () => {
+  const environment = env();
+  const state = await seedState(environment);
+  const upstream = metaFetchDouble();
+  const fetchImpl = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (url.includes('grant_type=ig_exchange_token')) throw new TypeError('synthetic network failure');
+    return upstream(input, init);
+  };
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  let response;
+  try {
+    ({ response } = await callback(state, { environment, fetchImpl }));
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(response.status, 400);
+  assert.ok((await response.text()).includes('instagram_long_token_exchange_unreachable'));
+  assert.equal(environment.INSTAGRAM_OAUTH_TOKENS.store.size, 0);
+});
+
+await test('the callback identifies an unreachable account verification request', async () => {
+  const environment = env();
+  const state = await seedState(environment);
+  const upstream = metaFetchDouble();
+  const fetchImpl = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (url.includes('/me?') || url.endsWith('/me')) throw new TypeError('synthetic network failure');
+    return upstream(input, init);
+  };
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  let response;
+  try {
+    ({ response } = await callback(state, { environment, fetchImpl }));
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(response.status, 400);
+  assert.ok((await response.text()).includes('instagram_account_verification_unreachable'));
+  assert.equal(environment.INSTAGRAM_OAUTH_TOKENS.store.size, 0);
+});
+
+await test('an unexpected Meta redirect is reported without following it', async () => {
+  const environment = env();
+  const state = await seedState(environment);
+  let requests = 0;
+  const fetchImpl = async () => {
+    requests += 1;
+    return new Response(null, {
+      status: 302,
+      headers: { location: 'https://unexpected.invalid/secret-path' },
+    });
+  };
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  let response;
+  try {
+    ({ response } = await callback(state, { environment, fetchImpl }));
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(response.status, 400);
+  const body = await response.text();
+  assert.ok(body.includes('instagram_code_exchange_redirected'));
+  assert.ok(!body.includes('unexpected.invalid'));
+  assert.equal(requests, 1);
+});
+
 await test('the state is single use', async () => {
   const environment = env();
   const state = await seedState(environment);

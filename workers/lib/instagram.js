@@ -252,10 +252,13 @@ export async function exchangeAuthorizationCode({
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
-      redirect: 'error',
+      redirect: 'manual',
     });
   } catch {
-    throw new InstagramError('instagram_unreachable');
+    throw new InstagramError('instagram_code_exchange_unreachable');
+  }
+  if (response.status >= 300 && response.status < 400) {
+    throw new InstagramError('instagram_code_exchange_redirected');
   }
   if (!response.ok) throw new InstagramError('instagram_oauth_exchange_failed');
 
@@ -284,9 +287,12 @@ export async function exchangeLongLivedToken({ clientSecret, accessToken, fetchI
 
   let response;
   try {
-    response = await fetchImpl(url.toString(), { redirect: 'error' });
+    response = await fetchImpl(url.toString(), { redirect: 'manual' });
   } catch {
-    throw new InstagramError('instagram_unreachable');
+    throw new InstagramError('instagram_long_token_exchange_unreachable');
+  }
+  if (response.status >= 300 && response.status < 400) {
+    throw new InstagramError('instagram_long_token_exchange_redirected');
   }
   if (!response.ok) throw new InstagramError('instagram_long_lived_exchange_failed');
 
@@ -329,7 +335,13 @@ export async function refreshLongLivedToken({ accessToken, fetchImpl = fetch }) 
 // Graph reads
 // ---------------------------------------------------------------------------
 
-async function graphGet(path, { accessToken, fields, fetchImpl = fetch }) {
+async function graphGet(path, {
+  accessToken,
+  fields,
+  fetchImpl = fetch,
+  unreachableCode = 'instagram_unreachable',
+  redirectedCode = 'instagram_graph_redirected',
+}) {
   const url = new URL(`/${INSTAGRAM_GRAPH_VERSION}${path}`, GRAPH_ORIGIN);
   if (fields) url.searchParams.set('fields', fields);
 
@@ -337,10 +349,13 @@ async function graphGet(path, { accessToken, fields, fetchImpl = fetch }) {
   try {
     response = await fetchImpl(url.toString(), {
       headers: { Authorization: `Bearer ${accessToken}` },
-      redirect: 'error',
+      redirect: 'manual',
     });
   } catch {
-    throw new InstagramError('instagram_unreachable');
+    throw new InstagramError(unreachableCode);
+  }
+  if (response.status >= 300 && response.status < 400) {
+    throw new InstagramError(redirectedCode);
   }
   if (response.status === 401 || response.status === 403) {
     throw new InstagramError('instagram_credentials_rejected');
@@ -355,6 +370,8 @@ export async function getConnectedAccount(accessToken, fetchImpl = fetch) {
     accessToken,
     fields: 'user_id,username',
     fetchImpl,
+    unreachableCode: 'instagram_account_verification_unreachable',
+    redirectedCode: 'instagram_account_verification_redirected',
   });
   const userId = parsed.user_id === undefined ? '' : String(parsed.user_id);
   const username = typeof parsed.username === 'string' ? parsed.username : '';
