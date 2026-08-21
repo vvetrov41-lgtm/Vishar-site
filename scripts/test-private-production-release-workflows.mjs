@@ -48,11 +48,23 @@ expectIncludes(crm, '--project-name "$CRM_PAGES_PROJECT"', 'CRM Pages');
 expectExcludes(crm, 'supabase db push', 'CRM Pages');
 expectExcludes(crm, 'wrangler deploy --env', 'CRM Pages');
 expectExcludes(crm, 'wrangler.team-admin.toml', 'CRM Pages');
-// The Instagram connector origin is supplied by an environment variable rather
-// than hardcoded, so the CRM can ship before the connector serves. Whatever the
-// variable holds, the build accepts only the exact production connector origin.
-expectIncludes(crm, 'vars.CRM_PRODUCTION_INSTAGRAM_CONNECTOR_ORIGIN', 'CRM Pages');
-expectIncludes(crm, "!= 'https://instagram.vishartattoo.com'", 'CRM Pages');
+// The production Instagram connector is live. Its browser origin is an exact,
+// repository-owned deployment constant so an absent environment variable
+// cannot silently ship a successful CRM build with both connection controls
+// disabled. The preflight and artifact check must also reject an empty value.
+expectIncludes(
+  crm,
+  'VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com',
+  'CRM Pages',
+);
+expectExcludes(crm, 'vars.CRM_PRODUCTION_INSTAGRAM_CONNECTOR_ORIGIN', 'CRM Pages');
+expectIncludes(
+  crm,
+  'if [ "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" != \'https://instagram.vishartattoo.com\' ]; then',
+  'CRM Pages',
+);
+expectExcludes(crm, 'if [ -n "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" ]', 'CRM Pages');
+expectIncludes(crm, 'grep -R -Fq "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" admin/dist', 'CRM Pages');
 
 expectIncludes(database, 'supabase db reset --local --no-seed', 'production database');
 expectIncludes(database, 'supabase db push --dry-run', 'production database');
