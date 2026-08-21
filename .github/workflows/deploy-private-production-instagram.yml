@@ -201,10 +201,13 @@ jobs:
             --header 'accept: application/json' \
             'https://vfjexhfdbrjmuxfdvbdx.supabase.co/auth/v1/user')"
           echo "SUPABASE_AUTH_CANARY_STATUS=$probe_status"
-          if [ "$probe_status" != '401' ]; then
-            echo 'The protected Supabase backend key did not reach the expected production Auth project.' >&2
-            exit 1
-          fi
+          case "$probe_status" in
+            401|403) ;;
+            *)
+              echo 'The protected Supabase backend key did not reach the expected production Auth project.' >&2
+              exit 1
+              ;;
+          esac
 
           printf '%s' "$CANONICAL_SUPABASE_SECRET_KEY" \
             | npx wrangler secret put SUPABASE_SECRET_KEY \

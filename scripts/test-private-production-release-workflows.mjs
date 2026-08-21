@@ -302,6 +302,8 @@ expectIncludes(instagram, 'npm run scan:secrets', 'Instagram connector');
 expectIncludes(instagram, 'secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY', 'Instagram connector');
 expectIncludes(instagram, 'SUPABASE_AUTH_CANARY_STATUS', 'Instagram connector');
 expectIncludes(instagram, 'WORKER_AUTH_CANARY_STATUS', 'Instagram connector');
+expectIncludes(instagram, '401|403) ;;', 'Instagram connector');
+expectExcludes(instagram, 'if [ "$probe_status" != \'401\' ]', 'Instagram connector');
 expectIncludes(
   instagram,
   'npx wrangler secret put SUPABASE_SECRET_KEY',
