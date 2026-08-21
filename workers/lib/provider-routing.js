@@ -1,8 +1,10 @@
 // Artist-owned provider binding selection.
-import { ConfigurationError } from './http.js';
+import { ConfigurationError, RequestError } from './http.js';
 
 export const ROUTED_INTEGRATION_TYPES = new Set(['telegram','email','calendar','whatsapp']);
+export const SUPPORTED_BOOKING_FORM_VERSION='booking-v1';
 const SOURCE_KEY=/^[a-z][a-z0-9-]{2,79}$/;
+const PUBLIC_SOURCE_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INTEGRATION_KEY=/^[a-z][a-z0-9_-]{2,79}$/;
 const PROVIDER=/^[a-z][a-z0-9_-]{1,63}$/;
 
@@ -10,6 +12,22 @@ export class ProviderRouteError extends Error {
   constructor(code){super('artist provider route is unavailable');this.name='ProviderRouteError';this.code=code;}
 }
 
+/**
+ * The registry selector is intentionally public. It identifies a booking
+ * source but grants no artist authority by itself; the backend also matches
+ * the exact observed Origin before returning source_key / artist_id.
+ */
+export function readBookingSourcePublicId(request){
+  let value='';
+  try{value=(new URL(request?.url??'').searchParams.get('source')??'').trim();}catch{value='';}
+  if(!value)return null;
+  if(!PUBLIC_SOURCE_ID.test(value)){
+    throw new RequestError('booking_source_invalid','This booking link is invalid.',400);
+  }
+  return value.toLowerCase();
+}
+
+/** Legacy rollout fallback. New registry-backed forms do not use this. */
 export function readTrustedBookingConfig(env){
   const sourceKey=typeof env?.BOOKING_SOURCE_KEY==='string'?env.BOOKING_SOURCE_KEY.trim():'';
   const formVersion=typeof env?.BOOKING_FORM_VERSION==='string'?env.BOOKING_FORM_VERSION.trim():'';
