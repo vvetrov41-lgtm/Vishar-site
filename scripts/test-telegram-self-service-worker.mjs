@@ -33,6 +33,7 @@ const registryChat = '-100500001';
 const personalChat = '500002';
 const webhookSecret = 'telegramWebhookSecret_1234567890';
 const linkToken = '0123456789abcdef0123456789abcdef';
+const webhookUrl = 'https://telegram.example.test/webhook';
 
 const baseEnv = {
   SUPABASE_URL: 'https://example.supabase.co',
@@ -229,7 +230,10 @@ await test('personal notification is leased, sent and acknowledged through narro
   });
 });
 
-await test('linking parser accepts only a bounded Telegram start challenge', async () => {
+await test('linking parser and route accept only bounded Telegram input', async () => {
+  assert.equal(workerTesting.isWebhookPath(new Request(webhookUrl)), true);
+  assert.equal(workerTesting.isWebhookPath(new Request('https://telegram.example.test/')), false);
+  assert.equal(workerTesting.isWebhookPath(new Request(`${webhookUrl}?x=1`)), false);
   assert.deepEqual(workerTesting.linkingMessage({
     message: { text: `/start ${linkToken}`, chat: { id: 600001, type: 'private' } },
   }), { token: linkToken, chatId: '600001', chatType: 'private' });
@@ -244,12 +248,32 @@ await test('linking parser accepts only a bounded Telegram start challenge', asy
   }), null);
 });
 
-await test('dormant linking endpoint is 404 when activation flag is absent', async () => {
-  const response = await worker.fetch(new Request('https://telegram.example.test/', {
+await test('dormant linking endpoint is 404 even on the exact webhook path', async () => {
+  const response = await worker.fetch(new Request(webhookUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: '{}',
   }), baseEnv);
+  assert.equal(response.status, 404);
+});
+
+await test('enabled linking still refuses every path except exact /webhook', async () => {
+  const env = {
+    ...baseEnv,
+    TELEGRAM_LINKING_ENABLED: 'true',
+    TELEGRAM_WEBHOOK_SECRET: webhookSecret,
+    TELEGRAM_BOT_TOKEN: sharedToken,
+  };
+  const response = await worker.fetch(new Request('https://telegram.example.test/', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': webhookSecret,
+    },
+    body: JSON.stringify({
+      message: { text: `/start ${linkToken}`, chat: { id: 600001, type: 'private' } },
+    }),
+  }), env);
   assert.equal(response.status, 404);
 });
 
@@ -260,7 +284,7 @@ await test('linking webhook rejects a request without the Telegram secret header
     TELEGRAM_WEBHOOK_SECRET: webhookSecret,
     TELEGRAM_BOT_TOKEN: sharedToken,
   };
-  const response = await worker.fetch(new Request('https://telegram.example.test/', {
+  const response = await worker.fetch(new Request(webhookUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -278,7 +302,7 @@ await test('verified webhook completes one link and sends only a safe confirmati
     TELEGRAM_BOT_TOKEN: sharedToken,
   };
   const mock = makeFetch();
-  const response = await workerTesting.handleLinkingWebhook(new Request('https://telegram.example.test/', {
+  const response = await workerTesting.handleLinkingWebhook(new Request(webhookUrl, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -310,7 +334,7 @@ await test('unrelated Telegram updates are acknowledged without database access'
     TELEGRAM_BOT_TOKEN: sharedToken,
   };
   const mock = makeFetch();
-  const response = await workerTesting.handleLinkingWebhook(new Request('https://telegram.example.test/', {
+  const response = await workerTesting.handleLinkingWebhook(new Request(webhookUrl, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
