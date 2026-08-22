@@ -57,10 +57,12 @@ const LIVE = {
     { hostname: 'instagram.vishartattoo.com', service: 'vishar-instagram-production' },
   ],
   dnsExists: false,
+  zoneResolved: true,
   zoneRoutes: [{ pattern: 'vishartattoo.com/pay-by-bank-transfer*', script: 'vishar-monzo-api-production' }],
   accessApps: [
     { name: 'calendar-production', domain: 'calendar.vishartattoo.com', type: 'self_hosted' },
   ],
+  accessCheckAvailable: true,
   versionId: 'c6fc73e8-281a-4715-86c5-ae2d7d43e9b1',
 };
 
@@ -95,6 +97,8 @@ assert.ok(desired.replaceableBindings.includes('GMAIL_SHARED_DRAIN_ENABLED'));
   assert.ok(verdict.warnings.some((w) => w.includes('2026-05-25') && w.includes('2026-08-22')));
   assert.equal(verdict.summary.live_version_id, 'c6fc73e8-281a-4715-86c5-ae2d7d43e9b1');
   assert.equal(verdict.summary.gmail_shared_drain_preserved, true);
+  assert.equal(verdict.summary.zone_resolved, true);
+  assert.equal(verdict.summary.access_check_available, true);
 }
 
 const READY_LIVE = {
@@ -162,6 +166,18 @@ const READY_LIVE = {
   assert.ok(verdict.failures.some((f) => f.includes('DNS record but no Worker Custom Domain')));
 }
 
+// Zone and Access verification are mandatory for a production deploy. An API
+// permission failure must not be converted into a false "no conflict" result.
+{
+  const verdict = evaluatePreflight({ live: { ...READY_LIVE, zoneResolved: false }, desired });
+  assert.ok(verdict.failures.some((f) => f.includes('zone vishartattoo.com could not be resolved')));
+  assert.equal(verdict.warnings.some((w) => w.includes('does not exist yet')), false);
+}
+{
+  const verdict = evaluatePreflight({ live: { ...READY_LIVE, accessCheckAvailable: false }, desired });
+  assert.ok(verdict.failures.some((f) => f.includes('Cloudflare Access state') && f.includes('could not be verified')));
+}
+
 for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/webhook', '*.vishartattoo.com']) {
   const live = { ...READY_LIVE, accessApps: [{ name: 'blocker', domain, type: 'self_hosted' }] };
   const verdict = evaluatePreflight({ live, desired });
@@ -184,8 +200,6 @@ for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/we
     .some((f) => f.includes('must enable the drain')));
 }
 
-// Linking rollback is also explicit: normal deploys cannot silently disable a
-// live webhook, but the dedicated rollback gate can close it.
 {
   const liveLinking = {
     ...READY_LIVE,
@@ -216,4 +230,4 @@ for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/we
   assert.ok(printed.includes('SUPABASE_SECRET_KEY'));
 }
 
-console.log('Telegram production preflight tests passed: Gmail shared drain and both linking state transitions are explicitly gated.');
+console.log('Telegram production preflight tests passed: Gmail shared drain, Cloudflare control-plane visibility and both linking state transitions are explicitly gated.');
