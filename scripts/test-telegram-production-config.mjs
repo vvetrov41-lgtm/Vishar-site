@@ -150,7 +150,8 @@ for (const needle of [
   'wrangler.telegram-drain.staging.toml',
   'gwaliusblwrzisrwnsvs',
   'TELEGRAM_CHAT_ID',
-  'setWebhook',
+  'scripts/activate-telegram-webhook.mjs',
+  'api.telegram.org',
   'GOOGLE_OAUTH_CLIENT_SECRET',
   'GMAIL_TOKEN_ENCRYPTION_KEY',
 ]) expectExcludes(workflow, needle, 'production workflow');
