@@ -2,8 +2,12 @@ import {
   drainPersonalTelegramNotifications,
   drainTelegramOutbox,
 } from './lib/telegram-drain.js';
-import { createSupabaseClient } from './lib/supabase.js';
-import { sendSharedTelegramNotification } from './lib/telegram.js';
+import { ConfigurationError } from './lib/http.js';
+import { createSupabaseClient, SupabaseError } from './lib/supabase.js';
+import {
+  sendSharedTelegramNotification,
+  sharedTelegramBotToken,
+} from './lib/telegram.js';
 
 const LINK_TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
 const CHAT_ID = /^-?[0-9]{1,20}$/;
@@ -56,7 +60,8 @@ function linkingConfigured(env) {
   return env?.TELEGRAM_LINKING_ENABLED === 'true'
     && WEBHOOK_SECRET.test(typeof env?.TELEGRAM_WEBHOOK_SECRET === 'string'
       ? env.TELEGRAM_WEBHOOK_SECRET.trim()
-      : '');
+      : '')
+    && Boolean(sharedTelegramBotToken(env));
 }
 
 function isWebhookPath(request) {
@@ -92,6 +97,11 @@ function linkingMessage(update) {
   return { token: match[1], chatId, chatType };
 }
 
+function shouldRetryLinkingFailure(error) {
+  if (error instanceof ConfigurationError) return true;
+  return error instanceof SupabaseError && (error.status === 429 || error.status >= 500);
+}
+
 async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
   if (!linkingConfigured(env)) return json(404, { error: 'not_found' });
   if (!isWebhookPath(request)) return json(404, { error: 'not_found' });
@@ -124,19 +134,27 @@ async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
       p_chat_id: link.chatId,
       p_chat_type: link.chatType,
     });
-    // Confirmation is best-effort. Link completion is the durable operation;
-    // a provider outage must not consume the challenge twice on retry.
-    await sendSharedTelegramNotification(
-      env,
-      link.chatId,
-      'Vishar CRM: Telegram connected.',
-      fetchImpl,
-    );
-  } catch {
-    // Do not expose whether a guessed token exists. A stale or revoked
-    // challenge receives the same provider-level acknowledgement as any other
-    // invalid start parameter and will not be retried indefinitely.
+  } catch (error) {
+    // A guessed, stale, revoked or already-consumed challenge must not become
+    // an oracle: database 4xx responses are acknowledged exactly like success.
+    // Transient backend/config failures are different - returning 503 lets
+    // Telegram retry the same update while the still-unconsumed challenge is
+    // valid instead of silently losing the connection attempt.
+    if (shouldRetryLinkingFailure(error)) {
+      return json(503, { error: 'temporarily_unavailable' });
+    }
+    return json(200, { ok: true });
   }
+
+  // Confirmation is best-effort and happens only after durable completion. A
+  // Telegram send failure must not ask Telegram to replay the /start command,
+  // because that could only hit an already-consumed challenge.
+  await sendSharedTelegramNotification(
+    env,
+    link.chatId,
+    'Vishar CRM: Telegram connected.',
+    fetchImpl,
+  );
 
   return json(200, { ok: true });
 }
@@ -162,4 +180,5 @@ export const __testing = {
   readWebhookJson,
   runScheduledDrain,
   safeFailureCode,
+  shouldRetryLinkingFailure,
 };
