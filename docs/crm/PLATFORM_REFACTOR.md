@@ -383,7 +383,7 @@ bounded release.
 | H | Booking source registry: public opaque id, origin check at runtime | `0078` | replaces `env.BOOKING_SOURCE_KEY` |
 | I–J | Hosted forms and external websites | `0079` | template/schema based, no form builder |
 | K–M | **Done** — `public.notifications`, the follow-up sweep, personal destinations and preferences | `0077` | see §6.1 |
-| N | Domain events + automation engine | `0078` | one engine, not a cron per scenario |
+| N | **Done** — domain events, rules, jobs, kill switches, one tick | `0081` | see §6.2 |
 | O–P | Templates, client reminders, workspace defaults | `0079`–`0080` | service vs marketing split enforced here |
 | Q–R | MCP domain contracts and surface | none | transport over the same capability layer |
 | S–T | Unified GPT: OAuth client → profile, not artist | `0081` | `gpt_action_clients` gains a profile-bound mode |
@@ -423,6 +423,40 @@ Delivery to a person's own Telegram or email is deliberately still absent:
 that needs the private destination store and the linking flow from Phase F.
 `set_notification_preference` refuses to enable a channel with no destination,
 so a preference can never be on while silently delivering nothing.
+
+### 6.2 What `0081` actually built
+
+Trigger, conditions, delay, action — with exactly one action: an internal
+notification. It reuses `activity_log` as the event source, `notifications` as
+the delivery target, and one backend-only tick rather than a cron per scenario.
+
+Four decisions are worth recording because they are what keep it safe:
+
+- **There is no rule DSL.** A rule's trigger, its two optional status
+  conditions, its delay and its action are typed columns. No jsonb, no
+  expression string, no table or function name, no template. An injection
+  surface that is never created cannot be validated wrongly later, and adding an
+  action means adding an enum value plus an explicit execution branch.
+- **Triggers come from a catalogue.** `activity_log.event_type` is free text
+  with only a shape check, so a rule names a row in
+  `automation_trigger_catalog` instead. Events outside it — including the
+  automation engine's own audit rows — are never projected, so an automation
+  cannot react to its own administration.
+- **The event projection carries no free text.** `automation_events` holds the
+  artist, the entity and the two status labels, and nothing else. There is
+  nowhere for a client name, an email address or a message body to land.
+- **Recipients are derived, never supplied.** A rule has no recipient column at
+  all: execution notifies the people who run the artist, checked at execution
+  time, so a revoked membership stops the notification.
+
+Editing a rule bumps its version; the tick cancels pending jobs materialised
+under a superseded version and never touches completed ones, which keep the
+action snapshot that actually ran. Kill switches at global, workspace and
+artist level pause execution and leave the work pending rather than discarding
+it.
+
+No cron and no Worker configuration change ships with this: with no rules
+present the tick is a no-op.
 
 ### Telegram migration order (Phase F/G), stated once
 

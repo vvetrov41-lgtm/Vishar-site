@@ -685,6 +685,14 @@ insert into expected_function_acl values
   ('public.snooze_follow_up(uuid,timestamptz)', false, true, false),
   ('public.set_notification_preference(public.notification_channel,boolean)', false, true, false),
 
+  -- Automation engine (migration 0081). The tick is backend-only; the three
+  -- management RPCs are browser-callable and enforce manage_automations in
+  -- their bodies. Every private helper stays uncallable by an API role.
+  ('public.service_run_automation_tick(integer)', false, false, true),
+  ('public.list_automation_rules(uuid)', false, true, false),
+  ('public.create_automation_rule(uuid,text,text,text,text,text,text,integer,public.notification_priority)', false, true, false),
+  ('public.set_automation_rule_enabled(uuid,boolean)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
@@ -741,7 +749,10 @@ select ok(
        -- Platform layer, migrations 0074-0077.
        'capability_registry', 'workspaces', 'workspace_memberships',
        'workspace_integrations', 'integration_assignments',
-       'artist_integration_routes', 'notifications', 'notification_preferences')),
+       'artist_integration_routes', 'notifications', 'notification_preferences',
+       -- Automation engine, migration 0081.
+       'automation_trigger_catalog', 'automation_events', 'automation_rules',
+       'automation_jobs', 'automation_kill_switches')),
   'every CRM table has row level security enabled and forced'
 );
 
