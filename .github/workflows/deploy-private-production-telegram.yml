@@ -1,0 +1,299 @@
+name: Deploy private production Telegram drain
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      deploy:
+        description: Deploy after validation. Leave false for validation-only runs.
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: Required only for deploy=true
+        required: false
+        default: ''
+        type: string
+      enable_linking:
+        description: Enable the Telegram /webhook handler in this deploy. Requires a second approval phrase.
+        required: true
+        default: false
+        type: boolean
+      linking_approval_phrase:
+        description: Required only when enable_linking=true
+        required: false
+        default: ''
+        type: string
+      disable_linking:
+        description: Explicitly disable already-live Telegram linking as a rollback. Requires its own approval phrase.
+        required: true
+        default: false
+        type: boolean
+      linking_rollback_phrase:
+        description: Required only when disable_linking=true
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-telegram
+  cancel-in-progress: false
+
+jobs:
+  telegram:
+    name: Private CRM Telegram production gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-telegram-drain-production
+      ENABLE_LINKING: ${{ inputs.enable_linking }}
+      DISABLE_LINKING: ${{ inputs.disable_linking }}
+
+    steps:
+      - name: Verify exact release branch and explicit production gates
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          LINKING_APPROVAL_PHRASE: ${{ inputs.linking_approval_phrase }}
+          LINKING_ROLLBACK_PHRASE: ${{ inputs.linking_rollback_phrase }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *) echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
+          esac
+          [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          }
+          if [ "$DEPLOY_REQUESTED" = 'true' ] && [ "$APPROVAL_PHRASE" != 'ENABLE_PRIVATE_CRM_TELEGRAM_DRAIN' ]; then
+            echo 'The exact Telegram production approval phrase is required for deploy=true.' >&2
+            exit 1
+          fi
+          if [ "$ENABLE_LINKING" = 'true' ] && [ "$DISABLE_LINKING" = 'true' ]; then
+            echo 'enable_linking and disable_linking are mutually exclusive.' >&2
+            exit 1
+          fi
+          if [ "$ENABLE_LINKING" = 'true' ] && [ "$DEPLOY_REQUESTED" != 'true' ]; then
+            echo 'enable_linking=true is valid only with deploy=true.' >&2
+            exit 1
+          fi
+          if [ "$DISABLE_LINKING" = 'true' ] && [ "$DEPLOY_REQUESTED" != 'true' ]; then
+            echo 'disable_linking=true is valid only with deploy=true.' >&2
+            exit 1
+          fi
+          if [ "$ENABLE_LINKING" = 'true' ] && [ "$LINKING_APPROVAL_PHRASE" != 'ENABLE_TELEGRAM_LINKING' ]; then
+            echo 'The separate Telegram linking approval phrase is required for enable_linking=true.' >&2
+            exit 1
+          fi
+          if [ "$DISABLE_LINKING" = 'true' ] && [ "$LINKING_ROLLBACK_PHRASE" != 'DISABLE_TELEGRAM_LINKING' ]; then
+            echo 'The separate Telegram linking rollback phrase is required for disable_linking=true.' >&2
+            exit 1
+          fi
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+
+      - name: Verify checkout and stack ancestry
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          REQUIRED_TELEGRAM_SHA: 314f0359ad083cec4efc7ea389d3111e2d83b755
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor "$REQUIRED_TELEGRAM_SHA" "$APPROVED_SHA"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
+      - name: Audit root dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Re-run focused Telegram production boundaries
+        run: |
+          node scripts/test-telegram-drain.mjs
+          node scripts/test-telegram-drain-worker.mjs
+          node scripts/test-telegram-self-service-worker.mjs
+          npm run test:telegram-production
+          npm run check:telegram-production-bundle
+          npm run scan:secrets
+
+      - name: Cloudflare production preflight (report only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          preflight_config="$RUNNER_TEMP/telegram.preflight.toml"
+          node scripts/generate-telegram-production-deploy-config.mjs "$preflight_config"
+          node scripts/preflight-telegram-production.mjs "$preflight_config" --report-only
+          rm -f "$preflight_config"
+
+      - name: Verify exact pre-provisioned production Worker secret names
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
+          const expected = [
+            'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
+            'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+            'SUPABASE_SECRET_KEY',
+            'TELEGRAM_BOT_TOKEN',
+            'TELEGRAM_WEBHOOK_SECRET',
+          ].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Production Telegram Worker secret-name set is not exact; expected ${expected.join(', ')}`);
+          }
+          NODE
+
+      - name: Generate and deploy Telegram shared scheduler
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy_config="$GITHUB_WORKSPACE/.wrangler.telegram.production.deploy.toml"
+          trap 'rm -f "$deploy_config"' EXIT
+
+          generator_args=("$deploy_config")
+          preflight_args=("$deploy_config")
+          expected_linking='false'
+          if [ "$ENABLE_LINKING" = 'true' ]; then
+            generator_args+=(--enable-linking)
+            preflight_args+=(--allow-linking)
+            expected_linking='true'
+          elif [ "$DISABLE_LINKING" = 'true' ]; then
+            preflight_args+=(--allow-linking-disable)
+          fi
+
+          node scripts/generate-telegram-production-deploy-config.mjs "${generator_args[@]}"
+          grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'GMAIL_SHARED_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq "TELEGRAM_LINKING_ENABLED = \"$expected_linking\"" "$deploy_config"
+          grep -Fq 'binding = "GMAIL_SERVICE"' "$deploy_config"
+          grep -Fq 'service = "vishar-gmail-production"' "$deploy_config"
+          grep -Fq 'telegram.vishartattoo.com' "$deploy_config"
+          grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
+
+          node scripts/preflight-telegram-production.mjs "${preflight_args[@]}"
+
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/telegram-production-wrangler.log \
+          WRANGLER_SEND_METRICS=false \
+            npx wrangler deploy \
+              --config "$deploy_config" \
+              --name "$WORKER_NAME" \
+              --dry-run \
+              --outdir .wrangler/telegram-production-generated
+
+          npx wrangler deploy \
+            --config "$deploy_config" \
+            --name "$WORKER_NAME" \
+            --strict
+
+          rm -f "$deploy_config"
+          trap - EXIT
+
+      - name: Record active Worker version and deployment evidence
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/telegram-production-evidence"
+          npx wrangler versions list --name "$WORKER_NAME" --json > "$RUNNER_TEMP/telegram-production-evidence/versions.json"
+          npx wrangler deployments list --name "$WORKER_NAME" --json > "$RUNNER_TEMP/telegram-production-evidence/deployments.json"
+          node <<'NODE'
+          const fs = require('fs');
+          const root = process.env.RUNNER_TEMP + '/telegram-production-evidence';
+          const versions = JSON.parse(fs.readFileSync(root + '/versions.json', 'utf8'));
+          if (!Array.isArray(versions) || !versions.length || !versions[0]?.id) {
+            throw new Error('Unable to resolve deployed Telegram Worker version id');
+          }
+          fs.writeFileSync(root + '/safe-summary.json', JSON.stringify({
+            worker: process.env.WORKER_NAME,
+            version_id: versions[0].id,
+            workers_dev: false,
+            preview_urls: false,
+            custom_domain: 'telegram.vishartattoo.com',
+            webhook_path: '/webhook',
+            linking_enabled: process.env.ENABLE_LINKING === 'true',
+            linking_rollback_requested: process.env.DISABLE_LINKING === 'true',
+            cron: '*/5 * * * *',
+            gmail_shared_drain_enabled: true,
+            gmail_service: 'vishar-gmail-production',
+            legacy_artist_fallback_retained: true,
+            secret_names_only: true,
+          }, null, 2));
+          console.log(`TELEGRAM_WORKER_VERSION=${versions[0].id}`);
+          NODE
+
+      - name: Upload safe Telegram production evidence
+        if: ${{ always() && inputs.deploy }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-production-${{ inputs.approved_sha }}
+          path: ${{ runner.temp }}/telegram-production-evidence/safe-summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Production Telegram boundary summary
+        if: always()
+        shell: bash
+        env:
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+        run: |
+          {
+            echo '### Private CRM Telegram production gate'
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo "- Linking enable requested: \`$ENABLE_LINKING\`"
+            echo "- Linking rollback requested: \`$DISABLE_LINKING\`"
+            echo '- Worker: `vishar-telegram-drain-production` only'
+            echo '- workers.dev disabled; preview URLs disabled'
+            echo '- Custom Domain: `telegram.vishartattoo.com`; only `/webhook` is accepted by code'
+            echo '- Tracked config: Telegram drain, Gmail shared drain and linking disabled; no cron or Service Binding'
+            echo '- Generated deploy config: Telegram + Gmail shared drains enabled, exact `*/5 * * * *` cron, `GMAIL_SERVICE -> vishar-gmail-production` preserved'
+            echo '- Linking defaults OFF, enable requires `ENABLE_TELEGRAM_LINKING`, and an explicit rollback requires `DISABLE_TELEGRAM_LINKING`'
+            echo '- Telegram webhook registration is deliberately outside this deploy and cannot be performed by this workflow'
+            echo '- Existing Vladimir/Kristina Artist bindings remain required as the Phase G fallback'
+            echo '- Shared bot token and webhook secret must be pre-provisioned, but their values are never read or printed'
+            echo '- Gmail credentials remain on the Gmail Worker; the scheduler receives only the bounded Service Binding'
+            echo '- There is no global Telegram chat-id binding; DB destinations are server-only'
+            echo '- Cloudflare preflight compares live bindings against the deploy config and blocks silent removal or unapproved linking state changes'
+            echo '- This workflow never runs secret put/bulk, webhook activation, Pages deploy or Supabase migration commands'
+          } >> "$GITHUB_STEP_SUMMARY"
