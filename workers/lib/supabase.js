@@ -23,10 +23,6 @@ export const ALLOWED_RPCS = new Set([
   'claim_telegram_outbox_by_id',
   'claim_telegram_outbox',
   'record_telegram_outbox_result',
-  'service_complete_telegram_link',
-  'service_resolve_telegram_destination',
-  'service_claim_telegram_notifications',
-  'service_record_telegram_notification_result',
   'claim_calendar_outbox',
   'record_calendar_outbox_result',
   'claim_calendar_availability_outbox',
@@ -36,6 +32,14 @@ export const ALLOWED_RPCS = new Set([
   'record_whatsapp_inbound_message',
   'record_whatsapp_message_status',
   'record_whatsapp_outbox_result',
+]);
+
+/** Phase F-G Telegram operations. Kept separate so the legacy intake surface stays pinned. */
+export const TELEGRAM_SELF_SERVICE_RPCS = new Set([
+  'service_complete_telegram_link',
+  'service_resolve_telegram_destination',
+  'service_claim_telegram_notifications',
+  'service_record_telegram_notification_result',
 ]);
 
 /** Read-only public-edge lookups added by the platform registry. */
@@ -137,7 +141,11 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
   const { url, authHeaders, keyKind } = readSupabaseConfig(env);
 
   async function rpc(name, args) {
-    if (!ALLOWED_RPCS.has(name) && !READ_ONLY_RPCS.has(name)) {
+    if (
+      !ALLOWED_RPCS.has(name)
+      && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
+      && !READ_ONLY_RPCS.has(name)
+    ) {
       throw new ConfigurationError('rpc_not_allowed', 'That database operation is not available.');
     }
 
