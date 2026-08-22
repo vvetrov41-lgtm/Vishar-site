@@ -38,6 +38,7 @@ const CHANNEL_LABELS: Record<IntegrationChannel, { en: string; ru: string }> = {
 };
 
 const CHANNEL_ROUTES: Partial<Record<IntegrationChannel, string>> = {
+  telegram: '/integrations/telegram',
   calendar: '/integrations/calendar',
   whatsapp: '/integrations/whatsapp',
   instagram: '/integrations/instagram',
