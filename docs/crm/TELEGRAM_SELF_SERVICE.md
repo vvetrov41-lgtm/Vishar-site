@@ -165,7 +165,24 @@ Production activation is intentionally separate from this Draft implementation.
 5. Deploy the Worker through the guarded release workflow. This enables the scheduled drain but deliberately leaves `TELEGRAM_LINKING_ENABLED=false`.
 6. Verify Vladimir and Kristina's legacy Artist alerts still deliver through their existing bindings.
 7. Configure the public bot username in the CRM. This is public identity only, not a credential.
-8. Register Telegram's webhook to the exact `/webhook` URL with the same secret-token value.
+8. Register Telegram's webhook to the exact `/webhook` URL with the same secret-token value:
+
+   ```
+   TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=... \
+     node scripts/activate-telegram-webhook.mjs register --confirm
+   ```
+
+   `verify` (the default) is read-only and needs only the bot token; `delete`
+   is the rollback. The tool accepts no URL argument - it can only ever point
+   at `https://telegram.vishartattoo.com/webhook`, it refuses to act without
+   `--confirm`, it fails if Telegram settles on any other URL, and it redacts
+   the token out of Telegram's own error text before printing anything.
+
+   This is a script rather than a GitHub workflow on purpose. Automating one
+   HTTPS call would mean storing the bot token and the webhook secret as GitHub
+   secrets. GitHub already holds a Cloudflare API token because deploying is
+   impossible without it; these two are avoidable, so they stay only in the
+   encrypted Cloudflare Worker secrets where they are actually needed.
 9. Enable linking in a separately reviewed production config change.
 10. Link and prove one personal destination.
 11. Link and prove each Artist group one at a time. The DB route becomes preferred only for that Artist; the old binding remains fallback.
