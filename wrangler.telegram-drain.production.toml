@@ -8,15 +8,21 @@ routes = [
   { pattern = "telegram.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }
 ]
 
-# One Worker owns both Telegram delivery and the future linking callback.
-# The tracked production template is deliberately inert:
-#   * scheduled delivery is disabled;
+# One Worker owns Telegram delivery, the bounded Gmail shared scheduler dispatch,
+# and the future Telegram linking callback. The tracked production template is
+# deliberately inert:
+#   * Telegram scheduled delivery is disabled;
+#   * Gmail shared scheduler dispatch is disabled;
 #   * self-service linking is disabled;
-#   * no cron exists in this file.
-# The guarded production release may enable the drain and add the exact cron,
-# but it keeps linking disabled until the bot webhook is separately activated.
+#   * no cron or Service Binding exists in this file.
+# The guarded production release generates the active scheduler config from this
+# template. It must preserve the already-live Gmail shared-cron contract:
+# GMAIL_SERVICE -> vishar-gmail-production plus GMAIL_SHARED_DRAIN_ENABLED=true.
+# Gmail credentials remain exclusively on the Gmail Worker.
+#
 # With TELEGRAM_LINKING_ENABLED=false every HTTP request returns 404, including
-# the pre-provisioned Custom Domain.
+# the pre-provisioned Custom Domain. Linking can only be enabled by the separate
+# explicit release gate; webhook registration remains a later, separate action.
 #
 # When linking is eventually activated, Telegram is configured to call only:
 #   https://telegram.vishartattoo.com/webhook
@@ -28,6 +34,7 @@ routes = [
 VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 TELEGRAM_DRAIN_ENABLED = "false"
+GMAIL_SHARED_DRAIN_ENABLED = "false"
 TELEGRAM_LINKING_ENABLED = "false"
 
 # Required encrypted production Worker secrets are deliberately absent here.
@@ -38,6 +45,10 @@ TELEGRAM_LINKING_ENABLED = "false"
 #   ARTIST_TELEGRAM_KRISTINA_HPRODUCTION
 #   TELEGRAM_BOT_TOKEN
 #   TELEGRAM_WEBHOOK_SECRET
+#
+# GMAIL_SERVICE is a Cloudflare Service Binding, not a secret. It is generated
+# only in the active deploy config and points to vishar-gmail-production. No
+# Gmail OAuth/client/token/KV credential may be copied into this Worker.
 #
 # TELEGRAM_BOT_TOKEN is the one shared bot credential used only by DB-resolved
 # destinations. TELEGRAM_WEBHOOK_SECRET authenticates the future /webhook
