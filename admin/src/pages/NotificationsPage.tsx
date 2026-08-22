@@ -1,15 +1,11 @@
 // The notification centre.
 //
-// This is the screen that makes an overdue follow-up visible. Until migration
-// 0077 a reminder that came due produced nothing at all, so the only way to
-// find one was to remember it existed.
-//
-// A notification is addressed to a person, not to an artist scope: the
-// database returns only the signed-in profile's own rows. The artist name on a
-// card is a label saying which scope the work sits in, not a statement about
-// who else can see it.
+// A notification is addressed to a person, not to an artist scope. Personal
+// Telegram delivery is configured here for the same reason: it belongs to the
+// signed-in profile and must never be confused with an Artist's shared group.
 
 import { useCallback, useState } from 'react';
+import { TelegramConnectionCard } from '../components/TelegramConnectionCard';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useLanguage } from '../lib/i18n';
@@ -30,8 +26,18 @@ export function NotificationsPage() {
   const { language } = useLanguage();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [telegramBusy, setTelegramBusy] = useState(false);
+  const [telegramActionError, setTelegramActionError] = useState<string | null>(null);
 
   const state = useAsync(() => api.listNotifications(), [api]);
+  const telegramState = useAsync(async () => {
+    const [info, destinations, notificationsEnabled] = await Promise.all([
+      api.getTelegramConnectorInfo(),
+      api.listTelegramDestinations(),
+      api.getTelegramNotificationsEnabled(),
+    ]);
+    return { info, destinations, notificationsEnabled };
+  }, [api]);
 
   const act = useCallback(
     async (id: string, run: () => Promise<unknown>) => {
@@ -49,29 +55,93 @@ export function NotificationsPage() {
     [state],
   );
 
-  if (state.loading) return <LoadingState />;
-  if (state.error) return <ErrorState message={state.error} onRetry={state.reload} />;
+  async function setTelegramNotifications(enabled: boolean) {
+    setTelegramBusy(true);
+    setTelegramActionError(null);
+    try {
+      await api.setTelegramNotificationsEnabled(enabled);
+      telegramState.reload();
+    } catch (cause) {
+      setTelegramActionError(cause instanceof Error ? cause.message : 'Could not update Telegram notifications.');
+    } finally {
+      setTelegramBusy(false);
+    }
+  }
 
   const notifications = state.data ?? [];
   const unread = notifications.filter((item) => item.status !== 'read');
   const read = notifications.filter((item) => item.status === 'read');
-
-  if (notifications.length === 0) {
-    return (
-      <EmptyState
-        title={language === 'ru' ? 'Пока ничего' : 'Nothing waiting'}
-        hint={language === 'ru'
-          ? 'Здесь появятся напоминания и уведомления, адресованные вам.'
-          : 'Reminders and notifications addressed to you will appear here.'}
-      />
-    );
-  }
+  const personalTelegram = telegramState.data?.destinations.find(
+    (destination) => destination.destination_kind === 'profile',
+  ) ?? null;
 
   return (
     <div className="stack">
+      <Section title={language === 'ru' ? 'Личные уведомления' : 'Personal delivery'}>
+        {telegramState.loading ? <LoadingState /> : null}
+        {telegramState.error ? (
+          <ErrorState message={telegramState.error} onRetry={telegramState.reload} />
+        ) : null}
+        {!telegramState.loading && !telegramState.error && personalTelegram ? (
+          <div className="stack">
+            <TelegramConnectionCard
+              destination={personalTelegram}
+              botUsername={telegramState.data?.info.bot_username ?? null}
+              onChanged={telegramState.reload}
+            />
+            {telegramActionError ? <ErrorState message={telegramActionError} /> : null}
+            {personalTelegram.is_connected ? (
+              <div className="card">
+                <div className="card-header">
+                  <strong>{language === 'ru' ? 'Доставка уведомлений' : 'Notification delivery'}</strong>
+                  <span className={`badge badge-${telegramState.data?.notificationsEnabled ? 'connected' : 'not_connected'}`}>
+                    {telegramState.data?.notificationsEnabled
+                      ? (language === 'ru' ? 'Включена' : 'Enabled')
+                      : (language === 'ru' ? 'Выключена' : 'Disabled')}
+                  </span>
+                </div>
+                <p className="muted">
+                  {language === 'ru'
+                    ? 'В CRM уведомления остаются всегда. Telegram является дополнительным личным каналом доставки.'
+                    : 'Notifications always remain in the CRM. Telegram is an optional personal delivery channel.'}
+                </p>
+                <div className="actions">
+                  <button
+                    type="button"
+                    disabled={telegramBusy || telegramState.data?.notificationsEnabled === true}
+                    onClick={() => { void setTelegramNotifications(true); }}
+                  >
+                    {language === 'ru' ? 'Включить Telegram' : 'Enable Telegram'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={telegramBusy || telegramState.data?.notificationsEnabled !== true}
+                    onClick={() => { void setTelegramNotifications(false); }}
+                  >
+                    {language === 'ru' ? 'Выключить Telegram' : 'Disable Telegram'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Section>
+
       {actionError ? <ErrorState message={actionError} /> : null}
 
-      {unread.length > 0 ? (
+      {state.loading ? <LoadingState /> : null}
+      {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : null}
+
+      {!state.loading && !state.error && notifications.length === 0 ? (
+        <EmptyState
+          title={language === 'ru' ? 'Пока ничего' : 'Nothing waiting'}
+          hint={language === 'ru'
+            ? 'Здесь появятся напоминания и уведомления, адресованные вам.'
+            : 'Reminders and notifications addressed to you will appear here.'}
+        />
+      ) : null}
+
+      {!state.loading && !state.error && unread.length > 0 ? (
         <Section title={`${language === 'ru' ? 'Новые' : 'Unread'} (${unread.length})`}>
           <ul className="card-list">
             {unread.map((item) => (
@@ -91,7 +161,7 @@ export function NotificationsPage() {
         </Section>
       ) : null}
 
-      {read.length > 0 ? (
+      {!state.loading && !state.error && read.length > 0 ? (
         <Section title={language === 'ru' ? 'Прочитанные' : 'Read'}>
           <ul className="card-list">
             {read.map((item) => (
@@ -160,13 +230,6 @@ function NotificationCard({
   );
 }
 
-/**
- * Where a notification points.
- *
- * A follow-up has no screen of its own, so it links to whatever it is about.
- * A notification whose target the CRM cannot open gets no link rather than a
- * link to nowhere.
- */
 function entityLink(notification: CrmNotification): string | null {
   if (!notification.entity_type || !notification.entity_id) return null;
   switch (notification.entity_type) {
