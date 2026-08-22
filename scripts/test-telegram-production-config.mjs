@@ -120,13 +120,19 @@ for (const needle of [
   'approved_sha',
   'enable_linking:',
   'linking_approval_phrase:',
+  'disable_linking:',
+  'linking_rollback_phrase:',
   "'ENABLE_PRIVATE_CRM_TELEGRAM_DRAIN'",
   "'ENABLE_TELEGRAM_LINKING'",
+  "'DISABLE_TELEGRAM_LINKING'",
+  'enable_linking and disable_linking are mutually exclusive',
   'enable_linking=true is valid only with deploy=true',
+  'disable_linking=true is valid only with deploy=true',
   'wrangler.telegram-drain.production.toml',
   'node scripts/generate-telegram-production-deploy-config.mjs',
   'generator_args+=(--enable-linking)',
   'preflight_args+=(--allow-linking)',
+  'preflight_args+=(--allow-linking-disable)',
   'GMAIL_SHARED_DRAIN_ENABLED = "true"',
   'binding = "GMAIL_SERVICE"',
   'service = "vishar-gmail-production"',
@@ -156,4 +162,4 @@ for (const needle of [
   'GMAIL_TOKEN_ENCRYPTION_KEY',
 ]) expectExcludes(workflow, needle, 'production workflow');
 
-console.log('Telegram production configuration boundaries: Gmail shared cron preserved; linking requires a separate approval gate.');
+console.log('Telegram production configuration boundaries: Gmail shared cron preserved; linking enable and rollback require separate approvals.');
