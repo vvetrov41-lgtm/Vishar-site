@@ -526,6 +526,10 @@ insert into expected_function_acl values
   ('public.claim_telegram_outbox(text,integer,integer)', false, false, true),
   ('public.claim_telegram_outbox_by_id(uuid,text,integer)', false, false, true),
   ('public.record_telegram_outbox_result(uuid,text,boolean,text)', false, false, true),
+  ('public.service_complete_telegram_link(text,text,text)', false, false, true),
+  ('public.service_resolve_telegram_destination(uuid,uuid)', false, false, true),
+  ('public.service_claim_telegram_notifications(text,integer,integer)', false, false, true),
+  ('public.service_record_telegram_notification_result(uuid,text,boolean,text)', false, false, true),
   ('public.resolve_outbox_route(uuid)', false, false, true),
   ('public.list_incomplete_intakes(integer,integer)', false, false, true),
   ('public.resolve_booking_source(text,text,text)', false, false, true),
@@ -607,6 +611,11 @@ insert into expected_function_acl values
   ('public.request_grouped_session_deposit(uuid[],uuid,text)', false, true, false),
   ('public.get_session_deposit_group(uuid)', false, true, false),
   ('public.attach_monzo_one_off_payment_destination(uuid,text)', false, true, false),
+  ('public.get_telegram_connector_info()', false, true, false),
+  ('public.configure_telegram_connector_identity(text)', false, true, false),
+  ('public.list_telegram_destinations()', false, true, false),
+  ('public.begin_telegram_link(text,uuid)', false, true, false),
+  ('public.disconnect_telegram_destination(text,uuid)', false, true, false),
 
   -- Reusable destination catalogue administration. Finance-authorised browser
   -- callers only; the reads return fingerprints rather than provider URLs, and
