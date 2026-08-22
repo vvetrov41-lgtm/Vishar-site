@@ -1,7 +1,7 @@
 // Narrow Supabase client for the trusted Worker.
 //
 // This client can call only the RPCs listed below. It has no generic table
-// endpoint, no query builder and no way to send arbitrary SQL — the backend key
+// endpoint, no query builder and no way to send arbitrary SQL - the backend key
 // it carries is powerful, so the call surface is kept deliberately small.
 //
 // The key is never logged, never echoed in an error, and never returned to a
@@ -23,6 +23,10 @@ export const ALLOWED_RPCS = new Set([
   'claim_telegram_outbox_by_id',
   'claim_telegram_outbox',
   'record_telegram_outbox_result',
+  'service_complete_telegram_link',
+  'service_resolve_telegram_destination',
+  'service_claim_telegram_notifications',
+  'service_record_telegram_notification_result',
   'claim_calendar_outbox',
   'record_calendar_outbox_result',
   'claim_calendar_availability_outbox',
