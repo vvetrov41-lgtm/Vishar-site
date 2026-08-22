@@ -15,27 +15,28 @@ const required = [
   'main = "workers/telegram-drain-worker.js"',
   'workers_dev = false',
   'preview_urls = false',
+  '{ pattern = "telegram.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }',
   'VISHAR_ENVIRONMENT = "production"',
   'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"',
   'TELEGRAM_DRAIN_ENABLED = "false"',
+  'TELEGRAM_LINKING_ENABLED = "false"',
 ];
 for (const needle of required) {
   if (!text.includes(needle)) throw new Error(`production template is missing ${needle}`);
 }
 
-const forbidden = [
-  'gwaliusblwrzisrwnsvs',
-  'vishar-telegram-drain-staging',
-  'vladimir-staging',
-  'kristina-staging',
-  'TELEGRAM_BOT_TOKEN',
-  'TELEGRAM_CHAT_ID',
-];
 const directives = text
   .split('\n')
   .map((line) => line.replace(/(^|\s)#.*$/, '').trim())
   .filter(Boolean)
   .join('\n');
+const forbidden = [
+  'gwaliusblwrzisrwnsvs',
+  'vishar-telegram-drain-staging',
+  'vladimir-staging',
+  'kristina-staging',
+  'TELEGRAM_CHAT_ID',
+];
 for (const needle of forbidden) {
   if (directives.includes(needle)) throw new Error(`production template contains forbidden staging/global token: ${needle}`);
 }
@@ -47,6 +48,9 @@ text = text.replace('TELEGRAM_DRAIN_ENABLED = "false"', 'TELEGRAM_DRAIN_ENABLED 
 if (!text.includes('TELEGRAM_DRAIN_ENABLED = "true"')) {
   throw new Error('failed to enable the production drain in generated config');
 }
+if (!text.includes('TELEGRAM_LINKING_ENABLED = "false"')) {
+  throw new Error('generated production config must keep Telegram linking disabled');
+}
 
-text += `\n[triggers]\ncrons = ["*/5 * * * *"]\n\n[secrets]\nrequired = [\n  "SUPABASE_SECRET_KEY",\n  "ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION",\n  "ARTIST_TELEGRAM_KRISTINA_HPRODUCTION",\n]\n`;
+text += `\n[triggers]\ncrons = ["*/5 * * * *"]\n\n[secrets]\nrequired = [\n  "SUPABASE_SECRET_KEY",\n  "ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION",\n  "ARTIST_TELEGRAM_KRISTINA_HPRODUCTION",\n  "TELEGRAM_BOT_TOKEN",\n  "TELEGRAM_WEBHOOK_SECRET",\n]\n`;
 fs.writeFileSync(output, text, { mode: 0o600 });
