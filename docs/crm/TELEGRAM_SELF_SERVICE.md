@@ -2,266 +2,313 @@
 
 Status: Phase F-G implementation contract, Draft PR #391. Nothing in this file implies production activation.
 
-## 1. Two different destinations
+## 1. Two destination types
 
-Telegram is intentionally split into two concepts that must never share an address implicitly.
+Telegram intentionally has two independent destination scopes.
 
 ### Personal destination
 
-A personal destination belongs to one CRM profile.
-
-- target key: `profile_id`
-- accepted Telegram chat type: `private`
-- purpose: CRM -> one person
-- example: reminders and internal notifications addressed to that operator
+- target: one CRM `profile_id`
+- Telegram chat type: `private`
+- purpose: internal CRM reminders and notifications addressed to that person
 - preference: `public.notification_preferences`, channel `telegram`
 - private address mirror: `crm_private.profile_notification_targets`
 
-A personal notification must never be delivered to an Artist's shared group just because the recipient works for that Artist.
+A personal notification must never be routed to an Artist group merely because the person works for that Artist.
 
-### Artist/shared destination
+### Artist shared destination
 
-An Artist destination belongs to one Artist operational scope.
+- target: one `artist_id`
+- Telegram chat type: `group` or `supergroup`
+- purpose: Artist operational notifications
+- management authority: current `manage_integrations` for that Artist
 
-- target key: `artist_id`
-- accepted Telegram chat types: `group` or `supergroup`
-- purpose: Artist business -> shared operational destination
-- management authority: `manage_integrations` for that exact Artist
-
-A manager who can configure Artist A cannot link or replace Artist B's group.
+A manager with access to Artist A cannot link or replace Artist B's group.
 
 ## 2. Private destination registry
 
-Migration `0086_telegram_self_service.sql` introduces `crm_private.telegram_destinations`.
+Migration `0086_telegram_self_service.sql` introduces:
 
-Chat IDs are capability-bearing routing values and remain server-only. They are not returned by browser RPCs, GPT actions or MCP tools.
+- `crm_private.telegram_destinations`
+- `crm_private.telegram_link_sessions`
+- `crm_private.telegram_connector_settings`
+- `crm_private.telegram_notification_deliveries`
 
-The safe browser list exposes only:
+Chat IDs are capability-bearing routing values. They remain server-only and are not returned by browser RPCs, GPT actions or MCP tools.
 
-- destination kind;
-- Artist id when the target is Artist-scoped;
-- safe target label;
-- connected/not-connected state;
-- safe display label;
-- connection time.
+The safe browser surface exposes only destination kind, Artist id when applicable, safe labels, connection state and timestamps.
 
 ## 3. Single-use linking
 
-`public.begin_telegram_link()` creates a ten-minute challenge.
+`public.begin_telegram_link()` creates a roughly ten-minute challenge.
 
-The raw start parameter is returned once to the authenticated CRM surface. PostgreSQL stores only its SHA-256 digest in `crm_private.telegram_link_sessions`.
+The raw start parameter is returned once to the authenticated CRM surface. PostgreSQL stores only its SHA-256 digest. Starting a second challenge for the same target invalidates the earlier unconsumed challenge.
 
-Starting another challenge for the same target invalidates the previous unconsumed challenge.
+The public bot identity is stored separately from credentials. The shared bot created for this rollout is:
 
-The CRM builds Telegram links as follows:
+`VisharCRMBot`
 
-- personal destination: `https://t.me/<bot>?start=<token>`
-- Artist group: `https://t.me/<bot>?startgroup=<token>`
+Expected links after migration 0086 is deployed and the connector identity is configured:
 
-The Worker accepts the resulting `/start <token>` or `/start@<bot> <token>` message only on the exact `/webhook` endpoint.
+- personal: `https://t.me/VisharCRMBot?start=<token>`
+- Artist group: `https://t.me/VisharCRMBot?startgroup=<token>`
 
-## 4. Completion re-checks authority
+The opaque token carries no Artist id and no chat id.
 
-The Telegram provider callback does not decide who owns the destination. The stored linking session does.
+Telegram Privacy Mode should remain enabled. A command addressed to the bot, including the group `/start@VisharCRMBot <token>` command produced by `startgroup`, is still delivered to the bot. There is no reason for the bot to receive ordinary group messages.
 
-`public.service_complete_telegram_link()` is backend-only and:
+## 4. Completion re-checks current authority
+
+`public.service_complete_telegram_link()` is backend-only. It:
 
 1. hashes the supplied token;
 2. locks one unconsumed, unexpired, non-invalidated session;
-3. validates the Telegram chat id and chat type;
-4. re-checks the target's current authorization;
+3. validates Telegram chat id and chat type;
+4. re-checks current CRM authorization;
 5. writes or replaces exactly that target's private destination;
 6. consumes the challenge.
 
-For an Artist target, the requester must still be an active CRM profile with current `manage_integrations` authority for that Artist when completion occurs. Revoking access after challenge creation therefore closes the link before it can be consumed.
+For an Artist target, the requester must still have current `manage_integrations` authority when completion happens. Revoking access after challenge creation therefore blocks completion.
 
-For a personal target, the profile must still be active and the chat must be private.
+For a personal target, the CRM profile must still be active and the Telegram chat must be private.
 
-## 5. Internal notification delivery
+## 5. Personal notification delivery
 
-In-app notifications remain the canonical record.
+In-app notifications remain canonical.
 
-Telegram delivery uses `crm_private.telegram_notification_deliveries`, a separate lease/retry state. Reading or dismissing the CRM notification does not rewrite external delivery history.
+Telegram delivery has separate lease/retry state in `crm_private.telegram_notification_deliveries`. Reading a CRM notification does not rewrite external-delivery history.
 
-Linking Telegram does not replay an old in-app backlog. A delivery row is materialised only for notifications created after the currently active personal destination was connected.
+Linking Telegram does not replay the historical in-app backlog. Delivery rows are materialised only for notifications created after the current personal destination was connected.
 
-Before leasing a delivery the backend re-checks:
+Before external delivery, the backend re-checks:
 
 - active profile;
-- enabled personal Telegram preference;
+- enabled Telegram notification preference;
 - active Telegram destination;
-- current Artist scope when `notification.artist_id` is present;
-- current workspace scope when `notification.workspace_id` is present.
+- current Artist access when `notification.artist_id` is present;
+- current workspace access when `notification.workspace_id` is present.
 
-Revocation therefore stops future personal Telegram delivery as well as hiding inaccessible notification content in the CRM.
+Revoked scope therefore blocks future external delivery.
 
-## 6. Shared bot and legacy fallback
+## 6. Shared bot and legacy Artist fallback
 
-The new route uses one encrypted Worker secret:
+The shared bot credential is an encrypted Cloudflare Worker secret:
 
 `TELEGRAM_BOT_TOKEN`
 
-Artist chat IDs are resolved from the private destination registry. Personal chat IDs are returned only by the narrow backend claim RPC.
+It must never be committed, logged, placed in Supabase, placed in a PR body, or pasted into a chat.
 
-The existing production bindings remain required during Phase G:
+During Phase G the two existing Artist-specific encrypted bindings remain required:
 
 - `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`
 - `ARTIST_TELEGRAM_KRISTINA_HPRODUCTION`
 
-Worker behavior during rollout is deliberate:
+Delivery behavior during transition:
 
-1. without the shared bot token, the existing Artist binding path remains canonical and the new destination resolver is not called;
-2. with the shared bot token, the Worker prefers the matching private Artist destination;
-3. if no registry row exists, or registry resolution itself fails, the Worker falls back to the same Artist's existing encrypted binding;
-4. it never tries another Artist's destination.
+1. without the shared bot token, the old same-Artist binding remains canonical and the DB destination resolver is not required;
+2. with the shared bot token, the Worker prefers the matching private DB Artist destination;
+3. if that destination does not exist, or resolver lookup fails, the Worker falls back only to the same Artist's legacy binding;
+4. it never tries another Artist and there is no global Telegram chat-id fallback.
 
-The old Artist bindings are removed only after DB-backed delivery has been proven for each migrated Artist in production.
+Legacy bindings are retired only after DB-backed delivery is proven per Artist in production.
 
 ## 7. Provider webhook boundary
 
-The tracked production Worker declares the Custom Domain:
+Target Custom Domain:
 
 `telegram.vishartattoo.com`
 
-The Worker accepts linking traffic only at:
+Exact callback:
 
 `https://telegram.vishartattoo.com/webhook`
 
-`TELEGRAM_LINKING_ENABLED` is `false` in both the tracked config and the generated Phase G drain deployment config. While it is false, HTTP linking returns 404.
-
-When linking is later activated, the Worker also requires the encrypted secret:
+The Worker rejects every other HTTP path. When linking is enabled it also requires:
 
 `TELEGRAM_WEBHOOK_SECRET`
 
-The callback must present the same value in Telegram's `X-Telegram-Bot-Api-Secret-Token` header. Unknown Telegram updates are acknowledged without database access so they do not become a provider retry loop.
+Telegram must present that same secret in `X-Telegram-Bot-Api-Secret-Token`.
 
-Cloudflare Access must not sit in front of the provider callback. Authentication is the Telegram webhook secret plus the server-owned single-use challenge.
+Unknown Telegram updates are acknowledged without DB access to avoid provider retry loops. Invalid, expired, revoked or consumed linking challenges are deliberately opaque. Transient backend 5xx/429 failures return a retryable response so a valid unconsumed challenge is not silently lost.
 
-## 7a. Live production already shares this Worker with Gmail
+Cloudflare Access must not sit in front of this provider callback.
 
-Read this before deploying anything to `vishar-telegram-drain-production`.
+## 7a. Live production Worker also schedules Gmail
 
-Live production state, read from the Cloudflare API on 2026-08-22:
+This is a critical production invariant.
 
-| | |
+Read-only Cloudflare audit on 2026-08-22 found the live `vishar-telegram-drain-production` Worker already owns the shared five-minute scheduler used by both Telegram and Gmail.
+
+Observed live state:
+
+| Item | Live state |
 | --- | --- |
-| Active version | `c6fc73e8-281a-4715-86c5-ae2d7d43e9b1`, deployed 2026-08-19 via wrangler |
-| Cron | `*/5 * * * *`, created 2026-08-14 |
-| `workers.dev` / preview URLs | disabled |
+| Active version | `c6fc73e8-281a-4715-86c5-ae2d7d43e9b1` |
+| Deployment date | 2026-08-19 |
+| Cron | `*/5 * * * *` |
+| `workers.dev` | disabled |
+| preview URLs | disabled |
 | compatibility date | `2026-05-25` |
-| Secrets (names only) | `ARTIST_TELEGRAM_KRISTINA_HPRODUCTION`, `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`, `SUPABASE_SECRET_KEY` |
-| Other bindings | `GMAIL_SERVICE` → `vishar-gmail-production`, `GMAIL_SHARED_DRAIN_ENABLED="true"`, `SUPABASE_URL`, `TELEGRAM_DRAIN_ENABLED="true"`, `VISHAR_ENVIRONMENT` |
+| secret names | `ARTIST_TELEGRAM_KRISTINA_HPRODUCTION`, `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`, `SUPABASE_SECRET_KEY` |
+| service binding | `GMAIL_SERVICE -> vishar-gmail-production` |
+| Gmail flag | `GMAIL_SHARED_DRAIN_ENABLED="true"` |
 
-The last row is the problem. This Worker's five-minute cron currently drives **two**
-jobs: the Telegram outbox drain, and the Gmail approved-email outbox drain
-dispatched through the `GMAIL_SERVICE` service binding.
+Cloudflare plain-text vars and Service Bindings are deployment configuration. A new Wrangler deploy can replace them. Therefore a Telegram self-service deploy that omitted the Gmail binding or its Worker dispatch would stop the production Gmail approved-email drain.
 
-That second job comes from `agent/gmail-shared-cron-drain` (PR #367), which is
-still an open Draft and is **not** in this branch's lineage. Neither binding
-appears anywhere in this branch — not in the tracked config, not in the
-generator, not in the Worker source.
+PR #391 now explicitly carries the already-live Gmail shared scheduler contract rather than merely detecting it:
 
-Cloudflare's deploy semantics decide what happens next. Secrets survive a
-deploy and are only removed by `wrangler secret delete`. Plain-text vars and
-service bindings do not: they are replaced wholesale by the deployed
-configuration, and `--strict` enforces exactly that. So deploying this branch as
-it stands would remove `GMAIL_SERVICE` and `GMAIL_SHARED_DRAIN_ENABLED`, replace
-the script with one that has no `runSharedGmailDrain`, and **stop Gmail email
-delivery in production** — with nothing in CI to notice, because CI never sees
-live Cloudflare state.
+- tracked config contains inert `GMAIL_SHARED_DRAIN_ENABLED="false"`;
+- generated production config sets `GMAIL_SHARED_DRAIN_ENABLED="true"`;
+- generated config adds `GMAIL_SERVICE -> vishar-gmail-production`;
+- `workers/telegram-drain-worker.js` preserves the bounded `drainApprovedEmailOutbox()` Service Binding call;
+- no Gmail OAuth secret, token-encryption secret, KV binding or provider credential moves into the Telegram Worker.
 
-`scripts/preflight-telegram-production.mjs` now blocks that. It reads live
-bindings, secret names, cron, `workers.dev`, Custom Domains, DNS, zone routes
-and Cloudflare Access apps, and fails if a deploy would remove any live binding
-production is running on. It runs twice in the guarded workflow: once in
-`--report-only` mode on every run, and once as a hard gate immediately before
-`wrangler deploy --strict`.
-
-Resolving it is a decision for whoever sequences the two workstreams, and there
-are only two honest options:
-
-1. Land the Gmail shared-cron work first, then rebase this branch onto it so the
-   tracked config and generator carry both bindings; or
-2. Carry `GMAIL_SERVICE` and `GMAIL_SHARED_DRAIN_ENABLED` into this branch's
-   tracked config and generator explicitly, accepting that two Draft PRs now
-   describe the same Worker.
-
-Deploying before one of those is done is the one thing that must not happen.
+`scripts/preflight-telegram-production.mjs` reads live Cloudflare state before deployment and blocks silent removal of live replaceable bindings. It also validates the Gmail target, live Gmail flag, secret names, cron, Custom Domain conflicts, DNS conflicts, Cloudflare Access, `workers.dev`, previews and linking state transitions.
 
 ## 8. Production activation order
 
-Production activation is intentionally separate from this Draft implementation.
+Production remains unchanged until separately approved.
 
-1. Create the one shared Vishar CRM Telegram bot through BotFather and record its
-   token and public username. Nothing below can be pre-provisioned without it:
-   `TELEGRAM_BOT_TOKEN` is that token, and the CRM connector identity is that
-   username. This is the single step that has no repository, Cloudflare or
-   database representation, so it has to happen first.
-2. Apply the stacked database migrations through `0086` using the normal production database release gate.
-3. Provision the Telegram Custom Domain and verify it points only to `vishar-telegram-drain-production`.
+### Step 1. Shared bot
 
-   Confirmed against the Cloudflare API, not just DNS: the account holds 14
-   Worker Custom Domains and `telegram.vishartattoo.com` is not one of them, has
-   no DNS record, is claimed by no zone route, and is covered by no Cloudflare
-   Access app. The hostname is free. Every sibling integration domain follows
-   the same shape - zone `vishartattoo.com`, `environment = production`, an edge
-   certificate, and a proxied `AAAA 100::` placeholder record - and the tracked
-   config already declares the route that way, so `wrangler deploy --strict`
-   creates it. A `--dry-run` does not create routes, so a green dry-run is not
-   evidence that this domain attaches cleanly; the first real deploy is where
-   that is proven.
+Already completed externally.
 
-   Note that `whatsapp` and `instagram`, the two existing provider callbacks,
-   have no Access app in front of them. Telegram's callback must stay the same
-   way, and the preflight fails if an Access policy ever covers it.
-4. Pre-provision exactly five Worker secrets:
-   - `SUPABASE_SECRET_KEY`
-   - `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`
-   - `ARTIST_TELEGRAM_KRISTINA_HPRODUCTION`
-   - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_WEBHOOK_SECRET`
-5. Deploy the Worker through the guarded release workflow. This enables the scheduled drain but deliberately leaves `TELEGRAM_LINKING_ENABLED=false`.
-6. Verify Vladimir and Kristina's legacy Artist alerts still deliver through their existing bindings.
-7. Configure the public bot username in the CRM. This is public identity only, not a credential.
-8. Register Telegram's webhook to the exact `/webhook` URL with the same secret-token value:
+Public username:
 
-   ```
-   TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=... \
-     node scripts/activate-telegram-webhook.mjs register --confirm
-   ```
+`VisharCRMBot`
 
-   `verify` (the default) is read-only and needs only the bot token; `delete`
-   is the rollback. The tool accepts no URL argument - it can only ever point
-   at `https://telegram.vishartattoo.com/webhook`, it refuses to act without
-   `--confirm`, it fails if Telegram settles on any other URL, and it redacts
-   the token out of Telegram's own error text before printing anything.
+The token is private and remains outside the repo and chat history.
 
-   This is a script rather than a GitHub workflow on purpose. Automating one
-   HTTPS call would mean storing the bot token and the webhook secret as GitHub
-   secrets. GitHub already holds a Cloudflare API token because deploying is
-   impossible without it; these two are avoidable, so they stay only in the
-   encrypted Cloudflare Worker secrets where they are actually needed.
-9. Enable linking in a separately reviewed production config change.
-10. Link and prove one personal destination.
-11. Link and prove each Artist group one at a time. The DB route becomes preferred only for that Artist; the old binding remains fallback.
-12. After production evidence shows stable DB-backed delivery per Artist, remove the corresponding legacy static binding in a separate cleanup release.
+### Step 2. Database stack
 
-Steps 1, 4, 8 and any external provider authorization require BotFather access,
-production secrets or provider controls. None of them are performed by an
-application migration, by CI, or by the guarded deploy workflow.
+Apply the normal production migration lineage through `0086` only through the protected production database release process.
 
-The guarded workflow fails closed before any of this is ready: its secret-name
-check requires the exact five-name set above, and `TELEGRAM_BOT_TOKEN` and
-`TELEGRAM_WEBHOOK_SECRET` do not exist until steps 1 and 4 are done.
+Production was still at migration `0073` at the last verified check, so this is not a one-migration deployment. The full stacked lineage `0074` through `0086` must be handled as the normal platform rollout.
 
-## 9. Rollback
+### Step 3. Connector identity
 
-Rollback does not require deleting destination history.
+After `0086` exists in production, configure the public bot username through the CRM owner RPC:
 
-- `TELEGRAM_LINKING_ENABLED=false` immediately closes the public linking surface while leaving scheduled delivery intact.
-- Disconnecting one destination deactivates only that target.
-- Disabling a personal Telegram preference stops external personal delivery while retaining in-app notifications.
-- Removing or failing the shared resolver path leaves the legacy same-Artist binding fallback in place during Phase G.
-- Existing static Artist bindings are not removed as part of the self-service foundation release.
+`VisharCRMBot`
 
-There is no global chat-id fallback.
+No bot token belongs in the database.
+
+### Step 4. Cloudflare secrets
+
+The production Telegram Worker must have exactly these encrypted secret names during Phase G:
+
+- `SUPABASE_SECRET_KEY`
+- `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`
+- `ARTIST_TELEGRAM_KRISTINA_HPRODUCTION`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_WEBHOOK_SECRET`
+
+The two legacy Artist secrets remain until migration equivalence is proven.
+
+### Step 5. First guarded Worker deploy, linking still off
+
+Run the protected production Telegram deployment with normal deploy approval and:
+
+- `enable_linking=false`
+- `disable_linking=false`
+
+Generated state:
+
+- Telegram drain enabled;
+- Gmail shared drain enabled;
+- `GMAIL_SERVICE -> vishar-gmail-production` preserved;
+- exact cron `*/5 * * * *`;
+- linking disabled;
+- Custom Domain declared;
+- `workers.dev=false`;
+- preview URLs disabled.
+
+This first real `wrangler deploy --strict` is also where creation of `telegram.vishartattoo.com` is actually proven. A dry-run cannot prove Custom Domain attachment.
+
+After deployment verify:
+
+- deployed Worker/version;
+- one exact five-minute cron;
+- Gmail Service Binding still present;
+- Gmail shared drain still functioning;
+- Vladimir and Kristina legacy Telegram alerts still functioning;
+- `https://telegram.vishartattoo.com/webhook` returns 404 while linking is off;
+- no Cloudflare Access app covers the callback.
+
+### Step 6. Enable linking through the separate gate
+
+A second production Worker deployment enables linking. It requires all normal production approval plus:
+
+`ENABLE_TELEGRAM_LINKING`
+
+The workflow generates `TELEGRAM_LINKING_ENABLED="true"` only when that independent gate is present. The preflight also requires `--allow-linking`.
+
+This deploy still preserves Telegram drain, Gmail shared drain, cron and legacy fallback.
+
+### Step 7. Register Telegram webhook
+
+Only after the linking-enabled Worker is live, register Telegram's webhook:
+
+`https://telegram.vishartattoo.com/webhook`
+
+Use `scripts/activate-telegram-webhook.mjs`. The tool accepts no arbitrary URL, register/delete require `--confirm`, and output redacts credentials.
+
+`verify` is read-only. Registration must use the same secret value as the encrypted Worker secret `TELEGRAM_WEBHOOK_SECRET`.
+
+Immediately verify Telegram reports the exact callback URL.
+
+### Step 8. Controlled E2E
+
+Prove in this order:
+
+1. one personal destination;
+2. Vladimir shared Artist group;
+3. Kristina shared Artist group;
+4. legacy same-Artist fallback remains available;
+5. no cross-Artist routing.
+
+Only after stable evidence should legacy Artist bindings be considered for a later cleanup release.
+
+## 9. Linking rollback
+
+The routine production deploy is deliberately unable to silently change a live linking state.
+
+If linking is already live and a generated config would disable it, Cloudflare preflight fails unless the dedicated rollback gate is used.
+
+The guarded rollback requires:
+
+- `deploy=true`;
+- `disable_linking=true`;
+- `enable_linking=false`;
+- normal production deploy phrase;
+- separate rollback phrase `DISABLE_TELEGRAM_LINKING`.
+
+That deploy sets `TELEGRAM_LINKING_ENABLED=false` while preserving Telegram scheduled delivery, Gmail shared drain, the five-minute cron and legacy Artist fallback.
+
+After an emergency rollback, Telegram webhook registration can be deleted separately with the guarded activation tool if required. Destination history does not need to be deleted.
+
+Other rollback properties:
+
+- disconnecting one destination deactivates only that target;
+- disabling a personal Telegram preference stops external personal delivery while retaining in-app notifications;
+- failure or absence of a DB Artist destination retains same-Artist legacy fallback during Phase G;
+- no global chat-id fallback exists.
+
+## 10. Future Artist invariant
+
+After cutover, onboarding a new Artist must not require:
+
+- GitHub code changes;
+- Wrangler changes;
+- a new Worker;
+- a new Cloudflare secret;
+- a new Telegram bot;
+- a Supabase migration;
+- a hard-coded Artist id.
+
+Expected Artist flow:
+
+CRM -> Integrations -> Telegram -> Connect shared group -> `t.me/VisharCRMBot?startgroup=<challenge>` -> select group -> connected.
+
+Expected personal flow:
+
+CRM -> Notifications -> Connect Telegram -> `t.me/VisharCRMBot?start=<challenge>` -> private chat -> connected.
