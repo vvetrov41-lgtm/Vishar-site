@@ -94,6 +94,18 @@ jobs:
           npm run check:telegram-production-bundle
           npm run scan:secrets
 
+      - name: Cloudflare production preflight (report only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          preflight_config="$RUNNER_TEMP/telegram.preflight.toml"
+          node scripts/generate-telegram-production-deploy-config.mjs "$preflight_config"
+          node scripts/preflight-telegram-production.mjs "$preflight_config" --report-only
+          rm -f "$preflight_config"
+
       - name: Verify exact pre-provisioned production Worker secret names
         if: ${{ inputs.deploy }}
         env:
@@ -133,6 +145,11 @@ jobs:
           grep -Fq 'TELEGRAM_LINKING_ENABLED = "false"' "$deploy_config"
           grep -Fq 'telegram.vishartattoo.com' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
+
+          # Live Cloudflare state is the authority on what production is running.
+          # A deploy may add bindings; it may never silently remove one that
+          # production depends on. This gates on that.
+          node scripts/preflight-telegram-production.mjs "$deploy_config"
 
           XDG_CONFIG_HOME=.wrangler/config \
           WRANGLER_LOG_PATH=.wrangler/telegram-production-wrangler.log \
@@ -214,5 +231,6 @@ jobs:
             echo '- Existing Vladimir/Kristina Artist bindings remain required as the Phase G fallback'
             echo '- Shared bot token and webhook secret must be pre-provisioned, but their values are never read or printed'
             echo '- There is no global Telegram chat-id binding; DB destinations are server-only'
+            echo '- Cloudflare preflight compares live bindings against the deploy config and blocks any silent removal'
             echo '- This workflow never runs secret put/bulk, setWebhook, Pages deploy or Supabase migration commands'
           } >> "$GITHUB_STEP_SUMMARY"

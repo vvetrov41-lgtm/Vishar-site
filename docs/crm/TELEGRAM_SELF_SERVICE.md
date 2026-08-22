@@ -137,6 +137,57 @@ The callback must present the same value in Telegram's `X-Telegram-Bot-Api-Secre
 
 Cloudflare Access must not sit in front of the provider callback. Authentication is the Telegram webhook secret plus the server-owned single-use challenge.
 
+## 7a. Live production already shares this Worker with Gmail
+
+Read this before deploying anything to `vishar-telegram-drain-production`.
+
+Live production state, read from the Cloudflare API on 2026-08-22:
+
+| | |
+| --- | --- |
+| Active version | `c6fc73e8-281a-4715-86c5-ae2d7d43e9b1`, deployed 2026-08-19 via wrangler |
+| Cron | `*/5 * * * *`, created 2026-08-14 |
+| `workers.dev` / preview URLs | disabled |
+| compatibility date | `2026-05-25` |
+| Secrets (names only) | `ARTIST_TELEGRAM_KRISTINA_HPRODUCTION`, `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`, `SUPABASE_SECRET_KEY` |
+| Other bindings | `GMAIL_SERVICE` → `vishar-gmail-production`, `GMAIL_SHARED_DRAIN_ENABLED="true"`, `SUPABASE_URL`, `TELEGRAM_DRAIN_ENABLED="true"`, `VISHAR_ENVIRONMENT` |
+
+The last row is the problem. This Worker's five-minute cron currently drives **two**
+jobs: the Telegram outbox drain, and the Gmail approved-email outbox drain
+dispatched through the `GMAIL_SERVICE` service binding.
+
+That second job comes from `agent/gmail-shared-cron-drain` (PR #367), which is
+still an open Draft and is **not** in this branch's lineage. Neither binding
+appears anywhere in this branch — not in the tracked config, not in the
+generator, not in the Worker source.
+
+Cloudflare's deploy semantics decide what happens next. Secrets survive a
+deploy and are only removed by `wrangler secret delete`. Plain-text vars and
+service bindings do not: they are replaced wholesale by the deployed
+configuration, and `--strict` enforces exactly that. So deploying this branch as
+it stands would remove `GMAIL_SERVICE` and `GMAIL_SHARED_DRAIN_ENABLED`, replace
+the script with one that has no `runSharedGmailDrain`, and **stop Gmail email
+delivery in production** — with nothing in CI to notice, because CI never sees
+live Cloudflare state.
+
+`scripts/preflight-telegram-production.mjs` now blocks that. It reads live
+bindings, secret names, cron, `workers.dev`, Custom Domains, DNS, zone routes
+and Cloudflare Access apps, and fails if a deploy would remove any live binding
+production is running on. It runs twice in the guarded workflow: once in
+`--report-only` mode on every run, and once as a hard gate immediately before
+`wrangler deploy --strict`.
+
+Resolving it is a decision for whoever sequences the two workstreams, and there
+are only two honest options:
+
+1. Land the Gmail shared-cron work first, then rebase this branch onto it so the
+   tracked config and generator carry both bindings; or
+2. Carry `GMAIL_SERVICE` and `GMAIL_SHARED_DRAIN_ENABLED` into this branch's
+   tracked config and generator explicitly, accepting that two Draft PRs now
+   describe the same Worker.
+
+Deploying before one of those is done is the one thing that must not happen.
+
 ## 8. Production activation order
 
 Production activation is intentionally separate from this Draft implementation.
@@ -149,13 +200,20 @@ Production activation is intentionally separate from this Draft implementation.
 2. Apply the stacked database migrations through `0086` using the normal production database release gate.
 3. Provision the Telegram Custom Domain and verify it points only to `vishar-telegram-drain-production`.
 
-   As of this workstream `telegram.vishartattoo.com` resolves to nothing, while
-   `instagram`, `whatsapp`, `calendar`, `monzo` and `gpt-actions` all resolve to
-   Cloudflare. The tracked config already declares the route with
-   `custom_domain = true`, so the guarded `wrangler deploy --strict` step creates
-   it if it does not exist yet. A `--dry-run` does not create routes, so a green
-   dry-run is not evidence that this domain attaches cleanly - the first real
-   deploy is where that is proven.
+   Confirmed against the Cloudflare API, not just DNS: the account holds 14
+   Worker Custom Domains and `telegram.vishartattoo.com` is not one of them, has
+   no DNS record, is claimed by no zone route, and is covered by no Cloudflare
+   Access app. The hostname is free. Every sibling integration domain follows
+   the same shape - zone `vishartattoo.com`, `environment = production`, an edge
+   certificate, and a proxied `AAAA 100::` placeholder record - and the tracked
+   config already declares the route that way, so `wrangler deploy --strict`
+   creates it. A `--dry-run` does not create routes, so a green dry-run is not
+   evidence that this domain attaches cleanly; the first real deploy is where
+   that is proven.
+
+   Note that `whatsapp` and `instagram`, the two existing provider callbacks,
+   have no Access app in front of them. Telegram's callback must stay the same
+   way, and the preflight fails if an Access policy ever covers it.
 4. Pre-provision exactly five Worker secrets:
    - `SUPABASE_SECRET_KEY`
    - `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`
