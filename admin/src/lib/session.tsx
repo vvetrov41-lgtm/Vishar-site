@@ -34,6 +34,7 @@ import { createWhatsAppConnectionsApi, type WhatsAppConnectionsApi } from './wha
 import { createCommunicationsApi, type CommunicationsApi } from './communications-api';
 import { createInstagramConnectionsApi, type InstagramConnectionsApi } from './instagram-connections-api';
 import { createPlatformApi, type PlatformApi } from './platform-api';
+import { createTelegramConnectionsApi, type TelegramConnectionsApi } from './telegram-connections-api';
 import { clearStaffInviteUrl } from './supabase';
 import type { ArtistMembership, Profile } from './types';
 
@@ -52,7 +53,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & InstagramConnectionsApi & PlatformApi;
+export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -105,6 +106,7 @@ export function SessionProvider({
       createCommunicationsApi(client),
       createInstagramConnectionsApi(client),
       createPlatformApi(client),
+      createTelegramConnectionsApi(client),
     );
   }, [client, teamInviteUrl]);
 
