@@ -6,12 +6,13 @@
 //
 // Production `vishar-telegram-drain-production` carries a GMAIL_SERVICE service
 // binding and GMAIL_SHARED_DRAIN_ENABLED, added by the Gmail shared-cron work.
-// That work is not in this branch's lineage, so a deploy from here would drop
-// both and stop the Gmail outbox draining, with nothing in CI to notice.
-// Secrets survive a deploy; plain-text vars and service bindings do not.
+// That contract must survive every Telegram self-service deployment. Gmail
+// credentials stay on the Gmail Worker; this Worker may call only the bounded
+// Service Binding RPC.
 //
 // So the rule this enforces is narrow and absolute: a deploy may add bindings,
-// never silently remove one that production is currently running on.
+// never silently remove one that production is currently running on, and it may
+// not enable Telegram linking without a separate explicit gate.
 //
 //   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
 //     node scripts/preflight-telegram-production.mjs <generated-deploy-config.toml>
@@ -22,6 +23,7 @@ const WORKER = 'vishar-telegram-drain-production';
 const ZONE = 'vishartattoo.com';
 const HOSTNAME = 'telegram.vishartattoo.com';
 const WEBHOOK_PATH = '/webhook';
+const GMAIL_SERVICE = 'vishar-gmail-production';
 
 const REQUIRED_SECRET_NAMES = [
   'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
@@ -46,19 +48,43 @@ export function parseDeployConfig(toml) {
     return match ? match[1] === 'true' : null;
   };
 
-  // [vars] runs until the next table header. Walk the lines rather than trying
-  // to express "until the next section or end of file" as one regex.
   const vars = {};
-  let inVars = false;
-  for (const line of stripped.split('\n')) {
-    const header = /^\s*\[\[?([A-Za-z0-9_.]+)\]?\]\s*$/.exec(line);
-    if (header) { inVars = header[1] === 'vars'; continue; }
-    if (!inVars) continue;
-    const kv = /^\s*([A-Za-z0-9_]+)\s*=\s*"([^"]*)"/.exec(line);
-    if (kv) vars[kv[1]] = kv[2];
-  }
+  const services = {};
+  let section = null;
+  let serviceBinding = null;
+  let serviceTarget = null;
+  const flushService = () => {
+    if (serviceBinding && serviceTarget) services[serviceBinding] = serviceTarget;
+    serviceBinding = null;
+    serviceTarget = null;
+  };
 
-  const services = [...stripped.matchAll(/^\s*binding\s*=\s*"([A-Za-z0-9_]+)"/gm)].map((m) => m[1]);
+  for (const line of stripped.split('\n')) {
+    const arrayHeader = /^\s*\[\[([A-Za-z0-9_.]+)\]\]\s*$/.exec(line);
+    if (arrayHeader) {
+      if (section === 'services') flushService();
+      section = arrayHeader[1];
+      continue;
+    }
+    const tableHeader = /^\s*\[([A-Za-z0-9_.]+)\]\s*$/.exec(line);
+    if (tableHeader) {
+      if (section === 'services') flushService();
+      section = tableHeader[1];
+      continue;
+    }
+
+    if (section === 'vars') {
+      const kv = /^\s*([A-Za-z0-9_]+)\s*=\s*"([^"]*)"/.exec(line);
+      if (kv) vars[kv[1]] = kv[2];
+    } else if (section === 'services') {
+      const binding = /^\s*binding\s*=\s*"([A-Za-z0-9_]+)"/.exec(line);
+      if (binding) serviceBinding = binding[1];
+      const service = /^\s*service\s*=\s*"([A-Za-z0-9_-]+)"/.exec(line);
+      if (service) serviceTarget = service[1];
+    }
+  }
+  if (section === 'services') flushService();
+
   const compatMatch = /^\s*compatibility_date\s*=\s*"([^"]+)"/m.exec(stripped);
   const cronMatch = /crons\s*=\s*\[([^\]]*)\]/.exec(stripped);
   const crons = cronMatch
@@ -67,9 +93,10 @@ export function parseDeployConfig(toml) {
 
   return {
     vars,
+    services,
     compatibilityDate: compatMatch ? compatMatch[1] : null,
     // Everything a deploy replaces wholesale: plain-text vars plus non-secret bindings.
-    replaceableBindings: [...Object.keys(vars), ...services].sort(),
+    replaceableBindings: [...Object.keys(vars), ...Object.keys(services)].sort(),
     crons,
     workersDev: bool('workers_dev'),
     previewUrls: bool('preview_urls'),
@@ -78,7 +105,7 @@ export function parseDeployConfig(toml) {
   };
 }
 
-export function evaluatePreflight({ live, desired, hostname = HOSTNAME }) {
+export function evaluatePreflight({ live, desired, hostname = HOSTNAME, allowLinking = false }) {
   const failures = [];
   const warnings = [];
 
@@ -94,6 +121,22 @@ export function evaluatePreflight({ live, desired, hostname = HOSTNAME }) {
       `deploy would REMOVE live binding ${name}; production is running on it. `
       + 'Add it to the deploy config or land the branch that owns it first.',
     );
+  }
+
+  const liveGmailService = (live.bindings || []).find((b) => b.name === 'GMAIL_SERVICE');
+  if (liveGmailService && liveGmailService.service !== GMAIL_SERVICE) {
+    failures.push(`live GMAIL_SERVICE points at ${liveGmailService.service || 'unknown'}, expected ${GMAIL_SERVICE}`);
+  }
+  const liveGmailEnabled = (live.bindings || []).find((b) => b.name === 'GMAIL_SHARED_DRAIN_ENABLED');
+  if (liveGmailEnabled && liveGmailEnabled.text !== 'true') {
+    failures.push('live GMAIL_SHARED_DRAIN_ENABLED is not true; investigate before a deploy can re-enable it');
+  }
+
+  if (desired.vars.GMAIL_SHARED_DRAIN_ENABLED !== 'true') {
+    failures.push('deploy config must preserve GMAIL_SHARED_DRAIN_ENABLED = "true"');
+  }
+  if (desired.services.GMAIL_SERVICE !== GMAIL_SERVICE) {
+    failures.push(`deploy config must bind GMAIL_SERVICE to ${GMAIL_SERVICE}`);
   }
 
   const liveSecretNames = (live.secretNames || []).slice().sort();
@@ -149,9 +192,20 @@ export function evaluatePreflight({ live, desired, hostname = HOSTNAME }) {
   }
   if (!desired.customDomain) failures.push('deploy config does not declare a Custom Domain route');
 
-  if (desired.vars.TELEGRAM_LINKING_ENABLED !== 'false') {
-    failures.push('deploy config must keep TELEGRAM_LINKING_ENABLED = "false" at this stage');
+  const desiredLinking = desired.vars.TELEGRAM_LINKING_ENABLED;
+  if (!['false', 'true'].includes(desiredLinking)) {
+    failures.push('deploy config must explicitly set TELEGRAM_LINKING_ENABLED to true or false');
+  } else if (desiredLinking === 'true' && !allowLinking) {
+    failures.push('linking-enabled deploy requires the explicit --allow-linking preflight gate');
   }
+
+  // Once linking is live, a routine drain deployment must not silently turn it
+  // off. A future rollback should have its own explicit rollback gate.
+  const liveLinking = (live.bindings || []).find((b) => b.name === 'TELEGRAM_LINKING_ENABLED');
+  if (liveLinking?.text === 'true' && desiredLinking === 'false') {
+    failures.push('deploy would disable live Telegram linking; use a dedicated rollback path instead');
+  }
+
   if (desired.vars.TELEGRAM_DRAIN_ENABLED !== 'true') {
     failures.push('generated deploy config must enable the drain');
   }
@@ -184,6 +238,9 @@ export function evaluatePreflight({ live, desired, hostname = HOSTNAME }) {
       dns_exists: Boolean(live.dnsExists),
       desired_bindings: desired.replaceableBindings,
       desired_crons: desired.crons,
+      desired_linking_enabled: desiredLinking === 'true',
+      gmail_shared_drain_preserved: desired.services.GMAIL_SERVICE === GMAIL_SERVICE
+        && desired.vars.GMAIL_SHARED_DRAIN_ENABLED === 'true',
     },
   };
 }
@@ -237,9 +294,17 @@ if (invokedDirectly) {
   // Validation-only runs happen before the shared bot secrets exist, so they
   // report rather than gate. The pre-deploy run gates.
   const reportOnly = args.includes('--report-only');
+  const allowLinking = args.includes('--allow-linking');
+  const knownFlags = new Set(['--report-only', '--allow-linking']);
+  for (const arg of args.filter((a) => a.startsWith('--'))) {
+    if (!knownFlags.has(arg)) {
+      console.error(`unknown option: ${arg}`);
+      process.exit(1);
+    }
+  }
   const configPath = args.find((a) => !a.startsWith('--'));
   if (!configPath) {
-    console.error('usage: preflight-telegram-production.mjs <generated-deploy-config.toml>');
+    console.error('usage: preflight-telegram-production.mjs <generated-deploy-config.toml> [--report-only] [--allow-linking]');
     process.exit(1);
   }
   const token = process.env.CLOUDFLARE_API_TOKEN;
@@ -251,7 +316,7 @@ if (invokedDirectly) {
 
   const desired = parseDeployConfig(readFileSync(configPath, 'utf8'));
   const live = await collectLiveState(token, accountId);
-  const verdict = evaluatePreflight({ live, desired });
+  const verdict = evaluatePreflight({ live, desired, allowLinking });
 
   console.log(JSON.stringify(verdict.summary, null, 2));
   for (const warning of verdict.warnings) console.log(`warning: ${warning}`);
