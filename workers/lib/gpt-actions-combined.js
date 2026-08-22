@@ -62,6 +62,49 @@ function clientListRoute(request, url) {
   return { rpc: 'gpt_list_clients', payload: { p_limit: limit }, responseKind: 'list' };
 }
 
+const CONTEXT_UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+
+// The unified GPT is one OAuth application shared by every CRM human, so it
+// needs one place to ask "which Artists may I act for, and which one am I on?".
+//
+// This is the only route that accepts an artist_id, and it accepts it as a
+// selector rather than as authority: public.gpt_artist_context re-derives the
+// caller's memberships from their own OAuth token before it stores or returns
+// anything, and refuses an Artist they do not hold. Every other route still
+// rejects artist_id outright, which is why this parser is written here instead
+// of reusing the operational mapper's exactObject().
+function contextRoute(request, url, body) {
+  if (url.pathname.replace(/\/+$/, '') !== '/v1/context') return null;
+  const method = request.method.toUpperCase();
+  if (method !== 'GET' && method !== 'POST') return null;
+
+  for (const key of url.searchParams.keys()) {
+    if (['oauth_client_id', 'integration_key', 'capability', 'provider', 'sql', 'rpc'].includes(key)) {
+      throw new Error(`forbidden_field:${key}`);
+    }
+    throw new Error(`unexpected_field:${key}`);
+  }
+
+  if (method === 'GET') {
+    return { rpc: 'gpt_artist_context', payload: { p_artist_id: null }, responseKind: 'object' };
+  }
+
+  if (!body || Array.isArray(body) || typeof body !== 'object') throw new Error('invalid_json_object');
+  for (const forbidden of [
+    'oauth_client_id', 'integration_key', 'capability', 'provider', 'scope',
+    'profile_id', 'sql', 'query', 'rpc',
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(body, forbidden)) throw new Error(`forbidden_field:${forbidden}`);
+  }
+  const unexpected = Object.keys(body).filter((key) => key !== 'artist_id');
+  if (unexpected.length) throw new Error(`unexpected_field:${unexpected[0]}`);
+
+  const artistId = body.artist_id;
+  if (artistId == null || artistId === '') throw new Error('required_field:artist_id');
+  if (typeof artistId !== 'string' || !CONTEXT_UUID.test(artistId)) throw new Error('invalid_field:artist_id');
+  return { rpc: 'gpt_artist_context', payload: { p_artist_id: artistId }, responseKind: 'object' };
+}
+
 function safeRpcError(status, text) {
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = null; }
@@ -93,7 +136,9 @@ async function handleFullRequest(request, env, fetchImpl) {
   let body = {};
   try {
     if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) body = await readJson(request);
-    const route = clientListRoute(request, url) || routeForFullGptAction(request, url, body);
+    const route = contextRoute(request, url, body)
+      || clientListRoute(request, url)
+      || routeForFullGptAction(request, url, body);
     if (!route) return null;
 
     const response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${route.rpc}`, {
@@ -147,4 +192,4 @@ export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
   return handleCoreGptActionsRequest(request, env, fetchImpl);
 }
 
-export const __testing = Object.freeze({ configured, bearer, clientListRoute, handleFullRequest });
+export const __testing = Object.freeze({ configured, bearer, clientListRoute, contextRoute, handleFullRequest });

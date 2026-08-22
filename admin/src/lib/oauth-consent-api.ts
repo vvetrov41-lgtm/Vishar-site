@@ -19,11 +19,30 @@ export interface GptConsentSummary {
   can_manage_appointments: boolean;
 }
 
+/**
+ * The consent screen has to describe two different bindings truthfully. A
+ * legacy GPT is fixed to one artist; the shared Vishar GPT is bound to the
+ * signed-in CRM user and reaches only the artists that user is authorized for.
+ * `binding_mode` is what the screen renders from, so it is never inferred from
+ * a display string.
+ */
+export interface GptConsentDetails {
+  integration_key: string;
+  client_display_name: string;
+  binding_mode: 'artist' | 'profile';
+  artist_display_name: string | null;
+  artist_count: number;
+  can_read_appointments: boolean;
+  can_manage_appointments: boolean;
+}
+
 export interface PendingGptConsent {
   authorizationId: string;
   requestedClientName: string;
   scopes: string[];
   summary: GptConsentSummary;
+  /** Null only on a CRM database that predates the unified GPT migration. */
+  details: GptConsentDetails | null;
 }
 
 export type GptConsentLoadResult =
@@ -120,6 +139,47 @@ function consentSummary(data: any): GptConsentSummary {
   return row as GptConsentSummary;
 }
 
+const UNIFIED_ARTIST_SCOPE_LABEL = 'Artists available to your CRM profile';
+
+function consentDetails(data: any): GptConsentDetails {
+  if (!data || Array.isArray(data) || typeof data !== 'object') {
+    throw new ApiError('This GPT is not enabled for your CRM access.');
+  }
+  const row = data as Partial<GptConsentDetails>;
+  if (
+    typeof row.integration_key !== 'string'
+    || typeof row.client_display_name !== 'string'
+    || (row.binding_mode !== 'artist' && row.binding_mode !== 'profile')
+    || typeof row.artist_count !== 'number'
+    || !Number.isInteger(row.artist_count)
+    || row.artist_count < 1
+    || typeof row.can_read_appointments !== 'boolean'
+    || typeof row.can_manage_appointments !== 'boolean'
+  ) {
+    throw new ApiError('This GPT is not enabled for your CRM access.');
+  }
+  // A GPT fixed to one artist must name that artist. One bound to a profile
+  // must not, because it is fixed to none.
+  if (row.binding_mode === 'artist') {
+    if (typeof row.artist_display_name !== 'string' || !row.artist_display_name.trim()) {
+      throw new ApiError('This GPT is not enabled for your CRM access.');
+    }
+  } else if (row.artist_display_name != null) {
+    throw new ApiError('This GPT is not enabled for your CRM access.');
+  }
+  return {
+    integration_key: row.integration_key,
+    client_display_name: row.client_display_name,
+    binding_mode: row.binding_mode,
+    artist_display_name: row.binding_mode === 'artist'
+      ? (row.artist_display_name as string)
+      : null,
+    artist_count: row.artist_count,
+    can_read_appointments: row.can_read_appointments,
+    can_manage_appointments: row.can_manage_appointments,
+  };
+}
+
 export function createOAuthConsentApi(client: CrmClient): OAuthConsentApi {
   return {
     async loadGptOAuthConsent(authorizationId: string) {
@@ -145,11 +205,36 @@ export function createOAuthConsentApi(client: CrmClient): OAuthConsentApi {
         throw new ApiError('The authorization server did not identify the requesting GPT.');
       }
 
-      const summaryResult = await client.rpc('get_gpt_action_consent_summary', {
+      // Prefer the detail contract, which carries the binding mode. Fall back
+      // to the long-standing summary only when the RPC itself is unavailable,
+      // so an older CRM database still renders a correct legacy screen. A
+      // detail payload that arrives malformed is a refusal, not a fallback.
+      const detailsResult = await client.rpc('get_gpt_consent_details', {
         p_oauth_client_id: clientId,
       });
-      if (summaryResult.error) {
-        throw new ApiError('This GPT is not enabled for your CRM access.');
+
+      let details: GptConsentDetails | null = null;
+      let summary: GptConsentSummary;
+      if (detailsResult.error) {
+        const summaryResult = await client.rpc('get_gpt_action_consent_summary', {
+          p_oauth_client_id: clientId,
+        });
+        if (summaryResult.error) {
+          throw new ApiError('This GPT is not enabled for your CRM access.');
+        }
+        summary = consentSummary(summaryResult.data);
+      } else {
+        details = consentDetails(detailsResult.data);
+        summary = {
+          integration_key: details.integration_key,
+          client_display_name: details.client_display_name,
+          artist_id: typeof (detailsResult.data as any)?.artist_id === 'string'
+            ? (detailsResult.data as any).artist_id
+            : '',
+          artist_display_name: details.artist_display_name ?? UNIFIED_ARTIST_SCOPE_LABEL,
+          can_read_appointments: details.can_read_appointments,
+          can_manage_appointments: details.can_manage_appointments,
+        };
       }
 
       return {
@@ -158,7 +243,8 @@ export function createOAuthConsentApi(client: CrmClient): OAuthConsentApi {
           authorizationId: cleanId,
           requestedClientName: requestedClientName(result.data),
           scopes: requestedScopes(result.data),
-          summary: consentSummary(summaryResult.data),
+          summary,
+          details,
         },
       };
     },
@@ -183,4 +269,5 @@ export const __testing = Object.freeze({
   oauthClientId,
   requestedScopes,
   consentSummary,
+  consentDetails,
 });

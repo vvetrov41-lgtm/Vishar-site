@@ -702,6 +702,11 @@ insert into expected_function_acl values
   ('public.record_client_marketing_consent(uuid,public.message_template_channel,public.consent_state,text,text)', false, true, false),
   ('public.suppress_client_communications(uuid,public.message_template_channel,public.suppression_reason,text)', false, true, true),
 
+  -- Unified GPT consent detail (migration 0084). The GPT action RPCs
+  -- themselves are hidden from this pre-GPT inventory by test 045, but this
+  -- one is new and stays visible so its grants are inventoried here.
+  ('public.get_gpt_consent_details(text)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),

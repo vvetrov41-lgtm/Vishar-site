@@ -54,7 +54,16 @@ assert.match(openapi, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(openapi, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
 assert.match(openapi, /tokenUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/token/);
 assert.doesNotMatch(openapi, /gpt-actions-staging|gwaliusblwrzisrwnsvs/);
-assert.doesNotMatch(openapi, /\bartist_id\b|oauth_client_id|integration_key|service_role|SUPABASE_SECRET_KEY|sb_secret_|storage_path|sha256|signed_url/i,
+// /v1/context is the single reviewed exception: it selects which artist the
+// signed-in CRM user is currently working as, and the database re-checks that
+// user's membership before honouring it. No CRM action may name an artist, so
+// the ban is applied with that one path removed rather than relaxed.
+const openapiWithoutContext = openapi.replace(/^ {2}\/v1\/context:\n(?: {3,}.*\n|\n(?= {3,}\S))*/m, '');
+assert.ok(openapi.includes('/v1/context:') && !openapiWithoutContext.includes('/v1/context:'),
+  'the artist-context carve-out must actually remove the /v1/context path before the ban is applied');
+assert.doesNotMatch(openapiWithoutContext, /\bartist_id\b/i,
+  'no CRM action may name an artist outside /v1/context');
+assert.doesNotMatch(openapi, /oauth_client_id|integration_key|service_role|SUPABASE_SECRET_KEY|sb_secret_|storage_path|sha256|signed_url/i,
   'production GPT schema must not expose routing, credentials or private Storage internals');
 assert.doesNotMatch(openapi, /submitted_email|submitted_phone|submitted_instagram|submitted_travelling_from/,
   'production GPT schema must not expose duplicate raw enquiry contact snapshots');
@@ -78,6 +87,7 @@ const expectedOperations = [
   'listWhatsAppMessages', 'sendWhatsAppMessage', 'listEmailMessages',
   'createEmailDraft', 'approveEmailDraft', 'searchEmailHistory', 'getEmailThread',
   'createGmailReplyDraft', 'listEnquiryFiles', 'listProjectFiles', 'listActivity',
+  'getArtistContext', 'selectArtistContext',
 ];
 const consequentialReads = new Set([
   'listClients', 'searchAppointmentClients', 'getClient', 'listEnquiries', 'getEnquiry',
@@ -86,12 +96,12 @@ const consequentialReads = new Set([
   'checkAppointmentConflicts', 'getAppointment', 'getAppointmentFull',
   'listAvailability', 'listPaymentRequests', 'getWhatsAppConversation',
   'listWhatsAppMessages', 'listEmailMessages', 'searchEmailHistory', 'getEmailThread',
-  'listEnquiryFiles', 'listProjectFiles', 'listActivity',
+  'listEnquiryFiles', 'listProjectFiles', 'listActivity', 'getArtistContext',
 ]);
 
 const operationIds = [...openapi.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 assert.deepEqual(operationIds.sort(), [...expectedOperations].sort());
-assert.equal(operationIds.length, 55, 'full production GPT contract must expose exactly 55 named operations');
+assert.equal(operationIds.length, 57, 'full production GPT contract must expose exactly 57 named operations');
 assert.equal(count(openapi, 'x-openai-isConsequential: false'), consequentialReads.size);
 assert.equal(count(openapi, 'x-openai-isConsequential: true'), expectedOperations.length - consequentialReads.size);
 
@@ -122,4 +132,4 @@ assert.match(runbook, /can_manage_crm/);
 assert.match(runbook, /can_manage_finance/);
 assert.match(runbook, /can_manage_communications/);
 
-console.log('GPT production config tests passed: production-only OAuth edge and 55 fixed-artist operational CRM actions.');
+console.log('GPT production config tests passed: production-only OAuth edge, 57 operational CRM actions and an artist context that only a real membership can select.');

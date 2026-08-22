@@ -15,13 +15,13 @@ const coreIds = operationIds(core);
 const operationIdsSplit = operationIds(operations);
 const combined = [...coreIds, ...operationIdsSplit];
 
-assert.equal(canonical.length, 55, 'canonical GPT schema must keep exactly 55 operations');
-assert.equal(coreIds.length, 26, 'core ChatGPT-import schema must contain exactly 26 operations');
+assert.equal(canonical.length, 57, 'canonical GPT schema must keep exactly 57 operations');
+assert.equal(coreIds.length, 28, 'core ChatGPT-import schema must contain exactly 28 operations');
 assert.equal(operationIdsSplit.length, 29, 'operations ChatGPT-import schema must contain exactly 29 operations');
 assert.ok(coreIds.length <= 30, 'core ChatGPT-import schema must stay at or below the editor 30-operation limit');
 assert.ok(operationIdsSplit.length <= 30, 'operations ChatGPT-import schema must stay at or below the editor 30-operation limit');
-assert.equal(new Set(combined).size, 55, 'split schemas must not duplicate operation IDs');
-assert.deepEqual([...combined].sort(), [...canonical].sort(), 'split schemas must cover the exact canonical 55-operation surface');
+assert.equal(new Set(combined).size, 57, 'split schemas must not duplicate operation IDs');
+assert.deepEqual([...combined].sort(), [...canonical].sort(), 'split schemas must cover the exact canonical 57-operation surface');
 
 assert.match(core, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(operations, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
@@ -32,12 +32,24 @@ assert.match(wrangler, /pattern = "gpt-operations\.vishartattoo\.com", custom_do
 assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 2,
   'production GPT Worker must expose exactly two custom domains for the two ChatGPT action sets');
 
+// /v1/context is the single reviewed exception to the artist_id ban. It is a
+// selector for which artist the signed-in CRM user is currently working as,
+// re-checked against that user's memberships in the database, and it is the
+// only place the string may appear. Every CRM action must still be unable to
+// name an artist, so the ban is applied to the schema with that one path
+// removed rather than relaxed.
+function withoutContextPath(schema) {
+  return schema.replace(/^ {2}\/v1\/context:\n(?: {3,}.*\n|\n(?= {3,}\S))*/m, '');
+}
+
 for (const [name, schema] of [['core', core], ['operations', operations]]) {
   assert.match(schema, /^openapi: 3\.1\.0$/m, `${name} schema must use OpenAPI 3.1`);
   assert.match(schema, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
   assert.match(schema, /tokenUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/token/);
   assert.doesNotMatch(schema, /gpt-actions-staging|gwaliusblwrzisrwnsvs/);
-  assert.doesNotMatch(schema, /\bartist_id\b|oauth_client_id|integration_key|service_role|SUPABASE_SECRET_KEY|sb_secret_|storage_path|sha256|signed_url/i,
+  assert.doesNotMatch(withoutContextPath(schema), /\bartist_id\b/i,
+    `${name} schema must not let a CRM action name an artist outside /v1/context`);
+  assert.doesNotMatch(schema, /oauth_client_id|integration_key|service_role|SUPABASE_SECRET_KEY|sb_secret_|storage_path|sha256|signed_url/i,
     `${name} schema must not expose routing, credentials or private Storage internals`);
   assert.doesNotMatch(
     schema,
@@ -77,4 +89,24 @@ assert.ok(!coreIds.includes('searchEmailHistory'));
 assert.ok(!coreIds.includes('getEmailThread'));
 assert.ok(!coreIds.includes('createGmailReplyDraft'));
 
-console.log('GPT OpenAPI split tests passed: 26 core + 29 operations, distinct action domains, exact 55-operation coverage and ChatGPT-compatible object schemas.');
+// The artist context lives in Core, because Core is the schema every Vishar GPT
+// imports; an operations-only GPT would otherwise have no way to say who it is
+// working as.
+assert.ok(coreIds.includes('getArtistContext'), 'the artist context read belongs to the core schema');
+assert.ok(coreIds.includes('selectArtistContext'), 'the artist context switch belongs to the core schema');
+assert.ok(!operationIdsSplit.includes('getArtistContext'));
+assert.ok(!operationIdsSplit.includes('selectArtistContext'));
+
+// Switching whose CRM the model operates on is a confirmed action, and reading
+// the available artists is not.
+assert.match(core, /operationId: getArtistContext[\s\S]{0,700}?x-openai-isConsequential: false/);
+assert.match(core, /operationId: selectArtistContext[\s\S]{0,700}?x-openai-isConsequential: true/);
+
+// The selector takes an artist and nothing else.
+assert.match(
+  core,
+  /operationId: selectArtistContext[\s\S]*?additionalProperties: false\n\s+required: \[artist_id\]\n\s+properties: \{artist_id: \{type: string, format: uuid\}\}/,
+  'selectArtistContext must accept exactly one artist id and no other field',
+);
+
+console.log('GPT OpenAPI split tests passed: 28 core + 29 operations, distinct action domains, exact 57-operation coverage, artist_id confined to /v1/context and ChatGPT-compatible object schemas.');

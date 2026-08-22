@@ -180,7 +180,9 @@ begin
           using errcode = '42501';
       end if;
     else
-      select count(*)::int, min(a.id)
+      -- uuid has no min() aggregate, so collect and take the single element.
+      -- The array is only read when exactly one Artist is accessible.
+      select count(*)::int, (array_agg(a.id order by a.id))[1]
         into v_accessible_count, v_implicit_artist_id
       from public.list_accessible_artists() a
       where a.is_active;
@@ -682,22 +684,17 @@ grant execute on function public.configure_gpt_full_management(text,boolean,bool
   to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 7. OAuth consent summary keeps its existing shape for legacy callers.
+-- 7. OAuth consent.
 --
--- A profile-bound GPT reports the membership boundary rather than pretending it
--- is fixed to the first Artist. artist_id remains populated solely to preserve
--- the long-standing return shape; the unified consent UI ignores that field.
+-- The consent screen has to tell a human the truth about what they are about
+-- to authorize, and the truth now has two shapes. Rather than overload the
+-- long-standing six-column contract, the guards and the full picture live in
+-- one private helper; the existing RPC keeps its exact signature and columns,
+-- and a new detail RPC exposes the binding mode the consent UI needs.
 -- ---------------------------------------------------------------------------
 
-create or replace function public.get_gpt_action_consent_summary(p_oauth_client_id text)
-returns table (
-  integration_key text,
-  client_display_name text,
-  artist_id uuid,
-  artist_display_name text,
-  can_read_appointments boolean,
-  can_manage_appointments boolean
-)
+create or replace function crm_private.gpt_consent_details(p_oauth_client_id text)
+returns jsonb
 language plpgsql
 stable
 security definer
@@ -706,6 +703,7 @@ as $$
 declare
   v_client crm_private.gpt_action_clients%rowtype;
   v_artist record;
+  v_artist_count integer := 0;
   v_can_read boolean := false;
   v_can_manage boolean := false;
 begin
@@ -738,19 +736,25 @@ begin
     select a.id, a.display_name into v_artist
     from public.artists a where a.id = v_client.artist_id;
 
-    return query select v_client.integration_key, v_client.display_name,
-      v_artist.id, v_artist.display_name,
-      v_client.can_read_appointments, v_client.can_manage_appointments;
-    return;
+    return jsonb_build_object(
+      'integration_key', v_client.integration_key,
+      'client_display_name', v_client.display_name,
+      'binding_mode', 'artist',
+      'artist_id', v_artist.id,
+      'artist_display_name', v_artist.display_name,
+      'artist_count', 1,
+      'can_read_appointments', v_client.can_read_appointments,
+      'can_manage_appointments', v_client.can_manage_appointments
+    );
   end if;
 
-  select a.id, a.display_name into v_artist
+  -- Profile-bound. The consent screen describes the membership boundary; it
+  -- must not name one Artist as though the GPT were fixed to it.
+  select count(*)::int into v_artist_count
   from public.list_accessible_artists() a
-  where a.is_active
-  order by a.display_name, a.id
-  limit 1;
+  where a.is_active;
 
-  if v_artist.id is null then
+  if v_artist_count = 0 then
     raise exception 'this CRM profile has no Artist access for the unified GPT'
       using errcode = '42501';
   end if;
@@ -773,9 +777,62 @@ begin
       using errcode = '42501';
   end if;
 
-  return query select v_client.integration_key, v_client.display_name,
-    v_artist.id, 'Artists available to your CRM profile'::text,
-    v_can_read, v_can_manage;
+  select a.id into v_artist
+  from public.list_accessible_artists() a
+  where a.is_active
+  order by a.display_name, a.id
+  limit 1;
+
+  return jsonb_build_object(
+    'integration_key', v_client.integration_key,
+    'client_display_name', v_client.display_name,
+    'binding_mode', 'profile',
+    -- Kept only so the legacy six-column projection below stays non-null. A
+    -- profile-bound GPT is not fixed to this Artist and the detail contract
+    -- deliberately reports no Artist name at all.
+    'artist_id', v_artist.id,
+    'artist_display_name', null,
+    'artist_count', v_artist_count,
+    'can_read_appointments', v_can_read,
+    'can_manage_appointments', v_can_manage
+  );
+end;
+$$;
+
+revoke all on function crm_private.gpt_consent_details(text)
+  from public, anon, authenticated, service_role;
+
+-- Unchanged signature, unchanged columns, unchanged legacy meaning.
+create or replace function public.get_gpt_action_consent_summary(p_oauth_client_id text)
+returns table (
+  integration_key text,
+  client_display_name text,
+  artist_id uuid,
+  artist_display_name text,
+  can_read_appointments boolean,
+  can_manage_appointments boolean
+)
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_details jsonb;
+begin
+  v_details := crm_private.gpt_consent_details(p_oauth_client_id);
+
+  return query
+  select
+    v_details ->> 'integration_key',
+    v_details ->> 'client_display_name',
+    (v_details ->> 'artist_id')::uuid,
+    coalesce(
+      v_details ->> 'artist_display_name',
+      'Artists available to your CRM profile'
+    ),
+    (v_details ->> 'can_read_appointments')::boolean,
+    (v_details ->> 'can_manage_appointments')::boolean;
 end;
 $$;
 
@@ -783,3 +840,22 @@ revoke all on function public.get_gpt_action_consent_summary(text)
   from public, anon, authenticated, service_role;
 grant execute on function public.get_gpt_action_consent_summary(text)
   to authenticated;
+
+-- The consent screen reads this one instead, so it can render an honest
+-- membership boundary rather than inferring a mode from a display string.
+create or replace function public.get_gpt_consent_details(p_oauth_client_id text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+  select crm_private.gpt_consent_details(p_oauth_client_id);
+$$;
+
+revoke all on function public.get_gpt_consent_details(text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.get_gpt_consent_details(text) to authenticated;
+
+comment on function public.get_gpt_consent_details(text) is
+  'Consent-screen detail for one enabled GPT OAuth client. Reports whether the client is fixed to one Artist or bound to the signed-in CRM profile, and the appointment rights that profile actually holds. It exposes no OAuth client id, provider account or credential.';

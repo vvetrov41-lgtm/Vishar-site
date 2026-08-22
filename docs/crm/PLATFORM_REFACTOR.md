@@ -491,6 +491,57 @@ contains only `notify_artist_team`. The moment somebody adds a client-facing
 automation action, that assertion fails and a reviewer has to confirm the gate
 is wired into it.
 
+### 6.4 What `0084` actually built
+
+The unified GPT, as an authorization change rather than as a new action
+surface. §1.11 recorded the finding: `crm_private.gpt_action_clients` binds one
+OAuth client to one artist, so a fifth artist means a fifth GPT. `0084` changes
+what the OAuth client identifies, and changes nothing else.
+
+- **The client is an application, the human is the authority.** A client row now
+  carries `binding_mode`. `artist` keeps the production Vladimir and Kristina
+  rows working exactly as before. `profile` has `artist_id` **null**, enforced by
+  a check constraint, so a profile-bound GPT has no artist to fall back on when
+  a membership disappears. There is nothing to fall back *to*.
+- **One resolver, not forty rewrites.** Every `gpt_*` RPC already funnels through
+  `require_gpt_action_context`, `require_gpt_enquiry_context` and
+  `require_gpt_operational_context`. Those three now call one new
+  `crm_private.require_gpt_client_context()`, and their signatures and result
+  columns are unchanged. No `gpt_*` operation was touched, so no operation could
+  be missed.
+- **The selection is a selector, never a grant.**
+  `crm_private.gpt_profile_artist_contexts` stores one artist per (client,
+  profile) pair and is unreachable from every API role. It is re-validated on
+  every single request against `list_accessible_artists()`; a revoked membership,
+  a deactivated artist or a deactivated profile makes the stored row inert
+  immediately, and the resolver raises rather than silently moving to the other
+  artist the human still holds.
+- **Fail closed on ambiguity.** A profile holding two artists with nothing
+  selected is refused with `22023` and told to select. It is not defaulted to the
+  first artist. A profile holding exactly one artist resolves without a stored
+  row at all, so there is no stale selector to invalidate later.
+- **Membership authorizes selection; capability still authorizes the action.**
+  Selecting an artist gets you as far as `view`. Reading appointments still needs
+  `view_sessions`, writing still needs `manage_sessions`, finance still needs
+  `manage_finance`. The GPT client's own flags remain a ceiling above that, never
+  a floor: a client flag can only narrow what a membership already allows.
+- **Consent tells the truth.** `get_gpt_action_consent_summary` keeps its exact
+  six columns for legacy callers. A new `get_gpt_consent_details` reports
+  `binding_mode`, and the consent screen renders from that rather than inferring
+  a mode from a display string. A profile-bound GPT reports **no** artist name,
+  because it is fixed to none; a screen that cannot tell which binding it is
+  describing falls back to the narrower fixed-artist wording.
+
+At the edge, `/v1/context` is the one route that accepts an `artist_id`, and it
+accepts it as a selector that the database re-checks. The ban on `artist_id` in
+every other route and in both OpenAPI schemas is unchanged — the contract tests
+strip `/v1/context` and then assert the ban still holds everywhere else, so the
+exception cannot quietly widen.
+
+Nothing here creates an OAuth client, enables a GPT, or changes a Cloudflare
+route. The canonical unified client ships with `oauth_client_id` null and
+`is_active` false, and pgTAP `232` asserts both.
+
 ### Telegram migration order (Phase F/G), stated once
 
 1. Add `crm_private.telegram_destinations`; write nothing.

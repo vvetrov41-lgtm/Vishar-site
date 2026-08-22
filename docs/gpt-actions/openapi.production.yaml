@@ -3,15 +3,51 @@ info:
   title: Vishar CRM Private Artist Actions
   version: 2.1.0-production
   description: >-
-    Private OAuth-authenticated operational CRM actions for one artist. The artist
-    is fixed by the OAuth client binding and cannot be selected in a request.
-    CRM, finance and communications management are independently owner-enabled.
+    Private OAuth-authenticated operational CRM actions for one artist at a
+    time. A GPT bound to a single artist keeps that artist for every request.
+    The shared Vishar GPT works as the signed-in CRM user and may act only for
+    the artists that user is authorized for; the active artist is read and
+    changed through /v1/context and is never accepted as a parameter of a CRM
+    action. CRM, finance and communications management are independently
+    owner-enabled.
 servers:
   - url: https://gpt-actions.vishartattoo.com
     description: Vishar CRM production action edge.
 security:
   - supabaseOAuth: [email]
 paths:
+  /v1/context:
+    get:
+      operationId: getArtistContext
+      summary: List the artists this CRM user may work as, and which one is active
+      x-openai-isConsequential: false
+      description: >-
+        The active artist decides whose CRM every other action reads and writes.
+        For a GPT bound to one artist this always returns that artist. For the
+        shared Vishar GPT it returns exactly the artists the signed-in CRM user
+        currently has access to, and asks for a choice when there is more than
+        one.
+      responses: {'200': {description: Available artists and the active artist context}}
+    post:
+      operationId: selectArtistContext
+      summary: Switch the active artist to one this CRM user is authorized to work as
+      x-openai-isConsequential: true
+      description: >-
+        Confirm the artist with the user before switching, because every later
+        action applies to that artist. The CRM re-checks the signed-in user's
+        access and refuses an artist they are not authorized for. A GPT bound to
+        a single artist cannot be switched at all.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [artist_id]
+              properties: {artist_id: {type: string, format: uuid}}
+      responses: {'200': {description: Updated active artist context}, '403': {description: The CRM user is not authorized for that artist}}
+
   /v1/clients:
     get:
       operationId: listClients

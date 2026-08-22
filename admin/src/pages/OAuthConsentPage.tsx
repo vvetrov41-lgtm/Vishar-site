@@ -12,12 +12,18 @@ const COPY = {
     requestedBy: 'Requesting application',
     signedInAs: 'Signed in as',
     artist: 'Fixed artist scope',
+    artistAccess: 'Artist access',
+    membershipScope: 'Artists available through your CRM memberships',
+    membershipCount: (count: number) => (count === 1
+      ? '1 artist you are currently authorized for'
+      : `${count} artists you are currently authorized for`),
     permission: 'Appointment access',
     write: 'View, create, reschedule and cancel appointments.',
     read: 'View appointments only.',
     scope: 'OAuth scope',
     boundaryTitle: 'What this does not allow',
     boundary: 'This action surface cannot switch artist, run arbitrary database queries, access finance, send client messages, or manage payments.',
+    unifiedBoundary: 'The active artist can be changed only to an artist you are authorized to access, and access is re-checked on every request. This action surface cannot run arbitrary database queries, access finance, send client messages, or manage payments.',
     approve: 'Approve access',
     deny: 'Deny',
     approving: 'Approving…',
@@ -32,12 +38,16 @@ const COPY = {
     requestedBy: 'Запрашивающее приложение',
     signedInAs: 'Вы вошли как',
     artist: 'Фиксированный артист',
+    artistAccess: 'Доступ к артистам',
+    membershipScope: 'Артисты, доступные через ваши права в CRM',
+    membershipCount: (count: number) => `Сейчас вам доступно артистов: ${count}`,
     permission: 'Доступ к записям',
     write: 'Просмотр, создание, перенос и отмена записей.',
     read: 'Только просмотр записей.',
     scope: 'OAuth-разрешение',
     boundaryTitle: 'Что этот доступ не разрешает',
     boundary: 'GPT не может переключить артиста, выполнять произвольные запросы к базе, видеть финансы, отправлять сообщения клиентам или управлять платежами.',
+    unifiedBoundary: 'Активного артиста можно переключить только на артиста, к которому у вас есть доступ, и доступ проверяется заново при каждом запросе. GPT не может выполнять произвольные запросы к базе, видеть финансы, отправлять сообщения клиентам или управлять платежами.',
     approve: 'Разрешить доступ',
     deny: 'Отклонить',
     approving: 'Разрешаем…',
@@ -115,6 +125,11 @@ export function OAuthConsentPage() {
     );
   }
 
+  // A screen that cannot tell which binding it is describing describes the
+  // narrower one: a fixed artist. It never claims membership-wide reach it has
+  // not been told about.
+  const profileBound = consent?.details?.binding_mode === 'profile';
+
   return (
     <div className="container" style={{ maxWidth: 640, paddingTop: 24 }}>
       <div className="login-language"><LanguageSwitcher /></div>
@@ -136,8 +151,20 @@ export function OAuthConsentPage() {
             <dt style={{ color: 'var(--muted)' }}>{copy.signedInAs}</dt>
             <dd style={{ margin: 0 }}>{profile?.display_name ?? 'CRM staff'}</dd>
 
-            <dt style={{ color: 'var(--muted)' }}>{copy.artist}</dt>
-            <dd style={{ margin: 0 }}>{consent.summary.artist_display_name}</dd>
+            <dt style={{ color: 'var(--muted)' }}>
+              {profileBound ? copy.artistAccess : copy.artist}
+            </dt>
+            <dd style={{ margin: 0 }}>
+              {profileBound ? (
+                <>
+                  {copy.membershipScope}
+                  <br />
+                  <span style={{ color: 'var(--muted)' }}>
+                    {copy.membershipCount(consent.details?.artist_count ?? 0)}
+                  </span>
+                </>
+              ) : consent.summary.artist_display_name}
+            </dd>
 
             <dt style={{ color: 'var(--muted)' }}>{copy.permission}</dt>
             <dd style={{ margin: 0 }}>
@@ -150,7 +177,9 @@ export function OAuthConsentPage() {
 
           <div className="notice" style={{ marginTop: 18 }}>
             <strong>{copy.boundaryTitle}</strong>
-            <p style={{ marginBottom: 0 }}>{copy.boundary}</p>
+            <p style={{ marginBottom: 0 }}>
+              {profileBound ? copy.unifiedBoundary : copy.boundary}
+            </p>
           </div>
 
           <div className="actions" style={{ marginTop: 18 }}>
