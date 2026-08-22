@@ -128,17 +128,12 @@ insert into public.artist_memberships
   (profile_id, artist_id, access_level,
    can_manage_integrations, is_active)
 values
-  -- The workspace admin also holds explicit automation authority on both
-  -- artists. Workspace membership alone is deliberately insufficient.
   ('c9111111-1111-4111-8111-111111111111', 'c8111111-1111-4111-8111-111111111111',
    'manager', true, true),
   ('c9111111-1111-4111-8111-111111111111', 'c8222222-2222-4222-8222-222222222222',
    'manager', true, true),
-  -- Alice has no workspace membership. She can still override her own concrete
-  -- artist rule because artist authority is independent from workspace power.
   ('c9222222-2222-4222-8222-222222222222', 'c8111111-1111-4111-8111-111111111111',
    'artist', true, true),
-  -- Limited Admin can run the workspace but has artist authority only on Alice.
   ('c9333333-3333-4333-8333-333333333333', 'c8111111-1111-4111-8111-111111111111',
    'manager', true, true),
   ('c9444444-4444-4444-8444-444444444444', 'c8111111-1111-4111-8111-111111111111',
@@ -202,7 +197,6 @@ select is(
   'materialisation produces explicit artist scopes rather than a workspace-scoped executable rule'
 );
 
--- Conditions are deliberately typed and status-only.
 select throws_ok(
   $$select public.upsert_workspace_automation_default(
       'c7111111-1111-4111-8111-111111111111', null,
@@ -335,8 +329,6 @@ select is(
   'non-overridden artist rules advance to the new default version and state'
 );
 
--- Clearing the override is an explicit artist action and copies the current
--- default, not the old version Alice originally diverged from.
 select pg_temp.auto_as('c9222222-2222-4222-8222-222222222222');
 select lives_ok(
   format($$select public.clear_artist_automation_override(
@@ -386,8 +378,6 @@ select is(
   'the refused partial-authority write leaves the default unchanged'
 );
 
--- A privileged direct write cannot smuggle a default across a workspace either;
--- the table trigger is a second boundary below the RPC authorization.
 select throws_ok(
   format($$insert into public.automation_rules (
       artist_id, name, trigger_event_type, action_title,
@@ -400,8 +390,6 @@ select throws_ok(
   'a concrete rule cannot carry a workspace default from another workspace'
 );
 
--- A read-only artist cannot use the override contract even when called from
--- the migration-owner test context: the function re-evaluates auth.uid().
 select pg_temp.auto_as('c9444444-4444-4444-8444-444444444444');
 select throws_ok(
   format($$select public.set_artist_automation_override(
@@ -423,10 +411,10 @@ select is((select count(*)::int from public.integration_outbox
            where created_at >= transaction_timestamp()),
           0,
           'Phase P writes no provider outbox work');
-select is((select count(*)::int from public.communication_outbox
+select is((select count(*)::int from public.communication_messages
            where created_at >= transaction_timestamp()),
           0,
-          'Phase P writes no client communication');
+          'Phase P writes no client communication message');
 
 select * from finish(true);
 rollback;
