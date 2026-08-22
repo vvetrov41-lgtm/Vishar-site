@@ -17,6 +17,16 @@ on:
         required: false
         default: ''
         type: string
+      enable_linking:
+        description: Enable the Telegram /webhook handler in this deploy. Requires a second approval phrase.
+        required: true
+        default: false
+        type: boolean
+      linking_approval_phrase:
+        description: Required only when enable_linking=true
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -33,14 +43,16 @@ jobs:
     environment: crm-production
     env:
       WORKER_NAME: vishar-telegram-drain-production
+      ENABLE_LINKING: ${{ inputs.enable_linking }}
 
     steps:
-      - name: Verify exact release branch and explicit production gate
+      - name: Verify exact release branch and explicit production gates
         shell: bash
         env:
           APPROVED_SHA: ${{ inputs.approved_sha }}
           DEPLOY_REQUESTED: ${{ inputs.deploy }}
           APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          LINKING_APPROVAL_PHRASE: ${{ inputs.linking_approval_phrase }}
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
@@ -53,6 +65,14 @@ jobs:
           }
           if [ "$DEPLOY_REQUESTED" = 'true' ] && [ "$APPROVAL_PHRASE" != 'ENABLE_PRIVATE_CRM_TELEGRAM_DRAIN' ]; then
             echo 'The exact Telegram production approval phrase is required for deploy=true.' >&2
+            exit 1
+          fi
+          if [ "$ENABLE_LINKING" = 'true' ] && [ "$DEPLOY_REQUESTED" != 'true' ]; then
+            echo 'enable_linking=true is valid only with deploy=true.' >&2
+            exit 1
+          fi
+          if [ "$ENABLE_LINKING" = 'true' ] && [ "$LINKING_APPROVAL_PHRASE" != 'ENABLE_TELEGRAM_LINKING' ]; then
+            echo 'The separate Telegram linking approval phrase is required for enable_linking=true.' >&2
             exit 1
           fi
 
@@ -130,7 +150,7 @@ jobs:
           }
           NODE
 
-      - name: Generate and deploy Telegram Worker with linking still dormant
+      - name: Generate and deploy Telegram shared scheduler
         if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -140,16 +160,29 @@ jobs:
           set -euo pipefail
           deploy_config="$GITHUB_WORKSPACE/.wrangler.telegram.production.deploy.toml"
           trap 'rm -f "$deploy_config"' EXIT
-          node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config"
+
+          generator_args=("$deploy_config")
+          preflight_args=("$deploy_config")
+          expected_linking='false'
+          if [ "$ENABLE_LINKING" = 'true' ]; then
+            generator_args+=(--enable-linking)
+            preflight_args+=(--allow-linking)
+            expected_linking='true'
+          fi
+
+          node scripts/generate-telegram-production-deploy-config.mjs "${generator_args[@]}"
           grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$deploy_config"
-          grep -Fq 'TELEGRAM_LINKING_ENABLED = "false"' "$deploy_config"
+          grep -Fq 'GMAIL_SHARED_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq "TELEGRAM_LINKING_ENABLED = \"$expected_linking\"" "$deploy_config"
+          grep -Fq 'binding = "GMAIL_SERVICE"' "$deploy_config"
+          grep -Fq 'service = "vishar-gmail-production"' "$deploy_config"
           grep -Fq 'telegram.vishartattoo.com' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
 
-          # Live Cloudflare state is the authority on what production is running.
-          # A deploy may add bindings; it may never silently remove one that
-          # production depends on. This gates on that.
-          node scripts/preflight-telegram-production.mjs "$deploy_config"
+          # Live Cloudflare state is authoritative. A deploy may add bindings;
+          # it may never silently remove one production depends on. Linking-on
+          # additionally requires the separately-approved preflight flag.
+          node scripts/preflight-telegram-production.mjs "${preflight_args[@]}"
 
           XDG_CONFIG_HOME=.wrangler/config \
           WRANGLER_LOG_PATH=.wrangler/telegram-production-wrangler.log \
@@ -193,8 +226,10 @@ jobs:
             preview_urls: false,
             custom_domain: 'telegram.vishartattoo.com',
             webhook_path: '/webhook',
-            linking_enabled: false,
+            linking_enabled: process.env.ENABLE_LINKING === 'true',
             cron: '*/5 * * * *',
+            gmail_shared_drain_enabled: true,
+            gmail_service: 'vishar-gmail-production',
             legacy_artist_fallback_retained: true,
             secret_names_only: true,
           }, null, 2));
@@ -222,15 +257,18 @@ jobs:
             echo "- Exact SHA: \`$GITHUB_SHA\`"
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo "- Linking requested: \`$ENABLE_LINKING\`"
             echo '- Worker: `vishar-telegram-drain-production` only'
             echo '- workers.dev disabled; preview URLs disabled'
             echo '- Custom Domain: `telegram.vishartattoo.com`; only `/webhook` is accepted by code'
-            echo '- Tracked config: drain disabled, linking disabled, no cron'
-            echo '- Generated deploy config: drain enabled with exact `*/5 * * * *` cron, linking still disabled'
-            echo '- Telegram webhook registration is deliberately outside this deploy and cannot be activated by this workflow'
+            echo '- Tracked config: Telegram drain, Gmail shared drain and linking disabled; no cron or Service Binding'
+            echo '- Generated deploy config: Telegram + Gmail shared drains enabled, exact `*/5 * * * *` cron, `GMAIL_SERVICE -> vishar-gmail-production` preserved'
+            echo '- Linking defaults OFF and requires its own `ENABLE_TELEGRAM_LINKING` approval phrase to turn ON'
+            echo '- Telegram webhook registration is deliberately outside this deploy and cannot be performed by this workflow'
             echo '- Existing Vladimir/Kristina Artist bindings remain required as the Phase G fallback'
             echo '- Shared bot token and webhook secret must be pre-provisioned, but their values are never read or printed'
+            echo '- Gmail credentials remain on the Gmail Worker; the scheduler receives only the bounded Service Binding'
             echo '- There is no global Telegram chat-id binding; DB destinations are server-only'
-            echo '- Cloudflare preflight compares live bindings against the deploy config and blocks any silent removal'
+            echo '- Cloudflare preflight compares live bindings against the deploy config and blocks silent removal or unsafe linking state changes'
             echo '- This workflow never runs secret put/bulk, setWebhook, Pages deploy or Supabase migration commands'
           } >> "$GITHUB_STEP_SUMMARY"
