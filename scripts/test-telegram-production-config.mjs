@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { TELEGRAM_SELF_SERVICE_RPCS } from '../workers/lib/supabase.js';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -16,6 +17,17 @@ const expectIncludes = (text, needle, label) => {
 const expectExcludes = (text, needle, label) => {
   if (text.includes(needle)) throw new Error(`${label}: forbidden ${needle}`);
 };
+
+const telegramRpcSurface = [...TELEGRAM_SELF_SERVICE_RPCS].sort();
+const expectedTelegramRpcSurface = [
+  'service_claim_telegram_notifications',
+  'service_complete_telegram_link',
+  'service_record_telegram_notification_result',
+  'service_resolve_telegram_destination',
+].sort();
+if (JSON.stringify(telegramRpcSurface) !== JSON.stringify(expectedTelegramRpcSurface)) {
+  throw new Error(`Telegram self-service Worker RPC surface changed: ${telegramRpcSurface.join(', ')}`);
+}
 
 const tracked = directivesOf(read('wrangler.telegram-drain.production.toml'));
 expectIncludes(tracked, 'name = "vishar-telegram-drain-production"', 'tracked config');
