@@ -1,9 +1,16 @@
 import { ProviderRouteError } from './provider-routing.js';
 import { createSupabaseClient } from './supabase.js';
-import { buildEnquiryNotification, sendNotification } from './telegram.js';
+import {
+  buildEnquiryNotification,
+  buildPersonalNotification,
+  sendNotification,
+  sendSharedTelegramNotification,
+  sharedTelegramBotToken,
+} from './telegram.js';
 
 const TELEGRAM_KIND = 'telegram_notification';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CHAT_ID = /^-?[0-9]{1,20}$/;
 const WORKER_ID = /^[a-z][a-z0-9_-]{2,127}$/;
 const REFERENCE = /^ENQ-[0-9]{4}-[0-9]{4,}$/;
 const DEFAULT_LEASE_SECONDS = 120;
@@ -90,6 +97,38 @@ function firstRow(value) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function validateRegistryDestination(value, expectedKind) {
+  if (value == null) return null;
+  const row = firstRow(value);
+  if (!row) return null;
+  if (
+    !UUID.test(row.destination_id ?? '')
+    || row.destination_kind !== expectedKind
+    || !CHAT_ID.test(String(row.chat_id ?? ''))
+  ) {
+    throw new TelegramDrainError('telegram_destination_invalid');
+  }
+  return { ...row, chat_id: String(row.chat_id) };
+}
+
+function validatePersonalDelivery(row) {
+  if (
+    !UUID.test(row?.delivery_id ?? '')
+    || !UUID.test(row?.notification_id ?? '')
+    || !UUID.test(row?.profile_id ?? '')
+    || !CHAT_ID.test(String(row?.chat_id ?? ''))
+    || typeof row?.title !== 'string'
+    || row.title.trim() === ''
+    || row.title.length > 200
+    || (row?.body != null && (typeof row.body !== 'string' || row.body.length > 2000))
+  ) {
+    throw new TelegramDrainError('telegram_notification_invalid');
+  }
+  const text = buildPersonalNotification({ title: row.title, body: row.body });
+  if (!text) throw new TelegramDrainError('telegram_notification_invalid');
+  return { ...row, chat_id: String(row.chat_id), text };
+}
+
 function safeErrorCode(error) {
   const code = error instanceof TelegramDrainError || error instanceof ProviderRouteError
     ? error.code
@@ -117,6 +156,29 @@ async function recordFailure(supabase, outboxId, workerId, errorCode) {
   }
 }
 
+async function preferredArtistDelivery(env, supabase, route, job, text, fetchImpl) {
+  // Rollout rule: without the one shared bot token the old artist binding stays
+  // canonical and we do not even require the new resolver to be present.
+  if (!sharedTelegramBotToken(env)) {
+    return sendNotification(env, route, text, fetchImpl);
+  }
+
+  try {
+    const resolved = await supabase.rpc('service_resolve_telegram_destination', {
+      p_artist_id: job.artist_id,
+      p_profile_id: null,
+    });
+    const destination = validateRegistryDestination(resolved, 'artist');
+    if (destination) {
+      return sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl);
+    }
+  } catch {
+    // Static bindings remain the rollback path throughout Phase G. A registry
+    // lookup failure must not make existing production enquiry alerts disappear.
+  }
+  return sendNotification(env, route, text, fetchImpl);
+}
+
 export async function processClaimedTelegramJob(env, {
   supabase,
   claimedJob,
@@ -141,11 +203,12 @@ export async function processClaimedTelegramJob(env, {
       p_outbox_id: job.outbox_id,
     });
     const route = validateTelegramRoute(firstRow(resolved), job);
-    notification = await sendNotification(env, route, buildEnquiryNotification({
+    const text = buildEnquiryNotification({
       referenceNumber: job.reference_number,
       fileCount: job.file_count,
       clientConflict: job.client_conflict,
-    }), fetchImpl);
+    });
+    notification = await preferredArtistDelivery(env, supabase, route, job, text, fetchImpl);
   } catch (error) {
     return recordFailure(
       supabase,
@@ -247,11 +310,75 @@ export async function drainTelegramOutbox(env, {
   return aggregate;
 }
 
+async function recordPersonalResult(supabase, deliveryId, workerId, succeeded, errorCode = null) {
+  return supabase.rpc('service_record_telegram_notification_result', {
+    p_delivery_id: deliveryId,
+    p_worker_id: workerId,
+    p_succeeded: succeeded,
+    p_error_code: succeeded ? null : errorCode,
+  });
+}
+
+export async function drainPersonalTelegramNotifications(env, {
+  workerId = randomWorkerId(),
+  limit = DEFAULT_LIMIT,
+  leaseSeconds = DEFAULT_LEASE_SECONDS,
+  fetchImpl = fetch,
+} = {}) {
+  validateAutomaticInputs(workerId, limit, leaseSeconds);
+  if (!sharedTelegramBotToken(env)) {
+    return { claimed: 0, succeeded: 0, failed: 0, unrecorded: 0, skipped: true };
+  }
+
+  const supabase = createSupabaseClient(env, fetchImpl);
+  const claimed = await supabase.rpc('service_claim_telegram_notifications', {
+    p_worker_id: workerId,
+    p_limit: limit,
+    p_lease_seconds: leaseSeconds,
+  });
+  const rows = Array.isArray(claimed) ? claimed : claimed == null ? [] : [claimed];
+  if (rows.length > limit) throw new TelegramDrainError('telegram_claim_invalid');
+
+  const aggregate = { claimed: rows.length, succeeded: 0, failed: 0, unrecorded: 0, skipped: false };
+  for (const row of rows) {
+    let delivery;
+    try {
+      delivery = validatePersonalDelivery(row);
+    } catch (error) {
+      const code = safeErrorCode(error);
+      if (!UUID.test(row?.delivery_id ?? '')) {
+        aggregate.unrecorded += 1;
+        continue;
+      }
+      try {
+        await recordPersonalResult(supabase, row.delivery_id, workerId, false, code);
+        aggregate.failed += 1;
+      } catch {
+        aggregate.unrecorded += 1;
+      }
+      continue;
+    }
+
+    const sent = await sendSharedTelegramNotification(env, delivery.chat_id, delivery.text, fetchImpl);
+    const succeeded = sent.delivered === true;
+    const code = succeeded ? null : safeErrorCode({ code: sent.errorCode });
+    try {
+      await recordPersonalResult(supabase, delivery.delivery_id, workerId, succeeded, code);
+      aggregate[succeeded ? 'succeeded' : 'failed'] += 1;
+    } catch {
+      aggregate.unrecorded += 1;
+    }
+  }
+  return aggregate;
+}
+
 export const __testing = {
   TELEGRAM_KIND,
   safeErrorCode,
   validateAutomaticInputs,
   validateClaimedJob,
   validateExplicitInputs,
+  validatePersonalDelivery,
+  validateRegistryDestination,
   validateTelegramRoute,
 };
