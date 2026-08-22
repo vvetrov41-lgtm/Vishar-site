@@ -19,10 +19,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0082` | Phase O, message templates and the consent/suppression gate | claimed on `agent/platform-message-templates` |
 | `0083` | Phase P, workspace automation defaults and artist overrides | claimed on `agent/platform-workspace-automation-defaults` |
 | `0084` | Phases S-T, unified GPT profile-bound authorization | claimed on `agent/platform-unified-gpt` |
+| `0085` | Phase U, notification scope re-checked on revocation | claimed on `agent/platform-golden-paths` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0085`
+`0086`
 
 ## Allocation rule for unfinished phases
 
@@ -43,6 +44,10 @@ This avoids two failure modes present in the original roadmap table: two future 
 The following phases intentionally have **no fixed migration number yet**:
 
 - F-G: Telegram self-service linking and delivery migration;
-- U: golden-path validation, no migration unless validation exposes a required schema fix.
+- (none remaining; Phase U's validation did expose a required fix and claimed `0085`).
 
-Phases Q-R use no migration. Phases S-T claim `0084` on their actual stacked lineage. Any later schema work claims from `0085` after a fresh check.
+Phases Q-R use no migration. Phases S-T claim `0084` on their actual stacked lineage.
+Phase U claimed `0085`: its cross-phase golden path found that `list_notifications`
+matched only on recipient and never re-derived artist scope, so a revoked
+membership kept an artist's notifications in the old recipient's inbox. Any later
+schema work claims from `0086` after a fresh check.

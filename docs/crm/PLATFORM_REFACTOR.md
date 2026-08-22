@@ -546,6 +546,56 @@ clients do; an owner turns capabilities on one at a time through the existing
 assert across every row that no GPT client ever arrives with a permission
 already enabled.
 
+### 6.5 Phase U: what the golden path proved, and what it broke
+
+Every phase before this one tested its own migration against its own fixtures.
+That proves each piece works. It does not prove they compose, and composition is
+the entire claim of this refactor.
+
+`supabase/tests/233_golden_paths.sql` onboards one brand-new artist the way a
+studio would and follows a single real enquiry the whole way: the artist row
+provisions a workspace, the owner grants two memberships, the capability
+registry answers for an artist nobody wrote code for, the artist opens their own
+hosted booking source, a stranger submits that form naming no artist, the
+durable intake resolves the artist from the form id, the activity projection
+feeds the automation engine, a rule the artist wrote themselves materialises a
+job, the tick delivers a notification into that artist's inbox and nobody
+else's, the consent gate allows service traffic to the new client and refuses
+marketing, a studio-wide automation default expands into an artist-owned rule,
+and the unified GPT resolves the same artist through the same memberships.
+
+Three things it established that no single-phase test could:
+
+- **Defaults are off, consistently.** A booking source and an automation rule
+  both arrive switched off. The golden path has to turn the rule on before
+  anything fires, which is the correct posture and worth pinning.
+- **Refusal, not silence.** `list_booking_sources` raises rather than returning
+  an empty routing map to someone without access. That distinction is the
+  hardening Phase I-J added, and it is asserted here as behaviour rather than
+  as an implementation detail.
+- **Phase P has no caller yet.** Its control-plane RPCs are granted to no API
+  role at all. The golden path asserts that closed state rather than pretending
+  a manager could use it today, and reaches the mechanism through a definer
+  boundary the way a future surface will.
+
+And one defect, which is why the phase earned a migration:
+
+**`list_notifications` never re-derived artist scope.** It matched on
+`recipient_profile_id` and stopped. That was right when notifications were built
+in Phases K-M, because delivery and access were decided at the same moment. It
+stopped being right once membership became something a studio grants and
+revokes: a revoked manager kept the artist's display name, the titles and bodies
+that artist's automations had written, and the entity ids of their enquiries and
+projects — in their own inbox, after the rest of the CRM had closed to them.
+`snooze_follow_up` had always called `require_artist_access`; notifications were
+the one read that did not.
+
+Migration `0085` applies the rule the rest of the platform already follows, to
+both `list_notifications` and `mark_notification_read`. Nothing is deleted:
+revocation hides the row and restoring the membership brings it back, the same
+posture the unified GPT takes with a stale Artist selector. The golden path
+asserts both halves.
+
 ### Telegram migration order (Phase F/G), stated once
 
 1. Add `crm_private.telegram_destinations`; write nothing.
