@@ -1,0 +1,15 @@
+name = "vishar-mcp-dormant"
+main = "workers/vishar-mcp.js"
+compatibility_date = "2026-08-22"
+workers_dev = false
+preview_urls = false
+
+# Phase Q-R is code and contract only. This file intentionally has no route and
+# MCP remains disabled. A later production rollout must provide the publishable
+# Supabase key, OAuth resource registration, rate limit and any service bindings
+# as a separately reviewed deployment change.
+[vars]
+VISHAR_ENVIRONMENT = "production"
+MCP_ENABLED = "false"
+MCP_GMAIL_TOOLS_ENABLED = "false"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
