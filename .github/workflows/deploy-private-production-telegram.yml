@@ -89,6 +89,7 @@ jobs:
         run: |
           node scripts/test-telegram-drain.mjs
           node scripts/test-telegram-drain-worker.mjs
+          node scripts/test-telegram-self-service-worker.mjs
           npm run test:telegram-production
           npm run check:telegram-production-bundle
           npm run scan:secrets
@@ -109,13 +110,15 @@ jobs:
             'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
             'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
             'SUPABASE_SECRET_KEY',
+            'TELEGRAM_BOT_TOKEN',
+            'TELEGRAM_WEBHOOK_SECRET',
           ].sort();
           if (JSON.stringify(actual) !== JSON.stringify(expected)) {
             throw new Error(`Production Telegram Worker secret-name set is not exact; expected ${expected.join(', ')}`);
           }
           NODE
 
-      - name: Generate and deploy only the scheduled Telegram drain Worker
+      - name: Generate and deploy Telegram Worker with linking still dormant
         if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -127,6 +130,8 @@ jobs:
           trap 'rm -f "$deploy_config"' EXIT
           node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config"
           grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'TELEGRAM_LINKING_ENABLED = "false"' "$deploy_config"
+          grep -Fq 'telegram.vishartattoo.com' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
 
           XDG_CONFIG_HOME=.wrangler/config \
@@ -169,7 +174,11 @@ jobs:
             version_id: versions[0].id,
             workers_dev: false,
             preview_urls: false,
+            custom_domain: 'telegram.vishartattoo.com',
+            webhook_path: '/webhook',
+            linking_enabled: false,
             cron: '*/5 * * * *',
+            legacy_artist_fallback_retained: true,
             secret_names_only: true,
           }, null, 2));
           console.log(`TELEGRAM_WORKER_VERSION=${versions[0].id}`);
@@ -197,12 +206,13 @@ jobs:
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Worker: `vishar-telegram-drain-production` only'
-            echo '- Public routes: none; workers.dev disabled; preview URLs disabled'
-            echo '- Tracked config: drain disabled and no cron'
-            echo '- Generated deploy config: drain enabled with exact `*/5 * * * *` cron'
-            echo '- Batch: default 10, DB hard maximum 20; lease-aware claim/ack and DB rollout cutoff remain authoritative'
-            echo '- Required secret names: one production Supabase backend key plus Vladimir/Kristina artist-scoped Telegram bindings'
-            echo '- Global Telegram token/chat bindings are forbidden and not provisioned by this workflow'
-            echo '- Secret values are never read or printed; this workflow never runs secret put/bulk'
-            echo '- Retained staging / Pages / CRM / Calendar / GPT / booking / database deployment commands: none'
+            echo '- workers.dev disabled; preview URLs disabled'
+            echo '- Custom Domain: `telegram.vishartattoo.com`; only `/webhook` is accepted by code'
+            echo '- Tracked config: drain disabled, linking disabled, no cron'
+            echo '- Generated deploy config: drain enabled with exact `*/5 * * * *` cron, linking still disabled'
+            echo '- Telegram webhook registration is deliberately outside this deploy and cannot be activated by this workflow'
+            echo '- Existing Vladimir/Kristina Artist bindings remain required as the Phase G fallback'
+            echo '- Shared bot token and webhook secret must be pre-provisioned, but their values are never read or printed'
+            echo '- There is no global Telegram chat-id binding; DB destinations are server-only'
+            echo '- This workflow never runs secret put/bulk, setWebhook, Pages deploy or Supabase migration commands'
           } >> "$GITHUB_STEP_SUMMARY"
