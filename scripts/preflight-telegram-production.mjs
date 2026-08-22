@@ -12,7 +12,7 @@
 //
 // So the rule this enforces is narrow and absolute: a deploy may add bindings,
 // never silently remove one that production is currently running on, and it may
-// not enable Telegram linking without a separate explicit gate.
+// not change live Telegram linking state without an explicit gate.
 //
 //   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
 //     node scripts/preflight-telegram-production.mjs <generated-deploy-config.toml>
@@ -33,8 +33,6 @@ const REQUIRED_SECRET_NAMES = [
   'TELEGRAM_WEBHOOK_SECRET',
 ];
 
-// Removing one of these would end a legacy Artist's Telegram delivery with no
-// DB-backed destination yet proven to replace it.
 const LEGACY_FALLBACK_SECRETS = [
   'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
   'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
@@ -95,7 +93,6 @@ export function parseDeployConfig(toml) {
     vars,
     services,
     compatibilityDate: compatMatch ? compatMatch[1] : null,
-    // Everything a deploy replaces wholesale: plain-text vars plus non-secret bindings.
     replaceableBindings: [...Object.keys(vars), ...Object.keys(services)].sort(),
     crons,
     workersDev: bool('workers_dev'),
@@ -105,13 +102,18 @@ export function parseDeployConfig(toml) {
   };
 }
 
-export function evaluatePreflight({ live, desired, hostname = HOSTNAME, allowLinking = false }) {
+export function evaluatePreflight({
+  live,
+  desired,
+  hostname = HOSTNAME,
+  allowLinking = false,
+  allowLinkingDisable = false,
+}) {
   const failures = [];
   const warnings = [];
 
   if (!live.workerExists) failures.push(`Worker ${WORKER} does not exist`);
 
-  // The whole reason this file exists.
   const liveReplaceable = (live.bindings || [])
     .filter((b) => b.type !== 'secret_text')
     .map((b) => b.name);
@@ -155,7 +157,6 @@ export function evaluatePreflight({ live, desired, hostname = HOSTNAME, allowLin
   if (desired.workersDev !== false) failures.push('deploy config does not set workers_dev = false');
   if (desired.previewUrls !== false) failures.push('deploy config does not set preview_urls = false');
 
-  // The hostname must be free, or already ours. Never someone else's.
   const attached = (live.customDomains || []).find((d) => d.hostname === hostname);
   if (attached && attached.service !== WORKER) {
     failures.push(`${hostname} is already a Custom Domain of ${attached.service}`);
@@ -173,8 +174,6 @@ export function evaluatePreflight({ live, desired, hostname = HOSTNAME, allowLin
     failures.push(`zone route ${conflictingRoute.pattern} points at ${conflictingRoute.script}`);
   }
 
-  // Cloudflare Access in front of a provider callback makes Telegram's POST fail
-  // a login redirect instead of reaching the Worker.
   const blockingAccess = (live.accessApps || []).filter((a) => {
     const domain = String(a.domain || '');
     return domain === hostname
@@ -199,11 +198,9 @@ export function evaluatePreflight({ live, desired, hostname = HOSTNAME, allowLin
     failures.push('linking-enabled deploy requires the explicit --allow-linking preflight gate');
   }
 
-  // Once linking is live, a routine drain deployment must not silently turn it
-  // off. A future rollback should have its own explicit rollback gate.
   const liveLinking = (live.bindings || []).find((b) => b.name === 'TELEGRAM_LINKING_ENABLED');
-  if (liveLinking?.text === 'true' && desiredLinking === 'false') {
-    failures.push('deploy would disable live Telegram linking; use a dedicated rollback path instead');
+  if (liveLinking?.text === 'true' && desiredLinking === 'false' && !allowLinkingDisable) {
+    failures.push('deploy would disable live Telegram linking; use the explicit --allow-linking-disable rollback gate');
   }
 
   if (desired.vars.TELEGRAM_DRAIN_ENABLED !== 'true') {
@@ -291,11 +288,10 @@ const invokedDirectly = process.argv[1]
 if (invokedDirectly) {
   const { readFileSync } = await import('node:fs');
   const args = process.argv.slice(2);
-  // Validation-only runs happen before the shared bot secrets exist, so they
-  // report rather than gate. The pre-deploy run gates.
   const reportOnly = args.includes('--report-only');
   const allowLinking = args.includes('--allow-linking');
-  const knownFlags = new Set(['--report-only', '--allow-linking']);
+  const allowLinkingDisable = args.includes('--allow-linking-disable');
+  const knownFlags = new Set(['--report-only', '--allow-linking', '--allow-linking-disable']);
   for (const arg of args.filter((a) => a.startsWith('--'))) {
     if (!knownFlags.has(arg)) {
       console.error(`unknown option: ${arg}`);
@@ -304,7 +300,10 @@ if (invokedDirectly) {
   }
   const configPath = args.find((a) => !a.startsWith('--'));
   if (!configPath) {
-    console.error('usage: preflight-telegram-production.mjs <generated-deploy-config.toml> [--report-only] [--allow-linking]');
+    console.error(
+      'usage: preflight-telegram-production.mjs <generated-deploy-config.toml> '
+      + '[--report-only] [--allow-linking] [--allow-linking-disable]',
+    );
     process.exit(1);
   }
   const token = process.env.CLOUDFLARE_API_TOKEN;
@@ -316,7 +315,12 @@ if (invokedDirectly) {
 
   const desired = parseDeployConfig(readFileSync(configPath, 'utf8'));
   const live = await collectLiveState(token, accountId);
-  const verdict = evaluatePreflight({ live, desired, allowLinking });
+  const verdict = evaluatePreflight({
+    live,
+    desired,
+    allowLinking,
+    allowLinkingDisable,
+  });
 
   console.log(JSON.stringify(verdict.summary, null, 2));
   for (const warning of verdict.warnings) console.log(`warning: ${warning}`);
