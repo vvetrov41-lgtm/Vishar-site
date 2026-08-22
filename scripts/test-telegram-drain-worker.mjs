@@ -2,7 +2,27 @@ import assert from 'node:assert/strict';
 import worker from '../workers/telegram-drain-worker.js';
 
 assert.equal(typeof worker.scheduled, 'function');
-assert.equal('fetch' in worker, false, 'the dedicated drain Worker has no public HTTP handler');
+
+// This Worker used to have no HTTP surface at all, and that assertion lived
+// here. Telegram linking needs one, so the guarantee moved rather than
+// disappeared: the handler exists, but under the tracked production
+// configuration - linking disabled - every path including the exact webhook
+// path is 404, and nothing reaches the network. The full webhook contract
+// (secret header, path exactness, retry semantics) is covered in
+// scripts/test-telegram-self-service-worker.mjs.
+assert.equal(typeof worker.fetch, 'function');
+for (const path of ['/', '/webhook', '/webhook?token=x', '/anything']) {
+  const dormant = await worker.fetch(
+    new Request(`https://telegram.example.test${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }),
+    { TELEGRAM_DRAIN_ENABLED: 'true' },
+  );
+  assert.equal(dormant.status, 404,
+    `${path} must be dormant while Telegram linking is disabled`);
+}
 
 const originalLog = console.log;
 const originalError = console.error;
@@ -42,8 +62,13 @@ try {
   });
   assert.ok(scheduledPromise instanceof Promise);
   await scheduledPromise;
+  // The scheduled drain now does two jobs: the durable Artist outbox and
+  // personal notification delivery. personalSkipped is true here because no
+  // shared bot token is configured, which is the tracked production posture.
   assert.deepEqual(messages, [
-    'telegram outbox drain {"claimed":0,"succeeded":0,"failed":0,"unrecorded":0}',
+    'telegram outbox drain {"claimed":0,"succeeded":0,"failed":0,"unrecorded":0,'
+      + '"personalClaimed":0,"personalSucceeded":0,"personalFailed":0,'
+      + '"personalUnrecorded":0,"personalSkipped":true}',
   ]);
 } finally {
   console.log = originalLog;
@@ -51,4 +76,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log('Telegram drain Worker tests passed: scheduled-only, disabled by default and aggregate-only logging.');
+console.log('Telegram drain Worker tests passed: drain disabled by default, linking dormant on every path, and aggregate-only logging.');

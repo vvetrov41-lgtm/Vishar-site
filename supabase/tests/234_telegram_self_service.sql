@@ -224,10 +224,12 @@ select ok(
   exists(select 1 from public.list_telegram_destinations()
          where destination_kind='profile' and is_connected),
   'browser sees that its personal Telegram destination is connected');
+-- A function argument cannot carry its own FROM clause; this also widens the
+-- check from one row to every row the browser can see.
 select ok(
-  row_to_json(x)::text not like '%100002%'
-  from (select * from public.list_telegram_destinations()
-        where destination_kind='profile' limit 1) x,
+  not exists (
+    select 1 from public.list_telegram_destinations() d
+    where row_to_json(d)::text like '%100002%'),
   'safe browser status does not contain the private chat id');
 select lives_ok(
   $$select public.set_notification_preference('telegram', true)$$,
@@ -391,10 +393,9 @@ select is(
 set local role authenticated;
 select pg_temp.telegram_claims('{"sub":"f6010000-0000-4000-8000-000000000001","role":"authenticated"}');
 select ok(
-  row_to_json(x)::text not like '%100200002%'
-  from (select * from public.list_telegram_destinations()
-        where destination_kind='artist'
-          and artist_id='f6a10000-0000-4000-8000-000000000001' limit 1) x,
+  not exists (
+    select 1 from public.list_telegram_destinations() d
+    where row_to_json(d)::text like '%100200002%'),
   'Artist connection status also hides the group chat id');
 
 -- Personal disconnect disables both the private target and preference.

@@ -653,6 +653,7 @@ stable
 security definer
 set search_path = pg_catalog, public, crm_private
 as $$
+#variable_conflict use_column
 begin
   if not crm_private.is_service_backend() then
     raise exception 'Telegram destination resolution is backend-only' using errcode = '42501';
@@ -714,6 +715,7 @@ language plpgsql
 security definer
 set search_path = pg_catalog, public, crm_private
 as $$
+#variable_conflict use_column
 begin
   if not crm_private.is_service_backend() then
     raise exception 'Telegram notification leasing is backend-only' using errcode = '42501';
