@@ -45,7 +45,14 @@ function diagnosticError(operation,status){
 }
 
 async function sendTelegramMessage(botToken,chatId,text,fetchImpl=fetch){
-  if(!SHARED_BOT_TOKEN.test(botToken??'')||!CHAT_ID.test(String(chatId??''))||typeof text!=='string'||!text){
+  // Legacy encrypted bindings historically accepted any non-empty provider
+  // token. Keep that contract here; only the new shared env binding is subject
+  // to SHARED_BOT_TOKEN validation in sharedTelegramBotToken().
+  if(
+    typeof botToken!=='string'||!botToken||botToken.length>256||/\s/.test(botToken)
+    || typeof chatId!=='string'||!chatId
+    || typeof text!=='string'||!text
+  ){
     return {delivered:false,errorCode:'telegram_destination_invalid'};
   }
   try{
@@ -61,7 +68,8 @@ async function sendTelegramMessage(botToken,chatId,text,fetchImpl=fetch){
 export async function sendSharedTelegramNotification(env,chatId,text,fetchImpl=fetch){
   const botToken=sharedTelegramBotToken(env);
   if(!botToken)return {delivered:false,errorCode:'telegram_shared_bot_not_configured'};
-  return sendTelegramMessage(botToken,chatId,text,fetchImpl);
+  if(!CHAT_ID.test(String(chatId??'')))return {delivered:false,errorCode:'telegram_destination_invalid'};
+  return sendTelegramMessage(botToken,String(chatId),text,fetchImpl);
 }
 
 export async function checkTelegramDestination(env,route,fetchImpl=fetch){
