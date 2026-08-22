@@ -27,6 +27,16 @@ on:
         required: false
         default: ''
         type: string
+      disable_linking:
+        description: Explicitly disable already-live Telegram linking as a rollback. Requires its own approval phrase.
+        required: true
+        default: false
+        type: boolean
+      linking_rollback_phrase:
+        description: Required only when disable_linking=true
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -44,6 +54,7 @@ jobs:
     env:
       WORKER_NAME: vishar-telegram-drain-production
       ENABLE_LINKING: ${{ inputs.enable_linking }}
+      DISABLE_LINKING: ${{ inputs.disable_linking }}
 
     steps:
       - name: Verify exact release branch and explicit production gates
@@ -53,6 +64,7 @@ jobs:
           DEPLOY_REQUESTED: ${{ inputs.deploy }}
           APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
           LINKING_APPROVAL_PHRASE: ${{ inputs.linking_approval_phrase }}
+          LINKING_ROLLBACK_PHRASE: ${{ inputs.linking_rollback_phrase }}
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
@@ -67,12 +79,24 @@ jobs:
             echo 'The exact Telegram production approval phrase is required for deploy=true.' >&2
             exit 1
           fi
+          if [ "$ENABLE_LINKING" = 'true' ] && [ "$DISABLE_LINKING" = 'true' ]; then
+            echo 'enable_linking and disable_linking are mutually exclusive.' >&2
+            exit 1
+          fi
           if [ "$ENABLE_LINKING" = 'true' ] && [ "$DEPLOY_REQUESTED" != 'true' ]; then
             echo 'enable_linking=true is valid only with deploy=true.' >&2
             exit 1
           fi
+          if [ "$DISABLE_LINKING" = 'true' ] && [ "$DEPLOY_REQUESTED" != 'true' ]; then
+            echo 'disable_linking=true is valid only with deploy=true.' >&2
+            exit 1
+          fi
           if [ "$ENABLE_LINKING" = 'true' ] && [ "$LINKING_APPROVAL_PHRASE" != 'ENABLE_TELEGRAM_LINKING' ]; then
             echo 'The separate Telegram linking approval phrase is required for enable_linking=true.' >&2
+            exit 1
+          fi
+          if [ "$DISABLE_LINKING" = 'true' ] && [ "$LINKING_ROLLBACK_PHRASE" != 'DISABLE_TELEGRAM_LINKING' ]; then
+            echo 'The separate Telegram linking rollback phrase is required for disable_linking=true.' >&2
             exit 1
           fi
 
@@ -168,6 +192,8 @@ jobs:
             generator_args+=(--enable-linking)
             preflight_args+=(--allow-linking)
             expected_linking='true'
+          elif [ "$DISABLE_LINKING" = 'true' ]; then
+            preflight_args+=(--allow-linking-disable)
           fi
 
           node scripts/generate-telegram-production-deploy-config.mjs "${generator_args[@]}"
@@ -179,9 +205,6 @@ jobs:
           grep -Fq 'telegram.vishartattoo.com' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
 
-          # Live Cloudflare state is authoritative. A deploy may add bindings;
-          # it may never silently remove one production depends on. Linking-on
-          # additionally requires the separately-approved preflight flag.
           node scripts/preflight-telegram-production.mjs "${preflight_args[@]}"
 
           XDG_CONFIG_HOME=.wrangler/config \
@@ -227,6 +250,7 @@ jobs:
             custom_domain: 'telegram.vishartattoo.com',
             webhook_path: '/webhook',
             linking_enabled: process.env.ENABLE_LINKING === 'true',
+            linking_rollback_requested: process.env.DISABLE_LINKING === 'true',
             cron: '*/5 * * * *',
             gmail_shared_drain_enabled: true,
             gmail_service: 'vishar-gmail-production',
@@ -257,18 +281,19 @@ jobs:
             echo "- Exact SHA: \`$GITHUB_SHA\`"
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
-            echo "- Linking requested: \`$ENABLE_LINKING\`"
+            echo "- Linking enable requested: \`$ENABLE_LINKING\`"
+            echo "- Linking rollback requested: \`$DISABLE_LINKING\`"
             echo '- Worker: `vishar-telegram-drain-production` only'
             echo '- workers.dev disabled; preview URLs disabled'
             echo '- Custom Domain: `telegram.vishartattoo.com`; only `/webhook` is accepted by code'
             echo '- Tracked config: Telegram drain, Gmail shared drain and linking disabled; no cron or Service Binding'
             echo '- Generated deploy config: Telegram + Gmail shared drains enabled, exact `*/5 * * * *` cron, `GMAIL_SERVICE -> vishar-gmail-production` preserved'
-            echo '- Linking defaults OFF and requires its own `ENABLE_TELEGRAM_LINKING` approval phrase to turn ON'
+            echo '- Linking defaults OFF, enable requires `ENABLE_TELEGRAM_LINKING`, and an explicit rollback requires `DISABLE_TELEGRAM_LINKING`'
             echo '- Telegram webhook registration is deliberately outside this deploy and cannot be performed by this workflow'
             echo '- Existing Vladimir/Kristina Artist bindings remain required as the Phase G fallback'
             echo '- Shared bot token and webhook secret must be pre-provisioned, but their values are never read or printed'
             echo '- Gmail credentials remain on the Gmail Worker; the scheduler receives only the bounded Service Binding'
             echo '- There is no global Telegram chat-id binding; DB destinations are server-only'
-            echo '- Cloudflare preflight compares live bindings against the deploy config and blocks silent removal or unsafe linking state changes'
-            echo '- This workflow never runs secret put/bulk, setWebhook, Pages deploy or Supabase migration commands'
+            echo '- Cloudflare preflight compares live bindings against the deploy config and blocks silent removal or unapproved linking state changes'
+            echo '- This workflow never runs secret put/bulk, webhook activation, Pages deploy or Supabase migration commands'
           } >> "$GITHUB_STEP_SUMMARY"
