@@ -152,7 +152,6 @@ for (const needle of [
   'wrangler versions list',
 ]) expectIncludes(workflow, needle, 'production workflow');
 for (const needle of [
-  '--strict',
   'versions[0].id',
   'wrangler secret put',
   'wrangler secret bulk',
@@ -166,6 +165,10 @@ for (const needle of [
   'GOOGLE_OAUTH_CLIENT_SECRET',
   'GMAIL_TOKEN_ENCRYPTION_KEY',
 ]) expectExcludes(workflow, needle, 'production workflow');
+
+if (/^\s*--strict\s*$/m.test(workflow)) {
+  throw new Error('production workflow: forbidden executable Wrangler strict-mode flag');
+}
 
 const preflightCall = 'node scripts/preflight-telegram-production.mjs "${preflight_args[@]}"';
 const preflightCallCount = workflow.split(preflightCall).length - 1;
