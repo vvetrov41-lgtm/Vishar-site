@@ -18,10 +18,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0081` | Phase N, automation engine foundation | claimed on `agent/platform-automation-engine` |
 | `0082` | Phase O, message templates and the consent/suppression gate | claimed on `agent/platform-message-templates` |
 | `0083` | Phase P, workspace automation defaults and artist overrides | claimed on `agent/platform-workspace-automation-defaults` |
+| `0084` | Phases S-T, unified GPT profile-bound authorization | claimed on `agent/platform-unified-gpt` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0084`
+`0085`
 
 ## Allocation rule for unfinished phases
 
@@ -42,8 +43,6 @@ This avoids two failure modes present in the original roadmap table: two future 
 The following phases intentionally have **no fixed migration number yet**:
 
 - F-G: Telegram self-service linking and delivery migration;
-- Q-R: MCP domain contracts and surface, currently expected to need no migration unless implementation proves otherwise;
-- S-T: unified GPT profile-bound authorization;
 - U: golden-path validation, no migration unless validation exposes a required schema fix.
 
-The first unfinished phase that actually begins after the current `0083` lineage may claim `0084`. Later phases claim the next free number from the then-current repository state, not from the stale planning table.
+Phases Q-R use no migration. Phases S-T claim `0084` on their actual stacked lineage. Any later schema work claims from `0085` after a fresh check.
