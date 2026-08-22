@@ -384,7 +384,8 @@ bounded release.
 | I–J | Hosted forms and external websites | `0079` | template/schema based, no form builder |
 | K–M | **Done** — `public.notifications`, the follow-up sweep, personal destinations and preferences | `0077` | see §6.1 |
 | N | **Done** — domain events, rules, jobs, kill switches, one tick | `0081` | see §6.2 |
-| O–P | Templates, client reminders, workspace defaults | `0079`–`0080` | service vs marketing split enforced here |
+| O | **Done** — templates plus the consent/suppression gate | `0082` | see §6.3 |
+| P | Workspace automation defaults and artist overrides | `0083` | builds on `0081` and `0082` |
 | Q–R | MCP domain contracts and surface | none | transport over the same capability layer |
 | S–T | Unified GPT: OAuth client → profile, not artist | `0081` | `gpt_action_clients` gains a profile-bound mode |
 | U | Full golden-path validation | none | §77–§82 of the brief |
@@ -457,6 +458,38 @@ it.
 
 No cron and no Worker configuration change ships with this: with no rules
 present the tick is a no-op.
+
+### 6.3 What `0082` actually built
+
+Reusable message templates, and the consent and suppression guards that decide
+whether a client may be contacted at all.
+
+The order is deliberate: nothing in this lineage can send a client a message
+yet. Building the guard first means the release that adds the first
+client-facing action has something to fail closed against, rather than being
+the release that also has to invent the rule.
+
+- **Classification is catalogued, not chosen.** `message_template_purposes`
+  decides whether a purpose is service or marketing, and `message_templates`
+  has no classification column of its own. A template cannot label a promotion
+  as service traffic, and `may_contact_client` takes a *purpose* rather than a
+  classification so no caller can downgrade one by argument.
+- **Silence is not consent.** A client with no `client_marketing_consent` row
+  receives service traffic and no marketing. `enquiries.privacy_acknowledged_at`
+  is documented in migration `0003` as an acknowledgement rather than a lawful
+  basis, and the gate is tested not to read it.
+- **Suppression outranks consent.** An unsubscribe stops marketing but not the
+  reminder for an appointment the client booked; every other reason means the
+  address itself is unusable and stops service traffic too. Releasing a
+  suppression records the release rather than deleting the row.
+- **A template body is not a template language.** Every `{{token}}` must name a
+  row in `message_template_variables`, so a body cannot reference a column, an
+  expression or anything else a renderer would have to interpret.
+
+pgTAP `230` also carries a tripwire: it asserts `automation_action_type` still
+contains only `notify_artist_team`. The moment somebody adds a client-facing
+automation action, that assertion fails and a reviewer has to confirm the gate
+is wired into it.
 
 ### Telegram migration order (Phase F/G), stated once
 

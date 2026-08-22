@@ -693,6 +693,15 @@ insert into expected_function_acl values
   ('public.create_automation_rule(uuid,text,text,text,text,text,text,integer,public.notification_priority)', false, true, false),
   ('public.set_automation_rule_enabled(uuid,boolean)', false, true, false),
 
+  -- Templates and the consent/suppression gate (migration 0082). The gate is
+  -- readable by the backend as well, because every future send path must be
+  -- able to ask it. Nothing here can record consent on the backend's behalf.
+  ('public.may_contact_client(uuid,public.message_template_channel,text)', false, true, true),
+  ('public.resolve_message_template(uuid,text,public.message_template_channel,text)', false, true, true),
+  ('public.upsert_message_template(uuid,text,public.message_template_channel,text,text,text,uuid)', false, true, false),
+  ('public.record_client_marketing_consent(uuid,public.message_template_channel,public.consent_state,text,text)', false, true, false),
+  ('public.suppress_client_communications(uuid,public.message_template_channel,public.suppression_reason,text)', false, true, true),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
@@ -752,7 +761,11 @@ select ok(
        'artist_integration_routes', 'notifications', 'notification_preferences',
        -- Automation engine, migration 0081.
        'automation_trigger_catalog', 'automation_events', 'automation_rules',
-       'automation_jobs', 'automation_kill_switches')),
+       'automation_jobs', 'automation_kill_switches',
+       -- Templates and consent, migration 0082.
+       'message_template_purposes', 'message_template_variables',
+       'message_templates', 'client_marketing_consent',
+       'communication_suppressions')),
   'every CRM table has row level security enabled and forced'
 );
 
