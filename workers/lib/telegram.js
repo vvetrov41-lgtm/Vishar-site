@@ -1,6 +1,11 @@
-// Durable Telegram notifications use only artist-owned encrypted bindings.
+// Durable Telegram notifications prefer the shared-bot destination registry
+// once it is configured, while legacy artist-owned bindings remain the rollout
+// fallback until production equivalence is proven.
 import { statusClass } from './logging.js';
 import { ProviderRouteError, resolveProviderBinding } from './provider-routing.js';
+
+const CHAT_ID = /^-?[0-9]{1,20}$/;
+const SHARED_BOT_TOKEN = /^[A-Za-z0-9:_-]{20,256}$/;
 
 export function buildEnquiryNotification({referenceNumber,fileCount,clientConflict}){
   const lines=['NEW TATTOO ENQUIRY','',`Reference: ${referenceNumber}`,`Reference images: ${fileCount}`];
@@ -8,6 +13,19 @@ export function buildEnquiryNotification({referenceNumber,fileCount,clientConfli
   lines.push('','Open the CRM to see the full enquiry and images.');
   return lines.join('\n');
 }
+
+export function buildPersonalNotification({title,body}){
+  const safeTitle=typeof title==='string'?title.trim():'';
+  const safeBody=typeof body==='string'?body.trim():'';
+  if(!safeTitle)return null;
+  return safeBody?`${safeTitle}\n\n${safeBody}`:safeTitle;
+}
+
+export function sharedTelegramBotToken(env){
+  const value=typeof env?.TELEGRAM_BOT_TOKEN==='string'?env.TELEGRAM_BOT_TOKEN.trim():'';
+  return SHARED_BOT_TOKEN.test(value)?value:null;
+}
+
 function diagnosticError(operation,status){
   const statusGroup=statusClass(status);
   if(status===401)return {reachable:false,errorCode:'telegram_bot_token_invalid',statusClass:statusGroup};
@@ -25,6 +43,27 @@ function diagnosticError(operation,status){
   }
   return {reachable:false,errorCode:'telegram_destination_rejected',statusClass:statusGroup};
 }
+
+async function sendTelegramMessage(botToken,chatId,text,fetchImpl=fetch){
+  if(!SHARED_BOT_TOKEN.test(botToken??'')||!CHAT_ID.test(String(chatId??''))||typeof text!=='string'||!text){
+    return {delivered:false,errorCode:'telegram_destination_invalid'};
+  }
+  try{
+    const response=await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({chat_id:String(chatId),text,disable_web_page_preview:true}),
+    });
+    if(!response.ok)return {delivered:false,errorCode:'telegram_rejected',statusClass:statusClass(response.status)};
+    return {delivered:true};
+  }catch{return {delivered:false,errorCode:'telegram_unreachable'};}
+}
+
+export async function sendSharedTelegramNotification(env,chatId,text,fetchImpl=fetch){
+  const botToken=sharedTelegramBotToken(env);
+  if(!botToken)return {delivered:false,errorCode:'telegram_shared_bot_not_configured'};
+  return sendTelegramMessage(botToken,chatId,text,fetchImpl);
+}
+
 export async function checkTelegramDestination(env,route,fetchImpl=fetch){
   let selected;
   try{selected=resolveProviderBinding(env,route);}
@@ -55,6 +94,7 @@ export async function checkTelegramDestination(env,route,fetchImpl=fetch){
     return {reachable:true};
   }catch{return {reachable:false,errorCode:'telegram_unreachable'};}
 }
+
 export async function sendNotification(env,route,text,fetchImpl=fetch){
   let selected;
   try{selected=resolveProviderBinding(env,route);}
@@ -65,12 +105,7 @@ export async function sendNotification(env,route,text,fetchImpl=fetch){
   const botToken=typeof selected.credentials.botToken==='string'?selected.credentials.botToken:'';
   const chatId=typeof selected.credentials.chatId==='string'?selected.credentials.chatId:'';
   if(!botToken||!chatId)return {delivered:false,errorCode:'provider_binding_invalid'};
-  try{
-    const response=await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({chat_id:chatId,text,disable_web_page_preview:true}),
-    });
-    if(!response.ok)return {delivered:false,errorCode:'telegram_rejected',statusClass:statusClass(response.status)};
-    return {delivered:true};
-  }catch{return {delivered:false,errorCode:'telegram_unreachable'};}
+  return sendTelegramMessage(botToken,chatId,text,fetchImpl);
 }
+
+export const __testing={CHAT_ID,SHARED_BOT_TOKEN,sendTelegramMessage};
