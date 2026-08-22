@@ -35,6 +35,7 @@ import { PasswordSetupPage } from './pages/PasswordSetupPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
+import { TelegramConnectionsPage } from './pages/TelegramConnectionsPage';
 import { UsersPage } from './pages/UsersPage';
 import { WhatsAppConnectionsPage } from './pages/WhatsAppConnectionsPage';
 
@@ -153,6 +154,8 @@ function Routes() {
       return <RequireCapability capability="manageIntegrations"><BookingSourcesPage /></RequireCapability>;
     case '/integrations/calendar':
       return <RequireCapability capability="manageIntegrations"><CalendarConnectionsPage /></RequireCapability>;
+    case '/integrations/telegram':
+      return <RequireCapability capability="manageIntegrations"><TelegramConnectionsPage /></RequireCapability>;
     case '/notifications':
       return <RequireCapability capability="viewNotifications"><NotificationsPage /></RequireCapability>;
     case '/integrations/whatsapp':
