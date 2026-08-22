@@ -106,6 +106,20 @@ export function createTelegramConnectionsApi(client: CrmClient) {
       return result.data.map(assertDestination);
     },
 
+    async getTelegramNotificationsEnabled(): Promise<boolean> {
+      const result = await client
+        .from('notification_preferences')
+        .select('is_enabled')
+        .eq('channel', 'telegram')
+        .maybeSingle();
+      if (result.error) throw new ApiError('Could not load Telegram notification preference.', result.error);
+      if (result.data == null) return false;
+      if (typeof result.data?.is_enabled !== 'boolean') {
+        throw new ApiError('Could not load Telegram notification preference.');
+      }
+      return result.data.is_enabled;
+    },
+
     async beginTelegramLink(
       destinationKind: TelegramDestinationKind,
       artistId: string | null = null,
@@ -143,7 +157,7 @@ export function createTelegramConnectionsApi(client: CrmClient) {
     async setTelegramNotificationsEnabled(enabled: boolean): Promise<void> {
       const result = await client.rpc('set_notification_preference', {
         p_channel: 'telegram',
-        p_enabled: enabled,
+        p_is_enabled: enabled,
       });
       if (result.error) throw new ApiError('Could not update Telegram notifications.', result.error);
     },
