@@ -1,0 +1,53 @@
+name: MCP domain validation
+
+on:
+  pull_request:
+    paths:
+      - 'workers/lib/mcp-domain.js'
+      - 'workers/lib/mcp-server.js'
+      - 'workers/lib/gmail-tool-contract.js'
+      - 'workers/vishar-mcp.js'
+      - 'scripts/test-mcp-domain-contracts.mjs'
+      - 'wrangler.mcp.toml'
+      - '.github/workflows/mcp-domain-validation.yml'
+      - 'docs/crm/MCP_DOMAIN_CONTRACTS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-domain-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: MCP contracts and dormant Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Test MCP domain contracts
+        run: node scripts/test-mcp-domain-contracts.mjs
+
+      - name: Compile dormant MCP Worker with Wrangler
+        env:
+          XDG_CONFIG_HOME: .wrangler/config
+          WRANGLER_LOG_PATH: .wrangler/mcp-wrangler.log
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx wrangler deploy --config wrangler.mcp.toml --dry-run --outdir .wrangler/mcp-dry-run
+
+      - name: Scan repository for committed secrets
+        run: npm run scan:secrets
