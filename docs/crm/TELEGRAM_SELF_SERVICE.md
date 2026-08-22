@@ -141,24 +141,43 @@ Cloudflare Access must not sit in front of the provider callback. Authentication
 
 Production activation is intentionally separate from this Draft implementation.
 
-1. Apply the stacked database migrations through `0086` using the normal production database release gate.
-2. Pre-provision the Telegram Custom Domain and verify it points only to `vishar-telegram-drain-production`.
-3. Pre-provision exactly five Worker secrets:
+1. Create the one shared Vishar CRM Telegram bot through BotFather and record its
+   token and public username. Nothing below can be pre-provisioned without it:
+   `TELEGRAM_BOT_TOKEN` is that token, and the CRM connector identity is that
+   username. This is the single step that has no repository, Cloudflare or
+   database representation, so it has to happen first.
+2. Apply the stacked database migrations through `0086` using the normal production database release gate.
+3. Provision the Telegram Custom Domain and verify it points only to `vishar-telegram-drain-production`.
+
+   As of this workstream `telegram.vishartattoo.com` resolves to nothing, while
+   `instagram`, `whatsapp`, `calendar`, `monzo` and `gpt-actions` all resolve to
+   Cloudflare. The tracked config already declares the route with
+   `custom_domain = true`, so the guarded `wrangler deploy --strict` step creates
+   it if it does not exist yet. A `--dry-run` does not create routes, so a green
+   dry-run is not evidence that this domain attaches cleanly - the first real
+   deploy is where that is proven.
+4. Pre-provision exactly five Worker secrets:
    - `SUPABASE_SECRET_KEY`
    - `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`
    - `ARTIST_TELEGRAM_KRISTINA_HPRODUCTION`
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_WEBHOOK_SECRET`
-4. Deploy the Worker through the guarded release workflow. This enables the scheduled drain but deliberately leaves `TELEGRAM_LINKING_ENABLED=false`.
-5. Verify Vladimir and Kristina's legacy Artist alerts still deliver through their existing bindings.
-6. Configure the public bot username in the CRM. This is public identity only, not a credential.
-7. Register Telegram's webhook to the exact `/webhook` URL with the same secret-token value.
-8. Enable linking in a separately reviewed production config change.
-9. Link and prove one personal destination.
-10. Link and prove each Artist group one at a time. The DB route becomes preferred only for that Artist; the old binding remains fallback.
-11. After production evidence shows stable DB-backed delivery per Artist, remove the corresponding legacy static binding in a separate cleanup release.
+5. Deploy the Worker through the guarded release workflow. This enables the scheduled drain but deliberately leaves `TELEGRAM_LINKING_ENABLED=false`.
+6. Verify Vladimir and Kristina's legacy Artist alerts still deliver through their existing bindings.
+7. Configure the public bot username in the CRM. This is public identity only, not a credential.
+8. Register Telegram's webhook to the exact `/webhook` URL with the same secret-token value.
+9. Enable linking in a separately reviewed production config change.
+10. Link and prove one personal destination.
+11. Link and prove each Artist group one at a time. The DB route becomes preferred only for that Artist; the old binding remains fallback.
+12. After production evidence shows stable DB-backed delivery per Artist, remove the corresponding legacy static binding in a separate cleanup release.
 
-Steps 3, 7 and any external provider authorization require access to production secrets or provider controls and are not performed by application migrations.
+Steps 1, 4, 8 and any external provider authorization require BotFather access,
+production secrets or provider controls. None of them are performed by an
+application migration, by CI, or by the guarded deploy workflow.
+
+The guarded workflow fails closed before any of this is ready: its secret-name
+check requires the exact five-name set above, and `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_WEBHOOK_SECRET` do not exist until steps 1 and 4 are done.
 
 ## 9. Rollback
 
