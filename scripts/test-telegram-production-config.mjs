@@ -30,47 +30,85 @@ if (JSON.stringify(telegramRpcSurface) !== JSON.stringify(expectedTelegramRpcSur
 }
 
 const tracked = directivesOf(read('wrangler.telegram-drain.production.toml'));
-expectIncludes(tracked, 'name = "vishar-telegram-drain-production"', 'tracked config');
-expectIncludes(tracked, 'main = "workers/telegram-drain-worker.js"', 'tracked config');
-expectIncludes(tracked, 'workers_dev = false', 'tracked config');
-expectIncludes(tracked, 'preview_urls = false', 'tracked config');
-expectIncludes(tracked, '{ pattern = "telegram.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }', 'tracked config');
-expectIncludes(tracked, 'VISHAR_ENVIRONMENT = "production"', 'tracked config');
-expectIncludes(tracked, 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"', 'tracked config');
-expectIncludes(tracked, 'TELEGRAM_DRAIN_ENABLED = "false"', 'tracked config');
-expectIncludes(tracked, 'TELEGRAM_LINKING_ENABLED = "false"', 'tracked config');
-expectExcludes(tracked, '[triggers]', 'tracked config');
-expectExcludes(tracked, 'crons =', 'tracked config');
-expectExcludes(tracked, 'gwaliusblwrzisrwnsvs', 'tracked config');
-expectExcludes(tracked, 'vishar-telegram-drain-staging', 'tracked config');
-expectExcludes(tracked, 'workers_dev = true', 'tracked config');
-expectExcludes(tracked, 'preview_urls = true', 'tracked config');
-expectExcludes(tracked, 'TELEGRAM_CHAT_ID', 'tracked config');
+for (const needle of [
+  'name = "vishar-telegram-drain-production"',
+  'main = "workers/telegram-drain-worker.js"',
+  'workers_dev = false',
+  'preview_urls = false',
+  '{ pattern = "telegram.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }',
+  'VISHAR_ENVIRONMENT = "production"',
+  'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"',
+  'TELEGRAM_DRAIN_ENABLED = "false"',
+  'GMAIL_SHARED_DRAIN_ENABLED = "false"',
+  'TELEGRAM_LINKING_ENABLED = "false"',
+]) expectIncludes(tracked, needle, 'tracked config');
+for (const needle of [
+  '[triggers]',
+  'crons =',
+  '[[services]]',
+  'gwaliusblwrzisrwnsvs',
+  'vishar-telegram-drain-staging',
+  'workers_dev = true',
+  'preview_urls = true',
+  'TELEGRAM_CHAT_ID',
+  'GOOGLE_OAUTH_CLIENT_ID',
+  'GOOGLE_OAUTH_CLIENT_SECRET',
+  'GMAIL_TOKEN_ENCRYPTION_KEY',
+  'GMAIL_OAUTH_STATE',
+  'GMAIL_OAUTH_TOKENS',
+]) expectExcludes(tracked, needle, 'tracked config');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telegram-production-'));
 const generatedPath = path.join(tempDir, 'wrangler.telegram.production.deploy.toml');
+const linkingPath = path.join(tempDir, 'wrangler.telegram.production.linking.toml');
 try {
-  const result = spawnSync(process.execPath, [
-    path.join(root, 'scripts/generate-telegram-production-deploy-config.mjs'),
-    generatedPath,
-  ], { encoding: 'utf8' });
+  const generator = path.join(root, 'scripts/generate-telegram-production-deploy-config.mjs');
+  const result = spawnSync(process.execPath, [generator, generatedPath], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'generator failed');
   const generated = directivesOf(fs.readFileSync(generatedPath, 'utf8'));
-  expectIncludes(generated, 'TELEGRAM_DRAIN_ENABLED = "true"', 'generated config');
-  expectIncludes(generated, 'TELEGRAM_LINKING_ENABLED = "false"', 'generated config');
-  expectIncludes(generated, 'telegram.vishartattoo.com', 'generated config');
-  expectIncludes(generated, '[triggers]', 'generated config');
-  expectIncludes(generated, 'crons = ["*/5 * * * *"]', 'generated config');
-  expectIncludes(generated, '[secrets]', 'generated config');
-  expectIncludes(generated, '"SUPABASE_SECRET_KEY"', 'generated config');
-  expectIncludes(generated, '"ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION"', 'generated config');
-  expectIncludes(generated, '"ARTIST_TELEGRAM_KRISTINA_HPRODUCTION"', 'generated config');
-  expectIncludes(generated, '"TELEGRAM_BOT_TOKEN"', 'generated config');
-  expectIncludes(generated, '"TELEGRAM_WEBHOOK_SECRET"', 'generated config');
-  expectExcludes(generated, 'TELEGRAM_DRAIN_ENABLED = "false"', 'generated config');
-  expectExcludes(generated, 'TELEGRAM_LINKING_ENABLED = "true"', 'generated config');
-  expectExcludes(generated, 'TELEGRAM_CHAT_ID', 'generated config');
-  expectExcludes(generated, 'gwaliusblwrzisrwnsvs', 'generated config');
+  for (const needle of [
+    'TELEGRAM_DRAIN_ENABLED = "true"',
+    'GMAIL_SHARED_DRAIN_ENABLED = "true"',
+    'TELEGRAM_LINKING_ENABLED = "false"',
+    'telegram.vishartattoo.com',
+    '[[services]]',
+    'binding = "GMAIL_SERVICE"',
+    'service = "vishar-gmail-production"',
+    '[triggers]',
+    'crons = ["*/5 * * * *"]',
+    '[secrets]',
+    '"SUPABASE_SECRET_KEY"',
+    '"ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION"',
+    '"ARTIST_TELEGRAM_KRISTINA_HPRODUCTION"',
+    '"TELEGRAM_BOT_TOKEN"',
+    '"TELEGRAM_WEBHOOK_SECRET"',
+  ]) expectIncludes(generated, needle, 'generated config');
+  for (const needle of [
+    'TELEGRAM_DRAIN_ENABLED = "false"',
+    'GMAIL_SHARED_DRAIN_ENABLED = "false"',
+    'TELEGRAM_LINKING_ENABLED = "true"',
+    'TELEGRAM_CHAT_ID',
+    'GOOGLE_OAUTH_CLIENT_SECRET',
+    'GMAIL_TOKEN_ENCRYPTION_KEY',
+    'gwaliusblwrzisrwnsvs',
+  ]) expectExcludes(generated, needle, 'generated config');
+
+  const linkingResult = spawnSync(process.execPath, [
+    generator,
+    linkingPath,
+    '--enable-linking',
+  ], { encoding: 'utf8' });
+  if (linkingResult.status !== 0) {
+    throw new Error(linkingResult.stderr || linkingResult.stdout || 'linking generator failed');
+  }
+  const linking = directivesOf(fs.readFileSync(linkingPath, 'utf8'));
+  expectIncludes(linking, 'TELEGRAM_LINKING_ENABLED = "true"', 'linking config');
+  expectIncludes(linking, 'GMAIL_SHARED_DRAIN_ENABLED = "true"', 'linking config');
+  expectIncludes(linking, 'binding = "GMAIL_SERVICE"', 'linking config');
+  expectIncludes(linking, 'crons = ["*/5 * * * *"]', 'linking config');
+
+  const badFlag = spawnSync(process.execPath, [generator, linkingPath, '--unknown'], { encoding: 'utf8' });
+  if (badFlag.status === 0) throw new Error('generator accepted an unknown production option');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
@@ -80,10 +118,20 @@ for (const needle of [
   'environment: crm-production',
   'release/private-crm-rc*',
   'approved_sha',
+  'enable_linking:',
+  'linking_approval_phrase:',
   "'ENABLE_PRIVATE_CRM_TELEGRAM_DRAIN'",
+  "'ENABLE_TELEGRAM_LINKING'",
+  'enable_linking=true is valid only with deploy=true',
   'wrangler.telegram-drain.production.toml',
   'node scripts/generate-telegram-production-deploy-config.mjs',
+  'generator_args+=(--enable-linking)',
+  'preflight_args+=(--allow-linking)',
+  'GMAIL_SHARED_DRAIN_ENABLED = "true"',
+  'binding = "GMAIL_SERVICE"',
+  'service = "vishar-gmail-production"',
   'node scripts/test-telegram-self-service-worker.mjs',
+  'npm run test:telegram-production',
   'npm run check:telegram-production-bundle',
   'npm run scan:secrets',
   'wrangler secret list',
@@ -102,7 +150,9 @@ for (const needle of [
   'wrangler.telegram-drain.staging.toml',
   'gwaliusblwrzisrwnsvs',
   'TELEGRAM_CHAT_ID',
-  'TELEGRAM_LINKING_ENABLED = "true"',
+  'setWebhook',
+  'GOOGLE_OAUTH_CLIENT_SECRET',
+  'GMAIL_TOKEN_ENCRYPTION_KEY',
 ]) expectExcludes(workflow, needle, 'production workflow');
 
-console.log('Telegram production configuration boundaries: passed');
+console.log('Telegram production configuration boundaries: Gmail shared cron preserved; linking requires a separate approval gate.');
