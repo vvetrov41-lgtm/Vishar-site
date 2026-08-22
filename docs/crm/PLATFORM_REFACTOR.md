@@ -539,8 +539,12 @@ strip `/v1/context` and then assert the ban still holds everywhere else, so the
 exception cannot quietly widen.
 
 Nothing here creates an OAuth client, enables a GPT, or changes a Cloudflare
-route. The canonical unified client ships with `oauth_client_id` null and
-`is_active` false, and pgTAP `232` asserts both.
+route. The canonical unified client ships with `oauth_client_id` null,
+`is_active` false and **every capability off**, exactly as the two production
+clients do; an owner turns capabilities on one at a time through the existing
+`configure_gpt_*` RPCs. pgTAP `232` asserts all three, and pgTAP `204` and `205`
+assert across every row that no GPT client ever arrives with a permission
+already enabled.
 
 ### Telegram migration order (Phase F/G), stated once
 

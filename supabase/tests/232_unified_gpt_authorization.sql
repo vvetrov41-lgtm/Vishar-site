@@ -110,6 +110,14 @@ select is(
   null,
   'the canonical unified GPT client is bound to no OAuth client id'
 );
+select ok(
+  (select not can_read_appointments and not can_manage_appointments
+      and not can_read_enquiries and not can_manage_crm
+      and not can_manage_finance and not can_manage_communications
+   from crm_private.gpt_action_clients
+   where integration_key = 'vishar-unified-gpt'),
+  'the canonical unified GPT client ships with every capability off'
+);
 select is(
   (select binding_mode from crm_private.gpt_action_clients
    where integration_key in ('vladimir-gpt-actions', 'kristina-gpt-actions')
@@ -169,8 +177,17 @@ set oauth_client_id = 'oauth-unified-legacy-vladimir',
     is_active = true
 where integration_key = 'vladimir-gpt-actions';
 
+-- The unified client ships with every capability off, so the fixture has to
+-- enable what it exercises. That is the point: these flags are an owner
+-- decision, not something a migration hands out.
 update crm_private.gpt_action_clients
 set oauth_client_id = 'oauth-unified-shared',
+    can_read_appointments = true,
+    can_manage_appointments = true,
+    can_read_enquiries = true,
+    can_manage_crm = true,
+    can_manage_finance = true,
+    can_manage_communications = true,
     is_active = true
 where integration_key = 'vishar-unified-gpt';
 

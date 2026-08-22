@@ -43,9 +43,15 @@ comment on table crm_private.gpt_action_clients is
   'Private allow-list for GPT OAuth clients. Legacy clients are Artist-bound; profile-bound clients derive Artist scope from the signed-in CRM profile and current memberships.';
 
 -- A dormant canonical unified client. It has no OAuth client id and is inactive,
--- so this migration cannot make it usable. The permission flags are ceilings:
--- even when enabled later, current Artist membership/capabilities remain the
--- lower and authoritative boundary on every request.
+-- so this migration cannot make it usable.
+--
+-- Every capability ships off, exactly as the two production clients do. A flag
+-- is a ceiling rather than a grant — membership and capability remain the lower
+-- and authoritative boundary on every request — but a seeded ceiling of "all
+-- capabilities" is still the wrong default, and pgTAP 204 and 205 assert across
+-- *every* row that no GPT client arrives with a permission already enabled. An
+-- owner turns these on through the existing configure_gpt_* RPCs, one at a
+-- time, the same way Vladimir's and Kristina's were turned on.
 insert into crm_private.gpt_action_clients (
   id, artist_id, binding_mode, integration_key, display_name, oauth_client_id,
   can_read_appointments, can_manage_appointments, can_read_enquiries,
@@ -57,7 +63,7 @@ insert into crm_private.gpt_action_clients (
   'vishar-unified-gpt',
   'Vishar CRM unified GPT',
   null,
-  true, true, true, true, true, true, false
+  false, false, false, false, false, false, false
 )
 on conflict (integration_key) do nothing;
 

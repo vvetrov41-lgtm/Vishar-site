@@ -14,10 +14,21 @@ select has_table('crm_private', 'gpt_action_clients',
   'private GPT OAuth-client bindings exist');
 select has_table('crm_private', 'gpt_action_receipts',
   'private GPT idempotency receipts exist');
+-- Migration 0084 added a second binding mode, so this counts what it always
+-- meant: the Artist-bound production clients. The row count is still fully
+-- pinned, because the assertion below names every client that is not one.
 select is(
-  (select count(*)::int from crm_private.gpt_action_clients),
+  (select count(*)::int from crm_private.gpt_action_clients
+   where binding_mode = 'artist'),
   2,
   'exactly the Vladimir and Kristina logical GPT clients are seeded'
+);
+select is(
+  (select array_agg(integration_key order by integration_key)
+   from crm_private.gpt_action_clients
+   where binding_mode <> 'artist'),
+  array['vishar-unified-gpt'],
+  'the only non-Artist-bound client is the dormant unified GPT'
 );
 select ok(
   (select bool_and(not is_active and oauth_client_id is null)
