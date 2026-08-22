@@ -31,7 +31,6 @@ service = "vishar-gmail-production"
 crons = ["*/5 * * * *"]
 `;
 
-// Exactly what /workers/scripts/vishar-telegram-drain-production/settings returned.
 const LIVE = {
   workerExists: true,
   compatibilityDate: '2026-05-25',
@@ -78,9 +77,6 @@ assert.equal(desired.services.GMAIL_SERVICE, 'vishar-gmail-production');
 assert.ok(desired.replaceableBindings.includes('GMAIL_SERVICE'));
 assert.ok(desired.replaceableBindings.includes('GMAIL_SHARED_DRAIN_ENABLED'));
 
-// The corrected generated config preserves the live Gmail scheduler contract.
-// Before the shared bot is provisioned, the only hard blocker is the two new
-// secret names. The Custom Domain and compatibility-date changes are warnings.
 {
   const verdict = evaluatePreflight({ live: LIVE, desired });
   assert.equal(verdict.ok, false);
@@ -88,24 +84,19 @@ assert.ok(desired.replaceableBindings.includes('GMAIL_SHARED_DRAIN_ENABLED'));
   assert.equal(verdict.failures.some((f) => f.includes('GMAIL_SERVICE')), false);
   assert.equal(verdict.failures.some((f) => f.includes('GMAIL_SHARED_DRAIN_ENABLED')), false);
   assert.ok(verdict.failures.some((f) => f.includes('TELEGRAM_BOT_TOKEN')
-    && f.includes('TELEGRAM_WEBHOOK_SECRET')), 'unprovisioned secrets must be reported');
-
-  // Secrets survive a deploy, so a live secret must never be reported as removed.
+    && f.includes('TELEGRAM_WEBHOOK_SECRET')));
   for (const secret of LIVE.secretNames) {
     assert.equal(
       verdict.failures.some((f) => f.includes('REMOVE live binding') && f.includes(secret)),
       false,
-      `${secret} is a secret and is preserved by a deploy`,
     );
   }
-
   assert.ok(verdict.warnings.some((w) => w.includes('does not exist yet')));
   assert.ok(verdict.warnings.some((w) => w.includes('2026-05-25') && w.includes('2026-08-22')));
   assert.equal(verdict.summary.live_version_id, 'c6fc73e8-281a-4715-86c5-ae2d7d43e9b1');
   assert.equal(verdict.summary.gmail_shared_drain_preserved, true);
 }
 
-// Once the two shared Telegram secrets exist, the dormant-linking deploy passes.
 const READY_LIVE = {
   ...LIVE,
   secretNames: [...LIVE.secretNames, 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET'].sort(),
@@ -116,7 +107,6 @@ const READY_LIVE = {
   assert.equal(verdict.ok, true);
 }
 
-// Any future config that forgets the already-live Gmail scheduler is blocked.
 {
   const missingGmail = parseDeployConfig(GENERATED
     .replace('GMAIL_SHARED_DRAIN_ENABLED = "true"\n', '')
@@ -127,8 +117,6 @@ const READY_LIVE = {
   assert.ok(verdict.failures.some((f) => f.includes('must bind GMAIL_SERVICE')));
 }
 
-// Wrong Gmail target or an emergency-disabled live Gmail flag are concurrent
-// production state that must be investigated rather than silently overwritten.
 {
   const badTarget = {
     ...READY_LIVE,
@@ -149,7 +137,6 @@ const READY_LIVE = {
     .some((f) => f.includes('GMAIL_SHARED_DRAIN_ENABLED is not true')));
 }
 
-// A legacy Artist secret disappearing removes the rollback path.
 {
   const live = {
     ...READY_LIVE,
@@ -160,7 +147,6 @@ const READY_LIVE = {
     && f.includes('rollback')));
 }
 
-// The hostname must never be taken from another Worker.
 {
   const live = {
     ...READY_LIVE,
@@ -171,25 +157,17 @@ const READY_LIVE = {
   assert.ok(verdict.failures.some((f) => f.includes('already a Custom Domain of vishar-gpt-actions-production')));
 }
 
-// A DNS record with no Custom Domain is an unresolved state, not a green light.
 {
   const verdict = evaluatePreflight({ live: { ...READY_LIVE, dnsExists: true }, desired });
   assert.ok(verdict.failures.some((f) => f.includes('DNS record but no Worker Custom Domain')));
 }
 
-// Cloudflare Access in front of the callback would answer Telegram with a login
-// redirect instead of reaching the Worker.
 for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/webhook', '*.vishartattoo.com']) {
   const live = { ...READY_LIVE, accessApps: [{ name: 'blocker', domain, type: 'self_hosted' }] };
   const verdict = evaluatePreflight({ live, desired });
-  assert.ok(
-    verdict.failures.some((f) => f.includes('Cloudflare Access app "blocker"')),
-    `Access on ${domain} must be a failure`,
-  );
+  assert.ok(verdict.failures.some((f) => f.includes('Cloudflare Access app "blocker"')));
 }
 
-// Linking can be generated, but preflight refuses it unless the caller carries
-// the separate explicit activation gate.
 {
   const linkingOn = parseDeployConfig(GENERATED.replace(
     'TELEGRAM_LINKING_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "true"'));
@@ -206,7 +184,8 @@ for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/we
     .some((f) => f.includes('must enable the drain')));
 }
 
-// Once linking is live, a routine config cannot silently switch it off.
+// Linking rollback is also explicit: normal deploys cannot silently disable a
+// live webhook, but the dedicated rollback gate can close it.
 {
   const liveLinking = {
     ...READY_LIVE,
@@ -214,21 +193,27 @@ for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/we
       { name: 'TELEGRAM_LINKING_ENABLED', text: 'true', type: 'plain_text' }],
   };
   assert.ok(evaluatePreflight({ live: liveLinking, desired }).failures
-    .some((f) => f.includes('would disable live Telegram linking')));
+    .some((f) => f.includes('explicit --allow-linking-disable')));
+  assert.deepEqual(
+    evaluatePreflight({
+      live: liveLinking,
+      desired,
+      allowLinkingDisable: true,
+    }).failures,
+    [],
+  );
 }
 
-// workers.dev or preview URLs live would expose the callback off its domain.
 {
   const verdict = evaluatePreflight({ live: { ...READY_LIVE, workersDevEnabled: true }, desired });
   assert.ok(verdict.failures.some((f) => f.includes('workers.dev is enabled')));
 }
 
-// No summary field may carry a secret value.
 {
   const verdict = evaluatePreflight({ live: LIVE, desired });
   const printed = JSON.stringify(verdict.summary);
   assert.equal(printed.includes('secret_text'), false);
-  assert.ok(printed.includes('SUPABASE_SECRET_KEY'), 'names are reported');
+  assert.ok(printed.includes('SUPABASE_SECRET_KEY'));
 }
 
-console.log('Telegram production preflight tests passed: Gmail shared drain is preserved and linking needs a separate gate.');
+console.log('Telegram production preflight tests passed: Gmail shared drain and both linking state transitions are explicitly gated.');
