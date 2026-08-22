@@ -20,7 +20,7 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0083` | Phase P, workspace automation defaults and artist overrides | claimed on `agent/platform-workspace-automation-defaults` |
 | `0084` | Phases S-T, unified GPT profile-bound authorization | claimed on `agent/platform-unified-gpt` |
 | `0085` | Phase U, notification scope re-checked on revocation | claimed on `agent/platform-golden-paths` |
-| `0086` | Phases F-G, Telegram self-service destinations and delivery foundation | claimed on `agent/platform-telegram-self-service` |
+| `0086` | Phases F-G, Telegram self-service destinations and delivery foundation | claimed in PR #391 |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
@@ -49,5 +49,6 @@ Phase U claimed `0085`: its cross-phase golden path found that `list_notificatio
 matched only on recipient and never re-derived artist scope, so a revoked
 membership kept an artist's notifications in the old recipient's inbox. Phase
 F-G claims `0086` for the private Telegram destination registry, single-use
-linking sessions and external-notification delivery state. Any later schema work
-claims from `0087` after a fresh check.
+linking sessions and external-notification delivery state. Its runtime and
+production activation contract is documented in `docs/crm/TELEGRAM_SELF_SERVICE.md`.
+Any later schema work claims from `0087` after a fresh check.
