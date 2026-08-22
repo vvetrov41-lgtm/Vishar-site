@@ -113,6 +113,12 @@ export function evaluatePreflight({
   const warnings = [];
 
   if (!live.workerExists) failures.push(`Worker ${WORKER} does not exist`);
+  if (live.zoneResolved === false) {
+    failures.push(`Cloudflare zone ${ZONE} could not be resolved; DNS and route safety are unverified`);
+  }
+  if (live.accessCheckAvailable === false) {
+    failures.push(`Cloudflare Access state for ${HOSTNAME} could not be verified; callback exposure is unverified`);
+  }
 
   const liveReplaceable = (live.bindings || [])
     .filter((b) => b.type !== 'secret_text')
@@ -164,7 +170,7 @@ export function evaluatePreflight({
   if (!attached && live.dnsExists) {
     failures.push(`${hostname} has a DNS record but no Worker Custom Domain; resolve that first`);
   }
-  if (!attached && !live.dnsExists) {
+  if (!attached && !live.dnsExists && live.zoneResolved !== false) {
     warnings.push(`${hostname} does not exist yet; the deploy will create it`);
   }
 
@@ -231,6 +237,8 @@ export function evaluatePreflight({
       live_crons: liveCrons,
       live_workers_dev: Boolean(live.workersDevEnabled),
       live_preview_urls: Boolean(live.previewUrlsEnabled),
+      zone_resolved: live.zoneResolved !== false,
+      access_check_available: live.accessCheckAvailable !== false,
       custom_domain_exists: Boolean(attached),
       dns_exists: Boolean(live.dnsExists),
       desired_bindings: desired.replaceableBindings,
@@ -262,10 +270,16 @@ export async function collectLiveState(token, accountId) {
   const deployments = await cf(`/accounts/${accountId}/workers/scripts/${WORKER}/deployments`, {}, token);
   const zones = await cf('/zones', { name: ZONE }, token);
   const zoneId = zones?.[0]?.id;
+  const zoneResolved = Boolean(zoneId);
   const dns = zoneId ? await cf(`/zones/${zoneId}/dns_records`, { name: HOSTNAME }, token) : [];
   const zoneRoutes = zoneId ? await cf(`/zones/${zoneId}/workers/routes`, {}, token) : [];
   let accessApps = [];
-  try { accessApps = await cf(`/accounts/${accountId}/access/apps`, {}, token); } catch { accessApps = []; }
+  let accessCheckAvailable = true;
+  try {
+    accessApps = await cf(`/accounts/${accountId}/access/apps`, {}, token);
+  } catch {
+    accessCheckAvailable = false;
+  }
 
   return {
     workerExists: true,
@@ -277,8 +291,10 @@ export async function collectLiveState(token, accountId) {
     crons: schedules?.schedules || [],
     customDomains: domains || [],
     dnsExists: (dns || []).length > 0,
+    zoneResolved,
     zoneRoutes: zoneRoutes || [],
     accessApps: accessApps || [],
+    accessCheckAvailable,
     versionId: deployments?.deployments?.[0]?.versions?.[0]?.version_id || null,
   };
 }
