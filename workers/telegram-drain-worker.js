@@ -59,6 +59,15 @@ function linkingConfigured(env) {
       : '');
 }
 
+function isWebhookPath(request) {
+  try {
+    const url = new URL(request?.url ?? '');
+    return url.pathname === '/webhook' && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
 async function readWebhookJson(request) {
   const type = (request.headers.get('content-type') || '').toLowerCase();
   if (!type.startsWith('application/json')) throw new Error('unsupported_media_type');
@@ -85,6 +94,7 @@ function linkingMessage(update) {
 
 async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
   if (!linkingConfigured(env)) return json(404, { error: 'not_found' });
+  if (!isWebhookPath(request)) return json(404, { error: 'not_found' });
   if (request.method !== 'POST') return json(405, { error: 'method_not_allowed' });
 
   const expected = env.TELEGRAM_WEBHOOK_SECRET.trim();
@@ -146,6 +156,7 @@ export default {
 
 export const __testing = {
   handleLinkingWebhook,
+  isWebhookPath,
   linkingConfigured,
   linkingMessage,
   readWebhookJson,
