@@ -8,13 +8,16 @@ import { useEffect } from 'react';
 import { AppShell } from './components/AppShell';
 import './components/AppShell.css';
 import { RequireCapability } from './components/RequireCapability';
+import { RequireControlPlane } from './components/RequireControlPlane';
 import { EmptyState, LoadingState } from './components/StateViews';
 import { useLanguage } from './lib/i18n';
 import { ArtistScopeProvider } from './lib/artist-scope';
+import { ControlPlaneAccessProvider } from './lib/control-plane-access';
 import { applyAppointmentTimeStep } from './lib/appointment-time-step';
 import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
+import { ArtistOnboardingPage } from './pages/ArtistOnboardingPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
 import { AvailabilityPage } from './pages/AvailabilityPage';
 import { BookingSourcesPage } from './pages/BookingSourcesPage';
@@ -38,6 +41,8 @@ import { ProjectsPage } from './pages/ProjectsPage';
 import { TelegramConnectionsPage } from './pages/TelegramConnectionsPage';
 import { UsersPage } from './pages/UsersPage';
 import { WhatsAppConnectionsPage } from './pages/WhatsAppConnectionsPage';
+import { WorkspaceDetailPage } from './pages/WorkspaceDetailPage';
+import { WorkspacesPage } from './pages/WorkspacesPage';
 
 export function App() {
   const { state, signOut } = useSession();
@@ -74,9 +79,11 @@ export function App() {
 
   return (
     <ArtistScopeProvider>
-      <AppShell>
-        <Routes />
-      </AppShell>
+      <ControlPlaneAccessProvider>
+        <AppShell>
+          <Routes />
+        </AppShell>
+      </ControlPlaneAccessProvider>
     </ArtistScopeProvider>
   );
 }
@@ -117,6 +124,26 @@ function Routes() {
         <ClientDetailPage clientId={clientDetail.id} />
       </RequireCapability>
     );
+  }
+
+  const workspaceDetail = matchRoute('/workspaces/:id', path);
+  if (workspaceDetail) {
+    return (
+      <RequireControlPlane>
+        <WorkspaceDetailPage workspaceId={workspaceDetail.id} />
+      </RequireControlPlane>
+    );
+  }
+
+  // Artist administration, not artist work. Two audiences reach it: somebody
+  // administering the organization who holds no membership on the artist, and
+  // the artist themselves through their own membership — who, in a studio, has
+  // no workspace membership at all. So this route is deliberately ungated in
+  // the browser and authorised entirely by
+  // public.artist_control_plane_context, which admits exactly those two.
+  const artistDetail = matchRoute('/artists/:id', path);
+  if (artistDetail) {
+    return <ArtistOnboardingPage artistId={artistDetail.id} />;
   }
 
   const projectDetail = matchRoute('/projects/:id', path);
@@ -162,6 +189,8 @@ function Routes() {
       return <RequireCapability capability="manageIntegrations"><WhatsAppConnectionsPage /></RequireCapability>;
     case '/integrations/instagram':
       return <RequireCapability capability="manageIntegrations"><InstagramConnectionsPage /></RequireCapability>;
+    case '/workspaces':
+      return <RequireControlPlane><WorkspacesPage /></RequireControlPlane>;
     case '/users':
       return <RequireCapability capability="manageUsers"><UsersPage /></RequireCapability>;
     case '/activity':

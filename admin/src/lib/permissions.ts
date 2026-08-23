@@ -184,6 +184,10 @@ export interface NavItem {
   capability: Capability;
 }
 
+// Deliberately absent: the control plane at /workspaces. Workspace authority
+// lives in workspace_memberships and has no relationship to CrmRole, so it
+// cannot be expressed here without the browser inventing an answer. AppShell
+// appends that entry from public.control_plane_access() instead.
 export const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Dashboard', capability: 'viewEnquiries' },
   { path: '/inbox', label: 'Communications', capability: 'viewEnquiries' },
