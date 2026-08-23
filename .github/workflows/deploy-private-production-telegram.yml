@@ -183,7 +183,9 @@ jobs:
         run: |
           set -euo pipefail
           deploy_config="$GITHUB_WORKSPACE/.wrangler.telegram.production.deploy.toml"
-          trap 'rm -f "$deploy_config"' EXIT
+          deploy_output="$RUNNER_TEMP/telegram-production-wrangler-output.ndjson"
+          trap 'rm -f "$deploy_config" "$deploy_output"' EXIT
+          rm -f "$deploy_output"
 
           generator_args=("$deploy_config")
           preflight_args=("$deploy_config")
@@ -205,6 +207,9 @@ jobs:
           grep -Fq 'telegram.vishartattoo.com' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
 
+          # This is the fail-closed replacement-safety gate. It compares the
+          # current Cloudflare control-plane state with the generated config
+          # immediately before the mutation and rejects unsafe drift.
           node scripts/preflight-telegram-production.mjs "${preflight_args[@]}"
 
           XDG_CONFIG_HOME=.wrangler/config \
@@ -216,10 +221,18 @@ jobs:
               --dry-run \
               --outdir .wrangler/telegram-production-generated
 
-          npx wrangler deploy \
-            --config "$deploy_config" \
-            --name "$WORKER_NAME" \
-            --strict
+          # Do not use Wrangler --strict here. This rollout intentionally changes
+          # reviewed remote configuration (including TELEGRAM_LINKING_ENABLED and
+          # the compatibility date), so --strict rejects the authorized diff even
+          # after the repository preflight has already proved replacement safety.
+          WRANGLER_OUTPUT_FILE_PATH="$deploy_output" \
+            npx wrangler deploy \
+              --config "$deploy_config" \
+              --name "$WORKER_NAME"
+
+          # Read the Cloudflare control plane back after mutation using the same
+          # allow-list that authorized this transition.
+          node scripts/preflight-telegram-production.mjs "${preflight_args[@]}"
 
           rm -f "$deploy_config"
           trap - EXIT
@@ -238,13 +251,29 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const root = process.env.RUNNER_TEMP + '/telegram-production-evidence';
+          const outputPath = process.env.RUNNER_TEMP + '/telegram-production-wrangler-output.ndjson';
           const versions = JSON.parse(fs.readFileSync(root + '/versions.json', 'utf8'));
-          if (!Array.isArray(versions) || !versions.length || !versions[0]?.id) {
-            throw new Error('Unable to resolve deployed Telegram Worker version id');
+          const outputEvents = fs.readFileSync(outputPath, 'utf8')
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line));
+          const deployEvents = outputEvents.filter((entry) => (
+            entry?.type === 'deploy'
+            && entry?.worker_name === process.env.WORKER_NAME
+            && typeof entry?.version_id === 'string'
+            && entry.version_id.length > 0
+          ));
+          if (deployEvents.length !== 1) {
+            throw new Error('Unable to resolve exactly one deployed Telegram Worker version from Wrangler structured output');
+          }
+          const deployedVersionId = deployEvents[0].version_id;
+          if (!Array.isArray(versions) || !versions.some((entry) => entry?.id === deployedVersionId)) {
+            throw new Error('Structured deploy version id is not present in the current Telegram Worker version list');
           }
           fs.writeFileSync(root + '/safe-summary.json', JSON.stringify({
             worker: process.env.WORKER_NAME,
-            version_id: versions[0].id,
+            version_id: deployedVersionId,
+            version_source: 'wrangler_deploy_event',
             workers_dev: false,
             preview_urls: false,
             custom_domain: 'telegram.vishartattoo.com',
@@ -257,7 +286,7 @@ jobs:
             legacy_artist_fallback_retained: true,
             secret_names_only: true,
           }, null, 2));
-          console.log(`TELEGRAM_WORKER_VERSION=${versions[0].id}`);
+          console.log(`TELEGRAM_WORKER_VERSION=${deployedVersionId}`);
           NODE
 
       - name: Upload safe Telegram production evidence
@@ -295,5 +324,6 @@ jobs:
             echo '- Gmail credentials remain on the Gmail Worker; the scheduler receives only the bounded Service Binding'
             echo '- There is no global Telegram chat-id binding; DB destinations are server-only'
             echo '- Cloudflare preflight compares live bindings against the deploy config and blocks silent removal or unapproved linking state changes'
+            echo '- Real deploy runs only after fail-closed live-state preflight and dry-run; post-deploy preflight reads the control plane back'
             echo '- This workflow never runs secret put/bulk, webhook activation, Pages deploy or Supabase migration commands'
           } >> "$GITHUB_STEP_SUMMARY"

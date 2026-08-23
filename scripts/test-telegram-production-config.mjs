@@ -144,11 +144,15 @@ for (const needle of [
   "'TELEGRAM_BOT_TOKEN'",
   "'TELEGRAM_WEBHOOK_SECRET'",
   '--dry-run',
-  '--strict',
+  'WRANGLER_OUTPUT_FILE_PATH="$deploy_output"',
+  "entry?.type === 'deploy'",
+  "version_source: 'wrangler_deploy_event'",
+  'versions.some((entry) => entry?.id === deployedVersionId)',
   'wrangler deployments list',
   'wrangler versions list',
 ]) expectIncludes(workflow, needle, 'production workflow');
 for (const needle of [
+  'versions[0].id',
   'wrangler secret put',
   'wrangler secret bulk',
   'wrangler pages deploy',
@@ -162,4 +166,14 @@ for (const needle of [
   'GMAIL_TOKEN_ENCRYPTION_KEY',
 ]) expectExcludes(workflow, needle, 'production workflow');
 
-console.log('Telegram production configuration boundaries: Gmail shared cron preserved; linking enable and rollback require separate approvals.');
+if (/^\s*--strict\s*$/m.test(workflow)) {
+  throw new Error('production workflow: forbidden executable Wrangler strict-mode flag');
+}
+
+const preflightCall = 'node scripts/preflight-telegram-production.mjs "${preflight_args[@]}"';
+const preflightCallCount = workflow.split(preflightCall).length - 1;
+if (preflightCallCount !== 2) {
+  throw new Error(`production workflow: expected preflight immediately before and after deploy, found ${preflightCallCount}`);
+}
+
+console.log('Telegram production configuration boundaries: fail-closed live preflight authorizes intended config replacement; Gmail shared cron is preserved; linking enable and rollback require separate approvals.');
