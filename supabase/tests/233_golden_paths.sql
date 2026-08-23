@@ -445,19 +445,38 @@ select is(
 -- is the case that matters: they were not present when the default was written.
 -- ---------------------------------------------------------------------------
 
--- Phase P shipped its control plane closed: these RPCs are granted to no API
--- role at all, pending the release that gives them a screen. That is the
--- current, deliberate state, so the golden path asserts it rather than
--- pretending a manager could click this today.
+-- Phase P shipped its control plane closed: granted to no API role at all,
+-- pending the release that gave it a screen. Migration 0088 is that release,
+-- and it opened exactly the slice artist onboarding needs - listing a studio's
+-- defaults and applying them to a new artist - while leaving the authoring
+-- call closed, because writing automation rules is a separate product surface
+-- that still has no screen.
+--
+-- So the assertion splits rather than disappearing. Both halves matter: the
+-- first is what makes the onboarding step reachable, the second is what keeps
+-- this from quietly becoming the automation product.
 select ok(
-  (select bool_and(
-     not has_function_privilege(r, f, 'EXECUTE'))
-   from unnest(array['anon', 'authenticated', 'service_role']) r
-   cross join unnest(array[
-     'public.upsert_workspace_automation_default(uuid,uuid,text,text,text,text,text,text,integer,public.notification_priority,boolean)',
+  (select bool_and(has_function_privilege('authenticated', f, 'EXECUTE'))
+   from unnest(array[
      'public.apply_workspace_automation_defaults_to_artist(uuid)',
      'public.list_workspace_automation_defaults(uuid)']) f),
-  'the workspace automation control plane is reachable by no API role yet'
+  'a signed-in profile can list a studio''s automation defaults and apply them'
+);
+
+select ok(
+  (select bool_and(not has_function_privilege(r, f, 'EXECUTE'))
+   from unnest(array['anon', 'authenticated', 'service_role']) r
+   cross join unnest(array[
+     'public.upsert_workspace_automation_default(uuid,uuid,text,text,text,text,text,text,integer,public.notification_priority,boolean)']) f),
+  'but authoring a studio default is still reachable by no API role'
+);
+
+select ok(
+  (select bool_and(not has_function_privilege('anon', f, 'EXECUTE'))
+   from unnest(array[
+     'public.apply_workspace_automation_defaults_to_artist(uuid)',
+     'public.list_workspace_automation_defaults(uuid)']) f),
+  'and none of it is open to anon'
 );
 
 -- Exercising it therefore needs the definer boundary a future surface would
