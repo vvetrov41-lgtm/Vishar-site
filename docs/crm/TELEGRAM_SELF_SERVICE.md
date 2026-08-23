@@ -138,9 +138,9 @@ This is a critical production invariant.
 
 Read-only Cloudflare audit on 2026-08-22 found the live `vishar-telegram-drain-production` Worker already owns the shared five-minute scheduler used by both Telegram and Gmail.
 
-Observed live state:
+Observed state at that audit, before any Phase G rollout:
 
-| Item | Live state |
+| Item | State on 2026-08-22 |
 | --- | --- |
 | Active version | `c6fc73e8-281a-4715-86c5-ae2d7d43e9b1` |
 | Deployment date | 2026-08-19 |
@@ -164,11 +164,30 @@ PR #391 now explicitly carries the already-live Gmail shared scheduler contract 
 
 `scripts/preflight-telegram-production.mjs` reads live Cloudflare state before deployment and blocks silent removal of live replaceable bindings. It also validates the Gmail target, live Gmail flag, secret names, cron, Custom Domain conflicts, DNS conflicts, Cloudflare Access, `workers.dev`, previews and linking state transitions.
 
+The rollout has since happened and the invariant held. Read-only Cloudflare readback on 2026-08-23:
+
+| Item | Live state on 2026-08-23 |
+| --- | --- |
+| Active version | `47e7bf8c-f532-4564-a88d-59b307ba75fb` |
+| Active deployment | `7134e3ec-b84d-43cb-8ffa-6c65c47118b6` at 100% |
+| Cron | `*/5 * * * *` |
+| `workers.dev` | disabled |
+| preview URLs | disabled |
+| compatibility date | `2026-08-22` |
+| secret names | `ARTIST_TELEGRAM_KRISTINA_HPRODUCTION`, `ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION`, `SUPABASE_SECRET_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` |
+| service binding | `GMAIL_SERVICE -> vishar-gmail-production` |
+| Gmail flag | `GMAIL_SHARED_DRAIN_ENABLED="true"` |
+| Telegram flag | `TELEGRAM_DRAIN_ENABLED="true"` |
+| linking flag | `TELEGRAM_LINKING_ENABLED="true"` |
+| Custom Domain | `telegram.vishartattoo.com`, attached and enabled |
+
+The Gmail Service Binding and enable flag survived both Phase G deploys, which is the outcome this section exists to protect.
+
 ## 8. Production activation order
 
-Production remains unchanged until separately approved.
+Steps 1 to 6 have been completed in production. Step 7 onwards has not. Each step below records its verified status; anything still open remains subject to separate approval.
 
-### Step 1. Shared bot
+### Step 1. Shared bot — done
 
 Already completed externally.
 
@@ -178,21 +197,25 @@ Public username:
 
 The token is private and remains outside the repo and chat history.
 
-### Step 2. Database stack
+### Step 2. Database stack — done
 
 Apply the normal production migration lineage through `0086` only through the protected production database release process.
 
-Production was still at migration `0073` at the last verified check, so this is not a one-migration deployment. The full stacked lineage `0074` through `0086` must be handled as the normal platform rollout.
+This was not a one-migration deployment: production was at `0073`, so the full stacked lineage `0074` through `0086` was handled as the normal platform rollout, completed on 2026-08-22 from `release/private-crm-rc77-platform-foundation` at `5fde7507`.
 
-### Step 3. Connector identity
+Verified on 2026-08-23: migration head `0086`, `public.configure_telegram_connector_identity(text)` present, `crm_private.telegram_destinations` and `crm_private.telegram_link_sessions` both empty.
+
+### Step 3. Connector identity — done
 
 After `0086` exists in production, configure the public bot username through the CRM owner RPC:
 
 `VisharCRMBot`
 
+Verified on 2026-08-23: the connector settings singleton reports `bot_username = VisharCRMBot`.
+
 No bot token belongs in the database.
 
-### Step 4. Cloudflare secrets
+### Step 4. Cloudflare secrets — done
 
 The production Telegram Worker must have exactly these encrypted secret names during Phase G:
 
@@ -204,7 +227,9 @@ The production Telegram Worker must have exactly these encrypted secret names du
 
 The two legacy Artist secrets remain until migration equivalence is proven.
 
-### Step 5. First guarded Worker deploy, linking still off
+Verified on 2026-08-23: exactly these five names are present. Only names were read; no secret value is read, printed or stored by CI or by this runbook.
+
+### Step 5. First guarded Worker deploy, linking still off — done
 
 Run the protected production Telegram deployment with normal deploy approval and:
 
@@ -222,7 +247,11 @@ Generated state:
 - `workers.dev=false`;
 - preview URLs disabled.
 
-This first real `wrangler deploy --strict` is also where creation of `telegram.vishartattoo.com` is actually proven. A dry-run cannot prove Custom Domain attachment.
+This first real deploy is also where creation of `telegram.vishartattoo.com` is actually proven. A dry-run cannot prove Custom Domain attachment.
+
+Do not use `wrangler deploy --strict` for this step. An earlier attempt (run `32599525230`) passed the fail-closed preflight and the dry-run, then aborted before upload because `--strict` rejects the intended differences of this very rollout: the compatibility-date change, the newly added `TELEGRAM_LINKING_ENABLED` var, and Wrangler's normalisation of the Service Binding `environment` field. `--strict` cannot express "this reviewed diff is authorized". The workflow in PR #393 removes `--strict` from the real deploy only, keeps the preflight and dry-run before it, and re-runs the same preflight afterwards as control-plane readback. Deploy from that lineage, not from PR #391 alone.
+
+Completed on 2026-08-23 by run `32601337163` from `release/private-crm-rc78-telegram-strict-recovery` at `8ebef21`, producing version `58f9245a-e6a0-4b3b-89cb-73d9892382bc` with linking still off.
 
 After deployment verify:
 
@@ -234,7 +263,7 @@ After deployment verify:
 - `https://telegram.vishartattoo.com/webhook` returns 404 while linking is off;
 - no Cloudflare Access app covers the callback.
 
-### Step 6. Enable linking through the separate gate
+### Step 6. Enable linking through the separate gate — done
 
 A second production Worker deployment enables linking. It requires all normal production approval plus:
 
@@ -244,7 +273,22 @@ The workflow generates `TELEGRAM_LINKING_ENABLED="true"` only when that independ
 
 This deploy still preserves Telegram drain, Gmail shared drain, cron and legacy fallback.
 
-### Step 7. Register Telegram webhook
+Completed on 2026-08-23 by run `32623927810` from the same `8ebef21` head, producing version `47e7bf8c-f532-4564-a88d-59b307ba75fb` with `TELEGRAM_LINKING_ENABLED="true"`.
+
+With linking on, the live boundary was verified by read-only probes and fails closed:
+
+| request | response |
+| --- | --- |
+| `GET /` | `404` |
+| `GET /anything` | `404` |
+| `GET /webhook` | `405` |
+| `POST /notwebhook` | `404` |
+| `POST /webhook` with no secret header | `401` |
+| `POST /webhook` with a wrong secret header | `401` |
+
+### Step 7. Register Telegram webhook — not done
+
+This is the next open step. It cannot be performed or verified from CI or from an agent session: `setWebhook` requires the bot token, which is deliberately held only as the encrypted Cloudflare Worker secret. Until it is registered, the Worker is live and fails closed but Telegram sends it nothing.
 
 Only after the linking-enabled Worker is live, register Telegram's webhook:
 
