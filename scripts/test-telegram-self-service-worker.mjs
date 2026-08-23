@@ -72,7 +72,12 @@ function route() {
   };
 }
 
-function makeFetch({ destination = [], personalClaim = [], rpcFailure = null } = {}) {
+function makeFetch({
+  destination = [],
+  personalClaim = [],
+  rpcFailure = null,
+  telegramStatus = 200,
+} = {}) {
   const rpcCalls = [];
   const telegramCalls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -85,6 +90,7 @@ function makeFetch({ destination = [], personalClaim = [], rpcFailure = null } =
       if (name === 'claim_telegram_outbox_by_id') return Response.json([job()]);
       if (name === 'resolve_outbox_route') return Response.json([route()]);
       if (name === 'service_resolve_telegram_destination') return Response.json(destination);
+      if (name === 'service_record_telegram_artist_delivery_result') return Response.json({ ok: true });
       if (name === 'record_telegram_outbox_result') return Response.json({ ok: true });
       if (name === 'service_claim_telegram_notifications') return Response.json(personalClaim);
       if (name === 'service_record_telegram_notification_result') return Response.json({ ok: true });
@@ -93,14 +99,17 @@ function makeFetch({ destination = [], personalClaim = [], rpcFailure = null } =
     }
     if (value.startsWith('https://api.telegram.org/bot')) {
       telegramCalls.push({ url: value, body: init.body ? JSON.parse(init.body) : null });
-      return Response.json({ ok: true });
+      return Response.json(
+        telegramStatus >= 200 && telegramStatus < 300 ? { ok: true } : { ok: false },
+        { status: telegramStatus },
+      );
     }
     throw new Error(`unexpected URL ${value}`);
   };
   return { fetchImpl, rpcCalls, telegramCalls };
 }
 
-await test('shared bot prefers a private registry Artist destination', async () => {
+await test('shared bot prefers a private registry Artist destination and records registry success', async () => {
   const env = { ...baseEnv, TELEGRAM_BOT_TOKEN: sharedToken };
   const mock = makeFetch({
     destination: [{
@@ -119,12 +128,74 @@ await test('shared bot prefers a private registry Artist destination', async () 
     'claim_telegram_outbox_by_id',
     'resolve_outbox_route',
     'service_resolve_telegram_destination',
+    'service_record_telegram_artist_delivery_result',
     'record_telegram_outbox_result',
   ]);
+  assert.deepEqual(mock.rpcCalls[3].args, {
+    p_destination_id: destinationId,
+    p_outbox_id: outboxId,
+    p_worker_id: workerId,
+    p_succeeded: true,
+    p_error_code: null,
+  });
   assert.equal(mock.telegramCalls.length, 1);
   assert.equal(mock.telegramCalls[0].body.chat_id, registryChat);
   assert.ok(mock.telegramCalls[0].url.includes(sharedToken));
   assert.ok(!mock.telegramCalls[0].url.includes(legacyToken));
+});
+
+await test('registry provider failure records registry failure before outbox failure', async () => {
+  const env = { ...baseEnv, TELEGRAM_BOT_TOKEN: sharedToken };
+  const mock = makeFetch({
+    destination: [{
+      destination_id: destinationId,
+      destination_kind: 'artist',
+      chat_id: registryChat,
+    }],
+    telegramStatus: 502,
+  });
+  const result = await drainTelegramOutboxById(env, {
+    outboxId,
+    workerId,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.equal(result.outcome, 'failed');
+  assert.deepEqual(mock.rpcCalls.map((call) => call.name), [
+    'claim_telegram_outbox_by_id',
+    'resolve_outbox_route',
+    'service_resolve_telegram_destination',
+    'service_record_telegram_artist_delivery_result',
+    'record_telegram_outbox_result',
+  ]);
+  assert.deepEqual(mock.rpcCalls[3].args, {
+    p_destination_id: destinationId,
+    p_outbox_id: outboxId,
+    p_worker_id: workerId,
+    p_succeeded: false,
+    p_error_code: 'telegram_rejected',
+  });
+  assert.equal(mock.rpcCalls[4].args.p_succeeded, false);
+});
+
+await test('registry evidence failure never converts an accepted Telegram send into a retry', async () => {
+  const env = { ...baseEnv, TELEGRAM_BOT_TOKEN: sharedToken };
+  const mock = makeFetch({
+    destination: [{
+      destination_id: destinationId,
+      destination_kind: 'artist',
+      chat_id: registryChat,
+    }],
+    rpcFailure: 'service_record_telegram_artist_delivery_result',
+  });
+  const result = await drainTelegramOutboxById(env, {
+    outboxId,
+    workerId,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.equal(result.outcome, 'succeeded');
+  assert.equal(mock.telegramCalls.length, 1);
+  assert.equal(mock.rpcCalls.at(-1).name, 'record_telegram_outbox_result');
+  assert.equal(mock.rpcCalls.at(-1).args.p_succeeded, true);
 });
 
 await test('no registry row keeps the exact legacy binding fallback', async () => {
@@ -138,6 +209,7 @@ await test('no registry row keeps the exact legacy binding fallback', async () =
   assert.equal(result.outcome, 'succeeded');
   assert.equal(mock.telegramCalls[0].body.chat_id, legacyChat);
   assert.ok(mock.telegramCalls[0].url.includes(legacyToken));
+  assert.ok(!mock.rpcCalls.some((call) => call.name === 'service_record_telegram_artist_delivery_result'));
 });
 
 await test('registry lookup failure also preserves the rollout fallback', async () => {
@@ -151,6 +223,7 @@ await test('registry lookup failure also preserves the rollout fallback', async 
   assert.equal(result.outcome, 'succeeded');
   assert.equal(mock.telegramCalls[0].body.chat_id, legacyChat);
   assert.ok(mock.telegramCalls[0].url.includes(legacyToken));
+  assert.ok(!mock.rpcCalls.some((call) => call.name === 'service_record_telegram_artist_delivery_result'));
 });
 
 await test('without a shared bot token the legacy path makes no registry call', async () => {
@@ -166,6 +239,7 @@ await test('without a shared bot token the legacy path makes no registry call', 
   });
   assert.equal(result.outcome, 'succeeded');
   assert.ok(!mock.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'));
+  assert.ok(!mock.rpcCalls.some((call) => call.name === 'service_record_telegram_artist_delivery_result'));
   assert.equal(mock.telegramCalls[0].body.chat_id, legacyChat);
 });
 
