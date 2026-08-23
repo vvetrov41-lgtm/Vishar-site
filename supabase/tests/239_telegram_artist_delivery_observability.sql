@@ -1,6 +1,7 @@
 -- 239_telegram_artist_delivery_observability.sql
--- Shared-bot Artist delivery records non-secret registry health only for the
--- exact active destination and the exact leased Telegram outbox row.
+-- Shared-bot Artist delivery reuses the existing backend acknowledgement RPC,
+-- but records non-secret destination health only while the same Worker owns a
+-- leased Telegram outbox row for that Artist.
 
 begin;
 select no_plan();
@@ -8,11 +9,11 @@ select no_plan();
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 select ok(not has_function_privilege('authenticated',
-  'public.service_record_telegram_artist_delivery_result(uuid,uuid,text,boolean,text)', 'EXECUTE'),
-  'browser cannot acknowledge Artist Telegram registry delivery');
+  'public.service_record_telegram_notification_result(uuid,text,boolean,text)', 'EXECUTE'),
+  'browser cannot acknowledge Telegram registry delivery');
 select ok(has_function_privilege('service_role',
-  'public.service_record_telegram_artist_delivery_result(uuid,uuid,text,boolean,text)', 'EXECUTE'),
-  'trusted Telegram Worker can acknowledge Artist registry delivery');
+  'public.service_record_telegram_notification_result(uuid,text,boolean,text)', 'EXECUTE'),
+  'trusted Telegram Worker keeps the existing acknowledgement privilege');
 
 insert into public.artists (id, slug, display_name, timezone, default_currency, is_active) values
   ('f9a10000-0000-4000-8000-000000000001', 'telegram-observe-a', 'Telegram Observe A', 'Europe/London', 'GBP', true),
@@ -34,14 +35,13 @@ insert into public.integration_outbox (
    0, 8, now(), 'telegram-observe-worker', now(), now() + interval '2 minutes'),
   ('f9b10000-0000-4000-8000-000000000002', 'telegram_notification',
    'telegram:observe-b', 'leased', '{}'::jsonb, 'f9a10000-0000-4000-8000-000000000002',
-   0, 8, now(), 'telegram-observe-worker', now(), now() + interval '2 minutes');
+   0, 8, now(), 'telegram-observe-worker-b', now(), now() + interval '2 minutes');
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}', true);
 select throws_ok(
-  $$select public.service_record_telegram_artist_delivery_result(
+  $$select public.service_record_telegram_notification_result(
     'f9d10000-0000-4000-8000-000000000001',
-    'f9b10000-0000-4000-8000-000000000001',
     'telegram-observe-worker', true, null)$$,
   '42501', null,
   'authenticated caller cannot forge Artist registry success evidence');
@@ -51,33 +51,29 @@ set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 select throws_ok(
-  $$select public.service_record_telegram_artist_delivery_result(
+  $$select public.service_record_telegram_notification_result(
     'f9d10000-0000-4000-8000-000000000002',
-    'f9b10000-0000-4000-8000-000000000001',
     'telegram-observe-worker', true, null)$$,
   '42501', null,
-  'Worker cannot attribute an outbox send to another Artist destination');
+  'Worker cannot acknowledge another Artist destination without that Artist lease');
 
 select throws_ok(
-  $$select public.service_record_telegram_artist_delivery_result(
+  $$select public.service_record_telegram_notification_result(
     'f9d10000-0000-4000-8000-000000000001',
-    'f9b10000-0000-4000-8000-000000000001',
     'another-worker', true, null)$$,
   '42501', null,
-  'Worker cannot acknowledge a lease it does not own');
+  'Worker cannot acknowledge an Artist destination without its own lease');
 
 select throws_ok(
-  $$select public.service_record_telegram_artist_delivery_result(
+  $$select public.service_record_telegram_notification_result(
     'f9d10000-0000-4000-8000-000000000001',
-    'f9b10000-0000-4000-8000-000000000001',
     'telegram-observe-worker', false, 'Bad Error')$$,
   '22023', null,
   'failed evidence accepts only safe machine error codes');
 
 select lives_ok(
-  $$select public.service_record_telegram_artist_delivery_result(
+  $$select public.service_record_telegram_notification_result(
     'f9d10000-0000-4000-8000-000000000001',
-    'f9b10000-0000-4000-8000-000000000001',
     'telegram-observe-worker', true, null)$$,
   'matching leased registry send records success');
 
@@ -96,10 +92,9 @@ select ok(
 set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select lives_ok(
-  $$select public.service_record_telegram_artist_delivery_result(
+  $$select public.service_record_telegram_notification_result(
     'f9d10000-0000-4000-8000-000000000002',
-    'f9b10000-0000-4000-8000-000000000002',
-    'telegram-observe-worker', false, 'telegram_rejected')$$,
+    'telegram-observe-worker-b', false, 'telegram_rejected')$$,
   'matching leased registry failure records health evidence');
 
 reset role;
