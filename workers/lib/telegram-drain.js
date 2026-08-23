@@ -156,11 +156,38 @@ async function recordFailure(supabase, outboxId, workerId, errorCode) {
   }
 }
 
+async function recordArtistRegistryResult(
+  supabase,
+  destinationId,
+  outboxId,
+  workerId,
+  succeeded,
+  errorCode = null,
+) {
+  try {
+    await supabase.rpc('service_record_telegram_artist_delivery_result', {
+      p_destination_id: destinationId,
+      p_outbox_id: outboxId,
+      p_worker_id: workerId,
+      p_succeeded: succeeded,
+      p_error_code: succeeded ? null : errorCode,
+    });
+    return true;
+  } catch {
+    // Provider delivery is the durable outcome. Observability must never turn a
+    // successful external send into a retry and duplicate the Telegram message.
+    return false;
+  }
+}
+
 async function preferredArtistDelivery(env, supabase, route, job, text, fetchImpl) {
   // Rollout rule: without the one shared bot token the old artist binding stays
   // canonical and we do not even require the new resolver to be present.
   if (!sharedTelegramBotToken(env)) {
-    return sendNotification(env, route, text, fetchImpl);
+    return {
+      notification: await sendNotification(env, route, text, fetchImpl),
+      registryDestinationId: null,
+    };
   }
 
   try {
@@ -170,13 +197,19 @@ async function preferredArtistDelivery(env, supabase, route, job, text, fetchImp
     });
     const destination = validateRegistryDestination(resolved, 'artist');
     if (destination) {
-      return sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl);
+      return {
+        notification: await sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl),
+        registryDestinationId: destination.destination_id,
+      };
     }
   } catch {
     // Static bindings remain the rollback path throughout Phase G. A registry
     // lookup failure must not make existing production enquiry alerts disappear.
   }
-  return sendNotification(env, route, text, fetchImpl);
+  return {
+    notification: await sendNotification(env, route, text, fetchImpl),
+    registryDestinationId: null,
+  };
 }
 
 export async function processClaimedTelegramJob(env, {
@@ -197,7 +230,7 @@ export async function processClaimedTelegramJob(env, {
     return recordFailure(supabase, claimedJob.outbox_id, workerId, errorCode);
   }
 
-  let notification;
+  let delivery;
   try {
     const resolved = await supabase.rpc('resolve_outbox_route', {
       p_outbox_id: job.outbox_id,
@@ -208,7 +241,7 @@ export async function processClaimedTelegramJob(env, {
       fileCount: job.file_count,
       clientConflict: job.client_conflict,
     });
-    notification = await preferredArtistDelivery(env, supabase, route, job, text, fetchImpl);
+    delivery = await preferredArtistDelivery(env, supabase, route, job, text, fetchImpl);
   } catch (error) {
     return recordFailure(
       supabase,
@@ -218,12 +251,34 @@ export async function processClaimedTelegramJob(env, {
     );
   }
 
+  const { notification, registryDestinationId } = delivery;
   if (!notification.delivered) {
+    const errorCode = safeErrorCode({ code: notification.errorCode });
+    if (registryDestinationId) {
+      await recordArtistRegistryResult(
+        supabase,
+        registryDestinationId,
+        job.outbox_id,
+        workerId,
+        false,
+        errorCode,
+      );
+    }
     return recordFailure(
       supabase,
       job.outbox_id,
       workerId,
-      safeErrorCode({ code: notification.errorCode }),
+      errorCode,
+    );
+  }
+
+  if (registryDestinationId) {
+    await recordArtistRegistryResult(
+      supabase,
+      registryDestinationId,
+      job.outbox_id,
+      workerId,
+      true,
     );
   }
 
