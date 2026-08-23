@@ -177,14 +177,19 @@ describe('organizations', () => {
     expect(await screen.findByText('No organizations')).toBeInTheDocument();
   });
 
-  it('offers founding an organization only to somebody who already administers one', async () => {
-    const { unmount } = renderWithSession(<App />, { ...studioSession(), path: '/workspaces' });
+  it('offers founding an organization only when the server authorizes it', async () => {
+    const { unmount } = renderWithSession(<App />, {
+      ...studioSession({
+        controlPlaneAccess: { ...FULL_ACCESS, can_found_workspace: true },
+      }),
+      path: '/workspaces',
+    });
     expect(await screen.findByRole('button', { name: 'New organization' })).toBeInTheDocument();
     unmount();
 
     renderWithSession(<App />, {
       ...studioSession({
-        workspaces: [{ ...STUDIO, can_manage_workspace: false, workspace_role: 'booking_manager' }],
+        controlPlaneAccess: { ...FULL_ACCESS, can_found_workspace: false },
       }),
       path: '/workspaces',
     });
