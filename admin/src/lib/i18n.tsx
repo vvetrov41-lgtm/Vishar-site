@@ -53,6 +53,7 @@ const EN = {
   'nav.sessions': 'Sessions',
   'nav.integrations': 'Integrations',
   'nav.notifications': 'Notifications',
+  'nav.workspaces': 'Organizations',
   'nav.users': 'Users',
   'nav.activity': 'Activity',
 
@@ -350,6 +351,7 @@ const RU: Record<TranslationKey, string> = {
   'nav.sessions': 'Сеансы',
   'nav.integrations': 'Интеграции',
   'nav.notifications': 'Уведомления',
+  'nav.workspaces': 'Организации',
   'nav.users': 'Сотрудники',
   'nav.activity': 'Журнал',
 

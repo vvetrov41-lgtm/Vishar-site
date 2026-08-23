@@ -114,6 +114,7 @@ describe('navigation', () => {
       '/payments',
       '/integrations',
       '/notifications',
+      '/workspaces',
       '/users',
       '/activity',
     ]);

@@ -43,7 +43,8 @@ export type Capability =
   | 'manageIntegrations'
   | 'viewNotifications'
   | 'manageUsers'
-  | 'manageSettings';
+  | 'manageSettings'
+  | 'manageWorkspaces';
 
 const OWNER: Capability[] = [
   'viewClients', 'editClient',
@@ -54,7 +55,7 @@ const OWNER: Capability[] = [
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft', 'approveEmail', 'viewActivity', 'viewIntegrationJobs', 'manageIntegrations',
   'viewNotifications',
-  'manageUsers', 'manageSettings',
+  'manageUsers', 'manageSettings', 'manageWorkspaces',
 ];
 
 const BOOKING_MANAGER: Capability[] = [
@@ -66,6 +67,11 @@ const BOOKING_MANAGER: Capability[] = [
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft',
   'viewActivity', 'manageIntegrations', 'viewNotifications',
+  // Organizations are membership-scoped at the database. Offering the screen
+  // to a manager is safe: list_workspaces returns only what they belong to,
+  // and an empty result renders as "you are in no organization" rather than
+  // as an error. Withholding it would hide a studio from its own admin.
+  'manageWorkspaces',
   // The frontend can only express the coarse global role. The database narrows
   // finance and Calendar Connections to memberships whose capability flags are
   // true. Deliberately absent: viewFinance, manageFinance, approveEmail,
@@ -198,6 +204,7 @@ export const NAV_ITEMS: NavItem[] = [
   // links on to the per-provider screens.
   { path: '/integrations', label: 'nav.integrations', capability: 'manageIntegrations' },
   { path: '/notifications', label: 'nav.notifications', capability: 'viewNotifications' },
+  { path: '/workspaces', label: 'nav.workspaces', capability: 'manageWorkspaces' },
   { path: '/users', label: 'Users', capability: 'manageUsers' },
   { path: '/activity', label: 'Activity', capability: 'viewActivity' },
 ];

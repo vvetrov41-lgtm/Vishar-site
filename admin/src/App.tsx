@@ -15,6 +15,7 @@ import { applyAppointmentTimeStep } from './lib/appointment-time-step';
 import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
+import { ArtistOnboardingPage } from './pages/ArtistOnboardingPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
 import { AvailabilityPage } from './pages/AvailabilityPage';
 import { BookingSourcesPage } from './pages/BookingSourcesPage';
@@ -38,6 +39,8 @@ import { ProjectsPage } from './pages/ProjectsPage';
 import { TelegramConnectionsPage } from './pages/TelegramConnectionsPage';
 import { UsersPage } from './pages/UsersPage';
 import { WhatsAppConnectionsPage } from './pages/WhatsAppConnectionsPage';
+import { WorkspaceDetailPage } from './pages/WorkspaceDetailPage';
+import { WorkspacesPage } from './pages/WorkspacesPage';
 
 export function App() {
   const { state, signOut } = useSession();
@@ -119,6 +122,27 @@ function Routes() {
     );
   }
 
+  const workspaceDetail = matchRoute('/workspaces/:id', path);
+  if (workspaceDetail) {
+    return (
+      <RequireCapability capability="manageWorkspaces">
+        <WorkspaceDetailPage workspaceId={workspaceDetail.id} />
+      </RequireCapability>
+    );
+  }
+
+  // Artist administration, not artist work: reachable by somebody who
+  // administers the organization even when they hold no membership on the
+  // artist. Every section inside asks the database separately.
+  const artistDetail = matchRoute('/artists/:id', path);
+  if (artistDetail) {
+    return (
+      <RequireCapability capability="manageWorkspaces">
+        <ArtistOnboardingPage artistId={artistDetail.id} />
+      </RequireCapability>
+    );
+  }
+
   const projectDetail = matchRoute('/projects/:id', path);
   if (projectDetail) {
     return (
@@ -162,6 +186,8 @@ function Routes() {
       return <RequireCapability capability="manageIntegrations"><WhatsAppConnectionsPage /></RequireCapability>;
     case '/integrations/instagram':
       return <RequireCapability capability="manageIntegrations"><InstagramConnectionsPage /></RequireCapability>;
+    case '/workspaces':
+      return <RequireCapability capability="manageWorkspaces"><WorkspacesPage /></RequireCapability>;
     case '/users':
       return <RequireCapability capability="manageUsers"><UsersPage /></RequireCapability>;
     case '/activity':

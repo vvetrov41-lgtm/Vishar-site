@@ -1,0 +1,185 @@
+/* Organization and artist administration.
+   Mobile-first, like the rest: every row is a stacked card at phone width and
+   only spreads sideways once there is room. Nothing here is a wide admin table
+   — this is used one-handed on a phone in a studio. */
+
+.stack { display: grid; gap: 16px; }
+
+.page-head { display: grid; gap: 4px; }
+.page-head h1 { margin: 0; font-size: 1.35rem; }
+
+.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+}
+.linklike:hover { text-decoration: underline; }
+
+.notice.ok { border-color: rgba(93, 219, 160, 0.4); color: var(--ok); }
+
+/* --- Organization list ------------------------------------------------- */
+
+.ws-list, .artist-roster, .team-rows { display: grid; gap: 12px; }
+
+.ws-card, .artist-row {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.ws-card-title, .artist-row-title {
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+}
+.ws-card-title:hover, .artist-row-title:hover { color: var(--accent); }
+
+.ws-card-badges, .artist-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* --- The onboarding checklist ------------------------------------------ */
+
+.checklist { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+
+.checklist-row {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.checklist-row p { margin: 4px 0 0; }
+
+/* The left edge carries the status so the list is scannable without reading
+   every badge. `external` is deliberately neutral rather than alarming: it is
+   not something the reader failed to do. */
+.checklist-row.status-ready { border-left-color: var(--ok); }
+.checklist-row.status-required { border-left-color: var(--danger); }
+.checklist-row.status-recommended { border-left-color: var(--warn); }
+.checklist-row.status-optional { border-left-color: var(--border-strong); }
+.checklist-row.status-external { border-left-color: var(--accent); }
+
+.checklist-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.checklist-step { font-weight: 600; }
+
+/* --- People and access -------------------------------------------------- */
+
+.team-row { display: grid; gap: 12px; padding: 14px; }
+.team-row header { display: grid; gap: 4px; }
+.team-row-controls { display: grid; gap: 10px; }
+
+.inline-form { display: grid; gap: 10px; align-items: end; }
+
+.danger-zone {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* --- Capability editor -------------------------------------------------- */
+
+.capability-editor { display: grid; gap: 16px; }
+
+.cap-grants { display: grid; gap: 10px; }
+.cap-field { display: grid; gap: 4px; }
+
+.cap-flags {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.cap-flags legend { padding: 0 6px; color: var(--muted); font-size: 0.82rem; }
+.cap-flags[disabled] { opacity: 0.55; }
+
+.cap-preview {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.cap-preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cap-domains { display: grid; gap: 12px; }
+.cap-domain h4 {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+.cap-domain ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.cap-domain li {
+  display: grid;
+  grid-template-columns: 1.1em 1fr;
+  gap: 6px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.cap-yes { color: var(--text); }
+.cap-yes span:first-child { color: var(--ok); }
+.cap-no { color: var(--faint); }
+
+/* --- Booking source links ----------------------------------------------- */
+
+.source-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.source-list > li { display: grid; gap: 6px; }
+
+.copy-link { display: grid; gap: 6px; }
+.copy-link code {
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+@media (min-width: 700px) {
+  .ws-card, .artist-row {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+  .ws-card-badges, .artist-row-badges { justify-content: flex-end; }
+
+  .team-row-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inline-form { grid-template-columns: 1fr auto; }
+  .capability-editor { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+  .cap-domains { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .copy-link { grid-template-columns: 1fr auto; align-items: center; }
+}

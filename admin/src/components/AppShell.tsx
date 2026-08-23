@@ -23,6 +23,7 @@ const NAV_KEYS: Record<string, string> = {
   '/sessions': 'nav.sessions',
   '/integrations': 'nav.integrations',
   '/notifications': 'nav.notifications',
+  '/workspaces': 'nav.workspaces',
   '/users': 'nav.users',
   '/activity': 'nav.activity',
 };
@@ -423,7 +424,14 @@ function groupOverflowItems(items: NavItem[]): { id: OverflowGroupId; items: Nav
 
 function overflowGroupFor(path: string): OverflowGroupId {
   if (path === '/finance' || path === '/payments') return 'finance';
-  if (path === '/users' || path.startsWith('/integrations') || path === '/settings') return 'administration';
+  if (
+    path === '/users'
+    || path === '/workspaces'
+    || path.startsWith('/workspaces/')
+    || path.startsWith('/artists/')
+    || path.startsWith('/integrations')
+    || path === '/settings'
+  ) return 'administration';
   if (path === '/notifications') return 'operations';
   return 'operations';
 }
