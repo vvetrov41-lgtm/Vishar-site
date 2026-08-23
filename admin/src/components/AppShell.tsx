@@ -6,13 +6,14 @@
 // decision only: RequireCapability and database policies remain the security
 // boundary.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLanguage, type Language } from '../lib/i18n';
 import { Link, useRouter } from '../lib/router';
 import { navItemsFor, type NavItem } from '../lib/permissions';
 import { useSession } from '../lib/session';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useArtistScope } from '../lib/artist-scope';
+import { useControlPlaneAccess } from '../lib/control-plane-access';
 
 const NAV_KEYS: Record<string, string> = {
   '/': 'nav.dashboard',
@@ -23,6 +24,7 @@ const NAV_KEYS: Record<string, string> = {
   '/sessions': 'nav.sessions',
   '/integrations': 'nav.integrations',
   '/notifications': 'nav.notifications',
+  '/workspaces': 'nav.workspaces',
   '/users': 'nav.users',
   '/activity': 'nav.activity',
 };
@@ -50,7 +52,25 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { profile, memberships, signOut } = useSession();
   const { path } = useRouter();
   const { t, label, language } = useLanguage();
-  const items = navItemsFor(profile?.role, memberships);
+  // The control-plane entry is appended from the server's answer rather than
+  // derived from the legacy role, which cannot express workspace authority.
+  // Placed before Users so Administration keeps its existing reading order.
+  const { canOpenControlPlane } = useControlPlaneAccess();
+  const roleItems = navItemsFor(profile?.role, memberships);
+  const items = useMemo<NavItem[]>(() => {
+    if (!canOpenControlPlane) return roleItems;
+    const workspaces: NavItem = {
+      path: '/workspaces',
+      label: 'nav.workspaces',
+      // Only reached when the server already said yes; the capability is
+      // carried so the NavItem shape stays uniform, never to decide access.
+      capability: 'viewNotifications',
+    };
+    const usersAt = roleItems.findIndex((item) => item.path === '/users');
+    if (usersAt === -1) return [...roleItems, workspaces];
+    return [...roleItems.slice(0, usersAt), workspaces, ...roleItems.slice(usersAt)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canOpenControlPlane, profile?.role, memberships]);
   const {
     artists,
     selectedArtistId,
@@ -423,7 +443,14 @@ function groupOverflowItems(items: NavItem[]): { id: OverflowGroupId; items: Nav
 
 function overflowGroupFor(path: string): OverflowGroupId {
   if (path === '/finance' || path === '/payments') return 'finance';
-  if (path === '/users' || path.startsWith('/integrations') || path === '/settings') return 'administration';
+  if (
+    path === '/users'
+    || path === '/workspaces'
+    || path.startsWith('/workspaces/')
+    || path.startsWith('/artists/')
+    || path.startsWith('/integrations')
+    || path === '/settings'
+  ) return 'administration';
   if (path === '/notifications') return 'operations';
   return 'operations';
 }

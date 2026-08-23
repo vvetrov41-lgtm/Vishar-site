@@ -351,7 +351,142 @@ export interface FakeClientOptions {
    */
   membershipOverrides?: ArtistMembership[];
   teamInviteUrl?: string;
+  /**
+   * Control-plane fixtures. Absent by default so every existing test keeps
+   * seeing an installation with no organizations, which is what
+   * `list_workspaces` returned before migration 0087 gave it anything to
+   * return.
+   */
+  workspaces?: ControlPlaneWorkspace[];
+  workspaceArtists?: Record<string, ControlPlaneArtist[]>;
+  workspaceTeam?: Record<string, ControlPlaneTeamMember[]>;
+  artistMemberships?: Record<string, ControlPlaneArtistMembership[]>;
+  /** Capability rows preview_membership_capabilities should answer with. */
+  capabilityPreview?: ControlPlaneCapability[];
+  /** Booking sources `list_booking_sources` should answer with. */
+  bookingSources?: unknown[];
+  /** People `list_directory_profiles` should answer with. */
+  directory?: ControlPlaneDirectoryProfile[];
+  /**
+   * What `control_plane_access` answers. Absent means no row, which is how the
+   * function signals a profile with no active CRM identity — and is what the
+   * older tests expect, since none of them belongs to an organization.
+   */
+  controlPlaneAccess?: ControlPlaneAccessRow | null;
+  /** What `artist_control_plane_context` answers, keyed by artist id. */
+  artistContexts?: Record<string, ControlPlaneArtistContext>;
+  /**
+   * Capability preview keyed by target profile id. Lets a test prove the
+   * preview is re-fetched for a new subject rather than reused, which the
+   * single `capabilityPreview` list cannot express.
+   */
+  capabilityPreviewByProfile?: Record<string, ControlPlaneCapability[]>;
+  /** RPC names that must refuse, so a test can prove a section collapses. */
+  denyRpc?: string[];
 }
+
+export interface ControlPlaneWorkspace {
+  id: string;
+  slug: string;
+  display_name: string;
+  workspace_type: 'solo' | 'studio';
+  timezone: string;
+  default_currency: string;
+  is_active: boolean;
+  workspace_role: 'owner' | 'admin' | 'booking_manager' | 'read_only';
+  can_manage_workspace: boolean;
+  can_manage_team: boolean;
+  can_manage_integrations: boolean;
+  artist_count: number;
+}
+
+export interface ControlPlaneArtist {
+  id: string;
+  slug: string;
+  display_name: string;
+  timezone: string;
+  default_currency: string;
+  is_active: boolean;
+  member_count: number;
+  active_booking_sources: number;
+  enabled_integrations: number;
+  viewer_has_membership: boolean;
+  created_at: string;
+}
+
+export interface ControlPlaneTeamMember {
+  profile_id: string;
+  display_name: string | null;
+  email: string;
+  profile_is_active: boolean;
+  profile_role: CrmRole;
+  workspace_role: 'owner' | 'admin' | 'booking_manager' | 'read_only';
+  can_manage_workspace: boolean;
+  can_manage_team: boolean;
+  can_manage_integrations: boolean;
+  membership_is_active: boolean;
+  artist_access_count: number;
+}
+
+export interface ControlPlaneArtistMembership {
+  profile_id: string;
+  display_name: string | null;
+  email: string;
+  profile_is_active: boolean;
+  profile_role: CrmRole;
+  access_level: 'owner' | 'artist' | 'manager' | 'read_only';
+  can_view_finance: boolean;
+  can_manage_finance: boolean;
+  can_manage_sessions: boolean;
+  can_manage_integrations: boolean;
+  is_active: boolean;
+  grant_source: string;
+}
+
+export interface ControlPlaneDirectoryProfile {
+  id: string;
+  display_name: string | null;
+  email: string;
+  profile_role: CrmRole;
+  can_hold_artist_writes: boolean;
+}
+
+export interface ControlPlaneAccessRow {
+  workspace_count: number;
+  administers_any: boolean;
+  can_manage_any_team: boolean;
+  can_found_workspace: boolean;
+  can_browse_directory: boolean;
+}
+
+export interface ControlPlaneArtistContext {
+  artist_id: string;
+  artist_slug: string;
+  artist_display_name: string;
+  artist_timezone: string;
+  artist_default_currency: string;
+  artist_is_active: boolean;
+  member_count: number;
+  active_booking_sources: number;
+  enabled_integrations: number;
+  workspace_id: string;
+  workspace_display_name: string;
+  workspace_type: 'solo' | 'studio';
+  viewer_can_administer: boolean;
+  viewer_has_artist_membership: boolean;
+  viewer_can_manage_team: boolean;
+}
+
+export interface ControlPlaneCapability {
+  capability: string;
+  domain: string;
+  is_write: boolean;
+  description: string;
+  granted: boolean;
+}
+
+export const STUDIO_WORKSPACE_ID = 'w1111111-1111-4111-8111-111111111111';
+export const NEW_ARTIST_ID = 'a9999999-9999-4999-8999-999999999999';
 
 const DENIED = { code: '42501', message: 'permission denied' };
 
@@ -427,6 +562,18 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   const accessibleArtistIds = options.accessibleArtistIds ?? (effectiveRole === 'owner'
     ? ARTISTS.map((artist) => artist.id)
     : [VLADIMIR_ARTIST_ID]);
+
+  const workspaces = options.workspaces ?? [];
+  const workspaceArtists = options.workspaceArtists ?? {};
+  const workspaceTeam = options.workspaceTeam ?? {};
+  const artistMemberships = options.artistMemberships ?? {};
+  const capabilityPreview = options.capabilityPreview ?? [];
+  const bookingSources = options.bookingSources ?? [];
+  const directory = options.directory ?? [];
+  const controlPlaneAccess = options.controlPlaneAccess ?? null;
+  const artistContexts = options.artistContexts ?? {};
+  const capabilityPreviewByProfile = options.capabilityPreviewByProfile ?? null;
+  const denyRpc = options.denyRpc ?? [];
 
   /**
    * Mirrors the real `artist_memberships` RLS policy
@@ -521,7 +668,96 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         return { data: { follow_up_id: (args as any)?.p_follow_up_id, schedule_version: 2 }, error: null };
       }
       if (name === 'list_capabilities') return { data: [], error: null };
-      if (name === 'list_workspaces') return { data: [], error: null };
+
+      // --- Control plane ---------------------------------------------------
+      // Every one of these refuses rather than answering empty when the option
+      // says so. The distinction matters: the screens must collapse a section
+      // they are not allowed to read, and must not mistake "no rows" for
+      // "not permitted".
+      if (denyRpc.includes(name)) return { data: null, error: DENIED };
+
+      if (name === 'list_workspaces') return { data: workspaces, error: null };
+      if (name === 'list_workspace_artists') {
+        const id = String((args as any)?.p_workspace_id ?? '');
+        if (!workspaces.some((workspace) => workspace.id === id)) {
+          return { data: null, error: DENIED };
+        }
+        return { data: workspaceArtists[id] ?? [], error: null };
+      }
+      if (name === 'list_workspace_team') {
+        const id = String((args as any)?.p_workspace_id ?? '');
+        const workspace = workspaces.find((candidate) => candidate.id === id);
+        if (!workspace || !workspace.can_manage_team) return { data: null, error: DENIED };
+        return { data: workspaceTeam[id] ?? [], error: null };
+      }
+      if (name === 'list_artist_memberships') {
+        const id = String((args as any)?.p_artist_id ?? '');
+        return { data: artistMemberships[id] ?? [], error: null };
+      }
+      if (name === 'artist_onboarding_state') {
+        const id = String((args as any)?.p_artist_id ?? '');
+        const members = artistMemberships[id] ?? [];
+        const artist = Object.values(workspaceArtists).flat().find((row) => row.id === id);
+        if (!artist) return { data: null, error: DENIED };
+        return {
+          data: [
+            { step: 'identity', status: artist.is_active ? 'ready' : 'required',
+              detail: `${artist.display_name} · ${artist.timezone}`, sort_order: 1 },
+            { step: 'workspace', status: 'ready', detail: 'Studio', sort_order: 2 },
+            { step: 'team',
+              status: members.some((m) => m.is_active && (m.access_level === 'artist' || m.access_level === 'owner'))
+                ? 'ready' : members.length > 0 ? 'recommended' : 'required',
+              detail: members.length === 0 ? 'Nobody can open this artist yet' : `${members.length} with access`,
+              sort_order: 3 },
+            { step: 'booking',
+              status: artist.active_booking_sources > 0 ? 'ready' : 'recommended',
+              detail: 'No booking form or website yet', sort_order: 4 },
+            { step: 'notifications', status: 'recommended', detail: 'Nobody has a destination', sort_order: 5 },
+            { step: 'integrations',
+              status: artist.enabled_integrations > 0 ? 'ready' : 'external',
+              detail: 'Some need approval outside the CRM', sort_order: 6 },
+            { step: 'automations', status: 'optional', detail: 'No studio defaults to apply', sort_order: 7 },
+          ],
+          error: null,
+        };
+      }
+      if (name === 'preview_membership_capabilities') {
+        // Keyed by subject when the test supplies a map, so a stale preview
+        // after switching person is observable rather than invisible.
+        if (capabilityPreviewByProfile) {
+          const target = String((args as any)?.p_profile_id ?? '');
+          return { data: capabilityPreviewByProfile[target] ?? [], error: null };
+        }
+        return { data: capabilityPreview, error: null };
+      }
+      if (name === 'control_plane_access') {
+        return { data: controlPlaneAccess ? [controlPlaneAccess] : [], error: null };
+      }
+      if (name === 'list_directory_profiles') {
+        return { data: directory, error: null };
+      }
+      if (name === 'artist_control_plane_context') {
+        const id = String((args as any)?.p_artist_id ?? '');
+        const ctx = artistContexts[id];
+        return ctx ? { data: [ctx], error: null } : { data: null, error: DENIED };
+      }
+      if (name === 'transfer_workspace_ownership') return { data: true, error: null };
+      if (name === 'list_workspace_automation_defaults') return { data: [], error: null };
+      // The booking-source list is artist-scoped and manage-level. Answering
+      // with the generic `{ ok: true }` fallback would hand the page a
+      // non-array and hide a real contract mismatch behind a crash.
+      if (name === 'list_booking_sources') return { data: bookingSources, error: null };
+      if (name === 'create_workspace') return { data: STUDIO_WORKSPACE_ID, error: null };
+      if (name === 'create_artist') return { data: NEW_ARTIST_ID, error: null };
+      if (name === 'seat_artist_owner') return { data: 'm0000000-0000-4000-8000-000000000000', error: null };
+      if (name === 'grant_workspace_artist_membership') {
+        return { data: 'm0000000-0000-4000-8000-000000000001', error: null };
+      }
+      if (name === 'upsert_workspace_membership') {
+        return { data: 'm0000000-0000-4000-8000-000000000002', error: null };
+      }
+      if (name === 'update_workspace' || name === 'update_artist') return { data: true, error: null };
+      if (name === 'apply_workspace_automation_defaults_to_artist') return { data: 0, error: null };
       if (name === 'list_profiles') return { data: Object.values(PROFILES), error: null };
       if (name === 'list_team_memberships') return { data: MEMBERSHIPS, error: null };
       if (name === 'list_assignable_profiles') {

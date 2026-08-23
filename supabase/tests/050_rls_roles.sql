@@ -716,6 +716,51 @@ insert into expected_function_acl values
   -- one is new and stays visible so its grants are inventoried here.
   ('public.get_gpt_consent_details(text)', false, true, false),
 
+  -- Artist and workspace lifecycle (migration 0087). Every one of these is a
+  -- browser-callable control-plane write that authorises against
+  -- manage_workspace on the exact workspace inside its own body. None is
+  -- offered to the service backend: adding an artist or founding an
+  -- organization is a human decision made in the CRM, and no Worker or cron
+  -- has a reason to make it.
+  ('public.create_workspace(text,public.workspace_type,text,text,text)', false, true, false),
+  ('public.update_workspace(uuid,text,text,text,boolean)', false, true, false),
+  ('public.create_artist(uuid,text,text,text,text,text)', false, true, false),
+  ('public.update_artist(uuid,text,text,text,boolean)', false, true, false),
+  -- The one-shot bootstrap seat. Refuses once the artist has any membership.
+  ('public.seat_artist_owner(uuid,uuid)', false, true, false),
+
+  -- Control-plane reads (migration 0088). Organizational metadata only: the
+  -- roster, the organization's own people, who holds one artist and why, and
+  -- what a prospective grant would allow. No operational record, no provider
+  -- identifier, and nothing the backend needs.
+  ('public.list_workspace_artists(uuid)', false, true, false),
+  ('public.list_workspace_team(uuid)', false, true, false),
+  ('public.list_artist_memberships(uuid)', false, true, false),
+  ('public.artist_onboarding_state(uuid)', false, true, false),
+  ('public.preview_membership_capabilities(uuid,uuid,public.artist_access_level,boolean,boolean,boolean,boolean)', false, true, false),
+
+  -- Phase P's workspace automation control plane, opened by migration 0088 to
+  -- exactly the slice artist onboarding needs. `upsert_workspace_automation_default`
+  -- stays deliberately absent from this list: authoring a studio default is a
+  -- separate product surface and remains callable by no API role, which the
+  -- exhaustive check below is what actually pins.
+  ('public.list_workspace_automation_defaults(uuid)', false, true, false),
+  ('public.apply_workspace_automation_defaults_to_artist(uuid)', false, true, false),
+
+  -- Control-plane governance (migration 0089). All browser-callable, none
+  -- offered to the service backend: founding an organization, staffing it,
+  -- moving its ownership and opening an artist's administration page are human
+  -- decisions made in the CRM, and no Worker or cron has a reason to make one.
+  --
+  -- list_directory_profiles is the scoped replacement for the people picker.
+  -- public.list_profiles() stays exactly as it was - owner-only, listed above -
+  -- because widening it would have handed the whole staff directory to anybody
+  -- with a booking_manager role rather than to somebody trusted to staff a team.
+  ('public.list_directory_profiles()', false, true, false),
+  ('public.control_plane_access()', false, true, false),
+  ('public.artist_control_plane_context(uuid)', false, true, false),
+  ('public.transfer_workspace_ownership(uuid,uuid)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
