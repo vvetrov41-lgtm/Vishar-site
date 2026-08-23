@@ -747,6 +747,20 @@ insert into expected_function_acl values
   ('public.list_workspace_automation_defaults(uuid)', false, true, false),
   ('public.apply_workspace_automation_defaults_to_artist(uuid)', false, true, false),
 
+  -- Control-plane governance (migration 0089). All browser-callable, none
+  -- offered to the service backend: founding an organization, staffing it,
+  -- moving its ownership and opening an artist's administration page are human
+  -- decisions made in the CRM, and no Worker or cron has a reason to make one.
+  --
+  -- list_directory_profiles is the scoped replacement for the people picker.
+  -- public.list_profiles() stays exactly as it was - owner-only, listed above -
+  -- because widening it would have handed the whole staff directory to anybody
+  -- with a booking_manager role rather than to somebody trusted to staff a team.
+  ('public.list_directory_profiles()', false, true, false),
+  ('public.control_plane_access()', false, true, false),
+  ('public.artist_control_plane_context(uuid)', false, true, false),
+  ('public.transfer_workspace_ownership(uuid,uuid)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),

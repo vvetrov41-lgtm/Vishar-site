@@ -1,7 +1,8 @@
 # How a new artist joins Vishar CRM
 
 This is the canonical answer to "a third tattoo artist starts on Monday, what
-has to happen". It describes the state after migrations `0087` and `0088`.
+has to happen". It describes the state after migrations `0087`, `0088` and
+`0089`.
 
 The short version: an owner or studio admin opens the CRM on their phone and
 does it. No commit, no branch, no pull request, no migration written for that
@@ -22,6 +23,14 @@ membership rows in the database.
 
 New people are invited from **Users**, which creates the auth user and the
 profile together. Nothing about that step is artist-specific.
+
+**This is the boundary of the operatorless claim.** Everything below — the
+organization, the artist, the memberships, the capabilities, the booking form —
+is a CRM operation needing no engineer. Minting a *human identity* is a
+separate trusted operation, and the invite flow is where it happens. The golden
+path in `supabase/tests/236_new_artist_golden_path.sql` says the same thing in
+its header and provisions its cast with privileged inserts rather than
+pretending otherwise.
 
 The legacy `profiles.role` (`owner` / `booking_manager` / `read_only`) still
 exists and still narrows what any membership can mean. It is a transition
@@ -82,6 +91,35 @@ integrations. It never, on its own, produces an artist capability.
 **Artist membership** (`public.artist_memberships`) is an explicit, auditable,
 revocable grant of access to one artist's work.
 
+### Does artist access require workspace membership?
+
+**No, deliberately.** The reverse rule — workspace membership never granting
+artist access — is enforced everywhere, so it is reasonable to assume the
+symmetry holds. It does not.
+
+Production settles it: an artist runs her own book today through an explicit
+artist `manager` membership and belongs to no workspace record at all.
+Requiring workspace membership would invalidate a live relationship, and it
+would also be wrong in principle — an artist-scoped collaborator who has no say
+in running the organization is a legitimate shape.
+
+So `grant_workspace_artist_membership` does not require it, and
+`supabase/tests/237_control_plane_governance.sql` pins both halves: the grant
+succeeds for somebody outside the organization, and it gives them no workspace
+access whatsoever.
+
+### Who owns a workspace
+
+An owner row cannot be edited through team management at all — not demoted, not
+deactivated, not adjusted. `upsert_workspace_membership` refuses, and a trigger
+on `workspace_memberships` refuses under any other path, so a workspace that
+has ever had an active owner keeps one.
+
+Ownership moves through `public.transfer_workspace_ownership`, which only a
+sitting owner may call, only onto somebody already in the organization. It
+promotes before it demotes so the invariant is never momentarily violated, and
+leaves the outgoing owner as an admin rather than removing their access.
+
 ### Seating the artist on their own book
 
 The first grant is special, and it needs explaining because the reason is not
@@ -103,12 +141,30 @@ It deliberately does *not* check `is_active`. Checking active-ness would reopen
 the door for an artist whose membership was deactivated — somebody who left a
 studio — and let an admin seat themselves on a real book.
 
+The seat also refuses a target whose CRM role could not use it. A `read_only`
+profile holds no write capability whatever their artist membership says, so
+seating one would spend the one-shot and leave an artist whose owner cannot
+edit an enquiry, move an appointment, take a payment or publish a form. The
+check runs *before* the row is written, so an ineligible choice leaves the
+bootstrap unspent and the mistake recoverable.
+
 ### Staffing
 
 Everything after that is `grant_workspace_artist_membership`, from
 **Access to this artist** on the artist's page. Either the artist's own
 `manage_team`, or the workspace's `manage_team`, is enough to call it. Neither
 can hand out finance or integrations they do not hold themselves.
+
+### Finding people to staff
+
+`public.list_directory_profiles` returns the active CRM people a caller may
+add, readable by a workspace team manager, an artist-level member, or the
+installation owner. It exists because `public.list_profiles` requires the
+legacy global owner role — so the first version of these screens rendered an
+empty dropdown for exactly the studio administrator they were written for.
+
+It returns identity only. It never discloses which other organizations a person
+belongs to.
 
 ---
 
@@ -271,7 +327,15 @@ every membership. It has not been removed because production runs on it.
 
 It is no longer the product control plane. Organizations, artists, memberships
 and capabilities are administered through the screens above, none of which
-depends on somebody being the global owner. Every test in
+depends on somebody being the global owner — and since `0089`, none of which
+*reads* the legacy role either: control-plane visibility comes from
+`public.control_plane_access()`, and the people picker from
+`public.list_directory_profiles()`.
+
+Where the legacy role still bites is inside `capability_from_grant`, which is
+why the artist seat checks eligibility rather than pretending the role does not
+matter. Removing it from the derivation is the workstream that retires the
+global role, not this one. Every test in
 `supabase/tests/235_control_plane.sql` and
 `supabase/tests/236_new_artist_golden_path.sql` runs with **no installation
 owner in the cast**, which is what makes that claim checkable rather than

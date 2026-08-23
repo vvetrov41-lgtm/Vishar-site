@@ -42,6 +42,8 @@ const EN = {
   'app.askOwner': 'Ask the owner if you think that is wrong.',
   'app.pageNotFound': 'Page not found',
   'app.useNavigation': 'Use the navigation below.',
+  'access.controlPlaneTitle': 'No organization yet',
+  'access.controlPlaneHint': 'You are not a member of any organization. Whoever administers yours can add you.',
   'access.notAvailableTitle': 'Not available for your role',
   'access.notAvailableHint': 'If you need this, ask the owner to change your access.',
 
@@ -340,6 +342,8 @@ const RU: Record<TranslationKey, string> = {
   'app.askOwner': 'Обратитесь к владельцу, если считаете, что это ошибка.',
   'app.pageNotFound': 'Страница не найдена',
   'app.useNavigation': 'Используйте меню внизу.',
+  'access.controlPlaneTitle': 'Организации пока нет',
+  'access.controlPlaneHint': 'Вы не состоите ни в одной организации. Вас может добавить тот, кто ею управляет.',
   'access.notAvailableTitle': 'Недоступно для вашей роли',
   'access.notAvailableHint': 'Обратитесь к владельцу, если вам нужен этот раздел.',
 

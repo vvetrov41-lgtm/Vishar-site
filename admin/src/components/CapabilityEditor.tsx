@@ -21,7 +21,7 @@
 // of the rules would have shown those rights as granted and then failed on
 // save.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../lib/i18n';
 import type {
   CapabilityPreviewRow,
@@ -248,29 +248,53 @@ export function CapabilityEditor({
 }
 
 /** Debounced capability preview. The grant changes on every keystroke-free
- *  click, and each change is a round trip, so this coalesces them. */
+ *  click, and each change is a round trip, so this coalesces them.
+ *
+ *  `subject` is load-bearing and must identify *whose* capabilities these are.
+ *  The answer depends on the target profile's legacy CRM role, not only on the
+ *  grant shape, so keying the effect on the grant alone meant that switching
+ *  from one person to another while leaving every checkbox untouched showed
+ *  the first person's derived capabilities under the second person's name.
+ *  Stale data here is worse than none: it is a confident wrong answer about
+ *  what somebody is about to be given.
+ *
+ *  The preview is also cleared the instant the subject changes, so a slow round
+ *  trip cannot leave the previous person's answer on screen while the new one
+ *  loads. */
 export function useCapabilityPreview(
   loader: (grant: Omit<MembershipGrant, 'isActive'>) => Promise<CapabilityPreviewRow[]>,
   grant: MembershipGrant,
   enabled: boolean,
+  subject: string,
 ) {
   const [preview, setPreview] = useState<CapabilityPreviewRow[] | null>(null);
   const [loading, setLoading] = useState(false);
 
   const key = [
+    subject,
     grant.accessLevel, grant.canViewFinance, grant.canManageFinance,
     grant.canManageSessions, grant.canManageIntegrations,
   ].join('|');
 
+  // Keep the loader the effect calls in a ref rather than in its dependency
+  // list. Callers build it with useCallback over the subject, so depending on
+  // it directly would refire on every parent render; ignoring it entirely
+  // would call a stale closure. `key` decides when to refetch; the ref decides
+  // what to call.
+  const loaderRef = useRef(loader);
+  useEffect(() => { loaderRef.current = loader; }, [loader]);
+
   useEffect(() => {
     if (!enabled) {
       setPreview(null);
+      setLoading(false);
       return undefined;
     }
     let cancelled = false;
+    setPreview(null);
     setLoading(true);
     const timer = window.setTimeout(() => {
-      loader({
+      loaderRef.current({
         accessLevel: grant.accessLevel,
         canViewFinance: grant.canViewFinance,
         canManageFinance: grant.canManageFinance,

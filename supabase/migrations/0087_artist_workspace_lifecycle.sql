@@ -978,7 +978,7 @@ end;
 $$;
 
 comment on function public.update_artist(uuid, text, text, text, boolean) is
-  'Change artist identity, or deactivate/reactivate the artist. Requires manage_workspace on the artist''s workspace. Deactivation also switches off every booking source for that artist in the same transaction.';
+  'Change artist identity, or deactivate/reactivate the artist. Requires manage_workspace on the artist''s workspace. Deactivation writes nothing to public.booking_sources: the public resolvers in 0079 join crm_private.artist_state, so intake refuses for an inactive artist while each source row keeps whatever state its owner set. Reactivation therefore restores exactly that state rather than republishing a form somebody had switched off.';
 
 revoke all on function public.update_artist(uuid, text, text, text, boolean)
   from public, anon, authenticated, service_role;

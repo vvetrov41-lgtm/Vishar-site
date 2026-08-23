@@ -13,6 +13,53 @@
 import { ApiError, type CrmClient } from './api';
 import type { ArtistAccessLevel, CrmRole } from './types';
 
+/** What the signed-in profile may do in the control plane, answered by the
+ *  server. The browser must not re-derive any of this from the legacy CrmRole:
+ *  that got both directions wrong — a read_only profile holding genuine
+ *  workspace administration was locked out, and a booking_manager belonging to
+ *  no organization was offered a nav entry to an empty page. */
+export interface ControlPlaneAccess {
+  workspace_count: number;
+  administers_any: boolean;
+  can_manage_any_team: boolean;
+  can_found_workspace: boolean;
+  can_browse_directory: boolean;
+}
+
+/** A person who can be staffed onto a workspace or an artist. Minimal by
+ *  design: it never says which other organizations they belong to. */
+export interface DirectoryProfile {
+  id: string;
+  display_name: string | null;
+  email: string;
+  profile_role: CrmRole;
+  /** Whether this person's CRM role could actually exercise an artist-owner
+   *  seat. The one-shot bootstrap refuses when false, so the interface warns
+   *  instead of burning it. */
+  can_hold_artist_writes: boolean;
+}
+
+/** Everything the artist administration screen needs, in one read, for either
+ *  audience: somebody administering the organization, or the artist through
+ *  their own membership. */
+export interface ArtistControlPlaneContext {
+  artist_id: string;
+  artist_slug: string;
+  artist_display_name: string;
+  artist_timezone: string;
+  artist_default_currency: string;
+  artist_is_active: boolean;
+  member_count: number;
+  active_booking_sources: number;
+  enabled_integrations: number;
+  workspace_id: string;
+  workspace_display_name: string;
+  workspace_type: WorkspaceType;
+  viewer_can_administer: boolean;
+  viewer_has_artist_membership: boolean;
+  viewer_can_manage_team: boolean;
+}
+
 export type WorkspaceType = 'solo' | 'studio';
 export type WorkspaceRole = 'owner' | 'admin' | 'booking_manager' | 'read_only';
 
@@ -121,6 +168,38 @@ function unwrap<T>(result: { data: unknown; error: unknown }, action: string): T
 
 export function createControlPlaneApi(client: CrmClient) {
   return {
+    /** Returns null when the profile has no active CRM identity, which the
+     *  function signals by returning no row at all. */
+    async controlPlaneAccess(): Promise<ControlPlaneAccess | null> {
+      const result = await client.rpc('control_plane_access');
+      if (result.error) throw new ApiError('Could not check your access.', result.error);
+      const rows = (result.data ?? []) as ControlPlaneAccess[];
+      return rows.length > 0 ? rows[0] : null;
+    },
+
+    async listDirectoryProfiles(): Promise<DirectoryProfile[]> {
+      return unwrap<DirectoryProfile[]>(
+        await client.rpc('list_directory_profiles'),
+        'load the people you can add',
+      );
+    },
+
+    async artistControlPlaneContext(artistId: string): Promise<ArtistControlPlaneContext | null> {
+      const result = await client.rpc('artist_control_plane_context', { p_artist_id: artistId });
+      if (result.error) throw new ApiError('Could not open that artist.', result.error);
+      const rows = (result.data ?? []) as ArtistControlPlaneContext[];
+      return rows.length > 0 ? rows[0] : null;
+    },
+
+    async transferWorkspaceOwnership(workspaceId: string, toProfileId: string): Promise<boolean> {
+      const result = await client.rpc('transfer_workspace_ownership', {
+        p_workspace_id: workspaceId,
+        p_to_profile_id: toProfileId,
+      });
+      if (result.error) throw new ApiError('Could not transfer ownership.', result.error);
+      return result.data === true;
+    },
+
     async createWorkspace(input: {
       displayName: string;
       workspaceType: WorkspaceType;

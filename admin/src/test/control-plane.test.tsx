@@ -20,10 +20,67 @@ import {
   STUDIO_WORKSPACE_ID,
   renderWithSession,
   type ControlPlaneArtist,
+  type ControlPlaneArtistContext,
   type ControlPlaneArtistMembership,
   type ControlPlaneCapability,
+  type ControlPlaneDirectoryProfile,
   type ControlPlaneWorkspace,
 } from './fixtures';
+
+const MANAGER_PROFILE_ID = '22222222-2222-4222-8222-222222222222';
+const READER_PROFILE_ID = '33333333-3333-4333-8333-333333333333';
+
+/** What public.control_plane_access() answers for somebody who administers the
+ *  studio below. Nothing in the interface may derive this from the legacy role. */
+const FULL_ACCESS = {
+  workspace_count: 1,
+  administers_any: true,
+  can_manage_any_team: true,
+  can_found_workspace: true,
+  can_browse_directory: true,
+};
+
+const DIRECTORY: ControlPlaneDirectoryProfile[] = [
+  {
+    id: MANAGER_PROFILE_ID,
+    display_name: 'Booking Manager',
+    email: 'manager@example.test',
+    profile_role: 'booking_manager',
+    can_hold_artist_writes: true,
+  },
+  {
+    id: READER_PROFILE_ID,
+    display_name: 'Read Only Person',
+    email: 'reader@example.test',
+    profile_role: 'read_only',
+    // The legacy role forbids every write, so the one-shot seat must not be
+    // spent here.
+    can_hold_artist_writes: false,
+  },
+];
+
+function artistContext(
+  overrides: Partial<ControlPlaneArtistContext> = {},
+): ControlPlaneArtistContext {
+  return {
+    artist_id: NEW_ARTIST_ID,
+    artist_slug: 'artist-z',
+    artist_display_name: 'Artist Z',
+    artist_timezone: 'Europe/London',
+    artist_default_currency: 'GBP',
+    artist_is_active: true,
+    member_count: 0,
+    active_booking_sources: 0,
+    enabled_integrations: 0,
+    workspace_id: STUDIO_WORKSPACE_ID,
+    workspace_display_name: 'Ink Collective',
+    workspace_type: 'studio',
+    viewer_can_administer: true,
+    viewer_has_artist_membership: false,
+    viewer_can_manage_team: true,
+    ...overrides,
+  };
+}
 
 const STUDIO: ControlPlaneWorkspace = {
   id: STUDIO_WORKSPACE_ID,
@@ -95,7 +152,10 @@ function studioSession(extra: Record<string, unknown> = {}) {
     workspaceArtists: { [STUDIO_WORKSPACE_ID]: [artist()] },
     workspaceTeam: { [STUDIO_WORKSPACE_ID]: [] },
     artistMemberships: { [NEW_ARTIST_ID]: [] },
+    artistContexts: { [NEW_ARTIST_ID]: artistContext() },
     capabilityPreview: CAPABILITIES,
+    controlPlaneAccess: FULL_ACCESS,
+    directory: DIRECTORY,
     ...extra,
   };
 }
@@ -109,7 +169,10 @@ describe('organizations', () => {
   });
 
   it('says nothing is there rather than looking broken when a profile has none', async () => {
-    renderWithSession(<App />, { role: 'owner', path: '/workspaces' });
+    renderWithSession(<App />, {
+      ...studioSession({ workspaces: [], controlPlaneAccess: FULL_ACCESS }),
+      path: '/workspaces',
+    });
 
     expect(await screen.findByText('No organizations')).toBeInTheDocument();
   });
@@ -380,5 +443,226 @@ describe('no secret reaches the browser', () => {
     expect(artistScreen.container.textContent ?? '').not.toMatch(
       /token|secret|api[_-]?key|chat_id|bearer|sb_secret|service_role/i,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regressions from the independent review of the first control-plane pass.
+// Each of these is a defect that shipped and was found by reading rather than
+// by a failing test, which is exactly the gap these close.
+// ---------------------------------------------------------------------------
+
+describe('the people directory is scoped, not owner-only', () => {
+  it('offers people to a workspace administrator who is not the installation owner', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    renderWithSession(<App />, {
+      // A booking_manager, deliberately: the legacy global owner is exactly
+      // what the control plane must stop depending on.
+      ...studioSession({ role: 'booking_manager' as const }),
+      rpcCalls,
+      path: `/workspaces/${STUDIO_WORKSPACE_ID}`,
+    });
+
+    expect(await screen.findByLabelText('Add a person')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Booking Manager' })).toBeInTheDocument();
+
+    // The scoped read, never public.list_profiles() — which requires the
+    // legacy global owner role and would have returned nothing here.
+    expect(rpcCalls.some((call) => call.name === 'list_directory_profiles')).toBe(true);
+    expect(rpcCalls.some((call) => call.name === 'list_profiles')).toBe(false);
+  });
+});
+
+describe('the workspace owner row', () => {
+  const ownerRow = {
+    profile_id: '11111111-1111-4111-8111-111111111111',
+    display_name: 'Studio Owner',
+    email: 'owner@example.test',
+    profile_is_active: true,
+    profile_role: 'booking_manager' as const,
+    workspace_role: 'owner' as const,
+    can_manage_workspace: true,
+    can_manage_team: true,
+    can_manage_integrations: true,
+    membership_is_active: true,
+    artist_access_count: 0,
+  };
+
+  it('offers no control the backend would refuse', async () => {
+    renderWithSession(<App />, {
+      ...studioSession({ workspaceTeam: { [STUDIO_WORKSPACE_ID]: [ownerRow] } }),
+      path: `/workspaces/${STUDIO_WORKSPACE_ID}`,
+    });
+
+    const card = (await screen.findByText('Studio Owner')).closest('article')!;
+    // No role select, no active checkbox, no save: upsert_workspace_membership
+    // refuses to write over an owner row, so a form here could only fail.
+    expect(within(card).queryByLabelText('Role')).not.toBeInTheDocument();
+    expect(within(card).queryByLabelText('Active')).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(within(card).getByText(/Ownership moves only through a deliberate transfer/))
+      .toBeInTheDocument();
+  });
+
+  it('still edits an ordinary member normally', async () => {
+    renderWithSession(<App />, {
+      ...studioSession({
+        workspaceTeam: {
+          [STUDIO_WORKSPACE_ID]: [{ ...ownerRow, workspace_role: 'admin' as const }],
+        },
+      }),
+      path: `/workspaces/${STUDIO_WORKSPACE_ID}`,
+    });
+
+    const card = (await screen.findByText('Studio Owner')).closest('article')!;
+    expect(within(card).getByLabelText('Role')).toBeInTheDocument();
+    // And `owner` is never an option, because granting it here is refused.
+    expect(within(card).queryByRole('option', { name: 'Owner' })).not.toBeInTheDocument();
+  });
+});
+
+describe('control-plane navigation is server-driven', () => {
+  it('is offered to a read_only profile that the server says administers a workspace', async () => {
+    // The case the legacy CrmRole got backwards: read_only in the old model
+    // meant "no administration anywhere", which locked this person out of the
+    // organization they genuinely run.
+    renderWithSession(<App />, {
+      ...studioSession({ role: 'read_only' as const }),
+      path: '/workspaces',
+    });
+
+    expect(await screen.findByText('Ink Collective')).toBeInTheDocument();
+  });
+
+  it('is withheld from a booking_manager the server places in no organization', async () => {
+    // The other direction: the old model showed this person a nav entry to an
+    // empty page purely because of their global role.
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      controlPlaneAccess: null,
+      path: '/workspaces',
+    });
+
+    expect(await screen.findByText('No organization yet')).toBeInTheDocument();
+    expect(screen.queryByText('Ink Collective')).not.toBeInTheDocument();
+  });
+});
+
+describe('the artist page reaches the artist themselves', () => {
+  it('opens for somebody holding only an artist membership and no workspace right', async () => {
+    // A freshly seated artist in a studio: seat_artist_owner grants an artist
+    // membership and no workspace membership, on purpose. The page used to
+    // resolve the artist by walking the viewer's workspaces, so it told them
+    // they had no access to their own onboarding.
+    renderWithSession(<App />, {
+      ...studioSession({
+        role: 'booking_manager' as const,
+        workspaces: [],
+        controlPlaneAccess: null,
+        artistContexts: {
+          [NEW_ARTIST_ID]: artistContext({
+            viewer_can_administer: false,
+            viewer_has_artist_membership: true,
+            viewer_can_manage_team: true,
+            member_count: 1,
+          }),
+        },
+        artistMemberships: { [NEW_ARTIST_ID]: [membership({ access_level: 'artist' })] },
+      }),
+      path: `/artists/${NEW_ARTIST_ID}`,
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Artist Z' })).toBeInTheDocument();
+    expect(screen.getByText('What is left to do')).toBeInTheDocument();
+    // Their organization is named for context but not offered as a link: they
+    // hold no workspace right, so following it would only reach a refusal.
+    expect(screen.getByText('Ink Collective')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Ink Collective/ })).not.toBeInTheDocument();
+  });
+
+  it('resolves through one server read rather than walking every workspace', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    renderWithSession(<App />, {
+      ...studioSession(),
+      rpcCalls,
+      path: `/artists/${NEW_ARTIST_ID}`,
+    });
+
+    await screen.findByRole('heading', { name: 'Artist Z' });
+    expect(rpcCalls.some((call) => call.name === 'artist_control_plane_context')).toBe(true);
+  });
+});
+
+describe('the capability preview follows the person, not just the checkboxes', () => {
+  it('refetches when the subject changes although the grant shape is identical', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    renderWithSession(<App />, {
+      ...studioSession({
+        artistMemberships: {
+          [NEW_ARTIST_ID]: [membership({ profile_id: 'aaaa1111-1111-4111-8111-111111111111' })],
+        },
+        artistContexts: {
+          [NEW_ARTIST_ID]: artistContext({ member_count: 1 }),
+        },
+        capabilityPreviewByProfile: {
+          [MANAGER_PROFILE_ID]: [{
+            capability: 'manage_sessions', domain: 'sessions', is_write: true,
+            description: 'Create, reschedule and cancel appointments.', granted: true,
+          }],
+          [READER_PROFILE_ID]: [{
+            capability: 'manage_sessions', domain: 'sessions', is_write: true,
+            description: 'Create, reschedule and cancel appointments.', granted: false,
+          }],
+        },
+      }),
+      rpcCalls,
+      path: `/artists/${NEW_ARTIST_ID}`,
+    });
+
+    // The grant flags are never touched between the two selections, so the old
+    // effect key could not tell these two people apart.
+    const picker = await screen.findByLabelText('Person');
+    fireEvent.change(picker, { target: { value: MANAGER_PROFILE_ID } });
+
+    expect(await screen.findByText('Create, reschedule and cancel appointments.'))
+      .toBeInTheDocument();
+
+    fireEvent.change(picker, { target: { value: READER_PROFILE_ID } });
+
+    await waitFor(() => {
+      const asked = rpcCalls.filter((call) => call.name === 'preview_membership_capabilities');
+      expect(asked.some((call) => call.args?.p_profile_id === READER_PROFILE_ID)).toBe(true);
+    }, { timeout: 3000 });
+
+    // And the first person's answer is gone rather than lingering under the
+    // second person's name.
+    await waitFor(() => {
+      expect(screen.queryByText('Create, reschedule and cancel appointments.'))
+        .not.toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+});
+
+describe('the one-shot artist seat', () => {
+  it('refuses to be spent on a profile whose CRM role forbids every write', async () => {
+    renderWithSession(<App />, { ...studioSession(), path: `/artists/${NEW_ARTIST_ID}` });
+
+    await screen.findByRole('heading', { name: 'Who is this artist' });
+    const picker = screen.getAllByLabelText('Person')[0];
+    fireEvent.change(picker, { target: { value: READER_PROFILE_ID } });
+
+    expect(await screen.findByText(/read-only CRM user and could not change anything/))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Give them access' })).toBeDisabled();
+  });
+
+  it('stays available for an eligible person', async () => {
+    renderWithSession(<App />, { ...studioSession(), path: `/artists/${NEW_ARTIST_ID}` });
+
+    await screen.findByRole('heading', { name: 'Who is this artist' });
+    const picker = screen.getAllByLabelText('Person')[0];
+    fireEvent.change(picker, { target: { value: MANAGER_PROFILE_ID } });
+
+    expect(screen.getByRole('button', { name: 'Give them access' })).not.toBeDisabled();
   });
 });

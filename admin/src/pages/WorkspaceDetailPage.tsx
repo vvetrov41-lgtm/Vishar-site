@@ -12,19 +12,19 @@ import { useLanguage } from '../lib/i18n';
 import { Link, useRouter } from '../lib/router';
 import { useApi } from '../lib/session';
 import type {
+  DirectoryProfile,
   WorkspaceArtist,
   WorkspaceRole,
   WorkspaceTeamMember,
 } from '../lib/control-plane-api';
 import type { Workspace } from '../lib/platform-api';
-import type { Profile } from '../lib/types';
 import './ControlPlane.css';
 
 interface WorkspaceDetailData {
   workspace: Workspace | null;
   artists: WorkspaceArtist[];
   team: WorkspaceTeamMember[] | null;
-  profiles: Profile[];
+  directory: DirectoryProfile[];
 }
 
 export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
@@ -40,7 +40,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const state = useAsync<WorkspaceDetailData>(async () => {
     const workspaces = await api.listWorkspaces();
     const workspace = workspaces.find((candidate) => candidate.id === workspaceId) ?? null;
-    if (!workspace) return { workspace: null, artists: [], team: null, profiles: [] };
+    if (!workspace) return { workspace: null, artists: [], team: null, directory: [] };
 
     const artists = await api.listWorkspaceArtists(workspaceId);
 
@@ -56,16 +56,20 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
       }
     }
 
-    let profiles: Profile[] = [];
+    // The scoped directory, not public.list_profiles(). That one requires the
+    // legacy installation-wide owner role, so it returned nothing — and
+    // therefore an empty "add a person" dropdown — for exactly the studio
+    // administrator this screen exists to serve.
+    let directory: DirectoryProfile[] = [];
     if (workspace.can_manage_team) {
       try {
-        profiles = await api.listProfiles();
+        directory = await api.listDirectoryProfiles();
       } catch {
-        profiles = [];
+        directory = [];
       }
     }
 
-    return { workspace, artists, team, profiles };
+    return { workspace, artists, team, directory };
   }, [api, workspaceId]);
 
   async function run(action: () => Promise<unknown>, success?: string) {
@@ -100,7 +104,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
 
   const artists = state.data?.artists ?? [];
   const team = state.data?.team ?? null;
-  const profiles = state.data?.profiles ?? [];
+  const directory = state.data?.directory ?? [];
   const soloFull = workspace.workspace_type === 'solo' && artists.length >= 1;
 
   return (
@@ -185,9 +189,8 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
           <AddPersonForm
             ru={ru}
             busy={busy}
-            profiles={profiles.filter(
-              (profile) => profile.is_active
-                && !team.some((member) => member.profile_id === profile.id),
+            profiles={directory.filter(
+              (profile) => !team.some((member) => member.profile_id === profile.id),
             )}
             onAdd={(profileId) => run(
               () => api.upsertWorkspaceMembership({
@@ -311,7 +314,7 @@ function AddPersonForm({
 }: {
   ru: boolean;
   busy: boolean;
-  profiles: Profile[];
+  profiles: DirectoryProfile[];
   onAdd: (profileId: string) => void;
 }) {
   const [profileId, setProfileId] = useState('');
@@ -352,7 +355,11 @@ function AddPersonForm({
   );
 }
 
-const WORKSPACE_ROLES: WorkspaceRole[] = ['owner', 'admin', 'booking_manager', 'read_only'];
+// `owner` is absent on purpose. public.upsert_workspace_membership refuses to
+// grant it and refuses to write over a row that already holds it, so offering
+// it here could only ever produce an error.
+const ASSIGNABLE_WORKSPACE_ROLES: Exclude<WorkspaceRole, 'owner'>[] =
+  ['admin', 'booking_manager', 'read_only'];
 
 function TeamRow({
   member, ru, busy, canManageIntegrations, canManageWorkspace, onSave,
@@ -371,6 +378,7 @@ function TeamRow({
     isActive: boolean;
   }) => void;
 }) {
+  const isOwner = member.workspace_role === 'owner';
   const [draft, setDraft] = useState({
     workspaceRole: member.workspace_role,
     canManageWorkspace: member.can_manage_workspace,
@@ -402,6 +410,16 @@ function TeamRow({
         </div>
       </header>
 
+      {isOwner ? (
+        // The backend refuses every edit to an owner row through this RPC, so
+        // the row renders as a statement of fact rather than as a form that is
+        // guaranteed to fail. Ownership moves through a deliberate transfer.
+        <p className="meta">
+          {ru
+            ? 'Владелец организации. Передать владение можно только явной передачей — обычное управление командой здесь ничего не меняет.'
+            : 'Owns this organization. Ownership moves only through a deliberate transfer; ordinary team management cannot change this row.'}
+        </p>
+      ) : (
       <div className="team-row-controls">
         <label>
           {ru ? 'Роль' : 'Role'}
@@ -412,10 +430,9 @@ function TeamRow({
               ...current, workspaceRole: event.target.value as WorkspaceRole,
             }))}
           >
-            {WORKSPACE_ROLES.map((role) => (
-              <option key={role} value={role} disabled={role === 'owner'}>
-                {role === 'owner' ? (ru ? 'Владелец' : 'Owner')
-                  : role === 'admin' ? (ru ? 'Администратор' : 'Admin')
+            {ASSIGNABLE_WORKSPACE_ROLES.map((role) => (
+              <option key={role} value={role}>
+                {role === 'admin' ? (ru ? 'Администратор' : 'Admin')
                   : role === 'booking_manager' ? (ru ? 'Менеджер' : 'Manager')
                   : (ru ? 'Только чтение' : 'Read only')}
               </option>
@@ -472,7 +489,9 @@ function TeamRow({
         ) : null}
       </div>
 
-      {dirty ? (
+      )}
+
+      {dirty && !isOwner ? (
         <div className="actions">
           <button
             type="button"

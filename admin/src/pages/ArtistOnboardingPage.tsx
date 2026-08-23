@@ -23,25 +23,23 @@ import { useApi } from '../lib/session';
 import {
   bookingSourcePublicUrl,
   type BookingSource,
-  type Workspace,
 } from '../lib/platform-api';
 import type {
+  ArtistControlPlaneContext,
   ArtistMembershipRow,
+  DirectoryProfile,
   MembershipGrant,
   OnboardingRow,
   OnboardingStatus,
-  WorkspaceArtist,
 } from '../lib/control-plane-api';
-import type { Profile } from '../lib/types';
 import './ControlPlane.css';
 
 interface ArtistData {
-  workspace: Workspace | null;
-  artist: WorkspaceArtist | null;
+  context: ArtistControlPlaneContext | null;
   onboarding: OnboardingRow[];
   memberships: ArtistMembershipRow[] | null;
   bookingSources: BookingSource[] | null;
-  profiles: Profile[];
+  directory: DirectoryProfile[];
   defaultsCount: number;
 }
 
@@ -89,27 +87,21 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
   const [notice, setNotice] = useState<string | null>(null);
 
   const state = useAsync<ArtistData>(async () => {
-    const workspaces = await api.listWorkspaces();
-
-    // The artist's own workspace is found by asking each accessible workspace
-    // for its roster. There is no "which workspace is this artist in" read for
-    // somebody who holds no membership on them, and inventing one would be a
-    // way to enumerate the installation.
-    let workspace: Workspace | null = null;
-    let artist: WorkspaceArtist | null = null;
-    for (const candidate of workspaces) {
-      try {
-        const roster = await api.listWorkspaceArtists(candidate.id);
-        const match = roster.find((row) => row.id === artistId);
-        if (match) { workspace = candidate; artist = match; break; }
-      } catch {
-        // Not readable by this profile; try the next.
-      }
-    }
-    if (!artist) {
+    // One read resolves the artist, its organization and the viewer's rights.
+    //
+    // This used to walk every workspace the viewer belonged to, looking for the
+    // artist on each roster. That worked for an administrator and failed for
+    // the person the page matters most to: a freshly seated artist holds an
+    // artist membership and, in a studio, no workspace membership at all —
+    // seat_artist_owner grants one and not the other, deliberately, because
+    // workspace authority is not artist authority. So list_workspaces()
+    // returned nothing for them and their own onboarding page said they had no
+    // access to it.
+    const context = await api.artistControlPlaneContext(artistId);
+    if (!context) {
       return {
-        workspace: null, artist: null, onboarding: [], memberships: null,
-        bookingSources: null, profiles: [], defaultsCount: 0,
+        context: null, onboarding: [], memberships: null,
+        bookingSources: null, directory: [], defaultsCount: 0,
       };
     }
 
@@ -123,17 +115,17 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
     let bookingSources: BookingSource[] | null = null;
     try { bookingSources = await api.listBookingSources(artistId); } catch { bookingSources = null; }
 
-    let profiles: Profile[] = [];
-    try { profiles = await api.listProfiles(); } catch { profiles = []; }
-
-    let defaultsCount = 0;
-    if (workspace) {
-      try {
-        defaultsCount = (await api.listWorkspaceAutomationDefaults(workspace.id)).length;
-      } catch { defaultsCount = 0; }
+    let directory: DirectoryProfile[] = [];
+    if (context.viewer_can_manage_team) {
+      try { directory = await api.listDirectoryProfiles(); } catch { directory = []; }
     }
 
-    return { workspace, artist, onboarding, memberships, bookingSources, profiles, defaultsCount };
+    let defaultsCount = 0;
+    try {
+      defaultsCount = (await api.listWorkspaceAutomationDefaults(context.workspace_id)).length;
+    } catch { defaultsCount = 0; }
+
+    return { context, onboarding, memberships, bookingSources, directory, defaultsCount };
   }, [api, artistId]);
 
   async function run(action: () => Promise<unknown>, success?: string) {
@@ -155,7 +147,7 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
   if (state.error) return <ErrorState message={state.error} onRetry={state.reload} />;
 
   const data = state.data;
-  if (!data?.artist) {
+  if (!data?.context) {
     return (
       <EmptyState
         title={ru ? 'Мастер недоступен' : 'Artist unavailable'}
@@ -166,8 +158,8 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
     );
   }
 
-  const { artist, workspace, onboarding, memberships, bookingSources, profiles, defaultsCount } = data;
-  const canAdminister = workspace?.can_manage_workspace ?? false;
+  const { context, onboarding, memberships, bookingSources, directory, defaultsCount } = data;
+  const canAdminister = context.viewer_can_administer;
   const remaining = onboarding.filter((row) => row.status === 'required').length;
 
   // The bootstrap seat is a one-shot: the database refuses it the moment any
@@ -178,15 +170,20 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
   return (
     <div className="stack">
       <div className="page-head">
-        {workspace ? (
-          <Link to={`/workspaces/${workspace.id}`} className="linklike">
-            ← {workspace.display_name}
+        {/* Named, not linked, for a viewer who holds no workspace right: the
+            organization's name is context, and following it would only reach a
+            refusal. */}
+        {canAdminister ? (
+          <Link to={`/workspaces/${context.workspace_id}`} className="linklike">
+            ← {context.workspace_display_name}
           </Link>
-        ) : null}
-        <h1>{artist.display_name}</h1>
+        ) : (
+          <div className="meta">{context.workspace_display_name}</div>
+        )}
+        <h1>{context.artist_display_name}</h1>
         <div className="meta">
-          {artist.timezone}{' · '}{artist.default_currency}
-          {artist.is_active ? null : (
+          {context.artist_timezone}{' · '}{context.artist_default_currency}
+          {context.artist_is_active ? null : (
             <> {' · '}<span className="badge danger">{ru ? 'Отключён' : 'Deactivated'}</span></>
           )}
         </div>
@@ -228,7 +225,7 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
           <SeatArtistForm
             ru={ru}
             busy={busy}
-            profiles={profiles.filter((profile) => profile.is_active)}
+            profiles={directory}
             onSeat={(profileId) => run(
               () => api.seatArtistOwner(profileId, artistId),
               ru ? 'Мастер получил доступ к своей работе.' : 'The artist now has access to their own work.',
@@ -273,9 +270,8 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
             ru={ru}
             busy={busy}
             api={api}
-            profiles={profiles.filter(
-              (profile) => profile.is_active
-                && !memberships.some((membership) => membership.profile_id === profile.id),
+            profiles={directory.filter(
+              (profile) => !memberships.some((m) => m.profile_id === profile.id),
             )}
             onGrant={(profileId, grant) => run(
               () => api.grantArtistMembership({ profileId, artistId, grant }),
@@ -352,7 +348,7 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
 
       {canAdminister ? (
         <ArtistSettings
-          artist={artist}
+          artist={context}
           ru={ru}
           busy={busy}
           onSave={(patch) => run(
@@ -390,10 +386,15 @@ function SeatArtistForm({
 }: {
   ru: boolean;
   busy: boolean;
-  profiles: Profile[];
+  profiles: DirectoryProfile[];
   onSeat: (profileId: string) => void;
 }) {
   const [profileId, setProfileId] = useState('');
+  const chosen = profiles.find((profile) => profile.id === profileId) ?? null;
+  // The seat is one-shot and the database refuses an ineligible target, so the
+  // person is told before they try rather than after. A read-only CRM user
+  // holds no write capability whatever their artist membership says.
+  const ineligible = chosen !== null && !chosen.can_hold_artist_writes;
   return (
     <form
       className="inline-form"
@@ -410,9 +411,16 @@ function SeatArtistForm({
           ))}
         </select>
       </label>
-      <button type="submit" disabled={busy || !profileId}>
+      <button type="submit" disabled={busy || !profileId || ineligible}>
         {ru ? 'Выдать доступ' : 'Give them access'}
       </button>
+      {ineligible ? (
+        <p className="meta" role="status">
+          {ru
+            ? 'У этого человека роль «только чтение» — он не сможет ничего изменить. Сначала повысьте его роль в CRM или выберите другого.'
+            : 'This person is a read-only CRM user and could not change anything. Raise their CRM role first, or choose somebody else.'}
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -442,7 +450,8 @@ function MembershipRow({
       api.previewMembershipCapabilities(artistId, membership.profile_id, shape),
     [api, artistId, membership.profile_id],
   );
-  const { preview, loading } = useCapabilityPreview(loader, grant, open);
+  const { preview, loading } = useCapabilityPreview(
+    loader, grant, open, membership.profile_id);
 
   return (
     <article className="card team-row">
@@ -498,7 +507,7 @@ function AddMembershipForm({
   ru: boolean;
   busy: boolean;
   api: ReturnType<typeof useApi>;
-  profiles: Profile[];
+  profiles: DirectoryProfile[];
   onGrant: (profileId: string, grant: MembershipGrant) => void;
 }) {
   const [profileId, setProfileId] = useState('');
@@ -516,7 +525,8 @@ function AddMembershipForm({
       api.previewMembershipCapabilities(artistId, profileId, shape),
     [api, artistId, profileId],
   );
-  const { preview, loading } = useCapabilityPreview(loader, grant, Boolean(profileId));
+  const { preview, loading } = useCapabilityPreview(
+    loader, grant, Boolean(profileId), profileId);
 
   if (profiles.length === 0) return null;
 
@@ -563,7 +573,7 @@ function AddMembershipForm({
 function ArtistSettings({
   artist, ru, busy, onSave,
 }: {
-  artist: WorkspaceArtist;
+  artist: ArtistControlPlaneContext;
   ru: boolean;
   busy: boolean;
   onSave: (patch: {
@@ -573,9 +583,9 @@ function ArtistSettings({
     isActive?: boolean;
   }) => void;
 }) {
-  const [name, setName] = useState(artist.display_name);
-  const [timezone, setTimezone] = useState(artist.timezone);
-  const [currency, setCurrency] = useState(artist.default_currency);
+  const [name, setName] = useState(artist.artist_display_name);
+  const [timezone, setTimezone] = useState(artist.artist_timezone);
+  const [currency, setCurrency] = useState(artist.artist_default_currency);
 
   return (
     <Section title={ru ? 'Настройки мастера' : 'Artist settings'}>
@@ -613,7 +623,7 @@ function ArtistSettings({
       </form>
 
       <div className="danger-zone">
-        {artist.is_active ? (
+        {artist.artist_is_active ? (
           <>
             <button
               type="button"

@@ -72,7 +72,8 @@ describe('responsive navigation shell', () => {
     ]);
     expect(within(administration).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Integrations',
-      'Organizations',
+      // Organizations is absent here on purpose: it is appended from
+      // public.control_plane_access(), and this session belongs to none.
       'Users',
     ]);
   });

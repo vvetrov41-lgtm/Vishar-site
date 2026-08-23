@@ -2,14 +2,35 @@
 --
 -- "Tomorrow a third tattoo artist turns up."
 --
--- Test 233 proved the platform composes for a new artist. It did so by
--- inserting the artist row directly, because in Phase U that was the only way
--- an artist could come into being. That is precisely the step this workstream
--- exists to delete, so this file re-runs the same journey with one rule:
+-- What this file does and does not claim
+-- --------------------------------------
+-- It proves that **onboarding an artist, once the people involved already have
+-- CRM identities, needs no engineer**. It does not prove that creating those
+-- identities is operatorless, and Act 0 below is deliberately privileged so
+-- that the boundary is visible rather than blurred.
 --
---   nothing here writes public.artists, public.workspaces or
---   public.artist_memberships directly. Every one of those rows is produced by
---   a named RPC a person could call from a phone.
+-- The boundary, stated plainly:
+--
+--   * Provisioning a human identity - an auth.users row and a public.profiles
+--     row - is a separate trusted operation. In the product it is the Users
+--     invite flow, which mints the account and the profile together. It is not
+--     part of the control plane and this file does not exercise it.
+--
+--   * Handing the very first workspace ownership to somebody is likewise a
+--     one-time act of delegation from the installation owner. Act 0 does it
+--     with a direct insert.
+--
+--   * **Everything after those two things** - founding an organization, adding
+--     an artist, seating them, staffing them, publishing a booking form, taking
+--     a real enquiry, applying studio automation policy, GPT discovery and
+--     revocation - runs through named RPCs that an ordinary signed-in profile
+--     may call from a phone. That is what the acts below test, and nothing in
+--     them writes public.artists, public.workspaces or public.artist_memberships
+--     directly.
+--
+-- Test 233 proved the platform composes for a new artist by inserting the
+-- artist row directly, because in Phase U that was the only way an artist could
+-- come into being. That is precisely the step this workstream deleted.
 --
 -- Read the acts as the screens somebody actually taps through: found the
 -- studio, add the artist, seat them, staff them, publish a form, take a real
@@ -26,6 +47,11 @@ select no_plan();
 
 -- ---------------------------------------------------------------------------
 -- Act 0. Four people who have never appeared in this database
+--
+-- Privileged setup, and the only privileged part of this file. These two
+-- inserts stand in for the Users invite flow, which is a separate trusted
+-- service; see the boundary note in the header. Everything from Act 1 onward
+-- runs as an ordinary signed-in profile through named RPCs.
 -- ---------------------------------------------------------------------------
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
@@ -59,8 +85,8 @@ insert into public.artist_memberships (
 );
 
 -- The studio owner is handed organization ownership once, the way an
--- installation owner would hand it over. This is the only privileged step, and
--- after it everything runs through the control plane.
+-- installation owner would delegate it. This is the second and last privileged
+-- step; after it everything runs through the control plane.
 insert into public.workspace_memberships (
   profile_id, workspace_id, workspace_role,
   can_manage_workspace, can_manage_team, can_manage_integrations, is_active

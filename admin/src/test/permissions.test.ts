@@ -114,7 +114,8 @@ describe('navigation', () => {
       '/payments',
       '/integrations',
       '/notifications',
-      '/workspaces',
+      // No '/workspaces': workspace authority is not expressible from CrmRole,
+      // so AppShell appends that entry from the server's answer instead.
       '/users',
       '/activity',
     ]);

@@ -365,6 +365,22 @@ export interface FakeClientOptions {
   capabilityPreview?: ControlPlaneCapability[];
   /** Booking sources `list_booking_sources` should answer with. */
   bookingSources?: unknown[];
+  /** People `list_directory_profiles` should answer with. */
+  directory?: ControlPlaneDirectoryProfile[];
+  /**
+   * What `control_plane_access` answers. Absent means no row, which is how the
+   * function signals a profile with no active CRM identity — and is what the
+   * older tests expect, since none of them belongs to an organization.
+   */
+  controlPlaneAccess?: ControlPlaneAccessRow | null;
+  /** What `artist_control_plane_context` answers, keyed by artist id. */
+  artistContexts?: Record<string, ControlPlaneArtistContext>;
+  /**
+   * Capability preview keyed by target profile id. Lets a test prove the
+   * preview is re-fetched for a new subject rather than reused, which the
+   * single `capabilityPreview` list cannot express.
+   */
+  capabilityPreviewByProfile?: Record<string, ControlPlaneCapability[]>;
   /** RPC names that must refuse, so a test can prove a section collapses. */
   denyRpc?: string[];
 }
@@ -425,6 +441,40 @@ export interface ControlPlaneArtistMembership {
   can_manage_integrations: boolean;
   is_active: boolean;
   grant_source: string;
+}
+
+export interface ControlPlaneDirectoryProfile {
+  id: string;
+  display_name: string | null;
+  email: string;
+  profile_role: CrmRole;
+  can_hold_artist_writes: boolean;
+}
+
+export interface ControlPlaneAccessRow {
+  workspace_count: number;
+  administers_any: boolean;
+  can_manage_any_team: boolean;
+  can_found_workspace: boolean;
+  can_browse_directory: boolean;
+}
+
+export interface ControlPlaneArtistContext {
+  artist_id: string;
+  artist_slug: string;
+  artist_display_name: string;
+  artist_timezone: string;
+  artist_default_currency: string;
+  artist_is_active: boolean;
+  member_count: number;
+  active_booking_sources: number;
+  enabled_integrations: number;
+  workspace_id: string;
+  workspace_display_name: string;
+  workspace_type: 'solo' | 'studio';
+  viewer_can_administer: boolean;
+  viewer_has_artist_membership: boolean;
+  viewer_can_manage_team: boolean;
 }
 
 export interface ControlPlaneCapability {
@@ -519,6 +569,10 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   const artistMemberships = options.artistMemberships ?? {};
   const capabilityPreview = options.capabilityPreview ?? [];
   const bookingSources = options.bookingSources ?? [];
+  const directory = options.directory ?? [];
+  const controlPlaneAccess = options.controlPlaneAccess ?? null;
+  const artistContexts = options.artistContexts ?? {};
+  const capabilityPreviewByProfile = options.capabilityPreviewByProfile ?? null;
   const denyRpc = options.denyRpc ?? [];
 
   /**
@@ -668,8 +722,26 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         };
       }
       if (name === 'preview_membership_capabilities') {
+        // Keyed by subject when the test supplies a map, so a stale preview
+        // after switching person is observable rather than invisible.
+        if (capabilityPreviewByProfile) {
+          const target = String((args as any)?.p_profile_id ?? '');
+          return { data: capabilityPreviewByProfile[target] ?? [], error: null };
+        }
         return { data: capabilityPreview, error: null };
       }
+      if (name === 'control_plane_access') {
+        return { data: controlPlaneAccess ? [controlPlaneAccess] : [], error: null };
+      }
+      if (name === 'list_directory_profiles') {
+        return { data: directory, error: null };
+      }
+      if (name === 'artist_control_plane_context') {
+        const id = String((args as any)?.p_artist_id ?? '');
+        const ctx = artistContexts[id];
+        return ctx ? { data: [ctx], error: null } : { data: null, error: DENIED };
+      }
+      if (name === 'transfer_workspace_ownership') return { data: true, error: null };
       if (name === 'list_workspace_automation_defaults') return { data: [], error: null };
       // The booking-source list is artist-scoped and manage-level. Answering
       // with the generic `{ ok: true }` fallback would hand the page a

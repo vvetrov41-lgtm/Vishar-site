@@ -8,9 +8,11 @@ import { useEffect } from 'react';
 import { AppShell } from './components/AppShell';
 import './components/AppShell.css';
 import { RequireCapability } from './components/RequireCapability';
+import { RequireControlPlane } from './components/RequireControlPlane';
 import { EmptyState, LoadingState } from './components/StateViews';
 import { useLanguage } from './lib/i18n';
 import { ArtistScopeProvider } from './lib/artist-scope';
+import { ControlPlaneAccessProvider } from './lib/control-plane-access';
 import { applyAppointmentTimeStep } from './lib/appointment-time-step';
 import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
@@ -77,9 +79,11 @@ export function App() {
 
   return (
     <ArtistScopeProvider>
-      <AppShell>
-        <Routes />
-      </AppShell>
+      <ControlPlaneAccessProvider>
+        <AppShell>
+          <Routes />
+        </AppShell>
+      </ControlPlaneAccessProvider>
     </ArtistScopeProvider>
   );
 }
@@ -125,22 +129,21 @@ function Routes() {
   const workspaceDetail = matchRoute('/workspaces/:id', path);
   if (workspaceDetail) {
     return (
-      <RequireCapability capability="manageWorkspaces">
+      <RequireControlPlane>
         <WorkspaceDetailPage workspaceId={workspaceDetail.id} />
-      </RequireCapability>
+      </RequireControlPlane>
     );
   }
 
-  // Artist administration, not artist work: reachable by somebody who
-  // administers the organization even when they hold no membership on the
-  // artist. Every section inside asks the database separately.
+  // Artist administration, not artist work. Two audiences reach it: somebody
+  // administering the organization who holds no membership on the artist, and
+  // the artist themselves through their own membership — who, in a studio, has
+  // no workspace membership at all. So this route is deliberately ungated in
+  // the browser and authorised entirely by
+  // public.artist_control_plane_context, which admits exactly those two.
   const artistDetail = matchRoute('/artists/:id', path);
   if (artistDetail) {
-    return (
-      <RequireCapability capability="manageWorkspaces">
-        <ArtistOnboardingPage artistId={artistDetail.id} />
-      </RequireCapability>
-    );
+    return <ArtistOnboardingPage artistId={artistDetail.id} />;
   }
 
   const projectDetail = matchRoute('/projects/:id', path);
@@ -187,7 +190,7 @@ function Routes() {
     case '/integrations/instagram':
       return <RequireCapability capability="manageIntegrations"><InstagramConnectionsPage /></RequireCapability>;
     case '/workspaces':
-      return <RequireCapability capability="manageWorkspaces"><WorkspacesPage /></RequireCapability>;
+      return <RequireControlPlane><WorkspacesPage /></RequireControlPlane>;
     case '/users':
       return <RequireCapability capability="manageUsers"><UsersPage /></RequireCapability>;
     case '/activity':
