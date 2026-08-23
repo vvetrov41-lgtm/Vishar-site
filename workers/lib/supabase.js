@@ -40,7 +40,6 @@ export const TELEGRAM_SELF_SERVICE_RPCS = new Set([
   'service_resolve_telegram_destination',
   'service_claim_telegram_notifications',
   'service_record_telegram_notification_result',
-  'service_record_telegram_artist_delivery_result',
 ]);
 
 /** Read-only public-edge lookups added by the platform registry. */
