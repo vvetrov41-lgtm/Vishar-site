@@ -7,6 +7,7 @@
 import { useState, type FormEvent } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
+import { useControlPlaneAccess } from '../lib/control-plane-access';
 import { useLanguage } from '../lib/i18n';
 import { Link } from '../lib/router';
 import { useApi } from '../lib/session';
@@ -15,6 +16,7 @@ import './ControlPlane.css';
 
 export function WorkspacesPage() {
   const api = useApi();
+  const { access } = useControlPlaneAccess();
   const { language } = useLanguage();
   const ru = language === 'ru';
 
@@ -30,7 +32,10 @@ export function WorkspacesPage() {
   if (state.error) return <ErrorState message={state.error} onRetry={state.reload} />;
 
   const workspaces = state.data ?? [];
-  const canFound = workspaces.some((workspace) => workspace.can_manage_workspace);
+  // Founding is installation-level and has no existing workspace from which the
+  // browser could derive a permission. Trust the server answer directly. This
+  // is also what makes the zero-workspace bootstrap reachable.
+  const canFound = access?.can_found_workspace === true;
 
   async function create(event: FormEvent) {
     event.preventDefault();
@@ -60,7 +65,7 @@ export function WorkspacesPage() {
         </strong>
         <span>
           {ru
-            ? 'Организация владеет мастерами. Права в организации не дают доступа к работе мастера — для этого нужен отдельный доступ к самому мастеру.'
+            ? 'Организация владеет мастерами. Права в организации не дают доступа к работе мастера - для этого нужен отдельный доступ к самому мастеру.'
             : 'An organization owns artists. Rights here do not open an artist’s work: that always needs separate access to the artist itself.'}
         </span>
       </div>
@@ -68,9 +73,13 @@ export function WorkspacesPage() {
       {workspaces.length === 0 ? (
         <EmptyState
           title={ru ? 'Организаций нет' : 'No organizations'}
-          hint={ru
-            ? 'Вас пока не добавили ни в одну организацию.'
-            : 'You have not been added to an organization yet.'}
+          hint={canFound
+            ? (ru
+              ? 'Создайте первую организацию ниже.'
+              : 'Create the first organization below.')
+            : (ru
+              ? 'Вас пока не добавили ни в одну организацию.'
+              : 'You have not been added to an organization yet.')}
         />
       ) : (
         <div className="ws-list">
@@ -130,8 +139,8 @@ export function WorkspacesPage() {
               <label>
                 {ru ? 'Тип' : 'Type'}
                 <select value={type} onChange={(event) => setType(event.target.value as WorkspaceType)}>
-                  <option value="studio">{ru ? 'Студия — несколько мастеров' : 'Studio — several artists'}</option>
-                  <option value="solo">{ru ? 'Соло — один мастер' : 'Solo — one artist'}</option>
+                  <option value="studio">{ru ? 'Студия - несколько мастеров' : 'Studio - several artists'}</option>
+                  <option value="solo">{ru ? 'Соло - один мастер' : 'Solo - one artist'}</option>
                 </select>
               </label>
               <p className="meta">

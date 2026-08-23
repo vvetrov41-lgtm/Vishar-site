@@ -10,7 +10,7 @@
 // to `CrmRole` whatsoever. Deriving it from the role got both directions wrong:
 //
 //   * a `read_only` profile holding genuine workspace administration was
-//     refused the screen outright — a real lockout of exactly the person the
+//     refused the screen outright - a real lockout of exactly the person the
 //     control plane was written for;
 //   * a `booking_manager` belonging to no organization was offered a nav entry
 //     that leads to an empty page.
@@ -20,7 +20,7 @@
 // the interface's affordances are noise.
 //
 // So the answer comes from public.control_plane_access(), which reads the same
-// mirrors authorization reads. The browser still only *hides* things — the
+// mirrors authorization reads. The browser still only *hides* things - the
 // database remains the authority, and every screen behind this gate re-asks.
 
 import {
@@ -33,8 +33,8 @@ import { useSession } from './session';
 interface ControlPlaneAccessValue {
   access: ControlPlaneAccess | null;
   loading: boolean;
-  /** True once the server has answered and said this profile belongs to at
-   *  least one organization. Never inferred from a role. */
+  /** True once the server has answered that this profile either belongs to an
+   *  organization or is allowed to found one. Never inferred from a role. */
   canOpenControlPlane: boolean;
 }
 
@@ -65,7 +65,11 @@ export function ControlPlaneAccessProvider({ children }: { children: ReactNode }
   const value = useMemo<ControlPlaneAccessValue>(() => ({
     access,
     loading,
-    canOpenControlPlane: (access?.workspace_count ?? 0) > 0,
+    // Founding the first organization is a valid control-plane entry point.
+    // In that state workspace_count is necessarily zero, so gating only on
+    // membership would hide the very screen that performs the bootstrap.
+    canOpenControlPlane: (access?.workspace_count ?? 0) > 0
+      || access?.can_found_workspace === true,
   }), [access, loading]);
 
   return (
