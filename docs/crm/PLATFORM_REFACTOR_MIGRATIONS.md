@@ -24,7 +24,7 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0087`
+`0089`
 
 ## Allocation rule for unfinished phases
 
@@ -42,7 +42,17 @@ This avoids two failure modes present in the original roadmap table: two future 
 
 ## Current unfinished phases
 
-The platform-refactor roadmap has no other phase waiting for an initial migration number. Phase F-G now claims `0086`; later fixes, if validation exposes any, claim from `0087` after a fresh check.
+The platform-refactor roadmap has no other phase waiting for an initial migration number. Phase F-G now claims `0086`; later fixes, if validation exposes any, claim from `0089` after a fresh check.
+
+The control-plane workstream claims `0087` and `0088` on the lineage whose tip
+is `agent/platform-telegram-self-service`. Production Supabase
+(`vfjexhfdbrjmuxfdvbdx`) was fresh-checked at `0086_telegram_self_service`
+before the claim, and no other active branch holds either number. `0087` adds
+the artist and workspace lifecycle RPCs, the shared capability derivation and
+the one-shot artist seat; `0088` adds the control-plane reads and opens the two
+workspace-automation calls artist onboarding needs. See
+`docs/crm/NEW_ARTIST_ONBOARDING.md`. Any later schema work claims from `0089`
+after a fresh check.
 
 Phases Q-R use no migration. Phases S-T claim `0084` on their actual stacked lineage.
 Phase U claimed `0085`: its cross-phase golden path found that `list_notifications`
@@ -51,4 +61,4 @@ membership kept an artist's notifications in the old recipient's inbox. Phase
 F-G claims `0086` for the private Telegram destination registry, single-use
 linking sessions and external-notification delivery state. Its runtime and
 production activation contract is documented in `docs/crm/TELEGRAM_SELF_SERVICE.md`.
-Any later schema work claims from `0087` after a fresh check.
+Any later schema work claims from `0089` after a fresh check.
