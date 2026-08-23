@@ -159,15 +159,13 @@ async function recordFailure(supabase, outboxId, workerId, errorCode) {
 async function recordArtistRegistryResult(
   supabase,
   destinationId,
-  outboxId,
   workerId,
   succeeded,
   errorCode = null,
 ) {
   try {
-    await supabase.rpc('service_record_telegram_artist_delivery_result', {
-      p_destination_id: destinationId,
-      p_outbox_id: outboxId,
+    await supabase.rpc('service_record_telegram_notification_result', {
+      p_delivery_id: destinationId,
       p_worker_id: workerId,
       p_succeeded: succeeded,
       p_error_code: succeeded ? null : errorCode,
@@ -258,7 +256,6 @@ export async function processClaimedTelegramJob(env, {
       await recordArtistRegistryResult(
         supabase,
         registryDestinationId,
-        job.outbox_id,
         workerId,
         false,
         errorCode,
@@ -276,7 +273,6 @@ export async function processClaimedTelegramJob(env, {
     await recordArtistRegistryResult(
       supabase,
       registryDestinationId,
-      job.outbox_id,
       workerId,
       true,
     );
