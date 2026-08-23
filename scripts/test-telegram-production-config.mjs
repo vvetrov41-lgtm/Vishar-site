@@ -22,6 +22,7 @@ const telegramRpcSurface = [...TELEGRAM_SELF_SERVICE_RPCS].sort();
 const expectedTelegramRpcSurface = [
   'service_claim_telegram_notifications',
   'service_complete_telegram_link',
+  'service_record_telegram_artist_delivery_result',
   'service_record_telegram_notification_result',
   'service_resolve_telegram_destination',
 ].sort();
