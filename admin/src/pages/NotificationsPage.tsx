@@ -230,14 +230,14 @@ function NotificationCard({
   );
 }
 
-function entityLink(notification: CrmNotification): string | null {
+export function entityLink(notification: CrmNotification): string | null {
   if (!notification.entity_type || !notification.entity_id) return null;
   switch (notification.entity_type) {
     case 'enquiry': return `/enquiries/${notification.entity_id}`;
     case 'project': return `/projects/${notification.entity_id}`;
     case 'client': return `/clients/${notification.entity_id}`;
     case 'conversation': return `/inbox/${notification.entity_id}`;
-    case 'session': return '/appointments';
+    case 'session': return `/appointments/${encodeURIComponent(notification.entity_id)}`;
     case 'payment_request': return '/payments';
     case 'integration': return '/integrations';
     default: return null;

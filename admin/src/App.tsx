@@ -28,6 +28,7 @@ import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { EnquiriesPage } from './pages/EnquiriesPage';
 import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
+import { FocusedAppointmentPage } from './pages/FocusedAppointmentPage';
 import { InboxPage } from './pages/InboxPage';
 import { InstagramConnectionsPage } from './pages/InstagramConnectionsPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
@@ -151,6 +152,15 @@ function Routes() {
     return (
       <RequireCapability capability="viewProjects">
         <ProjectDetailPage projectId={projectDetail.id} />
+      </RequireCapability>
+    );
+  }
+
+  const appointmentDetail = matchRoute('/appointments/:id', path);
+  if (appointmentDetail) {
+    return (
+      <RequireCapability capability="viewSessions">
+        <FocusedAppointmentPage appointmentId={appointmentDetail.id} />
       </RequireCapability>
     );
   }
