@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { assertAutomationTickSummary } from '../workers/lib/automation-tick.js';
 import worker, { __testing } from '../workers/telegram-drain-worker.js';
 
 assert.equal(typeof worker.scheduled, 'function');
@@ -43,6 +44,29 @@ assert.throws(
   (error) => error?.code === 'gmail_shared_drain_summary_invalid',
 );
 
+assert.deepEqual(assertAutomationTickSummary([{
+  materialised: 2,
+  withdrawn: 600,
+  executed: 150,
+  notified: 300,
+}]), {
+  materialised: 2,
+  withdrawn: 600,
+  executed: 150,
+  notified: 300,
+});
+for (const invalid of [
+  [],
+  [{ materialised: 101, withdrawn: 0, executed: 0, notified: 0 }],
+  [{ materialised: 0, withdrawn: -1, executed: 0, notified: 0 }],
+  [{ materialised: 0, withdrawn: 0, executed: 0 }],
+]) {
+  assert.throws(
+    () => assertAutomationTickSummary(invalid),
+    (error) => error?.code === 'automation_tick_summary_invalid',
+  );
+}
+
 const originalLog = console.log;
 const originalError = console.error;
 const originalFetch = globalThis.fetch;
@@ -55,6 +79,7 @@ try {
   worker.scheduled({}, {
     TELEGRAM_DRAIN_ENABLED: 'false',
     GMAIL_SHARED_DRAIN_ENABLED: 'false',
+    AUTOMATION_TICK_ENABLED: 'false',
   }, {
     waitUntil() { waited = true; },
   });
@@ -62,6 +87,7 @@ try {
   assert.deepEqual(messages, [
     'telegram outbox drain disabled',
     'gmail outbox shared drain disabled',
+    'automation tick disabled',
   ]);
 
   messages.length = 0;
@@ -81,6 +107,7 @@ try {
   worker.scheduled({}, {
     TELEGRAM_DRAIN_ENABLED: 'true',
     GMAIL_SHARED_DRAIN_ENABLED: 'false',
+    AUTOMATION_TICK_ENABLED: 'false',
     SUPABASE_URL: 'https://example.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
   }, {
@@ -90,8 +117,9 @@ try {
   await scheduledPromise;
   // The scheduled Telegram drain does two Telegram jobs: the durable Artist
   // outbox and personal delivery. Personal delivery is skipped without the
-  // shared bot token. Gmail remains independently disabled in this case.
+  // shared bot token. Gmail and automation remain independently disabled.
   assert.ok(messages.includes('gmail outbox shared drain disabled'));
+  assert.ok(messages.includes('automation tick disabled'));
   assert.ok(messages.includes(
     'telegram outbox drain {"claimed":0,"succeeded":0,"failed":0,"unrecorded":0,'
       + '"personalClaimed":0,"personalSucceeded":0,"personalFailed":0,'
@@ -104,6 +132,7 @@ try {
   worker.scheduled({}, {
     TELEGRAM_DRAIN_ENABLED: 'false',
     GMAIL_SHARED_DRAIN_ENABLED: 'true',
+    AUTOMATION_TICK_ENABLED: 'false',
     GMAIL_SERVICE: {
       async drainApprovedEmailOutbox() {
         gmailCalls += 1;
@@ -119,6 +148,7 @@ try {
   assert.deepEqual(messages, [
     'telegram outbox drain disabled',
     'gmail outbox shared drain {"skipped":false,"processed":2,"sent":1,"deduplicated":1,"failed":0}',
+    'automation tick disabled',
   ]);
 
   messages.length = 0;
@@ -126,6 +156,7 @@ try {
   worker.scheduled({}, {
     TELEGRAM_DRAIN_ENABLED: 'false',
     GMAIL_SHARED_DRAIN_ENABLED: 'true',
+    AUTOMATION_TICK_ENABLED: 'false',
   }, {
     waitUntil(promise) { scheduledPromise = promise; },
   });
@@ -136,10 +167,63 @@ try {
   );
   assert.ok(messages.some((line) => line.includes('gmail_shared_drain_summary_invalid')) === false);
   assert.ok(messages.some((line) => line.includes('gmail_service_binding_unavailable')));
+  assert.ok(messages.includes('automation tick disabled'));
+
+  messages.length = 0;
+  scheduledPromise = null;
+  let automationCalls = 0;
+  globalThis.fetch = async (url, init = {}) => {
+    const value = String(url);
+    assert.ok(value.endsWith('/rest/v1/rpc/service_run_automation_tick'));
+    assert.deepEqual(JSON.parse(init.body), { p_limit: 100 });
+    automationCalls += 1;
+    return Response.json([{
+      materialised: 0,
+      withdrawn: 0,
+      executed: 0,
+      notified: 0,
+    }]);
+  };
+  worker.scheduled({}, {
+    TELEGRAM_DRAIN_ENABLED: 'false',
+    GMAIL_SHARED_DRAIN_ENABLED: 'false',
+    AUTOMATION_TICK_ENABLED: 'true',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
+  }, {
+    waitUntil(promise) { scheduledPromise = promise; },
+  });
+  assert.ok(scheduledPromise instanceof Promise);
+  await scheduledPromise;
+  assert.equal(automationCalls, 1);
+  assert.deepEqual(messages, [
+    'telegram outbox drain disabled',
+    'gmail outbox shared drain disabled',
+    'automation tick {"materialised":0,"withdrawn":0,"executed":0,"notified":0}',
+  ]);
+
+  messages.length = 0;
+  scheduledPromise = null;
+  globalThis.fetch = async () => Response.json([{ materialised: 101, withdrawn: 0, executed: 0, notified: 0 }]);
+  worker.scheduled({}, {
+    TELEGRAM_DRAIN_ENABLED: 'false',
+    GMAIL_SHARED_DRAIN_ENABLED: 'false',
+    AUTOMATION_TICK_ENABLED: 'true',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
+  }, {
+    waitUntil(promise) { scheduledPromise = promise; },
+  });
+  await assert.rejects(
+    scheduledPromise,
+    (error) => error?.code === 'automation_tick_summary_invalid',
+  );
+  assert.ok(messages.some((line) => line.includes('automation_tick_summary_invalid')));
+  assert.ok(messages.every((line) => !line.includes('materialised":101')));
 } finally {
   console.log = originalLog;
   console.error = originalError;
   globalThis.fetch = originalFetch;
 }
 
-console.log('Telegram drain Worker tests passed: Telegram linking remains dormant by default and the live Gmail shared scheduler contract is preserved.');
+console.log('Telegram drain Worker tests passed: Telegram, Gmail and automation share one cron behind independent bounded switches; linking remains dormant by default.');
