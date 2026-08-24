@@ -125,6 +125,13 @@ try {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
+const cutover = spawnSync(process.execPath, [
+  path.join(root, 'scripts/test-telegram-registry-cutover.mjs'),
+], { encoding: 'utf8' });
+if (cutover.status !== 0) {
+  throw new Error(cutover.stderr || cutover.stdout || 'Telegram registry cutover test failed');
+}
+
 const workflow = read('.github/workflows/deploy-private-production-telegram.yml');
 for (const needle of [
   'environment: crm-production',
@@ -188,4 +195,4 @@ if (preflightCallCount !== 2) {
   throw new Error(`production workflow: expected preflight immediately before and after deploy, found ${preflightCallCount}`);
 }
 
-console.log('Telegram production configuration boundaries: fail-closed live preflight authorizes intended config replacement; Gmail shared cron is preserved; linking enable and rollback require separate approvals.');
+console.log('Telegram production configuration boundaries: fail-closed live preflight authorizes intended config replacement; Gmail shared cron is preserved; linking enable and rollback require separate approvals; shared-bot Artist delivery is registry-only.');
