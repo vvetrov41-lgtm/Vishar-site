@@ -98,6 +98,9 @@ jobs:
       - name: Test private production release workflow boundaries
         run: node scripts/test-private-production-release-workflows.mjs
 
+      - name: Test automatic private production release boundaries
+        run: node scripts/test-private-production-release-orchestrator.mjs
+
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
 
