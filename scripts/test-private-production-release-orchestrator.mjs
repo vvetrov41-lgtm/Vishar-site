@@ -43,7 +43,11 @@ expectIncludes(deploySection, '- validate-release', 'deploy job');
 expectIncludes(deploySection, '- validate-crm', 'deploy job');
 expectIncludes(deploySection, '- validate-database', 'deploy job');
 expectIncludes(deploySection, 'environment: crm-production', 'deploy job');
+expectIncludes(deploySection, 'if: github.actor == github.repository_owner', 'release authorization');
+expectIncludes(deploySection, '[ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]', 'release authorization');
 
+expectIncludes(workflow, 'REQUIRED_RELEASE_FOUNDATION_SHA: cbcb5fa1e5e8559fadd98c9681c6de7ea8549687', 'release lineage');
+expectIncludes(workflow, 'git merge-base --is-ancestor "$REQUIRED_RELEASE_FOUNDATION_SHA" "$GITHUB_SHA"', 'release lineage');
 expectIncludes(workflow, 'git ls-remote origin', 'release immutability');
 expectIncludes(workflow, 'refs/heads/${GITHUB_REF_NAME}', 'release immutability');
 expectIncludes(workflow, '[ "$remote_sha" = "$GITHUB_SHA" ]', 'release immutability');
@@ -62,8 +66,8 @@ expectIncludes(deploySection, "[ \"$CRM_ORIGIN\" = 'https://crm.vishartattoo.com
 expectIncludes(deploySection, 'wrangler pages deploy dist', 'CRM deploy');
 expectIncludes(deploySection, '--commit-hash "$GITHUB_SHA"', 'CRM deploy');
 expectIncludes(deploySection, '/pages/projects/${CRM_PAGES_PROJECT}/deployments', 'CRM readback');
-expectIncludes(deploySection, 'deployment_trigger?.metadata?.commit_hash', 'CRM readback');
-expectIncludes(deploySection, 'commitHash !== process.env.GITHUB_SHA', 'CRM readback');
+expectIncludes(deploySection, 'deployment_trigger?.metadata?.commit_hash === process.env.GITHUB_SHA', 'CRM readback');
+expectIncludes(deploySection, 'Exact production Pages commit was not found', 'CRM readback');
 
 expectIncludes(deploySection, 'generate-telegram-production-deploy-config.mjs "$preflight_config" --enable-linking', 'Telegram linking preservation');
 expectIncludes(deploySection, 'TELEGRAM_LINKING_ENABLED = "true"', 'Telegram linking preservation');
