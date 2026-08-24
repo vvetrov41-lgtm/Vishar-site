@@ -15,6 +15,133 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  production-booking-e2e:
+    name: Production booking E2E smoke
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/production-booking-e2e-20260824'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Create harmless reference image
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' | base64 -d > /tmp/e2e-reference.png
+          file /tmp/e2e-reference.png
+
+      - name: Submit through both live site contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          submit_form() {
+            local label="$1"
+            local page_url="$2"
+            local origin="$3"
+            local fallback_source="$4"
+            local email="$5"
+            local idem="$6"
+            local html="/tmp/${label}.html"
+            local body="/tmp/${label}-response.json"
+
+            echo "=== ${label}: fetch live page ==="
+            curl --fail-with-body --silent --show-error --location "$page_url" -o "$html"
+
+            local endpoint
+            endpoint="$(python3 - "$html" <<'PY'
+import re,sys
+text=open(sys.argv[1],encoding='utf-8',errors='replace').read()
+patterns=[
+    r"productionEndpoint\s*=\s*['\"]([^'\"]+)['\"]",
+    r"bookingEndpoint\s*=\s*['\"]([^'\"]+)['\"]",
+    r"https://[A-Za-z0-9.-]+\.workers\.dev/?(?:\?[^'\"<> ]*)?",
+]
+for pattern in patterns:
+    m=re.search(pattern,text)
+    if m:
+        print(m.group(1) if m.lastindex else m.group(0))
+        break
+PY
+)"
+            test -n "$endpoint"
+
+            local source_value
+            source_value="$(python3 - "$html" "$fallback_source" <<'PY'
+import re,sys
+text=open(sys.argv[1],encoding='utf-8',errors='replace').read()
+fallback=sys.argv[2]
+m=re.search(r"payload\.append\(\s*['\"]source['\"]\s*,\s*['\"]([^'\"]+)['\"]",text)
+print(m.group(1) if m else fallback)
+PY
+)"
+
+            echo "page=${page_url}"
+            echo "origin=${origin}"
+            echo "endpoint=${endpoint}"
+            echo "source_field=${source_value}"
+
+            local status
+            status="$(curl --silent --show-error \
+              --request POST \
+              --header "Origin: ${origin}" \
+              --output "$body" \
+              --write-out '%{http_code}' \
+              --form-string "idempotencyKey=${idem}" \
+              --form-string "name=E2E TEST ${label} 2026-08-24" \
+              --form-string "email=${email}" \
+              --form-string "phone=" \
+              --form-string "instagram=" \
+              --form-string "preferredReply=Email" \
+              --form-string "travellingFrom=Production E2E test" \
+              --form-string "projectType=Not sure yet" \
+              --form-string "placement=E2E test placement" \
+              --form-string "size=E2E test size" \
+              --form-string "coverUp=No" \
+              --form-string "timing=E2E TEST - safe to delete" \
+              --form-string "idea=PRODUCTION E2E TEST. This record is intentionally synthetic and may be deleted after verification." \
+              --form-string "privacyAcknowledged=true" \
+              --form-string "privacyNoticeVersion=2026-07-29" \
+              --form-string "source=${source_value}" \
+              --form-string "landingPage=${page_url}" \
+              --form-string "referrer=" \
+              --form-string "utmSource=e2e-production-smoke" \
+              --form-string "utmMedium=github-actions" \
+              --form-string "utmCampaign=booking-reliability-20260824" \
+              --form-string "utmContent=${label}" \
+              --form-string "utmTerm=" \
+              --form-string "elapsedMs=2500" \
+              --form "references=@/tmp/e2e-reference.png;type=image/png;filename=e2e-reference.png" \
+              "$endpoint")"
+
+            echo "http_status=${status}"
+            cat "$body"
+            echo
+            test "$status" = "200"
+            python3 - "$body" <<'PY'
+import json,sys
+obj=json.load(open(sys.argv[1]))
+assert obj.get('ok') is True, obj
+assert isinstance(obj.get('reference'),str) and obj['reference'], obj
+print('reference=' + obj['reference'])
+PY
+          }
+
+          submit_form \
+            "vladimir" \
+            "https://vishartattoo.com/booking/" \
+            "https://vishartattoo.com" \
+            "/booking/" \
+            "booking-e2e-vladimir-20260824@invalid.example" \
+            "20260824-0001-4000-8000-000000000001"
+
+          submit_form \
+            "kristina" \
+            "https://www.kristinavishar.com/" \
+            "https://www.kristinavishar.com" \
+            "/#booking" \
+            "booking-e2e-kristina-20260824@invalid.example" \
+            "20260824-0002-4000-8000-000000000002"
+
   site-and-worker:
     name: Public site and Worker
     runs-on: ubuntu-latest
@@ -165,10 +292,6 @@ jobs:
       - name: Run pgTAP suite
         run: supabase test db
 
-      # The pgTAP suite runs against a database where every migration has
-      # already been applied, so it cannot observe what a data migration does to
-      # rows that existed beforehand. This replays the history in stages against
-      # a throwaway database instead.
       - name: Verify the communications migration preserves existing WhatsApp records
         run: npm run test:communications-migration
 
