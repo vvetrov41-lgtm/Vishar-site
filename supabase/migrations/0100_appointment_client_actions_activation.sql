@@ -22,13 +22,18 @@ set description = excluded.description;
 
 -- ---------------------------------------------------------------------------
 -- 2. Activate reviewed 24-hour copy in place
+--
+-- Only workspace defaults are changed. Existing artist-authored overrides stay
+-- byte-for-byte intact. A custom 24h template that uses none of the new action
+-- variables remains a valid action-free reminder after this migration.
 -- ---------------------------------------------------------------------------
 
 update public.message_templates t
 set body = E'Hi {{client_first_name}},\n\nYour tattoo appointment with {{artist_display_name}} at {{studio_name}} is tomorrow, {{appointment_date}}, at {{appointment_time}}.\n\nPlease note: if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.\n\nManage this appointment securely:\n\nConfirm attendance:\n{{confirm_link}}\n\nRequest a different time:\n{{reschedule_link}}\nYour current appointment stays booked until we contact you and agree a new time.\n\nCancel this appointment:\n{{cancel_link}}\n\nOpening a link only shows a confirmation page. No appointment change is made until you confirm the action there.\n\nIf you have a question before then, just reply to this email.\n\nSee you tomorrow,\n{{studio_name}}',
     version = t.version + 1,
     updated_at = now()
-where t.purpose = 'session_reminder_24h'
+where t.artist_id is null
+  and t.purpose = 'session_reminder_24h'
   and t.channel = 'email'
   and t.locale = 'en'
   and t.status = 'active';
@@ -37,7 +42,8 @@ update public.message_templates t
 set body = E'Hi {{client_first_name}},\n\nYour consultation with {{artist_display_name}} is tomorrow, {{appointment_date}}, at {{appointment_time}}.\n\nPlease bring any reference images or ideas you would like to talk through.\n\nManage this appointment securely:\n\nConfirm attendance:\n{{confirm_link}}\n\nRequest a different time:\n{{reschedule_link}}\nYour current appointment stays booked until we contact you and agree a new time.\n\nCancel this appointment:\n{{cancel_link}}\n\nOpening a link only shows a confirmation page. No appointment change is made until you confirm the action there.\n\nIf you have a question before then, just reply to this email.\n\nSee you tomorrow,\n{{studio_name}}',
     version = t.version + 1,
     updated_at = now()
-where t.purpose = 'consultation_reminder'
+where t.artist_id is null
+  and t.purpose = 'consultation_reminder'
   and t.channel = 'email'
   and t.locale = 'en'
   and t.status = 'active';
@@ -252,28 +258,47 @@ begin
   from public.email_messages m
   where m.automation_job_id = v_job.id;
 
+  -- Workspace defaults opt into action links by carrying all three catalogued
+  -- variables. Artist-authored overrides that carry none remain valid ordinary
+  -- reminders. A partial opt-in fails closed rather than creating an email with
+  -- a missing or ambiguous action.
+  if position('{{confirm_link}}' in coalesce(v_template.subject, '')) > 0
+     or position('{{reschedule_link}}' in coalesce(v_template.subject, '')) > 0
+     or position('{{cancel_link}}' in coalesce(v_template.subject, '')) > 0 then
+    update public.automation_jobs
+    set status = 'failed', attempt_count = attempt_count + 1,
+        last_error_category = 'template_unavailable'
+    where id = p_job_id;
+    return 'failed';
+  end if;
+
   v_actions_required := v_template.purpose in (
-    'session_reminder_24h',
-    'consultation_reminder'
-  );
+      'session_reminder_24h',
+      'consultation_reminder'
+    )
+    and (
+      position('{{confirm_link}}' in coalesce(v_template.body, '')) > 0
+      or position('{{reschedule_link}}' in coalesce(v_template.body, '')) > 0
+      or position('{{cancel_link}}' in coalesce(v_template.body, '')) > 0
+    );
+
+  if v_actions_required
+     and (
+       position('{{confirm_link}}' in coalesce(v_template.body, '')) = 0
+       or position('{{reschedule_link}}' in coalesce(v_template.body, '')) = 0
+       or position('{{cancel_link}}' in coalesce(v_template.body, '')) = 0
+     ) then
+    update public.automation_jobs
+    set status = 'failed', attempt_count = attempt_count + 1,
+        last_error_category = 'template_unavailable'
+    where id = p_job_id;
+    return 'failed';
+  end if;
 
   if v_message_id is null then
     v_subject := crm_private.render_lifecycle_template_text(v_template.subject, v_session.id);
 
     if v_actions_required then
-      if position('{{confirm_link}}' in coalesce(v_template.body, '')) = 0
-         or position('{{reschedule_link}}' in coalesce(v_template.body, '')) = 0
-         or position('{{cancel_link}}' in coalesce(v_template.body, '')) = 0
-         or position('{{confirm_link}}' in coalesce(v_template.subject, '')) > 0
-         or position('{{reschedule_link}}' in coalesce(v_template.subject, '')) > 0
-         or position('{{cancel_link}}' in coalesce(v_template.subject, '')) > 0 then
-        update public.automation_jobs
-        set status = 'failed', attempt_count = attempt_count + 1,
-            last_error_category = 'template_unavailable'
-        where id = p_job_id;
-        return 'failed';
-      end if;
-
       -- Validate all ordinary variables before minting a real capability set.
       v_body := crm_private.render_lifecycle_action_template_text(
         v_template.body,
