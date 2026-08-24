@@ -38,6 +38,7 @@ const required = [
   'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"',
   'TELEGRAM_DRAIN_ENABLED = "false"',
   'GMAIL_SHARED_DRAIN_ENABLED = "false"',
+  'AUTOMATION_TICK_ENABLED = "false"',
   'TELEGRAM_LINKING_ENABLED = "false"',
 ];
 for (const needle of required) {
@@ -79,6 +80,7 @@ text = text.replace(
 );
 text = text.replace('TELEGRAM_DRAIN_ENABLED = "false"', 'TELEGRAM_DRAIN_ENABLED = "true"');
 text = text.replace('GMAIL_SHARED_DRAIN_ENABLED = "false"', 'GMAIL_SHARED_DRAIN_ENABLED = "true"');
+text = text.replace('AUTOMATION_TICK_ENABLED = "false"', 'AUTOMATION_TICK_ENABLED = "true"');
 if (enableLinking) {
   text = text.replace('TELEGRAM_LINKING_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "true"');
 }
@@ -91,6 +93,9 @@ if (!text.includes('TELEGRAM_DRAIN_ENABLED = "true"')) {
 }
 if (!text.includes('GMAIL_SHARED_DRAIN_ENABLED = "true"')) {
   throw new Error('failed to preserve the Gmail shared scheduler dispatch');
+}
+if (!text.includes('AUTOMATION_TICK_ENABLED = "true"')) {
+  throw new Error('failed to enable the production automation heartbeat');
 }
 const expectedLinking = enableLinking ? 'true' : 'false';
 if (!text.includes(`TELEGRAM_LINKING_ENABLED = "${expectedLinking}"`)) {
