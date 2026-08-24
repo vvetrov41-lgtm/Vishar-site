@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const workflow = read('.github/workflows/private-production-release.yml');
+const observer = read('.github/workflows/private-production-release-observer.yml');
 const telegramRollback = read('.github/workflows/deploy-private-production-telegram.yml');
 
 const expectIncludes = (text, needle, label) => {
@@ -85,6 +86,27 @@ if (count(deploySection, 'node scripts/preflight-telegram-production.mjs') < 4) 
 expectIncludes(deploySection, 'WRANGLER_OUTPUT_FILE_PATH', 'Telegram version evidence');
 expectIncludes(deploySection, 'wrangler versions list', 'Telegram version readback');
 expectIncludes(deploySection, 'Verify live Telegram HTTP boundary', 'Telegram live readback');
+
+expectIncludes(observer, "- 'release/private-crm-rc*'", 'release observer trigger');
+expectIncludes(observer, 'actions: read', 'release observer permissions');
+expectIncludes(observer, 'statuses: write', 'release observer permissions');
+expectIncludes(observer, 'if: github.actor == github.repository_owner', 'release observer authorization');
+expectIncludes(observer, "context='vishar/private-production-release'", 'release observer status context');
+expectIncludes(observer, 'statuses/${GITHUB_SHA}', 'release observer exact-SHA status');
+expectIncludes(observer, 'actions/workflows/private-production-release.yml/runs?event=push&per_page=30', 'release observer exact workflow');
+expectIncludes(observer, 'run?.head_sha === process.env.TARGET_SHA', 'release observer exact-SHA discovery');
+expectIncludes(observer, 'run.head_sha !== process.env.TARGET_SHA', 'release observer exact-SHA readback');
+expectExcludes(observer, 'environment: crm-production', 'release observer isolation');
+expectExcludes(observer, 'secrets.', 'release observer isolation');
+for (const forbidden of [
+  'supabase db push',
+  'wrangler deploy',
+  'wrangler pages deploy',
+  'wrangler secret',
+  'activate-telegram-webhook.mjs',
+]) {
+  expectExcludes(observer, forbidden, 'release observer mutation boundary');
+}
 
 for (const forbidden of [
   'activate-telegram-webhook.mjs',
