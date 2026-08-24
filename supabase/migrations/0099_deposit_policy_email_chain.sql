@@ -40,12 +40,12 @@ select distinct
   a.workspace_id,
   null::uuid,
   'deposit_request',
-  'email',
+  'email'::public.message_template_channel,
   'en',
   1,
   'Deposit for your tattoo booking with {{artist_display_name}}',
   E'Hi {{client_first_name}},\n\nA deposit of {{deposit_amount}} is required to secure your tattoo booking with {{artist_display_name}} at {{studio_name}}.\n\nIf you cancel an appointment covered by this deposit within 72 hours of its scheduled start time, the deposit is non-refundable.\n\nPay your deposit here:\n{{payment_link}}\n\nIf you have any questions, reply to this email.\n\n{{studio_name}}',
-  'active',
+  'active'::public.message_template_status,
   null::uuid
 from public.artists a
 join public.workspaces w on w.id = a.workspace_id
@@ -70,12 +70,12 @@ select distinct
   a.workspace_id,
   null::uuid,
   'deposit_confirmation',
-  'email',
+  'email'::public.message_template_channel,
   'en',
   1,
   'Deposit received for your tattoo booking with {{artist_display_name}}',
   E'Hi {{client_first_name}},\n\nWe have received your {{deposit_amount}} deposit for your tattoo booking with {{artist_display_name}} at {{studio_name}}. Your booking is secured.\n\nAs stated when the deposit was requested, if you cancel an appointment covered by this deposit within 72 hours of its scheduled start time, the deposit is non-refundable.\n\nIf you have any questions, reply to this email.\n\n{{studio_name}}',
-  'active',
+  'active'::public.message_template_status,
   null::uuid
 from public.artists a
 join public.workspaces w on w.id = a.workspace_id
