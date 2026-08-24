@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   validate:
@@ -60,3 +61,76 @@ jobs:
 
       - name: Scan repository for committed secrets
         run: node scripts/scan-secrets.mjs
+
+      - name: Observe booking host RC2 production acceptance
+        if: github.head_ref == 'agent/booking-host-rc2-observer'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: 970fb0a2c7719b2613e3a36404115feb7ca03f7b
+          RELEASE_BRANCH: release/booking-host-rc2-appointment-actions
+          BOOKING_HOST: https://booking.vishartattoo.com
+          ACTION_TOKEN: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production-booking-host.yml/runs"
+          found=''
+          for attempt in $(seq 1 24); do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              --get \
+              --data-urlencode "branch=${RELEASE_BRANCH}" \
+              --data-urlencode 'event=push' \
+              --data-urlencode 'per_page=20' \
+              "$api" > "$RUNNER_TEMP/runs.json"
+            found="$(jq -c --arg sha "$EXPECTED_SHA" '[.workflow_runs[] | select(.head_sha == $sha)][0] // empty' "$RUNNER_TEMP/runs.json")"
+            if [ -n "$found" ]; then
+              status="$(jq -r '.status' <<<"$found")"
+              conclusion="$(jq -r '.conclusion // ""' <<<"$found")"
+              echo "release_run_id=$(jq -r '.id' <<<"$found")"
+              echo "release_status=$status"
+              echo "release_conclusion=${conclusion:-pending}"
+              if [ "$status" = 'completed' ]; then
+                test "$conclusion" = 'success'
+                break
+              fi
+            fi
+            sleep 10
+          done
+          test -n "$found"
+          test "$(jq -r '.status' <<<"$found")" = 'completed'
+          test "$(jq -r '.conclusion' <<<"$found")" = 'success'
+          test "$(jq -r '.head_sha' <<<"$found")" = "$EXPECTED_SHA"
+          test "$(jq -r '.head_branch' <<<"$found")" = "$RELEASE_BRANCH"
+
+          root_status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/root.html" \
+            --write-out '%{http_code}' \
+            "${BOOKING_HOST}/?rc2-observer=${EXPECTED_SHA}")"
+          test "$root_status" = '200'
+          grep -Fq 'https://booking.vishartattoo.com/api/enquiry' "$RUNNER_TEMP/root.html"
+          if grep -Fq 'https://tattooai.vvetrov41.workers.dev/' "$RUNNER_TEMP/root.html"; then
+            echo 'Direct intake endpoint leaked back into live booking HTML.' >&2
+            exit 1
+          fi
+
+          action_url="${BOOKING_HOST}/appointments/respond/${ACTION_TOKEN}?rc2-observer=${EXPECTED_SHA}"
+          action_status="$(curl --silent --show-error \
+            --dump-header "$RUNNER_TEMP/action.headers" \
+            --output "$RUNNER_TEMP/action.html" \
+            --write-out '%{http_code}' \
+            "$action_url")"
+          test "$action_status" = '404'
+          grep -Fq 'This link is unavailable' "$RUNNER_TEMP/action.html"
+          grep -Eiq '^content-type: text/html' "$RUNNER_TEMP/action.headers"
+          grep -Eiq '^cache-control: no-store, max-age=0' "$RUNNER_TEMP/action.headers"
+          grep -Eiq '^referrer-policy: no-referrer' "$RUNNER_TEMP/action.headers"
+          grep -Eiq '^x-robots-tag: noindex, nofollow, noarchive' "$RUNNER_TEMP/action.headers"
+          if grep -Eiq '^set-cookie:' "$RUNNER_TEMP/action.headers"; then
+            echo 'Unexpected Set-Cookie crossed the branded proxy boundary.' >&2
+            exit 1
+          fi
+
+          echo 'booking_host_rc2_live_acceptance=success'
