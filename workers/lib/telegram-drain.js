@@ -180,18 +180,18 @@ async function recordArtistRegistryResult(
 
 async function preferredArtistDelivery(env, supabase, route, job, text, fetchImpl) {
   const production = env?.VISHAR_ENVIRONMENT === 'production';
-  if (!production) {
-    // Retained staging keeps the historical artist-owned binding. Production
-    // is intentionally selected by environment, never by the presence of a
-    // secret, so a missing shared token cannot silently re-enable fallback.
+  const sharedConfigured = Boolean(sharedTelegramBotToken(env));
+
+  if (!sharedConfigured) {
+    if (production) {
+      // Production must never regain the legacy path merely because its shared
+      // credential is absent or malformed.
+      throw new TelegramDrainError('telegram_shared_bot_not_configured');
+    }
     return {
       notification: await sendNotification(env, route, text, fetchImpl),
       registryDestinationId: null,
     };
-  }
-
-  if (!sharedTelegramBotToken(env)) {
-    throw new TelegramDrainError('telegram_shared_bot_not_configured');
   }
 
   let destination;
@@ -202,13 +202,28 @@ async function preferredArtistDelivery(env, supabase, route, job, text, fetchImp
     });
     destination = validateRegistryDestination(resolved, 'artist');
   } catch {
+    if (production) {
+      throw new TelegramDrainError('telegram_destination_unavailable');
+    }
+  }
+
+  if (destination) {
+    return {
+      notification: await sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl),
+      registryDestinationId: destination.destination_id,
+    };
+  }
+
+  if (production) {
     throw new TelegramDrainError('telegram_destination_unavailable');
   }
-  if (!destination) throw new TelegramDrainError('telegram_destination_unavailable');
 
+  // Retained staging keeps the historical fallback so it can exercise both the
+  // progressive registry path and the old artist binding without weakening the
+  // production invariant above.
   return {
-    notification: await sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl),
-    registryDestinationId: destination.destination_id,
+    notification: await sendNotification(env, route, text, fetchImpl),
+    registryDestinationId: null,
   };
 }
 
