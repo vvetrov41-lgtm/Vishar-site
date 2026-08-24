@@ -179,31 +179,48 @@ async function recordArtistRegistryResult(
 }
 
 async function preferredArtistDelivery(env, supabase, route, job, text, fetchImpl) {
-  // Rollout rule: without the one shared bot token the old artist binding stays
-  // canonical and we do not even require the new resolver to be present.
-  if (!sharedTelegramBotToken(env)) {
+  const production = env?.VISHAR_ENVIRONMENT === 'production';
+  const sharedConfigured = Boolean(sharedTelegramBotToken(env));
+
+  if (!sharedConfigured) {
+    if (production) {
+      // Production must never regain the legacy path merely because its shared
+      // credential is absent or malformed.
+      throw new TelegramDrainError('telegram_shared_bot_not_configured');
+    }
     return {
       notification: await sendNotification(env, route, text, fetchImpl),
       registryDestinationId: null,
     };
   }
 
+  let destination;
   try {
     const resolved = await supabase.rpc('service_resolve_telegram_destination', {
       p_artist_id: job.artist_id,
       p_profile_id: null,
     });
-    const destination = validateRegistryDestination(resolved, 'artist');
-    if (destination) {
-      return {
-        notification: await sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl),
-        registryDestinationId: destination.destination_id,
-      };
-    }
+    destination = validateRegistryDestination(resolved, 'artist');
   } catch {
-    // Static bindings remain the rollback path throughout Phase G. A registry
-    // lookup failure must not make existing production enquiry alerts disappear.
+    if (production) {
+      throw new TelegramDrainError('telegram_destination_unavailable');
+    }
   }
+
+  if (destination) {
+    return {
+      notification: await sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl),
+      registryDestinationId: destination.destination_id,
+    };
+  }
+
+  if (production) {
+    throw new TelegramDrainError('telegram_destination_unavailable');
+  }
+
+  // Retained staging keeps the historical fallback so it can exercise both the
+  // progressive registry path and the old artist binding without weakening the
+  // production invariant above.
   return {
     notification: await sendNotification(env, route, text, fetchImpl),
     registryDestinationId: null,
