@@ -315,7 +315,7 @@ select is((select count(*)::int from public.activity_log), (select n::int from l
           'authenticated mutation attempts leave activity_log unchanged');
 
 -- Layer 2: the trigger, which is what protects the audit trail from a role that
--- bypasses RLS entirely — hosted Supabase gives `postgres` and `service_role`
+-- bypasses RLS entirely - hosted Supabase gives `postgres` and `service_role`
 -- exactly that. FORCE is lifted here only to reach that code path.
 -- activity_log's entity references are DEFERRABLE INITIALLY DEFERRED, and
 -- ALTER TABLE refuses to run while their triggers are still pending.
@@ -530,6 +530,8 @@ insert into expected_function_acl values
   ('public.service_resolve_telegram_destination(uuid,uuid)', false, false, true),
   ('public.service_claim_telegram_notifications(text,integer,integer)', false, false, true),
   ('public.service_record_telegram_notification_result(uuid,text,boolean,text)', false, false, true),
+  ('public.service_resolve_appointment_client_action(text)', false, false, true),
+  ('public.service_apply_appointment_client_action(text)', false, false, true),
   ('public.resolve_outbox_route(uuid)', false, false, true),
   ('public.list_incomplete_intakes(integer,integer)', false, false, true),
   ('public.resolve_booking_source(text,text,text)', false, false, true),
@@ -730,7 +732,7 @@ insert into expected_function_acl values
   -- manage_workspace on the exact workspace inside its own body. None is
   -- offered to the service backend: adding an artist or founding an
   -- organization is a human decision made in the CRM, and no Worker or cron
-  -- has a reason to make it.
+  -- has a reason to make one.
   ('public.create_workspace(text,public.workspace_type,text,text,text)', false, true, false),
   ('public.update_workspace(uuid,text,text,text,boolean)', false, true, false),
   ('public.create_artist(uuid,text,text,text,text,text)', false, true, false),
