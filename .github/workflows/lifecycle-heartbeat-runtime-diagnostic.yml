@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: lifecycle-heartbeat-runtime-diagnostic
@@ -31,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Verify read-only diagnostic lineage and inputs
         shell: bash
@@ -39,10 +40,28 @@ jobs:
           set -euo pipefail
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
           [ "$GITHUB_REF_NAME" = 'agent/lifecycle-heartbeat-runtime-diagnostic' ]
-          [ "$(git rev-parse HEAD^)" = "$EXPECTED_RELEASE_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_RELEASE_SHA" "$GITHUB_SHA"
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_RELEASE_SHA" "$GITHUB_SHA")
+          [ "${#changed[@]}" -eq 1 ]
+          [ "${changed[0]}" = '.github/workflows/lifecycle-heartbeat-runtime-diagnostic.yml' ]
           [ -n "$CLOUDFLARE_API_TOKEN" ]
           [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
           [ "$WORKER_NAME" = 'vishar-telegram-drain-production' ]
+
+      - name: Publish diagnostic run link
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          payload="$(node -e 'process.stdout.write(JSON.stringify({state:"pending",context:"vishar/lifecycle-heartbeat-runtime",description:"Read-only lifecycle heartbeat observation is running.",target_url:process.env.GITHUB_SERVER_URL+"/"+process.env.GITHUB_REPOSITORY+"/actions/runs/"+process.env.GITHUB_RUN_ID}))')"
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'Content-Type: application/json' \
+            --data "$payload" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" >/dev/null
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -181,3 +200,26 @@ jobs:
             echo '- That event emitted a successful, redacted `automation tick` summary'
             echo '- No production mutation is performed by this diagnostic'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish diagnostic completion
+        if: always()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          state='success'
+          description='Lifecycle heartbeat runtime acceptance passed.'
+          if [ "$JOB_STATUS" != 'success' ]; then
+            state='error'
+            description='Lifecycle heartbeat runtime acceptance failed.'
+          fi
+          payload="$(STATE="$state" DESCRIPTION="$description" node -e 'process.stdout.write(JSON.stringify({state:process.env.STATE,context:"vishar/lifecycle-heartbeat-runtime",description:process.env.DESCRIPTION,target_url:process.env.GITHUB_SERVER_URL+"/"+process.env.GITHUB_REPOSITORY+"/actions/runs/"+process.env.GITHUB_RUN_ID}))')"
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'Content-Type: application/json' \
+            --data "$payload" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" >/dev/null
