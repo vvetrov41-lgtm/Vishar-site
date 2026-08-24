@@ -19,18 +19,18 @@
     "brand_variants_source": "explicit_user_confirmation",
     "target_goal": "both",
     "priority_topics": [
-      "Realism tattoo artist in Manchester and Salford"
+      "Realism tattoo artist in London"
     ],
     "semantic_cluster_queries": [
-      "realism tattoo artist Manchester",
-      "black and grey realism tattoo Manchester",
-      "colour realism tattoo Manchester",
-      "tattoo cover up Manchester",
-      "custom tattoo artist Manchester",
-      "realism tattoo artist Salford",
-      "tattoo artist Salford",
-      "tattoo consultation Manchester",
-      "portrait tattoo artist Manchester",
+      "realism tattoo artist London",
+      "black and grey realism tattoo London",
+      "colour realism tattoo London",
+      "tattoo cover up London",
+      "custom tattoo artist London",
+      "tattoo consultation London",
+      "portrait tattoo artist London",
+      "large scale realism tattoo artist London",
+      "realism sleeve tattoo artist London",
       "Vladimir Vishar tattoo artist"
     ],
     "competitors": [],
@@ -54,14 +54,14 @@
       "Medium and large multi-session realism projects"
     ],
     "documents": [],
-    "context_notes": "Personal brand and qualified-enquiry website for tattoo artist Vladimir Vishar. Vladimir works from No Regrets Studios Manchester in Salford but does not own or represent the studio as his own business. Primary physical location: Salford. Primary commercial market: Manchester. Wider service area: Greater Manchester. Conversion goal: qualified project enquiries and consultations, not traffic alone. Appointments only; no walk-ins. Do not invent awards, prices, availability, reviews, medical claims or superlatives. Do not over-promote No Regrets Studios. Do not create near-duplicate location pages or mass-generate pages. Treat brand mention, URL citation and recommendation as separate outcomes. Technical SEO and LLM accessibility remediation through PR #159 is complete.",
+    "context_notes": "Personal brand and qualified-enquiry website for tattoo artist Vladimir Vishar. The current commercial search market is London and the website is accepting enquiries for future London appointments. The exact studio is confirmed with each appointment; do not infer or publish a permanent studio address, borough or neighbourhood until explicitly verified. Existing Manchester URL slugs are temporarily retained for indexing continuity and are not evidence of the current target market. Conversion goal: qualified project enquiries and consultations, not traffic alone. Appointments only; no walk-ins. Do not invent awards, prices, availability, reviews, medical claims or superlatives. Do not create near-duplicate location pages or mass-generate pages. Treat brand mention, URL citation and recommendation as separate outcomes. Technical SEO and LLM accessibility remediation through PR #159 is complete.",
     "site_discovery_approved": true,
     "context_not_applicable_decisions": [],
     "audit_decisions": {},
-    "semantic_cluster_topic": "Realism tattoo artist in Manchester and Salford",
+    "semantic_cluster_topic": "Realism tattoo artist in London",
     "semantic_cluster_status": "confirmed",
-    "semantic_cluster_source": "explicit_user_confirmation",
-    "semantic_cluster_confirmed_at": "2026-07-14T17:12:00+00:00",
+    "semantic_cluster_source": "user_approved_london_migration",
+    "semantic_cluster_confirmed_at": "2026-08-24T20:35:00+01:00",
     "brand_variants_confirmed_at": "2026-07-14T17:07:58+00:00",
     "brand_variants_confirmation": {
       "variants_sha256": "1d8cfa909e36ec1ee3b2d7285efab5434098e1ea0c2c04c7e2edd0318f0eccd8",
@@ -72,10 +72,10 @@
   },
   "region": {
     "country": "United Kingdom",
-    "city": "Salford, Greater Manchester",
+    "city": "London",
     "language": "English (en-GB)",
     "scope_status": "resolved",
-    "scope_provenance": "project_context",
+    "scope_provenance": "user_approved_london_migration",
     "google": {
       "gl": "gb",
       "hl": "en"
