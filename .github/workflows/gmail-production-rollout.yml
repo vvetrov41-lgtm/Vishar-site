@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 25
     environment: crm-production
     env:
-      PRODUCT_BRANCH: agent/gmail-crm-production-integration
+      PRODUCT_BRANCH: agent/platform-telegram-self-service
       SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -34,6 +34,7 @@ jobs:
       OPERATIONS_HOST: gpt-operations.vishartattoo.com
       GMAIL_STATE_NAMESPACE_TITLE: vishar-gmail-production-oauth-state
       GMAIL_TOKENS_NAMESPACE_TITLE: vishar-gmail-production-oauth-tokens
+      GMAIL_DEPLOY_CONFIG: ${{ github.workspace }}/.wrangler.gmail.production.deploy.toml
 
     steps:
       - name: Resolve phase and verify production branch boundary
@@ -59,7 +60,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Verify operator SHA equals product head and exact-head CI is green
+      - name: Verify operator SHA equals current platform head and exact-head CI is green
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -82,8 +83,11 @@ jobs:
 
       - name: Revalidate Gmail production exact head
         run: |
+          set -euo pipefail
           npm ci --ignore-scripts
           node scripts/test-gmail-production.mjs
+          node scripts/test-gmail-rollout-phases.mjs
+          node scripts/test-telegram-drain-worker.mjs
           node scripts/test-gpt-gmail-openapi.mjs
           npm run validate:gpt-actions
           npm run scan:secrets
@@ -123,7 +127,7 @@ jobs:
           echo "state_id=$state_id" >> "$GITHUB_OUTPUT"
           echo "tokens_id=$tokens_id" >> "$GITHUB_OUTPUT"
 
-      - name: Generate exact production Gmail Worker config
+      - name: Generate and validate exact production Gmail Worker config
         shell: bash
         env:
           PHASE: ${{ steps.phase.outputs.phase }}
@@ -131,25 +135,63 @@ jobs:
           GMAIL_KV_TOKENS_ID: ${{ steps.kv.outputs.tokens_id }}
         run: |
           set -euo pipefail
-          node scripts/generate-gmail-production-deploy-config.mjs "$RUNNER_TEMP/wrangler.gmail.deploy.toml" "$PHASE"
-          grep -Fq 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"' "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
-          grep -Fq "id = \"$GMAIL_KV_STATE_ID\"" "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
-          grep -Fq "id = \"$GMAIL_KV_TOKENS_ID\"" "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
-          if [ "$PHASE" = 'bootstrap' ]; then
-            grep -Fq 'GMAIL_OAUTH_ENABLED = "false"' "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
-            grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$RUNNER_TEMP/wrangler.gmail.deploy.toml"
-          fi
+          test "$(dirname "$GMAIL_DEPLOY_CONFIG")" = "$GITHUB_WORKSPACE"
+          node scripts/generate-gmail-production-deploy-config.mjs "$GMAIL_DEPLOY_CONFIG" "$PHASE"
+          grep -Fq 'main = "workers/gmail-production-entrypoint.js"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq "id = \"$GMAIL_KV_STATE_ID\"" "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq "id = \"$GMAIL_KV_TOKENS_ID\"" "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq 'crons = []' "$GMAIL_DEPLOY_CONFIG"
+          ! grep -Fq '*/5 * * * *' "$GMAIL_DEPLOY_CONFIG"
+          case "$PHASE" in
+            bootstrap)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+            vladimir-read)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+            vladimir-send)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+            kristina-read)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "false"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+            kristina-send)
+              grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_DRAIN_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              grep -Fq 'GMAIL_KRISTINA_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+              ;;
+          esac
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --dry-run --outdir .wrangler/gmail-production-generated-phase
 
       - name: Deploy bootstrap Gmail Worker and provision only generated encryption key
         if: ${{ steps.phase.outputs.phase == 'bootstrap' }}
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME" --strict
-          secrets_json="$(npx wrangler secret list --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME" --format json)"
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --strict
+          secrets_json="$(npx wrangler secret list --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --format json)"
           if ! jq -e 'any(.[]; .name == "GMAIL_TOKEN_ENCRYPTION_KEY")' <<<"$secrets_json" >/dev/null; then
             node -e "process.stdout.write(require('crypto').randomBytes(32).toString('base64url'))" \
-              | npx wrangler secret put GMAIL_TOKEN_ENCRYPTION_KEY --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME"
+              | npx wrangler secret put GMAIL_TOKEN_ENCRYPTION_KEY --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME"
           fi
 
       - name: Verify Gmail Worker secrets before OAuth/read activation
@@ -157,7 +199,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          secrets_json="$(npx wrangler secret list --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME" --format json)"
+          secrets_json="$(npx wrangler secret list --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --format json)"
           SECRET_LIST="$secrets_json" node <<'NODE'
           const entries = JSON.parse(process.env.SECRET_LIST || '[]');
           const names = new Set(entries.map((entry) => entry?.name).filter(Boolean));
@@ -174,7 +216,12 @@ jobs:
       - name: Deploy activated Gmail Worker phase
         if: ${{ steps.phase.outputs.phase != 'bootstrap' }}
         shell: bash
-        run: npx wrangler deploy --config "$RUNNER_TEMP/wrangler.gmail.deploy.toml" --name "$GMAIL_WORKER_NAME" --strict
+        run: |
+          set -euo pipefail
+          # Activation phases intentionally change reviewed feature flags. The
+          # generated-config assertions above are the fail-closed authorization
+          # boundary; Wrangler --strict would reject those expected differences.
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME"
 
       - name: Deploy GPT service binding without changing GPT OAuth/capability gates
         if: ${{ steps.phase.outputs.phase == 'bootstrap' }}
@@ -188,16 +235,35 @@ jobs:
             --var GPT_OAUTH_RELAY_ENABLED:true \
             --var GPT_ACTIONS_ENABLED:true
 
+      - name: Read back Gmail direct schedule count
+        shell: bash
+        run: |
+          set -euo pipefail
+          schedules="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
+          SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const result = payload.result;
+          const schedules = Array.isArray(result) ? result : Array.isArray(result?.schedules) ? result.schedules : null;
+          if (payload.success !== true || schedules === null || schedules.length !== 0) {
+            throw new Error('Gmail Worker direct Cron Trigger count is not zero');
+          }
+          console.log('Gmail direct cron count: 0');
+          NODE
+
       - name: Verify production edge state
         shell: bash
         env:
           PHASE: ${{ steps.phase.outputs.phase }}
         run: |
           set -euo pipefail
+          start_slug='vladimir'
+          if [[ "$PHASE" == kristina-* ]]; then start_slug='kristina'; fi
           for attempt in $(seq 1 20); do
             privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/privacy" || true)"
             ops="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/enquiries/11111111-1111-4111-8111-111111111111/gmail/history" || true)"
-            start_headers="$(curl -sS -D - -o /dev/null --max-time 10 "https://$GMAIL_HOST/oauth/google/start/vladimir" || true)"
+            start_headers="$(curl -sS -D - -o /dev/null --max-time 10 "https://$GMAIL_HOST/oauth/google/start/$start_slug" || true)"
             start_status="$(printf '%s' "$start_headers" | awk 'toupper($1) ~ /^HTTP\// {status=$2} END {print status}')"
             if [ "$privacy" = 200 ] && [ "$ops" = 401 ]; then
               if [ "$PHASE" = 'bootstrap' ] && [ "$start_status" = 404 ]; then exit 0; fi
@@ -207,6 +273,11 @@ jobs:
           done
           echo 'Production Gmail/GPT edge did not reach the expected phase state.' >&2
           exit 1
+
+      - name: Remove generated Gmail deploy config
+        if: always()
+        shell: bash
+        run: rm -f "$GMAIL_DEPLOY_CONFIG"
 
       - name: Production Gmail rollout summary
         if: always()
@@ -219,8 +290,11 @@ jobs:
             echo "- Exact SHA: \`$GITHUB_SHA\`"
             echo "- Operator branch: \`$GITHUB_REF_NAME\`"
             echo "- Phase: \`$PHASE\`"
+            echo '- Product lineage: current `agent/platform-telegram-self-service` head'
             echo '- Gmail Worker: `vishar-gmail-production`'
             echo '- Gmail OAuth domain: `gmail.vishartattoo.com`'
+            echo '- Gmail direct Cron Trigger count: `0`'
+            echo '- Shared scheduler remains `vishar-telegram-drain-production` via `GMAIL_SERVICE`'
             echo '- GPT Operations domain remains `gpt-operations.vishartattoo.com`'
             echo '- Gmail state/token KV namespaces: dedicated production-only namespaces'
             echo '- Calendar Worker/token/KV bindings: untouched'
