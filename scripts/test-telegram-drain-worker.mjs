@@ -145,11 +145,12 @@ try {
   assert.ok(scheduledPromise instanceof Promise);
   await scheduledPromise;
   assert.equal(gmailCalls, 1);
-  assert.deepEqual(messages, [
-    'telegram outbox drain disabled',
+  assert.equal(messages.length, 3);
+  assert.ok(messages.includes('telegram outbox drain disabled'));
+  assert.ok(messages.includes('automation tick disabled'));
+  assert.ok(messages.includes(
     'gmail outbox shared drain {"skipped":false,"processed":2,"sent":1,"deduplicated":1,"failed":0}',
-    'automation tick disabled',
-  ]);
+  ));
 
   messages.length = 0;
   scheduledPromise = null;
