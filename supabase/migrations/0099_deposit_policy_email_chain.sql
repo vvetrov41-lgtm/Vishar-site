@@ -121,7 +121,7 @@ select
   r.locale,
   r.version + 1,
   r.subject,
-  E'Hi {{client_first_name}},\n\nYour tattoo appointment with {{artist_display_name}} at {{studio_name}} is in 72 hours, on {{appointment_date}} at {{appointment_time}}.\n\nAs stated when your booking deposit was arranged, from this point the deposit is non-refundable if you cancel the appointment.\n\nIf anything has changed, or you have a question before then, please reply to this email as soon as possible.\n\nSee you soon,\n{{studio_name}}',
+  E'Hi {{client_first_name}},\n\nYour tattoo appointment with {{artist_display_name}} at {{studio_name}} is in 72 hours, on {{appointment_date}} at {{appointment_time}}.\n\nPlease note: if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.\n\nIf anything has changed, or you have a question before then, please reply to this email as soon as possible.\n\nSee you soon,\n{{studio_name}}',
   'active',
   r.created_by
 from retired r;
@@ -679,7 +679,7 @@ begin
     and t.locale = 'en'
     and t.status = 'active'
     and t.artist_id is null
-    and t.body like '%from this point the deposit is non-refundable if you cancel the appointment.%';
+    and t.body like '%if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.%';
 
   if v_request_templates <> v_active_workspaces
      or v_confirmation_templates <> v_active_workspaces
