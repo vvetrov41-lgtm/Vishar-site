@@ -51,7 +51,7 @@ function renderRow(appointment: Appointment) {
 
 describe('appointment client response visibility', () => {
   it('reads authoritative client response fields from sessions', async () => {
-    const select = vi.fn(() => ({
+    const select = vi.fn((_columns: string) => ({
       order: vi.fn(() => ({
         limit: vi.fn(async () => ({
           data: [{
