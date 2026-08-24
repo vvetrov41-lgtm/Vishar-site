@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - agent/production-booking-e2e-20260824
+  pull_request:
+    branches:
+      - agent/platform-telegram-self-service
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -15,13 +19,17 @@ jobs:
     steps:
       - name: Checkout exact test head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Record exact SHA
         shell: bash
         run: |
           set -euo pipefail
-          echo "test_sha=$(git rev-parse HEAD)"
-          test "$(git branch --show-current)" = "agent/production-booking-e2e-20260824"
+          observed="$(git rev-parse HEAD)"
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "test_sha=${observed}"
+          test "$observed" = "$expected"
 
       - name: Create harmless reference image
         shell: bash
