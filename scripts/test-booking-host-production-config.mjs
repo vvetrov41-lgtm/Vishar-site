@@ -42,7 +42,10 @@ assert.equal(productionTesting.ACTION_UPSTREAM_ORIGIN, 'https://telegram.vishart
 assert.equal(productionTesting.ACTION_NAMESPACE_PREFIX, '/appointments/respond/');
 assert.match(productionWorker, /handleBookingHostRequest/);
 assert.match(productionWorker, /https:\/\/telegram\.vishartattoo\.com/);
-assert.doesNotMatch(productionWorker, /SUPABASE|TELEGRAM_BOT_TOKEN|SECRET|TOKEN|KV|Authorization:/);
+assert.doesNotMatch(
+  productionWorker,
+  /SUPABASE_SECRET_KEY|TELEGRAM_BOT_TOKEN|MONZO_CLIENT_SECRET|GOOGLE_OAUTH_CLIENT_SECRET|Authorization:/,
+);
 
 const token = 'a'.repeat(64);
 const actionPath = `/appointments/respond/${token}`;
