@@ -73,3 +73,18 @@ F-G claims `0086` for the private Telegram destination registry, single-use
 linking sessions and external-notification delivery state. Its runtime and
 production activation contract is documented in `docs/crm/TELEGRAM_SELF_SERVICE.md`.
 Any later schema work claims from `0091` after a fresh check.
+
+The client lifecycle workstream claims `0092` through `0095`, and its
+scheduling-integrity restack claims `0096`. Lifecycle Automation v1 claims
+`0097`: the first configuration that makes that engine do something, rather
+than more machinery. It ships, per active artist, a 72-hour and a 24-hour
+tattoo-session reminder plus a 24-hour consultation check-in (both
+`in_person_consultation` and `video_consultation`, which are one rule each
+because a lifecycle rule is conditioned on exactly one appointment type), the
+three service templates those rules select, and nothing else — no table, no
+function, no trigger, no scheduler, no delivery path and no credential. It
+deliberately ships no 72-hour consultation reminder and leaves `touch_up`
+unconfigured. Because a job materialises only from a new `appointment.scheduled`
+event and history is never backfilled, applying it cannot send an email and
+does not enrol already-booked clients. Any later schema work claims from `0098`
+after a fresh check.
