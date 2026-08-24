@@ -310,6 +310,50 @@ jobs:
       - name: Dry-run production migrations
         run: supabase db push --dry-run
 
+      - name: Preflight Cloudflare Pages target before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="$(curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${CRM_PAGES_PROJECT}")"
+          PAGES_PROJECT="$project" node <<'NODE'
+          const body = JSON.parse(process.env.PAGES_PROJECT || '{}');
+          if (body.success !== true || body.result?.name !== process.env.CRM_PAGES_PROJECT) {
+            throw new Error('Production Cloudflare Pages target preflight failed');
+          }
+          NODE
+
+      - name: Verify exact Telegram production Worker secret names before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
+          const expected = [
+            'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
+            'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+            'SUPABASE_SECRET_KEY',
+            'TELEGRAM_BOT_TOKEN',
+            'TELEGRAM_WEBHOOK_SECRET',
+          ].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Production Telegram Worker secret-name set mismatch before mutation: ${actual.join(', ')}`);
+          }
+          NODE
+
+      - name: Telegram production preflight before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          preflight_config="$RUNNER_TEMP/telegram.preflight.before-mutation.toml"
+          node scripts/generate-telegram-production-deploy-config.mjs "$preflight_config" --enable-linking
+          node scripts/preflight-telegram-production.mjs "$preflight_config" --allow-linking
+          rm -f "$preflight_config"
+
       - name: Apply production migrations
         run: supabase db push
 
