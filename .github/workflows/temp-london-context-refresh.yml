@@ -1,0 +1,128 @@
+name: Refresh London GEO Context
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: geo/london-context-refresh
+          fetch-depth: 1
+
+      - name: Update durable migration facts
+        shell: python
+        run: |
+          from pathlib import Path
+
+          profile = Path('geo_agent/PROJECT_PROFILE.md')
+          text = profile.read_text(encoding='utf-8')
+          old = (
+              '- The London commercial-positioning migration and metadata cleanup were approved\n'
+              '  in the project chat on 2026-08-24. Existing Manchester URL slugs are retained\n'
+              '  temporarily and are not evidence of the current target market.'
+          )
+          new = (
+              '- The London commercial-positioning migration and metadata cleanup were approved\n'
+              '  in the project chat on 2026-08-24. PR #426 migrated the three indexed specialty\n'
+              '  routes to London slugs and preserves their former Manchester URLs with permanent\n'
+              '  301 redirects.'
+          )
+          if text.count(old) != 1:
+              raise SystemExit('Expected exactly one stale PROJECT_PROFILE migration statement')
+          profile.write_text(text.replace(old, new), encoding='utf-8')
+
+          config = Path('geo_agent/config/geo_agent_config.json')
+          text = config.read_text(encoding='utf-8')
+          old = 'Existing Manchester URL slugs are temporarily retained for indexing continuity and are not evidence of the current target market.'
+          new = 'The three specialty pages now use London URL slugs; their former Manchester URLs are preserved only as permanent 301 redirect sources after PR #426.'
+          if text.count(old) != 1:
+              raise SystemExit('Expected exactly one stale context_notes migration statement')
+          config.write_text(text.replace(old, new), encoding='utf-8')
+
+      - name: Build bounded local context snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp-geo-context
+          mkdir .tmp-geo-context
+          cp index.html .tmp-geo-context/home.html
+          cp about/index.html .tmp-geo-context/about.html
+          cp black-and-grey-realism-london/index.html .tmp-geo-context/black-and-grey-realism-london.html
+          cp colour-realism-tattoo-london/index.html .tmp-geo-context/colour-realism-tattoo-london.html
+          cp cover-up-tattoo-london/index.html .tmp-geo-context/cover-up-tattoo-london.html
+          cp faq/index.html .tmp-geo-context/faq.html
+          cp aftercare/index.html .tmp-geo-context/aftercare.html
+          test "$(find .tmp-geo-context -type f -name '*.html' | wc -l)" -eq 7
+
+      - name: Refresh project context with canonical GEO launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/geo_agent_launcher.py --runtime codex collect-context \
+            --domain "https://vishartattoo.com/" \
+            --site-html-dir ".tmp-geo-context" \
+            --max-pages 7
+
+      - name: Verify refreshed artifacts
+        shell: python
+        run: |
+          from pathlib import Path
+
+          required = [
+              Path('geo_agent/reports/PROJECT_CONTEXT.md'),
+              Path('geo_agent/data/project_context.json'),
+              Path('geo_agent/data/processed/project_context_pages.csv'),
+              Path('geo_agent/data/processed/project_context_site_discovery.json'),
+          ]
+          old_routes = [
+              'colour-realism-tattoo-manchester',
+              'black-and-grey-realism-manchester',
+              'cover-up-tattoo-manchester',
+          ]
+          new_routes = [
+              'colour-realism-tattoo-london',
+              'black-and-grey-realism-london',
+              'cover-up-tattoo-london',
+          ]
+          for path in required:
+              if not path.is_file():
+                  raise SystemExit(f'Missing refreshed artifact: {path}')
+              text = path.read_text(encoding='utf-8-sig')
+              for old in old_routes:
+                  if old in text:
+                      raise SystemExit(f'Stale route {old} remains in refreshed artifact {path}')
+          combined = '\n'.join(path.read_text(encoding='utf-8-sig') for path in required)
+          for new in new_routes:
+              if new not in combined:
+                  raise SystemExit(f'Expected London route {new} not found in refreshed context artifacts')
+
+          profile = Path('geo_agent/PROJECT_PROFILE.md').read_text(encoding='utf-8')
+          config = Path('geo_agent/config/geo_agent_config.json').read_text(encoding='utf-8')
+          if 'Existing Manchester URL slugs are retained' in profile:
+              raise SystemExit('Stale migration statement remains in PROJECT_PROFILE')
+          if 'temporarily retained for indexing continuity' in config:
+              raise SystemExit('Stale migration statement remains in config context_notes')
+
+      - name: Remove temporary inputs and workflow, then commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp-geo-context
+          rm .github/workflows/temp-london-context-refresh.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'Refresh GEO project context after London URL migration'
+          git push origin HEAD:geo/london-context-refresh
