@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'workers/booking-host.js'
+      - 'workers/booking-host-production.js'
       - 'wrangler.booking-host.production.toml'
       - 'scripts/test-booking-host-worker.mjs'
       - 'scripts/test-booking-host-production-config.mjs'

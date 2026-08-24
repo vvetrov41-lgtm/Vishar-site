@@ -1,12 +1,13 @@
 name = "vishar-booking-host-production"
-main = "workers/booking-host.js"
+main = "workers/booking-host-production.js"
 compatibility_date = "2026-05-25"
 workers_dev = false
 preview_urls = false
 
 # Public, credential-free booking frontend. The Worker mirrors only the booking
-# and privacy pages plus their required static assets, then relays the exact
-# current multipart booking payload to the canonical production intake.
+# and privacy pages plus their required static assets, relays the exact current
+# multipart booking payload to the canonical production intake, and exposes the
+# branded appointment client-action path through a fixed first-party proxy.
 #
 # The production Custom Domain is intentionally NOT declared as a Wrangler
 # route. It is an existing account-level Workers Custom Domain:
