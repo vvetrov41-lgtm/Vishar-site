@@ -2,6 +2,7 @@ import {
   drainPersonalTelegramNotifications,
   drainTelegramOutbox,
 } from './lib/telegram-drain.js';
+import { runAutomationTick } from './lib/automation-tick.js';
 import { ConfigurationError } from './lib/http.js';
 import { createSupabaseClient, SupabaseError } from './lib/supabase.js';
 import {
@@ -86,6 +87,19 @@ async function runSharedGmailDrain(env) {
   } catch (error) {
     console.error('gmail outbox shared drain failed', JSON.stringify({
       code: safeFailureCode(error, 'gmail_shared_drain_error'),
+    }));
+    throw error;
+  }
+}
+
+async function runScheduledAutomationTick(env) {
+  try {
+    const summary = await runAutomationTick(env);
+    console.log('automation tick', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    console.error('automation tick failed', JSON.stringify({
+      code: safeFailureCode(error, 'automation_tick_error'),
     }));
     throw error;
   }
@@ -215,11 +229,14 @@ export default {
     if (env.TELEGRAM_DRAIN_ENABLED === 'true') tasks.push(runScheduledDrain(env));
     else console.log('telegram outbox drain disabled');
 
-    // Production already shares this cron with the Gmail Worker. Keep the
-    // bounded service-binding dispatch independent from Telegram so either task
-    // can fail without suppressing the other task's execution.
+    // Production already shares this cron with the Gmail Worker. Keep each
+    // bounded task independent so one failure cannot suppress another task's
+    // execution. Promise.all only aggregates their final scheduled outcome.
     if (env.GMAIL_SHARED_DRAIN_ENABLED === 'true') tasks.push(runSharedGmailDrain(env));
     else console.log('gmail outbox shared drain disabled');
+
+    if (env.AUTOMATION_TICK_ENABLED === 'true') tasks.push(runScheduledAutomationTick(env));
+    else console.log('automation tick disabled');
 
     if (!tasks.length) return;
     ctx.waitUntil(Promise.all(tasks));
@@ -233,6 +250,7 @@ export const __testing = {
   linkingConfigured,
   linkingMessage,
   readWebhookJson,
+  runScheduledAutomationTick,
   runScheduledDrain,
   runSharedGmailDrain,
   safeFailureCode,
