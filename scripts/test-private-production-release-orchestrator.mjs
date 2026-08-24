@@ -59,8 +59,12 @@ expectIncludes(deploySection, '[ "$PROJECT_URL" = "https://${PROJECT_REF}.supaba
 expectExcludes(deploySection, 'db reset --linked', 'production database');
 expectExcludes(deploySection, '--include-seed', 'production database');
 expectOrder(workflow, '- name: Dry-run production migrations', '- name: Apply production migrations', 'database rollout');
+expectOrder(workflow, '- name: Preflight Cloudflare Pages target before mutation', '- name: Apply production migrations', 'pre-mutation Pages control-plane check');
+expectOrder(workflow, '- name: Verify exact Telegram production Worker secret names before mutation', '- name: Apply production migrations', 'pre-mutation Telegram secret inventory');
+expectOrder(workflow, '- name: Telegram production preflight before mutation', '- name: Apply production migrations', 'pre-mutation Telegram control-plane check');
 expectOrder(workflow, '- name: Apply production migrations', '- name: Verify no production migrations remain', 'database readback');
 expectIncludes(deploySection, 'supabase db push --dry-run', 'database rollout');
+expectIncludes(deploySection, 'Production Cloudflare Pages target preflight failed', 'pre-mutation Pages control-plane check');
 
 expectIncludes(deploySection, "[ \"$CRM_ORIGIN\" = 'https://crm.vishartattoo.com' ]", 'CRM target');
 expectIncludes(deploySection, 'wrangler pages deploy dist', 'CRM deploy');
@@ -75,8 +79,8 @@ expectIncludes(deploySection, 'GMAIL_SHARED_DRAIN_ENABLED = "true"', 'Gmail shar
 expectIncludes(deploySection, 'service = "vishar-gmail-production"', 'Gmail service binding preservation');
 expectOrder(workflow, '- name: Telegram production preflight', '- name: Dry-run Telegram shared scheduler', 'Telegram rollout');
 expectOrder(workflow, '- name: Dry-run Telegram shared scheduler', '- name: Deploy Telegram shared scheduler', 'Telegram rollout');
-if (count(deploySection, 'node scripts/preflight-telegram-production.mjs') < 3) {
-  throw new Error('Telegram rollout: preflight must run before dry-run/deploy and after deploy');
+if (count(deploySection, 'node scripts/preflight-telegram-production.mjs') < 4) {
+  throw new Error('Telegram rollout: preflight must run before the first production mutation, before deploy and after deploy');
 }
 expectIncludes(deploySection, 'WRANGLER_OUTPUT_FILE_PATH', 'Telegram version evidence');
 expectIncludes(deploySection, 'wrangler versions list', 'Telegram version readback');
