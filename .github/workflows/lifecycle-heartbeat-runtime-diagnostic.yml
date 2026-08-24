@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - release/private-crm-rc91-lifecycle-heartbeat-diagnostic
+  pull_request:
+    branches:
+      - agent/platform-telegram-self-service
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: read
@@ -15,7 +22,11 @@ concurrency:
 jobs:
   inspect:
     name: Observe live lifecycle heartbeat without mutation
-    if: github.actor == github.repository_owner
+    if: >-
+      github.actor == github.repository_owner &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.head_ref == 'release/private-crm-rc91-lifecycle-heartbeat-diagnostic'))
     runs-on: ubuntu-latest
     timeout-minutes: 12
     environment: crm-production
@@ -25,12 +36,13 @@ jobs:
       WORKER_NAME: vishar-telegram-drain-production
       EXPECTED_RELEASE_SHA: 8a251eeae5c6000d2f7850cfacf643c6c4cea430
       EXPECTED_WORKER_VERSION: 31ab0046-87f0-491a-a9fd-a5dfa4e4c36e
+      DIAGNOSTIC_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout exact diagnostic snapshot
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.DIAGNOSTIC_SHA }}
           fetch-depth: 0
 
       - name: Verify diagnostic boundary before reading production
@@ -38,10 +50,16 @@ jobs:
         run: |
           set -euo pipefail
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
-          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc91-lifecycle-heartbeat-diagnostic' ]
-          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
-          git merge-base --is-ancestor "$EXPECTED_RELEASE_SHA" "$GITHUB_SHA"
-          mapfile -t changed < <(git diff --name-only "$EXPECTED_RELEASE_SHA" "$GITHUB_SHA" | sort)
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            [ "$GITHUB_REF_NAME" = 'release/private-crm-rc91-lifecycle-heartbeat-diagnostic' ]
+          else
+            [ "$GITHUB_EVENT_NAME" = 'pull_request' ]
+            [ "$GITHUB_HEAD_REF" = 'release/private-crm-rc91-lifecycle-heartbeat-diagnostic' ]
+            [ "$GITHUB_BASE_REF" = 'agent/platform-telegram-self-service' ]
+          fi
+          [ "$(git rev-parse HEAD)" = "$DIAGNOSTIC_SHA" ]
+          git merge-base --is-ancestor "$EXPECTED_RELEASE_SHA" "$DIAGNOSTIC_SHA"
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_RELEASE_SHA" "$DIAGNOSTIC_SHA" | sort)
           [ "${#changed[@]}" -eq 2 ]
           [ "${changed[0]}" = '.github/workflows/lifecycle-heartbeat-runtime-diagnostic.yml' ]
           [ "${changed[1]}" = '.github/workflows/private-production-release.yml' ]
