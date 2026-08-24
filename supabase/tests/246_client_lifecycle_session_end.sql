@@ -240,7 +240,7 @@ select ok(
 );
 select ok(
   (select subject = 'Session-end lifecycle test'
-      and body like 'Hi Session End,%'
+      and body like 'Hi Session,%'
       and body like '%Session End Test Artist%'
       and body not like '%{{%'
    from public.email_messages where automation_job_id = (select id from t_job)),
