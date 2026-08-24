@@ -272,7 +272,7 @@ export function AppointmentsPage() {
                 >
                   <option value="">{copy.noEnquiry}</option>
                   {data.enquiries.map((enquiry) => (
-                    <option key={enquiry.id} value={enquiry.reference_number}>{enquiry.reference_number}</option>
+                    <option key={enquiry.id} value={enquiry.id}>{enquiry.reference_number}</option>
                   ))}
                 </select>
               </label>
