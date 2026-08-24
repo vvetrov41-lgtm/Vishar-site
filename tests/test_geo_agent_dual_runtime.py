@@ -101,8 +101,9 @@ def test_shared_project_profile_is_single_source(project: Path) -> None:
     profile = (project / "geo_agent" / "PROJECT_PROFILE.md").read_text(encoding="utf-8")
     config = json.loads((project / "geo_agent" / "config" / "geo_agent_config.json").read_text(encoding="utf-8"))
     assert "Vladimir Vishar" in profile
-    assert "No Regrets Studios" in profile
+    assert "London" in profile
     assert config["project"]["domain"] == "https://vishartattoo.com/"
+    assert config["region"]["city"] == "London"
     assert "vishar tattoo" in [value.lower() for value in config["project"]["brand_variants"]]
 
 
