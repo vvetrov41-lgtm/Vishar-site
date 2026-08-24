@@ -43,6 +43,9 @@ jobs:
           api_root="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}"
           context='vishar/private-production-release'
           observer_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          runs_file="$RUNNER_TEMP/private-production-release-runs.json"
+          run_file="$RUNNER_TEMP/private-production-release-run.json"
+          trap 'rm -f "$runs_file" "$run_file"' EXIT
 
           post_status() {
             state="$1"
@@ -72,13 +75,15 @@ jobs:
           release_run_id=''
           release_run_url=''
           for _ in $(seq 1 24); do
-            runs="$(curl -fsS \
+            curl -fsS \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               -H 'Accept: application/vnd.github+json' \
               -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "${api_root}/actions/workflows/private-production-release.yml/runs?event=push&per_page=30")"
-            match="$(RUNS="$runs" TARGET_SHA="$GITHUB_SHA" node <<'NODE'
-          const body = JSON.parse(process.env.RUNS || '{}');
+              -o "$runs_file" \
+              "${api_root}/actions/workflows/private-production-release.yml/runs?event=push&per_page=30"
+            match="$(TARGET_SHA="$GITHUB_SHA" node - "$runs_file" <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
           const runs = Array.isArray(body.workflow_runs) ? body.workflow_runs : [];
           const match = runs.find((run) => run?.head_sha === process.env.TARGET_SHA);
           if (match?.id) {
@@ -106,13 +111,15 @@ jobs:
           post_status pending 'Exact production release is validating or waiting to roll out.' "$release_run_url"
 
           for _ in $(seq 1 225); do
-            run="$(curl -fsS \
+            curl -fsS \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               -H 'Accept: application/vnd.github+json' \
               -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "${api_root}/actions/runs/${release_run_id}")"
-            result="$(RUN="$run" TARGET_SHA="$GITHUB_SHA" node <<'NODE'
-          const run = JSON.parse(process.env.RUN || '{}');
+              -o "$run_file" \
+              "${api_root}/actions/runs/${release_run_id}"
+            result="$(TARGET_SHA="$GITHUB_SHA" node - "$run_file" <<'NODE'
+          const fs = require('fs');
+          const run = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
           if (run.head_sha !== process.env.TARGET_SHA) {
             throw new Error('Observed production run SHA mismatch');
           }
