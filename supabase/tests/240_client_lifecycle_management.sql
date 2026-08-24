@@ -344,5 +344,106 @@ select is(
   'the lifecycle control plane names no pre-existing artist'
 );
 
+-- ---------------------------------------------------------------------------
+-- System provenance is not a general exemption from approval
+--
+-- Migration 0093 lets an approved email exist with no approver, because a
+-- lifecycle message has no human author to name. That relaxation is only sound
+-- while it is tied to the job that produced it: otherwise any future insert
+-- path could reach the no-approver branch by writing 'system'. The constraint
+-- itself has to say so, not only the trigger.
+-- ---------------------------------------------------------------------------
+
+select throws_ok(
+  $$insert into public.email_messages (
+      status, artist_id, client_id, to_email, subject, body,
+      created_by, created_by_kind, approved_by, approved_at, automation_job_id
+    ) values (
+      'approved', 'c8011111-1111-4111-8111-111111111111'::uuid, null,
+      'nobody@example.test', 'Unapproved', 'Body',
+      null, 'system', null, now(), null)$$,
+  '23514', null,
+  'an approved system email with no lifecycle job is refused by the check constraint'
+);
+
+-- ---------------------------------------------------------------------------
+-- An event a rule can never match must not starve the ones it can
+--
+-- A rule conditioned on one appointment type still sees every session event
+-- its artist emits. Those pairs never produce a job, so if they are selected
+-- into the batch they are selected again on every tick, forever, in
+-- occurred_at order - and once there are more of them than the tick limit,
+-- real reminders behind them are never scheduled. The regression is written
+-- with a limit of one so a single unmatchable event is enough to prove it.
+-- ---------------------------------------------------------------------------
+
+insert into public.clients (id, full_name, email) values
+  ('c6011111-1111-4111-8111-111111111111', 'Starvation Client', 'starve@example.test');
+
+insert into public.projects
+  (id, artist_id, client_id, status, title, currency)
+values
+  ('c5011111-1111-4111-8111-111111111111', 'c8011111-1111-4111-8111-111111111111',
+   'c6011111-1111-4111-8111-111111111111', 'active', 'Starvation project', 'GBP');
+
+-- The consultation is older, so it sorts first and would take the whole batch.
+insert into public.sessions
+  (id, artist_id, client_id, appointment_type, status, start_at, end_at)
+values
+  ('c4011111-1111-4111-8111-111111111111', 'c8011111-1111-4111-8111-111111111111',
+   'c6011111-1111-4111-8111-111111111111', 'in_person_consultation', 'confirmed',
+   date_trunc('hour', now()) + interval '20 days',
+   date_trunc('hour', now()) + interval '20 days' + interval '30 minutes');
+
+insert into public.sessions
+  (id, artist_id, project_id, client_id, appointment_type, status, start_at, end_at)
+values
+  ('c4022222-2222-4222-8222-222222222222', 'c8011111-1111-4111-8111-111111111111',
+   'c5011111-1111-4111-8111-111111111111',
+   'c6011111-1111-4111-8111-111111111111', 'tattoo_session', 'confirmed',
+   date_trunc('hour', now()) + interval '30 days',
+   date_trunc('hour', now()) + interval '30 days' + interval '3 hours');
+
+select pg_temp.life_as('c9011111-1111-4111-8111-111111111111');
+set local role authenticated;
+select ok(
+  public.set_automation_rule_enabled((select id from t_artist_rule), true),
+  'the tattoo-session reminder is switched on'
+);
+reset role;
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+select crm_private.log_artist_activity(
+  'c8011111-1111-4111-8111-111111111111', 'appointment.scheduled', 'staff', null,
+  'c6011111-1111-4111-8111-111111111111', null, null,
+  'c4011111-1111-4111-8111-111111111111', null, '{}'::jsonb);
+select crm_private.log_artist_activity(
+  'c8011111-1111-4111-8111-111111111111', 'appointment.scheduled', 'staff', null,
+  'c6011111-1111-4111-8111-111111111111', null,
+  'c5011111-1111-4111-8111-111111111111',
+  'c4022222-2222-4222-8222-222222222222', null, '{}'::jsonb);
+
+-- One slot in the batch, and one unmatchable event ahead of the real one.
+select is(
+  (select materialised from public.service_run_automation_tick(1)),
+  1,
+  'the single available slot is spent on work that can actually be scheduled'
+);
+select is(
+  (select count(*)::int from public.automation_jobs j
+   where j.rule_id = (select id from t_artist_rule)
+     and j.session_id = 'c4022222-2222-4222-8222-222222222222'),
+  1,
+  'the tattoo session behind the consultation is scheduled rather than starved'
+);
+select is(
+  (select count(*)::int from public.automation_jobs j
+   where j.rule_id = (select id from t_artist_rule)
+     and j.session_id = 'c4011111-1111-4111-8111-111111111111'),
+  0,
+  'and the consultation the rule does not apply to produces no job at all'
+);
+
 select * from finish(true);
 rollback;
