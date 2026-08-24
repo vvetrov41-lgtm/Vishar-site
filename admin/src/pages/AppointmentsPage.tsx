@@ -10,6 +10,7 @@ import { useApi, useSession } from '../lib/session';
 import type { Client, Enquiry, Project, SessionStatus } from '../lib/types';
 import type {
   Appointment,
+  AppointmentClientResponse,
   AppointmentConflict,
   AppointmentType,
 } from '../lib/appointment-api';
@@ -271,7 +272,7 @@ export function AppointmentsPage() {
                 >
                   <option value="">{copy.noEnquiry}</option>
                   {data.enquiries.map((enquiry) => (
-                    <option key={enquiry.id} value={enquiry.id}>{enquiry.reference_number}</option>
+                    <option key={enquiry.id} value={enquiry.reference_number}>{enquiry.reference_number}</option>
                   ))}
                 </select>
               </label>
@@ -389,7 +390,7 @@ export function AppointmentsPage() {
   );
 }
 
-function AppointmentRow({
+export function AppointmentRow({
   appointment,
   client,
   enquiry,
@@ -430,6 +431,12 @@ function AppointmentRow({
       <div className="meta">
         <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
         <span className={appointment.status === 'confirmed' ? 'badge ok' : 'badge'}>{statusLabel}</span>{' '}
+        {appointment.client_response ? (
+          <span className={appointment.client_response === 'reschedule_requested' ? 'badge warn' : 'badge ok'}>
+            {clientResponseLabel(appointment.client_response, language)}
+            {appointment.client_response_at ? ` · ${formatDateTime(appointment.client_response_at, language)}` : ''}
+          </span>
+        ) : null}{' '}
         <span className="badge">{durationValue(appointment.duration_hours, language)}</span>{' '}
         <span className="badge">{paymentLabel}</span>{' '}
         <span className={appointment.calendar_sync_status === 'failed' ? 'badge warn' : 'badge'}>
@@ -537,6 +544,20 @@ function AppointmentRow({
 
 export function typeLabel(type: AppointmentType, language: Language): string {
   return TYPE_LABELS[language][type];
+}
+
+export function clientResponseLabel(response: AppointmentClientResponse, language: Language): string {
+  const labels: Record<Language, Record<AppointmentClientResponse, string>> = {
+    en: {
+      attendance_confirmed: 'Client confirmed',
+      reschedule_requested: 'Client requested reschedule',
+    },
+    ru: {
+      attendance_confirmed: 'Клиент подтвердил',
+      reschedule_requested: 'Клиент просит перенос',
+    },
+  };
+  return labels[language][response];
 }
 
 function calendarSyncLabel(appointment: Appointment, language: Language): string {
