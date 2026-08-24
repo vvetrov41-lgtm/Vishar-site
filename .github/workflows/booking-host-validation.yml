@@ -62,36 +62,39 @@ jobs:
       - name: Scan repository for committed secrets
         run: node scripts/scan-secrets.mjs
 
-      - name: Observe booking host RC2 production acceptance
+      - name: Observe booking host RC94 production acceptance
         if: github.head_ref == 'agent/booking-host-rc2-observer'
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_SHA: 970fb0a2c7719b2613e3a36404115feb7ca03f7b
-          RELEASE_BRANCH: release/booking-host-rc2-appointment-actions
+          EXPECTED_SHA: 60551f599d086c9fbcf3b5cd61c8500d88f07901
+          RELEASE_BRANCH: release/private-crm-rc94-booking-host-appointment-actions
           BOOKING_HOST: https://booking.vishartattoo.com
           ACTION_TOKEN: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
         shell: bash
         run: |
           set -euo pipefail
-          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production-booking-host.yml/runs"
+          headers=(
+            --header "Authorization: Bearer ${GH_TOKEN}"
+            --header 'Accept: application/vnd.github+json'
+            --header 'X-GitHub-Api-Version: 2022-11-28'
+          )
+
+          booking_api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production-booking-host.yml/runs"
           found=''
-          for attempt in $(seq 1 24); do
-            curl --fail --silent --show-error \
-              --header "Authorization: Bearer ${GH_TOKEN}" \
-              --header 'Accept: application/vnd.github+json' \
-              --header 'X-GitHub-Api-Version: 2022-11-28' \
+          for attempt in $(seq 1 36); do
+            curl --fail --silent --show-error "${headers[@]}" \
               --get \
               --data-urlencode "branch=${RELEASE_BRANCH}" \
               --data-urlencode 'event=push' \
               --data-urlencode 'per_page=20' \
-              "$api" > "$RUNNER_TEMP/runs.json"
-            found="$(jq -c --arg sha "$EXPECTED_SHA" '[.workflow_runs[] | select(.head_sha == $sha)][0] // empty' "$RUNNER_TEMP/runs.json")"
+              "$booking_api" > "$RUNNER_TEMP/booking-runs.json"
+            found="$(jq -c --arg sha "$EXPECTED_SHA" --arg branch "$RELEASE_BRANCH" '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch)][0] // empty' "$RUNNER_TEMP/booking-runs.json")"
             if [ -n "$found" ]; then
               status="$(jq -r '.status' <<<"$found")"
               conclusion="$(jq -r '.conclusion // ""' <<<"$found")"
-              echo "release_run_id=$(jq -r '.id' <<<"$found")"
-              echo "release_status=$status"
-              echo "release_conclusion=${conclusion:-pending}"
+              echo "booking_release_run_id=$(jq -r '.id' <<<"$found")"
+              echo "booking_release_status=$status"
+              echo "booking_release_conclusion=${conclusion:-pending}"
               if [ "$status" = 'completed' ]; then
                 test "$conclusion" = 'success'
                 break
@@ -105,10 +108,21 @@ jobs:
           test "$(jq -r '.head_sha' <<<"$found")" = "$EXPECTED_SHA"
           test "$(jq -r '.head_branch' <<<"$found")" = "$RELEASE_BRANCH"
 
+          private_api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/private-production-release.yml/runs"
+          curl --fail --silent --show-error "${headers[@]}" \
+            --get \
+            --data-urlencode "branch=${RELEASE_BRANCH}" \
+            --data-urlencode 'event=push' \
+            --data-urlencode 'per_page=20' \
+            "$private_api" > "$RUNNER_TEMP/private-runs.json"
+          private_count="$(jq --arg sha "$EXPECTED_SHA" --arg branch "$RELEASE_BRANCH" '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch)] | length' "$RUNNER_TEMP/private-runs.json")"
+          echo "full_private_release_runs_for_booking_ref=$private_count"
+          test "$private_count" = '0'
+
           root_status="$(curl --silent --show-error \
             --output "$RUNNER_TEMP/root.html" \
             --write-out '%{http_code}' \
-            "${BOOKING_HOST}/?rc2-observer=${EXPECTED_SHA}")"
+            "${BOOKING_HOST}/?rc94-observer=${EXPECTED_SHA}")"
           test "$root_status" = '200'
           grep -Fq 'https://booking.vishartattoo.com/api/enquiry' "$RUNNER_TEMP/root.html"
           if grep -Fq 'https://tattooai.vvetrov41.workers.dev/' "$RUNNER_TEMP/root.html"; then
@@ -116,12 +130,13 @@ jobs:
             exit 1
           fi
 
-          action_url="${BOOKING_HOST}/appointments/respond/${ACTION_TOKEN}?rc2-observer=${EXPECTED_SHA}"
+          action_url="${BOOKING_HOST}/appointments/respond/${ACTION_TOKEN}?rc94-observer=${EXPECTED_SHA}"
           action_status="$(curl --silent --show-error \
             --dump-header "$RUNNER_TEMP/action.headers" \
             --output "$RUNNER_TEMP/action.html" \
             --write-out '%{http_code}' \
             "$action_url")"
+          echo "branded_action_status=$action_status"
           test "$action_status" = '404'
           grep -Fq 'This link is unavailable' "$RUNNER_TEMP/action.html"
           grep -Eiq '^content-type: text/html' "$RUNNER_TEMP/action.headers"
@@ -133,4 +148,4 @@ jobs:
             exit 1
           fi
 
-          echo 'booking_host_rc2_live_acceptance=success'
+          echo 'booking_host_rc94_live_acceptance=success'
