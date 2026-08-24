@@ -16,6 +16,17 @@ const output = path.resolve(outputArg);
 const sourcePath = path.resolve(source.pathname);
 if (output === sourcePath) throw new Error('refusing to overwrite the tracked production template');
 
+const workerEntrypoint = path.join(path.dirname(sourcePath), 'workers/telegram-drain-worker.js');
+if (!fs.existsSync(workerEntrypoint)) {
+  throw new Error('production Telegram Worker entrypoint is missing');
+}
+const relativeWorkerEntrypoint = path.relative(path.dirname(output), workerEntrypoint)
+  .split(path.sep)
+  .join('/');
+if (!relativeWorkerEntrypoint || path.isAbsolute(relativeWorkerEntrypoint)) {
+  throw new Error('failed to derive a relative production Telegram Worker entrypoint');
+}
+
 let text = fs.readFileSync(source, 'utf8');
 const required = [
   'name = "vishar-telegram-drain-production"',
@@ -62,12 +73,19 @@ if (/^\s*\[\[services\]\]\s*$/m.test(text)) {
   throw new Error('tracked production template must remain unbound');
 }
 
+text = text.replace(
+  'main = "workers/telegram-drain-worker.js"',
+  `main = "${relativeWorkerEntrypoint}"`,
+);
 text = text.replace('TELEGRAM_DRAIN_ENABLED = "false"', 'TELEGRAM_DRAIN_ENABLED = "true"');
 text = text.replace('GMAIL_SHARED_DRAIN_ENABLED = "false"', 'GMAIL_SHARED_DRAIN_ENABLED = "true"');
 if (enableLinking) {
   text = text.replace('TELEGRAM_LINKING_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "true"');
 }
 
+if (!text.includes(`main = "${relativeWorkerEntrypoint}"`)) {
+  throw new Error('failed to resolve the production Telegram Worker entrypoint for generated config');
+}
 if (!text.includes('TELEGRAM_DRAIN_ENABLED = "true"')) {
   throw new Error('failed to enable the production Telegram drain');
 }
