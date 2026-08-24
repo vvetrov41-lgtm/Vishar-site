@@ -42,10 +42,11 @@ function makeHarness({ registryResult = [{
   destination_id: destinationId,
   destination_kind: 'artist',
   chat_id: sharedChatId,
-}], registryStatus = 200, withSharedToken = true } = {}) {
+}], registryStatus = 200, withSharedToken = true, environment = 'production' } = {}) {
   const rpcCalls = [];
   const telegramCalls = [];
   const env = {
+    VISHAR_ENVIRONMENT: environment,
     SUPABASE_URL: 'https://example.supabase.co',
     SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
     ...(withSharedToken ? { TELEGRAM_BOT_TOKEN: sharedToken } : {}),
@@ -120,6 +121,19 @@ for (const scenario of [
     workerId,
     fetchImpl: h.fetchImpl,
   });
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'telegram_shared_bot_not_configured');
+  assert.equal(h.telegramCalls.length, 0);
+  assert.ok(!h.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'));
+}
+
+{
+  const h = makeHarness({ withSharedToken: false, environment: 'staging' });
+  const result = await drainTelegramOutboxById(h.env, {
+    outboxId,
+    workerId,
+    fetchImpl: h.fetchImpl,
+  });
   assert.deepEqual(result, { claimed: true, outboxId, outcome: 'succeeded' });
   assert.equal(h.telegramCalls.length, 1);
   assert.equal(h.telegramCalls[0].body.chat_id, legacyChatId);
@@ -127,4 +141,4 @@ for (const scenario of [
   assert.ok(!h.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'));
 }
 
-console.log('Telegram registry cutover tests passed: shared-bot production delivery is registry-only and fail-closed, while no-shared-token staging fallback remains explicit.');
+console.log('Telegram registry cutover tests passed: production is registry-only even when shared credentials are absent, while retained staging keeps its explicit legacy binding path.');
