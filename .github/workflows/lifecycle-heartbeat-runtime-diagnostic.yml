@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - agent/lifecycle-heartbeat-runtime-diagnostic
+  pull_request:
+    branches:
+      - agent/platform-telegram-self-service
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: read
@@ -16,7 +23,11 @@ concurrency:
 jobs:
   inspect:
     name: Observe live lifecycle heartbeat without mutation
-    if: github.actor == github.repository_owner
+    if: >-
+      github.actor == github.repository_owner &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' &&
+        github.head_ref == 'agent/lifecycle-heartbeat-runtime-diagnostic'))
     runs-on: ubuntu-latest
     timeout-minutes: 12
     environment: crm-production
@@ -26,12 +37,13 @@ jobs:
       WORKER_NAME: vishar-telegram-drain-production
       EXPECTED_RELEASE_SHA: 8a251eeae5c6000d2f7850cfacf643c6c4cea430
       EXPECTED_WORKER_VERSION: 31ab0046-87f0-491a-a9fd-a5dfa4e4c36e
+      DIAGNOSTIC_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout diagnostic snapshot
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.DIAGNOSTIC_SHA }}
           fetch-depth: 0
 
       - name: Verify read-only diagnostic lineage and inputs
@@ -39,9 +51,15 @@ jobs:
         run: |
           set -euo pipefail
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
-          [ "$GITHUB_REF_NAME" = 'agent/lifecycle-heartbeat-runtime-diagnostic' ]
-          git merge-base --is-ancestor "$EXPECTED_RELEASE_SHA" "$GITHUB_SHA"
-          mapfile -t changed < <(git diff --name-only "$EXPECTED_RELEASE_SHA" "$GITHUB_SHA")
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            [ "$GITHUB_REF_NAME" = 'agent/lifecycle-heartbeat-runtime-diagnostic' ]
+          else
+            [ "$GITHUB_EVENT_NAME" = 'pull_request' ]
+            [ "$GITHUB_HEAD_REF" = 'agent/lifecycle-heartbeat-runtime-diagnostic' ]
+            [ "$GITHUB_BASE_REF" = 'agent/platform-telegram-self-service' ]
+          fi
+          git merge-base --is-ancestor "$EXPECTED_RELEASE_SHA" "$DIAGNOSTIC_SHA"
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_RELEASE_SHA" "$DIAGNOSTIC_SHA")
           [ "${#changed[@]}" -eq 1 ]
           [ "${changed[0]}" = '.github/workflows/lifecycle-heartbeat-runtime-diagnostic.yml' ]
           [ -n "$CLOUDFLARE_API_TOKEN" ]
@@ -61,7 +79,7 @@ jobs:
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             -H 'Content-Type: application/json' \
             --data "$payload" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" >/dev/null
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${DIAGNOSTIC_SHA}" >/dev/null
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -132,6 +150,7 @@ jobs:
             'automation tick failed',
           ];
           let scheduledEvents = 0;
+          let okScheduledEvents = 0;
           let successfulAutomationTicks = 0;
           for await (const line of rl) {
             let value;
@@ -141,9 +160,12 @@ jobs:
               || Object.prototype.hasOwnProperty.call(event, 'cron');
             if (!isScheduled) continue;
             scheduledEvents += 1;
+            const outcome = typeof value?.outcome === 'string' ? value.outcome : 'unknown';
+            if (outcome === 'ok') okScheduledEvents += 1;
+            let eventHasSuccessfulAutomationTick = false;
             const safe = {
               event: 'scheduled',
-              outcome: typeof value?.outcome === 'string' ? value.outcome : 'unknown',
+              outcome,
               timestamp: Number.isFinite(value?.eventTimestamp) ? value.eventTimestamp : null,
               cron: typeof event?.cron === 'string' ? event.cron : null,
               logs: [],
@@ -153,17 +175,25 @@ jobs:
               if (!safePrefixes.some((prefix) => raw.startsWith(prefix))) continue;
               const clipped = raw.slice(0, 500);
               safe.logs.push(clipped);
-              if (raw.startsWith('automation tick {')) successfulAutomationTicks += 1;
+              if (raw.startsWith('automation tick {')) eventHasSuccessfulAutomationTick = true;
             }
+            if (outcome === 'ok' && eventHasSuccessfulAutomationTick) successfulAutomationTicks += 1;
             console.log(JSON.stringify(safe));
           }
-          console.log(JSON.stringify({ scheduled_events_seen: scheduledEvents, successful_automation_ticks_seen: successfulAutomationTicks }));
+          console.log(JSON.stringify({
+            scheduled_events_seen: scheduledEvents,
+            ok_scheduled_events_seen: okScheduledEvents,
+            successful_automation_ticks_seen: successfulAutomationTicks,
+          }));
           if (scheduledEvents < 1) {
             console.error('No Cloudflare scheduled event observed in one cron window');
             process.exitCode = 2;
-          } else if (successfulAutomationTicks < 1) {
-            console.error('Scheduled event observed, but no successful automation tick log was observed');
+          } else if (okScheduledEvents < 1) {
+            console.error('Scheduled event observed, but no outcome=ok scheduled invocation was observed');
             process.exitCode = 3;
+          } else if (successfulAutomationTicks < 1) {
+            console.error('Outcome=ok scheduled invocation observed, but no successful automation tick log was observed on it');
+            process.exitCode = 4;
           }
           NODE
 
@@ -196,8 +226,8 @@ jobs:
             echo "- Worker version: \`$EXPECTED_WORKER_VERSION\`"
             echo '- Live `AUTOMATION_TICK_ENABLED=true` read back from Cloudflare'
             echo '- Live cron is exactly `*/5 * * * *`'
-            echo '- At least one real scheduled event was observed'
-            echo '- That event emitted a successful, redacted `automation tick` summary'
+            echo '- At least one real scheduled event was observed with `outcome=ok`'
+            echo '- That same event emitted a successful, redacted `automation tick` summary'
             echo '- No production mutation is performed by this diagnostic'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -222,4 +252,4 @@ jobs:
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             -H 'Content-Type: application/json' \
             --data "$payload" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" >/dev/null
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${DIAGNOSTIC_SHA}" >/dev/null
