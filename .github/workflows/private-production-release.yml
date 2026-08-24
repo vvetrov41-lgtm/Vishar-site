@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'release/private-crm-rc*'
+      - '!release/private-crm-rc*-booking-host*'
   workflow_dispatch:
 
 permissions:
@@ -34,6 +35,10 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-booking-host*)
+              echo 'Booking-host release refs are handled by the bounded booking-host workflow only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*) ;;
             *)
               echo 'Private production release may run only from release/private-crm-rc*.' >&2
@@ -94,6 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-booking-host*) exit 1 ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
@@ -146,6 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-booking-host*) exit 1 ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
@@ -235,6 +242,10 @@ jobs:
             exit 1
           }
           case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-booking-host*)
+              echo 'Booking-host release refs must never enter the full private production rollout.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*) ;;
             *)
               echo 'Private production release may run only from release/private-crm-rc*.' >&2
