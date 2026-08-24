@@ -1,0 +1,217 @@
+name: Deploy production booking host
+
+on:
+  push:
+    branches:
+      - 'release/booking-host-rc*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production-booking-host
+  cancel-in-progress: false
+
+env:
+  WORKER_NAME: vishar-booking-host-production
+  PRODUCTION_CONFIG: wrangler.booking-host.production.toml
+  PRODUCTION_HOST: https://booking.vishartattoo.com
+
+jobs:
+  deploy:
+    name: Booking host production rollout
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+
+    steps:
+      - name: Verify bounded release trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTOR" = 'vvetrov41-lgtm'
+          case "$GITHUB_REF_NAME" in
+            release/booking-host-rc*) ;;
+            *) echo 'Unexpected booking-host release branch.' >&2; exit 1 ;;
+          esac
+
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable release tip and lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          tips="$(git ls-remote --heads origin "refs/heads/$GITHUB_REF_NAME")"
+          printf '%s' "$tips" | awk '{print $1}' | grep -Fxq "$GITHUB_SHA"
+          git merge-base --is-ancestor 49b7bac137cb24257d3b2ca5d81fd6157c5a1c79 "$GITHUB_SHA"
+          test -f workers/booking-host.js
+          test -f wrangler.booking-host.production.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Re-run exact booking-host validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm audit --audit-level=moderate
+          node scripts/test-booking-host-worker.mjs
+          node scripts/test-booking-host-production-config.mjs
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/booking-host-production-wrangler.log \
+          WRANGLER_SEND_METRICS=false \
+          npx wrangler deploy \
+            --config "$PRODUCTION_CONFIG" \
+            --dry-run \
+            --outdir .wrangler/booking-host-production-dry-run
+          node scripts/scan-secrets.mjs
+
+      - name: Cloudflare preflight and current deployment snapshot
+        id: preflight
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$api/settings" > "$RUNNER_TEMP/booking-host-settings-before.json"
+          SETTINGS_FILE="$RUNNER_TEMP/booking-host-settings-before.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.SETTINGS_FILE, 'utf8'));
+          if (body?.success !== true || !body.result) throw new Error('Unable to verify current Worker settings.');
+          const bindings = Array.isArray(body.result.bindings) ? body.result.bindings : [];
+          if (bindings.length !== 0) {
+            throw new Error(`Booking host unexpectedly has ${bindings.length} live binding(s); refusing replacement deploy.`);
+          }
+          NODE
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$api/deployments" > "$RUNNER_TEMP/booking-host-deployments-before.json"
+          before_id="$(DEPLOYMENTS_FILE="$RUNNER_TEMP/booking-host-deployments-before.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.DEPLOYMENTS_FILE, 'utf8'));
+          const rows = body?.result?.deployments;
+          if (body?.success !== true || !Array.isArray(rows) || !rows[0]?.id) {
+            throw new Error('Unable to resolve current booking-host deployment.');
+          }
+          process.stdout.write(rows[0].id);
+          NODE
+          )"
+          echo "before_deployment_id=$before_id" >> "$GITHUB_OUTPUT"
+
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/booking-host-before.html" --write-out '%{http_code}' "${PRODUCTION_HOST}/?release-preflight=${GITHUB_SHA}")"
+          test "$status" = '200'
+
+      - name: Deploy only the credential-free booking host Worker
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/booking-host-production-wrangler.log \
+          WRANGLER_SEND_METRICS=false \
+          npx wrangler deploy --config "$PRODUCTION_CONFIG" --name "$WORKER_NAME"
+
+      - name: Read back deployed state and live HTTP boundary
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          BEFORE_DEPLOYMENT_ID: ${{ steps.preflight.outputs.before_deployment_id }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$api/settings" > "$RUNNER_TEMP/booking-host-settings-after.json"
+          SETTINGS_FILE="$RUNNER_TEMP/booking-host-settings-after.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.SETTINGS_FILE, 'utf8'));
+          if (body?.success !== true || !body.result) throw new Error('Unable to verify deployed Worker settings.');
+          const bindings = Array.isArray(body.result.bindings) ? body.result.bindings : [];
+          if (bindings.length !== 0) throw new Error('Booking host gained an unexpected live binding.');
+          if (body.result.compatibility_date !== '2026-05-25') {
+            throw new Error(`Unexpected compatibility date: ${body.result.compatibility_date || 'missing'}`);
+          }
+          NODE
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$api/deployments" > "$RUNNER_TEMP/booking-host-deployments-after.json"
+          AFTER_FILE="$RUNNER_TEMP/booking-host-deployments-after.json" BEFORE_DEPLOYMENT_ID="$BEFORE_DEPLOYMENT_ID" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.AFTER_FILE, 'utf8'));
+          const rows = body?.result?.deployments;
+          if (body?.success !== true || !Array.isArray(rows) || !rows[0]?.id) {
+            throw new Error('Unable to resolve deployed booking-host version.');
+          }
+          if (rows[0].id === process.env.BEFORE_DEPLOYMENT_ID) {
+            throw new Error('Cloudflare deployment id did not change after deploy.');
+          }
+          console.log(`active_deployment_id=${rows[0].id}`);
+          console.log(`active_version_id=${rows[0]?.versions?.[0]?.version_id || 'unknown'}`);
+          NODE
+
+          status="$(curl --silent --show-error --output "$RUNNER_TEMP/booking-host-after.html" --write-out '%{http_code}' "${PRODUCTION_HOST}/?release-readback=${GITHUB_SHA}")"
+          test "$status" = '200'
+          grep -Fq 'https://booking.vishartattoo.com/api/enquiry' "$RUNNER_TEMP/booking-host-after.html"
+          if grep -Fq 'https://tattooai.vvetrov41.workers.dev/' "$RUNNER_TEMP/booking-host-after.html"; then
+            echo 'Live booking host still exposes the direct production intake endpoint.' >&2
+            exit 1
+          fi
+
+          wrong_origin_status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/booking-host-wrong-origin.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Origin: https://invalid.example' \
+            --form-string 'name=boundary-probe' \
+            "${PRODUCTION_HOST}/api/enquiry")"
+          test "$wrong_origin_status" = '403'
+
+          stale_json_status="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/booking-host-stale-json.json" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Origin: https://booking.vishartattoo.com' \
+            --header 'Content-Type: application/json' \
+            --data '{"type":"tattoo-enquiry"}' \
+            "${PRODUCTION_HOST}/api/enquiry")"
+          test "$stale_json_status" = '415'
+          grep -Fq 'multipart_required' "$RUNNER_TEMP/booking-host-stale-json.json"
+
+      - name: Production rollout summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Dedicated booking host rollout'
+            echo "- Exact release SHA: \`$GITHUB_SHA\`"
+            echo '- Worker: `vishar-booking-host-production` only'
+            echo '- Host: `booking.vishartattoo.com`'
+            echo '- Bindings/secrets: expected zero'
+            echo '- DNS/custom-domain mutation: none'
+            echo '- Database/customer-data mutation by acceptance probes: none'
+          } >> "$GITHUB_STEP_SUMMARY"
