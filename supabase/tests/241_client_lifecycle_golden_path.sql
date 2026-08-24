@@ -411,6 +411,247 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
+-- Suppression is re-read at delivery, not at scheduling
+--
+-- The order of events is the whole assertion. The job is materialised while the
+-- client is perfectly contactable, the client's address is suppressed only
+-- afterwards, and the appointment is then moved so the reminder comes due. A
+-- gate consulted when the work was scheduled would send this message; a gate
+-- consulted before the send does not.
+-- ---------------------------------------------------------------------------
+
+select pg_temp.lifecycle_artist();
+set local role authenticated;
+create temporary table t_blocked_session as
+select (
+  public.schedule_appointment(
+    (select id from t_artist),
+    'e7011111-1111-4111-8111-111111111111',
+    'tattoo_session'::public.appointment_type,
+    (select base_at + interval '144 hours' from t_clock),
+    (select base_at + interval '146 hours' from t_clock),
+    'confirmed'::public.session_status,
+    null,
+    'e6011111-1111-4111-8111-111111111111',
+    'Lifecycle suppression fixture'
+  ) ->> 'appointment_id'
+)::uuid as id;
+grant select on t_blocked_session to public;
+
+select is(
+  public.may_contact_client(
+    'e7011111-1111-4111-8111-111111111111',
+    'email'::public.message_template_channel,
+    'session_reminder_24h'),
+  true,
+  'the client is contactable at the moment the reminder is scheduled'
+);
+reset role;
+
+select pg_temp.lifecycle_backend();
+set local role service_role;
+select * from public.service_run_automation_tick(100);
+reset role;
+
+create temporary table t_blocked_job as
+select j.id
+from public.automation_jobs j
+where j.rule_id = (select id from t_rule)
+  and j.session_id = (select id from t_blocked_session);
+grant select on t_blocked_job to public;
+
+select is((select count(*)::int from t_blocked_job), 1,
+  'the reminder is scheduled while the client is still contactable');
+select is(
+  (select status::text from public.automation_jobs
+   where id = (select id from t_blocked_job)),
+  'pending',
+  'and waits, as any future reminder does'
+);
+
+-- Only now does the address stop working.
+select pg_temp.lifecycle_artist();
+set local role authenticated;
+select isnt(
+  public.suppress_client_communications(
+    'e7011111-1111-4111-8111-111111111111',
+    'email'::public.message_template_channel,
+    'bounced'::public.suppression_reason,
+    'hard_bounce'),
+  null,
+  'the client mailbox starts bouncing after the reminder was already queued'
+);
+select is(
+  public.may_contact_client(
+    'e7011111-1111-4111-8111-111111111111',
+    'email'::public.message_template_channel,
+    'session_reminder_24h'),
+  false,
+  'the shared gate now refuses even this service message'
+);
+
+-- Bring the appointment inside the reminder window through the ordinary RPC.
+select lives_ok(
+  $$select public.reschedule_appointment(
+      (select id from t_blocked_session),
+      (select base_at + interval '12 hours' from t_clock),
+      (select base_at + interval '14 hours' from t_clock))$$,
+  'the appointment moves into the reminder window'
+);
+reset role;
+
+select pg_temp.lifecycle_backend();
+set local role service_role;
+select * from public.service_run_automation_tick(100);
+reset role;
+
+select is(
+  (select status::text from public.automation_jobs
+   where id = (select id from t_blocked_job)),
+  'cancelled',
+  'a due reminder to a suppressed address is withdrawn rather than sent'
+);
+select is(
+  (select last_error_category from public.automation_jobs
+   where id = (select id from t_blocked_job)),
+  'client_blocked',
+  'and the recorded reason is the client gate, not a delivery failure'
+);
+select is(
+  (select count(*)::int from public.email_messages
+   where automation_job_id = (select id from t_blocked_job)),
+  0,
+  'no CRM email row was written for the suppressed client'
+);
+select is(
+  (select count(*)::int from public.integration_outbox o
+   where o.dedupe_key = 'email:automation:' || (select id from t_blocked_job)::text),
+  0,
+  'and nothing reached the Gmail outbox'
+);
+
+-- ---------------------------------------------------------------------------
+-- Everything this artist produced stayed inside this artist
+-- ---------------------------------------------------------------------------
+
+select is(
+  (select count(*)::int
+   from public.automation_jobs j
+   join public.sessions s on s.id = j.session_id
+   where j.artist_id <> s.artist_id),
+  0,
+  'no lifecycle job is scoped to one artist while pointing at another artist''s appointment'
+);
+select is(
+  (select count(*)::int
+   from public.email_messages m
+   join public.automation_jobs j on j.id = m.automation_job_id
+   where m.artist_id <> j.artist_id),
+  0,
+  'and no automation email belongs to an artist other than the job that made it'
+);
+select is(
+  (select count(*)::int
+   from public.automation_jobs j
+   where j.action_type = 'send_client_message'::public.automation_action_type
+     and j.artist_id <> (select id from t_artist)),
+  0,
+  'the two artists that existed before this test gained no client-message work'
+);
+
+-- ---------------------------------------------------------------------------
+-- Revoking one membership row closes the lifecycle surface
+-- ---------------------------------------------------------------------------
+
+insert into auth.users (id, email) values
+  ('e9033333-3333-4333-8333-333333333333', 'lifecycle-manager@example.test');
+insert into public.profiles (id, email, display_name, role, is_active) values
+  ('e9033333-3333-4333-8333-333333333333', 'lifecycle-manager@example.test',
+   'Lifecycle Manager', 'booking_manager', true);
+
+create function pg_temp.lifecycle_manager() returns void language sql as $$
+  select set_config(
+    'request.jwt.claims',
+    '{"sub":"e9033333-3333-4333-8333-333333333333","role":"authenticated"}',
+    true
+  )::void;
+$$;
+grant execute on function pg_temp.lifecycle_manager() to authenticated, service_role;
+
+select pg_temp.lifecycle_admin();
+set local role authenticated;
+select isnt(
+  public.grant_workspace_artist_membership(
+    'e9033333-3333-4333-8333-333333333333', (select id from t_artist),
+    'manager'::public.artist_access_level, false, false, true, false, true),
+  null,
+  'the studio staffs a manager onto the new artist'
+);
+reset role;
+
+select pg_temp.lifecycle_manager();
+set local role authenticated;
+select is(
+  (select count(*)::int
+   from public.list_client_lifecycle_rules((select id from t_artist))),
+  1,
+  'the manager can read the artist''s lifecycle policy'
+);
+reset role;
+
+select pg_temp.lifecycle_admin();
+set local role authenticated;
+select isnt(
+  public.grant_workspace_artist_membership(
+    'e9033333-3333-4333-8333-333333333333', (select id from t_artist),
+    'manager'::public.artist_access_level, false, false, true, false, false),
+  null,
+  'the studio revokes that seat'
+);
+reset role;
+
+select pg_temp.lifecycle_manager();
+set local role authenticated;
+select is(
+  (select count(*)::int
+   from public.list_client_lifecycle_rules((select id from t_artist))),
+  0,
+  'and the lifecycle policy leaves their scope in the same instant'
+);
+select is(
+  (select count(*)::int from public.list_client_lifecycle_rules(null)),
+  0,
+  'including when they ask without naming an artist at all'
+);
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- Nothing credential-shaped reaches the browser surface
+--
+-- The artist has a real Gmail route by this point: an integration key and a
+-- mailbox address. Neither is part of what a CRM user reads about their own
+-- automations, and the reminder they can read is addressed by the engine
+-- rather than by anything the browser supplied.
+-- ---------------------------------------------------------------------------
+
+select pg_temp.lifecycle_artist();
+set local role authenticated;
+select is(
+  (select count(*)::int
+   from public.list_client_lifecycle_rules((select id from t_artist)) r
+   where r::text ~* '(google_gmail_lifecycle_third|lifecycle-third@example\.test|lifecycle-client@example\.test)'),
+  0,
+  'the lifecycle read surface carries no integration key, mailbox or client address'
+);
+select cmp_ok(
+  (select count(*)::int
+   from public.list_client_lifecycle_rules((select id from t_artist))),
+  '>=', 1,
+  'even though it does carry the artist''s own rule'
+);
+reset role;
+
+-- ---------------------------------------------------------------------------
 -- No artist-specific special case exists in the lifecycle path
 -- ---------------------------------------------------------------------------
 
