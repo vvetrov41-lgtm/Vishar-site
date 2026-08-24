@@ -30,7 +30,6 @@ jobs:
         github.head_ref == 'agent/lifecycle-heartbeat-runtime-diagnostic'))
     runs-on: ubuntu-latest
     timeout-minutes: 12
-    environment: crm-production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
