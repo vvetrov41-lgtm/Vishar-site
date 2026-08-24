@@ -157,7 +157,7 @@
         <div class="absolute inset-0 z-0">
             <picture class="block w-full h-full">
                 <source srcset="/assets/hero/hero.webp" type="image/webp">
-                <img src="/assets/hero/hero.jpg" alt="Black and grey realism hannya demon artwork by Vladimir Vishar, Manchester tattoo artist" loading="eager" fetchpriority="high" width="1500" height="1024" class="w-full h-full object-cover scale-105 opacity-60">
+                <img src="/assets/hero/hero.jpg" alt="Black and grey realism hannya demon artwork by Vladimir Vishar, London tattoo artist" loading="eager" fetchpriority="high" width="1500" height="1024" class="w-full h-full object-cover scale-105 opacity-60">
             </picture>
             <div class="absolute inset-0 bg-gradient-to-b from-black/20 via-black/40 to-black"></div>
         </div>
@@ -921,7 +921,7 @@
     const galleryFiles = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg'];
     const galleryAlts = [
       'Vladimir Vishar holding a tattoo convention award, with a colour realism sleeve visible',
-      'Portrait of Vladimir Vishar, Manchester realism tattoo artist',
+      'Portrait of Vladimir Vishar, London realism tattoo artist',
       'Vladimir Vishar featured on the cover of Ink Legends Magazine',
       'Vladimir Vishar painting a dark realism skull piece',
       'Vladimir Vishar at a tattoo convention next to a client\'s healed leg tattoo',
@@ -955,7 +955,7 @@
           w.className = 'aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full';
           w.setAttribute('aria-label', `Open portfolio image ${i+1} of ${portfolioImages.length}`);
           w.addEventListener('click', () => openLb(i));
-          w.innerHTML = `${buildPortfolioImage(file, `Realism tattoo by Vladimir Vishar, Manchester &amp; Salford — portfolio piece ${i+1}`)}<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
+          w.innerHTML = `${buildPortfolioImage(file, `Realism tattoo by Vladimir Vishar, London — portfolio piece ${i+1}`)}<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
           pg.appendChild(w);
         });
       }
@@ -964,7 +964,7 @@
         galleryFiles.forEach((file, i) => {
           const w = document.createElement('div');
           w.className = 'aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group';
-          w.innerHTML = buildStudioGalleryImage(file, galleryAlts[i] || 'Vladimir Vishar, Manchester realism tattoo artist');
+          w.innerHTML = buildStudioGalleryImage(file, galleryAlts[i] || 'Vladimir Vishar, London realism tattoo artist');
           gg.appendChild(w);
         });
       }
