@@ -96,8 +96,9 @@ marketplace; do not compare unlike entities without labelling the difference.
 - Deep context was collected from the repository's seven core HTML pages.
 - Brand variants were explicitly confirmed by Vladimir Vishar on 2026-07-14.
 - The London commercial-positioning migration and metadata cleanup were approved
-  in the project chat on 2026-08-24. Existing Manchester URL slugs are retained
-  temporarily and are not evidence of the current target market.
+  in the project chat on 2026-08-24. PR #426 migrated the three indexed specialty
+  routes to London slugs and preserves their former Manchester URLs with permanent
+  301 redirects.
 - Technical SEO and LLM crawler remediation through PR #159 is existing
   evidence, but future live measurements must still record their own date,
   method, location, device, and provider.
