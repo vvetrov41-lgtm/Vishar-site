@@ -92,39 +92,17 @@ where a.is_active
       and t.status = 'active'
   );
 
--- Preserve history: retire the active 0097 72h version and activate a new one.
-with current_72h as (
-  select t.*
-  from public.message_templates t
-  where t.purpose = 'session_reminder_72h'
-    and t.channel = 'email'
-    and t.locale = 'en'
-    and t.status = 'active'
-),
-retired as (
-  update public.message_templates t
-  set status = 'retired',
-      updated_at = now()
-  from current_72h c
-  where t.id = c.id
-  returning c.*
-)
-insert into public.message_templates (
-  workspace_id, artist_id, purpose, channel, locale, version,
-  subject, body, status, created_by
-)
-select
-  r.workspace_id,
-  r.artist_id,
-  r.purpose,
-  r.channel,
-  r.locale,
-  r.version + 1,
-  r.subject,
-  E'Hi {{client_first_name}},\n\nYour tattoo appointment with {{artist_display_name}} at {{studio_name}} is in 72 hours, on {{appointment_date}} at {{appointment_time}}.\n\nPlease note: if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.\n\nIf anything has changed, or you have a question before then, please reply to this email as soon as possible.\n\nSee you soon,\n{{studio_name}}',
-  'active',
-  r.created_by
-from retired r;
+-- Keep the current active template id stable because lifecycle rules resolve by
+-- purpose/channel/locale. The migration updates the reviewed copy in place and
+-- increments its version instead of creating a second retired+active pair.
+update public.message_templates t
+set body = E'Hi {{client_first_name}},\n\nYour tattoo appointment with {{artist_display_name}} at {{studio_name}} is in 72 hours, on {{appointment_date}} at {{appointment_time}}.\n\nPlease note: if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.\n\nIf anything has changed, or you have a question before then, please reply to this email as soon as possible.\n\nSee you soon,\n{{studio_name}}',
+    version = t.version + 1,
+    updated_at = now()
+where t.purpose = 'session_reminder_72h'
+  and t.channel = 'email'
+  and t.locale = 'en'
+  and t.status = 'active';
 
 -- ---------------------------------------------------------------------------
 -- 2. Payment provenance on system-approved email
