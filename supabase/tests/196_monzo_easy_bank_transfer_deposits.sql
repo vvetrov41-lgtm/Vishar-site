@@ -88,14 +88,14 @@ select is((select (result ->> 'amount')::numeric from first_request), 250::numer
 select ok((select result ->> 'public_path' from first_request) like '/pay-by-bank-transfer/%',
   'the client-facing path contains only the payment route and opaque id');
 select is((select result ->> 'delivery_status' from first_request), 'queued_provider_not_connected',
-  'email is queued honestly while no provider is connected');
+  'legacy RPC reports queued while the DB delivery contract handles provider routing');
 
 select is(
   (select count(*)::int from public.integration_outbox
-   where kind = 'transactional_email'
+   where kind = 'approved_email'
      and session_id = 'c6611111-1111-4111-8111-111111111111'),
   1,
-  'one deposit email job is durably deduplicated'
+  'one deposit email job enters the approved-email delivery path and is durably deduplicated'
 );
 
 create temporary table replay_request as
