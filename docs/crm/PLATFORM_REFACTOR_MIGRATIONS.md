@@ -33,10 +33,12 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0096` | Client lifecycle scheduling integrity | claimed on private CRM lineage |
 | `0097` | Lifecycle Automation v1 production activation | claimed in PR #414 |
 | `0098` | Appointment client-action capability foundation | claimed on `agent/appointment-client-actions-foundation` |
+| `0099` | Deposit-policy Gmail delivery chain | claimed in PR #428 |
+| `0100` | Appointment client-action lifecycle activation | claimed on `agent/appointment-client-actions-activation-v2` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0099`
+`0101`
 
 ## Allocation rule for unfinished phases
 
@@ -94,12 +96,28 @@ Because a job materialises only from a new `appointment.scheduled` event and
 history is never backfilled, applying it cannot send an email and does not
 enrol already-booked clients.
 
-Appointment client actions claim `0098`. That migration is deliberately an inert
-foundation: it stores non-terminal client responses separately from internal
+Appointment client actions claim `0098` for their inert capability foundation.
+That migration stores non-terminal client responses separately from internal
 appointment status, adds server-only one-time capabilities bound to the exact
 appointment version, exposes only narrow backend resolve/apply RPCs, and keeps
 reschedule as a request while preserving the existing Calendar cancellation
-path for an explicit client cancel. No `0097` template is changed and no token
-is issued merely by applying `0098`; reminder-link activation remains a separate
-workstream after review. Any later schema work claims from `0099` after a fresh
-check.
+path for an explicit client cancel. Applying `0098` itself issues no token.
+
+Deposit-policy Gmail delivery claims `0099`, merged in PR #428 and applied to
+production before `0100` was allocated. It connects deposit request and paid
+confirmation mail to the existing approved-email Gmail path, adds payment
+provenance to system-approved mail and preserves the conditional 72-hour
+non-refundable cancellation wording in the tattoo reminder.
+
+Appointment client-action lifecycle activation claims `0100`. It adds the three
+catalogued action-link variables and activates Confirm attendance, Request a
+different time and Cancel in the existing 24-hour tattoo and consultation
+emails. The 72-hour tattoo message deliberately remains action-free: when an
+appointment is first scheduled inside 24 hours, both the overdue 72-hour job and
+the 24-hour job can execute in one automation tick, while the 0098 minting
+contract permits only one active capability per appointment/action. Keeping the
+72-hour email action-free prevents the later 24-hour mint from invalidating
+links just written into an email from the same tick. Capability minting remains
+inside the database-owned lifecycle execution transaction, after destination,
+suppression, template and Gmail gates, and the branded public runtime remains
+the already-deployed `booking.vishartattoo.com` proxy.
