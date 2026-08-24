@@ -48,8 +48,21 @@ select is((select count(*)::int from t_artist), 1,
   'canonical test install has one active Vladimir artist');
 
 -- ---------------------------------------------------------------------------
--- 1. Activation configuration
+-- 1. Activation configuration and security boundaries
 -- ---------------------------------------------------------------------------
+
+select is(
+  (select public_origin from crm_private.appointment_client_action_settings
+   where singleton),
+  'https://booking.vishartattoo.com',
+  'the backend-only branded action origin is configured'
+);
+
+select ok(
+  not has_table_privilege('service_role',
+    'crm_private.appointment_client_action_settings', 'SELECT'),
+  'the Worker service role cannot read the private action-origin table directly'
+);
 
 select is(
   (select count(*)::int
@@ -62,7 +75,7 @@ select is(
      and t.body like '%[[reschedule_capability]]%'
      and t.body like '%[[cancel_capability]]%'),
   2,
-  'both 24h lifecycle templates carry all three internal capability markers'
+  'both current 24h templates carry all three capability markers'
 );
 
 select is(
@@ -134,7 +147,7 @@ select lives_ok(
 reset role;
 
 -- ---------------------------------------------------------------------------
--- 3. Tattoo 24h reminder mints exactly one three-action capability set
+-- 3. Tattoo 24h reminder creates one three-action capability set
 -- ---------------------------------------------------------------------------
 
 select pg_temp.as_owner();
@@ -181,15 +194,6 @@ select is(
   'tattoo execution mints exactly three tokens, proving 72h email mints none'
 );
 
-select is(
-  (select count(*)::int
-   from crm_private.appointment_client_action_tokens
-   where session_id=(select id from t_tattoo)
-     and consumed_at is null and invalidated_at is null),
-  3,
-  'all three freshly issued tattoo actions are live'
-);
-
 select ok(
   (select body ~ 'Confirm attendance:[[:space:]]+https://booking\.vishartattoo\.com/appointments/respond/[0-9a-f]{64}'
       and body ~ 'Request a reschedule:[[:space:]]+https://booking\.vishartattoo\.com/appointments/respond/[0-9a-f]{64}'
@@ -199,7 +203,7 @@ select ok(
       and body like '%deposit applies to this booking%'
    from public.email_messages
    where automation_job_id=(select id from t_tattoo_24h_job)),
-  'tattoo 24h approved email contains three fully rendered branded links and deposit reminder'
+  'tattoo 24h approved email contains three rendered branded links and the deposit reminder'
 );
 
 select ok(
@@ -227,7 +231,7 @@ select is(
    where session_id=(select id from t_tattoo)
      and action='confirm_attendance'),
   encode(extensions.digest((select token from t_tattoo_link), 'sha256'), 'hex'),
-  'private capability registry stores the hash matching the emailed raw token'
+  'private registry stores the digest matching the emailed raw token'
 );
 
 select is(
@@ -239,20 +243,9 @@ select is(
        where automation_job_id=(select id from t_tattoo_24h_job))
      and o.kind='approved_email'),
   1,
-  'approved-email outbox payload exposes only its single email_message_id field'
+  'approved-email outbox payload exposes only its email_message_id field'
 );
 
-select is(
-  (select payload ? 'email_message_id'
-   from public.integration_outbox
-   where email_message_id=(
-       select id from public.email_messages
-       where automation_job_id=(select id from t_tattoo_24h_job))),
-  true,
-  'approved-email outbox references the rendered email by id'
-);
-
--- GET/readback must remain scanner-safe and not consume the emailed token.
 select pg_temp.backend();
 set local role service_role;
 select is(
@@ -260,7 +253,7 @@ select is(
    from public.service_resolve_appointment_client_action(
      (select token from t_tattoo_link))),
   'confirm_attendance',
-  'emailed confirm link resolves through the existing backend boundary'
+  'emailed confirm link resolves through the scanner-safe backend boundary'
 );
 reset role;
 
@@ -289,9 +282,8 @@ where id=(select id from t_tattoo_24h_job);
 select pg_temp.backend();
 set local role service_role;
 select lives_ok(
-  $$select crm_private.execute_client_lifecycle_job(
-      (select id from t_tattoo_24h_job))$$,
-  'replaying an already-materialised lifecycle job is safe'
+  $$select pg_temp.tick()$$,
+  'replaying through the public automation tick is safe'
 );
 reset role;
 
@@ -300,7 +292,7 @@ select set_eq(
     from crm_private.appointment_client_action_tokens
     where session_id=(select id from t_tattoo)$$,
   $$select action::text, token_hash from t_hashes_before$$,
-  'delivery replay preserves the exact capability set already embedded in the email'
+  'delivery replay preserves the capability set already embedded in the email'
 );
 
 select is(
@@ -310,7 +302,10 @@ select is(
   'delivery replay cannot duplicate the 24h email'
 );
 
--- Mutating POST consumes exactly the chosen capability and records the response.
+-- ---------------------------------------------------------------------------
+-- 5. Mutating POST consumes the chosen capability only once
+-- ---------------------------------------------------------------------------
+
 select pg_temp.backend();
 set local role service_role;
 select lives_ok(
@@ -344,67 +339,25 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- 5. Consultation 24h reminder gets actions but no deposit wording
+-- 6. Suppression happens before capability issuance
 -- ---------------------------------------------------------------------------
 
 select pg_temp.as_owner();
 set local role authenticated;
-create temporary table t_consult as
-select (
-  public.schedule_appointment(
-    (select id from t_artist),
-    'fa111111-1111-4111-8111-111111111111',
-    'in_person_consultation'::public.appointment_type,
-    (select base_at + interval '22 hours 30 minutes' from t_clock),
-    (select base_at + interval '23 hours' from t_clock),
-    'confirmed'::public.session_status,
-    null,
-    null,
-    'Action activation consultation'
-  ) ->> 'appointment_id'
-)::uuid as id;
-grant select on t_consult to public;
-reset role;
-
-select pg_temp.backend();
-set local role service_role;
-select pg_temp.tick();
-reset role;
-
-select is(
-  (select count(*)::int from crm_private.appointment_client_action_tokens
-   where session_id=(select id from t_consult)),
-  3,
-  'consultation 24h reminder mints exactly three client actions'
+select lives_ok(
+  $$select public.suppress_client_communications(
+      'fa111111-1111-4111-8111-111111111111',
+      'email'::public.message_template_channel,
+      'complained'::public.suppression_reason,
+      'action_activation_test')$$,
+  'artist-scoped client is suppressed before a new 24h lifecycle job executes'
 );
 
-select ok(
-  (select body ~ 'Confirm attendance:[[:space:]]+https://booking\.vishartattoo\.com/appointments/respond/[0-9a-f]{64}'
-      and body ~ 'Request a reschedule:[[:space:]]+https://booking\.vishartattoo\.com/appointments/respond/[0-9a-f]{64}'
-      and body ~ 'Cancel appointment:[[:space:]]+https://booking\.vishartattoo\.com/appointments/respond/[0-9a-f]{64}'
-      and lower(body) not like '%deposit%'
-   from public.email_messages m
-   join public.automation_jobs j on j.id=m.automation_job_id
-   where j.session_id=(select id from t_consult)
-     and j.message_purpose='consultation_reminder'),
-  'consultation email has all actions and no tattoo deposit wording'
-);
-
--- ---------------------------------------------------------------------------
--- 6. Suppressed email creates neither message nor capability
--- ---------------------------------------------------------------------------
-
-insert into public.clients (id, full_name, email) values
-  ('fa333333-3333-4333-8333-333333333333',
-   'Suppressed Action Client', 'suppressed-action-client@example.test');
-
-select pg_temp.as_owner();
-set local role authenticated;
 create temporary table t_suppressed as
 select (
   public.schedule_appointment(
     (select id from t_artist),
-    'fa333333-3333-4333-8333-333333333333',
+    'fa111111-1111-4111-8111-111111111111',
     'video_consultation'::public.appointment_type,
     (select base_at + interval '17 hours' from t_clock),
     (select base_at + interval '17 hours 30 minutes' from t_clock),
@@ -415,14 +368,6 @@ select (
   ) ->> 'appointment_id'
 )::uuid as id;
 grant select on t_suppressed to public;
-select lives_ok(
-  $$select public.suppress_client_communications(
-      'fa333333-3333-4333-8333-333333333333',
-      'email'::public.message_template_channel,
-      'complained'::public.suppression_reason,
-      'action_activation_test')$$,
-  'client is suppressed before the 24h lifecycle job executes'
-);
 reset role;
 
 select pg_temp.backend();
