@@ -2,10 +2,9 @@
 --
 -- Migration 0082: templates, and the consent/suppression gate.
 --
--- Nothing in this lineage can send a client a message yet, which is exactly why
--- these assertions matter: the gate is being built before the thing it guards,
--- so the only way to know it is right is to test it directly. The questions
--- worth answering are the ones a future send path will ask —
+-- Client lifecycle automation now consumes this gate, so these assertions pin
+-- the policy the send path must obey. The questions worth answering are the
+-- ones every automated service message still asks:
 --
 --   can a template call itself service traffic when it is a promotion?
 --   does silence count as consent?
@@ -442,18 +441,21 @@ select throws_ok(
 );
 
 -- ---------------------------------------------------------------------------
--- The automation engine still cannot reach a client
---
--- A tripwire: the moment somebody adds a client-facing action, this fails and
--- the reviewer has to confirm the gate above is wired into it.
+-- Client automation is now explicit, and the old tripwire becomes a contract.
+-- Tests 240/241 prove this action is wired through the service-purpose,
+-- suppression, template, artist/session and Gmail gates above rather than
+-- bypassing them.
 -- ---------------------------------------------------------------------------
 
 select is(
   (select array_agg(e.enumlabel::text order by e.enumsortorder)
-   from pg_type t join pg_enum e on e.enumtypid = t.oid
-   where t.typname = 'automation_action_type'),
-  array['notify_artist_team'],
-  'the automation engine still has exactly one action, and it notifies staff'
+   from pg_type t
+   join pg_enum e on e.enumtypid = t.oid
+   join pg_namespace n on n.oid = t.typnamespace
+   where n.nspname = 'public'
+     and t.typname = 'automation_action_type'),
+  array['notify_artist_team','send_client_message'],
+  'the automation action catalogue contains only the reviewed staff and gated client actions'
 );
 
 select * from finish(true);
