@@ -74,6 +74,19 @@ begin
     return new;
   end if;
 
+  -- execute_client_lifecycle_job uses INSERT ... ON CONFLICT DO NOTHING for
+  -- delivery idempotency. A replay of an already-materialised job must not mint
+  -- a fresh capability set and invalidate the links stored in the existing
+  -- message. The unique automation_job_id will make this attempted insert a
+  -- no-op after BEFORE INSERT triggers return.
+  if exists (
+    select 1
+    from public.email_messages m
+    where m.automation_job_id = new.automation_job_id
+  ) then
+    return new;
+  end if;
+
   select j.session_id, j.message_purpose
     into v_session_id, v_job_purpose
   from public.automation_jobs j
