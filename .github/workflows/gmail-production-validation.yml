@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'workers/gmail-production.js'
+      - 'workers/gmail-production-entrypoint.js'
+      - 'workers/telegram-drain-worker.js'
       - 'workers/lib/google-gmail.js'
       - 'workers/lib/gmail-supabase.js'
       - 'workers/lib/gmail-tool-contract.js'
@@ -15,9 +17,12 @@ on:
       - 'docs/gpt-actions/openapi.production*.yaml'
       - 'docs/crm/MCP_READY_ARCHITECTURE.md'
       - 'scripts/test-gmail-production.mjs'
+      - 'scripts/test-gmail-rollout-phases.mjs'
       - 'scripts/test-gmail-mcp-ready.mjs'
       - 'scripts/test-gpt-gmail-openapi.mjs'
+      - 'scripts/test-telegram-drain-worker.mjs'
       - 'scripts/materialize-gmail-openapi.mjs'
+      - 'scripts/generate-gmail-production-deploy-config.mjs'
       - '.github/workflows/gmail-production-validation.yml'
   workflow_dispatch:
 
@@ -42,6 +47,12 @@ jobs:
       - name: Gmail OAuth/provider regression
         run: node scripts/test-gmail-production.mjs
 
+      - name: Gmail rollout phase regression
+        run: node scripts/test-gmail-rollout-phases.mjs
+
+      - name: Shared scheduler RPC contract regression
+        run: node scripts/test-telegram-drain-worker.mjs
+
       - name: Gmail MCP-ready contract regression
         run: node scripts/test-gmail-mcp-ready.mjs
 
@@ -57,9 +68,12 @@ jobs:
       - name: Gmail Worker syntax check
         run: |
           node --check workers/gmail-production.js
+          node --check workers/gmail-production-entrypoint.js
           node --check workers/lib/google-gmail.js
           node --check workers/lib/gmail-supabase.js
           node --check workers/lib/gmail-tool-contract.js
+          node --check scripts/generate-gmail-production-deploy-config.mjs
+          node --check scripts/test-gmail-rollout-phases.mjs
 
       - name: Gmail production bundle dry-run
         env:
