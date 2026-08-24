@@ -1,0 +1,50 @@
+name: RC89 release run diagnostic
+
+on:
+  push:
+    branches:
+      - agent/rc89-release-run-diagnostic
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report exact RC89 release run
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET_SHA: 880c28e87e3e9be4d71d00f63e82e376b0046aee
+        run: |
+          set -euo pipefail
+          file="$RUNNER_TEMP/runs.json"
+          curl -fsS \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -o "$file" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/private-production-release.yml/runs?event=push&per_page=30"
+          TARGET_SHA="$TARGET_SHA" node - "$file" <<'NODE'
+          const fs = require('fs');
+          const body = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const runs = Array.isArray(body.workflow_runs) ? body.workflow_runs : [];
+          const matches = runs.filter((run) => run?.head_sha === process.env.TARGET_SHA);
+          if (matches.length !== 1) {
+            console.log(JSON.stringify({match_count: matches.length}));
+            process.exit(2);
+          }
+          const run = matches[0];
+          console.log(JSON.stringify({
+            id: run.id,
+            status: run.status,
+            conclusion: run.conclusion,
+            head_sha: run.head_sha,
+            head_branch: run.head_branch,
+            html_url: run.html_url
+          }));
+          NODE
+          exit 1
