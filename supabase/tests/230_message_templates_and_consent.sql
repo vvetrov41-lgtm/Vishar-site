@@ -349,8 +349,15 @@ select throws_ok(
 reset role;
 
 -- A template is created as a draft, so nothing can select copy nobody approved.
+--
+-- Scoped to this test's own workspace. It used to count the whole table, which
+-- only worked while no installation-wide template was active anywhere; 0097
+-- ships active v1 lifecycle copy in the real artists' workspaces, and the
+-- property being asserted was always about the template just written here.
 select is(
-  (select count(*)::int from public.message_templates where status = 'active'),
+  (select count(*)::int from public.message_templates
+   where workspace_id = 'b7111111-1111-4111-8111-111111111111'::uuid
+     and status = 'active'),
   0,
   'a new template is a draft until somebody activates it'
 );

@@ -212,8 +212,13 @@ select public.create_automation_rule(
 grant select on t_rule to public;
 reset role;
 
+-- Scoped to the rule this test just created. It used to count the whole table,
+-- which only worked while the installation carried no enabled rule anywhere;
+-- 0097 ships an enabled v1 lifecycle ruleset, and the property being asserted
+-- was always about the newly created rule rather than about the installation.
 select is(
-  (select count(*)::int from public.automation_rules where is_enabled),
+  (select count(*)::int from public.automation_rules
+   where id = (select id from t_rule) and is_enabled),
   0,
   'a new rule is created disabled, so nothing runs until somebody turns it on'
 );
