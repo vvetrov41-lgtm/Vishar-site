@@ -47,7 +47,13 @@ export const AUTOMATION_BACKEND_RPCS = new Set([
   'service_run_automation_tick',
 ]);
 
-/** Read-only public-edge lookups added by the platform registry. */
+/** Appointment client-action capability surface, kept separate from booking resolvers. */
+export const APPOINTMENT_CLIENT_ACTION_RPCS = new Set([
+  'service_resolve_appointment_client_action',
+  'service_apply_appointment_client_action',
+]);
+
+/** Read-only public-edge lookups added by platform-owned booking routes. */
 export const READ_ONLY_RPCS = new Set([
   'resolve_booking_source_public',
   'resolve_hosted_booking_source',
@@ -150,6 +156,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       !ALLOWED_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
+      && !APPOINTMENT_CLIENT_ACTION_RPCS.has(name)
       && !READ_ONLY_RPCS.has(name)
     ) {
       throw new ConfigurationError('rpc_not_allowed', 'That database operation is not available.');

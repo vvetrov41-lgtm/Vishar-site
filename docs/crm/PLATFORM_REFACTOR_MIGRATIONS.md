@@ -25,10 +25,18 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0088` | Control plane, read surfaces | claimed in PR #394 |
 | `0089` | Control plane, governance hardening | claimed in PR #394 |
 | `0090` | Control plane, ownership-transfer boundary hardening | claimed in PR #394 |
+| `0091` | Telegram artist delivery observability | claimed on private CRM lineage |
+| `0092` | Automation client-message action | claimed on private CRM lineage |
+| `0093` | Client lifecycle automation | claimed on private CRM lineage |
+| `0094` | Client lifecycle control plane | claimed on private CRM lineage |
+| `0095` | Client lifecycle client-archive fix | claimed on private CRM lineage |
+| `0096` | Client lifecycle scheduling integrity | claimed on private CRM lineage |
+| `0097` | Lifecycle Automation v1 production activation | claimed in PR #414 |
+| `0098` | Appointment client-action capability foundation | claimed on `agent/appointment-client-actions-foundation` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0091`
+`0099`
 
 ## Allocation rule for unfinished phases
 
@@ -46,7 +54,7 @@ This avoids two failure modes present in the original roadmap table: two future 
 
 ## Current unfinished phases
 
-The platform-refactor roadmap has no other phase waiting for an initial migration number. Phase F-G now claims `0086`; later fixes, if validation exposes any, claim from `0091` after a fresh check.
+The platform-refactor roadmap has no other phase waiting for an initial migration number. Phase F-G now claims `0086`; later fixes use the next free number after a fresh check.
 
 The control-plane workstream claims `0087` through `0090` on the lineage whose tip
 is `agent/platform-telegram-self-service`. Production Supabase
@@ -63,7 +71,7 @@ interface stop deriving control-plane visibility from `CrmRole`. `0090` closes
 the final ownership-transfer boundary found in the second review: only a sitting
 active workspace owner may transfer that workspace, so installation-wide owner
 authority can no longer create an extra owner while emitting a false
-`from_profile_id`. Any later schema work claims from `0091` after a fresh check.
+`from_profile_id`.
 
 Phases Q-R use no migration. Phases S-T claim `0084` on their actual stacked lineage.
 Phase U claimed `0085`: its cross-phase golden path found that `list_notifications`
@@ -72,7 +80,6 @@ membership kept an artist's notifications in the old recipient's inbox. Phase
 F-G claims `0086` for the private Telegram destination registry, single-use
 linking sessions and external-notification delivery state. Its runtime and
 production activation contract is documented in `docs/crm/TELEGRAM_SELF_SERVICE.md`.
-Any later schema work claims from `0091` after a fresh check.
 
 The client lifecycle workstream claims `0092` through `0095`, and its
 scheduling-integrity restack claims `0096`. Lifecycle Automation v1 claims
@@ -81,10 +88,18 @@ than more machinery. It ships, per active artist, a 72-hour and a 24-hour
 tattoo-session reminder plus a 24-hour consultation check-in (both
 `in_person_consultation` and `video_consultation`, which are one rule each
 because a lifecycle rule is conditioned on exactly one appointment type), the
-three service templates those rules select, and nothing else — no table, no
-function, no trigger, no scheduler, no delivery path and no credential. It
-deliberately ships no 72-hour consultation reminder and leaves `touch_up`
-unconfigured. Because a job materialises only from a new `appointment.scheduled`
-event and history is never backfilled, applying it cannot send an email and
-does not enrol already-booked clients. Any later schema work claims from `0098`
-after a fresh check.
+three service templates those rules select, and nothing else. It deliberately
+ships no 72-hour consultation reminder and leaves `touch_up` unconfigured.
+Because a job materialises only from a new `appointment.scheduled` event and
+history is never backfilled, applying it cannot send an email and does not
+enrol already-booked clients.
+
+Appointment client actions claim `0098`. That migration is deliberately an inert
+foundation: it stores non-terminal client responses separately from internal
+appointment status, adds server-only one-time capabilities bound to the exact
+appointment version, exposes only narrow backend resolve/apply RPCs, and keeps
+reschedule as a request while preserving the existing Calendar cancellation
+path for an explicit client cancel. No `0097` template is changed and no token
+is issued merely by applying `0098`; reminder-link activation remains a separate
+workstream after review. Any later schema work claims from `0099` after a fresh
+check.
