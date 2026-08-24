@@ -179,8 +179,9 @@ async function recordArtistRegistryResult(
 }
 
 async function preferredArtistDelivery(env, supabase, route, job, text, fetchImpl) {
-  // Rollout rule: without the one shared bot token the old artist binding stays
-  // canonical and we do not even require the new resolver to be present.
+  // Retained staging may still run without the shared-bot secret. In that
+  // explicit mode the historical artist-owned binding remains the delivery
+  // mechanism. Production has TELEGRAM_BOT_TOKEN and is registry-only.
   if (!sharedTelegramBotToken(env)) {
     return {
       notification: await sendNotification(env, route, text, fetchImpl),
@@ -188,25 +189,24 @@ async function preferredArtistDelivery(env, supabase, route, job, text, fetchImp
     };
   }
 
+  let destination;
   try {
     const resolved = await supabase.rpc('service_resolve_telegram_destination', {
       p_artist_id: job.artist_id,
       p_profile_id: null,
     });
-    const destination = validateRegistryDestination(resolved, 'artist');
-    if (destination) {
-      return {
-        notification: await sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl),
-        registryDestinationId: destination.destination_id,
-      };
-    }
+    destination = validateRegistryDestination(resolved, 'artist');
   } catch {
-    // Static bindings remain the rollback path throughout Phase G. A registry
-    // lookup failure must not make existing production enquiry alerts disappear.
+    // Once the shared bot is configured, silently falling back to an artist
+    // secret would hide registry failures and make production routing
+    // unverifiable. Fail closed instead.
+    throw new TelegramDrainError('telegram_destination_unavailable');
   }
+  if (!destination) throw new TelegramDrainError('telegram_destination_unavailable');
+
   return {
-    notification: await sendNotification(env, route, text, fetchImpl),
-    registryDestinationId: null,
+    notification: await sendSharedTelegramNotification(env, destination.chat_id, text, fetchImpl),
+    registryDestinationId: destination.destination_id,
   };
 }
 
