@@ -19,7 +19,8 @@ jobs:
     steps:
       - name: Checkout exact audit head
         uses: actions/checkout@v4
-      - name: Inspect live Kristina form contract without submitting
+
+      - name: Read live browser contract
         shell: bash
         run: |
           set -euo pipefail
@@ -29,60 +30,48 @@ jobs:
           python3 - <<'PY'
           import json, re
           from pathlib import Path
-
           text = Path('/tmp/kristina.html').read_text(encoding='utf-8', errors='replace')
+          print(json.dumps({
+            'fetch_literals': sorted(set(re.findall(r'fetch\(\s*["\']([^"\']+)["\']', text))),
+            'uses_formdata': bool(re.search(r'new\s+FormData\s*\(', text)),
+            'uses_json_stringify': bool(re.search(r'JSON\.stringify\s*\(', text)),
+            'named_controls': sorted(set(re.findall(r'<(?:input|select|textarea)\b[^>]*\bname=["\']([^"\']+)["\']', text, re.I))),
+            'has_started_at_runtime': bool(re.search(r'startedAt', text)),
+          }, indent=2))
+          PY
 
-          def one(pattern):
-              match = re.search(pattern, text, re.I | re.S)
-              return match.group(1).strip() if match else None
-
-          form_tag = one(r'(<form\b[^>]*(?:id=["\']tattoo-enquiry-form["\']|data-[^>]*booking)[^>]*>)')
-          action = None
-          method = None
-          if form_tag:
-              action_m = re.search(r'\baction=["\']([^"\']*)["\']', form_tag, re.I)
-              action = action_m.group(1) if action_m else None
-              method_m = re.search(r'\bmethod=["\']([^"\']*)["\']', form_tag, re.I)
-              method = method_m.group(1) if method_m else None
-
-          endpoint_assignments = []
-          for name, value in re.findall(r'\b([A-Za-z_$][\w$]*(?:Endpoint|endpoint|URL|Url|url))\s*=\s*["\']([^"\']+)["\']', text):
-              if value.startswith(('http://', 'https://', '/', './')):
-                  endpoint_assignments.append({'name': name, 'value': value})
-
-          fetch_literals = sorted(set(re.findall(r'fetch\(\s*["\']([^"\']+)["\']', text)))
-          formdata_appends = sorted(set(re.findall(r'\.append\(\s*["\']([^"\']+)["\']', text)))
-          formdata_sets = sorted(set(re.findall(r'\.set\(\s*["\']([^"\']+)["\']', text)))
-          named_controls = sorted(set(re.findall(r'<(?:input|select|textarea)\b[^>]*\bname=["\']([^"\']+)["\']', text, re.I)))
-          has_formdata = bool(re.search(r'new\s+FormData\s*\(', text))
-          has_json_stringify = bool(re.search(r'JSON\.stringify\s*\(', text))
-          content_types = sorted(set(re.findall(r'["\']Content-Type["\']\s*:\s*["\']([^"\']+)["\']', text, re.I)))
-
-          submit_context = None
-          anchors = [m.start() for m in re.finditer(r'(?:tattoo-enquiry-form|addEventListener\(\s*["\']submit["\']|fetch\s*\()', text, re.I)]
-          if anchors:
-              pos = anchors[-1]
-              snippet = text[max(0, pos-2500):min(len(text), pos+7000)]
-              lines = []
-              for raw in snippet.splitlines():
-                  line = raw.strip()
-                  if any(token in line for token in ('fetch(', 'FormData', '.append(', '.set(', 'Endpoint', 'endpoint', 'Content-Type', 'JSON.stringify', 'submit', 'privacy', 'idempot')):
-                      lines.append(line[:500])
-              submit_context = lines[:80]
-
-          report = {
-              'http_contract_audit': 'read_only',
-              'form_action': action,
-              'form_method': method,
-              'endpoint_assignments': endpoint_assignments,
-              'fetch_literals': fetch_literals,
-              'uses_formdata': has_formdata,
-              'uses_json_stringify': has_json_stringify,
-              'explicit_content_types': content_types,
-              'formdata_append_fields': formdata_appends,
-              'formdata_set_fields': formdata_sets,
-              'named_controls': named_controls,
-              'submit_context': submit_context,
-          }
-          print(json.dumps(report, indent=2, ensure_ascii=True))
+      - name: Submit one marked synthetic enquiry through exact live browser endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' | base64 -d > /tmp/e2e-reference.png
+          started_at="$(( $(date +%s%3N) - 10000 ))"
+          status="$(curl --silent --show-error \
+            --request POST \
+            --header 'Origin: https://www.kristinavishar.com' \
+            --header 'Referer: https://www.kristinavishar.com/' \
+            --output /tmp/response.txt \
+            --write-out '%{http_code}' \
+            --form-string 'name=E2E TEST KRISTINA BROWSER CONTRACT' \
+            --form-string 'email=booking-e2e-kristina-browser-20260824@invalid.example' \
+            --form-string 'phone=' \
+            --form-string 'instagram=' \
+            --form-string 'preferredReply=Email' \
+            --form-string 'travellingFrom=Production E2E test' \
+            --form-string 'projectType=Not sure yet' \
+            --form-string 'placement=E2E test placement' \
+            --form-string 'size=E2E test size' \
+            --form-string 'coverUp=No' \
+            --form-string 'timing=E2E TEST - safe to delete' \
+            --form-string 'idea=PRODUCTION E2E TEST through the exact Kristina browser contract. Safe to delete.' \
+            --form-string 'consent=on' \
+            --form-string 'website=' \
+            --form-string "startedAt=${started_at}" \
+            --form 'references=@/tmp/e2e-reference.png;type=image/png;filename=e2e-reference.png' \
+            'https://www.kristinavishar.com/api/booking')"
+          echo "http_status=${status}"
+          python3 - <<'PY'
+          from pathlib import Path
+          body = Path('/tmp/response.txt').read_text(encoding='utf-8', errors='replace')
+          print('response_body=' + body[:2000].replace('\n',' '))
           PY
