@@ -1,19 +1,14 @@
 -- 241_client_lifecycle_golden_path.sql
 --
--- A brand-new third artist, created through the platform control plane, uses
--- the same lifecycle engine and Gmail outbox as every existing artist.
---
--- The key regression is rescheduling: this test never edits automation_jobs.
--- It changes the real sessions.start_at through reschedule_appointment, runs the
--- scheduler again, and proves the already-existing job follows that domain row.
--- Everything is synthetic and rolled back; no Google API is called.
+-- A brand-new third artist, created through the ordinary platform control
+-- plane, uses the same lifecycle engine and Gmail outbox as existing artists.
+-- Everything is synthetic and rolled back; no external provider API is called.
 
 begin;
 select no_plan();
 
 -- ---------------------------------------------------------------------------
--- Act 0. Two fresh CRM identities. Identity provisioning itself remains a
--- trusted service boundary, exactly as in the platform golden-path test 236.
+-- Identities and helpers
 -- ---------------------------------------------------------------------------
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
@@ -28,8 +23,7 @@ insert into public.profiles (id, email, display_name, role, is_active) values
   ('e9022222-2222-4222-8222-222222222222', 'lifecycle-artist@example.test',
    'Lifecycle Third Artist', 'booking_manager', true);
 
--- One delegated organization seat lets the admin use the ordinary workspace
--- creation flow. This is bootstrap authority, not artist-specific runtime code.
+-- Bootstrap organization authority through an existing delegated workspace.
 insert into public.workspace_memberships (
   profile_id, workspace_id, workspace_role,
   can_manage_workspace, can_manage_team, can_manage_integrations, is_active
@@ -61,14 +55,12 @@ $$;
 grant execute on function pg_temp.lifecycle_admin(), pg_temp.lifecycle_artist(),
   pg_temp.lifecycle_backend() to authenticated, service_role;
 
--- Fixed to the current hour, so every appointment lands on a five-minute
--- boundary regardless of when CI starts.
 create temporary table t_clock as
 select date_trunc('hour', now()) as base_at;
 grant select on t_clock to public;
 
 -- ---------------------------------------------------------------------------
--- Act 1. Create and seat an artist the lifecycle engine has never seen before
+-- Create and seat an artist the lifecycle engine has never seen before
 -- ---------------------------------------------------------------------------
 
 reset role;
@@ -93,13 +85,11 @@ select isnt(
 reset role;
 
 -- ---------------------------------------------------------------------------
--- Act 2. Provider route and client fixture. Credential custody remains outside
--- Postgres; only verified safe Gmail routing metadata is created here.
+-- Provider route plus local client/project fixtures
 -- ---------------------------------------------------------------------------
 
 select pg_temp.lifecycle_backend();
 set local role service_role;
-
 select lives_ok(
   $$select public.service_set_gmail_integration(
       (select id from t_artist),
@@ -110,19 +100,25 @@ select lives_ok(
         'https://www.googleapis.com/auth/gmail.send'
       ]::text[]
     )$$,
-  'the same backend Gmail contract can bind a previously unknown artist'
+  'the normal backend Gmail contract accepts the new artist'
 );
 reset role;
 
--- Direct fixture setup runs as the test owner. service_role itself remains
--- unable to write the client table, which the global ACL suite already pins.
+-- Direct fixture setup runs only as the pgTAP database owner. Product actors
+-- continue to use bounded RPCs below.
 insert into public.clients (id, full_name, email) values
   ('e7011111-1111-4111-8111-111111111111',
    'Lifecycle Client', 'lifecycle-client@example.test');
 
+insert into public.projects (id, client_id, artist_id, title, description) values
+  ('e6011111-1111-4111-8111-111111111111',
+   'e7011111-1111-4111-8111-111111111111',
+   (select id from t_artist),
+   'Lifecycle tattoo project',
+   'Synthetic project required by the tattoo-session domain invariant');
+
 -- ---------------------------------------------------------------------------
--- Act 3. The artist authors reviewed copy and a disabled typed rule, then
--- explicitly activates both. No SQL table write is needed by the artist.
+-- Artist authors reviewed copy and explicitly enables a typed reminder rule
 -- ---------------------------------------------------------------------------
 
 select pg_temp.lifecycle_artist();
@@ -163,8 +159,7 @@ select ok(
 );
 
 -- ---------------------------------------------------------------------------
--- Act 4. Schedule a confirmed tattoo session 48 hours away. The ordinary
--- appointment RPC produces the domain event; lifecycle code is not called.
+-- Schedule a real project-linked tattoo session 48 hours away
 -- ---------------------------------------------------------------------------
 
 create temporary table t_session as
@@ -176,7 +171,8 @@ select (
     (select base_at + interval '48 hours' from t_clock),
     (select base_at + interval '50 hours' from t_clock),
     'confirmed'::public.session_status,
-    null, null,
+    null,
+    'e6011111-1111-4111-8111-111111111111',
     'Lifecycle golden-path appointment'
   ) ->> 'appointment_id'
 )::uuid as id;
@@ -190,11 +186,11 @@ select is(
      and e.event_type = 'appointment.scheduled'
      and e.entity_id = (select id from t_session)),
   1,
-  'the normal appointment activity becomes exactly one session automation event'
+  'the normal appointment activity becomes exactly one automation event'
 );
 
 -- ---------------------------------------------------------------------------
--- Act 5. First backend tick materializes a future reminder job.
+-- First tick materializes a future reminder job
 -- ---------------------------------------------------------------------------
 
 select pg_temp.lifecycle_backend();
@@ -209,11 +205,8 @@ where j.rule_id = (select id from t_rule)
   and j.session_id = (select id from t_session);
 grant select on t_job to public;
 
-select is(
-  (select count(*)::int from t_job),
-  1,
-  'one lifecycle rule and one session materialize one job'
-);
+select is((select count(*)::int from t_job), 1,
+  'one lifecycle rule and one session materialize one job');
 select is(
   (select j.scheduled_at from public.automation_jobs j
    where j.id = (select id from t_job)),
@@ -228,8 +221,7 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- Act 6. Reschedule the real appointment to 72 hours away. The test does not
--- touch automation_jobs. A tick must move the same job to start_at - 24h.
+-- Reschedule the domain appointment. The test never edits automation_jobs.
 -- ---------------------------------------------------------------------------
 
 select pg_temp.lifecycle_artist();
@@ -267,13 +259,11 @@ select is(
    where j.id = (select id from t_job)),
   (select s.start_at - interval '24 hours'
    from public.sessions s where s.id = (select id from t_session)),
-  'the existing pending job follows the new real appointment start'
+  'the existing pending job follows the new appointment start'
 );
 
 -- ---------------------------------------------------------------------------
--- Act 7. Move the actual session to 23 hours away. Its reminder is now due.
--- The scheduler re-reads session status, template, suppression and Gmail route
--- before creating an approved system email and the existing Gmail outbox item.
+-- Move the real session inside the reminder window and execute it
 -- ---------------------------------------------------------------------------
 
 select pg_temp.lifecycle_artist();
@@ -283,7 +273,7 @@ select lives_ok(
       (select id from t_session),
       (select base_at + interval '23 hours' from t_clock),
       (select base_at + interval '25 hours' from t_clock))$$,
-  'the appointment itself, not the automation job, is moved inside the reminder window'
+  'the appointment itself is moved inside the reminder window'
 );
 reset role;
 
@@ -311,7 +301,7 @@ select ok(
       and status = 'approved'::public.email_message_status
    from public.email_messages
    where automation_job_id = (select id from t_job)),
-  'automation has explicit system approval provenance and fabricates no human approver'
+  'automation records system approval provenance without a fake human approver'
 );
 select ok(
   (select subject = 'Your tattoo session tomorrow'
@@ -320,7 +310,7 @@ select ok(
       and body not like '%{{%'
    from public.email_messages
    where automation_job_id = (select id from t_job)),
-  'reviewed template variables are rendered from the live third-artist session'
+  'reviewed template variables render from the live third-artist session'
 );
 select is(
   (select count(*)::int
@@ -333,7 +323,7 @@ select is(
   'the existing approved-email outbox receives exactly one delivery item'
 );
 
--- Running the scheduler again is deliberately boring.
+-- A repeated scheduler tick must remain idempotent.
 select pg_temp.lifecycle_backend();
 set local role service_role;
 select * from public.service_run_automation_tick(100);
@@ -351,13 +341,11 @@ select is(
    where o.kind = 'approved_email'
      and o.dedupe_key = 'email:automation:' || (select id from t_job)::text),
   1,
-  'and cannot duplicate the Gmail outbox item'
+  'a repeated tick cannot duplicate the Gmail outbox item'
 );
 
 -- ---------------------------------------------------------------------------
--- Act 8. Cancellation is also read from the authoritative appointment row.
--- A second appointment materializes a job, then cancellation kills it before
--- any client email can be created.
+-- Cancellation is also derived from the authoritative appointment row
 -- ---------------------------------------------------------------------------
 
 select pg_temp.lifecycle_artist();
@@ -371,7 +359,8 @@ select (
     (select base_at + interval '96 hours' from t_clock),
     (select base_at + interval '98 hours' from t_clock),
     'confirmed'::public.session_status,
-    null, null,
+    null,
+    'e6011111-1111-4111-8111-111111111111',
     'Lifecycle cancellation fixture'
   ) ->> 'appointment_id'
 )::uuid as id;
@@ -422,7 +411,7 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- Act 9. The whole path is data-driven, not Vladimir/Kristina-driven.
+-- No artist-specific special case exists in the lifecycle path
 -- ---------------------------------------------------------------------------
 
 select is(
