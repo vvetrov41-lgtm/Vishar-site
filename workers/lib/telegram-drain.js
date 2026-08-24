@@ -179,14 +179,19 @@ async function recordArtistRegistryResult(
 }
 
 async function preferredArtistDelivery(env, supabase, route, job, text, fetchImpl) {
-  // Retained staging may still run without the shared-bot secret. In that
-  // explicit mode the historical artist-owned binding remains the delivery
-  // mechanism. Production has TELEGRAM_BOT_TOKEN and is registry-only.
-  if (!sharedTelegramBotToken(env)) {
+  const production = env?.VISHAR_ENVIRONMENT === 'production';
+  if (!production) {
+    // Retained staging keeps the historical artist-owned binding. Production
+    // is intentionally selected by environment, never by the presence of a
+    // secret, so a missing shared token cannot silently re-enable fallback.
     return {
       notification: await sendNotification(env, route, text, fetchImpl),
       registryDestinationId: null,
     };
+  }
+
+  if (!sharedTelegramBotToken(env)) {
+    throw new TelegramDrainError('telegram_shared_bot_not_configured');
   }
 
   let destination;
@@ -197,9 +202,6 @@ async function preferredArtistDelivery(env, supabase, route, job, text, fetchImp
     });
     destination = validateRegistryDestination(resolved, 'artist');
   } catch {
-    // Once the shared bot is configured, silently falling back to an artist
-    // secret would hide registry failures and make production routing
-    // unverifiable. Fail closed instead.
     throw new TelegramDrainError('telegram_destination_unavailable');
   }
   if (!destination) throw new TelegramDrainError('telegram_destination_unavailable');
