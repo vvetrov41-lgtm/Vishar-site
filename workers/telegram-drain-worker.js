@@ -9,6 +9,10 @@ import {
   sendSharedTelegramNotification,
   sharedTelegramBotToken,
 } from './lib/telegram.js';
+import {
+  handleAppointmentClientActionRequest,
+  isAppointmentClientActionPath,
+} from './routes/appointment-client-action.js';
 
 const LINK_TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
 const CHAT_ID = /^-?[0-9]{1,20}$/;
@@ -221,6 +225,13 @@ async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
 
 export default {
   fetch(request, env) {
+    // Appointment action capabilities are independent of Telegram linking.
+    // The namespace is owned explicitly so malformed/expired links cannot fall
+    // through to the webhook surface, and browser authority remains the opaque
+    // one-time token handled by the shared backend-only Supabase client.
+    if (isAppointmentClientActionPath(request)) {
+      return handleAppointmentClientActionRequest(request, env);
+    }
     return handleLinkingWebhook(request, env);
   },
   scheduled(_controller, env, ctx) {
