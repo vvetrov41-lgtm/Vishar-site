@@ -96,6 +96,11 @@ expectIncludes(observer, 'statuses/${GITHUB_SHA}', 'release observer exact-SHA s
 expectIncludes(observer, 'actions/workflows/private-production-release.yml/runs?event=push&per_page=30', 'release observer exact workflow');
 expectIncludes(observer, 'run?.head_sha === process.env.TARGET_SHA', 'release observer exact-SHA discovery');
 expectIncludes(observer, 'run.head_sha !== process.env.TARGET_SHA', 'release observer exact-SHA readback');
+expectIncludes(observer, 'runs_file="$RUNNER_TEMP/private-production-release-runs.json"', 'release observer bounded JSON handling');
+expectIncludes(observer, 'run_file="$RUNNER_TEMP/private-production-release-run.json"', 'release observer bounded JSON handling');
+expectIncludes(observer, "fs.readFileSync(process.argv[2], 'utf8')", 'release observer bounded JSON handling');
+expectExcludes(observer, 'RUNS="$runs"', 'release observer ARG_MAX boundary');
+expectExcludes(observer, 'RUN="$run"', 'release observer ARG_MAX boundary');
 expectExcludes(observer, 'environment: crm-production', 'release observer isolation');
 expectExcludes(observer, 'secrets.', 'release observer isolation');
 for (const forbidden of [
