@@ -9,14 +9,17 @@ routes = [
 ]
 
 # One Worker owns Telegram delivery, the bounded Gmail shared scheduler dispatch,
-# and the future Telegram linking callback. The tracked production template is
-# deliberately inert:
+# the generic automation-engine heartbeat, and the Telegram linking callback.
+# The tracked production template is deliberately inert:
 #   * Telegram scheduled delivery is disabled;
 #   * Gmail shared scheduler dispatch is disabled;
+#   * automation-engine ticks are disabled;
 #   * self-service linking is disabled;
 #   * no cron or Service Binding exists in this file.
 # The guarded production release generates the active scheduler config from this
-# template. It must preserve the already-live Gmail shared-cron contract:
+# template. It preserves the already-live Gmail shared-cron contract and enables
+# the backend-only automation heartbeat on the same existing cron. No second
+# Worker or cron is introduced.
 # GMAIL_SERVICE -> vishar-gmail-production plus GMAIL_SHARED_DRAIN_ENABLED=true.
 # Gmail credentials remain exclusively on the Gmail Worker.
 #
@@ -35,9 +38,11 @@ VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 TELEGRAM_DRAIN_ENABLED = "false"
 GMAIL_SHARED_DRAIN_ENABLED = "false"
+AUTOMATION_TICK_ENABLED = "false"
 TELEGRAM_LINKING_ENABLED = "false"
 
 # Required encrypted production Worker secrets are deliberately absent here.
+# The automation heartbeat reuses SUPABASE_SECRET_KEY and adds no credential.
 # Phase G keeps both legacy Artist bindings until the DB-backed shared-bot path
 # has been proved in production, so rollback never depends on rewriting a chat:
 #   SUPABASE_SECRET_KEY

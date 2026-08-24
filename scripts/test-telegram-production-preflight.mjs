@@ -1,7 +1,7 @@
 // The preflight exists to catch one specific class of accident: a deploy that
 // resolves a divergence between live Cloudflare state and tracked config by
-// deleting or changing the difference. The LIVE fixture is the real production
-// shape observed through Cloudflare on 2026-08-22.
+// deleting or changing the difference. The LIVE fixture is the production
+// shape before the automation heartbeat binding is introduced.
 
 import assert from 'node:assert/strict';
 import { parseDeployConfig, evaluatePreflight } from './preflight-telegram-production.mjs';
@@ -21,6 +21,7 @@ VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 TELEGRAM_DRAIN_ENABLED = "true"
 GMAIL_SHARED_DRAIN_ENABLED = "true"
+AUTOMATION_TICK_ENABLED = "true"
 TELEGRAM_LINKING_ENABLED = "false"
 
 [[services]]
@@ -75,9 +76,11 @@ assert.deepEqual(desired.hostnames, ['telegram.vishartattoo.com']);
 assert.equal(desired.vars.TELEGRAM_LINKING_ENABLED, 'false');
 assert.equal(desired.vars.TELEGRAM_DRAIN_ENABLED, 'true');
 assert.equal(desired.vars.GMAIL_SHARED_DRAIN_ENABLED, 'true');
+assert.equal(desired.vars.AUTOMATION_TICK_ENABLED, 'true');
 assert.equal(desired.services.GMAIL_SERVICE, 'vishar-gmail-production');
 assert.ok(desired.replaceableBindings.includes('GMAIL_SERVICE'));
 assert.ok(desired.replaceableBindings.includes('GMAIL_SHARED_DRAIN_ENABLED'));
+assert.ok(desired.replaceableBindings.includes('AUTOMATION_TICK_ENABLED'));
 
 {
   const verdict = evaluatePreflight({ live: LIVE, desired });
@@ -85,6 +88,7 @@ assert.ok(desired.replaceableBindings.includes('GMAIL_SHARED_DRAIN_ENABLED'));
   assert.equal(verdict.failures.some((f) => f.includes('REMOVE live binding')), false);
   assert.equal(verdict.failures.some((f) => f.includes('GMAIL_SERVICE')), false);
   assert.equal(verdict.failures.some((f) => f.includes('GMAIL_SHARED_DRAIN_ENABLED')), false);
+  assert.equal(verdict.failures.some((f) => f.includes('AUTOMATION_TICK_ENABLED')), false);
   assert.ok(verdict.failures.some((f) => f.includes('TELEGRAM_BOT_TOKEN')
     && f.includes('TELEGRAM_WEBHOOK_SECRET')));
   for (const secret of LIVE.secretNames) {
@@ -97,6 +101,7 @@ assert.ok(desired.replaceableBindings.includes('GMAIL_SHARED_DRAIN_ENABLED'));
   assert.ok(verdict.warnings.some((w) => w.includes('2026-05-25') && w.includes('2026-08-22')));
   assert.equal(verdict.summary.live_version_id, 'c6fc73e8-281a-4715-86c5-ae2d7d43e9b1');
   assert.equal(verdict.summary.gmail_shared_drain_preserved, true);
+  assert.equal(verdict.summary.automation_tick_enabled, true);
   assert.equal(verdict.summary.zone_resolved, true);
   assert.equal(verdict.summary.access_check_available, true);
 }
@@ -122,6 +127,13 @@ const READY_LIVE = {
 }
 
 {
+  const missingAutomation = parseDeployConfig(GENERATED.replace(
+    'AUTOMATION_TICK_ENABLED = "true"\n', ''));
+  const verdict = evaluatePreflight({ live: READY_LIVE, desired: missingAutomation });
+  assert.ok(verdict.failures.some((f) => f.includes('must enable AUTOMATION_TICK_ENABLED')));
+}
+
+{
   const badTarget = {
     ...READY_LIVE,
     bindings: READY_LIVE.bindings.map((b) => b.name === 'GMAIL_SERVICE'
@@ -139,6 +151,14 @@ const READY_LIVE = {
   };
   assert.ok(evaluatePreflight({ live: disabledGmail, desired }).failures
     .some((f) => f.includes('GMAIL_SHARED_DRAIN_ENABLED is not true')));
+
+  const disabledAutomation = {
+    ...READY_LIVE,
+    bindings: [...READY_LIVE.bindings,
+      { name: 'AUTOMATION_TICK_ENABLED', text: 'false', type: 'plain_text' }],
+  };
+  assert.ok(evaluatePreflight({ live: disabledAutomation, desired }).failures
+    .some((f) => f.includes('AUTOMATION_TICK_ENABLED is not true')));
 }
 
 {
@@ -198,6 +218,11 @@ for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/we
     'TELEGRAM_DRAIN_ENABLED = "true"', 'TELEGRAM_DRAIN_ENABLED = "false"'));
   assert.ok(evaluatePreflight({ live: READY_LIVE, desired: drainOff }).failures
     .some((f) => f.includes('must enable the drain')));
+
+  const automationOff = parseDeployConfig(GENERATED.replace(
+    'AUTOMATION_TICK_ENABLED = "true"', 'AUTOMATION_TICK_ENABLED = "false"'));
+  assert.ok(evaluatePreflight({ live: READY_LIVE, desired: automationOff }).failures
+    .some((f) => f.includes('must enable AUTOMATION_TICK_ENABLED')));
 }
 
 {
@@ -228,6 +253,7 @@ for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/we
   const printed = JSON.stringify(verdict.summary);
   assert.equal(printed.includes('secret_text'), false);
   assert.ok(printed.includes('SUPABASE_SECRET_KEY'));
+  assert.ok(printed.includes('automation_tick_enabled'));
 }
 
-console.log('Telegram production preflight tests passed: Gmail shared drain, Cloudflare control-plane visibility and both linking state transitions are explicitly gated.');
+console.log('Telegram production preflight tests passed: Gmail shared drain, automation heartbeat, Cloudflare visibility and linking state transitions are explicitly gated.');
