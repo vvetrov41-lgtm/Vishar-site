@@ -27,7 +27,7 @@ set classification = excluded.classification,
 insert into public.message_template_variables (variable, description)
 values (
   'payment_link',
-  'The request-specific Vishar payment redirect for an issued deposit request.'
+  'The request-specific first-party payment path for an issued deposit request.'
 )
 on conflict (variable) do update
 set description = excluded.description;
@@ -44,7 +44,7 @@ select distinct
   'en',
   1,
   'Deposit for your tattoo booking with {{artist_display_name}}',
-  E'Hi {{client_first_name}},\n\nA deposit of {{deposit_amount}} is required to secure your tattoo booking with {{artist_display_name}} at {{studio_name}}.\n\nIf you cancel an appointment covered by this deposit within 72 hours of its scheduled start time, the deposit is non-refundable.\n\nPay your deposit here:\n{{payment_link}}\n\nIf you have any questions, reply to this email.\n\n{{studio_name}}',
+  E'Hi {{client_first_name}},\n\nA deposit of {{deposit_amount}} is required to secure your tattoo booking with {{artist_display_name}} at {{studio_name}}.\n\nIf you cancel an appointment covered by this deposit within 72 hours of its scheduled start time, the deposit is non-refundable.\n\nPay your deposit here:\nhttps://vishartattoo.com{{payment_link}}\n\nIf you have any questions, reply to this email.\n\n{{studio_name}}',
   'active'::public.message_template_status,
   null::uuid
 from public.artists a
@@ -338,7 +338,7 @@ begin
     v_out := replace(
       v_out,
       '{{payment_link}}',
-      'https://vishartattoo.com/pay-by-bank-transfer/' || v_public_id::text
+      '/pay-by-bank-transfer/' || v_public_id::text
     );
   end if;
 
