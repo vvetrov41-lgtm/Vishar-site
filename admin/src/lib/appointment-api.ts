@@ -7,6 +7,10 @@ export type AppointmentType =
   | 'video_consultation'
   | 'touch_up';
 
+export type AppointmentClientResponse =
+  | 'attendance_confirmed'
+  | 'reschedule_requested';
+
 export type CalendarSyncStatus =
   | 'not_connected'
   | 'queued'
@@ -34,6 +38,9 @@ export interface Appointment {
   calendar_last_synced_version: number | null;
   calendar_last_synced_at: string | null;
   calendar_last_error_code: string | null;
+  client_response: AppointmentClientResponse | null;
+  client_response_at: string | null;
+  client_response_calendar_version: number | null;
   notes: string | null;
   cancelled_at: string | null;
 }
@@ -93,6 +100,9 @@ function normaliseAppointment(row: Partial<Appointment> & Pick<Appointment, 'id'
     calendar_last_synced_version: row.calendar_last_synced_version ?? null,
     calendar_last_synced_at: row.calendar_last_synced_at ?? null,
     calendar_last_error_code: row.calendar_last_error_code ?? null,
+    client_response: row.client_response ?? null,
+    client_response_at: row.client_response_at ?? null,
+    client_response_calendar_version: row.client_response_calendar_version ?? null,
     notes: row.notes ?? null,
     cancelled_at: row.cancelled_at ?? null,
   } as Appointment;
@@ -108,7 +118,7 @@ export function createAppointmentApi(client: CrmClient) {
     } = {}): Promise<Appointment[]> {
       let query = client
         .from('sessions')
-        .select('id, artist_id, client_id, enquiry_id, project_id, appointment_type, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, calendar_sync_status, calendar_last_synced_version, calendar_last_synced_at, calendar_last_error_code, notes, cancelled_at')
+        .select('id, artist_id, client_id, enquiry_id, project_id, appointment_type, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, calendar_sync_status, calendar_last_synced_version, calendar_last_synced_at, calendar_last_error_code, client_response, client_response_at, client_response_calendar_version, notes, cancelled_at')
         .order('start_at', { ascending: true })
         .limit(300);
 
