@@ -42,6 +42,11 @@ export const TELEGRAM_SELF_SERVICE_RPCS = new Set([
   'service_record_telegram_notification_result',
 ]);
 
+/** Existing generic automation engine backend surface. Never exposed to public callers. */
+export const AUTOMATION_BACKEND_RPCS = new Set([
+  'service_run_automation_tick',
+]);
+
 /** Read-only public-edge lookups added by the platform registry. */
 export const READ_ONLY_RPCS = new Set([
   'resolve_booking_source_public',
@@ -144,6 +149,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
     if (
       !ALLOWED_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
+      && !AUTOMATION_BACKEND_RPCS.has(name)
       && !READ_ONLY_RPCS.has(name)
     ) {
       throw new ConfigurationError('rpc_not_allowed', 'That database operation is not available.');
