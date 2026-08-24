@@ -114,7 +114,7 @@ insert into public.projects (
 
 insert into public.sessions (
   id, project_id, client_id, enquiry_id, artist_id, appointment_type,
-  status, start_at, end_at, title
+  status, start_at, end_at
 ) values (
   'f9611111-1111-4111-8111-111111111111',
   'f9511111-1111-4111-8111-111111111111',
@@ -123,8 +123,7 @@ insert into public.sessions (
   (select id from t_artist),
   'tattoo_session', 'confirmed',
   date_trunc('day', now()) + interval '30 days 10 hours',
-  date_trunc('day', now()) + interval '30 days 17 hours',
-  'Deposit policy appointment'
+  date_trunc('day', now()) + interval '30 days 17 hours'
 );
 
 select pg_temp.as_owner();
