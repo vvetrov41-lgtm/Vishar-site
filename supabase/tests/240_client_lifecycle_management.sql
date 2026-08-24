@@ -167,7 +167,10 @@ select public.create_client_lifecycle_rule(
   'en'
 ) as id;
 grant select on t_artist_rule to public;
+reset role;
 
+-- Raw table assertions intentionally run as the test owner. The authenticated
+-- product role has no table grants and reaches the same state only through RPCs.
 select is(
   (select action_type::text from public.automation_rules
    where id = (select id from t_artist_rule)),
@@ -185,14 +188,17 @@ select ok(
        where id = (select id from t_artist_rule)),
   'an artist lifecycle rule starts disabled'
 );
+
+select pg_temp.life_as('c9011111-1111-4111-8111-111111111111');
+set local role authenticated;
 select is(
   (select count(*)::int
    from public.list_client_lifecycle_rules('c8011111-1111-4111-8111-111111111111')),
   1,
   'the author can read the lifecycle rule through the bounded surface'
 );
-
 reset role;
+
 select pg_temp.life_as('c9022222-2222-4222-8222-222222222222');
 set local role authenticated;
 select is(
