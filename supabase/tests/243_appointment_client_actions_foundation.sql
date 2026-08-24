@@ -56,6 +56,23 @@ grant select on t_artist to service_role;
 
 select is((select count(*)::int from t_artist), 1,
   'canonical test install has exactly one active Vladimir artist');
+
+-- The canonical no-seed test database deliberately has no real operator
+-- profile for Vladimir. Add one synthetic active Artist membership inside this
+-- transaction so notification assertions test delivery rather than fixture
+-- accidents. The transaction rollback removes it completely.
+insert into auth.users (id, email) values
+  ('e9033333-3333-4333-8333-333333333333', 'client-action-artist@example.test');
+insert into public.profiles (id, email, display_name, role, is_active) values
+  ('e9033333-3333-4333-8333-333333333333', 'client-action-artist@example.test',
+   'Client Action Artist', 'booking_manager', true);
+insert into public.artist_memberships
+  (profile_id, artist_id, access_level, can_view_finance, can_manage_finance,
+   can_manage_sessions, can_manage_integrations, is_active)
+values
+  ('e9033333-3333-4333-8333-333333333333', (select id from t_artist),
+   'artist', true, true, true, true, true);
+
 select ok(
   (select count(*) > 0
    from crm_private.automation_notification_recipients((select id from t_artist))),
@@ -188,7 +205,7 @@ select is((select count(*)::int from public.notifications
            where entity_type='session'
              and entity_id='e9022222-2222-4222-8222-222222222221'
              and notification_type='appointment.attendance_confirmed'),
-  (select count(*)::int from crm_private.automation_notification_recipients((select id from t_artist)),
+  (select count(*)::int from crm_private.automation_notification_recipients((select id from t_artist))),
   'attendance confirmation notifies exactly the current artist recipients');
 
 set local role service_role;
@@ -237,7 +254,7 @@ select is((select count(*)::int from public.notifications
              and entity_id='e9022222-2222-4222-8222-222222222222'
              and notification_type='appointment.reschedule_requested'
              and priority='high'),
-  (select count(*)::int from crm_private.automation_notification_recipients((select id from t_artist)),
+  (select count(*)::int from crm_private.automation_notification_recipients((select id from t_artist))),
   'reschedule request creates a high-priority internal notification');
 
 -- ---------------------------------------------------------------------------
@@ -319,7 +336,7 @@ select is((select count(*)::int from public.notifications
              and entity_id='e9022222-2222-4222-8222-222222222224'
              and notification_type='appointment.cancelled_by_client'
              and priority='high'),
-  (select count(*)::int from crm_private.automation_notification_recipients((select id from t_artist)),
+  (select count(*)::int from crm_private.automation_notification_recipients((select id from t_artist))),
   'client cancellation creates a high-priority internal notification');
 
 set local role service_role;
