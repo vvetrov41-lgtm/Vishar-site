@@ -1,0 +1,141 @@
+name: Private production release observer
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*'
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+
+concurrency:
+  group: private-production-release-observer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    name: Observe exact production release
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+
+    steps:
+      - name: Verify release event boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *) exit 1 ;;
+          esac
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Observe exact production workflow and publish commit status
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          api_root="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}"
+          context='vishar/private-production-release'
+          observer_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          post_status() {
+            state="$1"
+            description="$2"
+            target_url="$3"
+            payload="$(STATUS_STATE="$state" STATUS_DESCRIPTION="$description" STATUS_TARGET_URL="$target_url" STATUS_CONTEXT="$context" node <<'NODE'
+          const payload = {
+            state: process.env.STATUS_STATE,
+            description: process.env.STATUS_DESCRIPTION,
+            target_url: process.env.STATUS_TARGET_URL,
+            context: process.env.STATUS_CONTEXT,
+          };
+          process.stdout.write(JSON.stringify(payload));
+          NODE
+            )"
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              -H 'Content-Type: application/json' \
+              --data "$payload" \
+              "${api_root}/statuses/${GITHUB_SHA}" >/dev/null
+          }
+
+          post_status pending 'Production release workflow detected; validation is starting.' "$observer_url"
+
+          release_run_id=''
+          release_run_url=''
+          for _ in $(seq 1 24); do
+            runs="$(curl -fsS \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "${api_root}/actions/workflows/private-production-release.yml/runs?event=push&per_page=30")"
+            match="$(RUNS="$runs" TARGET_SHA="$GITHUB_SHA" node <<'NODE'
+          const body = JSON.parse(process.env.RUNS || '{}');
+          const runs = Array.isArray(body.workflow_runs) ? body.workflow_runs : [];
+          const match = runs.find((run) => run?.head_sha === process.env.TARGET_SHA);
+          if (match?.id) {
+            process.stdout.write(`${match.id}\n${match.html_url || ''}`);
+          }
+          NODE
+            )"
+            if [ -n "$match" ]; then
+              release_run_id="$(printf '%s\n' "$match" | sed -n '1p')"
+              release_run_url="$(printf '%s\n' "$match" | sed -n '2p')"
+              break
+            fi
+            sleep 10
+          done
+
+          if [ -z "$release_run_id" ]; then
+            post_status error 'Production release workflow was not detected for this exact SHA.' "$observer_url"
+            exit 1
+          fi
+
+          case "$release_run_id" in
+            *[!0-9]*|'') exit 1 ;;
+          esac
+          [ -n "$release_run_url" ] || release_run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${release_run_id}"
+          post_status pending 'Exact production release is validating or waiting to roll out.' "$release_run_url"
+
+          for _ in $(seq 1 225); do
+            run="$(curl -fsS \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "${api_root}/actions/runs/${release_run_id}")"
+            result="$(RUN="$run" TARGET_SHA="$GITHUB_SHA" node <<'NODE'
+          const run = JSON.parse(process.env.RUN || '{}');
+          if (run.head_sha !== process.env.TARGET_SHA) {
+            throw new Error('Observed production run SHA mismatch');
+          }
+          process.stdout.write(`${run.status || ''}\n${run.conclusion || ''}`);
+          NODE
+            )"
+            status="$(printf '%s\n' "$result" | sed -n '1p')"
+            conclusion="$(printf '%s\n' "$result" | sed -n '2p')"
+
+            if [ "$status" = 'completed' ]; then
+              if [ "$conclusion" = 'success' ]; then
+                post_status success 'Production rollout completed and workflow readback passed.' "$release_run_url"
+                exit 0
+              fi
+              if [ "$conclusion" = 'cancelled' ]; then
+                post_status error 'Production release was cancelled.' "$release_run_url"
+                exit 1
+              fi
+              post_status failure "Production release completed with ${conclusion:-failure}." "$release_run_url"
+              exit 1
+            fi
+
+            sleep 20
+          done
+
+          post_status pending 'Production release is still waiting or running; inspect the exact run.' "$release_run_url"
