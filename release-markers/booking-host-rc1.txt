@@ -1,0 +1,3 @@
+Dedicated booking host production release candidate.
+Source integration head: 8c07c1acda2628f289bf3e4a2d44a047c0b28a23
+Scope: vishar-booking-host-production only
