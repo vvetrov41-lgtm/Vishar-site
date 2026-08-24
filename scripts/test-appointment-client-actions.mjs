@@ -66,7 +66,7 @@ await test('the whole client-action namespace is owned, but only one strict toke
   assert.equal(isAppointmentClientActionPath(new Request('https://tattooai.example/appointments/other')), false);
   assert.equal(readAppointmentClientActionToken(new Request(URL)), TOKEN);
   assert.equal(readAppointmentClientActionToken(new Request(`${URL}/`)), TOKEN);
-  for (const tail of ['abc', 'A'.repeat(64), `${TOKEN}x`, '../respond/' + TOKEN, '1']) {
+  for (const tail of ['abc', 'A'.repeat(64), `${TOKEN}x`, `${TOKEN}/extra`, '1']) {
     assert.equal(
       readAppointmentClientActionToken(new Request(`https://tattooai.example/appointments/respond/${tail}`)),
       null,
