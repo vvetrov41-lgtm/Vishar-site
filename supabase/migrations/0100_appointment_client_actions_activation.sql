@@ -10,13 +10,13 @@
 -- action runtime is already live at booking.vishartattoo.com.
 
 -- ---------------------------------------------------------------------------
--- 1. Catalogue the three lifecycle-only URL variables
+-- 1. Catalogue the three lifecycle-only token variables
 -- ---------------------------------------------------------------------------
 
 insert into public.message_template_variables (variable, description) values
-  ('confirm_link', 'Single-use client link that confirms attendance for the authoritative appointment version.'),
-  ('reschedule_link', 'Single-use client link that requests a different appointment time without moving the current booking.'),
-  ('cancel_link', 'Single-use client link that confirms cancellation of the authoritative appointment version.')
+  ('confirm_link', 'Opaque single-use token appended to the branded confirm-attendance action path.'),
+  ('reschedule_link', 'Opaque single-use token appended to the branded reschedule-request action path.'),
+  ('cancel_link', 'Opaque single-use token appended to the branded cancellation action path.')
 on conflict (variable) do update
 set description = excluded.description;
 
@@ -29,7 +29,7 @@ set description = excluded.description;
 -- ---------------------------------------------------------------------------
 
 update public.message_templates t
-set body = E'Hi {{client_first_name}},\n\nYour tattoo appointment with {{artist_display_name}} at {{studio_name}} is tomorrow, {{appointment_date}}, at {{appointment_time}}.\n\nPlease note: if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.\n\nManage this appointment securely:\n\nConfirm attendance:\n{{confirm_link}}\n\nRequest a different time:\n{{reschedule_link}}\nYour current appointment stays booked until we contact you and agree a new time.\n\nCancel this appointment:\n{{cancel_link}}\n\nOpening a link only shows a confirmation page. No appointment change is made until you confirm the action there.\n\nIf you have a question before then, just reply to this email.\n\nSee you tomorrow,\n{{studio_name}}',
+set body = E'Hi {{client_first_name}},\n\nYour tattoo appointment with {{artist_display_name}} at {{studio_name}} is tomorrow, {{appointment_date}}, at {{appointment_time}}.\n\nPlease note: if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.\n\nManage this appointment securely:\n\nConfirm attendance:\nhttps://booking.vishartattoo.com/appointments/respond/{{confirm_link}}\n\nRequest a different time:\nhttps://booking.vishartattoo.com/appointments/respond/{{reschedule_link}}\nYour current appointment stays booked until we contact you and agree a new time.\n\nCancel this appointment:\nhttps://booking.vishartattoo.com/appointments/respond/{{cancel_link}}\n\nOpening a link only shows a confirmation page. No appointment change is made until you confirm the action there.\n\nIf you have a question before then, just reply to this email.\n\nSee you tomorrow,\n{{studio_name}}',
     version = t.version + 1,
     updated_at = now()
 where t.artist_id is null
@@ -39,7 +39,7 @@ where t.artist_id is null
   and t.status = 'active';
 
 update public.message_templates t
-set body = E'Hi {{client_first_name}},\n\nYour consultation with {{artist_display_name}} is tomorrow, {{appointment_date}}, at {{appointment_time}}.\n\nPlease bring any reference images or ideas you would like to talk through.\n\nManage this appointment securely:\n\nConfirm attendance:\n{{confirm_link}}\n\nRequest a different time:\n{{reschedule_link}}\nYour current appointment stays booked until we contact you and agree a new time.\n\nCancel this appointment:\n{{cancel_link}}\n\nOpening a link only shows a confirmation page. No appointment change is made until you confirm the action there.\n\nIf you have a question before then, just reply to this email.\n\nSee you tomorrow,\n{{studio_name}}',
+set body = E'Hi {{client_first_name}},\n\nYour consultation with {{artist_display_name}} is tomorrow, {{appointment_date}}, at {{appointment_time}}.\n\nPlease bring any reference images or ideas you would like to talk through.\n\nManage this appointment securely:\n\nConfirm attendance:\nhttps://booking.vishartattoo.com/appointments/respond/{{confirm_link}}\n\nRequest a different time:\nhttps://booking.vishartattoo.com/appointments/respond/{{reschedule_link}}\nYour current appointment stays booked until we contact you and agree a new time.\n\nCancel this appointment:\nhttps://booking.vishartattoo.com/appointments/respond/{{cancel_link}}\n\nOpening a link only shows a confirmation page. No appointment change is made until you confirm the action there.\n\nIf you have a question before then, just reply to this email.\n\nSee you tomorrow,\n{{studio_name}}',
     version = t.version + 1,
     updated_at = now()
 where t.artist_id is null
@@ -50,6 +50,11 @@ where t.artist_id is null
 
 -- ---------------------------------------------------------------------------
 -- 3. Internal renderer for server-minted action capabilities
+--
+-- The public origin belongs to the reviewed template, not to a function body.
+-- This helper handles only opaque capabilities and delegates ordinary template
+-- variables plus the unresolved-variable fail-closed check to the existing
+-- lifecycle renderer.
 -- ---------------------------------------------------------------------------
 
 create or replace function crm_private.render_lifecycle_action_template_text(
@@ -67,7 +72,6 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   v_out text := p_text;
-  v_base constant text := 'https://booking.vishartattoo.com/appointments/respond/';
 begin
   if v_out is null then
     return null;
@@ -80,12 +84,10 @@ begin
     return null;
   end if;
 
-  v_out := replace(v_out, '{{confirm_link}}', v_base || p_confirm_token);
-  v_out := replace(v_out, '{{reschedule_link}}', v_base || p_reschedule_token);
-  v_out := replace(v_out, '{{cancel_link}}', v_base || p_cancel_token);
+  v_out := replace(v_out, '{{confirm_link}}', p_confirm_token);
+  v_out := replace(v_out, '{{reschedule_link}}', p_reschedule_token);
+  v_out := replace(v_out, '{{cancel_link}}', p_cancel_token);
 
-  -- The existing lifecycle renderer owns all ordinary variables and the final
-  -- unresolved-variable fail-closed check.
   return crm_private.render_lifecycle_template_text(v_out, p_session_id);
 end;
 $$;
@@ -427,10 +429,11 @@ begin
 end;
 $$;
 
+-- Preserve the original private execution boundary from 0093. The public
+-- service_run_automation_tick() SECURITY DEFINER function invokes this helper as
+-- its owner; API roles, including service_role, never call the helper directly.
 revoke all on function crm_private.execute_client_lifecycle_job(uuid)
-  from public, anon, authenticated;
-grant execute on function crm_private.execute_client_lifecycle_job(uuid)
-  to service_role;
+  from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 5. Apply-time invariants
