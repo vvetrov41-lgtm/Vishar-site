@@ -1,6 +1,5 @@
 import { createSupabaseClient } from './supabase.js';
 
-const MAX_TICK_COUNT = 500;
 const TICK_LIMIT = 100;
 
 function invalidSummary() {
@@ -15,13 +14,13 @@ export function assertAutomationTickSummary(value) {
 
   const fields = ['materialised', 'withdrawn', 'executed', 'notified'];
   for (const field of fields) {
-    if (!Number.isInteger(row[field]) || row[field] < 0 || row[field] > MAX_TICK_COUNT) {
-      throw invalidSummary();
-    }
+    if (!Number.isSafeInteger(row[field]) || row[field] < 0) throw invalidSummary();
   }
 
-  if (row.executed > TICK_LIMIT || row.materialised > TICK_LIMIT) throw invalidSummary();
-  if (row.notified > row.executed) throw invalidSummary();
+  // Only materialisation is globally bounded by p_limit. Legacy notification
+  // execution and client lifecycle execution each have their own bounded due
+  // selection, while one legacy job may notify more than one current recipient.
+  if (row.materialised > TICK_LIMIT) throw invalidSummary();
 
   return {
     materialised: row.materialised,
@@ -40,6 +39,5 @@ export async function runAutomationTick(env, fetchImpl = fetch) {
 }
 
 export const __testing = {
-  MAX_TICK_COUNT,
   TICK_LIMIT,
 };
