@@ -196,6 +196,7 @@ jobs:
           test ! -d black-and-grey-realism-manchester
           test ! -d cover-up-tattoo-manchester
           test -f _redirects
+          python -m pip install pytest --quiet
           python -m pytest tests/test_london_url_redirects.py -q
 
       - name: Remove temporary workflow and commit
