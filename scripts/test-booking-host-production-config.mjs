@@ -13,6 +13,8 @@ const config = await readFile(new URL('../wrangler.booking-host.production.toml'
 const worker = await readFile(new URL('../workers/booking-host.js', import.meta.url), 'utf8');
 const productionWorker = await readFile(new URL('../workers/booking-host-production.js', import.meta.url), 'utf8');
 const releaseWorkflow = await readFile(new URL('../.github/workflows/deploy-production-booking-host.yml', import.meta.url), 'utf8');
+const privateReleaseWorkflow = await readFile(new URL('../.github/workflows/private-production-release.yml', import.meta.url), 'utf8');
+const privateReleaseObserver = await readFile(new URL('../.github/workflows/private-production-release-observer.yml', import.meta.url), 'utf8');
 const activeConfig = config
   .split('\n')
   .filter((line) => !line.trimStart().startsWith('#'))
@@ -154,7 +156,10 @@ const wrongHost = await handleProductionBookingHostRequest(
 assert.equal(wrongHost.status, 404);
 assert.equal(actionCalls.length, 2);
 
-assert.match(releaseWorkflow, /release\/booking-host-rc\*/);
+const bookingReleasePattern = 'release/private-crm-rc*-booking-host*';
+const bookingReleaseExclusion = "- '!release/private-crm-rc*-booking-host*'";
+assert.match(releaseWorkflow, /release\/private-crm-rc\*-booking-host\*/);
+assert.doesNotMatch(releaseWorkflow, /release\/booking-host-rc\*/);
 assert.match(releaseWorkflow, /environment: crm-production/);
 assert.match(releaseWorkflow, /WORKER_NAME: vishar-booking-host-production/);
 assert.match(releaseWorkflow, /git ls-remote --heads origin/);
@@ -168,4 +173,10 @@ assert.match(releaseWorkflow, /Cloudflare deployment id did not change after dep
 assert.match(releaseWorkflow, /multipart_required/);
 assert.doesNotMatch(releaseWorkflow, /supabase db push|supabase migration|wrangler secret put|routes?\s+(create|delete)|custom domain/i);
 
-console.log('booking host production config and appointment proxy tests passed');
+assert.equal(releaseWorkflow.includes(bookingReleasePattern), true);
+assert.equal(privateReleaseWorkflow.includes(bookingReleaseExclusion), true);
+assert.equal(privateReleaseObserver.includes(bookingReleaseExclusion), true);
+assert.match(privateReleaseWorkflow, /release\/private-crm-rc\*-booking-host\*\)\s*(?:\n|.)*?exit 1/);
+assert.match(privateReleaseObserver, /release\/private-crm-rc\*-booking-host\*\) exit 1/);
+
+console.log('booking host production config, release admission and appointment proxy tests passed');
