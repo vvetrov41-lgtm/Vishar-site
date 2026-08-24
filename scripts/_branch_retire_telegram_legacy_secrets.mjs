@@ -55,12 +55,24 @@ function removeStandaloneLines(text, needle, expected, label) {
   write(path, text);
 }
 
-// 2. Generated deploy config: only shared/backend secrets are required.
+// 2. Generated deploy config: only shared/backend secrets are required. This
+// secret inventory is embedded inside one escaped template-literal source line,
+// so remove the two escaped entries rather than deleting the whole source line.
 {
   const path = 'scripts/generate-telegram-production-deploy-config.mjs';
   let text = read(path);
-  text = removeStandaloneLines(text, LEGACY_K, 1, path);
-  text = removeStandaloneLines(text, LEGACY_V, 1, path);
+  text = replaceExact(text,
+    '  "ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION",\\n',
+    '',
+    1,
+    path,
+  );
+  text = replaceExact(text,
+    '  "ARTIST_TELEGRAM_KRISTINA_HPRODUCTION",\\n',
+    '',
+    1,
+    path,
+  );
   write(path, text);
 }
 
