@@ -1,0 +1,29 @@
+name: Audit London URL Migration
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: geo/london-url-migration
+          fetch-depth: 1
+
+      - name: List tracked old specialty URL references
+        shell: bash
+        run: |
+          echo '=== colour-realism-tattoo-manchester ==='
+          git grep -n 'colour-realism-tattoo-manchester' || true
+          echo '=== black-and-grey-realism-manchester ==='
+          git grep -n 'black-and-grey-realism-manchester' || true
+          echo '=== cover-up-tattoo-manchester ==='
+          git grep -n 'cover-up-tattoo-manchester' || true
