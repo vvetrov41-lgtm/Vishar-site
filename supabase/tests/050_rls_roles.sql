@@ -694,13 +694,22 @@ insert into expected_function_acl values
   ('public.snooze_follow_up(uuid,timestamptz)', false, true, false),
   ('public.set_notification_preference(public.notification_channel,boolean)', false, true, false),
 
-  -- Automation engine (migration 0081). The tick is backend-only; the three
-  -- management RPCs are browser-callable and enforce manage_automations in
-  -- their bodies. Every private helper stays uncallable by an API role.
+  -- Automation engine (migration 0081). The tick is backend-only; management
+  -- RPCs are browser-callable and enforce manage_automations in their bodies.
+  -- Every private helper stays uncallable by an API role.
   ('public.service_run_automation_tick(integer)', false, false, true),
   ('public.list_automation_rules(uuid)', false, true, false),
   ('public.create_automation_rule(uuid,text,text,text,text,text,text,integer,public.notification_priority)', false, true, false),
   ('public.set_automation_rule_enabled(uuid,boolean)', false, true, false),
+
+  -- Client lifecycle control plane (migrations 0093-0094). These are human
+  -- policy-management calls only. The backend may execute the already-reviewed
+  -- scheduler but may not author or activate policy on a person's behalf.
+  ('public.create_client_lifecycle_rule(uuid,text,public.appointment_type,text,public.automation_schedule_anchor,integer,text)', false, true, false),
+  ('public.list_client_lifecycle_rules(uuid)', false, true, false),
+  ('public.upsert_workspace_client_lifecycle_default(uuid,uuid,text,public.appointment_type,text,public.automation_schedule_anchor,integer,text,boolean)', false, true, false),
+  ('public.list_workspace_client_lifecycle_defaults(uuid)', false, true, false),
+  ('public.set_message_template_active(uuid,boolean)', false, true, false),
 
   -- Templates and the consent/suppression gate (migration 0082). The gate is
   -- readable by the backend as well, because every future send path must be
