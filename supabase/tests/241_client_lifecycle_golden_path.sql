@@ -112,11 +112,13 @@ select lives_ok(
     )$$,
   'the same backend Gmail contract can bind a previously unknown artist'
 );
+reset role;
 
+-- Direct fixture setup runs as the test owner. service_role itself remains
+-- unable to write the client table, which the global ACL suite already pins.
 insert into public.clients (id, full_name, email) values
   ('e7011111-1111-4111-8111-111111111111',
    'Lifecycle Client', 'lifecycle-client@example.test');
-reset role;
 
 -- ---------------------------------------------------------------------------
 -- Act 3. The artist authors reviewed copy and a disabled typed rule, then
