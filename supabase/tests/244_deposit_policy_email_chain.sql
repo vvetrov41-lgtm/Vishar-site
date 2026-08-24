@@ -67,12 +67,12 @@ select ok(
 
 select ok(
   (select body like '%in 72 hours%'
-          and body like '%from this point the deposit is non-refundable if you cancel the appointment.%'
+          and body like '%if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.%'
    from public.message_templates
    where workspace_id = (select workspace_id from t_artist)
      and purpose = 'session_reminder_72h'
      and status = 'active'),
-  'the 72-hour reminder explicitly links back to the disclosed deposit rule'
+  'the 72-hour reminder states the deposit rule without claiming every booking has a deposit'
 );
 
 select ok(
