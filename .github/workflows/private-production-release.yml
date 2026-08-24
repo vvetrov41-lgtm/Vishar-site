@@ -13,6 +13,9 @@ concurrency:
   group: private-production-release
   cancel-in-progress: false
 
+env:
+  REQUIRED_RELEASE_FOUNDATION_SHA: cbcb5fa1e5e8559fadd98c9681c6de7ea8549687
+
 jobs:
   validate-release:
     name: Release and Worker validation
@@ -39,6 +42,10 @@ jobs:
           esac
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
           [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor "$REQUIRED_RELEASE_FOUNDATION_SHA" "$GITHUB_SHA" || {
+            echo 'Release snapshot does not descend from the approved private-platform foundation.' >&2
+            exit 1
+          }
           remote_sha="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
           [ -n "$remote_sha" ]
           [ "$remote_sha" = "$GITHUB_SHA" ] || {
@@ -92,7 +99,9 @@ jobs:
           esac
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
           [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor "$REQUIRED_RELEASE_FOUNDATION_SHA" "$GITHUB_SHA"
           remote_sha="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
+          [ -n "$remote_sha" ]
           [ "$remote_sha" = "$GITHUB_SHA" ]
 
       - name: Setup Node
@@ -142,7 +151,9 @@ jobs:
           esac
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
           [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor "$REQUIRED_RELEASE_FOUNDATION_SHA" "$GITHUB_SHA"
           remote_sha="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
+          [ -n "$remote_sha" ]
           [ "$remote_sha" = "$GITHUB_SHA" ]
 
       - name: Setup Node
@@ -180,6 +191,7 @@ jobs:
 
   deploy:
     name: Production rollout
+    if: github.actor == github.repository_owner
     needs:
       - validate-release
       - validate-crm
@@ -218,6 +230,10 @@ jobs:
           CRM_DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ] || {
+            echo 'Only the repository owner may authorize an automatic private production release.' >&2
+            exit 1
+          }
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*) ;;
             *)
@@ -227,6 +243,10 @@ jobs:
           esac
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
           [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor "$REQUIRED_RELEASE_FOUNDATION_SHA" "$GITHUB_SHA" || {
+            echo 'Release snapshot does not descend from the approved private-platform foundation.' >&2
+            exit 1
+          }
           remote_sha="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
           [ -n "$remote_sha" ]
           [ "$remote_sha" = "$GITHUB_SHA" ] || {
@@ -385,12 +405,11 @@ jobs:
           if (body.success !== true || !Array.isArray(body.result)) {
             throw new Error('Cloudflare Pages deployment readback failed');
           }
-          const latest = body.result.find((entry) => entry?.environment === 'production');
-          if (!latest) throw new Error('No production Pages deployment found');
-          const commitHash = latest?.deployment_trigger?.metadata?.commit_hash;
-          if (commitHash !== process.env.GITHUB_SHA) {
-            throw new Error(`Production Pages head mismatch: ${commitHash || 'missing'}`);
-          }
+          const matching = body.result.find((entry) => (
+            entry?.environment === 'production'
+            && entry?.deployment_trigger?.metadata?.commit_hash === process.env.GITHUB_SHA
+          ));
+          if (!matching) throw new Error('Exact production Pages commit was not found in deployment readback');
           NODE
 
       - name: Verify exact Telegram production Worker secret names
@@ -504,6 +523,7 @@ jobs:
             echo
             echo "- Exact immutable release SHA: \`$GITHUB_SHA\`"
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Release actor: \`$GITHUB_ACTOR\` (repository owner required)"
             echo '- Validation: public/Worker, private CRM, full pgTAP, communications migration preservation, PostgreSQL lint'
             echo '- Database: remote dry-run, apply, post-apply dry-run'
             echo '- CRM: exact production build, Supabase Auth readback, Pages commit-hash readback'
