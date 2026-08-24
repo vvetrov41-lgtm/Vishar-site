@@ -6,9 +6,10 @@
 //
 // Production `vishar-telegram-drain-production` carries a GMAIL_SERVICE service
 // binding and GMAIL_SHARED_DRAIN_ENABLED, added by the Gmail shared-cron work.
-// That contract must survive every Telegram self-service deployment. Gmail
-// credentials stay on the Gmail Worker; this Worker may call only the bounded
-// Service Binding RPC.
+// The same cron now owns the generic automation-engine heartbeat behind
+// AUTOMATION_TICK_ENABLED. These contracts must survive every production deploy.
+// Gmail credentials stay on the Gmail Worker; the automation tick reuses only
+// the already-provisioned Supabase backend secret.
 //
 // So the rule this enforces is narrow and absolute: a deploy may add bindings,
 // never silently remove one that production is currently running on, and it may
@@ -147,6 +148,14 @@ export function evaluatePreflight({
     failures.push(`deploy config must bind GMAIL_SERVICE to ${GMAIL_SERVICE}`);
   }
 
+  if (desired.vars.AUTOMATION_TICK_ENABLED !== 'true') {
+    failures.push('deploy config must enable AUTOMATION_TICK_ENABLED = "true"');
+  }
+  const liveAutomationEnabled = (live.bindings || []).find((b) => b.name === 'AUTOMATION_TICK_ENABLED');
+  if (liveAutomationEnabled && liveAutomationEnabled.text !== 'true') {
+    failures.push('live AUTOMATION_TICK_ENABLED is not true; investigate before a deploy can re-enable it');
+  }
+
   const liveSecretNames = (live.secretNames || []).slice().sort();
   for (const name of LEGACY_FALLBACK_SECRETS) {
     if (!liveSecretNames.includes(name)) {
@@ -244,6 +253,7 @@ export function evaluatePreflight({
       desired_bindings: desired.replaceableBindings,
       desired_crons: desired.crons,
       desired_linking_enabled: desiredLinking === 'true',
+      automation_tick_enabled: desired.vars.AUTOMATION_TICK_ENABLED === 'true',
       gmail_shared_drain_preserved: desired.services.GMAIL_SERVICE === GMAIL_SERVICE
         && desired.vars.GMAIL_SHARED_DRAIN_ENABLED === 'true',
     },
