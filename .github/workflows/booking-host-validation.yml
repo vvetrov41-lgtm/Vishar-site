@@ -1,0 +1,56 @@
+name: Booking host validation
+
+on:
+  pull_request:
+    paths:
+      - 'workers/booking-host.js'
+      - 'wrangler.booking-host.production.toml'
+      - 'scripts/test-booking-host-worker.mjs'
+      - 'scripts/test-booking-host-production-config.mjs'
+      - '.github/workflows/booking-host-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify exact checkout
+        run: |
+          set -euo pipefail
+          echo "head=$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain)"
+
+      - name: Test booking host contract
+        run: |
+          set -euo pipefail
+          node scripts/test-booking-host-worker.mjs
+          node scripts/test-booking-host-production-config.mjs
+
+      - name: Compile production Worker without deploy
+        run: |
+          set -euo pipefail
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/booking-host-production-wrangler.log \
+          WRANGLER_SEND_METRICS=false \
+          npx wrangler deploy \
+            --config wrangler.booking-host.production.toml \
+            --dry-run \
+            --outdir .wrangler/booking-host-production-dry-run
+
+      - name: Scan repository for committed secrets
+        run: node scripts/scan-secrets.mjs
