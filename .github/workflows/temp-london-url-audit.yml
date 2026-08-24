@@ -1,4 +1,4 @@
-name: Audit London URL Migration
+name: Apply London URL Migration
 
 on:
   pull_request:
@@ -6,10 +6,10 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  audit:
+  migrate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
@@ -18,12 +18,197 @@ jobs:
           ref: geo/london-url-migration
           fetch-depth: 1
 
-      - name: List tracked old specialty URL references
+      - name: Apply route migration
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          mappings = [
+              ('colour-realism-tattoo-manchester', 'colour-realism-tattoo-london'),
+              ('black-and-grey-realism-manchester', 'black-and-grey-realism-london'),
+              ('cover-up-tattoo-manchester', 'cover-up-tattoo-london'),
+          ]
+
+          live_files = {
+              'about/index.html',
+              'aftercare/index.html',
+              'book/index.html',
+              'black-and-grey-realism-manchester/index.html',
+              'colour-realism-tattoo-manchester/index.html',
+              'cover-up-tattoo-manchester/index.html',
+              'components.js',
+              'faq/index.html',
+              'index.html',
+              'llms.txt',
+              'sitemap.xml',
+              'tailwind.config.js',
+              'geo_agent/config/geo_agent_config.json',
+          }
+          historical_exact = {'SEO_TECHNICAL_AUDIT.md', 'TECHNICAL_AUDIT.md'}
+          historical_prefixes = ('geo_agent/data/', 'geo_agent/reports/')
+          workflow_path = '.github/workflows/temp-london-url-audit.yml'
+
+          for old, new in mappings:
+              old_dir = Path(old)
+              new_dir = Path(new)
+              if not old_dir.is_dir():
+                  raise SystemExit(f'Missing expected source directory: {old}')
+              if new_dir.exists():
+                  raise SystemExit(f'Target directory already exists: {new}')
+
+          grep = subprocess.run(
+              ['git', 'grep', '-Il', '-e', mappings[0][0], '-e', mappings[1][0], '-e', mappings[2][0]],
+              text=True,
+              stdout=subprocess.PIPE,
+              check=False,
+          )
+          matched = {line.strip() for line in grep.stdout.splitlines() if line.strip()}
+          unexpected = {
+              path for path in matched
+              if path != workflow_path
+              and path not in live_files
+              and path not in historical_exact
+              and not path.startswith(historical_prefixes)
+          }
+          if unexpected:
+              raise SystemExit('Unexpected old-route references: ' + ', '.join(sorted(unexpected)))
+
+          touched = set()
+          seen = {old: 0 for old, _ in mappings}
+          for rel in sorted(live_files):
+              path = Path(rel)
+              if not path.is_file():
+                  raise SystemExit(f'Missing expected live file: {rel}')
+              text = path.read_text(encoding='utf-8')
+              original = text
+              for old, new in mappings:
+                  count = text.count(old)
+                  seen[old] += count
+                  if count:
+                      text = text.replace(old, new)
+              if text != original:
+                  path.write_text(text, encoding='utf-8')
+                  touched.add(rel)
+
+          for old, count in seen.items():
+              if count == 0:
+                  raise SystemExit(f'No live references replaced for {old}')
+
+          sitemap = Path('sitemap.xml')
+          sitemap_text = sitemap.read_text(encoding='utf-8')
+          for _, new in mappings:
+              loc = f'<loc>https://vishartattoo.com/{new}/</loc>'
+              if sitemap_text.count(loc) != 1:
+                  raise SystemExit(f'Expected one sitemap entry for {new}')
+              marker = loc + '\n    <lastmod>2026-07-15</lastmod>'
+              if sitemap_text.count(marker) != 1:
+                  raise SystemExit(f'Unexpected lastmod block for {new}')
+              sitemap_text = sitemap_text.replace(marker, loc + '\n    <lastmod>2026-08-24</lastmod>')
+          sitemap.write_text(sitemap_text, encoding='utf-8')
+
+          for old, new in mappings:
+              Path(old).rename(new)
+
+          redirect_lines = ['# London specialty URL migration - permanent redirects']
+          for old, new in mappings:
+              redirect_lines.extend([
+                  f'/{old} /{new}/ 301',
+                  f'/{old}/ /{new}/ 301',
+                  f'/{old}/index.html /{new}/ 301',
+              ])
+          Path('_redirects').write_text('\n'.join(redirect_lines) + '\n', encoding='utf-8')
+
+          test = '''from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+MAPPINGS = [
+    ("colour-realism-tattoo-manchester", "colour-realism-tattoo-london"),
+    ("black-and-grey-realism-manchester", "black-and-grey-realism-london"),
+    ("cover-up-tattoo-manchester", "cover-up-tattoo-london"),
+]
+
+
+def test_london_specialty_routes_are_canonical() -> None:
+    sitemap = (REPO / "sitemap.xml").read_text(encoding="utf-8")
+    llms = (REPO / "llms.txt").read_text(encoding="utf-8")
+    config = (REPO / "geo_agent" / "config" / "geo_agent_config.json").read_text(encoding="utf-8")
+    tailwind = (REPO / "tailwind.config.js").read_text(encoding="utf-8")
+
+    for old, new in MAPPINGS:
+        assert not (REPO / old).exists()
+        page = REPO / new / "index.html"
+        assert page.is_file()
+        html = page.read_text(encoding="utf-8")
+        canonical = f'<link rel="canonical" href="https://vishartattoo.com/{new}/">'
+        assert canonical in html
+        assert old not in html
+        assert f"https://vishartattoo.com/{new}/" in sitemap
+        assert f"https://vishartattoo.com/{old}/" not in sitemap
+        assert f"https://vishartattoo.com/{new}/" in llms
+        assert f"https://vishartattoo.com/{old}/" not in llms
+        assert new in config
+        assert old not in config
+        assert new in tailwind
+        assert old not in tailwind
+
+
+def test_cloudflare_redirects_preserve_old_specialty_urls() -> None:
+    redirects_path = REPO / "_redirects"
+    assert redirects_path.is_file()
+    lines = {
+        line.strip()
+        for line in redirects_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    expected = set()
+    for old, new in MAPPINGS:
+        expected.update({
+            f"/{old} /{new}/ 301",
+            f"/{old}/ /{new}/ 301",
+            f"/{old}/index.html /{new}/ 301",
+        })
+    assert expected == lines
+
+
+def test_public_source_does_not_link_to_old_specialty_routes() -> None:
+    suffixes = {".html", ".js", ".txt", ".xml"}
+    ignored_top_level = {
+        ".agents", ".codex", ".geo-topic-agent-runtime", ".github", ".specify",
+        "geo_agent", "node_modules", "scripts", "tests",
+    }
+    for path in REPO.rglob("*"):
+        if not path.is_file() or path.suffix not in suffixes:
+            continue
+        rel = path.relative_to(REPO)
+        if rel.parts and rel.parts[0] in ignored_top_level:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for old, _ in MAPPINGS:
+            assert old not in text, f"stale route {old} found in {rel}"
+'''
+          Path('tests/test_london_url_redirects.py').write_text(test, encoding='utf-8')
+
+      - name: Verify migration before commit
         shell: bash
         run: |
-          echo '=== colour-realism-tattoo-manchester ==='
-          git grep -n 'colour-realism-tattoo-manchester' || true
-          echo '=== black-and-grey-realism-manchester ==='
-          git grep -n 'black-and-grey-realism-manchester' || true
-          echo '=== cover-up-tattoo-manchester ==='
-          git grep -n 'cover-up-tattoo-manchester' || true
+          test -f colour-realism-tattoo-london/index.html
+          test -f black-and-grey-realism-london/index.html
+          test -f cover-up-tattoo-london/index.html
+          test ! -d colour-realism-tattoo-manchester
+          test ! -d black-and-grey-realism-manchester
+          test ! -d cover-up-tattoo-manchester
+          test -f _redirects
+          python -m pytest tests/test_london_url_redirects.py -q
+
+      - name: Remove temporary workflow and commit
+        shell: bash
+        run: |
+          rm .github/workflows/temp-london-url-audit.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'Migrate specialty URLs to London with 301 redirects'
+          git push origin HEAD:geo/london-url-migration
