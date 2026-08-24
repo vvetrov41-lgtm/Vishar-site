@@ -71,20 +71,38 @@ function assertChallenge(value: unknown): TelegramLinkChallenge {
   return row as unknown as TelegramLinkChallenge;
 }
 
-export function telegramStartUrl(
+function telegramLinkParts(
   botUsername: string,
   challenge: Pick<TelegramLinkChallenge, 'link_token' | 'destination_kind'>,
-): string {
+): { username: string; token: string } {
   const username = botUsername.trim().replace(/^@/, '');
   if (!BOT_USERNAME.test(username) || !LINK_TOKEN.test(challenge.link_token)) {
     throw new ApiError('Telegram linking is not configured correctly.');
   }
+  return { username, token: challenge.link_token };
+}
+
+export function telegramStartUrl(
+  botUsername: string,
+  challenge: Pick<TelegramLinkChallenge, 'link_token' | 'destination_kind'>,
+): string {
+  const { username, token } = telegramLinkParts(botUsername, challenge);
   const url = new URL(`https://t.me/${username}`);
   url.searchParams.set(
     challenge.destination_kind === 'artist' ? 'startgroup' : 'start',
-    challenge.link_token,
+    token,
   );
   return url.toString();
+}
+
+export function telegramStartCommand(
+  botUsername: string,
+  challenge: Pick<TelegramLinkChallenge, 'link_token' | 'destination_kind'>,
+): string {
+  const { username, token } = telegramLinkParts(botUsername, challenge);
+  return challenge.destination_kind === 'artist'
+    ? `/start@${username} ${token}`
+    : `/start ${token}`;
 }
 
 export function createTelegramConnectionsApi(client: CrmClient) {

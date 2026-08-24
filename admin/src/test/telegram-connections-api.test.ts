@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CrmClient } from '../lib/api';
 import {
   createTelegramConnectionsApi,
+  telegramStartCommand,
   telegramStartUrl,
 } from '../lib/telegram-connections-api';
 
@@ -25,6 +26,30 @@ describe('Telegram self-service API boundary', () => {
     expect(new URL(profile).searchParams.has('startgroup')).toBe(false);
     expect(new URL(artist).searchParams.get('startgroup')).toBe('abcdef12345678901234567890');
     expect(new URL(artist).searchParams.has('start')).toBe(false);
+  });
+
+  it('builds a Telegram command fallback without changing the challenge token', () => {
+    expect(telegramStartCommand('@VisharCRMBot', {
+      link_token: 'abcdef12345678901234567890',
+      destination_kind: 'artist',
+    })).toBe('/start@VisharCRMBot abcdef12345678901234567890');
+
+    expect(telegramStartCommand('VisharCRMBot', {
+      link_token: '12345678901234567890abcdef',
+      destination_kind: 'profile',
+    })).toBe('/start 12345678901234567890abcdef');
+  });
+
+  it('rejects malformed bot usernames and linking tokens for links and commands', () => {
+    expect(() => telegramStartCommand('bad bot', {
+      link_token: 'abcdef12345678901234567890',
+      destination_kind: 'artist',
+    })).toThrow('Telegram linking is not configured correctly.');
+
+    expect(() => telegramStartUrl('VisharCRMBot', {
+      link_token: 'too-short',
+      destination_kind: 'artist',
+    })).toThrow('Telegram linking is not configured correctly.');
   });
 
   it('loads only the public bot username', async () => {
