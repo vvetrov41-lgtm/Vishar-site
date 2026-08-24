@@ -17,6 +17,16 @@ const expectIncludes = (text, needle, label) => {
 const expectExcludes = (text, needle, label) => {
   if (text.includes(needle)) throw new Error(`${label}: forbidden ${needle}`);
 };
+const expectGeneratedMainResolvesToWorker = (text, configPath, label) => {
+  const main = text.match(/^main = "([^"]+)"$/m)?.[1];
+  if (!main) throw new Error(`${label}: generated main entrypoint is missing`);
+  if (path.isAbsolute(main)) throw new Error(`${label}: generated main must remain relative to the config`);
+  const resolved = path.resolve(path.dirname(configPath), main);
+  const expected = path.join(root, 'workers/telegram-drain-worker.js');
+  if (resolved !== expected) {
+    throw new Error(`${label}: generated main resolves to ${resolved}, expected ${expected}`);
+  }
+};
 
 const telegramRpcSurface = [...TELEGRAM_SELF_SERVICE_RPCS].sort();
 const expectedTelegramRpcSurface = [
@@ -66,6 +76,7 @@ try {
   const result = spawnSync(process.execPath, [generator, generatedPath], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'generator failed');
   const generated = directivesOf(fs.readFileSync(generatedPath, 'utf8'));
+  expectGeneratedMainResolvesToWorker(generated, generatedPath, 'generated config');
   for (const needle of [
     'TELEGRAM_DRAIN_ENABLED = "true"',
     'GMAIL_SHARED_DRAIN_ENABLED = "true"',
@@ -102,6 +113,7 @@ try {
     throw new Error(linkingResult.stderr || linkingResult.stdout || 'linking generator failed');
   }
   const linking = directivesOf(fs.readFileSync(linkingPath, 'utf8'));
+  expectGeneratedMainResolvesToWorker(linking, linkingPath, 'linking config');
   expectIncludes(linking, 'TELEGRAM_LINKING_ENABLED = "true"', 'linking config');
   expectIncludes(linking, 'GMAIL_SHARED_DRAIN_ENABLED = "true"', 'linking config');
   expectIncludes(linking, 'binding = "GMAIL_SERVICE"', 'linking config');
