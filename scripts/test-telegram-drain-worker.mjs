@@ -4,12 +4,12 @@ import worker, { __testing } from '../workers/telegram-drain-worker.js';
 
 assert.equal(typeof worker.scheduled, 'function');
 
-// This Worker used to have no HTTP surface at all. Telegram linking needs one,
-// so the guarantee moved rather than disappeared: under the tracked production
-// configuration linking is disabled, every path is 404, and nothing reaches the
-// network. The full webhook contract lives in test-telegram-self-service-worker.
+// Telegram linking and appointment client actions are the only HTTP surfaces on
+// this shared runtime. Ordinary paths remain dormant while Telegram linking is
+// disabled, and a malformed appointment capability is owned locally without a
+// backend call. The detailed action contract lives in test-appointment-client-actions.
 assert.equal(typeof worker.fetch, 'function');
-for (const path of ['/', '/webhook', '/webhook?token=x', '/anything']) {
+for (const path of ['/', '/webhook', '/webhook?token=x', '/anything', '/appointments/respond/not-a-token']) {
   const dormant = await worker.fetch(
     new Request(`https://telegram.example.test${path}`, {
       method: 'POST',
@@ -19,7 +19,7 @@ for (const path of ['/', '/webhook', '/webhook?token=x', '/anything']) {
     { TELEGRAM_DRAIN_ENABLED: 'true' },
   );
   assert.equal(dormant.status, 404,
-    `${path} must be dormant while Telegram linking is disabled`);
+    `${path} must not become an unbounded HTTP surface`);
 }
 
 assert.deepEqual(__testing.assertGmailSummary({
@@ -75,6 +75,54 @@ console.log = (...args) => messages.push(args.join(' '));
 console.error = (...args) => messages.push(args.join(' '));
 
 try {
+  // The production-like shared Worker secret can reach only the two exact
+  // appointment-action RPCs. GET resolves without mutating; POST applies only
+  // the server-bound action selected by the capability token.
+  const actionToken = 'a'.repeat(64);
+  const actionUrl = `https://telegram.example.test/appointments/respond/${actionToken}`;
+  const actionEnv = {
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SECRET_KEY: 'sb_secret_unit_test',
+  };
+  const actionCalls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    const body = init.body ? JSON.parse(init.body) : null;
+    actionCalls.push({ href, body, headers: new Headers(init.headers), method: init.method });
+    if (href.endsWith('/rest/v1/rpc/service_resolve_appointment_client_action')) {
+      return Response.json([{
+        action: 'confirm_attendance',
+        artist_display_name: 'Vladimir Vishar',
+      }]);
+    }
+    if (href.endsWith('/rest/v1/rpc/service_apply_appointment_client_action')) {
+      return Response.json({
+        action: 'confirm_attendance',
+        outcome: 'attendance_confirmed',
+        artist_display_name: 'Vladimir Vishar',
+      });
+    }
+    throw new Error(`unexpected appointment action backend call: ${href}`);
+  };
+
+  const resolveResponse = await worker.fetch(new Request(actionUrl), actionEnv);
+  assert.equal(resolveResponse.status, 200);
+  assert.match(resolveResponse.headers.get('content-type') || '', /text\/html/);
+  assert.match(await resolveResponse.text(), /Confirm attendance/);
+  assert.equal(actionCalls.length, 1);
+  assert.match(actionCalls[0].href, /service_resolve_appointment_client_action$/);
+  assert.deepEqual(actionCalls[0].body, { p_token: actionToken });
+  assert.equal(actionCalls[0].headers.get('apikey'), actionEnv.SUPABASE_SECRET_KEY);
+  assert.equal(actionCalls[0].headers.get('authorization'), null);
+
+  actionCalls.length = 0;
+  const applyResponse = await worker.fetch(new Request(actionUrl, { method: 'POST' }), actionEnv);
+  assert.equal(applyResponse.status, 200);
+  assert.match(await applyResponse.text(), /Attendance confirmed/);
+  assert.equal(actionCalls.length, 1);
+  assert.match(actionCalls[0].href, /service_apply_appointment_client_action$/);
+  assert.deepEqual(actionCalls[0].body, { p_token: actionToken });
+
   let waited = false;
   worker.scheduled({}, {
     TELEGRAM_DRAIN_ENABLED: 'false',
@@ -227,4 +275,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log('Telegram drain Worker tests passed: Telegram, Gmail and automation share one cron behind independent bounded switches; linking remains dormant by default.');
+console.log('Telegram drain Worker tests passed: appointment actions share the bounded HTTP runtime while Telegram, Gmail and automation keep one isolated cron.');
