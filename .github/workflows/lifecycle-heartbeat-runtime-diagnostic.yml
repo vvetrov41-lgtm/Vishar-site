@@ -1,0 +1,206 @@
+name: Lifecycle heartbeat runtime diagnostic
+
+on:
+  pull_request:
+    branches:
+      - agent/lifecycle-heartbeat-runtime-base
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifecycle-heartbeat-runtime-diagnostic-exact-rc91
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    name: Observe exact RC91 lifecycle heartbeat without mutation
+    if: >-
+      github.actor == github.repository_owner &&
+      github.head_ref == 'release/private-crm-rc91-lifecycle-heartbeat'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: crm-production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: vishar-telegram-drain-production
+      EXPECTED_RELEASE_SHA: 8a251eeae5c6000d2f7850cfacf643c6c4cea430
+      EXPECTED_WORKER_VERSION: 31ab0046-87f0-491a-a9fd-a5dfa4e4c36e
+      RC_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - name: Checkout immutable released RC91 head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RC_HEAD_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact released ref before reading production
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$GITHUB_EVENT_NAME" = 'pull_request' ]
+          [ "$GITHUB_HEAD_REF" = 'release/private-crm-rc91-lifecycle-heartbeat' ]
+          [ "$GITHUB_BASE_REF" = 'agent/lifecycle-heartbeat-runtime-base' ]
+          [ "$RC_HEAD_SHA" = "$EXPECTED_RELEASE_SHA" ]
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA" ]
+          remote_sha="$(git ls-remote origin refs/heads/release/private-crm-rc91-lifecycle-heartbeat | awk 'NR == 1 {print $1}')"
+          [ "$remote_sha" = "$EXPECTED_RELEASE_SHA" ]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ]
+          [ "$WORKER_NAME" = 'vishar-telegram-drain-production' ]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked tooling
+        run: npm ci
+
+      - name: Read exact live Worker version, heartbeat binding and cron
+        shell: bash
+        run: |
+          set -euo pipefail
+          settings="$RUNNER_TEMP/settings.json"
+          schedules="$RUNNER_TEMP/schedules.json"
+          deployments="$RUNNER_TEMP/deployments.json"
+          auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Accept: application/json')
+          curl -fsS "${auth[@]}" -o "$settings" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/settings"
+          curl -fsS "${auth[@]}" -o "$schedules" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/schedules"
+          curl -fsS "${auth[@]}" -o "$deployments" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/deployments"
+          node - "$settings" "$schedules" "$deployments" <<'NODE'
+          const fs = require('fs');
+          const settings = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const schedules = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+          const deployments = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'));
+          if (settings.success !== true || schedules.success !== true || deployments.success !== true) {
+            throw new Error('Cloudflare scheduler readback failed');
+          }
+          const bindings = Array.isArray(settings.result?.bindings) ? settings.result.bindings : [];
+          const heartbeat = bindings.find((row) => row?.name === 'AUTOMATION_TICK_ENABLED');
+          if (heartbeat?.text !== 'true') throw new Error('AUTOMATION_TICK_ENABLED is not live=true');
+          const crons = Array.isArray(schedules.result)
+            ? schedules.result.map((row) => row?.cron).filter((value) => typeof value === 'string')
+            : [];
+          if (crons.length !== 1 || crons[0] !== '*/5 * * * *') {
+            throw new Error('Unexpected lifecycle shared cron');
+          }
+          const version = deployments.result?.deployments?.[0]?.versions?.[0]?.version_id ?? null;
+          if (version !== process.env.EXPECTED_WORKER_VERSION) {
+            throw new Error(`Live Worker version drifted: ${version || 'missing'}`);
+          }
+          console.log(JSON.stringify({
+            worker: process.env.WORKER_NAME,
+            version,
+            automation_tick_enabled: true,
+            crons,
+          }));
+          NODE
+          rm -f "$settings" "$schedules" "$deployments"
+
+      - name: Tail one cron window and require successful heartbeat on an ok scheduled invocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/sanitize-heartbeat-tail.cjs" <<'NODE'
+          const readline = require('readline');
+          const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+          const safePrefixes = [
+            'telegram outbox drain',
+            'telegram outbox drain failed',
+            'gmail outbox shared drain',
+            'gmail outbox shared drain failed',
+            'automation tick ',
+            'automation tick failed',
+          ];
+          let scheduledEvents = 0;
+          let okScheduledEvents = 0;
+          let successfulAutomationTicks = 0;
+          for await (const line of rl) {
+            let value;
+            try { value = JSON.parse(line); } catch { continue; }
+            const event = value?.event || {};
+            const isScheduled = Object.prototype.hasOwnProperty.call(event, 'scheduledTime')
+              || Object.prototype.hasOwnProperty.call(event, 'cron');
+            if (!isScheduled) continue;
+            scheduledEvents += 1;
+            const outcome = typeof value?.outcome === 'string' ? value.outcome : 'unknown';
+            if (outcome === 'ok') okScheduledEvents += 1;
+            let eventHasSuccessfulAutomationTick = false;
+            const safe = {
+              event: 'scheduled',
+              outcome,
+              timestamp: Number.isFinite(value?.eventTimestamp) ? value.eventTimestamp : null,
+              cron: typeof event?.cron === 'string' ? event.cron : null,
+              logs: [],
+            };
+            for (const entry of Array.isArray(value?.logs) ? value.logs : []) {
+              const raw = Array.isArray(entry?.message) ? entry.message.join(' ') : String(entry?.message ?? '');
+              if (!safePrefixes.some((prefix) => raw.startsWith(prefix))) continue;
+              safe.logs.push(raw.slice(0, 500));
+              if (raw.startsWith('automation tick {')) eventHasSuccessfulAutomationTick = true;
+            }
+            if (outcome === 'ok' && eventHasSuccessfulAutomationTick) successfulAutomationTicks += 1;
+            console.log(JSON.stringify(safe));
+          }
+          console.log(JSON.stringify({
+            scheduled_events_seen: scheduledEvents,
+            ok_scheduled_events_seen: okScheduledEvents,
+            successful_automation_ticks_seen: successfulAutomationTicks,
+          }));
+          if (scheduledEvents < 1) {
+            console.error('No Cloudflare scheduled event observed in one cron window');
+            process.exitCode = 2;
+          } else if (okScheduledEvents < 1) {
+            console.error('Scheduled event observed, but no outcome=ok scheduled invocation was observed');
+            process.exitCode = 3;
+          } else if (successfulAutomationTicks < 1) {
+            console.error('Outcome=ok scheduled invocation observed, but no successful automation tick log was observed on it');
+            process.exitCode = 4;
+          }
+          NODE
+
+          set +e
+          timeout 390s npx wrangler tail "$WORKER_NAME" --format json --sampling-rate 1 \
+            2>"$RUNNER_TEMP/wrangler-tail.stderr" \
+            | node "$RUNNER_TEMP/sanitize-heartbeat-tail.cjs"
+          pipe_status=("${PIPESTATUS[@]}")
+          set -e
+          tail_status="${pipe_status[0]}"
+          sanitize_status="${pipe_status[1]}"
+          if [ "$sanitize_status" -ne 0 ]; then
+            echo "sanitized heartbeat acceptance failed with status ${sanitize_status}" >&2
+            exit "$sanitize_status"
+          fi
+          if [ "$tail_status" -ne 0 ] && [ "$tail_status" -ne 124 ]; then
+            echo "wrangler tail failed with status ${tail_status}" >&2
+            sed -E 's/(Bearer|token|secret)[^ ]*/[redacted]/Ig' "$RUNNER_TEMP/wrangler-tail.stderr" | tail -n 20 >&2
+            exit "$tail_status"
+          fi
+          rm -f "$RUNNER_TEMP/sanitize-heartbeat-tail.cjs" "$RUNNER_TEMP/wrangler-tail.stderr"
+
+      - name: Runtime acceptance summary
+        if: success()
+        run: |
+          {
+            echo '### Lifecycle heartbeat runtime acceptance'
+            echo
+            echo "- Exact released RC91 SHA: \`$EXPECTED_RELEASE_SHA\`"
+            echo "- Worker version: \`$EXPECTED_WORKER_VERSION\`"
+            echo '- Live `AUTOMATION_TICK_ENABLED=true` read back from Cloudflare'
+            echo '- Live cron is exactly `*/5 * * * *`'
+            echo '- A real scheduled event was observed with `outcome=ok`'
+            echo '- The same event emitted a successful, redacted `automation tick` summary'
+            echo '- No production mutation was performed by this diagnostic'
+          } >> "$GITHUB_STEP_SUMMARY"
