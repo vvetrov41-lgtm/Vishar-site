@@ -16,7 +16,7 @@ if (!/^sb_publishable_[A-Za-z0-9_-]{16,}$/.test(publishableKey)) {
 }
 
 const enabled = phase !== 'bootstrap';
-const drain = phase === 'vladimir-send' || phase === 'kristina-read' || phase === 'kristina-send';
+const drain = phase === 'vladimir-send' || phase === 'kristina-send';
 const kristina = phase === 'kristina-read' || phase === 'kristina-send';
 
 let config = fs.readFileSync('wrangler.gmail.production.toml', 'utf8');
@@ -31,6 +31,9 @@ for (const [from, to] of replacements) {
   if (!config.includes(from)) throw new Error(`tracked Gmail config is missing ${from}`);
   config = config.replace(from, to);
 }
+if (!config.includes('main = "workers/gmail-production-entrypoint.js"')) {
+  throw new Error('tracked Gmail config is missing the RPC entrypoint wrapper');
+}
 if (!config.includes('SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"')) {
   throw new Error('tracked Gmail config is not production-bound');
 }
@@ -40,6 +43,10 @@ config = config.replace(
 );
 config += `\n[[kv_namespaces]]\nbinding = "GMAIL_OAUTH_STATE"\nid = "${stateId}"\n`;
 config += `\n[[kv_namespaces]]\nbinding = "GMAIL_OAUTH_TOKENS"\nid = "${tokensId}"\n`;
-if (drain) config += '\n[triggers]\ncrons = ["*/5 * * * *"]\n';
+
+// Gmail never owns a Cron Trigger. An existing scheduled Worker dispatches the
+// bounded drain RPC through a same-account Service Binding. Explicitly clearing
+// crons also removes any historical trigger if one ever existed.
+config += '\n[triggers]\ncrons = []\n';
 
 fs.writeFileSync(output, config);
