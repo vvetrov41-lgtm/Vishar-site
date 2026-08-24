@@ -48,13 +48,14 @@ select set_eq(
   $$select variable from public.message_template_variables
     where variable in ('confirm_link','reschedule_link','cancel_link')$$,
   $$values ('confirm_link'), ('reschedule_link'), ('cancel_link')$$,
-  'all three appointment action URL variables are catalogued'
+  'all three appointment action token variables are catalogued'
 );
 
 select is(
   (select count(*)::int
    from public.message_templates t
-   where t.status='active'::public.message_template_status
+   where t.artist_id is null
+     and t.status='active'::public.message_template_status
      and t.channel='email'::public.message_template_channel
      and t.locale='en'
      and t.purpose in ('session_reminder_24h','consultation_reminder')
@@ -63,7 +64,7 @@ select is(
      and position('{{cancel_link}}' in t.body)>0),
   (select count(distinct a.workspace_id)::int * 2
    from public.artists a join crm_private.artist_state s on s.artist_id=a.id and s.is_active),
-  'every active workspace has action-enabled 24h tattoo and consultation templates'
+  'every active workspace default has action-enabled 24h tattoo and consultation templates'
 );
 
 select is(
@@ -83,7 +84,8 @@ select is(
 select ok(
   (select bool_and(t.body like '%if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.%')
    from public.message_templates t
-   where t.status='active'::public.message_template_status
+   where t.artist_id is null
+     and t.status='active'::public.message_template_status
      and t.channel='email'::public.message_template_channel
      and t.locale='en'
      and t.purpose='session_reminder_72h'),
@@ -101,14 +103,19 @@ select is(
 );
 
 select ok(
-  not has_function_privilege('service_role',
-    'crm_private.issue_appointment_client_actions(uuid)', 'EXECUTE'),
+  not has_function_privilege(
+    'service_role', 'crm_private.issue_appointment_client_actions(uuid)', 'EXECUTE'),
   'service_role still cannot mint raw appointment capabilities directly'
 );
 select ok(
-  not has_function_privilege('service_role',
-    'crm_private.render_lifecycle_action_template_text(text,uuid,text,text,text)', 'EXECUTE'),
-  'action-link renderer remains DB-private'
+  not has_function_privilege(
+    'service_role', 'crm_private.render_lifecycle_action_template_text(text,uuid,text,text,text)', 'EXECUTE'),
+  'action-token renderer remains DB-private'
+);
+select ok(
+  not has_function_privilege(
+    'service_role', 'crm_private.execute_client_lifecycle_job(uuid)', 'EXECUTE'),
+  'lifecycle executor keeps its original DB-private boundary'
 );
 
 -- Synthetic client/project and ordinary Gmail route.
@@ -269,7 +276,7 @@ select ok(
       and reschedule_token ~ '^[0-9a-f]{64}$'
       and cancel_token ~ '^[0-9a-f]{64}$'
    from t_links),
-  'all three raw capabilities appear in the outbound email with the exact 256-bit shape'
+  'all three raw capabilities appear only in the outbound email with the exact 256-bit shape'
 );
 
 create temporary table t_action_tokens as
@@ -284,7 +291,7 @@ select is(
    join crm_private.appointment_client_action_tokens t
      on t.session_id=(select id from t_tattoo)
     and t.action::text=x.action
-    and t.token_hash=extensions.encode(extensions.digest(x.token,'sha256'),'hex')),
+    and t.token_hash=encode(extensions.digest(x.token,'sha256'),'hex')),
   3, 'private registry stores the SHA-256 digest for each email capability'
 );
 select ok(
@@ -311,22 +318,26 @@ select is(
     (select token from t_action_tokens where action='cancel'))),
   'cancel', 'email cancel token resolves to cancel'
 );
-select is(
-  crm_private.execute_client_lifecycle_job((select automation_job_id from t_24h_message)),
-  'skipped', 'completed lifecycle job is idempotently skipped on replay'
-);
+-- Replay only through the public tick boundary. The private executor remains
+-- intentionally unavailable even to service_role.
+select pg_temp.tick();
 reset role;
 
 select is(
   (select body from public.email_messages where id=(select id from t_24h_message)),
   (select original_body from t_links),
-  'lifecycle replay preserves the exact action URLs already stored in the email'
+  'repeated automation tick preserves the exact action URLs already stored in the email'
+);
+select is(
+  (select count(*)::int from public.email_messages
+   where automation_job_id=(select automation_job_id from t_24h_message)),
+  1, 'repeated automation tick cannot duplicate the lifecycle email'
 );
 select is(
   (select count(*)::int from crm_private.appointment_client_action_tokens
    where session_id=(select id from t_tattoo)
      and consumed_at is null and invalidated_at is null),
-  3, 'lifecycle replay does not rotate the existing capability set'
+  3, 'repeated automation tick does not rotate the existing capability set'
 );
 
 select pg_temp.as_owner();
