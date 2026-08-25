@@ -1,22 +1,21 @@
 -- 247_telegram_notification_entity_targets.sql
--- The trusted Telegram lease may carry a safe CRM entity target, while the
--- browser and legacy v1 claim surface remain unchanged.
+-- The trusted Telegram lease may carry a safe CRM entity target without adding
+-- a second backend RPC. Existing callers keep using the same function identity.
 
 begin;
 select no_plan();
 
-select has_function('public', 'service_claim_telegram_notifications_v2',
+select has_function('public', 'service_claim_telegram_notifications',
   array['text', 'integer', 'integer'],
-  'entity-aware Telegram claim exists');
+  'existing Telegram claim remains the entity-aware backend surface');
 select ok(not has_function_privilege('authenticated',
-  'public.service_claim_telegram_notifications_v2(text,integer,integer)', 'EXECUTE'),
-  'browser cannot lease entity-aware Telegram deliveries');
-select ok(has_function_privilege('service_role',
-  'public.service_claim_telegram_notifications_v2(text,integer,integer)', 'EXECUTE'),
-  'trusted connector can lease entity-aware Telegram deliveries');
+  'public.service_claim_telegram_notifications(text,integer,integer)', 'EXECUTE'),
+  'browser still cannot lease Telegram deliveries');
 select ok(has_function_privilege('service_role',
   'public.service_claim_telegram_notifications(text,integer,integer)', 'EXECUTE'),
-  'legacy v1 claim remains available for rollback');
+  'trusted connector retains the same Telegram claim privilege');
+select ok(to_regprocedure('public.service_claim_telegram_notifications_v2(text,integer,integer)') is null,
+  'no second Telegram claim RPC broadens the backend surface');
 
 insert into auth.users (id, email)
 values ('f7010000-0000-4000-8000-000000000001', 'telegram-target@example.test');
@@ -91,19 +90,19 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 create temporary table claimed_target as
 select *
-from public.service_claim_telegram_notifications_v2('telegram-target-worker', 20, 120);
+from public.service_claim_telegram_notifications('telegram-target-worker', 20, 120);
 grant select on claimed_target to service_role;
 
 select is((select count(*)::integer from claimed_target), 1,
-  'v2 leases the eligible personal notification exactly once');
+  'existing claim leases the eligible personal notification exactly once');
 select is((select notification_id from claimed_target),
   'f7b10000-0000-4000-8000-000000000001'::uuid,
-  'v2 preserves the notification identity');
+  'existing claim preserves the notification identity');
 select is((select entity_type from claimed_target), 'session',
-  'v2 preserves the session entity type');
+  'existing claim now preserves the session entity type');
 select is((select entity_id from claimed_target),
   'f7c10000-0000-4000-8000-000000000001'::uuid,
-  'v2 preserves the exact session id');
+  'existing claim now preserves the exact session id');
 select is((select chat_id from claimed_target), '700001',
   'private chat id remains backend-only lease data');
 
