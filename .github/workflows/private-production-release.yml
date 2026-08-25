@@ -5,6 +5,7 @@ on:
     branches:
       - 'release/private-crm-rc*'
       - '!release/private-crm-rc*-booking-host*'
+      - '!release/private-crm-rc*-inventory-*'
   workflow_dispatch:
 
 permissions:
@@ -37,6 +38,10 @@ jobs:
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*-booking-host*)
               echo 'Booking-host release refs are handled by the bounded booking-host workflow only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-inventory-*)
+              echo 'Read-only inventory refs must never enter the production release workflow.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;
