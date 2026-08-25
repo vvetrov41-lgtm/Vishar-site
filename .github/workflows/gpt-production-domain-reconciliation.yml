@@ -10,12 +10,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: gpt-production-domain-reconciliation
+  group: gpt-production-domain-reconciliation-${{ github.event.before || github.sha }}
   cancel-in-progress: false
 
 jobs:
   reconcile:
-    if: github.actor == github.repository_owner
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: crm-production
@@ -157,6 +157,7 @@ jobs:
             echo "- Trigger SHA: \`$GITHUB_SHA\` (same tree, one no-op child commit)"
             echo '- Operator namespace: `release/private-crm-rc*-inventory-gpt-domain-operator`'
             echo '- Full production release/observer: excluded by the existing `inventory-*` namespace boundary'
+            echo '- Branch-creation events: skipped before checkout; valid trigger concurrency is keyed by approved parent SHA'
             echo '- Canonical domains: `gpt-actions.vishartattoo.com`, `gpt-operations.vishartattoo.com`'
             echo '- Retired transition domain: `gpt-communications.vishartattoo.com` when present'
             echo '- Mutation acceptance: HTTP 2xx is provisional; fresh GET readback is authoritative'
