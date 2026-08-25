@@ -12,6 +12,9 @@ assert.match(workflow, /release\/private-crm-rc\*-inventory-\*/);
 assert.match(workflow, /github\.event\.before/);
 assert.match(workflow, /GITHUB_SHA\^/);
 assert.match(workflow, /GITHUB_SHA\^\{tree\}/);
+assert.match(workflow, /group: cloudflare-production-inventory-\$\{\{ inputs\.approved_sha \|\| github\.event\.before \|\| github\.sha \}\}/);
+assert.match(workflow, /github\.event_name != 'push' \|\| github\.event\.before != '0000000000000000000000000000000000000000'/);
+assert.doesNotMatch(workflow, /group: cloudflare-production-inventory\s*$/m);
 assert.match(workflow, /CRM_PRODUCTION_CLOUDFLARE_API_TOKEN/);
 assert.match(workflow, /CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID/);
 assert.match(workflow, /actions\/upload-artifact@v4/);
@@ -48,4 +51,4 @@ assert.match(script, /list response shape is unsupported/);
 assert.doesNotMatch(script, /pages\/projects\?/);
 assert.doesNotMatch(script, /deployments\?page=/);
 
-console.log('Cloudflare production inventory workflow safety tests passed.');
+console.log('Cloudflare production inventory workflow safety tests passed, including branch-creation skip and approved-SHA keyed concurrency.');
