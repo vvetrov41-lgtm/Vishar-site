@@ -39,6 +39,7 @@ export const TELEGRAM_SELF_SERVICE_RPCS = new Set([
   'service_complete_telegram_link',
   'service_resolve_telegram_destination',
   'service_claim_telegram_notifications',
+  'service_claim_telegram_notifications_v2',
   'service_record_telegram_notification_result',
 ]);
 
