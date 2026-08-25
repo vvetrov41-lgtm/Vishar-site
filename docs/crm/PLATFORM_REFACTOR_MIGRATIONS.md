@@ -35,10 +35,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0098` | Appointment client-action capability foundation | claimed on `agent/appointment-client-actions-foundation` |
 | `0099` | Deposit-policy Gmail delivery chain | claimed in PR #428 |
 | `0100` | Appointment client-action lifecycle activation | claimed on `agent/appointment-client-actions-activation-v2` |
+| `0101` | Lifecycle control-plane safe template reads | claimed on `agent/lifecycle-control-plane-ui` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0101`
+`0102`
 
 ## Allocation rule for unfinished phases
 
@@ -121,3 +122,12 @@ links just written into an email from the same tick. Capability minting remains
 inside the database-owned lifecycle execution transaction, after destination,
 suppression, template and Gmail gates, and the branded public runtime remains
 the already-deployed `booking.vishartattoo.com` proxy.
+
+Lifecycle control-plane safe reads claim `0101`. The migration does not grant
+browser SELECT on `message_templates` and does not create or enable any rule or
+template. It adds three `SECURITY DEFINER` RPCs with pinned `search_path` that
+require the caller's current `view_automations` capability on the requested
+artist and return only lifecycle-compatible service email templates plus the
+service-purpose and template-variable catalogues. This gives the private CRM a
+server-authoritative read surface for lifecycle authoring without exposing
+provider state, client values, template authorship or another backend path.
