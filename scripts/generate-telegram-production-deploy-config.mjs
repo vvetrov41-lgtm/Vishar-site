@@ -36,6 +36,7 @@ const required = [
   '{ pattern = "telegram.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }',
   'VISHAR_ENVIRONMENT = "production"',
   'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"',
+  'CRM_ORIGIN = "https://crm.vishartattoo.com"',
   'TELEGRAM_DRAIN_ENABLED = "false"',
   'GMAIL_SHARED_DRAIN_ENABLED = "false"',
   'AUTOMATION_TICK_ENABLED = "false"',
