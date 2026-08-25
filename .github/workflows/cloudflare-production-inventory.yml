@@ -3,7 +3,12 @@ name: Cloudflare production inventory
 on:
   push:
     branches:
+      - 'agent/platform-telegram-self-service'
       - 'release/cloudflare-inventory-*'
+    paths:
+      - '.github/workflows/cloudflare-production-inventory.yml'
+      - 'scripts/cloudflare-production-inventory.mjs'
+      - 'scripts/test-cloudflare-production-inventory.mjs'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -58,14 +63,34 @@ jobs:
             echo 'Inventory must inspect the current immutable canonical SHA.' >&2
             exit 1
           }
-          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
-            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
-            | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
-          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation' 'Booking host validation'; do
-            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
-              any(.[]; .name == $name and .head_sha == $sha
-                       and .status == "completed" and .conclusion == "success")
-            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+          )
+          for attempt in $(seq 1 60); do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+              --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+              | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+            all_green=true
+            for workflow in "${required_workflows[@]}"; do
+              if ! jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+                any(.[]; .name == $name and .head_sha == $sha
+                         and .status == "completed" and .conclusion == "success")
+              ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null; then
+                all_green=false
+              fi
+            done
+            if [ "$all_green" = true ]; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo 'Required exact-head CI did not become green within 15 minutes.' >&2
+              jq . "$RUNNER_TEMP/exact-head-runs.json" >&2
+              exit 1
+            fi
+            sleep 15
           done
 
       - name: Setup Node
