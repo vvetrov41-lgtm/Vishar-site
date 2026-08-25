@@ -104,6 +104,9 @@ jobs:
       - name: Test read-only Cloudflare production inventory boundary
         run: node scripts/test-cloudflare-production-inventory.mjs
 
+      - name: Test exact CRM Pages production preflight
+        run: node scripts/test-crm-pages-production-preflight.mjs
+
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
 

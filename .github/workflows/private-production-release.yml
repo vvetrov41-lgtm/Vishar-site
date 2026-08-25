@@ -289,7 +289,7 @@ jobs:
           [ "$VITE_SUPABASE_URL" = "$PROJECT_URL" ]
           case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
           [ "$CRM_ORIGIN" = 'https://crm.vishartattoo.com' ]
-          [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]
+          [ "$CRM_PAGES_PROJECT" = 'vishar-crm-production' ]
           [ "$VITE_CALENDAR_CONNECTOR_ORIGIN" = 'https://calendar.vishartattoo.com' ]
           [ "$VITE_MONZO_CONNECTOR_ORIGIN" = 'https://monzo.vishartattoo.com' ]
           [ "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" = 'https://instagram.vishartattoo.com' ]
@@ -327,19 +327,7 @@ jobs:
         run: supabase db push --dry-run
 
       - name: Preflight Cloudflare Pages target before mutation
-        shell: bash
-        run: |
-          set -euo pipefail
-          project="$(curl -fsS \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H 'Accept: application/json' \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${CRM_PAGES_PROJECT}")"
-          PAGES_PROJECT="$project" node <<'NODE'
-          const body = JSON.parse(process.env.PAGES_PROJECT || '{}');
-          if (body.success !== true || body.result?.name !== process.env.CRM_PAGES_PROJECT) {
-            throw new Error('Production Cloudflare Pages target preflight failed');
-          }
-          NODE
+        run: node scripts/verify-crm-pages-production.mjs
 
       - name: Verify exact Telegram production Worker secret names before mutation
         shell: bash

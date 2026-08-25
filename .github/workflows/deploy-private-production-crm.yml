@@ -124,8 +124,8 @@ jobs:
             exit 1
           fi
 
-          if ! [[ "$CRM_PAGES_PROJECT" =~ ^vishar-crm-production(-[a-z0-9-]+)?$ ]]; then
-            echo 'CRM_PRODUCTION_PAGES_PROJECT must be a dedicated private CRM project name.' >&2
+          if [ "$CRM_PAGES_PROJECT" != 'vishar-crm-production' ]; then
+            echo 'CRM_PRODUCTION_PAGES_PROJECT must be the exact production CRM Pages project.' >&2
             exit 1
           fi
 
@@ -184,6 +184,13 @@ jobs:
       - name: Install pinned root deployment tooling
         if: ${{ inputs.deploy }}
         run: npm ci
+
+      - name: Preflight exact production Pages target and Access boundary
+        if: ${{ inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/verify-crm-pages-production.mjs
 
       - name: Configure production Supabase Auth URLs
         if: ${{ inputs.deploy }}
