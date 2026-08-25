@@ -17,13 +17,13 @@ permissions:
   statuses: write
 
 concurrency:
-  group: cloudflare-production-inventory
+  group: cloudflare-production-inventory-${{ inputs.approved_sha || github.event.before || github.sha }}
   cancel-in-progress: false
 
 jobs:
   inventory:
     name: Read-only production topology
-    if: github.actor == github.repository_owner
+    if: github.actor == github.repository_owner && (github.event_name != 'push' || github.event.before != '0000000000000000000000000000000000000000')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: crm-production

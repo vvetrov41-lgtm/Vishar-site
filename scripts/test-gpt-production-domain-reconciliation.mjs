@@ -142,6 +142,9 @@ assert.match(releaseObserver, /!release\/private-crm-rc\*-inventory-\*/);
 assert.match(inventoryWorkflow, /release\/private-crm-rc\*-inventory-\*/);
 assert.match(workflow, /CANONICAL_BRANCH: agent\/platform-telegram-self-service/);
 assert.match(workflow, /environment: crm-production/);
+assert.match(workflow, /group: gpt-production-domain-reconciliation-\$\{\{ github\.event\.before \|\| github\.sha \}\}/);
+assert.match(workflow, /github\.event\.before != '0000000000000000000000000000000000000000'/);
+assert.doesNotMatch(workflow, /group: gpt-production-domain-reconciliation\s*$/m);
 assert.match(workflow, /node scripts\/reconcile-gpt-production-domains\.mjs\s*$/m);
 assert.match(workflow, /node scripts\/reconcile-gpt-production-domains\.mjs --apply/);
 assert.doesNotMatch(workflow, /wrangler deploy|supabase db push|SUPABASE_DB_PASSWORD|SUPABASE_SECRET_KEY/i);
@@ -163,4 +166,4 @@ const authoritativeReadbackIndex = reconciler.indexOf('await waitForTargetDomain
 assert.ok(deleteIndex >= 0 && authoritativeReadbackIndex > deleteIndex,
   'Cloudflare DELETE must always be followed by authoritative GET readback');
 
-console.log('GPT production domain reconciliation tests passed: inventory-excluded same-tree operator trigger, exact-head CI admission, 2xx transport, authoritative GET readback and rollback boundary.');
+console.log('GPT production domain reconciliation tests passed: inventory-excluded same-tree operator trigger, branch-creation skip, parent-keyed concurrency, exact-head CI admission, 2xx transport, authoritative GET readback and rollback boundary.');
