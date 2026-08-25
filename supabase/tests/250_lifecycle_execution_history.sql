@@ -30,15 +30,15 @@ values
   ('f5300000-0000-4000-8000-000000000001'::uuid, 'f5200000-0000-4000-8000-000000000001'::uuid, 'history-home-artist', 'History Home Artist', 'Europe/London', 'GBP', true),
   ('f5300000-0000-4000-8000-000000000002'::uuid, 'f5200000-0000-4000-8000-000000000002'::uuid, 'history-foreign-artist', 'History Foreign Artist', 'Europe/London', 'GBP', true);
 
-insert into public.clients (id, artist_id, full_name, email)
+insert into public.clients (id, full_name, email)
 values
-  ('f5400000-0000-4000-8000-000000000001'::uuid, 'f5300000-0000-4000-8000-000000000001'::uuid, 'History Client', 'history-client@example.test'),
-  ('f5400000-0000-4000-8000-000000000002'::uuid, 'f5300000-0000-4000-8000-000000000002'::uuid, 'Foreign History Client', 'foreign-history@example.test');
+  ('f5400000-0000-4000-8000-000000000001'::uuid, 'History Client', 'history-client@example.test'),
+  ('f5400000-0000-4000-8000-000000000002'::uuid, 'Foreign History Client', 'foreign-history@example.test');
 
-insert into public.projects (id, artist_id, client_id, title, status)
+insert into public.projects (id, client_id, title, status)
 values
-  ('f5500000-0000-4000-8000-000000000001'::uuid, 'f5300000-0000-4000-8000-000000000001'::uuid, 'f5400000-0000-4000-8000-000000000001'::uuid, 'History Project', 'active'),
-  ('f5500000-0000-4000-8000-000000000002'::uuid, 'f5300000-0000-4000-8000-000000000002'::uuid, 'f5400000-0000-4000-8000-000000000002'::uuid, 'Foreign History Project', 'active');
+  ('f5500000-0000-4000-8000-000000000001'::uuid, 'f5400000-0000-4000-8000-000000000001'::uuid, 'History Project', 'active'),
+  ('f5500000-0000-4000-8000-000000000002'::uuid, 'f5400000-0000-4000-8000-000000000002'::uuid, 'Foreign History Project', 'active');
 
 insert into public.sessions (
   id, artist_id, client_id, project_id, appointment_type, start_at, end_at, status
