@@ -1,26 +1,48 @@
 # Post-session check-in readiness
 
-Status: technically ready, product configuration not approved.
+Status: approved for the bounded `0103` production activation. Live production
+state must still be read back after the exact-SHA release.
 
-This document records the existing activation boundary for a client email sent
-after an appointment. It does not choose a delay, write client-facing copy, or
-enable production configuration. Repository and production state must be
-fresh-checked before an activation workstream uses it.
+This document records the approved activation boundary for a client email sent
+after an appointment. Repository and production state must still be checked
+afresh before applying or accepting the configuration.
 
-## Product decisions still required
+## Approved product configuration
 
-Activation must not begin until one authoritative decision names all of:
+The initial production stage is exactly:
 
-1. the positive offset from `session_end`;
-2. the exact email subject and body for every activated locale;
-3. the appointment types that receive the message.
+- timing: 24 hours after authoritative `session_end`;
+- appointment types: `tattoo_session` and `touch_up`;
+- excluded appointment types: `in_person_consultation` and
+  `video_consultation`;
+- locale: English only;
+- purpose: `post_session_checkin`;
+- subject: `How is your tattoo feeling today?`;
+- body:
+
+```text
+Hi {{client_first_name}},
+
+Just checking in after your tattoo session with {{artist_display_name}} yesterday.
+
+How are you feeling, and how is the tattoo doing so far?
+
+Please keep following the aftercare instructions you were given. If you have any questions or anything you are unsure about during the healing process, just reply to this email and let us know.
+
+There is no need to reply if everything is going well.
+
+Take care,
+{{artist_display_name}}
+```
+
+Migration `0103_post_session_checkin_activation.sql` encodes only this stage.
+It does not activate any other post-session purpose, timing, appointment type or
+locale.
 
 The `+60 minute` offset and copy in
 `supabase/tests/246_client_lifecycle_session_end.sql` are synthetic test
-fixtures. They are explicitly not approved production configuration. The
-catalogue description for `post_session_checkin` identifies the service
-purpose, but it is not client-facing copy and does not supply a delay or an
-appointment-type scope.
+fixtures and are not production configuration. Test `248` proves the approved
+24-hour copy and scope, including the previously unconfigured `touch_up` path.
 
 ## Existing runtime contract
 
@@ -61,7 +83,7 @@ tests `240` and `241`.
 
 ## Activation workstream
 
-After the product decision exists:
+The bounded activation workstream must:
 
 1. fresh-check the canonical platform head, open PRs, production migration
    head, migration ledger, lifecycle configuration and provider runtime;
