@@ -437,7 +437,14 @@ export async function drainPersonalTelegramNotifications(env, {
   }
 
   const supabase = createSupabaseClient(env, fetchImpl);
-  const claimed = await supabase.rpc('service_claim_telegram_notifications_v2', {
+  // The enriched v2 claim is used only when this deployment has a trusted CRM
+  // origin to render. Without CRM_ORIGIN we intentionally retain the v1 claim:
+  // existing staging/rollback deployments keep delivering the notification
+  // rather than depending on entity metadata they cannot use.
+  const claimRpc = trustedCrmOrigin(env)
+    ? 'service_claim_telegram_notifications_v2'
+    : 'service_claim_telegram_notifications';
+  const claimed = await supabase.rpc(claimRpc, {
     p_worker_id: workerId,
     p_limit: limit,
     p_lease_seconds: leaseSeconds,
