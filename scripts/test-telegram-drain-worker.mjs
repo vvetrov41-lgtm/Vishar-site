@@ -269,6 +269,59 @@ try {
   );
   assert.ok(messages.some((line) => line.includes('automation_tick_summary_invalid')));
   assert.ok(messages.every((line) => !line.includes('materialised":101')));
+
+  // A fast failure must not let waitUntil settle while another responsibility
+  // is still running. All shared-cron tasks retain their full execution window.
+  messages.length = 0;
+  scheduledPromise = null;
+  let releaseAutomation;
+  let automationFinished = false;
+  globalThis.fetch = async () => {
+    await new Promise((resolve) => { releaseAutomation = resolve; });
+    automationFinished = true;
+    return Response.json([{
+      materialised: 0,
+      withdrawn: 0,
+      executed: 0,
+      notified: 0,
+    }]);
+  };
+  worker.scheduled({}, {
+    TELEGRAM_DRAIN_ENABLED: 'false',
+    GMAIL_SHARED_DRAIN_ENABLED: 'true',
+    AUTOMATION_TICK_ENABLED: 'true',
+    GMAIL_SERVICE: {
+      async drainApprovedEmailOutbox() {
+        throw Object.assign(new Error('unit test Gmail failure'), {
+          code: 'gmail_unit_test_failure',
+        });
+      },
+    },
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
+  }, {
+    waitUntil(promise) { scheduledPromise = promise; },
+  });
+  assert.ok(scheduledPromise instanceof Promise);
+  while (!releaseAutomation) await Promise.resolve();
+  let sharedCronSettled = false;
+  scheduledPromise.then(
+    () => { sharedCronSettled = true; },
+    () => { sharedCronSettled = true; },
+  );
+  await Promise.resolve();
+  assert.equal(sharedCronSettled, false);
+  assert.equal(automationFinished, false);
+  releaseAutomation();
+  await assert.rejects(
+    scheduledPromise,
+    (error) => error?.code === 'gmail_unit_test_failure',
+  );
+  assert.equal(automationFinished, true);
+  assert.ok(messages.includes(
+    'automation tick {"materialised":0,"withdrawn":0,"executed":0,"notified":0}',
+  ));
+  assert.ok(messages.some((line) => line.includes('gmail_unit_test_failure')));
 } finally {
   console.log = originalLog;
   console.error = originalError;

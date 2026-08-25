@@ -109,6 +109,13 @@ async function runScheduledAutomationTick(env) {
   }
 }
 
+async function settleScheduledTasks(tasks) {
+  const results = await Promise.allSettled(tasks);
+  const failed = results.find((result) => result.status === 'rejected');
+  if (failed) throw failed.reason;
+  return results.map((result) => result.value);
+}
+
 function json(status, value) {
   return new Response(JSON.stringify(value), {
     status,
@@ -242,7 +249,8 @@ export default {
 
     // Production already shares this cron with the Gmail Worker. Keep each
     // bounded task independent so one failure cannot suppress another task's
-    // execution. Promise.all only aggregates their final scheduled outcome.
+    // execution or release the Worker lifetime while a sibling is still
+    // running. The first failure is rethrown only after every task settles.
     if (env.GMAIL_SHARED_DRAIN_ENABLED === 'true') tasks.push(runSharedGmailDrain(env));
     else console.log('gmail outbox shared drain disabled');
 
@@ -250,7 +258,7 @@ export default {
     else console.log('automation tick disabled');
 
     if (!tasks.length) return;
-    ctx.waitUntil(Promise.all(tasks));
+    ctx.waitUntil(settleScheduledTasks(tasks));
   },
 };
 
@@ -265,5 +273,6 @@ export const __testing = {
   runScheduledDrain,
   runSharedGmailDrain,
   safeFailureCode,
+  settleScheduledTasks,
   shouldRetryLinkingFailure,
 };
