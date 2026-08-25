@@ -36,11 +36,7 @@ function mockFetch(row) {
       const name = value.split('/').pop();
       const args = JSON.parse(init.body || '{}');
       rpcCalls.push({ name, args });
-      if (name === 'service_claim_telegram_notifications_v2') return Response.json([row]);
-      if (name === 'service_claim_telegram_notifications') {
-        const { entity_type, entity_id, ...legacy } = row;
-        return Response.json([legacy]);
-      }
+      if (name === 'service_claim_telegram_notifications') return Response.json([row]);
       if (name === 'service_record_telegram_notification_result') return Response.json({ ok: true });
       throw new Error(`unexpected RPC ${name}`);
     }
@@ -54,22 +50,23 @@ function mockFetch(row) {
   return { fetchImpl, rpcCalls, telegramCalls };
 }
 
+const productionEnv = {
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
+  TELEGRAM_BOT_TOKEN: sharedToken,
+  VISHAR_ENVIRONMENT: 'production',
+  CRM_ORIGIN: 'https://crm.vishartattoo.com',
+};
+
 {
   const mock = mockFetch(claimed());
-  const env = {
-    SUPABASE_URL: 'https://example.supabase.co',
-    SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
-    TELEGRAM_BOT_TOKEN: sharedToken,
-    VISHAR_ENVIRONMENT: 'production',
-    CRM_ORIGIN: 'https://crm.vishartattoo.com',
-  };
-  const result = await drainPersonalTelegramNotifications(env, {
+  const result = await drainPersonalTelegramNotifications(productionEnv, {
     workerId,
     limit: 1,
     fetchImpl: mock.fetchImpl,
   });
   assert.equal(result.succeeded, 1);
-  assert.equal(mock.rpcCalls[0].name, 'service_claim_telegram_notifications_v2');
+  assert.equal(mock.rpcCalls[0].name, 'service_claim_telegram_notifications');
   assert.equal(mock.telegramCalls.length, 1);
   assert.match(
     mock.telegramCalls[0].body.text,
@@ -78,13 +75,11 @@ function mockFetch(row) {
 }
 
 {
-  const mock = mockFetch(claimed());
-  const env = {
-    SUPABASE_URL: 'https://example.supabase.co',
-    SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
-    TELEGRAM_BOT_TOKEN: sharedToken,
-  };
-  const result = await drainPersonalTelegramNotifications(env, {
+  // Simulate the new Worker running briefly against a pre-0101 DB response.
+  // The same RPC lacks entity fields, so delivery must continue without a link.
+  const { entity_type, entity_id, ...legacyRow } = claimed();
+  const mock = mockFetch(legacyRow);
+  const result = await drainPersonalTelegramNotifications(productionEnv, {
     workerId,
     limit: 1,
     fetchImpl: mock.fetchImpl,
@@ -95,4 +90,4 @@ function mockFetch(row) {
   assert.doesNotMatch(mock.telegramCalls[0].body.text, /Open in CRM:/);
 }
 
-console.log('Telegram appointment notification deep-link tests passed: production uses v2 entity metadata and rollback remains on v1 without CRM_ORIGIN.');
+console.log('Telegram appointment notification deep-link tests passed: one RPC renders the exact production appointment link after 0101 and remains compatible with the pre-0101 response shape.');
