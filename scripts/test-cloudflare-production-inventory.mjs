@@ -33,6 +33,11 @@ assert.match(script, /Secret values: never requested; secret names only/);
 assert.match(script, /pages\/projects`\)/);
 assert.match(script, /deployments`\)/);
 assert.match(script, /errorCodes\.join/);
+assert.match(script, /function listRows/);
+for (const key of ['scripts', 'projects', 'deployments', 'apps', 'policies', 'namespaces', 'queues', 'buckets']) {
+  assert.match(script, new RegExp(`['"]${key}['"]`));
+}
+assert.match(script, /list response shape is unsupported/);
 assert.doesNotMatch(script, /pages\/projects\?/);
 assert.doesNotMatch(script, /deployments\?page=/);
 
