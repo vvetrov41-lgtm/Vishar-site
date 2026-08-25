@@ -103,19 +103,22 @@ insert into public.projects (id, client_id, artist_id, title, description) value
    'fb202222-2222-4222-8222-222222222222',
    'Preview project B', 'Cross-artist lifecycle preview fixture');
 
+-- Production appointments are constrained to five-minute increments. Anchor
+-- synthetic fixtures to the top of the current hour so they exercise the same
+-- validation path without depending on the runner's wall-clock seconds.
 insert into public.sessions (
   id, project_id, status, start_at, end_at, artist_id, appointment_type, client_id, notes
 ) values
   ('fb401111-1111-4111-8111-111111111111', 'fb311111-1111-4111-8111-111111111111',
-   'completed', now() - interval '52 hours', now() - interval '48 hours',
+   'completed', date_trunc('hour', now()) - interval '52 hours', date_trunc('hour', now()) - interval '48 hours',
    'fb201111-1111-4111-8111-111111111111', 'tattoo_session', 'fb301111-1111-4111-8111-111111111111',
    'completed preview fixture'),
   ('fb402222-2222-4222-8222-222222222222', 'fb311111-1111-4111-8111-111111111111',
-   'confirmed', now() + interval '2 hours', now() + interval '6 hours',
+   'confirmed', date_trunc('hour', now()) + interval '2 hours', date_trunc('hour', now()) + interval '6 hours',
    'fb201111-1111-4111-8111-111111111111', 'tattoo_session', 'fb301111-1111-4111-8111-111111111111',
    'action-link preview fixture'),
   ('fb403333-3333-4333-8333-333333333333', 'fb312222-2222-4222-8222-222222222222',
-   'confirmed', now() + interval '1 day', now() + interval '1 day 4 hours',
+   'confirmed', date_trunc('hour', now()) + interval '1 day', date_trunc('hour', now()) + interval '1 day 4 hours',
    'fb202222-2222-4222-8222-222222222222', 'tattoo_session', 'fb302222-2222-4222-8222-222222222222',
    'cross-artist fixture');
 
