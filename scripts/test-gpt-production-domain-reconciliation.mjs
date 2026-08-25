@@ -100,6 +100,8 @@ assert.equal(cloudflareResponseAccepted({ ok: true, method: 'GET', payload: { su
 
 const workflow = readFileSync(new URL('../.github/workflows/gpt-production-domain-reconciliation.yml', import.meta.url), 'utf8');
 const fullRelease = readFileSync(new URL('../.github/workflows/private-production-release.yml', import.meta.url), 'utf8');
+const releaseObserver = readFileSync(new URL('../.github/workflows/private-production-release-observer.yml', import.meta.url), 'utf8');
+const inventoryWorkflow = readFileSync(new URL('../.github/workflows/cloudflare-production-inventory.yml', import.meta.url), 'utf8');
 const wrangler = readFileSync(new URL('../wrangler.gpt-actions.production.toml', import.meta.url), 'utf8');
 const operations = readFileSync(new URL('../docs/gpt-actions/openapi.production.operations.yaml', import.meta.url), 'utf8');
 const reconciler = readFileSync(new URL('./reconcile-gpt-production-domains.mjs', import.meta.url), 'utf8');
@@ -113,13 +115,31 @@ assert.match(operations, /operationId: getWhatsAppConversation/);
 assert.match(operations, /operationId: searchEmailHistory/);
 assert.match(operations, /operationId: createEmailDraft/);
 
-// This bounded control-plane operator must sit outside release/private-crm-rc*.
-// That makes it impossible for a push intended only for GPT domain readback to
-// trigger the full Supabase + CRM Pages + Telegram production release.
-assert.match(workflow, /ops\/gpt-production-domain-reconcile-acceptance/);
-assert.doesNotMatch(workflow, /release\/private-crm-rc/);
-assert.match(fullRelease, /release\/private-crm-rc\*/);
-assert.doesNotMatch(fullRelease, /ops\/gpt-production-domain-reconcile/);
+// The production environment admits release/private-crm-rc* refs. The bounded
+// GPT operator therefore uses a one-commit, same-tree trigger under the existing
+// inventory exclusion. Its parent is the immutable canonical SHA that is
+// actually checked out and executed. Full release and its observer already
+// exclude every inventory ref, while the read-only inventory workflow is free
+// to run alongside the operator as independent topology evidence.
+assert.match(workflow, /release\/private-crm-rc\*-inventory-gpt-domain-operator/);
+assert.match(workflow, /APPROVED_SHA: \$\{\{ github\.event\.before \}\}/);
+assert.match(workflow, /git rev-parse "\$GITHUB_SHA\^"/);
+assert.match(workflow, /GITHUB_SHA\^\{tree\}/);
+assert.match(workflow, /APPROVED_SHA\^\{tree\}/);
+assert.match(workflow, /\[ "\$GITHUB_SHA" != "\$APPROVED_SHA" \]/);
+assert.match(workflow, /required_workflows=\(/);
+for (const required of [
+  'Static Validation',
+  'CRM and booking validation',
+  'Gmail production validation',
+  'Booking host validation',
+  'WhatsApp production onboarding validation',
+]) {
+  assert.match(workflow, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+}
+assert.match(fullRelease, /!release\/private-crm-rc\*-inventory-\*/);
+assert.match(releaseObserver, /!release\/private-crm-rc\*-inventory-\*/);
+assert.match(inventoryWorkflow, /release\/private-crm-rc\*-inventory-\*/);
 assert.match(workflow, /CANONICAL_BRANCH: agent\/platform-telegram-self-service/);
 assert.match(workflow, /environment: crm-production/);
 assert.match(workflow, /node scripts\/reconcile-gpt-production-domains\.mjs\s*$/m);
@@ -143,4 +163,4 @@ const authoritativeReadbackIndex = reconciler.indexOf('await waitForTargetDomain
 assert.ok(deleteIndex >= 0 && authoritativeReadbackIndex > deleteIndex,
   'Cloudflare DELETE must always be followed by authoritative GET readback');
 
-console.log('GPT production domain reconciliation tests passed: isolated ops namespace, 2xx mutation transport, authoritative GET readback and rollback boundary.');
+console.log('GPT production domain reconciliation tests passed: inventory-excluded same-tree operator trigger, exact-head CI admission, 2xx transport, authoritative GET readback and rollback boundary.');
