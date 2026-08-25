@@ -21,6 +21,8 @@ const expectOrder = (text, first, second, label) => {
 };
 
 expectIncludes(workflow, "- 'release/private-crm-rc*'", 'release trigger');
+expectIncludes(workflow, "- '!release/private-crm-rc*-inventory-*'", 'read-only inventory trigger exclusion');
+expectIncludes(workflow, 'release/private-crm-rc*-inventory-*)', 'read-only inventory runtime exclusion');
 expectIncludes(workflow, 'workflow_dispatch:', 'release trigger');
 expectExcludes(workflow, 'approved_sha:', 'zero-input release');
 expectExcludes(workflow, 'approval_phrase:', 'zero-input release');
@@ -88,6 +90,8 @@ expectIncludes(deploySection, 'wrangler versions list', 'Telegram version readba
 expectIncludes(deploySection, 'Verify live Telegram HTTP boundary', 'Telegram live readback');
 
 expectIncludes(observer, "- 'release/private-crm-rc*'", 'release observer trigger');
+expectIncludes(observer, "- '!release/private-crm-rc*-inventory-*'", 'release observer inventory exclusion');
+expectIncludes(observer, 'release/private-crm-rc*-inventory-*)', 'release observer runtime inventory exclusion');
 expectIncludes(observer, 'actions: read', 'release observer permissions');
 expectIncludes(observer, 'statuses: write', 'release observer permissions');
 expectIncludes(observer, 'if: github.actor == github.repository_owner', 'release observer authorization');

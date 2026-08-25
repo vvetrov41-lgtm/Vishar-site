@@ -3,12 +3,7 @@ name: Cloudflare production inventory
 on:
   push:
     branches:
-      - 'agent/platform-telegram-self-service'
-      - 'release/cloudflare-inventory-*'
-    paths:
-      - '.github/workflows/cloudflare-production-inventory.yml'
-      - 'scripts/cloudflare-production-inventory.mjs'
-      - 'scripts/test-cloudflare-production-inventory.mjs'
+      - 'release/private-crm-rc*-inventory-*'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -34,7 +29,7 @@ jobs:
     environment: crm-production
     env:
       CANONICAL_BRANCH: agent/platform-telegram-self-service
-      APPROVED_SHA: ${{ inputs.approved_sha || github.sha }}
+      APPROVED_SHA: ${{ inputs.approved_sha || github.event.before }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_ZONE: vishartattoo.com
@@ -53,6 +48,14 @@ jobs:
         run: |
           set -euo pipefail
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            case "$GITHUB_REF_NAME" in
+              release/private-crm-rc*-inventory-*) ;;
+              *) echo 'Inventory push must use the reserved read-only branch namespace.' >&2; exit 1 ;;
+            esac
+            [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+            [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          fi
           [ "$CLOUDFLARE_ZONE" = 'vishartattoo.com' ]
           [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
           [ -n "$CLOUDFLARE_API_TOKEN" ]

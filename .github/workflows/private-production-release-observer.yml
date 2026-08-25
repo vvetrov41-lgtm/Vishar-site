@@ -5,6 +5,7 @@ on:
     branches:
       - 'release/private-crm-rc*'
       - '!release/private-crm-rc*-booking-host*'
+      - '!release/private-crm-rc*-inventory-*'
 
 permissions:
   contents: read
@@ -30,6 +31,7 @@ jobs:
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*-booking-host*) exit 1 ;;
+            release/private-crm-rc*-inventory-*) exit 1 ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
