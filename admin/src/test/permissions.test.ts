@@ -111,6 +111,7 @@ describe('navigation', () => {
       '/projects',
       '/appointments',
       '/availability',
+      '/automations',
       '/payments',
       '/integrations',
       '/notifications',
@@ -128,6 +129,7 @@ describe('navigation', () => {
     expect(paths).not.toContain('/users');
     expect(paths).toContain('/enquiries');
     expect(paths).toContain('/availability');
+    expect(paths).toContain('/automations');
     expect(paths).toContain('/activity');
   });
 
@@ -157,7 +159,7 @@ describe('navigation', () => {
     // widen.
     expect(paths).toEqual([
       '/', '/inbox', '/enquiries', '/clients', '/projects', '/appointments', '/availability',
-      '/notifications',
+      '/automations', '/notifications',
     ]);
   });
 

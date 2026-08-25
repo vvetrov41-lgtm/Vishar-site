@@ -32,6 +32,7 @@ import { FocusedAppointmentPage } from './pages/FocusedAppointmentPage';
 import { InboxPage } from './pages/InboxPage';
 import { InstagramConnectionsPage } from './pages/InstagramConnectionsPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
+import { LifecycleAutomationPage } from './pages/LifecycleAutomationPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
@@ -138,7 +139,7 @@ function Routes() {
 
   // Artist administration, not artist work. Two audiences reach it: somebody
   // administering the organization who holds no membership on the artist, and
-  // the artist themselves through their own membership — who, in a studio, has
+  // the artist themselves through their own membership - who, in a studio, has
   // no workspace membership at all. So this route is deliberately ungated in
   // the browser and authorised entirely by
   // public.artist_control_plane_context, which admits exactly those two.
@@ -183,6 +184,8 @@ function Routes() {
       return <RequireCapability capability="viewSessions"><AppointmentsPage /></RequireCapability>;
     case '/availability':
       return <RequireCapability capability="viewSessions"><AvailabilityPage /></RequireCapability>;
+    case '/automations':
+      return <RequireCapability capability="viewAutomations"><LifecycleAutomationPage /></RequireCapability>;
     case '/payments':
       return <RequireCapability capability="manageFinance"><PaymentsPage /></RequireCapability>;
     case '/integrations':

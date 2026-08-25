@@ -1,0 +1,108 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { CrmClient } from '../lib/api';
+import { createLifecycleApi } from '../lib/lifecycle-api';
+
+function clientWithRpc(response: { data: unknown; error: unknown } = { data: [], error: null }) {
+  const rpc = vi.fn(async () => response);
+  return { client: { rpc } as unknown as CrmClient, rpc };
+}
+
+describe('lifecycle control-plane API boundary', () => {
+  it('reads rules and templates only through named artist-scoped RPCs', async () => {
+    const { client, rpc } = clientWithRpc();
+    const api = createLifecycleApi(client);
+
+    await api.listClientLifecycleRules('artist-1');
+    await api.listClientLifecycleTemplates('artist-1');
+    await api.listClientLifecycleTemplatePurposes('artist-1');
+    await api.listClientLifecycleTemplateVariables('artist-1');
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'list_client_lifecycle_rules', {
+      p_artist_id: 'artist-1',
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'list_client_lifecycle_templates', {
+      p_artist_id: 'artist-1',
+    });
+    expect(rpc).toHaveBeenNthCalledWith(3, 'list_client_lifecycle_template_purposes', {
+      p_artist_id: 'artist-1',
+    });
+    expect(rpc).toHaveBeenNthCalledWith(4, 'list_client_lifecycle_template_variables', {
+      p_artist_id: 'artist-1',
+    });
+  });
+
+  it('creates lifecycle rules through the typed RPC and cannot enable them during creation', async () => {
+    const { client, rpc } = clientWithRpc({ data: 'rule-1', error: null });
+    const api = createLifecycleApi(client);
+
+    await api.createClientLifecycleRule({
+      artistId: 'artist-1',
+      name: 'Post-session check-in',
+      appointmentType: 'tattoo_session',
+      messagePurpose: 'post_session_checkin',
+      scheduleAnchor: 'session_end',
+      anchorOffsetMinutes: 1440,
+      locale: 'en',
+    });
+
+    expect(rpc).toHaveBeenCalledWith('create_client_lifecycle_rule', {
+      p_artist_id: 'artist-1',
+      p_name: 'Post-session check-in',
+      p_appointment_type: 'tattoo_session',
+      p_message_purpose: 'post_session_checkin',
+      p_schedule_anchor: 'session_end',
+      p_anchor_offset_minutes: 1440,
+      p_locale: 'en',
+    });
+    expect(JSON.stringify(rpc.mock.calls[0])).not.toContain('is_enabled');
+  });
+
+  it('changes rule state only through the existing capability-gated RPC', async () => {
+    const { client, rpc } = clientWithRpc({ data: true, error: null });
+    const api = createLifecycleApi(client);
+
+    await api.setAutomationRuleEnabled('rule-1', true);
+
+    expect(rpc).toHaveBeenCalledWith('set_automation_rule_enabled', {
+      p_rule_id: 'rule-1',
+      p_is_enabled: true,
+    });
+  });
+
+  it('saves email templates as drafts through the existing template RPC', async () => {
+    const { client, rpc } = clientWithRpc({ data: 'template-1', error: null });
+    const api = createLifecycleApi(client);
+
+    await api.upsertMessageTemplate({
+      workspaceId: 'workspace-1',
+      artistId: 'artist-1',
+      purpose: 'post_session_checkin',
+      subject: 'How is your tattoo healing?',
+      body: 'Hi {{client_first_name}}, how is your tattoo healing?',
+      locale: 'en',
+    });
+
+    expect(rpc).toHaveBeenCalledWith('upsert_message_template', {
+      p_workspace_id: 'workspace-1',
+      p_purpose: 'post_session_checkin',
+      p_channel: 'email',
+      p_body: 'Hi {{client_first_name}}, how is your tattoo healing?',
+      p_locale: 'en',
+      p_subject: 'How is your tattoo healing?',
+      p_artist_id: 'artist-1',
+    });
+    expect(JSON.stringify(rpc.mock.calls[0])).not.toContain('status');
+  });
+
+  it('activates or retires a template only through the explicit transition RPC', async () => {
+    const { client, rpc } = clientWithRpc({ data: true, error: null });
+    const api = createLifecycleApi(client);
+
+    await api.setMessageTemplateActive('template-1', true);
+
+    expect(rpc).toHaveBeenCalledWith('set_message_template_active', {
+      p_template_id: 'template-1',
+      p_is_active: true,
+    });
+  });
+});
