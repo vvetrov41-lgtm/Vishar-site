@@ -2,8 +2,11 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
+import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type {
+  ClientLifecyclePreview,
+  ClientLifecyclePreviewSession,
   ClientLifecyclePurpose,
   ClientLifecycleRule,
   ClientLifecycleTemplate,
@@ -19,7 +22,9 @@ interface LifecycleData {
   templates: ClientLifecycleTemplate[];
   purposes: ClientLifecyclePurpose[];
   variables: ClientLifecycleVariable[];
+  previewSessions: ClientLifecyclePreviewSession[];
   canManage: boolean;
+  canPreview: boolean;
   workspaceId: string;
 }
 
@@ -29,6 +34,15 @@ const APPOINTMENT_TYPES: LifecycleAppointmentType[] = [
   'video_consultation',
   'touch_up',
 ];
+
+const PREVIEW_CAPABILITIES = [
+  'view_automations',
+  'view_sessions',
+  'view_clients',
+  'view_enquiries',
+  'view_integrations',
+  'view_finance',
+] as const;
 
 export function LifecycleAutomationPage() {
   const api = useApi();
@@ -42,25 +56,32 @@ export function LifecycleAutomationPage() {
   const state = useAsync<LifecycleData | null>(async () => {
     if (!selectedArtistId) return null;
 
-    const [rules, templates, purposes, variables, capabilities, context] = await Promise.all([
+    const [rules, templates, purposes, variables, previewSessions, capabilities, context] = await Promise.all([
       api.listClientLifecycleRules(selectedArtistId),
       api.listClientLifecycleTemplates(selectedArtistId),
       api.listClientLifecycleTemplatePurposes(selectedArtistId),
       api.listClientLifecycleTemplateVariables(selectedArtistId),
+      api.listClientLifecyclePreviewSessions(selectedArtistId),
       api.listCapabilities(selectedArtistId),
       api.artistControlPlaneContext(selectedArtistId),
     ]);
 
     if (!context?.workspace_id) throw new Error('Could not resolve the artist workspace.');
 
+    const granted = new Set(
+      capabilities
+        .filter((grant) => grant.artist_id === selectedArtistId)
+        .map((grant) => grant.capability),
+    );
+
     return {
       rules,
       templates,
       purposes,
       variables,
-      canManage: capabilities.some(
-        (grant) => grant.artist_id === selectedArtistId && grant.capability === 'manage_automations',
-      ),
+      previewSessions,
+      canManage: granted.has('manage_automations'),
+      canPreview: PREVIEW_CAPABILITIES.every((capability) => granted.has(capability)),
       workspaceId: context.workspace_id,
     };
   }, [api, selectedArtistId]);
@@ -120,6 +141,17 @@ export function LifecycleAutomationPage() {
       </div>
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
       {notice ? <div className="notice ok" role="status">{notice}</div> : null}
+
+      <Section title={ru ? 'Предпросмотр' : 'Preview'}>
+        <LifecyclePreviewPanel
+          key={selectedArtistId}
+          ru={ru}
+          rules={data.rules}
+          sessions={data.previewSessions}
+          canPreview={data.canPreview}
+          onPreview={(ruleId, sessionId) => api.previewClientLifecycleRule(selectedArtistId, ruleId, sessionId)}
+        />
+      </Section>
 
       <Section title={ru ? 'Правила' : 'Rules'}>
         {data.rules.length === 0 ? (
@@ -254,6 +286,192 @@ export function LifecycleAutomationPage() {
         ) : null}
       </Section>
     </div>
+  );
+}
+
+function LifecyclePreviewPanel({
+  ru,
+  rules,
+  sessions,
+  canPreview,
+  onPreview,
+}: {
+  ru: boolean;
+  rules: ClientLifecycleRule[];
+  sessions: ClientLifecyclePreviewSession[];
+  canPreview: boolean;
+  onPreview: (ruleId: string, sessionId: string) => Promise<ClientLifecyclePreview | null>;
+}) {
+  const [ruleId, setRuleId] = useState(rules[0]?.id ?? '');
+  const [sessionId, setSessionId] = useState(sessions[0]?.session_id ?? '');
+  const [preview, setPreview] = useState<ClientLifecyclePreview | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  if (!canPreview) {
+    return (
+      <EmptyState
+        compact
+        title={ru ? 'Предпросмотр недоступен' : 'Preview unavailable'}
+        hint={ru
+          ? 'Для предпросмотра нужен доступ к автоматизациям, клиентам, записям, заявкам, финансам и интеграциям этого мастера.'
+          : 'Preview requires access to this artist’s automations, clients, appointments, enquiries, finance and integrations.'}
+      />
+    );
+  }
+
+  if (rules.length === 0 || sessions.length === 0) {
+    return (
+      <EmptyState
+        compact
+        title={ru ? 'Пока нечего проверять' : 'Nothing to preview yet'}
+        hint={rules.length === 0
+          ? (ru ? 'Для предпросмотра нужно хотя бы одно правило.' : 'Create at least one rule before using preview.')
+          : (ru ? 'Для этого мастера нет доступных записей для предпросмотра.' : 'There are no accessible appointments for this artist to preview.')}
+      />
+    );
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!ruleId || !sessionId) return;
+    setPreviewBusy(true);
+    setPreviewError(null);
+    setPreview(null);
+    try {
+      const result = await onPreview(ruleId, sessionId);
+      if (!result) {
+        setPreviewError(ru
+          ? 'Предпросмотр недоступен для выбранного правила и записи.'
+          : 'Preview is unavailable for the selected rule and appointment.');
+        return;
+      }
+      setPreview(result);
+    } catch (cause) {
+      setPreviewError(cause instanceof Error
+        ? cause.message
+        : (ru ? 'Не удалось построить предпросмотр.' : 'Could not build the preview.'));
+    } finally {
+      setPreviewBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <div className="notice">
+        {ru
+          ? 'Предпросмотр использует реальные данные выбранной записи, но ничего не отправляет, не создаёт задачу и не ставит письмо в очередь.'
+          : 'Preview uses the selected appointment’s real data, but it does not send anything, create a job or queue an email.'}
+      </div>
+      <form className="stack" onSubmit={(event) => { void submit(event); }}>
+        <label>
+          {ru ? 'Правило' : 'Rule'}
+          <select
+            value={ruleId}
+            onChange={(event) => {
+              setRuleId(event.target.value);
+              setPreview(null);
+              setPreviewError(null);
+            }}
+          >
+            {rules.map((rule) => (
+              <option key={rule.id} value={rule.id}>
+                {rule.name} · {appointmentLabel(rule.appointment_type, ru)} · {scheduleLabel(rule, ru)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {ru ? 'Запись' : 'Appointment'}
+          <select
+            value={sessionId}
+            onChange={(event) => {
+              setSessionId(event.target.value);
+              setPreview(null);
+              setPreviewError(null);
+            }}
+          >
+            {sessions.map((session) => (
+              <option key={session.session_id} value={session.session_id}>
+                {session.client_name} · {appointmentLabel(session.appointment_type, ru)} · {formatDateTime(session.start_at, ru ? 'ru' : 'en')}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="actions">
+          <button type="submit" disabled={previewBusy || !ruleId || !sessionId}>
+            {previewBusy ? (ru ? 'Проверяем…' : 'Checking…') : (ru ? 'Показать предпросмотр' : 'Show preview')}
+          </button>
+        </div>
+      </form>
+
+      {previewError ? <div className="notice warn" role="alert">{previewError}</div> : null}
+      {preview ? <LifecyclePreviewResult ru={ru} preview={preview} /> : null}
+    </div>
+  );
+}
+
+function LifecyclePreviewResult({
+  ru,
+  preview,
+}: {
+  ru: boolean;
+  preview: ClientLifecyclePreview;
+}) {
+  return (
+    <article className="card" aria-label={ru ? 'Результат предпросмотра' : 'Preview result'}>
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <strong>{preview.rule_name}</strong>
+          <div className="meta">
+            {preview.client_name}
+            {' · '}{appointmentLabel(preview.appointment_type, ru)}
+            {' · '}{sessionStatusLabel(preview.session_status, ru)}
+          </div>
+        </div>
+        <span className={`badge ${preview.eligible ? 'ok' : 'warn'}`}>
+          {preview.eligible ? (ru ? 'Можно отправить' : 'Would send') : (ru ? 'Не отправится' : 'Would not send')}
+        </span>
+      </div>
+
+      <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '4px', margin: '16px 0' }}>
+        <dt className="meta">{ru ? 'Когда' : 'Scheduled for'}</dt>
+        <dd style={{ margin: 0 }}>{formatDateTime(preview.scheduled_at, ru ? 'ru' : 'en')}</dd>
+        <dt className="meta">{ru ? 'Шаблон' : 'Template'}</dt>
+        <dd style={{ margin: 0 }}>{preview.template_id ? `${preview.template_scope ?? ''} · v${preview.template_version ?? '?'}` : (ru ? 'Нет активного шаблона' : 'No active template')}</dd>
+        <dt className="meta">{ru ? 'Email' : 'Email integration'}</dt>
+        <dd style={{ margin: 0 }}>{preview.integration_available ? (ru ? 'Подключён' : 'Available') : (ru ? 'Недоступен' : 'Unavailable')}</dd>
+        <dt className="meta">{ru ? 'Существующая задача' : 'Existing job'}</dt>
+        <dd style={{ margin: 0 }}>{preview.existing_job_status ? automationJobStatusLabel(preview.existing_job_status, ru) : (ru ? 'Нет' : 'None')}</dd>
+        <dt className="meta">{ru ? 'Результат' : 'Decision'}</dt>
+        <dd style={{ margin: 0 }}>{preview.blocker ? blockerLabel(preview.blocker, ru) : (ru ? 'Все проверки пройдены' : 'All checks pass')}</dd>
+        {preview.suppression_reason ? (
+          <>
+            <dt className="meta">{ru ? 'Ограничение клиента' : 'Client suppression'}</dt>
+            <dd style={{ margin: 0 }}>{suppressionLabel(preview.suppression_reason, ru)}</dd>
+          </>
+        ) : null}
+      </dl>
+
+      <div className="stack">
+        <div>
+          <div className="meta">{ru ? 'Тема письма' : 'Email subject'}</div>
+          <div>{preview.rendered_subject || (ru ? 'Недоступна' : 'Unavailable')}</div>
+        </div>
+        <div>
+          <div className="meta">{ru ? 'Текст письма' : 'Email body'}</div>
+          <div className="card" style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>
+            {preview.rendered_body || (ru ? 'Текст недоступен' : 'Body unavailable')}
+          </div>
+        </div>
+      </div>
+
+      <div className="meta" style={{ marginTop: 12 }}>
+        {ru
+          ? 'Только чтение · реальные ссылки действий не создаются'
+          : 'Read only · real action links are never created'}
+      </div>
+    </article>
   );
 }
 
@@ -504,4 +722,56 @@ function templateStatusLabel(status: ClientLifecycleTemplate['status'], ru: bool
   if (status === 'active') return ru ? 'Активен' : 'Active';
   if (status === 'draft') return ru ? 'Черновик' : 'Draft';
   return ru ? 'Архив' : 'Retired';
+}
+
+function sessionStatusLabel(status: ClientLifecyclePreview['session_status'], ru: boolean): string {
+  const labels: Record<ClientLifecyclePreview['session_status'], [string, string]> = {
+    draft: ['Draft', 'Черновик'],
+    proposed: ['Proposed', 'Предложено'],
+    confirmed: ['Confirmed', 'Подтверждено'],
+    completed: ['Completed', 'Завершено'],
+    cancelled: ['Cancelled', 'Отменено'],
+    no_show: ['No-show', 'Неявка'],
+  };
+  return labels[status][ru ? 1 : 0];
+}
+
+function automationJobStatusLabel(status: NonNullable<ClientLifecyclePreview['existing_job_status']>, ru: boolean): string {
+  const labels: Record<NonNullable<ClientLifecyclePreview['existing_job_status']>, [string, string]> = {
+    pending: ['Pending', 'Ожидает'],
+    running: ['Running', 'Выполняется'],
+    completed: ['Completed', 'Отправлено'],
+    cancelled: ['Cancelled', 'Отменено'],
+    failed: ['Failed', 'Ошибка'],
+  };
+  return labels[status][ru ? 1 : 0];
+}
+
+function blockerLabel(blocker: string, ru: boolean): string {
+  const labels: Record<string, [string, string]> = {
+    already_delivered: ['Already delivered', 'Уже отправлено'],
+    job_cancelled: ['Existing job was cancelled', 'Существующая задача отменена'],
+    job_failed: ['Existing job failed', 'Существующая задача завершилась ошибкой'],
+    automation_paused: ['Automations are paused for this artist', 'Автоматизации этого мастера приостановлены'],
+    rule_disabled: ['This rule is disabled', 'Это правило выключено'],
+    appointment_type_mismatch: ['Appointment type does not match the rule', 'Тип записи не подходит для этого правила'],
+    appointment_ineligible: ['Appointment status makes this message ineligible', 'Статус записи не позволяет отправить это сообщение'],
+    appointment_not_ready: ['Appointment is not ready for this automation yet', 'Запись ещё не готова для этой автоматизации'],
+    not_due: ['Message is not due yet', 'Время отправки ещё не наступило'],
+    destination_unavailable: ['Client email destination is unavailable', 'Email клиента недоступен'],
+    template_unavailable: ['Active service template is unavailable', 'Нет подходящего активного сервисного шаблона'],
+    client_blocked: ['Client suppression blocks this message', 'Ограничения клиента блокируют это сообщение'],
+    integration_unavailable: ['Email integration is unavailable', 'Email-интеграция недоступна'],
+  };
+  return labels[blocker]?.[ru ? 1 : 0] ?? (ru ? 'Отправка заблокирована' : 'Delivery is blocked');
+}
+
+function suppressionLabel(reason: string, ru: boolean): string {
+  const labels: Record<string, [string, string]> = {
+    client_archived: ['Client is archived', 'Клиент архивирован'],
+    client_email_missing: ['Client email is missing', 'У клиента нет email'],
+    email_suppressed: ['Email is suppressed for this client', 'Email для этого клиента отключён'],
+    service_email_suppressed: ['Service email is suppressed for this client', 'Сервисные email для этого клиента отключены'],
+  };
+  return labels[reason]?.[ru ? 1 : 0] ?? (ru ? 'Действует ограничение клиента' : 'A client suppression applies');
 }
