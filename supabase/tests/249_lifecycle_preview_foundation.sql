@@ -140,6 +140,8 @@ insert into public.artist_integrations (
 
 create temporary table preview_counts_before as
 select
+  (select count(*) from public.automation_rules) as rules,
+  (select count(*) from public.message_templates) as templates,
   (select count(*) from public.automation_jobs) as jobs,
   (select count(*) from public.email_messages) as emails,
   (select count(*) from public.integration_outbox) as outbox,
@@ -340,6 +342,16 @@ select is(
 reset role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select is(
+  (select count(*) from public.automation_rules),
+  (select rules from preview_counts_before),
+  'preview creates no automation rules or lifecycle product stages'
+);
+select is(
+  (select count(*) from public.message_templates),
+  (select templates from preview_counts_before),
+  'preview creates no message templates'
+);
+select is(
   (select count(*) from public.automation_jobs),
   (select jobs from preview_counts_before),
   'preview creates no automation jobs'
@@ -358,19 +370,6 @@ select is(
   (select count(*) from crm_private.appointment_client_action_tokens),
   (select action_tokens from preview_counts_before),
   'preview mints no appointment action capability'
-);
-
-select is(
-  (select count(*)::int
-   from public.automation_rules
-   where message_purpose not in (
-     'session_reminder_72h',
-     'session_reminder_24h',
-     'consultation_reminder',
-     'post_session_checkin'
-   )),
-  0,
-  'preview foundation activates no new lifecycle product stage'
 );
 
 select * from finish(true);
