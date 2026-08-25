@@ -3,7 +3,7 @@ name: GPT production domain reconciliation
 on:
   push:
     branches:
-      - ops/gpt-production-domain-reconcile-acceptance
+      - 'release/private-crm-rc*-inventory-gpt-domain-operator'
 
 permissions:
   actions: read
@@ -21,6 +21,7 @@ jobs:
     environment: crm-production
     env:
       CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
       WORKER_NAME: vishar-gpt-actions-production
       CORE_HOST: gpt-actions.vishartattoo.com
       OPERATIONS_HOST: gpt-operations.vishartattoo.com
@@ -29,28 +30,69 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
 
     steps:
-      - name: Checkout exact operator SHA
+      - name: Checkout exact approved canonical source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.APPROVED_SHA }}
           fetch-depth: 0
 
-      - name: Verify exact owner operator and current canonical SHA
+      - name: Verify isolated operator trigger, immutable canonical SHA and exact-head CI
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
-          [ "$GITHUB_REF_NAME" = 'ops/gpt-production-domain-reconcile-acceptance' ]
-          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-inventory-gpt-domain-operator) ;;
+            *) echo 'GPT domain operator must use its reserved inventory-excluded release namespace.' >&2; exit 1 ;;
+          esac
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$GITHUB_SHA" != "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
           [ -z "$(git status --short)" ]
           [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
           [ -n "$CLOUDFLARE_API_TOKEN" ]
           canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
           [ -n "$canonical_sha" ]
-          [ "$canonical_sha" = "$GITHUB_SHA" ] || {
-            echo 'Operator SHA is no longer the current canonical Vishar CRM head.' >&2
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Approved operator SHA is no longer the current canonical Vishar CRM head.' >&2
             exit 1
           }
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+            'WhatsApp production onboarding validation'
+          )
+          for attempt in $(seq 1 60); do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+              --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+              | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+            all_green=true
+            for workflow in "${required_workflows[@]}"; do
+              if ! jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+                any(.[]; .name == $name and .head_sha == $sha
+                         and .status == "completed" and .conclusion == "success")
+              ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null; then
+                all_green=false
+              fi
+            done
+            if [ "$all_green" = true ]; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo 'Required exact-head CI did not become green within the bounded admission window.' >&2
+              jq . "$RUNNER_TEMP/exact-head-runs.json" >&2
+              exit 1
+            fi
+            sleep 15
+          done
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -111,8 +153,10 @@ jobs:
         run: |
           {
             echo '### GPT production domain reconciliation'
-            echo "- Exact canonical SHA: \`$GITHUB_SHA\`"
-            echo '- Operator namespace: `ops/gpt-production-domain-reconcile-acceptance` (outside the full release namespace)'
+            echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
+            echo "- Trigger SHA: \`$GITHUB_SHA\` (same tree, one no-op child commit)"
+            echo '- Operator namespace: `release/private-crm-rc*-inventory-gpt-domain-operator`'
+            echo '- Full production release/observer: excluded by the existing `inventory-*` namespace boundary'
             echo '- Canonical domains: `gpt-actions.vishartattoo.com`, `gpt-operations.vishartattoo.com`'
             echo '- Retired transition domain: `gpt-communications.vishartattoo.com` when present'
             echo '- Mutation acceptance: HTTP 2xx is provisional; fresh GET readback is authoritative'
