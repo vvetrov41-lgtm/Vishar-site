@@ -67,6 +67,7 @@ describe('responsive navigation shell', () => {
       'Communications',
       'Clients',
       'Time off',
+      'Automations',
       'Notifications',
       'Activity',
     ]);
@@ -89,6 +90,7 @@ describe('responsive navigation shell', () => {
       'Communications',
       'Clients',
       'Time off',
+      'Automations',
       'Notifications',
     ]);
     expect(within(dialog).queryByRole('group', { name: 'Administration' })).not.toBeInTheDocument();
@@ -115,6 +117,11 @@ describe('responsive navigation shell', () => {
 
   it('retains artist selection on artist-owned queues', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/enquiries' });
+    expect(await screen.findByRole('combobox', { name: 'Artist' })).toBeInTheDocument();
+  });
+
+  it('treats lifecycle automations as artist-scoped', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/automations' });
     expect(await screen.findByRole('combobox', { name: 'Artist' })).toBeInTheDocument();
   });
 
