@@ -474,6 +474,7 @@ function overflowGroupLabel(group: OverflowGroupId, language: Language): string 
 function navigationLabel(path: string, language: Language, fallback: string): string {
   if (path === '/appointments') return language === 'ru' ? 'Записи' : 'Appointments';
   if (path === '/availability') return language === 'ru' ? 'Выходные' : 'Time off';
+  if (path === '/automations') return language === 'ru' ? 'Автоматизации' : 'Automations';
   return fallback;
 }
 
@@ -488,6 +489,7 @@ function pageScopeFor(path: string): PageScope {
     || path === '/appointments'
     || path === '/sessions'
     || path === '/availability'
+    || path === '/automations'
     || path === '/activity'
   ) return 'artist';
   return 'global';
@@ -561,6 +563,8 @@ function NavIcon({ path }: { path: string }) {
       return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /><path d="M8 14h3M8 17h6" /></svg>;
     case '/availability':
       return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /><path d="M8 15h8" /></svg>;
+    case '/automations':
+      return <svg {...common}><path d="M5 7h14M5 12h14M5 17h14" /><circle cx="9" cy="7" r="2" fill="var(--surface)" /><circle cx="15" cy="12" r="2" fill="var(--surface)" /><circle cx="11" cy="17" r="2" fill="var(--surface)" /></svg>;
     case '/users':
       return <svg {...common}><circle cx="12" cy="8" r="3" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /><path d="M19 5v4M17 7h4" /></svg>;
     case '/activity':
