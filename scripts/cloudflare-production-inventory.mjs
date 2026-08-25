@@ -148,7 +148,7 @@ async function main() {
     read(`/zones/${zone.id}/workers/routes?per_page=100`),
     read(`/zones/${zone.id}/dns_records?per_page=500`),
     read(`/accounts/${accountId}/access/apps?per_page=100`),
-    read(`/accounts/${accountId}/pages/projects?page=1&per_page=25`),
+    read(`/accounts/${accountId}/pages/projects`),
     read(`/accounts/${accountId}/storage/kv/namespaces?per_page=100`, { required: false }),
     read(`/accounts/${accountId}/d1/database?per_page=100`, { required: false }),
     read(`/accounts/${accountId}/r2/buckets`, { required: false }),
@@ -228,7 +228,7 @@ async function main() {
 
   const pages = [];
   for (const project of sortBy(pagesRows.result ?? [], 'name')) {
-    const deployments = await read(`/accounts/${accountId}/pages/projects/${encodeURIComponent(project.name)}/deployments?page=1&per_page=25`);
+    const deployments = await read(`/accounts/${accountId}/pages/projects/${encodeURIComponent(project.name)}/deployments`);
     const production = (deployments.result ?? []).find((deployment) => deployment?.environment === 'production') ?? null;
     pages.push({
       name: project.name,
