@@ -30,5 +30,9 @@ assert.match(script, /secret_names/);
 assert.match(script, /\[redacted\]/);
 assert.match(script, /Cloudflare mutations: none \(GET requests only\)/);
 assert.match(script, /Secret values: never requested; secret names only/);
+assert.match(script, /pages\/projects\?page=1&per_page=25/);
+assert.match(script, /deployments\?page=1&per_page=25/);
+assert.match(script, /errorCodes\.join/);
+assert.doesNotMatch(script, /pages\/projects\?per_page=100/);
 
 console.log('Cloudflare production inventory workflow safety tests passed.');
