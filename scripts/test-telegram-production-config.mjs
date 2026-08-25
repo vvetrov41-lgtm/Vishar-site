@@ -36,7 +36,6 @@ const expectGeneratedMainResolvesToWorker = (text, configPath, label) => {
 const telegramRpcSurface = [...TELEGRAM_SELF_SERVICE_RPCS].sort();
 const expectedTelegramRpcSurface = [
   'service_claim_telegram_notifications',
-  'service_claim_telegram_notifications_v2',
   'service_complete_telegram_link',
   'service_record_telegram_notification_result',
   'service_resolve_telegram_destination',
