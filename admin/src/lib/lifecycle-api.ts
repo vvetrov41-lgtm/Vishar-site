@@ -16,6 +16,18 @@ export type LifecycleSessionStatus =
   | 'cancelled'
   | 'no_show';
 export type LifecycleAutomationJobStatus = 'pending' | 'running' | 'completed' | 'cancelled' | 'failed';
+export type LifecycleExecutionStatus =
+  | 'scheduled'
+  | 'pending'
+  | 'queued'
+  | 'sent'
+  | 'suppressed'
+  | 'withdrawn'
+  | 'cancelled'
+  | 'failed'
+  | 'retrying';
+export type LifecycleEmailStatus = 'draft' | 'approved' | 'queued' | 'sent' | 'failed';
+export type LifecycleOutboxStatus = 'pending' | 'leased' | 'succeeded' | 'failed' | 'dead';
 export type MessageTemplateStatus = 'draft' | 'active' | 'retired';
 
 export interface ClientLifecycleRule {
@@ -96,6 +108,26 @@ export interface ClientLifecyclePreview {
   existing_job_status: LifecycleAutomationJobStatus | null;
   eligible: boolean;
   blocker: string | null;
+}
+
+export interface ClientLifecycleExecutionHistoryRow {
+  job_id: string;
+  rule_id: string;
+  rule_name: string;
+  rule_version: number;
+  session_id: string;
+  client_name: string;
+  appointment_type: LifecycleAppointmentType;
+  message_purpose: string;
+  scheduled_at: string;
+  lifecycle_status: LifecycleExecutionStatus;
+  job_status: LifecycleAutomationJobStatus;
+  email_status: LifecycleEmailStatus | null;
+  outbox_status: LifecycleOutboxStatus | null;
+  failure_reason: string | null;
+  attempt_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 function unwrap<T>(result: { data: unknown; error: unknown }, action: string): T {
@@ -192,6 +224,19 @@ export function createLifecycleApi(client: CrmClient) {
         'preview lifecycle rule',
       );
       return rows[0] ?? null;
+    },
+
+    async listClientLifecycleExecutionHistory(
+      artistId: string,
+      limit = 50,
+    ): Promise<ClientLifecycleExecutionHistoryRow[]> {
+      return unwrap<ClientLifecycleExecutionHistoryRow[]>(
+        await client.rpc('list_client_lifecycle_execution_history', {
+          p_artist_id: artistId,
+          p_limit: limit,
+        }),
+        'load lifecycle execution history',
+      );
     },
 
     async upsertMessageTemplate(input: {
