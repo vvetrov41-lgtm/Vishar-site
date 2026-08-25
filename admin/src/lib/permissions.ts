@@ -30,6 +30,7 @@ export type Capability =
   | 'manageProjects'
   | 'viewSessions'
   | 'manageSessions'
+  | 'viewAutomations'
   | 'viewFinance'
   | 'manageFinance'
   | 'viewNotes'
@@ -50,7 +51,7 @@ const OWNER: Capability[] = [
   'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
   'editEnquiry', 'manageEnquiryFiles', 'removeEnquiryFiles',
   'viewProjects', 'manageProjects',
-  'viewSessions', 'manageSessions', 'viewFinance', 'manageFinance',
+  'viewSessions', 'manageSessions', 'viewAutomations', 'viewFinance', 'manageFinance',
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft', 'approveEmail', 'viewActivity', 'viewIntegrationJobs', 'manageIntegrations',
   'viewNotifications',
@@ -62,7 +63,7 @@ const BOOKING_MANAGER: Capability[] = [
   'viewEnquiries', 'createEnquiry', 'transitionEnquiry', 'assignEnquiry', 'convertEnquiry', 'viewEnquiryFiles',
   'editEnquiry', 'manageEnquiryFiles',
   'viewProjects', 'manageProjects',
-  'viewSessions', 'manageSessions',
+  'viewSessions', 'manageSessions', 'viewAutomations',
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft',
   'viewActivity', 'manageIntegrations', 'viewNotifications',
@@ -77,6 +78,7 @@ const READ_ONLY: Capability[] = [
   'viewEnquiries',
   'viewProjects',
   'viewSessions',
+  'viewAutomations',
   'viewFollowUps',
   'viewNotifications',
   // Deliberately absent: every write, all finance, files, notes, emails,
@@ -196,6 +198,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
   { path: '/appointments', label: 'Appointments', capability: 'viewSessions' },
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
+  { path: '/automations', label: 'Automations', capability: 'viewAutomations' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
   // One entry. Calendar, WhatsApp and Instagram were three peers here, which
   // stopped scaling at three; the hub at /integrations lists every channel and
