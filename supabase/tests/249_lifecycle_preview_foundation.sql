@@ -55,11 +55,13 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 insert into auth.users (id, email) values
   ('fb011111-1111-4111-8111-111111111111', 'preview-reader@example.test'),
-  ('fb022222-2222-4222-8222-222222222222', 'preview-outsider@example.test');
+  ('fb022222-2222-4222-8222-222222222222', 'preview-outsider@example.test'),
+  ('fb033333-3333-4333-8333-333333333333', 'preview-no-finance@example.test');
 
 insert into public.profiles (id, email, display_name, role, is_active) values
-  ('fb011111-1111-4111-8111-111111111111', 'preview-reader@example.test', 'Preview Reader', 'read_only', true),
-  ('fb022222-2222-4222-8222-222222222222', 'preview-outsider@example.test', 'Preview Outsider', 'read_only', true);
+  ('fb011111-1111-4111-8111-111111111111', 'preview-reader@example.test', 'Preview Reader', 'owner', true),
+  ('fb022222-2222-4222-8222-222222222222', 'preview-outsider@example.test', 'Preview Outsider', 'read_only', true),
+  ('fb033333-3333-4333-8333-333333333333', 'preview-no-finance@example.test', 'Preview No Finance', 'read_only', true);
 
 insert into public.workspaces (id, slug, display_name, workspace_type, is_active) values
   ('fb101111-1111-4111-8111-111111111111', 'preview-workspace-a', 'Preview Workspace A', 'studio', true),
@@ -79,6 +81,8 @@ insert into public.artist_memberships (
   ('fb011111-1111-4111-8111-111111111111', 'fb201111-1111-4111-8111-111111111111',
    'read_only', false, false, false, false, true, 'explicit'),
   ('fb022222-2222-4222-8222-222222222222', 'fb202222-2222-4222-8222-222222222222',
+   'read_only', false, false, false, false, true, 'explicit'),
+  ('fb033333-3333-4333-8333-333333333333', 'fb201111-1111-4111-8111-111111111111',
    'read_only', false, false, false, false, true, 'explicit');
 
 insert into public.clients (id, full_name, email) values
@@ -245,6 +249,26 @@ select ok(
      'fb602222-2222-4222-8222-222222222222'::uuid,
      'fb402222-2222-4222-8222-222222222222'::uuid)),
   'action-link preview uses inert labels rather than minting or exposing a capability-shaped token'
+);
+
+reset role;
+select pg_temp.as_profile('fb033333-3333-4333-8333-333333333333');
+set local role authenticated;
+select is(
+  (select count(*)::int
+   from public.list_client_lifecycle_preview_sessions(
+     'fb201111-1111-4111-8111-111111111111'::uuid, 50)),
+  2,
+  'an active member without finance access may enumerate bounded session labels'
+);
+select is(
+  (select count(*)::int
+   from public.preview_client_lifecycle_rule(
+     'fb201111-1111-4111-8111-111111111111'::uuid,
+     'fb601111-1111-4111-8111-111111111111'::uuid,
+     'fb401111-1111-4111-8111-111111111111'::uuid)),
+  0,
+  'message preview requires finance read access because the shared renderer can expose deposit values'
 );
 
 reset role;
