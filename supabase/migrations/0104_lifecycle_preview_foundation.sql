@@ -34,6 +34,8 @@ as $$
   where s.artist_id = p_artist_id
     and public.is_active_user()
     and crm_private.has_artist_capability(p_artist_id, 'view_automations')
+    and crm_private.has_artist_capability(p_artist_id, 'view_sessions')
+    and crm_private.has_artist_capability(p_artist_id, 'view_clients')
   order by abs(extract(epoch from (s.start_at - now()))), s.start_at desc, s.id
   limit least(greatest(coalesce(p_limit, 50), 1), 100);
 $$;
@@ -77,6 +79,11 @@ as $$
       and a.is_active
       and public.is_active_user()
       and crm_private.has_artist_capability(a.id, 'view_automations')
+      and crm_private.has_artist_capability(a.id, 'view_sessions')
+      and crm_private.has_artist_capability(a.id, 'view_clients')
+      and crm_private.has_artist_capability(a.id, 'view_enquiries')
+      and crm_private.has_artist_capability(a.id, 'view_integrations')
+      and crm_private.has_artist_capability(a.id, 'view_finance')
   ),
   selected_rule as (
     select r.*
@@ -223,6 +230,9 @@ as $$
     select
       x.*,
       case
+        when x.selected_job_status = 'completed'::public.automation_job_status then 'already_delivered'
+        when x.selected_job_status = 'cancelled'::public.automation_job_status then 'job_cancelled'
+        when x.selected_job_status = 'failed'::public.automation_job_status then 'job_failed'
         when not x.automations_enabled then 'automation_paused'
         when not x.is_enabled then 'rule_disabled'
         when x.condition_appointment_type is distinct from x.selected_appointment_type then 'appointment_type_mismatch'
@@ -246,9 +256,6 @@ as $$
           or btrim(x.preview_body) = '' then 'template_unavailable'
         when x.send_block_reason is not null then 'client_blocked'
         when not x.has_email_integration then 'integration_unavailable'
-        when x.selected_job_status = 'completed'::public.automation_job_status then 'already_delivered'
-        when x.selected_job_status = 'cancelled'::public.automation_job_status then 'job_cancelled'
-        when x.selected_job_status = 'failed'::public.automation_job_status then 'job_failed'
         else null
       end as decision_blocker
     from rendered x
