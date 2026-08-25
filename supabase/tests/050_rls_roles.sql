@@ -713,11 +713,17 @@ insert into expected_function_acl values
   ('public.list_workspace_client_lifecycle_defaults(uuid)', false, true, false),
   ('public.set_message_template_active(uuid,boolean)', false, true, false),
 
-  -- Lifecycle authoring reads (migration 0101). These expose only service
+  -- Lifecycle authoring reads (migration 0102). These expose only service
   -- email template/catalogue metadata inside the caller's current artist scope.
   ('public.list_client_lifecycle_templates(uuid)', false, true, false),
   ('public.list_client_lifecycle_template_purposes(uuid)', false, true, false),
   ('public.list_client_lifecycle_template_variables(uuid)', false, true, false),
+
+  -- Lifecycle Studio preview foundation (migration 0104). Both are bounded
+  -- authenticated reads that re-check exact artist capabilities internally;
+  -- neither is exposed to anon or the service backend.
+  ('public.list_client_lifecycle_preview_sessions(uuid,integer)', false, true, false),
+  ('public.preview_client_lifecycle_rule(uuid,uuid,uuid)', false, true, false),
 
   -- Templates and the consent/suppression gate (migration 0082). The gate is
   -- readable by the backend as well, because every future send path must be

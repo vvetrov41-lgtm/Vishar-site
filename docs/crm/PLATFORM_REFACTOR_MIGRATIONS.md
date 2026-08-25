@@ -38,10 +38,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0101` | Telegram notification entity targets | claimed in PR #440 |
 | `0102` | Lifecycle control-plane safe template reads | claimed on `agent/lifecycle-control-plane-ui` |
 | `0103` | Post-session check-in production activation | claimed on `agent/post-session-checkin-activation` |
+| `0104` | Lifecycle Automation Studio v2 read-only preview foundation | claimed on `agent/lifecycle-studio-preview-foundation` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0104`
+`0105`
 
 ## Allocation rule for unfinished phases
 
@@ -147,3 +148,15 @@ English workspace template and, per active Artist, exactly two enabled rules:
 `video_consultation`, adds no other post-session stage, does not backfill
 historical appointments and keeps delivery on the existing system-approved
 `approved_email` outbox and Gmail Worker path.
+
+Lifecycle Automation Studio v2 preview foundation claims `0104`. It adds two
+read-only `SECURITY DEFINER` RPCs with pinned `search_path`: a bounded real
+session picker and a rule/session preview. The preview reuses the current
+lifecycle schedule calculation, template resolution, rendering,
+suppression and Gmail-availability gates, but it cannot create a rule,
+template, automation job, email, provider outbox row or appointment action
+capability. Real action links are never minted or returned; action templates
+receive inert preview labels instead. The full rendered-message preview is
+conservatively finance-gated because the shared production renderer can expose
+`deposit_amount`; direct browser SELECT on lifecycle source tables remains
+closed.
