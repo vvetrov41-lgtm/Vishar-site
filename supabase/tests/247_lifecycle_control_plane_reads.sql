@@ -1,6 +1,6 @@
 -- 247_lifecycle_control_plane_reads.sql
 --
--- 0101 exposes lifecycle template metadata without granting browser SELECT on
+-- 0102 exposes lifecycle template metadata without granting browser SELECT on
 -- message_templates. Everything here is synthetic and rolled back.
 
 begin;
