@@ -8,6 +8,14 @@ export type LifecycleAppointmentType =
 
 export type LifecycleScheduleAnchor = 'session_start' | 'session_end';
 export type LifecycleLocale = 'en' | 'ru';
+export type LifecycleSessionStatus =
+  | 'draft'
+  | 'proposed'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show';
+export type LifecycleAutomationJobStatus = 'pending' | 'running' | 'completed' | 'cancelled' | 'failed';
 export type MessageTemplateStatus = 'draft' | 'active' | 'retired';
 
 export interface ClientLifecycleRule {
@@ -56,6 +64,38 @@ export interface ClientLifecyclePurpose {
 export interface ClientLifecycleVariable {
   variable: string;
   description: string;
+}
+
+export interface ClientLifecyclePreviewSession {
+  session_id: string;
+  client_name: string;
+  appointment_type: LifecycleAppointmentType;
+  session_status: LifecycleSessionStatus;
+  start_at: string;
+  end_at: string;
+}
+
+export interface ClientLifecyclePreview {
+  rule_id: string;
+  rule_name: string;
+  rule_version: number;
+  rule_enabled: boolean;
+  session_id: string;
+  client_name: string;
+  appointment_type: LifecycleAppointmentType;
+  session_status: LifecycleSessionStatus;
+  scheduled_at: string;
+  template_id: string | null;
+  template_version: number | null;
+  template_scope: 'workspace' | 'artist' | null;
+  rendered_subject: string | null;
+  rendered_body: string | null;
+  suppression_reason: string | null;
+  integration_available: boolean;
+  existing_job_id: string | null;
+  existing_job_status: LifecycleAutomationJobStatus | null;
+  eligible: boolean;
+  blocker: string | null;
 }
 
 function unwrap<T>(result: { data: unknown; error: unknown }, action: string): T {
@@ -123,6 +163,35 @@ export function createLifecycleApi(client: CrmClient) {
         await client.rpc('list_client_lifecycle_template_variables', { p_artist_id: artistId }),
         'load lifecycle template variables',
       );
+    },
+
+    async listClientLifecyclePreviewSessions(
+      artistId: string,
+      limit = 50,
+    ): Promise<ClientLifecyclePreviewSession[]> {
+      return unwrap<ClientLifecyclePreviewSession[]>(
+        await client.rpc('list_client_lifecycle_preview_sessions', {
+          p_artist_id: artistId,
+          p_limit: limit,
+        }),
+        'load lifecycle preview sessions',
+      );
+    },
+
+    async previewClientLifecycleRule(
+      artistId: string,
+      ruleId: string,
+      sessionId: string,
+    ): Promise<ClientLifecyclePreview | null> {
+      const rows = unwrap<ClientLifecyclePreview[]>(
+        await client.rpc('preview_client_lifecycle_rule', {
+          p_artist_id: artistId,
+          p_rule_id: ruleId,
+          p_session_id: sessionId,
+        }),
+        'preview lifecycle rule',
+      );
+      return rows[0] ?? null;
     },
 
     async upsertMessageTemplate(input: {
