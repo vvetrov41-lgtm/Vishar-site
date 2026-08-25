@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
@@ -307,6 +307,13 @@ function LifecyclePreviewPanel({
   const [preview, setPreview] = useState<ClientLifecyclePreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!rules.some((rule) => rule.id === ruleId)) setRuleId(rules[0]?.id ?? '');
+    if (!sessions.some((session) => session.session_id === sessionId)) setSessionId(sessions[0]?.session_id ?? '');
+    setPreview(null);
+    setPreviewError(null);
+  }, [rules, sessions, ruleId, sessionId]);
 
   if (!canPreview) {
     return (
