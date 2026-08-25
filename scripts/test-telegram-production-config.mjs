@@ -6,6 +6,8 @@ import {
   AUTOMATION_BACKEND_RPCS,
   TELEGRAM_SELF_SERVICE_RPCS,
 } from '../workers/lib/supabase.js';
+import { __testing as telegramDrainTesting } from '../workers/lib/telegram-drain.js';
+import { buildPersonalNotification } from '../workers/lib/telegram.js';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -47,6 +49,28 @@ if (JSON.stringify(automationRpcSurface) !== JSON.stringify(['service_run_automa
   throw new Error(`Automation backend Worker RPC surface changed: ${automationRpcSurface.join(', ')}`);
 }
 
+const sessionId = '55555555-5555-4555-8555-555555555555';
+const productionTarget = telegramDrainTesting.personalNotificationActionUrl({
+  VISHAR_ENVIRONMENT: 'production',
+  CRM_ORIGIN: 'https://crm.vishartattoo.com',
+}, 'session', sessionId);
+if (productionTarget !== `https://crm.vishartattoo.com/#/appointments/${sessionId}`) {
+  throw new Error(`production session target is incorrect: ${productionTarget}`);
+}
+if (telegramDrainTesting.personalNotificationActionUrl({
+  VISHAR_ENVIRONMENT: 'production',
+  CRM_ORIGIN: 'https://evil.example.test',
+}, 'session', sessionId) !== null) {
+  throw new Error('production session target accepted a non-Vishar CRM origin');
+}
+const renderedPersonal = buildPersonalNotification({
+  title: 'Client requested reschedule',
+  body: 'Open the appointment to review the request.',
+  actionUrl: productionTarget,
+});
+expectIncludes(renderedPersonal, `Open in CRM: https://crm.vishartattoo.com/#/appointments/${sessionId}`,
+  'personal notification renderer');
+
 const tracked = directivesOf(read('wrangler.telegram-drain.production.toml'));
 for (const needle of [
   'name = "vishar-telegram-drain-production"',
@@ -56,6 +80,7 @@ for (const needle of [
   '{ pattern = "telegram.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }',
   'VISHAR_ENVIRONMENT = "production"',
   'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"',
+  'CRM_ORIGIN = "https://crm.vishartattoo.com"',
   'TELEGRAM_DRAIN_ENABLED = "false"',
   'GMAIL_SHARED_DRAIN_ENABLED = "false"',
   'AUTOMATION_TICK_ENABLED = "false"',
@@ -87,6 +112,7 @@ try {
   const generated = directivesOf(fs.readFileSync(generatedPath, 'utf8'));
   expectGeneratedMainResolvesToWorker(generated, generatedPath, 'generated config');
   for (const needle of [
+    'CRM_ORIGIN = "https://crm.vishartattoo.com"',
     'TELEGRAM_DRAIN_ENABLED = "true"',
     'GMAIL_SHARED_DRAIN_ENABLED = "true"',
     'AUTOMATION_TICK_ENABLED = "true"',
@@ -125,6 +151,7 @@ try {
   }
   const linking = directivesOf(fs.readFileSync(linkingPath, 'utf8'));
   expectGeneratedMainResolvesToWorker(linking, linkingPath, 'linking config');
+  expectIncludes(linking, 'CRM_ORIGIN = "https://crm.vishartattoo.com"', 'linking config');
   expectIncludes(linking, 'TELEGRAM_LINKING_ENABLED = "true"', 'linking config');
   expectIncludes(linking, 'GMAIL_SHARED_DRAIN_ENABLED = "true"', 'linking config');
   expectIncludes(linking, 'AUTOMATION_TICK_ENABLED = "true"', 'linking config');
@@ -207,4 +234,4 @@ if (preflightCallCount !== 2) {
   throw new Error(`production workflow: expected preflight immediately before and after deploy, found ${preflightCallCount}`);
 }
 
-console.log('Telegram production configuration boundaries: fail-closed preflight preserves Gmail, enables one bounded automation heartbeat on the existing cron, gates linking, and keeps Artist delivery registry-only.');
+console.log('Telegram production configuration boundaries: fail-closed preflight preserves Gmail, pins the CRM origin for exact appointment links, enables one bounded automation heartbeat on the existing cron, gates linking, and keeps Artist delivery registry-only.');

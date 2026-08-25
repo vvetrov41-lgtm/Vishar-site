@@ -15,6 +15,7 @@ const WORKER_ID = /^[a-z][a-z0-9_-]{2,127}$/;
 const REFERENCE = /^ENQ-[0-9]{4}-[0-9]{4,}$/;
 const DEFAULT_LEASE_SECONDS = 120;
 const DEFAULT_LIMIT = 10;
+const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
 
 export class TelegramDrainError extends Error {
   constructor(code) {
@@ -111,7 +112,40 @@ function validateRegistryDestination(value, expectedKind) {
   return { ...row, chat_id: String(row.chat_id) };
 }
 
-function validatePersonalDelivery(row) {
+function trustedCrmOrigin(env) {
+  const raw = typeof env?.CRM_ORIGIN === 'string' ? env.CRM_ORIGIN.trim() : '';
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (
+      parsed.protocol !== 'https:'
+      || parsed.username
+      || parsed.password
+      || parsed.port
+      || parsed.pathname !== '/'
+      || parsed.search
+      || parsed.hash
+    ) return null;
+    if (env?.VISHAR_ENVIRONMENT === 'production' && parsed.origin !== PRODUCTION_CRM_ORIGIN) {
+      return null;
+    }
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function personalNotificationActionUrl(env, entityType, entityId) {
+  if (entityType !== 'session') return null;
+  if (!UUID.test(entityId ?? '')) throw new TelegramDrainError('telegram_notification_invalid');
+  const origin = trustedCrmOrigin(env);
+  if (!origin) return null;
+  return `${origin}/#/appointments/${entityId}`;
+}
+
+function validatePersonalDelivery(env, row) {
+  const entityType = row?.entity_type ?? null;
+  const entityId = row?.entity_id ?? null;
   if (
     !UUID.test(row?.delivery_id ?? '')
     || !UUID.test(row?.notification_id ?? '')
@@ -121,10 +155,14 @@ function validatePersonalDelivery(row) {
     || row.title.trim() === ''
     || row.title.length > 200
     || (row?.body != null && (typeof row.body !== 'string' || row.body.length > 2000))
+    || ((entityType === null) !== (entityId === null))
+    || (entityType !== null && typeof entityType !== 'string')
+    || (entityId !== null && !UUID.test(entityId))
   ) {
     throw new TelegramDrainError('telegram_notification_invalid');
   }
-  const text = buildPersonalNotification({ title: row.title, body: row.body });
+  const actionUrl = personalNotificationActionUrl(env, entityType, entityId);
+  const text = buildPersonalNotification({ title: row.title, body: row.body, actionUrl });
   if (!text) throw new TelegramDrainError('telegram_notification_invalid');
   return { ...row, chat_id: String(row.chat_id), text };
 }
@@ -399,6 +437,10 @@ export async function drainPersonalTelegramNotifications(env, {
   }
 
   const supabase = createSupabaseClient(env, fetchImpl);
+  // 0101 enriches the existing claim in place. Old database versions simply
+  // omit entity_type/entity_id, which validatePersonalDelivery treats as a
+  // legacy notification and sends without a CRM link. No second RPC or rollout
+  // switch is required.
   const claimed = await supabase.rpc('service_claim_telegram_notifications', {
     p_worker_id: workerId,
     p_limit: limit,
@@ -411,7 +453,7 @@ export async function drainPersonalTelegramNotifications(env, {
   for (const row of rows) {
     let delivery;
     try {
-      delivery = validatePersonalDelivery(row);
+      delivery = validatePersonalDelivery(env, row);
     } catch (error) {
       const code = safeErrorCode(error);
       if (!UUID.test(row?.delivery_id ?? '')) {
@@ -441,8 +483,11 @@ export async function drainPersonalTelegramNotifications(env, {
 }
 
 export const __testing = {
+  PRODUCTION_CRM_ORIGIN,
   TELEGRAM_KIND,
+  personalNotificationActionUrl,
   safeErrorCode,
+  trustedCrmOrigin,
   validateAutomaticInputs,
   validateClaimedJob,
   validateExplicitInputs,

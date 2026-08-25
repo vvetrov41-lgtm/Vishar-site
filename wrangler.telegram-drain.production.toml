@@ -36,6 +36,7 @@ routes = [
 [vars]
 VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
+CRM_ORIGIN = "https://crm.vishartattoo.com"
 TELEGRAM_DRAIN_ENABLED = "false"
 GMAIL_SHARED_DRAIN_ENABLED = "false"
 AUTOMATION_TICK_ENABLED = "false"
