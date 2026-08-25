@@ -28,7 +28,7 @@ html { background: var(--bg); }
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   background: var(--bg);
   color: var(--text);
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -43,7 +43,9 @@ a { color: inherit; }
   padding-bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
 }
 .app-workspace { min-width: 0; }
-.container { max-width: 980px; margin: 0 auto; padding: 16px; }
+.container { min-width: 0; max-width: 980px; margin: 0 auto; padding: 16px; }
+.stack, .page-head, .meta { min-width: 0; max-width: 100%; }
+.page-head, .meta, .notice, .card strong, .card p { overflow-wrap: anywhere; }
 
 /* Persistent navigation is reserved for tablet/desktop widths. */
 .sidebar { display: none; }
@@ -290,17 +292,23 @@ a { color: inherit; }
 }
 
 .card {
+  min-width: 0;
+  max-width: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
   margin-bottom: 12px;
 }
+.card > * { min-width: 0; }
 .card h2, .card h3 { margin: 0 0 8px; font-size: 0.95rem; font-weight: 600; }
 
 .list { display: flex; flex-direction: column; gap: 10px; }
 .row {
   display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   text-decoration: none;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -308,6 +316,7 @@ a { color: inherit; }
   padding: 14px;
   min-height: var(--tap);
 }
+.row > * { min-width: 0; }
 .row:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -317,6 +326,8 @@ a { color: inherit; }
 
 .badge {
   display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 0.72rem;
