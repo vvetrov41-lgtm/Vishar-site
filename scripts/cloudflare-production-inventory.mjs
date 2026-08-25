@@ -6,6 +6,21 @@ import { dirname, resolve } from 'node:path';
 const API_ROOT = 'https://api.cloudflare.com/client/v4';
 const VISHAR_NAME = /(vishar|tattooai|kristina|kisa)/i;
 const SENSITIVE_NAME = /(secret|token|password|private|credential|client_secret|api_key|publishable_key|webhook_secret|access_aud)/i;
+const HTTP_BOUNDARIES = Object.freeze([
+  'https://crm.vishartattoo.com/',
+  'https://vishar-crm-production.pages.dev/',
+  'https://booking.vishartattoo.com/',
+  'https://calendar.vishartattoo.com/',
+  'https://gmail.vishartattoo.com/',
+  'https://gpt-actions.vishartattoo.com/',
+  'https://gpt-operations.vishartattoo.com/',
+  'https://instagram.vishartattoo.com/',
+  'https://monzo.vishartattoo.com/',
+  'https://pay.vishartattoo.com/',
+  'https://team.vishartattoo.com/',
+  'https://telegram.vishartattoo.com/',
+  'https://whatsapp.vishartattoo.com/',
+]);
 
 function fail(message) {
   throw new Error(message);
@@ -105,6 +120,16 @@ function safeDeploymentAnnotations(annotations) {
   return Object.fromEntries(allowed.filter((key) => annotations[key] != null).map((key) => [key, annotations[key]]));
 }
 
+function safeRedirectTarget(value) {
+  if (!value) return null;
+  try {
+    const target = new URL(value);
+    return `${target.origin}${target.pathname}`;
+  } catch {
+    return '[invalid]';
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
@@ -152,12 +177,13 @@ async function main() {
   if (exactZones.length !== 1) fail('Exact production zone could not be resolved uniquely');
   const zone = exactZones[0];
 
-  const [scriptRows, customDomainRows, routeRows, dnsRows, accessRows, pagesRows, kvRows, d1Rows, r2Rows, durableRows, queueRows] = await Promise.all([
+  const [scriptRows, customDomainRows, routeRows, dnsRows, accountAccessRows, zoneAccessRows, pagesRows, kvRows, d1Rows, r2Rows, durableRows, queueRows] = await Promise.all([
     read(`/accounts/${accountId}/workers/scripts?per_page=100`),
     read(`/accounts/${accountId}/workers/domains?per_page=100`),
     read(`/zones/${zone.id}/workers/routes?per_page=100`),
     read(`/zones/${zone.id}/dns_records?per_page=500`),
-    read(`/accounts/${accountId}/access/apps?per_page=100`),
+    read(`/accounts/${accountId}/access/apps?per_page=100`, { required: false }),
+    read(`/zones/${zone.id}/access/apps?per_page=100`, { required: false }),
     read(`/accounts/${accountId}/pages/projects`),
     read(`/accounts/${accountId}/storage/kv/namespaces?per_page=100`, { required: false }),
     read(`/accounts/${accountId}/d1/database?per_page=100`, { required: false }),
@@ -165,6 +191,10 @@ async function main() {
     read(`/accounts/${accountId}/workers/durable_objects/namespaces`, { required: false }),
     read(`/accounts/${accountId}/queues?per_page=100`, { required: false }),
   ]);
+
+  if (accountAccessRows.result == null && zoneAccessRows.result == null) {
+    fail('Cloudflare Access applications are unreadable at both account and zone scope');
+  }
 
   const scripts = sortBy(listRows(scriptRows.result, 'Workers', ['scripts']), 'id');
   const workers = [];
@@ -216,14 +246,26 @@ async function main() {
   }
 
   const accessApplications = [];
-  for (const app of sortBy(listRows(accessRows.result, 'Access applications', ['apps']), 'domain')) {
-    const policies = await read(`/accounts/${accountId}/access/apps/${app.id}/policies?per_page=100`, { required: false });
+  const accessCandidates = [
+    ...listRows(accountAccessRows.result, 'account Access applications', ['apps'])
+      .map((app) => ({ app, scope_kind: 'accounts', scope_id: accountId })),
+    ...listRows(zoneAccessRows.result, 'zone Access applications', ['apps'])
+      .map((app) => ({ app, scope_kind: 'zones', scope_id: zone.id })),
+  ];
+  const seenAccessApps = new Set();
+  for (const candidate of accessCandidates.sort((left, right) => String(left.app?.domain ?? '').localeCompare(String(right.app?.domain ?? '')))) {
+    const { app, scope_kind: scopeKind, scope_id: scopeId } = candidate;
+    const identity = app?.id || `${app?.domain ?? ''}:${app?.name ?? ''}`;
+    if (seenAccessApps.has(identity)) continue;
+    seenAccessApps.add(identity);
+    const policies = await read(`/${scopeKind}/${scopeId}/access/apps/${app.id}/policies?per_page=100`, { required: false });
     const policyRows = listRows(policies.result, 'Access policies', ['policies']);
     accessApplications.push({
       id: app.id ?? null,
       name: app.name ?? null,
       domain: app.domain ?? null,
       type: app.type ?? null,
+      scope_kind: scopeKind,
       session_duration: app.session_duration ?? null,
       app_launcher_visible: app.app_launcher_visible ?? null,
       policies: sortBy(policyRows.map((policy) => ({
@@ -237,6 +279,24 @@ async function main() {
       })), 'precedence'),
     });
   }
+
+  const httpBoundaries = await Promise.all(HTTP_BOUNDARIES.map(async (url) => {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'manual',
+        headers: { Accept: 'text/html,application/json;q=0.9,*/*;q=0.1' },
+        signal: AbortSignal.timeout(10_000),
+      });
+      return {
+        url,
+        status: response.status,
+        redirect_target: safeRedirectTarget(response.headers.get('location')),
+      };
+    } catch {
+      return { url, status: null, redirect_target: null, error: 'request_failed' };
+    }
+  }));
 
   const pages = [];
   for (const project of sortBy(listRows(pagesRows.result, 'Pages projects', ['projects']), 'name')) {
@@ -267,7 +327,7 @@ async function main() {
   }
 
   const inventory = {
-    schema_version: 1,
+    schema_version: 2,
     generated_at: new Date().toISOString(),
     source_sha: sourceSha,
     account_id: accountId,
@@ -290,6 +350,7 @@ async function main() {
     })), 'pattern'),
     dns_records: sortBy(listRows(dnsRows.result, 'DNS records', ['records']).map(safeDnsRecord), 'name'),
     access_applications: accessApplications,
+    http_boundaries: httpBoundaries,
     pages,
     storage: {
       kv_status: kvRows.status,
@@ -321,7 +382,8 @@ async function main() {
     `- Worker Custom Domains: ${inventory.worker_custom_domains.length}`,
     `- Worker Routes: ${inventory.worker_routes.length}`,
     `- Pages projects: ${pages.length} (${pages.filter((project) => project.vishar_named).length} Vishar-named)`,
-    `- Access applications: ${accessApplications.length}`,
+    `- Access applications: ${accessApplications.length} (account and zone scopes reconciled)`,
+    `- Unauthenticated HTTP boundaries: ${httpBoundaries.length}`,
     `- DNS records inventoried: ${inventory.dns_records.length} (TXT and non-routing content redacted)`,
     '- Cloudflare mutations: none (GET requests only)',
     '- Secret values: never requested; secret names only',
