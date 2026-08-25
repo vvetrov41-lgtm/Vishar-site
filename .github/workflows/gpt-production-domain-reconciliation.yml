@@ -3,7 +3,7 @@ name: GPT production domain reconciliation
 on:
   push:
     branches:
-      - release/private-crm-rc102-gpt-domain-reconcile
+      - ops/gpt-production-domain-reconcile-acceptance
 
 permissions:
   actions: read
@@ -29,18 +29,18 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
 
     steps:
-      - name: Checkout exact release SHA
+      - name: Checkout exact operator SHA
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Verify exact owner release and current canonical SHA
+      - name: Verify exact owner operator and current canonical SHA
         shell: bash
         run: |
           set -euo pipefail
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
-          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc102-gpt-domain-reconcile' ]
+          [ "$GITHUB_REF_NAME" = 'ops/gpt-production-domain-reconcile-acceptance' ]
           [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
           [ -z "$(git status --short)" ]
           [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
@@ -48,7 +48,7 @@ jobs:
           canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
           [ -n "$canonical_sha" ]
           [ "$canonical_sha" = "$GITHUB_SHA" ] || {
-            echo 'Release SHA is no longer the current canonical Vishar CRM head.' >&2
+            echo 'Operator SHA is no longer the current canonical Vishar CRM head.' >&2
             exit 1
           }
 
@@ -86,7 +86,7 @@ jobs:
           set -euo pipefail
           node scripts/reconcile-gpt-production-domains.mjs --apply
 
-      - name: Verify canonical GPT HTTP boundaries after mutation
+      - name: Verify canonical GPT HTTP boundaries after readback
         shell: bash
         run: |
           set -euo pipefail
@@ -112,10 +112,12 @@ jobs:
           {
             echo '### GPT production domain reconciliation'
             echo "- Exact canonical SHA: \`$GITHUB_SHA\`"
+            echo '- Operator namespace: `ops/gpt-production-domain-reconcile-acceptance` (outside the full release namespace)'
             echo '- Canonical domains: `gpt-actions.vishartattoo.com`, `gpt-operations.vishartattoo.com`'
             echo '- Retired transition domain: `gpt-communications.vishartattoo.com` when present'
+            echo '- Mutation acceptance: HTTP 2xx is provisional; fresh GET readback is authoritative'
             echo '- Production GPT Worker code/version mutation: none'
             echo '- Supabase mutation: none'
             echo '- Staging mutation: none'
-            echo '- Failure mode: fail closed; a successful detach is re-attached if post-mutation verification fails'
+            echo '- Failure mode: fail closed; ambiguous or failed post-mutation state restores the previous domain set'
           } >> "$GITHUB_STEP_SUMMARY"

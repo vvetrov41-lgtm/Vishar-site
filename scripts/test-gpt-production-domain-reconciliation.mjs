@@ -4,6 +4,7 @@ import {
   GPT_DOMAIN_POLICY,
   classifyTargetDomains,
   rollbackAttachPayload,
+  cloudflareResponseAccepted,
 } from './reconcile-gpt-production-domains.mjs';
 
 const canonicalRows = [
@@ -87,7 +88,18 @@ assert.throws(
   /not safely identifiable/,
 );
 
+// Cloudflare may return HTTP 200 for a successful Custom Domain DELETE without
+// the standard JSON envelope. A mutation 2xx is transport acceptance only;
+// normal GET reads still require the canonical Cloudflare success envelope.
+assert.equal(cloudflareResponseAccepted({ ok: true, method: 'DELETE', payload: null }), true);
+assert.equal(cloudflareResponseAccepted({ ok: true, method: 'DELETE', payload: {} }), true);
+assert.equal(cloudflareResponseAccepted({ ok: true, method: 'PUT', payload: null }), true);
+assert.equal(cloudflareResponseAccepted({ ok: false, method: 'DELETE', payload: { success: true } }), false);
+assert.equal(cloudflareResponseAccepted({ ok: true, method: 'GET', payload: null }), false);
+assert.equal(cloudflareResponseAccepted({ ok: true, method: 'GET', payload: { success: true } }), true);
+
 const workflow = readFileSync(new URL('../.github/workflows/gpt-production-domain-reconciliation.yml', import.meta.url), 'utf8');
+const fullRelease = readFileSync(new URL('../.github/workflows/private-production-release.yml', import.meta.url), 'utf8');
 const wrangler = readFileSync(new URL('../wrangler.gpt-actions.production.toml', import.meta.url), 'utf8');
 const operations = readFileSync(new URL('../docs/gpt-actions/openapi.production.operations.yaml', import.meta.url), 'utf8');
 const reconciler = readFileSync(new URL('./reconcile-gpt-production-domains.mjs', import.meta.url), 'utf8');
@@ -101,7 +113,13 @@ assert.match(operations, /operationId: getWhatsAppConversation/);
 assert.match(operations, /operationId: searchEmailHistory/);
 assert.match(operations, /operationId: createEmailDraft/);
 
-assert.match(workflow, /release\/private-crm-rc102-gpt-domain-reconcile/);
+// This bounded control-plane operator must sit outside release/private-crm-rc*.
+// That makes it impossible for a push intended only for GPT domain readback to
+// trigger the full Supabase + CRM Pages + Telegram production release.
+assert.match(workflow, /ops\/gpt-production-domain-reconcile-acceptance/);
+assert.doesNotMatch(workflow, /release\/private-crm-rc/);
+assert.match(fullRelease, /release\/private-crm-rc\*/);
+assert.doesNotMatch(fullRelease, /ops\/gpt-production-domain-reconcile/);
 assert.match(workflow, /CANONICAL_BRANCH: agent\/platform-telegram-self-service/);
 assert.match(workflow, /environment: crm-production/);
 assert.match(workflow, /node scripts\/reconcile-gpt-production-domains\.mjs\s*$/m);
@@ -110,9 +128,19 @@ assert.doesNotMatch(workflow, /wrangler deploy|supabase db push|SUPABASE_DB_PASS
 
 assert.match(reconciler, /workers\/domains\/\$\{encodeURIComponent\(stale\.id\)\}/);
 assert.match(reconciler, /method: 'DELETE'/);
+assert.match(reconciler, /cloudflareResponseAccepted/);
+assert.match(reconciler, /DELETE was not confirmed by canonical GET readback/);
+assert.match(reconciler, /waitForTargetDomainState/);
+assert.match(reconciler, /ensurePreviousDomainState/);
 assert.match(reconciler, /method: 'PUT', body: rollbackAttachPayload\(stale\)/);
+assert.match(reconciler, /delete_transport=accepted readback=canonical/);
 assert.match(reconciler, /worker_deployment_unchanged=true/);
 assert.doesNotMatch(reconciler, /25a878c2c6cbcdbf4987523bdf4b1e69d6f2b106/,
   'runtime domain IDs must be resolved from fresh Cloudflare state, never pinned in source');
 
-console.log('GPT production domain reconciliation tests passed: exact two-domain policy, stale-host-only mutation, fail-closed rollback boundary.');
+const deleteIndex = reconciler.indexOf("{ method: 'DELETE' }");
+const authoritativeReadbackIndex = reconciler.indexOf('await waitForTargetDomainState', deleteIndex);
+assert.ok(deleteIndex >= 0 && authoritativeReadbackIndex > deleteIndex,
+  'Cloudflare DELETE must always be followed by authoritative GET readback');
+
+console.log('GPT production domain reconciliation tests passed: isolated ops namespace, 2xx mutation transport, authoritative GET readback and rollback boundary.');
