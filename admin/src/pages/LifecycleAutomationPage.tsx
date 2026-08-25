@@ -217,7 +217,7 @@ export function LifecycleAutomationPage() {
                   </span>
                 </div>
                 <p style={{ whiteSpace: 'pre-wrap' }}>{template.body}</p>
-                {data.canManage ? (
+                {data.canManage && template.template_scope === 'artist' ? (
                   <div className="actions">
                     <button
                       type="button"
