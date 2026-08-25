@@ -14,11 +14,15 @@ export function buildEnquiryNotification({referenceNumber,fileCount,clientConfli
   return lines.join('\n');
 }
 
-export function buildPersonalNotification({title,body}){
+export function buildPersonalNotification({title,body,actionUrl=null}){
   const safeTitle=typeof title==='string'?title.trim():'';
   const safeBody=typeof body==='string'?body.trim():'';
+  const safeActionUrl=typeof actionUrl==='string'?actionUrl.trim():'';
   if(!safeTitle)return null;
-  return safeBody?`${safeTitle}\n\n${safeBody}`:safeTitle;
+  const sections=[safeTitle];
+  if(safeBody)sections.push(safeBody);
+  if(safeActionUrl)sections.push(`Open in CRM: ${safeActionUrl}`);
+  return sections.join('\n\n');
 }
 
 export function sharedTelegramBotToken(env){
