@@ -27,6 +27,15 @@ function sortBy(rows, key) {
   return [...rows].sort((left, right) => String(left?.[key] ?? '').localeCompare(String(right?.[key] ?? '')));
 }
 
+function listRows(value, label, nestedKeys = []) {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value;
+  for (const key of nestedKeys) {
+    if (Array.isArray(value?.[key])) return value[key];
+  }
+  fail(`Cloudflare ${label} list response shape is unsupported`);
+}
+
 function safeBinding(binding) {
   const row = { name: binding?.name ?? null, type: binding?.type ?? 'unknown' };
   switch (binding?.type) {
@@ -138,7 +147,8 @@ async function main() {
   if (tokenState.result?.status !== 'active') fail('Cloudflare API token is not active');
 
   const zoneRows = await read(`/zones?name=${encodeURIComponent(zoneName)}&per_page=50`);
-  const exactZones = (zoneRows.result ?? []).filter((zone) => zone?.name === zoneName);
+  const exactZones = listRows(zoneRows.result, 'zones', ['zones'])
+    .filter((zone) => zone?.name === zoneName);
   if (exactZones.length !== 1) fail('Exact production zone could not be resolved uniquely');
   const zone = exactZones[0];
 
@@ -156,7 +166,7 @@ async function main() {
     read(`/accounts/${accountId}/queues?per_page=100`, { required: false }),
   ]);
 
-  const scripts = sortBy(scriptRows.result ?? [], 'id');
+  const scripts = sortBy(listRows(scriptRows.result, 'Workers', ['scripts']), 'id');
   const workers = [];
   for (const script of scripts) {
     const name = script.id;
@@ -167,12 +177,13 @@ async function main() {
       read(`/accounts/${accountId}/workers/services/${encodeURIComponent(name)}/environments/production/subdomain`, { required: false }),
       read(`/accounts/${accountId}/workers/scripts/${encodeURIComponent(name)}/secrets`, { required: false }),
     ]);
-    const deploymentRows = deployments.result?.deployments ?? deployments.result ?? [];
-    const activeDeployment = Array.isArray(deploymentRows) ? deploymentRows[0] ?? null : null;
-    const bindings = sortBy((settings.result?.bindings ?? []).map(safeBinding), 'name');
+    const deploymentRows = listRows(deployments.result, 'Worker deployments', ['deployments']);
+    const activeDeployment = deploymentRows[0] ?? null;
+    const bindings = sortBy(listRows(settings.result?.bindings, 'Worker bindings').map(safeBinding), 'name');
+    const secretRows = listRows(secrets.result, 'Worker secrets', ['secrets']);
     const secretNames = new Set([
       ...bindings.filter((binding) => binding.type === 'secret_text').map((binding) => binding.name),
-      ...((secrets.result ?? []).map((secret) => secret?.name).filter(Boolean)),
+      ...(secretRows.map((secret) => secret?.name).filter(Boolean)),
     ]);
     workers.push({
       name,
@@ -188,7 +199,7 @@ async function main() {
       placement: settings.result?.placement ?? null,
       bindings: bindings.filter((binding) => binding.type !== 'secret_text'),
       secret_names: [...secretNames].sort(),
-      cron_triggers: sortBy(schedules.result ?? [], 'cron'),
+      cron_triggers: sortBy(listRows(schedules.result, 'Worker schedules', ['schedules']), 'cron'),
       workers_dev_enabled: subdomain.result?.enabled ?? null,
       preview_urls_enabled: subdomain.result?.previews_enabled ?? null,
       active_deployment: activeDeployment ? {
@@ -205,8 +216,9 @@ async function main() {
   }
 
   const accessApplications = [];
-  for (const app of sortBy(accessRows.result ?? [], 'domain')) {
+  for (const app of sortBy(listRows(accessRows.result, 'Access applications', ['apps']), 'domain')) {
     const policies = await read(`/accounts/${accountId}/access/apps/${app.id}/policies?per_page=100`, { required: false });
+    const policyRows = listRows(policies.result, 'Access policies', ['policies']);
     accessApplications.push({
       id: app.id ?? null,
       name: app.name ?? null,
@@ -214,7 +226,7 @@ async function main() {
       type: app.type ?? null,
       session_duration: app.session_duration ?? null,
       app_launcher_visible: app.app_launcher_visible ?? null,
-      policies: sortBy((policies.result ?? []).map((policy) => ({
+      policies: sortBy(policyRows.map((policy) => ({
         id: policy.id ?? null,
         name: policy.name ?? null,
         decision: policy.decision ?? null,
@@ -227,9 +239,10 @@ async function main() {
   }
 
   const pages = [];
-  for (const project of sortBy(pagesRows.result ?? [], 'name')) {
+  for (const project of sortBy(listRows(pagesRows.result, 'Pages projects', ['projects']), 'name')) {
     const deployments = await read(`/accounts/${accountId}/pages/projects/${encodeURIComponent(project.name)}/deployments`);
-    const production = (deployments.result ?? []).find((deployment) => deployment?.environment === 'production') ?? null;
+    const production = listRows(deployments.result, 'Pages deployments', ['deployments'])
+      .find((deployment) => deployment?.environment === 'production') ?? null;
     pages.push({
       name: project.name,
       vishar_named: VISHAR_NAME.test(project.name),
@@ -260,7 +273,7 @@ async function main() {
     account_id: accountId,
     zone: { id: zone.id, name: zone.name, status: zone.status, paused: zone.paused, type: zone.type },
     workers,
-    worker_custom_domains: sortBy((customDomainRows.result ?? []).map((domain) => ({
+    worker_custom_domains: sortBy(listRows(customDomainRows.result, 'Worker Custom Domains', ['domains']).map((domain) => ({
       id: domain.id ?? null,
       hostname: domain.hostname ?? null,
       service: domain.service ?? domain.worker_name ?? null,
@@ -270,25 +283,25 @@ async function main() {
       enabled: domain.enabled ?? null,
       previews_enabled: domain.previews_enabled ?? null,
     })), 'hostname'),
-    worker_routes: sortBy((routeRows.result ?? []).map((route) => ({
+    worker_routes: sortBy(listRows(routeRows.result, 'Worker routes', ['routes']).map((route) => ({
       id: route.id ?? null,
       pattern: route.pattern ?? null,
       script: route.script ?? null,
     })), 'pattern'),
-    dns_records: sortBy((dnsRows.result ?? []).map(safeDnsRecord), 'name'),
+    dns_records: sortBy(listRows(dnsRows.result, 'DNS records', ['records']).map(safeDnsRecord), 'name'),
     access_applications: accessApplications,
     pages,
     storage: {
       kv_status: kvRows.status,
-      kv_namespaces: sortBy((kvRows.result ?? []).map((row) => ({ id: row.id ?? null, title: row.title ?? null })), 'title'),
+      kv_namespaces: sortBy(listRows(kvRows.result, 'KV namespaces', ['namespaces']).map((row) => ({ id: row.id ?? null, title: row.title ?? null })), 'title'),
       d1_status: d1Rows.status,
-      d1_databases: sortBy((d1Rows.result ?? []).map((row) => ({ uuid: row.uuid ?? null, name: row.name ?? null })), 'name'),
+      d1_databases: sortBy(listRows(d1Rows.result, 'D1 databases', ['databases', 'result']).map((row) => ({ uuid: row.uuid ?? null, name: row.name ?? null })), 'name'),
       r2_status: r2Rows.status,
-      r2_buckets: sortBy((r2Rows.result?.buckets ?? r2Rows.result ?? []).map((row) => ({ name: row.name ?? null, creation_date: row.creation_date ?? null })), 'name'),
+      r2_buckets: sortBy(listRows(r2Rows.result, 'R2 buckets', ['buckets']).map((row) => ({ name: row.name ?? null, creation_date: row.creation_date ?? null })), 'name'),
       durable_objects_status: durableRows.status,
-      durable_object_namespaces: sortBy((durableRows.result ?? []).map((row) => ({ id: row.id ?? null, name: row.name ?? null, script: row.script ?? null, class: row.class ?? null })), 'name'),
+      durable_object_namespaces: sortBy(listRows(durableRows.result, 'Durable Object namespaces', ['namespaces']).map((row) => ({ id: row.id ?? null, name: row.name ?? null, script: row.script ?? null, class: row.class ?? null })), 'name'),
       queues_status: queueRows.status,
-      queues: sortBy((queueRows.result ?? []).map((row) => ({ queue_id: row.queue_id ?? row.id ?? null, queue_name: row.queue_name ?? row.name ?? null })), 'queue_name'),
+      queues: sortBy(listRows(queueRows.result, 'Queues', ['queues']).map((row) => ({ queue_id: row.queue_id ?? row.id ?? null, queue_name: row.queue_name ?? row.name ?? null })), 'queue_name'),
     },
     read_statuses: reads.map(({ path, status }) => ({ path, status })),
   };
