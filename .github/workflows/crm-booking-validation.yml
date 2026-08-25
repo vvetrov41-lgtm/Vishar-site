@@ -101,6 +101,9 @@ jobs:
       - name: Test automatic private production release boundaries
         run: node scripts/test-private-production-release-orchestrator.mjs
 
+      - name: Test read-only Cloudflare production inventory boundary
+        run: node scripts/test-cloudflare-production-inventory.mjs
+
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
 
