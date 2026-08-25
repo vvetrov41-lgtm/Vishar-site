@@ -48,6 +48,9 @@ expectIncludes(crm, '../node_modules/.bin/wrangler pages deploy dist', 'CRM Page
 expectIncludes(crm, 'test -f admin/functions/api/whatsapp/embedded-signup/provision.js', 'CRM Pages');
 expectExcludes(crm, 'npx wrangler pages deploy admin/dist', 'CRM Pages');
 expectIncludes(crm, '--project-name "$CRM_PAGES_PROJECT"', 'CRM Pages');
+expectIncludes(crm, "[ \"$CRM_PAGES_PROJECT\" != 'vishar-crm-production' ]", 'CRM Pages exact target');
+expectIncludes(crm, 'node scripts/verify-crm-pages-production.mjs', 'CRM Pages target and Access preflight');
+expectExcludes(crm, 'vishar-crm-production(-[a-z0-9-]+)?', 'CRM Pages lookalike target');
 expectExcludes(crm, 'supabase db push', 'CRM Pages');
 expectExcludes(crm, 'wrangler deploy --env', 'CRM Pages');
 expectExcludes(crm, 'wrangler.team-admin.toml', 'CRM Pages');

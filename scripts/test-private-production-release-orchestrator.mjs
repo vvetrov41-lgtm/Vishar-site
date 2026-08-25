@@ -67,7 +67,9 @@ expectOrder(workflow, '- name: Verify exact Telegram production Worker secret na
 expectOrder(workflow, '- name: Telegram production preflight before mutation', '- name: Apply production migrations', 'pre-mutation Telegram control-plane check');
 expectOrder(workflow, '- name: Apply production migrations', '- name: Verify no production migrations remain', 'database readback');
 expectIncludes(deploySection, 'supabase db push --dry-run', 'database rollout');
-expectIncludes(deploySection, 'Production Cloudflare Pages target preflight failed', 'pre-mutation Pages control-plane check');
+expectIncludes(deploySection, "[ \"$CRM_PAGES_PROJECT\" = 'vishar-crm-production' ]", 'exact Pages target');
+expectIncludes(deploySection, 'node scripts/verify-crm-pages-production.mjs', 'Pages target and Access preflight');
+expectExcludes(deploySection, 'vishar-crm-production(-[a-z0-9-]+)?', 'Pages lookalike target');
 
 expectIncludes(deploySection, "[ \"$CRM_ORIGIN\" = 'https://crm.vishartattoo.com' ]", 'CRM target');
 expectIncludes(deploySection, 'wrangler pages deploy dist', 'CRM deploy');
