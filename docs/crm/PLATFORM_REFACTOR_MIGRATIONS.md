@@ -35,11 +35,12 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0098` | Appointment client-action capability foundation | claimed on `agent/appointment-client-actions-foundation` |
 | `0099` | Deposit-policy Gmail delivery chain | claimed in PR #428 |
 | `0100` | Appointment client-action lifecycle activation | claimed on `agent/appointment-client-actions-activation-v2` |
-| `0101` | Lifecycle control-plane safe template reads | claimed on `agent/lifecycle-control-plane-ui` |
+| `0101` | Telegram notification entity targets | claimed in PR #440 |
+| `0102` | Lifecycle control-plane safe template reads | claimed on `agent/lifecycle-control-plane-ui` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0102`
+`0103`
 
 ## Allocation rule for unfinished phases
 
@@ -123,7 +124,13 @@ inside the database-owned lifecycle execution transaction, after destination,
 suppression, template and Gmail gates, and the branded public runtime remains
 the already-deployed `booking.vishartattoo.com` proxy.
 
-Lifecycle control-plane safe reads claim `0101`. The migration does not grant
+Telegram notification entity targets claim `0101`, merged in PR #440. The
+existing backend-only notification claim RPC keeps the same input identity and
+gains nullable `entity_type` and `entity_id` result fields so the trusted
+Telegram connector can preserve the appointment entity already attached to an
+internal notification and build the corresponding CRM deep link.
+
+Lifecycle control-plane safe reads claim `0102`. The migration does not grant
 browser SELECT on `message_templates` and does not create or enable any rule or
 template. It adds three `SECURITY DEFINER` RPCs with pinned `search_path` that
 require the caller's current `view_automations` capability on the requested
