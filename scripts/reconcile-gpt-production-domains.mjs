@@ -85,6 +85,16 @@ export function rollbackAttachPayload(stale, policy = GPT_DOMAIN_POLICY) {
   };
 }
 
+export function cloudflareResponseAccepted({ ok, method = 'GET', payload = null } = {}) {
+  if (ok !== true) return false;
+  // Cloudflare Custom Domain mutation endpoints can return a successful 2xx
+  // response without the standard { success: true } envelope. Mutations are
+  // therefore transport-accepted here and are never considered complete until
+  // a subsequent GET readback proves the requested state.
+  if (method !== 'GET') return true;
+  return payload?.success === true;
+}
+
 function deploymentSignature(result) {
   const deployments = listRows(result, 'Worker deployments', 'deployments');
   const active = deployments[0];
@@ -118,14 +128,20 @@ async function cloudflareRequest(accountId, token, path, { method = 'GET', body 
   } catch {
     payload = null;
   }
-  if (!response.ok || payload?.success !== true) {
+
+  if (!cloudflareResponseAccepted({ ok: response.ok, method, payload })) {
     const codes = (payload?.errors || [])
       .map((entry) => Number(entry?.code))
       .filter(Number.isFinite)
       .slice(0, 5);
     fail(`Cloudflare request failed (${response.status}; codes=${codes.join(',') || 'none'}) for ${method} ${path}`);
   }
-  return { status: response.status, result: payload.result ?? null };
+
+  return {
+    status: response.status,
+    result: payload?.result ?? null,
+    mutationTransportAccepted: method !== 'GET',
+  };
 }
 
 async function listDomains(accountId, token) {
@@ -140,6 +156,82 @@ async function readDeploymentSignature(accountId, token, worker) {
     `/accounts/${accountId}/workers/scripts/${encodeURIComponent(worker)}/deployments`,
   );
   return deploymentSignature(response.result);
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForTargetDomainState(accountId, token, predicate, label, { attempts = 8, delayMs = 750 } = {}) {
+  let lastState = null;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const state = classifyTargetDomains(await listDomains(accountId, token));
+      lastState = state;
+      lastError = null;
+      if (predicate(state)) return state;
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (attempt < attempts) await sleep(delayMs);
+  }
+
+  if (lastError) {
+    fail(`${label}: ${lastError?.message || lastError}`);
+  }
+  const stateText = lastState
+    ? `target_count=${lastState.targetCount}, stale_present=${lastState.requiresDetach}`
+    : 'state_unavailable';
+  fail(`${label}: ${stateText}`);
+}
+
+async function ensurePreviousDomainState(accountId, token, stale) {
+  let current = null;
+  try {
+    current = await waitForTargetDomainState(
+      accountId,
+      token,
+      (state) => state.targetCount === 2 || state.targetCount === 3,
+      'Rollback preflight could not resolve the GPT Custom Domain state',
+      { attempts: 4, delayMs: 750 },
+    );
+  } catch {
+    // If the control-plane read itself is temporarily unavailable, one more
+    // bounded read is safer than issuing a blind attach that could duplicate
+    // an already-present domain.
+    current = await waitForTargetDomainState(
+      accountId,
+      token,
+      (state) => state.targetCount === 2 || state.targetCount === 3,
+      'Rollback refused because the current GPT Custom Domain state is unreadable',
+      { attempts: 8, delayMs: 1000 },
+    );
+  }
+
+  if (current.requiresDetach && current.targetCount === 3) {
+    return 'already_restored';
+  }
+  if (current.requiresDetach || current.targetCount !== 2) {
+    fail('Rollback refused an unexpected GPT Custom Domain state');
+  }
+
+  await cloudflareRequest(
+    accountId,
+    token,
+    `/accounts/${accountId}/workers/domains`,
+    { method: 'PUT', body: rollbackAttachPayload(stale) },
+  );
+
+  await waitForTargetDomainState(
+    accountId,
+    token,
+    (state) => state.requiresDetach && state.targetCount === 3,
+    'Rollback readback did not restore the previous GPT Custom Domain set',
+  );
+  return 'reattached';
 }
 
 async function probe(url, expectedStatus) {
@@ -190,7 +282,7 @@ async function main() {
   await verifyCanonicalHttp();
 
   if (!before.requiresDetach) {
-    process.stdout.write(`mode=${apply ? 'apply' : 'preflight'} mutation=not_needed canonical_domains=2\n`);
+    process.stdout.write(`mode=${apply ? 'apply' : 'preflight'} mutation=not_needed canonical_domains=2 worker_deployment_verified=true\n`);
     return;
   }
 
@@ -200,7 +292,9 @@ async function main() {
   }
 
   const stale = before.stale;
-  let detached = false;
+  let mutationTransportAccepted = false;
+  let canonicalReadbackConfirmed = false;
+
   try {
     await cloudflareRequest(
       accountId,
@@ -208,13 +302,18 @@ async function main() {
       `/accounts/${accountId}/workers/domains/${encodeURIComponent(stale.id)}`,
       { method: 'DELETE' },
     );
-    detached = true;
+    mutationTransportAccepted = true;
 
-    const afterDomains = await listDomains(accountId, token);
-    const after = classifyTargetDomains(afterDomains);
+    const after = await waitForTargetDomainState(
+      accountId,
+      token,
+      (state) => !state.requiresDetach && state.targetCount === 2,
+      'Production GPT Custom Domain DELETE was not confirmed by canonical GET readback',
+    );
     if (after.requiresDetach || after.targetCount !== 2) {
       fail('Production GPT Custom Domain set did not reconcile to the exact canonical pair');
     }
+    canonicalReadbackConfirmed = true;
 
     const afterDeployment = await readDeploymentSignature(accountId, token, GPT_DOMAIN_POLICY.worker);
     if (afterDeployment !== beforeDeployment) {
@@ -222,25 +321,24 @@ async function main() {
     }
 
     await verifyCanonicalHttp();
-    process.stdout.write('mode=apply mutation=detached stale_domains=0 canonical_domains=2 worker_deployment_unchanged=true\n');
+    process.stdout.write(
+      'mode=apply mutation=detached delete_transport=accepted readback=canonical stale_domains=0 canonical_domains=2 worker_deployment_unchanged=true\n',
+    );
   } catch (error) {
-    if (detached) {
+    if (mutationTransportAccepted) {
+      let rollback;
       try {
-        await cloudflareRequest(
-          accountId,
-          token,
-          `/accounts/${accountId}/workers/domains`,
-          { method: 'PUT', body: rollbackAttachPayload(stale) },
-        );
-        const rolledBack = classifyTargetDomains(await listDomains(accountId, token));
-        if (!rolledBack.requiresDetach || rolledBack.targetCount !== 3) {
-          fail('Rollback readback did not restore the previous GPT Custom Domain set');
-        }
+        rollback = await ensurePreviousDomainState(accountId, token, stale);
       } catch (rollbackError) {
         fail(`${error?.message || error}; rollback failed: ${rollbackError?.message || rollbackError}`);
       }
+      throw new Error(`${error?.message || error}; previous domain state restored (${rollback})`);
     }
     throw error;
+  }
+
+  if (!canonicalReadbackConfirmed) {
+    fail('Production GPT domain reconciliation exited without canonical GET readback');
   }
 }
 
