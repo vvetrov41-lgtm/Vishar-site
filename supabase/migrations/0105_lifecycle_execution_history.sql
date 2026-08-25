@@ -66,7 +66,7 @@ as $$
     from public.automation_jobs j
     join authorized a on a.artist_id = j.artist_id
     join public.sessions s on s.id = j.session_id and s.artist_id = j.artist_id
-    join public.clients c on c.id = s.client_id and c.artist_id = j.artist_id
+    join public.clients c on c.id = s.client_id
     left join public.automation_rules r on r.id = j.rule_id and r.artist_id = j.artist_id
     left join lateral (
       select m.id, m.status
@@ -107,6 +107,7 @@ as $$
       when x.selected_job_status = 'cancelled'::public.automation_job_status then 'cancelled'
       when x.selected_job_status = 'failed'::public.automation_job_status then 'failed'
       when x.selected_job_status = 'completed'::public.automation_job_status and x.selected_email_status = 'sent'::public.email_message_status then 'sent'
+      when x.selected_job_status = 'completed'::public.automation_job_status and x.selected_email_status = 'cancelled'::public.email_message_status then 'cancelled'
       when x.selected_job_status = 'completed'::public.automation_job_status and x.selected_email_status = 'failed'::public.email_message_status then 'failed'
       when x.selected_job_status = 'completed'::public.automation_job_status and x.selected_outbox_status in ('failed'::public.outbox_status, 'dead'::public.outbox_status) then 'failed'
       when x.selected_job_status = 'completed'::public.automation_job_status and x.selected_outbox_status in ('pending'::public.outbox_status, 'leased'::public.outbox_status) and coalesce(x.selected_outbox_attempt_count, 0) > 0 then 'retrying'
