@@ -1,0 +1,121 @@
+name: GPT production domain reconciliation
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc102-gpt-domain-reconcile
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gpt-production-domain-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      WORKER_NAME: vishar-gpt-actions-production
+      CORE_HOST: gpt-actions.vishartattoo.com
+      OPERATIONS_HOST: gpt-operations.vishartattoo.com
+      STALE_HOST: gpt-communications.vishartattoo.com
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact owner release and current canonical SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc102-gpt-domain-reconcile' ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ -z "$(git status --short)" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$GITHUB_SHA" ] || {
+            echo 'Release SHA is no longer the current canonical Vishar CRM head.' >&2
+            exit 1
+          }
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate exact GPT production source before Cloudflare access
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm audit --audit-level=moderate
+          npm run test:gpt-production
+          node scripts/test-gpt-operations-domain.mjs
+          node scripts/test-gpt-production-domain-reconciliation.mjs
+          npm run check:gpt-production-bundle
+          npm run scan:secrets
+          [ "$(grep -c 'custom_domain = true' wrangler.gpt-actions.production.toml)" -eq 2 ]
+          grep -Fq "pattern = \"$CORE_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
+          grep -Fq "pattern = \"$OPERATIONS_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
+          ! grep -Fq "$STALE_HOST" wrangler.gpt-actions.production.toml
+
+      - name: Fresh read-only Cloudflare preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/reconcile-gpt-production-domains.mjs
+
+      - name: Reconcile only the stale GPT Communications Custom Domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/reconcile-gpt-production-domains.mjs --apply
+
+      - name: Verify canonical GPT HTTP boundaries after mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            expected="$1"
+            url="$2"
+            actual="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)"
+            [ "$actual" = "$expected" ] || {
+              echo "GPT boundary mismatch for $url: expected $expected, got $actual" >&2
+              exit 1
+            }
+          }
+          probe 200 "https://$CORE_HOST/privacy"
+          probe 400 "https://$CORE_HOST/oauth/authorize"
+          probe 401 "https://$CORE_HOST/v1/clients"
+          probe 200 "https://$OPERATIONS_HOST/privacy"
+          probe 401 "https://$OPERATIONS_HOST/v1/appointments"
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### GPT production domain reconciliation'
+            echo "- Exact canonical SHA: \`$GITHUB_SHA\`"
+            echo '- Canonical domains: `gpt-actions.vishartattoo.com`, `gpt-operations.vishartattoo.com`'
+            echo '- Retired transition domain: `gpt-communications.vishartattoo.com` when present'
+            echo '- Production GPT Worker code/version mutation: none'
+            echo '- Supabase mutation: none'
+            echo '- Staging mutation: none'
+            echo '- Failure mode: fail closed; a successful detach is re-attached if post-mutation verification fails'
+          } >> "$GITHUB_STEP_SUMMARY"
