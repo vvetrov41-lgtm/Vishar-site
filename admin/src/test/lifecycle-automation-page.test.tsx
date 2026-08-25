@@ -133,7 +133,7 @@ describe('Lifecycle automation control plane', () => {
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Healing check-in' } });
     fireEvent.change(screen.getByLabelText('Message purpose'), { target: { value: 'session_reminder_24h' } });
-    fireEvent.change(screen.getByLabelText('Offset, minutes'), { target: { value: '-2880' } });
+    fireEvent.change(screen.getByLabelText(/Offset, minutes/), { target: { value: '-2880' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create disabled' }));
 
     await waitFor(() => expect(lifecycle.createClientLifecycleRule).toHaveBeenCalledWith({
