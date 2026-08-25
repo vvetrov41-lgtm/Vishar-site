@@ -26,7 +26,7 @@ export type LifecycleExecutionStatus =
   | 'cancelled'
   | 'failed'
   | 'retrying';
-export type LifecycleEmailStatus = 'draft' | 'approved' | 'queued' | 'sent' | 'failed';
+export type LifecycleEmailStatus = 'draft' | 'approved' | 'queued' | 'sent' | 'failed' | 'cancelled';
 export type LifecycleOutboxStatus = 'pending' | 'leased' | 'succeeded' | 'failed' | 'dead';
 export type MessageTemplateStatus = 'draft' | 'active' | 'retired';
 
