@@ -47,10 +47,14 @@ jobs:
         run: |
           set -euo pipefail
           branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          case "$branch" in
-            agent/kristina-whatsapp-production-onboarding|agent/kristina-self-service-whatsapp-connect|release/private-crm-rc*) ;;
-            *) echo "Unexpected WhatsApp onboarding branch: $branch" >&2; exit 1 ;;
-          esac
+          if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
+            test -n "${GITHUB_HEAD_REF:-}"
+          else
+            case "$branch" in
+              agent/kristina-whatsapp-production-onboarding|agent/kristina-self-service-whatsapp-connect|release/private-crm-rc*) ;;
+              *) echo "Unexpected WhatsApp onboarding branch: $branch" >&2; exit 1 ;;
+            esac
+          fi
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --short)"
           echo "exact_head=$GITHUB_SHA"
