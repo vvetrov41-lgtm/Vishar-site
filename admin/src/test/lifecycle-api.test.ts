@@ -31,6 +31,63 @@ describe('lifecycle control-plane API boundary', () => {
     });
   });
 
+  it('previews only through the bounded artist/rule/session RPCs', async () => {
+    const session = {
+      session_id: 'session-1',
+      client_name: 'Preview Client',
+      appointment_type: 'tattoo_session',
+      session_status: 'completed',
+      start_at: '2026-08-24T09:00:00Z',
+      end_at: '2026-08-24T16:00:00Z',
+    };
+    const preview = {
+      rule_id: 'rule-1',
+      rule_name: 'Post-session check-in',
+      rule_version: 1,
+      rule_enabled: true,
+      session_id: 'session-1',
+      client_name: 'Preview Client',
+      appointment_type: 'tattoo_session',
+      session_status: 'completed',
+      scheduled_at: '2026-08-25T16:00:00Z',
+      template_id: 'template-1',
+      template_version: 1,
+      template_scope: 'workspace',
+      rendered_subject: 'How is your tattoo feeling today?',
+      rendered_body: 'Hi Preview, how are you feeling?',
+      suppression_reason: null,
+      integration_available: true,
+      existing_job_id: null,
+      existing_job_status: null,
+      eligible: true,
+      blocker: null,
+    };
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: [session], error: null })
+      .mockResolvedValueOnce({ data: [preview], error: null })
+      .mockResolvedValueOnce({ data: [], error: null });
+    const api = createLifecycleApi({ rpc } as unknown as CrmClient);
+
+    await expect(api.listClientLifecyclePreviewSessions('artist-1', 25)).resolves.toEqual([session]);
+    await expect(api.previewClientLifecycleRule('artist-1', 'rule-1', 'session-1')).resolves.toEqual(preview);
+    await expect(api.previewClientLifecycleRule('artist-1', 'rule-1', 'session-missing')).resolves.toBeNull();
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'list_client_lifecycle_preview_sessions', {
+      p_artist_id: 'artist-1',
+      p_limit: 25,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'preview_client_lifecycle_rule', {
+      p_artist_id: 'artist-1',
+      p_rule_id: 'rule-1',
+      p_session_id: 'session-1',
+    });
+    expect(rpc).toHaveBeenNthCalledWith(3, 'preview_client_lifecycle_rule', {
+      p_artist_id: 'artist-1',
+      p_rule_id: 'rule-1',
+      p_session_id: 'session-missing',
+    });
+  });
+
   it('creates lifecycle rules through the typed RPC and cannot enable them during creation', async () => {
     const { client, rpc } = clientWithRpc({ data: 'rule-1', error: null });
     const api = createLifecycleApi(client);
