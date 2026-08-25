@@ -52,7 +52,10 @@ select is(
    from public.automation_rules r
    join crm_private.artist_state s on s.artist_id = r.artist_id and s.is_active
    where r.action_type = 'send_client_message'::public.automation_action_type
-     and r.is_enabled),
+     and r.is_enabled
+     and r.message_purpose in (
+       'session_reminder_72h', 'session_reminder_24h', 'consultation_reminder'
+     )),
   (select count(*)::int
    from public.artists a
    join crm_private.artist_state s on s.artist_id = a.id and s.is_active) * 4,
@@ -66,7 +69,10 @@ select set_eq(
     from public.automation_rules r
     where r.artist_id = (select id from t_artist)
       and r.action_type = 'send_client_message'::public.automation_action_type
-      and r.is_enabled$$,
+      and r.is_enabled
+      and r.message_purpose in (
+        'session_reminder_72h', 'session_reminder_24h', 'consultation_reminder'
+      )$$,
   $$values
       ('tattoo_session',          'session_reminder_72h',  -4320),
       ('tattoo_session',          'session_reminder_24h',  -1440),
@@ -93,9 +99,12 @@ select is(
    where r.artist_id = (select id from t_artist)
      and r.action_type = 'send_client_message'::public.automation_action_type
      and r.is_enabled
+     and r.message_purpose in (
+       'session_reminder_72h', 'session_reminder_24h', 'consultation_reminder'
+     )
      and r.condition_appointment_type = 'touch_up'::public.appointment_type),
   0,
-  'touch_up is deliberately unconfigured in v1'
+  'touch_up is deliberately unconfigured in the v1 pre-session stage'
 );
 
 select ok(
@@ -107,7 +116,10 @@ select ok(
    from public.automation_rules r
    where r.artist_id = (select id from t_artist)
      and r.action_type = 'send_client_message'::public.automation_action_type
-     and r.is_enabled),
+     and r.is_enabled
+     and r.message_purpose in (
+       'session_reminder_72h', 'session_reminder_24h', 'consultation_reminder'
+     )),
   'every v1 rule is a session-start, email, appointment.scheduled rule'
 );
 
@@ -233,7 +245,10 @@ reset role;
 select set_eq(
   $$select j.message_purpose, j.anchor_offset_minutes
     from public.automation_jobs j
-    where j.session_id = (select id from t_tattoo)$$,
+    where j.session_id = (select id from t_tattoo)
+      and j.message_purpose in (
+        'session_reminder_72h', 'session_reminder_24h', 'consultation_reminder'
+      )$$,
   $$values ('session_reminder_72h', -4320), ('session_reminder_24h', -1440)$$,
   'a tattoo session materialises exactly the 72 hour and 24 hour reminders'
 );
@@ -252,7 +267,10 @@ select ok(
      and j.status = 'pending'::public.automation_job_status)
    from public.automation_jobs j
    join public.sessions s on s.id = j.session_id
-   where j.session_id = (select id from t_tattoo)),
+   where j.session_id = (select id from t_tattoo)
+     and j.message_purpose in (
+       'session_reminder_72h', 'session_reminder_24h', 'consultation_reminder'
+     )),
   'both reminders are anchored to the authoritative appointment start'
 );
 
@@ -339,7 +357,10 @@ select ok(
      j.scheduled_at = s.start_at + make_interval(mins => j.anchor_offset_minutes))
    from public.automation_jobs j
    join public.sessions s on s.id = j.session_id
-   where j.session_id = (select id from t_tattoo)),
+   where j.session_id = (select id from t_tattoo)
+     and j.message_purpose in (
+       'session_reminder_72h', 'session_reminder_24h', 'consultation_reminder'
+     )),
   'both reminders followed the appointment to its new start'
 );
 

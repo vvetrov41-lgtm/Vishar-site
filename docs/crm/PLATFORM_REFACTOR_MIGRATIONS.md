@@ -37,10 +37,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0100` | Appointment client-action lifecycle activation | claimed on `agent/appointment-client-actions-activation-v2` |
 | `0101` | Telegram notification entity targets | claimed in PR #440 |
 | `0102` | Lifecycle control-plane safe template reads | claimed on `agent/lifecycle-control-plane-ui` |
+| `0103` | Post-session check-in production activation | claimed on `agent/post-session-checkin-activation` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0103`
+`0104`
 
 ## Allocation rule for unfinished phases
 
@@ -138,3 +139,11 @@ artist and return only lifecycle-compatible service email templates plus the
 service-purpose and template-variable catalogues. This gives the private CRM a
 server-authoritative read surface for lifecycle authoring without exposing
 provider state, client values, template authorship or another backend path.
+
+Post-session check-in activation claims `0103`. It adds one reviewed active
+English workspace template and, per active Artist, exactly two enabled rules:
+`tattoo_session` and `touch_up`, both anchored 1,440 minutes after authoritative
+`session_end`. It deliberately excludes `in_person_consultation` and
+`video_consultation`, adds no other post-session stage, does not backfill
+historical appointments and keeps delivery on the existing system-approved
+`approved_email` outbox and Gmail Worker path.
