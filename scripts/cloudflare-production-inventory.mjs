@@ -122,7 +122,13 @@ async function main() {
     }
     reads.push({ path, status });
     if (!response.ok || body?.success !== true) {
-      if (required) fail(`Cloudflare read failed (${status}) for ${path}`);
+      const errorCodes = (body?.errors ?? [])
+        .map((error) => Number(error?.code))
+        .filter(Number.isFinite)
+        .slice(0, 5);
+      if (required) {
+        fail(`Cloudflare read failed (${status}; codes=${errorCodes.join(',') || 'none'}) for ${path}`);
+      }
       return { status, result: null };
     }
     return { status, result: body.result ?? null, result_info: body.result_info ?? null };
@@ -142,7 +148,7 @@ async function main() {
     read(`/zones/${zone.id}/workers/routes?per_page=100`),
     read(`/zones/${zone.id}/dns_records?per_page=500`),
     read(`/accounts/${accountId}/access/apps?per_page=100`),
-    read(`/accounts/${accountId}/pages/projects?per_page=100`),
+    read(`/accounts/${accountId}/pages/projects?page=1&per_page=25`),
     read(`/accounts/${accountId}/storage/kv/namespaces?per_page=100`, { required: false }),
     read(`/accounts/${accountId}/d1/database?per_page=100`, { required: false }),
     read(`/accounts/${accountId}/r2/buckets`, { required: false }),
@@ -222,7 +228,7 @@ async function main() {
 
   const pages = [];
   for (const project of sortBy(pagesRows.result ?? [], 'name')) {
-    const deployments = await read(`/accounts/${accountId}/pages/projects/${encodeURIComponent(project.name)}/deployments?per_page=20`);
+    const deployments = await read(`/accounts/${accountId}/pages/projects/${encodeURIComponent(project.name)}/deployments?page=1&per_page=25`);
     const production = (deployments.result ?? []).find((deployment) => deployment?.environment === 'production') ?? null;
     pages.push({
       name: project.name,
