@@ -1,0 +1,95 @@
+name: Cloudflare production inventory
+
+on:
+  push:
+    branches:
+      - 'release/cloudflare-inventory-*'
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact current agent/platform-telegram-self-service SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: cloudflare-production-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    name: Read-only production topology
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ inputs.approved_sha || github.sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ZONE: vishartattoo.com
+
+    steps:
+      - name: Checkout exact approved source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify owner, immutable SHA, canonical lineage and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$CLOUDFLARE_ZONE" = 'vishartattoo.com' ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Inventory must inspect the current immutable canonical SHA.' >&2
+            exit 1
+          }
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation' 'Booking host validation'; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null
+          done
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prove inventory workflow is read-only
+        run: node scripts/test-cloudflare-production-inventory.mjs
+
+      - name: Read and sanitize live Cloudflare topology
+        env:
+          SOURCE_SHA: ${{ env.APPROVED_SHA }}
+        run: |
+          set -euo pipefail
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-production-inventory.json" \
+            --summary "$RUNNER_TEMP/cloudflare-production-inventory.md"
+          cat "$RUNNER_TEMP/cloudflare-production-inventory.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized inventory evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-production-inventory-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/cloudflare-production-inventory.json
+          if-no-files-found: error
+          retention-days: 7
