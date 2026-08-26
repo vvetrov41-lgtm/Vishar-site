@@ -1,0 +1,41 @@
+name: One-shot lifecycle history matcher fix
+
+on:
+  push:
+    branches:
+      - agent/lifecycle-execution-history-ui
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/lifecycle-execution-history-ui
+          fetch-depth: 0
+      - name: Apply guarded matcher fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('admin/src/test/lifecycle-automation-page.test.tsx')
+          text = path.read_text()
+          old = "expect(screen.getByText('History Client')).toBeInTheDocument();"
+          new = "expect(screen.getByText(/History Client/)).toBeInTheDocument();"
+          if text.count(old) != 1:
+              raise SystemExit(f'guard expected 1 match, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/lifecycle-history-ui-final-test-fix.yml
+      - name: Commit bounded fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin/src/test/lifecycle-automation-page.test.tsx .github/workflows/lifecycle-history-ui-final-test-fix.yml
+          git diff --cached --check
+          git commit -m 'Fix lifecycle history client matcher'
+          git push origin HEAD:agent/lifecycle-execution-history-ui
