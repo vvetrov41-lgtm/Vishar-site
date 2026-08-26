@@ -147,6 +147,13 @@ function api(canManage = false, canPreview = true) {
     artistControlPlaneContext: vi.fn(async () => ({ workspace_id: WORKSPACE_ID })),
     createClientLifecycleRule: vi.fn(async () => 'new-rule'),
     setAutomationRuleEnabled: vi.fn(async () => true),
+    updateClientLifecycleRuleTiming: vi.fn(async () => ({
+      rule_id: 'rule-1',
+      schedule_anchor: 'session_start',
+      anchor_offset_minutes: -2880,
+      rule_version: 2,
+      pending_jobs_rescheduled: 0,
+    })),
     upsertMessageTemplate: vi.fn(async () => 'new-template'),
     setMessageTemplateActive: vi.fn(async () => true),
   } as any;
@@ -181,6 +188,7 @@ describe('Lifecycle automation control plane', () => {
     expect(screen.getByText(/History Client/)).toBeInTheDocument();
     expect(screen.getByText('You can view these automations but cannot change them.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit timing' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create disabled' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
   });
@@ -298,6 +306,45 @@ describe('Lifecycle automation control plane', () => {
       anchorOffsetMinutes: -2880,
       locale: 'en',
     }));
+  });
+
+  it('edits timing with human controls and the bounded timing RPC', async () => {
+    const lifecycle = api(true);
+    vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_ID));
+    vi.mocked(useApi).mockReturnValue(lifecycle);
+
+    render(<LifecycleAutomationPage />);
+    await screen.findByRole('button', { name: 'Edit timing' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit timing' }));
+
+    expect(screen.getByText('1 day before appointment starts')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save timing' }));
+
+    await waitFor(() => expect(lifecycle.updateClientLifecycleRuleTiming).toHaveBeenCalledWith({
+      ruleId: 'rule-1',
+      timingDirection: 'before_session_start',
+      amount: 2,
+      unit: 'days',
+    }));
+    expect(await screen.findByText('Timing updated.')).toBeInTheDocument();
+  });
+
+  it('renders the timing editor in Russian without database vocabulary', async () => {
+    const lifecycle = api(true);
+    vi.mocked(useLanguage).mockReturnValue({ language: 'ru', t: (key: string) => key } as any);
+    vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_ID));
+    vi.mocked(useApi).mockReturnValue(lifecycle);
+
+    render(<LifecycleAutomationPage />);
+    await screen.findByRole('button', { name: 'Изменить время' });
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить время' }));
+
+    expect(screen.getByText('1 дн. до начала записи')).toBeInTheDocument();
+    expect(screen.getByLabelText('Относительно записи')).toBeInTheDocument();
+    expect(screen.getByLabelText('Единица времени')).toBeInTheDocument();
+    expect(screen.queryByText('session_start')).not.toBeInTheDocument();
+    expect(screen.queryByText('anchor_offset_minutes')).not.toBeInTheDocument();
   });
 
   it('saves artist template copy as a draft and does not activate it implicitly', async () => {
