@@ -102,6 +102,25 @@ function api(canManage = false, canPreview = true) {
       start_at: '2026-08-27T10:00:00Z',
       end_at: '2026-08-27T17:00:00Z',
     }] : []),
+    listClientLifecycleExecutionHistory: vi.fn(async () => [{
+      job_id: 'job-1',
+      rule_id: 'rule-1',
+      rule_name: '24 hour reminder',
+      rule_version: 1,
+      session_id: SESSION_ID,
+      client_name: 'History Client',
+      appointment_type: 'tattoo_session',
+      message_purpose: 'session_reminder_24h',
+      scheduled_at: '2026-08-26T10:00:00Z',
+      lifecycle_status: 'scheduled',
+      job_status: 'pending',
+      email_status: null,
+      outbox_status: null,
+      failure_reason: null,
+      attempt_count: 0,
+      created_at: '2026-08-25T10:00:00Z',
+      updated_at: '2026-08-25T10:00:00Z',
+    }]),
     previewClientLifecycleRule: vi.fn(async () => ({
       rule_id: 'rule-1',
       rule_name: '24 hour reminder',
@@ -154,9 +173,12 @@ describe('Lifecycle automation control plane', () => {
 
     render(<LifecycleAutomationPage />);
 
-    expect(await screen.findByText('24 hour reminder')).toBeInTheDocument();
+    expect(await screen.findAllByText('24 hour reminder')).toHaveLength(2);
     expect(screen.getByText('Your appointment')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show preview' })).toBeInTheDocument();
+    expect(screen.getByText('Execution history')).toBeInTheDocument();
+    expect(screen.getByText('Scheduled')).toBeInTheDocument();
+    expect(screen.getByText(/History Client/)).toBeInTheDocument();
     expect(screen.getByText('You can view these automations but cannot change them.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create disabled' })).not.toBeInTheDocument();
@@ -188,6 +210,42 @@ describe('Lifecycle automation control plane', () => {
     expect(lifecycle.setMessageTemplateActive).not.toHaveBeenCalled();
   });
 
+  it('renders only normalized execution-history failures through the bounded read RPC', async () => {
+    const lifecycle = api(false, true);
+    lifecycle.listClientLifecycleExecutionHistory.mockResolvedValue([{
+      job_id: 'job-failed',
+      rule_id: 'rule-1',
+      rule_name: '24 hour reminder',
+      rule_version: 1,
+      session_id: SESSION_ID,
+      client_name: 'History Client',
+      appointment_type: 'tattoo_session',
+      message_purpose: 'session_reminder_24h',
+      scheduled_at: '2026-08-26T10:00:00Z',
+      lifecycle_status: 'failed',
+      job_status: 'completed',
+      email_status: 'queued',
+      outbox_status: 'dead',
+      failure_reason: 'provider_delivery_failed',
+      attempt_count: 3,
+      created_at: '2026-08-25T10:00:00Z',
+      updated_at: '2026-08-26T10:05:00Z',
+    }]);
+    vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_ID));
+    vi.mocked(useApi).mockReturnValue(lifecycle);
+
+    render(<LifecycleAutomationPage />);
+
+    expect(await screen.findByText('Provider delivery failed')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(screen.queryByText('provider_delivery_failed')).not.toBeInTheDocument();
+    expect(lifecycle.listClientLifecycleExecutionHistory).toHaveBeenCalledWith(ARTIST_ID);
+    expect(lifecycle.createClientLifecycleRule).not.toHaveBeenCalled();
+    expect(lifecycle.upsertMessageTemplate).not.toHaveBeenCalled();
+    expect(lifecycle.setAutomationRuleEnabled).not.toHaveBeenCalled();
+    expect(lifecycle.setMessageTemplateActive).not.toHaveBeenCalled();
+  });
+
   it('fails closed when the operator lacks the complete preview capability set', async () => {
     const lifecycle = api(false, false);
     vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_ID));
@@ -196,6 +254,7 @@ describe('Lifecycle automation control plane', () => {
     render(<LifecycleAutomationPage />);
 
     expect(await screen.findByText('Preview unavailable')).toBeInTheDocument();
+    expect(screen.getByText('History unavailable')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show preview' })).not.toBeInTheDocument();
     expect(lifecycle.previewClientLifecycleRule).not.toHaveBeenCalled();
   });
@@ -208,6 +267,8 @@ describe('Lifecycle automation control plane', () => {
 
     render(<LifecycleAutomationPage />);
     await screen.findByRole('button', { name: 'Показать предпросмотр' });
+    expect(screen.getByText('История выполнения')).toBeInTheDocument();
+    expect(screen.getByText('Запланировано')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Показать предпросмотр' }));
 
     expect(await screen.findByText('Не отправится')).toBeInTheDocument();
