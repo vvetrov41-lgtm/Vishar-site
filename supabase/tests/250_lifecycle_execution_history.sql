@@ -109,7 +109,17 @@ update public.automation_jobs
 set last_error_category = 'client_blocked', cancelled_at = now()
 where id = 'f5800000-0000-4000-8000-000000000002'::uuid;
 
-select test_set_auth_claims('f5100000-0000-4000-8000-000000000001'::uuid, 'booking_manager');
+create function pg_temp.as_profile(p_profile uuid) returns void language sql as $$
+  select set_config(
+    'request.jwt.claims',
+    json_build_object('sub', p_profile, 'role', 'authenticated')::text,
+    true
+  )::void;
+$$;
+grant execute on function pg_temp.as_profile(uuid) to authenticated;
+
+reset role;
+select pg_temp.as_profile('f5100000-0000-4000-8000-000000000001'::uuid);
 set local role authenticated;
 
 select is(
