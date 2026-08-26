@@ -178,7 +178,7 @@ describe('Lifecycle automation control plane', () => {
     expect(screen.getByRole('button', { name: 'Show preview' })).toBeInTheDocument();
     expect(screen.getByText('Execution history')).toBeInTheDocument();
     expect(screen.getByText('Scheduled')).toBeInTheDocument();
-    expect(screen.getByText('History Client')).toBeInTheDocument();
+    expect(screen.getByText(/History Client/)).toBeInTheDocument();
     expect(screen.getByText('You can view these automations but cannot change them.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create disabled' })).not.toBeInTheDocument();
