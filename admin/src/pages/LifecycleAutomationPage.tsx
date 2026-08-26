@@ -6,6 +6,8 @@ import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type {
   ClientLifecycleExecutionHistoryRow,
+  LifecycleConfigurationHistoryCursor,
+  LifecycleConfigurationHistoryRow,
   ClientLifecyclePreview,
   ClientLifecyclePreviewSession,
   ClientLifecyclePurpose,
@@ -17,6 +19,7 @@ import type {
   LifecycleScheduleAnchor,
   LifecycleTimingDirection,
   LifecycleTimingUnit,
+  MessageTemplateStatus,
 } from '../lib/lifecycle-api';
 import { useApi } from '../lib/session';
 
@@ -27,11 +30,14 @@ interface LifecycleData {
   variables: ClientLifecycleVariable[];
   previewSessions: ClientLifecyclePreviewSession[];
   history: ClientLifecycleExecutionHistoryRow[];
+  configurationHistory: LifecycleConfigurationHistoryRow[];
   canManage: boolean;
   canPreview: boolean;
   canHistory: boolean;
   workspaceId: string;
 }
+
+const CONFIGURATION_HISTORY_PAGE_SIZE = 20;
 
 const APPOINTMENT_TYPES: LifecycleAppointmentType[] = [
   'tattoo_session',
@@ -68,13 +74,14 @@ export function LifecycleAutomationPage() {
   const state = useAsync<LifecycleData | null>(async () => {
     if (!selectedArtistId) return null;
 
-    const [rules, templates, purposes, variables, previewSessions, history, capabilities, context] = await Promise.all([
+    const [rules, templates, purposes, variables, previewSessions, history, configurationHistory, capabilities, context] = await Promise.all([
       api.listClientLifecycleRules(selectedArtistId),
       api.listClientLifecycleTemplates(selectedArtistId),
       api.listClientLifecycleTemplatePurposes(selectedArtistId),
       api.listClientLifecycleTemplateVariables(selectedArtistId),
       api.listClientLifecyclePreviewSessions(selectedArtistId),
       api.listClientLifecycleExecutionHistory(selectedArtistId),
+      api.listLifecycleConfigurationHistory(selectedArtistId, CONFIGURATION_HISTORY_PAGE_SIZE),
       api.listCapabilities(selectedArtistId),
       api.artistControlPlaneContext(selectedArtistId),
     ]);
@@ -94,6 +101,7 @@ export function LifecycleAutomationPage() {
       variables,
       previewSessions,
       history,
+      configurationHistory,
       canManage: granted.has('manage_automations'),
       canPreview: PREVIEW_CAPABILITIES.every((capability) => granted.has(capability)),
       canHistory: HISTORY_CAPABILITIES.every((capability) => granted.has(capability)),
@@ -174,6 +182,22 @@ export function LifecycleAutomationPage() {
           ru={ru}
           rows={data.history}
           canView={data.canHistory}
+        />
+      </Section>
+
+      <Section title={ru ? 'История изменений' : 'Configuration history'}>
+        <LifecycleConfigurationHistoryPanel
+          key={selectedArtistId}
+          ru={ru}
+          rows={data.configurationHistory}
+          rules={data.rules}
+          templates={data.templates}
+          purposes={data.purposes}
+          onLoadOlder={(cursor) => api.listLifecycleConfigurationHistory(
+            selectedArtistId,
+            CONFIGURATION_HISTORY_PAGE_SIZE,
+            cursor,
+          )}
         />
       </Section>
 
@@ -394,6 +418,115 @@ function LifecycleExecutionHistoryPanel({
           </dl>
         </article>
       ))}
+    </div>
+  );
+}
+
+function LifecycleConfigurationHistoryPanel({
+  ru,
+  rows: initialRows,
+  rules,
+  templates,
+  purposes,
+  onLoadOlder,
+}: {
+  ru: boolean;
+  rows: LifecycleConfigurationHistoryRow[];
+  rules: ClientLifecycleRule[];
+  templates: ClientLifecycleTemplate[];
+  purposes: ClientLifecyclePurpose[];
+  onLoadOlder: (cursor: LifecycleConfigurationHistoryCursor) => Promise<LifecycleConfigurationHistoryRow[]>;
+}) {
+  const [rows, setRows] = useState(initialRows);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(initialRows.length === CONFIGURATION_HISTORY_PAGE_SIZE);
+
+  useEffect(() => {
+    setRows(initialRows);
+    setHasMore(initialRows.length === CONFIGURATION_HISTORY_PAGE_SIZE);
+    setOlderError(null);
+    setLoadingOlder(false);
+  }, [initialRows]);
+
+  async function loadOlder() {
+    const last = rows[rows.length - 1];
+    if (!last || loadingOlder) return;
+
+    setLoadingOlder(true);
+    setOlderError(null);
+    try {
+      const page = await onLoadOlder({ occurredAt: last.occurred_at, activityId: last.activity_id });
+      setRows((current) => {
+        const known = new Set(current.map((row) => row.activity_id));
+        return [...current, ...page.filter((row) => !known.has(row.activity_id))];
+      });
+      setHasMore(page.length === CONFIGURATION_HISTORY_PAGE_SIZE);
+    } catch {
+      setOlderError(ru
+        ? 'Не удалось загрузить более ранние изменения. Попробуйте снова.'
+        : 'Could not load older changes. Try again.');
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        compact
+        title={ru ? 'Изменений пока нет' : 'No configuration changes yet'}
+        hint={ru
+          ? 'Здесь появятся включение правил, изменение времени и новые версии шаблонов.'
+          : 'Rule state, timing and template version changes will appear here.'}
+      />
+    );
+  }
+
+  return (
+    <div className="stack">
+      <div className="meta">
+        {ru
+          ? 'История доступна только для чтения. Тексты сообщений и данные клиентов здесь не показываются.'
+          : 'Read-only history of rule and template changes. Message copy and client data are never shown.'}
+      </div>
+      {rows.map((row) => {
+        const name = configurationEntityName(row, rules, templates, purposes, ru);
+        const details = configurationChangeDetails(row, ru);
+        return (
+          <article className="card" key={row.activity_id}>
+            <div className="row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div>
+                <strong>{configurationEventLabel(row, name, ru)}</strong>
+                <div className="meta">
+                  {configurationActorLabel(row, ru)}
+                  {' · '}{formatDateTime(row.occurred_at, ru ? 'ru' : 'en')}
+                </div>
+              </div>
+              <span className="badge">
+                {row.entity_kind === 'rule'
+                  ? (ru ? 'Правило' : 'Rule')
+                  : (ru ? 'Шаблон' : 'Template')}
+              </span>
+            </div>
+            {details.length > 0 ? (
+              <div className="meta" style={{ marginTop: 10 }}>
+                {details.join(' · ')}
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
+      {olderError ? <div className="notice warn" role="alert">{olderError}</div> : null}
+      {hasMore ? (
+        <div className="actions">
+          <button type="button" disabled={loadingOlder} onClick={() => { void loadOlder(); }}>
+            {loadingOlder
+              ? (ru ? 'Загружаем изменения…' : 'Loading changes…')
+              : (ru ? 'Показать более ранние' : 'Load older changes')}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -908,6 +1041,165 @@ function matchingActiveTemplate(rule: ClientLifecycleRule, templates: ClientLife
     && template.purpose === rule.message_purpose
     && template.locale === rule.message_locale
   );
+}
+
+function configurationEntityName(
+  row: LifecycleConfigurationHistoryRow,
+  rules: ClientLifecycleRule[],
+  templates: ClientLifecycleTemplate[],
+  purposes: ClientLifecyclePurpose[],
+  ru: boolean,
+): string {
+  if (row.rule_id) {
+    const rule = rules.find((candidate) => candidate.id === row.rule_id);
+    if (rule) return rule.name;
+  }
+
+  const purpose = row.purpose
+    ?? (row.template_id ? templates.find((candidate) => candidate.id === row.template_id)?.purpose : null);
+  if (purpose) return configurationPurposeLabel(purpose, purposes, ru);
+  return row.entity_kind === 'rule'
+    ? (ru ? 'Без названия' : 'Untitled rule')
+    : (ru ? 'Email-шаблон' : 'Email template');
+}
+
+function configurationPurposeLabel(
+  purpose: string,
+  purposes: ClientLifecyclePurpose[],
+  ru: boolean,
+): string {
+  const known: Record<string, [string, string]> = {
+    session_reminder_24h: ['24-hour session reminder', 'Напоминание о сеансе за 24 часа'],
+    session_reminder_72h: ['72-hour session reminder', 'Напоминание о сеансе за 72 часа'],
+    consultation_reminder: ['Consultation reminder', 'Напоминание о консультации'],
+    post_session_checkin: ['Post-session check-in', 'Сообщение после сеанса'],
+  };
+  if (known[purpose]) return known[purpose][ru ? 1 : 0];
+  const description = purposes.find((candidate) => candidate.purpose === purpose)?.description;
+  return description || (ru ? 'Сервисное сообщение' : 'Service message');
+}
+
+function configurationEventLabel(
+  row: LifecycleConfigurationHistoryRow,
+  name: string,
+  ru: boolean,
+): string {
+  if (row.event_type === 'automation.rule_created') {
+    return ru ? `Создано правило «${name}»` : `Created rule “${name}”`;
+  }
+  if (row.event_type === 'automation.rule_updated') {
+    if (row.is_enabled_after === true) return ru ? `Правило «${name}» включено` : `Enabled rule “${name}”`;
+    if (row.is_enabled_after === false) return ru ? `Правило «${name}» выключено` : `Disabled rule “${name}”`;
+    return ru ? `Изменено правило «${name}»` : `Changed rule “${name}”`;
+  }
+  if (row.event_type === 'automation.rule_timing_updated') {
+    return ru ? `Изменено время для правила «${name}»` : `Changed timing for rule “${name}”`;
+  }
+  if (row.event_type === 'automation.template_created') {
+    return ru
+      ? `Сохранён черновик шаблона «${name}»${configurationVersionSuffix(row.version, ru)}`
+      : `Saved template draft “${name}”${configurationVersionSuffix(row.version, ru)}`;
+  }
+  if (row.status_after === 'active') {
+    return ru
+      ? `Шаблон «${name}» активирован${configurationVersionSuffix(row.version, ru)}`
+      : `Activated template “${name}”${configurationVersionSuffix(row.version, ru)}`;
+  }
+  if (row.status_after === 'retired') {
+    return ru
+      ? `Шаблон «${name}» выведен из использования${configurationVersionSuffix(row.version, ru)}`
+      : `Retired template “${name}”${configurationVersionSuffix(row.version, ru)}`;
+  }
+  return ru ? `Изменён шаблон «${name}»` : `Changed template “${name}”`;
+}
+
+function configurationVersionSuffix(version: number | null, ru: boolean): string {
+  if (version === null) return '';
+  return ru ? `, версия ${version}` : `, version ${version}`;
+}
+
+function configurationActorLabel(row: LifecycleConfigurationHistoryRow, ru: boolean): string {
+  if (row.actor_display_name) return row.actor_display_name;
+  const known: Record<string, [string, string]> = {
+    system: ['System', 'Система'],
+    worker: ['Automation worker', 'Сервис автоматизаций'],
+    service_role: ['System service', 'Системный сервис'],
+    ai: ['AI assistant', 'ИИ-ассистент'],
+    user: ['Team member', 'Участник команды'],
+    profile: ['Team member', 'Участник команды'],
+  };
+  return known[row.actor_kind]?.[ru ? 1 : 0] ?? (ru ? 'Участник команды' : 'Team member');
+}
+
+function configurationChangeDetails(row: LifecycleConfigurationHistoryRow, ru: boolean): string[] {
+  const details: string[] = [];
+  if (row.event_type === 'automation.rule_updated'
+    && row.is_enabled_before !== null
+    && row.is_enabled_after !== null) {
+    details.push(`${configurationEnabledLabel(row.is_enabled_before, ru)} → ${configurationEnabledLabel(row.is_enabled_after, ru)}`);
+  }
+  if (row.event_type === 'automation.rule_timing_updated') {
+    const before = configurationTimingLabel(
+      row.schedule_anchor_before,
+      row.anchor_offset_minutes_before,
+      ru,
+    );
+    const after = configurationTimingLabel(
+      row.schedule_anchor_after,
+      row.anchor_offset_minutes_after,
+      ru,
+    );
+    if (before && after) details.push(`${before} → ${after}`);
+  }
+  if (row.event_type === 'automation.template_updated'
+    && row.status_before
+    && row.status_after
+    && row.status_before !== row.status_after) {
+    details.push(`${configurationTemplateStatusLabel(row.status_before, ru)} → ${configurationTemplateStatusLabel(row.status_after, ru)}`);
+  }
+  if ((row.pending_jobs_rescheduled ?? 0) > 0) {
+    details.push(ru
+      ? `Перенесено задач: ${row.pending_jobs_rescheduled}`
+      : `Pending jobs rescheduled: ${row.pending_jobs_rescheduled}`);
+  }
+  if ((row.previous_active_versions_retired ?? 0) > 0) {
+    details.push(ru
+      ? `Предыдущих версий выведено из использования: ${row.previous_active_versions_retired}`
+      : `Previous active versions retired: ${row.previous_active_versions_retired}`);
+  }
+  return details;
+}
+
+function configurationEnabledLabel(enabled: boolean, ru: boolean): string {
+  return enabled ? (ru ? 'Включено' : 'Enabled') : (ru ? 'Выключено' : 'Disabled');
+}
+
+function configurationTemplateStatusLabel(status: MessageTemplateStatus, ru: boolean): string {
+  if (status === 'active') return ru ? 'Активен' : 'Active';
+  if (status === 'draft') return ru ? 'Черновик' : 'Draft';
+  return ru ? 'Выведен из использования' : 'Retired';
+}
+
+function configurationTimingLabel(
+  anchor: LifecycleScheduleAnchor | null,
+  minutes: number | null,
+  ru: boolean,
+): string | null {
+  if (!anchor || minutes === null) return null;
+  if (minutes === 0) {
+    return anchor === 'session_start'
+      ? (ru ? 'В момент начала записи' : 'At appointment start')
+      : (ru ? 'В момент окончания записи' : 'At appointment end');
+  }
+  const duration = humanDuration(Math.abs(minutes), ru);
+  if (anchor === 'session_start') {
+    return minutes < 0
+      ? (ru ? `${duration} до начала записи` : `${duration} before appointment starts`)
+      : (ru ? `${duration} после начала записи` : `${duration} after appointment starts`);
+  }
+  return minutes > 0
+    ? (ru ? `${duration} после окончания записи` : `${duration} after appointment ends`)
+    : (ru ? `${duration} до окончания записи` : `${duration} before appointment ends`);
 }
 
 function appointmentLabel(type: LifecycleAppointmentType, ru: boolean): string {

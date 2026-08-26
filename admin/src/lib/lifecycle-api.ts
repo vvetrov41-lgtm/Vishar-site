@@ -132,6 +132,44 @@ export interface ClientLifecycleExecutionHistoryRow {
   updated_at: string;
 }
 
+export type LifecycleConfigurationEventType =
+  | 'automation.rule_created'
+  | 'automation.rule_updated'
+  | 'automation.rule_timing_updated'
+  | 'automation.template_created'
+  | 'automation.template_updated';
+
+export interface LifecycleConfigurationHistoryRow {
+  activity_id: string;
+  occurred_at: string;
+  event_type: LifecycleConfigurationEventType;
+  actor_profile_id: string | null;
+  actor_display_name: string | null;
+  actor_kind: string;
+  entity_kind: 'rule' | 'template';
+  rule_id: string | null;
+  template_id: string | null;
+  purpose: string | null;
+  channel: string | null;
+  locale: string | null;
+  version: number | null;
+  is_enabled_before: boolean | null;
+  is_enabled_after: boolean | null;
+  schedule_anchor_before: LifecycleScheduleAnchor | null;
+  schedule_anchor_after: LifecycleScheduleAnchor | null;
+  anchor_offset_minutes_before: number | null;
+  anchor_offset_minutes_after: number | null;
+  status_before: MessageTemplateStatus | null;
+  status_after: MessageTemplateStatus | null;
+  pending_jobs_rescheduled: number | null;
+  previous_active_versions_retired: number | null;
+}
+
+export interface LifecycleConfigurationHistoryCursor {
+  occurredAt: string;
+  activityId: string;
+}
+
 export interface ClientLifecycleTimingUpdate {
   rule_id: string;
   schedule_anchor: LifecycleScheduleAnchor;
@@ -265,6 +303,22 @@ export function createLifecycleApi(client: CrmClient) {
           p_limit: limit,
         }),
         'load lifecycle execution history',
+      );
+    },
+
+    async listLifecycleConfigurationHistory(
+      artistId: string,
+      limit = 20,
+      before: LifecycleConfigurationHistoryCursor | null = null,
+    ): Promise<LifecycleConfigurationHistoryRow[]> {
+      return unwrap<LifecycleConfigurationHistoryRow[]>(
+        await client.rpc('list_lifecycle_configuration_history', {
+          p_artist_id: artistId,
+          p_limit: limit,
+          p_before_occurred_at: before?.occurredAt ?? null,
+          p_before_id: before?.activityId ?? null,
+        }),
+        'load lifecycle configuration history',
       );
     },
 

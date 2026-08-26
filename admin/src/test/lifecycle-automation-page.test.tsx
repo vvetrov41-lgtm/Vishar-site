@@ -30,6 +30,35 @@ function artistScope(selectedArtistId: string | null) {
   } as any;
 }
 
+function configurationHistoryRow(overrides: Record<string, unknown> = {}) {
+  return {
+    activity_id: 'activity-1',
+    occurred_at: '2026-08-25T11:00:00Z',
+    event_type: 'automation.template_created',
+    actor_profile_id: 'profile-1',
+    actor_display_name: 'Alex Morgan',
+    actor_kind: 'profile',
+    entity_kind: 'template',
+    rule_id: null,
+    template_id: 'template-1',
+    purpose: 'session_reminder_24h',
+    channel: 'email',
+    locale: 'en',
+    version: 1,
+    is_enabled_before: null,
+    is_enabled_after: null,
+    schedule_anchor_before: null,
+    schedule_anchor_after: null,
+    anchor_offset_minutes_before: null,
+    anchor_offset_minutes_after: null,
+    status_before: null,
+    status_after: 'draft',
+    pending_jobs_rescheduled: null,
+    previous_active_versions_retired: null,
+    ...overrides,
+  };
+}
+
 function api(canManage = false, canPreview = true) {
   const viewCapabilities = canPreview
     ? ['view_automations', 'view_sessions', 'view_clients', 'view_enquiries', 'view_integrations', 'view_finance']
@@ -121,6 +150,7 @@ function api(canManage = false, canPreview = true) {
       created_at: '2026-08-25T10:00:00Z',
       updated_at: '2026-08-25T10:00:00Z',
     }]),
+    listLifecycleConfigurationHistory: vi.fn(async () => [configurationHistoryRow()]),
     previewClientLifecycleRule: vi.fn(async () => ({
       rule_id: 'rule-1',
       rule_name: '24 hour reminder',
@@ -184,6 +214,8 @@ describe('Lifecycle automation control plane', () => {
     expect(screen.getByText('Your appointment')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show preview' })).toBeInTheDocument();
     expect(screen.getByText('Execution history')).toBeInTheDocument();
+    expect(screen.getByText('Configuration history')).toBeInTheDocument();
+    expect(screen.getByText('Saved template draft “24-hour session reminder”, version 1')).toBeInTheDocument();
     expect(screen.getByText('Scheduled')).toBeInTheDocument();
     expect(screen.getByText(/History Client/)).toBeInTheDocument();
     expect(screen.getByText('You can view these automations but cannot change them.')).toBeInTheDocument();
@@ -254,6 +286,63 @@ describe('Lifecycle automation control plane', () => {
     expect(lifecycle.setMessageTemplateActive).not.toHaveBeenCalled();
   });
 
+  it('renders configuration changes in human language without raw audit fields', async () => {
+    const lifecycle = api(false, true);
+    lifecycle.listLifecycleConfigurationHistory.mockResolvedValue([configurationHistoryRow({
+      activity_id: 'activity-rule-state',
+      event_type: 'automation.rule_updated',
+      entity_kind: 'rule',
+      rule_id: 'rule-1',
+      template_id: null,
+      is_enabled_before: false,
+      is_enabled_after: true,
+      status_after: null,
+    })]);
+    vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_ID));
+    vi.mocked(useApi).mockReturnValue(lifecycle);
+
+    render(<LifecycleAutomationPage />);
+
+    expect(await screen.findByText('Enabled rule “24 hour reminder”')).toBeInTheDocument();
+    expect(screen.getByText('Disabled → Enabled')).toBeInTheDocument();
+    expect(screen.getByText(/Alex Morgan/)).toBeInTheDocument();
+    expect(screen.queryByText('automation.rule_updated')).not.toBeInTheDocument();
+    expect(screen.queryByText('activity-rule-state')).not.toBeInTheDocument();
+  });
+
+  it('loads older configuration changes with the exact stable cursor', async () => {
+    const lifecycle = api(false, true);
+    const firstPage = Array.from({ length: 20 }, (_, index) => configurationHistoryRow({
+      activity_id: `activity-${index + 1}`,
+      occurred_at: `2026-08-25T${String(19 - index).padStart(2, '0')}:00:00Z`,
+    }));
+    const older = configurationHistoryRow({
+      activity_id: 'activity-older',
+      occurred_at: '2026-08-24T23:00:00Z',
+      event_type: 'automation.template_updated',
+      template_id: 'template-older',
+      purpose: 'consultation_reminder',
+      version: 2,
+      status_before: 'active',
+      status_after: 'retired',
+    });
+    lifecycle.listLifecycleConfigurationHistory
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce([older]);
+    vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_ID));
+    vi.mocked(useApi).mockReturnValue(lifecycle);
+
+    render(<LifecycleAutomationPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Load older changes' }));
+
+    await waitFor(() => expect(lifecycle.listLifecycleConfigurationHistory).toHaveBeenLastCalledWith(
+      ARTIST_ID,
+      20,
+      { occurredAt: '2026-08-25T00:00:00Z', activityId: 'activity-20' },
+    ));
+    expect(await screen.findByText('Retired template “Consultation reminder”, version 2')).toBeInTheDocument();
+  });
+
   it('fails closed when the operator lacks the complete preview capability set', async () => {
     const lifecycle = api(false, false);
     vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_ID));
@@ -263,6 +352,8 @@ describe('Lifecycle automation control plane', () => {
 
     expect(await screen.findByText('Preview unavailable')).toBeInTheDocument();
     expect(screen.getByText('History unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Configuration history')).toBeInTheDocument();
+    expect(screen.getByText('Saved template draft “24-hour session reminder”, version 1')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show preview' })).not.toBeInTheDocument();
     expect(lifecycle.previewClientLifecycleRule).not.toHaveBeenCalled();
   });
@@ -276,6 +367,8 @@ describe('Lifecycle automation control plane', () => {
     render(<LifecycleAutomationPage />);
     await screen.findByRole('button', { name: 'Показать предпросмотр' });
     expect(screen.getByText('История выполнения')).toBeInTheDocument();
+    expect(screen.getByText('История изменений')).toBeInTheDocument();
+    expect(screen.getByText('Сохранён черновик шаблона «Напоминание о сеансе за 24 часа», версия 1')).toBeInTheDocument();
     expect(screen.getByText('Запланировано')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Показать предпросмотр' }));
 
