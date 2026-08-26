@@ -88,6 +88,37 @@ describe('lifecycle control-plane API boundary', () => {
     });
   });
 
+  it('reads execution history only through the bounded artist-scoped RPC', async () => {
+    const history = [{
+      job_id: 'job-1',
+      rule_id: 'rule-1',
+      rule_name: 'Post-session check-in',
+      rule_version: 1,
+      session_id: 'session-1',
+      client_name: 'Preview Client',
+      appointment_type: 'tattoo_session',
+      message_purpose: 'post_session_checkin',
+      scheduled_at: '2026-08-25T16:00:00Z',
+      lifecycle_status: 'scheduled',
+      job_status: 'pending',
+      email_status: null,
+      outbox_status: null,
+      failure_reason: null,
+      attempt_count: 0,
+      created_at: '2026-08-25T10:00:00Z',
+      updated_at: '2026-08-25T10:00:00Z',
+    }];
+    const { client, rpc } = clientWithRpc({ data: history, error: null });
+    const api = createLifecycleApi(client);
+
+    await expect(api.listClientLifecycleExecutionHistory('artist-1', 25)).resolves.toEqual(history);
+
+    expect(rpc).toHaveBeenCalledWith('list_client_lifecycle_execution_history', {
+      p_artist_id: 'artist-1',
+      p_limit: 25,
+    });
+  });
+
   it('creates lifecycle rules through the typed RPC and cannot enable them during creation', async () => {
     const { client, rpc } = clientWithRpc({ data: 'rule-1', error: null });
     const api = createLifecycleApi(client);

@@ -39,10 +39,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0102` | Lifecycle control-plane safe template reads | claimed on `agent/lifecycle-control-plane-ui` |
 | `0103` | Post-session check-in production activation | claimed on `agent/post-session-checkin-activation` |
 | `0104` | Lifecycle Automation Studio v2 read-only preview foundation | claimed on `agent/lifecycle-studio-preview-foundation` |
+| `0105` | Lifecycle Automation Studio v2 execution-history read foundation | claimed on `agent/lifecycle-execution-history-foundation` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0105`
+`0106`
 
 ## Allocation rule for unfinished phases
 
@@ -160,3 +161,13 @@ receive inert preview labels instead. The full rendered-message preview is
 conservatively finance-gated because the shared production renderer can expose
 `deposit_amount`; direct browser SELECT on lifecycle source tables remains
 closed.
+
+Lifecycle Automation Studio v2 execution-history foundation claims `0105`.
+It adds one bounded read-only `SECURITY DEFINER` RPC with pinned `search_path`
+for artist-scoped lifecycle jobs. The projection joins only enough session,
+client, email and approved-email outbox state to explain whether a lifecycle
+message is scheduled, pending, queued, sent, suppressed, withdrawn, cancelled,
+failed or retrying. It returns normalized failure categories and deliberately
+omits recipient addresses, message bodies, provider identifiers, provider
+payloads and raw provider/database errors. It requires current automation,
+session, client and integration read capabilities and performs no mutation.

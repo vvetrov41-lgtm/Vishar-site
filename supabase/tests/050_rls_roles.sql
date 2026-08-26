@@ -725,6 +725,11 @@ insert into expected_function_acl values
   ('public.list_client_lifecycle_preview_sessions(uuid,integer)', false, true, false),
   ('public.preview_client_lifecycle_rule(uuid,uuid,uuid)', false, true, false),
 
+  -- Lifecycle Studio execution history foundation (migration 0105). This is a
+  -- bounded authenticated read that re-checks the exact artist capabilities
+  -- internally and is unavailable to anon and the service backend.
+  ('public.list_client_lifecycle_execution_history(uuid,integer)', false, true, false),
+
   -- Templates and the consent/suppression gate (migration 0082). The gate is
   -- readable by the backend as well, because every future send path must be
   -- able to ask it. Nothing here can record consent on the backend's behalf.
