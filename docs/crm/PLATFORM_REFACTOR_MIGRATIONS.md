@@ -181,3 +181,12 @@ enforces the existing 30-day and five-minute boundaries, versions only the
 owned lifecycle rule, and atomically moves pending unsent jobs onto the new
 version. Running and terminal job snapshots remain unchanged. The mutation
 writes a bounded before/after activity record with no client or provider data.
+
+Lifecycle Automation Studio v2 template versioning claims `0107`. Every
+template save still creates a disabled draft row, but the database now assigns
+the next version inside the exact workspace/artist, purpose, channel and locale
+slot. Transaction-scoped locking covers concurrent first saves, and separate
+partial unique indexes make duplicate workspace or artist versions impossible.
+Activating a replacement continues to retire, rather than rewrite or delete,
+the previous active version, so execution history can retain the exact copy it
+used.
