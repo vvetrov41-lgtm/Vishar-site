@@ -173,7 +173,7 @@ describe('Lifecycle automation control plane', () => {
 
     render(<LifecycleAutomationPage />);
 
-    expect(await screen.findByText('24 hour reminder')).toBeInTheDocument();
+    expect(await screen.findAllByText('24 hour reminder')).toHaveLength(2);
     expect(screen.getByText('Your appointment')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show preview' })).toBeInTheDocument();
     expect(screen.getByText('Execution history')).toBeInTheDocument();

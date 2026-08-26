@@ -368,7 +368,7 @@ function LifecycleExecutionHistoryPanel({
             </span>
           </div>
           <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '4px', margin: '14px 0 0' }}>
-            <dt className="meta">{ru ? 'Запланировано' : 'Scheduled for'}</dt>
+            <dt className="meta">{ru ? 'Запланировано на' : 'Scheduled for'}</dt>
             <dd style={{ margin: 0 }}>{formatDateTime(row.scheduled_at, ru ? 'ru' : 'en')}</dd>
             <dt className="meta">{ru ? 'Попытки' : 'Attempts'}</dt>
             <dd style={{ margin: 0 }}>{row.attempt_count}</dd>
