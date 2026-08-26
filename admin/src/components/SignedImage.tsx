@@ -1,8 +1,9 @@
 // A private reference image.
 //
 // The signed URL is minted on render and expires within a minute. The compact
-// preview stays inside the CRM; a deliberate click opens the same short-lived
-// URL at its original resolution in a new tab.
+// preview stays inside the CRM. A deliberate click mints a fresh short-lived
+// URL before opening the original so a page left open cannot reuse an expired
+// token.
 
 import { useEffect, useState } from 'react';
 import { useLanguage } from '../lib/i18n';
@@ -22,11 +23,13 @@ export function SignedImage({
   const { t } = useLanguage();
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [openFailed, setOpenFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setUrl(null);
     setFailed(false);
+    setOpenFailed(false);
     if (file.upload_state !== 'ready') {
       return () => { cancelled = true; };
     }
@@ -35,6 +38,35 @@ export function SignedImage({
       .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
   }, [api, file.storage_path, file.upload_state]);
+
+  async function openOriginal() {
+    setOpenFailed(false);
+
+    // Open synchronously while the click still owns Safari's user gesture.
+    // `noopener` would intentionally hide the returned Window handle, so clear
+    // opener immediately instead and navigate this blank tab only after the
+    // fresh signed URL arrives.
+    const opened = window.open('about:blank', '_blank');
+    if (!opened) {
+      setOpenFailed(true);
+      return;
+    }
+    opened.opener = null;
+
+    try {
+      const freshUrl = await api.signedFileUrl(file.storage_path);
+      if (!freshUrl) {
+        opened.close();
+        setOpenFailed(true);
+        return;
+      }
+      setUrl(freshUrl);
+      opened.location.replace(freshUrl);
+    } catch {
+      opened.close();
+      setOpenFailed(true);
+    }
+  }
 
   if (file.upload_state !== 'ready') {
     return <div className="notice warn">{t('image.uploadFailed')}</div>;
@@ -57,7 +89,7 @@ export function SignedImage({
         className="reference-preview"
         aria-label={t('image.openOriginal', { filename })}
         title={t('image.openOriginal', { filename })}
-        onClick={() => { window.open(url, '_blank', 'noopener,noreferrer'); }}
+        onClick={() => { void openOriginal(); }}
       >
         <img
           src={url}
@@ -66,6 +98,7 @@ export function SignedImage({
           decoding="async"
         />
       </button>
+      {openFailed ? <div className="notice">{t('image.openFailed')}</div> : null}
       {onRemove ? (
         <button
           type="button"
