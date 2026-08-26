@@ -178,6 +178,8 @@ select is((select schedule_anchor::text from timing_result), 'session_start', 'h
 select is((select anchor_offset_minutes from timing_result), -2880, 'two days maps to canonical signed minutes');
 select is((select rule_version from timing_result), 2, 'timing change creates a new rule version');
 select is((select pending_jobs_rescheduled from timing_result), 1, 'the pending unsent job is rescheduled');
+
+reset role;
 select is((select anchor_offset_minutes from public.automation_rules where id='f6700000-0000-4000-8000-000000000001'::uuid), -2880, 'only canonical rule timing changes');
 select ok((select is_enabled from public.automation_rules where id='f6700000-0000-4000-8000-000000000001'::uuid), 'timing change preserves enabled state');
 select is((select message_purpose from public.automation_rules where id='f6700000-0000-4000-8000-000000000001'::uuid), 'session_reminder_24h', 'timing change preserves message purpose');
@@ -199,11 +201,13 @@ select ok(
   'audit event carries bounded before/after timing state'
 );
 
+set local role authenticated;
 select is(
   (select rule_version from public.update_client_lifecycle_rule_timing('f6700000-0000-4000-8000-000000000001'::uuid, 'before_session_start', 2, 'days')),
   2,
   'saving identical timing is an idempotent no-op'
 );
+reset role;
 select is(
   (select count(*)::integer from public.activity_log where event_type='automation.rule_timing_updated' and artist_id='f6300000-0000-4000-8000-000000000001'::uuid),
   1,
@@ -220,7 +224,6 @@ select is(
   'timing mutation creates no provider outbox side effect'
 );
 
-reset role;
 update crm_private.profile_access
 set is_active=false
 where profile_id='f6100000-0000-4000-8000-000000000001'::uuid;
