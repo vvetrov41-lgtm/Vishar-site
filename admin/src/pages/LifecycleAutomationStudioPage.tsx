@@ -78,11 +78,11 @@ function LifecycleRuntimeDiagnostics({
   const pending = health.pending_job_count;
   const queueSummary = overdue > 0
     ? ru
-      ? `${overdue} ${russianTaskWord(overdue)} опаздывает больше чем на 15 минут.`
+      ? `${overdue} ${russianTaskWord(overdue)} ${overdue === 1 ? 'опаздывает' : 'опаздывают'} больше чем на 15 минут.`
       : `${overdue} ${overdue === 1 ? 'task is' : 'tasks are'} more than 15 minutes late.`
     : pending > 0
       ? ru
-        ? `${pending} ${russianTaskWord(pending)} ждёт своего времени. Просроченных нет.`
+        ? `${pending} ${russianTaskWord(pending)} ${pending === 1 ? 'ждёт' : 'ждут'} своего времени. Просроченных нет.`
         : `${pending} ${pending === 1 ? 'task is' : 'tasks are'} waiting for the scheduled time. None are overdue.`
       : ru
         ? 'Очередь пуста. Просроченных задач нет.'
@@ -104,11 +104,11 @@ function LifecycleRuntimeDiagnostics({
       <div className="dashboard-metrics">
         <div className="dashboard-metric stat">
           <span className="value">{pending}</span>
-          <span className="label">{ru ? 'ждёт выполнения' : 'waiting'}</span>
+          <span className="label">{ru ? 'ждут выполнения' : 'waiting'}</span>
         </div>
         <div className="dashboard-metric stat">
           <span className="value">{overdue}</span>
-          <span className="label">{ru ? 'опаздывает >15 мин' : 'overdue >15 min'}</span>
+          <span className="label">{ru ? 'опаздывают >15 мин' : 'overdue >15 min'}</span>
         </div>
       </div>
 
