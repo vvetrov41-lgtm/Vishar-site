@@ -149,6 +149,29 @@ describe('lifecycle control-plane API boundary', () => {
     });
   });
 
+  it('reads automation health only through the bounded Artist-scoped RPC', async () => {
+    const health = {
+      artist_id: 'artist-1',
+      health_status: 'healthy',
+      automation_enabled: true,
+      active_rule_count: 6,
+      disabled_rule_count: 0,
+      attention_item_count: 0,
+      missing_template_rule_count: 0,
+      invalid_rule_count: 0,
+      integration_available: true,
+      recent_failed_job_count: 0,
+      blocker_codes: [],
+    };
+    const { client, rpc } = clientWithRpc({ data: [health], error: null });
+    const api = createLifecycleApi(client);
+
+    await expect(api.getLifecycleAutomationHealth('artist-1')).resolves.toEqual(health);
+    expect(rpc).toHaveBeenCalledWith('get_lifecycle_automation_health', {
+      p_artist_id: 'artist-1',
+    });
+  });
+
   it('creates lifecycle rules through the typed RPC and cannot enable them during creation', async () => {
     const { client, rpc } = clientWithRpc({ data: 'rule-1', error: null });
     const api = createLifecycleApi(client);
