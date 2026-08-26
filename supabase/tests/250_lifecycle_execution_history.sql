@@ -7,15 +7,18 @@ insert into auth.users (
   created_at, updated_at
 ) values (
   'f5100000-0000-4000-8000-000000000001'::uuid,
-  '00000000-0000-0000-0000-000000000000'::uuid,
+  '00000000-0000-4000-8000-000000000000'::uuid,
   'authenticated', 'authenticated', 'history-owner@example.test',
   crypt('history-owner-password', gen_salt('bf')), now(),
   '{"provider":"email","providers":["email"]}'::jsonb,
   '{}'::jsonb, now(), now()
 );
 
-insert into public.user_profiles (id, full_name, role)
-values ('f5100000-0000-4000-8000-000000000001'::uuid, 'History Owner', 'owner');
+insert into public.profiles (id, email, display_name, role, is_active)
+values (
+  'f5100000-0000-4000-8000-000000000001'::uuid,
+  'history-owner@example.test', 'History Owner', 'owner', true
+);
 
 insert into public.workspaces (id, slug, display_name, created_by)
 values
@@ -35,10 +38,10 @@ values
   ('f5400000-0000-4000-8000-000000000001'::uuid, 'History Client', 'history-client@example.test'),
   ('f5400000-0000-4000-8000-000000000002'::uuid, 'Foreign History Client', 'foreign-history@example.test');
 
-insert into public.projects (id, client_id, title, status)
+insert into public.projects (id, client_id, artist_id, title, status)
 values
-  ('f5500000-0000-4000-8000-000000000001'::uuid, 'f5400000-0000-4000-8000-000000000001'::uuid, 'History Project', 'active'),
-  ('f5500000-0000-4000-8000-000000000002'::uuid, 'f5400000-0000-4000-8000-000000000002'::uuid, 'Foreign History Project', 'active');
+  ('f5500000-0000-4000-8000-000000000001'::uuid, 'f5400000-0000-4000-8000-000000000001'::uuid, 'f5300000-0000-4000-8000-000000000001'::uuid, 'History Project', 'active'),
+  ('f5500000-0000-4000-8000-000000000002'::uuid, 'f5400000-0000-4000-8000-000000000002'::uuid, 'f5300000-0000-4000-8000-000000000002'::uuid, 'Foreign History Project', 'active');
 
 insert into public.sessions (
   id, artist_id, client_id, project_id, appointment_type, start_at, end_at, status
