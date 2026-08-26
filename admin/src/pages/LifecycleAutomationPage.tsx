@@ -5,6 +5,7 @@ import { useArtistScope } from '../lib/artist-scope';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type {
+  ClientLifecycleExecutionHistoryRow,
   ClientLifecyclePreview,
   ClientLifecyclePreviewSession,
   ClientLifecyclePurpose,
@@ -23,8 +24,10 @@ interface LifecycleData {
   purposes: ClientLifecyclePurpose[];
   variables: ClientLifecycleVariable[];
   previewSessions: ClientLifecyclePreviewSession[];
+  history: ClientLifecycleExecutionHistoryRow[];
   canManage: boolean;
   canPreview: boolean;
+  canHistory: boolean;
   workspaceId: string;
 }
 
@@ -44,6 +47,13 @@ const PREVIEW_CAPABILITIES = [
   'view_finance',
 ] as const;
 
+const HISTORY_CAPABILITIES = [
+  'view_automations',
+  'view_sessions',
+  'view_clients',
+  'view_integrations',
+] as const;
+
 export function LifecycleAutomationPage() {
   const api = useApi();
   const { language } = useLanguage();
@@ -56,12 +66,13 @@ export function LifecycleAutomationPage() {
   const state = useAsync<LifecycleData | null>(async () => {
     if (!selectedArtistId) return null;
 
-    const [rules, templates, purposes, variables, previewSessions, capabilities, context] = await Promise.all([
+    const [rules, templates, purposes, variables, previewSessions, history, capabilities, context] = await Promise.all([
       api.listClientLifecycleRules(selectedArtistId),
       api.listClientLifecycleTemplates(selectedArtistId),
       api.listClientLifecycleTemplatePurposes(selectedArtistId),
       api.listClientLifecycleTemplateVariables(selectedArtistId),
       api.listClientLifecyclePreviewSessions(selectedArtistId),
+      api.listClientLifecycleExecutionHistory(selectedArtistId),
       api.listCapabilities(selectedArtistId),
       api.artistControlPlaneContext(selectedArtistId),
     ]);
@@ -80,8 +91,10 @@ export function LifecycleAutomationPage() {
       purposes,
       variables,
       previewSessions,
+      history,
       canManage: granted.has('manage_automations'),
       canPreview: PREVIEW_CAPABILITIES.every((capability) => granted.has(capability)),
+      canHistory: HISTORY_CAPABILITIES.every((capability) => granted.has(capability)),
       workspaceId: context.workspace_id,
     };
   }, [api, selectedArtistId]);
@@ -150,6 +163,15 @@ export function LifecycleAutomationPage() {
           sessions={data.previewSessions}
           canPreview={data.canPreview}
           onPreview={(ruleId, sessionId) => api.previewClientLifecycleRule(selectedArtistId, ruleId, sessionId)}
+        />
+      </Section>
+
+      <Section title={ru ? 'История выполнения' : 'Execution history'}>
+        <LifecycleExecutionHistoryPanel
+          key={selectedArtistId}
+          ru={ru}
+          rows={data.history}
+          canView={data.canHistory}
         />
       </Section>
 
@@ -285,6 +307,80 @@ export function LifecycleAutomationPage() {
           />
         ) : null}
       </Section>
+    </div>
+  );
+}
+
+function LifecycleExecutionHistoryPanel({
+  ru,
+  rows,
+  canView,
+}: {
+  ru: boolean;
+  rows: ClientLifecycleExecutionHistoryRow[];
+  canView: boolean;
+}) {
+  if (!canView) {
+    return (
+      <EmptyState
+        compact
+        title={ru ? 'История недоступна' : 'History unavailable'}
+        hint={ru
+          ? 'Для истории нужен доступ к автоматизациям, клиентам, записям и интеграциям этого мастера.'
+          : 'History requires access to this artist’s automations, clients, appointments and integrations.'}
+      />
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        compact
+        title={ru ? 'История пока пуста' : 'No execution history yet'}
+        hint={ru
+          ? 'Здесь появятся последние запланированные и выполненные автоматизации этого мастера.'
+          : 'The latest scheduled and completed automations for this artist will appear here.'}
+      />
+    );
+  }
+
+  return (
+    <div className="stack">
+      <div className="meta">
+        {ru
+          ? 'Последние 50 задач. История доступна только для чтения и не показывает адреса получателей, текст писем или ошибки провайдера.'
+          : 'Latest 50 jobs. History is read-only and never exposes recipient addresses, message bodies or raw provider errors.'}
+      </div>
+      {rows.map((row) => (
+        <article className="card" key={row.job_id}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <strong>{row.rule_name}</strong>
+              <div className="meta">
+                {row.client_name}
+                {' · '}{appointmentLabel(row.appointment_type, ru)}
+                {' · '}{row.message_purpose}
+                {' · '}v{row.rule_version}
+              </div>
+            </div>
+            <span className={`badge ${executionBadgeClass(row.lifecycle_status)}`}>
+              {executionStatusLabel(row.lifecycle_status, ru)}
+            </span>
+          </div>
+          <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '4px', margin: '14px 0 0' }}>
+            <dt className="meta">{ru ? 'Запланировано' : 'Scheduled for'}</dt>
+            <dd style={{ margin: 0 }}>{formatDateTime(row.scheduled_at, ru ? 'ru' : 'en')}</dd>
+            <dt className="meta">{ru ? 'Попытки' : 'Attempts'}</dt>
+            <dd style={{ margin: 0 }}>{row.attempt_count}</dd>
+            {row.failure_reason ? (
+              <>
+                <dt className="meta">{ru ? 'Причина' : 'Reason'}</dt>
+                <dd style={{ margin: 0 }}>{failureReasonLabel(row.failure_reason, ru)}</dd>
+              </>
+            ) : null}
+          </dl>
+        </article>
+      ))}
     </div>
   );
 }
@@ -752,6 +848,42 @@ function automationJobStatusLabel(status: NonNullable<ClientLifecyclePreview['ex
     failed: ['Failed', 'Ошибка'],
   };
   return labels[status][ru ? 1 : 0];
+}
+
+function executionStatusLabel(status: ClientLifecycleExecutionHistoryRow['lifecycle_status'], ru: boolean): string {
+  const labels: Record<ClientLifecycleExecutionHistoryRow['lifecycle_status'], [string, string]> = {
+    scheduled: ['Scheduled', 'Запланировано'],
+    pending: ['Pending', 'Ожидает'],
+    queued: ['Queued', 'В очереди'],
+    sent: ['Sent', 'Отправлено'],
+    suppressed: ['Suppressed', 'Отправка запрещена'],
+    withdrawn: ['Withdrawn', 'Снято'],
+    cancelled: ['Cancelled', 'Отменено'],
+    failed: ['Failed', 'Ошибка'],
+    retrying: ['Retrying', 'Повторная попытка'],
+  };
+  return labels[status][ru ? 1 : 0];
+}
+
+function executionBadgeClass(status: ClientLifecycleExecutionHistoryRow['lifecycle_status']): string {
+  if (status === 'sent') return 'ok';
+  if (['failed', 'suppressed', 'withdrawn', 'cancelled', 'retrying'].includes(status)) return 'warn';
+  return '';
+}
+
+function failureReasonLabel(reason: string, ru: boolean): string {
+  const labels: Record<string, [string, string]> = {
+    client_suppressed: ['Client communications are suppressed', 'Коммуникации с клиентом отключены'],
+    appointment_withdrawn: ['Appointment is no longer eligible', 'Запись больше не подходит для отправки'],
+    integration_unavailable: ['Email integration is unavailable', 'Email-интеграция недоступна'],
+    template_unavailable: ['Active template is unavailable', 'Нет подходящего активного шаблона'],
+    destination_unavailable: ['Delivery destination is unavailable', 'Адрес доставки недоступен'],
+    email_failed: ['Email preparation failed', 'Не удалось подготовить email'],
+    provider_delivery_failed: ['Provider delivery failed', 'Провайдер не доставил сообщение'],
+    delivery_state_missing: ['Delivery state could not be confirmed', 'Не удалось подтвердить состояние доставки'],
+    automation_failed: ['Automation failed', 'Ошибка автоматизации'],
+  };
+  return labels[reason]?.[ru ? 1 : 0] ?? (ru ? 'Неизвестная причина' : 'Unknown failure reason');
 }
 
 function blockerLabel(blocker: string, ru: boolean): string {
