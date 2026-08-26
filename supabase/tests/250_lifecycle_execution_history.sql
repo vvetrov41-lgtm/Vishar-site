@@ -75,16 +75,18 @@ insert into public.automation_rules (
    'send_client_message', 'Foreign History Rule', 'normal',
    'session_start', -1440, 'tattoo_session', 'session_reminder_24h', 'email', 'en', false);
 
-select set_config('test.history_event_home', public.record_appointment_event(
-  'f5300000-0000-4000-8000-000000000001'::uuid,
-  'appointment.scheduled', 'session', 'f5600000-0000-4000-8000-000000000001'::uuid,
-  null, 'confirmed', now()
-)::text, false);
-select set_config('test.history_event_foreign', public.record_appointment_event(
-  'f5300000-0000-4000-8000-000000000002'::uuid,
-  'appointment.scheduled', 'session', 'f5600000-0000-4000-8000-000000000002'::uuid,
-  null, 'confirmed', now()
-)::text, false);
+-- Jobs reference canonical automation_events directly. This avoids relying on
+-- a test-only event helper and mirrors the service-owned table shape exactly.
+insert into public.automation_events (
+  id, activity_id, artist_id, event_type, entity_kind, entity_id,
+  from_status, to_status, occurred_at
+) values
+  ('f5900000-0000-4000-8000-000000000001'::uuid, 'f5910000-0000-4000-8000-000000000001'::uuid,
+   'f5300000-0000-4000-8000-000000000001'::uuid, 'appointment.scheduled', 'session',
+   'f5600000-0000-4000-8000-000000000001'::uuid, null, 'confirmed', now()),
+  ('f5900000-0000-4000-8000-000000000002'::uuid, 'f5910000-0000-4000-8000-000000000002'::uuid,
+   'f5300000-0000-4000-8000-000000000002'::uuid, 'appointment.scheduled', 'session',
+   'f5600000-0000-4000-8000-000000000002'::uuid, null, 'confirmed', now());
 
 insert into public.automation_jobs (
   id, rule_id, rule_version, event_id, artist_id,
@@ -93,13 +95,13 @@ insert into public.automation_jobs (
   schedule_anchor, anchor_offset_minutes, condition_appointment_type,
   message_purpose, message_channel, message_locale, session_id
 ) values
-  ('f5800000-0000-4000-8000-000000000001'::uuid, 'f5700000-0000-4000-8000-000000000001'::uuid, 1, current_setting('test.history_event_home')::uuid, 'f5300000-0000-4000-8000-000000000001'::uuid,
+  ('f5800000-0000-4000-8000-000000000001'::uuid, 'f5700000-0000-4000-8000-000000000001'::uuid, 1, 'f5900000-0000-4000-8000-000000000001'::uuid, 'f5300000-0000-4000-8000-000000000001'::uuid,
    'send_client_message', 'History Rule', 'normal', now() + interval '1 day', 'pending', 0,
    'session_start', -1440, 'tattoo_session', 'session_reminder_24h', 'email', 'en', 'f5600000-0000-4000-8000-000000000001'::uuid),
-  ('f5800000-0000-4000-8000-000000000002'::uuid, 'f5700000-0000-4000-8000-000000000003'::uuid, 1, current_setting('test.history_event_home')::uuid, 'f5300000-0000-4000-8000-000000000001'::uuid,
+  ('f5800000-0000-4000-8000-000000000002'::uuid, 'f5700000-0000-4000-8000-000000000003'::uuid, 1, 'f5900000-0000-4000-8000-000000000001'::uuid, 'f5300000-0000-4000-8000-000000000001'::uuid,
    'send_client_message', 'History Rule', 'normal', now() - interval '1 day', 'cancelled', 1,
    'session_start', -1440, 'tattoo_session', 'session_reminder_24h', 'email', 'en', 'f5600000-0000-4000-8000-000000000001'::uuid),
-  ('f5800000-0000-4000-8000-000000000003'::uuid, 'f5700000-0000-4000-8000-000000000002'::uuid, 1, current_setting('test.history_event_foreign')::uuid, 'f5300000-0000-4000-8000-000000000002'::uuid,
+  ('f5800000-0000-4000-8000-000000000003'::uuid, 'f5700000-0000-4000-8000-000000000002'::uuid, 1, 'f5900000-0000-4000-8000-000000000002'::uuid, 'f5300000-0000-4000-8000-000000000002'::uuid,
    'send_client_message', 'Foreign History Rule', 'normal', now() + interval '1 day', 'pending', 0,
    'session_start', -1440, 'tattoo_session', 'session_reminder_24h', 'email', 'en', 'f5600000-0000-4000-8000-000000000002'::uuid);
 
