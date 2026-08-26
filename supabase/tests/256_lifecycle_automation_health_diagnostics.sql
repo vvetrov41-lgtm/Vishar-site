@@ -112,6 +112,9 @@ insert into public.projects (id, client_id, artist_id, title) values (
   'Diagnostics Project'
 );
 
+-- Use one transaction-stable, five-minute-aligned clock base. Session writes
+-- enforce five-minute increments, so raw now() (with seconds/microseconds)
+-- would make an otherwise valid diagnostics fixture fail before the RPC test.
 insert into public.sessions (
   id, project_id, client_id, artist_id, appointment_type, status, start_at, end_at
 ) values
@@ -120,28 +123,36 @@ insert into public.sessions (
     'fe800000-0000-4000-8000-000000000001',
     'fe700000-0000-4000-8000-000000000001',
     'fe300000-0000-4000-8000-000000000001',
-    'tattoo_session', 'confirmed', now() + interval '2 hours', now() + interval '9 hours'
+    'tattoo_session', 'confirmed',
+    date_trunc('hour', now()) + interval '2 hours',
+    date_trunc('hour', now()) + interval '9 hours'
   ),
   (
     'fe900000-0000-4000-8000-000000000002',
     'fe800000-0000-4000-8000-000000000001',
     'fe700000-0000-4000-8000-000000000001',
     'fe300000-0000-4000-8000-000000000001',
-    'tattoo_session', 'confirmed', now() - interval '30 minutes', now() + interval '6 hours 30 minutes'
+    'tattoo_session', 'confirmed',
+    date_trunc('hour', now()) - interval '30 minutes',
+    date_trunc('hour', now()) + interval '6 hours 30 minutes'
   ),
   (
     'fe900000-0000-4000-8000-000000000003',
     'fe800000-0000-4000-8000-000000000001',
     'fe700000-0000-4000-8000-000000000001',
     'fe300000-0000-4000-8000-000000000001',
-    'tattoo_session', 'completed', now() - interval '1 day', now() - interval '17 hours'
+    'tattoo_session', 'completed',
+    date_trunc('hour', now()) - interval '1 day',
+    date_trunc('hour', now()) - interval '17 hours'
   ),
   (
     'fe900000-0000-4000-8000-000000000004',
     'fe800000-0000-4000-8000-000000000001',
     'fe700000-0000-4000-8000-000000000001',
     'fe300000-0000-4000-8000-000000000001',
-    'tattoo_session', 'confirmed', now() - interval '3 hours', now() + interval '4 hours'
+    'tattoo_session', 'confirmed',
+    date_trunc('hour', now()) - interval '3 hours',
+    date_trunc('hour', now()) + interval '4 hours'
   );
 
 insert into public.automation_events (
@@ -149,16 +160,16 @@ insert into public.automation_events (
 ) values
   ('fea00000-0000-4000-8000-000000000001', 'feb00000-0000-4000-8000-000000000001',
    'fe300000-0000-4000-8000-000000000001', 'appointment.scheduled', 'session',
-   'fe900000-0000-4000-8000-000000000001', now() - interval '1 day'),
+   'fe900000-0000-4000-8000-000000000001', date_trunc('hour', now()) - interval '1 day'),
   ('fea00000-0000-4000-8000-000000000002', 'feb00000-0000-4000-8000-000000000002',
    'fe300000-0000-4000-8000-000000000001', 'appointment.scheduled', 'session',
-   'fe900000-0000-4000-8000-000000000002', now() - interval '1 day'),
+   'fe900000-0000-4000-8000-000000000002', date_trunc('hour', now()) - interval '1 day'),
   ('fea00000-0000-4000-8000-000000000003', 'feb00000-0000-4000-8000-000000000003',
    'fe300000-0000-4000-8000-000000000001', 'appointment.scheduled', 'session',
-   'fe900000-0000-4000-8000-000000000003', now() - interval '2 days'),
+   'fe900000-0000-4000-8000-000000000003', date_trunc('hour', now()) - interval '2 days'),
   ('fea00000-0000-4000-8000-000000000004', 'feb00000-0000-4000-8000-000000000004',
    'fe300000-0000-4000-8000-000000000001', 'appointment.scheduled', 'session',
-   'fe900000-0000-4000-8000-000000000004', now() - interval '1 day');
+   'fe900000-0000-4000-8000-000000000004', date_trunc('hour', now()) - interval '1 day');
 
 insert into public.automation_jobs (
   id, rule_id, rule_version, event_id, artist_id,
@@ -173,7 +184,8 @@ insert into public.automation_jobs (
     'fea00000-0000-4000-8000-000000000001',
     'fe300000-0000-4000-8000-000000000001',
     'send_client_message', 'Diagnostics reminder', 'normal',
-    now() + interval '2 hours', 'pending', 0, null, now(),
+    date_trunc('hour', now()) + interval '2 hours', 'pending', 0, null,
+    date_trunc('hour', now()),
     'session_start', -1440, 'tattoo_session',
     'session_reminder_24h', 'email', 'en',
     'fe900000-0000-4000-8000-000000000001'
@@ -184,7 +196,8 @@ insert into public.automation_jobs (
     'fea00000-0000-4000-8000-000000000002',
     'fe300000-0000-4000-8000-000000000001',
     'send_client_message', 'Diagnostics reminder', 'normal',
-    now() - interval '30 minutes', 'pending', 0, null, now() - interval '30 minutes',
+    date_trunc('hour', now()) - interval '30 minutes', 'pending', 0, null,
+    date_trunc('hour', now()) - interval '30 minutes',
     'session_start', -1440, 'tattoo_session',
     'session_reminder_24h', 'email', 'en',
     'fe900000-0000-4000-8000-000000000002'
@@ -195,7 +208,9 @@ insert into public.automation_jobs (
     'fea00000-0000-4000-8000-000000000003',
     'fe300000-0000-4000-8000-000000000001',
     'send_client_message', 'Diagnostics reminder', 'normal',
-    now() - interval '1 day', 'completed', 1, now() - interval '23 hours', now() - interval '23 hours',
+    date_trunc('hour', now()) - interval '1 day', 'completed', 1,
+    date_trunc('hour', now()) - interval '23 hours',
+    date_trunc('hour', now()) - interval '23 hours',
     'session_start', -1440, 'tattoo_session',
     'session_reminder_24h', 'email', 'en',
     'fe900000-0000-4000-8000-000000000003'
@@ -206,7 +221,8 @@ insert into public.automation_jobs (
     'fea00000-0000-4000-8000-000000000004',
     'fe300000-0000-4000-8000-000000000001',
     'send_client_message', 'Diagnostics reminder', 'normal',
-    now() - interval '3 hours', 'failed', 3, null, now() - interval '2 hours',
+    date_trunc('hour', now()) - interval '3 hours', 'failed', 3, null,
+    date_trunc('hour', now()) - interval '2 hours',
     'session_start', -1440, 'tattoo_session',
     'session_reminder_24h', 'email', 'en',
     'fe900000-0000-4000-8000-000000000004'
@@ -238,25 +254,25 @@ select is(
 select is(
   (select next_scheduled_at
    from public.get_lifecycle_automation_health('fe300000-0000-4000-8000-000000000001')),
-  now() + interval '2 hours',
+  date_trunc('hour', now()) + interval '2 hours',
   'diagnostics expose the next future pending schedule time'
 );
 select is(
   (select oldest_overdue_pending_at
    from public.get_lifecycle_automation_health('fe300000-0000-4000-8000-000000000001')),
-  now() - interval '30 minutes',
+  date_trunc('hour', now()) - interval '30 minutes',
   'diagnostics expose the oldest overdue pending schedule time'
 );
 select is(
   (select last_completed_at
    from public.get_lifecycle_automation_health('fe300000-0000-4000-8000-000000000001')),
-  now() - interval '23 hours',
+  date_trunc('hour', now()) - interval '23 hours',
   'diagnostics expose the most recent completed lifecycle job time'
 );
 select is(
   (select last_failed_at
    from public.get_lifecycle_automation_health('fe300000-0000-4000-8000-000000000001')),
-  now() - interval '2 hours',
+  date_trunc('hour', now()) - interval '2 hours',
   'diagnostics expose the most recent failed lifecycle job time'
 );
 
