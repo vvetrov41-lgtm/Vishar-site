@@ -89,7 +89,7 @@ describe('Lifecycle runtime diagnostics', () => {
     render(<LifecycleAutomationStudioPage />);
 
     expect(await screen.findByText('Очередь и выполнение')).toBeInTheDocument();
-    expect(screen.getByText('3 задачи ждёт своего времени. Просроченных нет.')).toBeInTheDocument();
+    expect(screen.getByText('3 задачи ждут своего времени. Просроченных нет.')).toBeInTheDocument();
     expect(screen.queryByText('Самая старая просроченная задача')).not.toBeInTheDocument();
     expect(screen.getByText(/Диагностика только читает агрегированные данные/)).toBeInTheDocument();
   });
