@@ -8,30 +8,40 @@ insert into auth.users (
 ) values (
   'f5100000-0000-4000-8000-000000000001'::uuid,
   '00000000-0000-4000-8000-000000000000'::uuid,
-  'authenticated', 'authenticated', 'history-owner@example.test',
-  crypt('history-owner-password', gen_salt('bf')), now(),
+  'authenticated', 'authenticated', 'history-reader@example.test',
+  crypt('history-reader-password', gen_salt('bf')), now(),
   '{"provider":"email","providers":["email"]}'::jsonb,
   '{}'::jsonb, now(), now()
 );
 
+-- Use a non-owner profile so installation-owner bootstrap triggers do not
+-- silently grant access to the foreign synthetic artist. The history RPC must
+-- prove its own exact artist capability boundary.
 insert into public.profiles (id, email, display_name, role, is_active)
 values (
   'f5100000-0000-4000-8000-000000000001'::uuid,
-  'history-owner@example.test', 'History Owner', 'owner', true
+  'history-reader@example.test', 'History Reader', 'booking_manager', true
 );
 
-insert into public.workspaces (id, slug, display_name, created_by)
+insert into public.workspaces (id, slug, display_name, workspace_type, is_active)
 values
-  ('f5200000-0000-4000-8000-000000000001'::uuid, 'history-home', 'History Home', 'f5100000-0000-4000-8000-000000000001'::uuid),
-  ('f5200000-0000-4000-8000-000000000002'::uuid, 'history-foreign', 'History Foreign', 'f5100000-0000-4000-8000-000000000001'::uuid);
-
-insert into public.workspace_memberships (workspace_id, profile_id, role, is_active, created_by)
-values ('f5200000-0000-4000-8000-000000000001'::uuid, 'f5100000-0000-4000-8000-000000000001'::uuid, 'owner', true, 'f5100000-0000-4000-8000-000000000001'::uuid);
+  ('f5200000-0000-4000-8000-000000000001'::uuid, 'history-home', 'History Home', 'studio', true),
+  ('f5200000-0000-4000-8000-000000000002'::uuid, 'history-foreign', 'History Foreign', 'studio', true);
 
 insert into public.artists (id, workspace_id, slug, display_name, timezone, default_currency, is_active)
 values
   ('f5300000-0000-4000-8000-000000000001'::uuid, 'f5200000-0000-4000-8000-000000000001'::uuid, 'history-home-artist', 'History Home Artist', 'Europe/London', 'GBP', true),
   ('f5300000-0000-4000-8000-000000000002'::uuid, 'f5200000-0000-4000-8000-000000000002'::uuid, 'history-foreign-artist', 'History Foreign Artist', 'Europe/London', 'GBP', true);
+
+insert into public.artist_memberships (
+  profile_id, artist_id, access_level,
+  can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active, grant_source
+) values (
+  'f5100000-0000-4000-8000-000000000001'::uuid,
+  'f5300000-0000-4000-8000-000000000001'::uuid,
+  'manager', false, false, false, false, true, 'explicit'
+);
 
 insert into public.clients (id, full_name, email)
 values
@@ -97,7 +107,7 @@ update public.automation_jobs
 set last_error_category = 'client_blocked', cancelled_at = now()
 where id = 'f5800000-0000-4000-8000-000000000002'::uuid;
 
-select test_set_auth_claims('f5100000-0000-4000-8000-000000000001'::uuid, 'owner');
+select test_set_auth_claims('f5100000-0000-4000-8000-000000000001'::uuid, 'booking_manager');
 set local role authenticated;
 
 select is(
