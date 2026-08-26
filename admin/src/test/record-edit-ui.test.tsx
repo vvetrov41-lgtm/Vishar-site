@@ -99,17 +99,25 @@ describe('CRM record editing UI', () => {
     expect(screen.getByText('+447700900099')).toBeInTheDocument();
   });
 
-  it('opens the original signed reference from its compact preview', async () => {
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+  it('mints a fresh signed reference before opening the original', async () => {
+    const replace = vi.fn();
+    const opened = {
+      opener: window,
+      location: { replace },
+      close: vi.fn(),
+    } as unknown as Window;
+    const open = vi.spyOn(window, 'open').mockReturnValue(opened);
     renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });
 
     const preview = await screen.findByRole('button', { name: 'Open full-size reference: reference-1.jpg' });
     fireEvent.click(preview);
-    expect(open).toHaveBeenCalledWith(
-      expect.stringContaining('https://storage.example.test/signed/'),
-      '_blank',
-      'noopener,noreferrer'
-    );
+    expect(open).toHaveBeenCalledWith('about:blank', '_blank');
+    expect(opened.opener).toBeNull();
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith(
+        expect.stringContaining('https://storage.example.test/signed/')
+      );
+    });
     open.mockRestore();
   });
 });
