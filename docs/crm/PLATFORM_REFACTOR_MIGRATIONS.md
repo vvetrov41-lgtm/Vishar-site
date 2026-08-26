@@ -40,10 +40,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0103` | Post-session check-in production activation | claimed on `agent/post-session-checkin-activation` |
 | `0104` | Lifecycle Automation Studio v2 read-only preview foundation | claimed on `agent/lifecycle-studio-preview-foundation` |
 | `0105` | Lifecycle Automation Studio v2 execution-history read foundation | claimed on `agent/lifecycle-execution-history-foundation` |
+| `0106` | Lifecycle Automation Studio v2 timing mutation foundation | claimed on `agent/lifecycle-timing-control` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0106`
+`0107`
 
 ## Allocation rule for unfinished phases
 
@@ -171,3 +172,12 @@ failed or retrying. It returns normalized failure categories and deliberately
 omits recipient addresses, message bodies, provider identifiers, provider
 payloads and raw provider/database errors. It requires current automation,
 session, client and integration read capabilities and performs no mutation.
+
+Lifecycle Automation Studio v2 timing mutation foundation claims `0106`. It
+adds one narrowly scoped authenticated RPC that accepts a positive amount,
+minutes/hours/days, and either before-session-start or after-session-end. The
+database converts that input to the canonical anchor and signed minute offset,
+enforces the existing 30-day and five-minute boundaries, versions only the
+owned lifecycle rule, and atomically moves pending unsent jobs onto the new
+version. Running and terminal job snapshots remain unchanged. The mutation
+writes a bounded before/after activity record with no client or provider data.
