@@ -31,6 +31,13 @@ export type LifecycleExecutionStatus =
 export type LifecycleEmailStatus = 'draft' | 'approved' | 'queued' | 'sent' | 'failed' | 'cancelled';
 export type LifecycleOutboxStatus = 'pending' | 'leased' | 'succeeded' | 'failed' | 'dead';
 export type MessageTemplateStatus = 'draft' | 'active' | 'retired';
+export type LifecycleAutomationHealthStatus = 'healthy' | 'attention' | 'inactive';
+export type LifecycleAutomationHealthBlocker =
+  | 'automation_paused'
+  | 'integration_unavailable'
+  | 'missing_active_template'
+  | 'invalid_rule'
+  | 'repeated_delivery_failures';
 
 export interface ClientLifecycleRule {
   id: string;
@@ -168,6 +175,20 @@ export interface LifecycleConfigurationHistoryRow {
 export interface LifecycleConfigurationHistoryCursor {
   occurredAt: string;
   activityId: string;
+}
+
+export interface LifecycleAutomationHealth {
+  artist_id: string;
+  health_status: LifecycleAutomationHealthStatus;
+  automation_enabled: boolean;
+  active_rule_count: number;
+  disabled_rule_count: number;
+  attention_item_count: number;
+  missing_template_rule_count: number;
+  invalid_rule_count: number;
+  integration_available: boolean;
+  recent_failed_job_count: number;
+  blocker_codes: LifecycleAutomationHealthBlocker[];
 }
 
 export interface ClientLifecycleTimingUpdate {
@@ -320,6 +341,14 @@ export function createLifecycleApi(client: CrmClient) {
         }),
         'load lifecycle configuration history',
       );
+    },
+
+    async getLifecycleAutomationHealth(artistId: string): Promise<LifecycleAutomationHealth | null> {
+      const rows = unwrap<LifecycleAutomationHealth[]>(
+        await client.rpc('get_lifecycle_automation_health', { p_artist_id: artistId }),
+        'load lifecycle automation health',
+      );
+      return rows[0] ?? null;
     },
 
     async upsertMessageTemplate(input: {

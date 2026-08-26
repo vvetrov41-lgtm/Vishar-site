@@ -79,6 +79,19 @@ function api(canManage = false, canPreview = true) {
   }
 
   return {
+    getLifecycleAutomationHealth: vi.fn(async () => ({
+      artist_id: ARTIST_ID,
+      health_status: 'healthy',
+      automation_enabled: true,
+      active_rule_count: 1,
+      disabled_rule_count: 0,
+      attention_item_count: 0,
+      missing_template_rule_count: 0,
+      invalid_rule_count: 0,
+      integration_available: true,
+      recent_failed_job_count: 0,
+      blocker_codes: [],
+    })),
     listClientLifecycleRules: vi.fn(async () => [{
       id: 'rule-1',
       artist_id: ARTIST_ID,
@@ -214,6 +227,8 @@ describe('Lifecycle automation control plane', () => {
     expect(screen.getByText('Your appointment')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show preview' })).toBeInTheDocument();
     expect(screen.getByText('Execution history')).toBeInTheDocument();
+    expect(screen.getByText('Automation health')).toBeInTheDocument();
+    expect(screen.getByText('All active automations are ready.')).toBeInTheDocument();
     expect(screen.getByText('Configuration history')).toBeInTheDocument();
     expect(screen.getByText('Saved template draft “24-hour session reminder”, version 1')).toBeInTheDocument();
     expect(screen.getByText('Scheduled')).toBeInTheDocument();
@@ -223,6 +238,37 @@ describe('Lifecycle automation control plane', () => {
     expect(screen.queryByRole('button', { name: 'Edit timing' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create disabled' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
+  });
+
+  it('renders health blockers in human language without raw server codes', async () => {
+    const lifecycle = api(false, true);
+    lifecycle.getLifecycleAutomationHealth.mockResolvedValue({
+      artist_id: ARTIST_ID,
+      health_status: 'attention',
+      automation_enabled: false,
+      active_rule_count: 2,
+      disabled_rule_count: 1,
+      attention_item_count: 3,
+      missing_template_rule_count: 1,
+      invalid_rule_count: 0,
+      integration_available: false,
+      recent_failed_job_count: 0,
+      blocker_codes: ['automation_paused', 'integration_unavailable', 'missing_active_template'],
+    });
+    vi.mocked(useLanguage).mockReturnValue({ language: 'ru', t: (key: string) => key } as any);
+    vi.mocked(useArtistScope).mockReturnValue(artistScope(ARTIST_ID));
+    vi.mocked(useApi).mockReturnValue(lifecycle);
+
+    render(<LifecycleAutomationPage />);
+
+    expect(await screen.findByText('Требует внимания')).toBeInTheDocument();
+    expect(screen.getByText('Причин для проверки: 3.')).toBeInTheDocument();
+    expect(screen.getByText('Автоматизации приостановлены')).toBeInTheDocument();
+    expect(screen.getByText('Email не подключён или недоступен')).toBeInTheDocument();
+    expect(screen.getByText('Для активного правила нет подходящего email-шаблона')).toBeInTheDocument();
+    expect(screen.queryByText('automation_paused')).not.toBeInTheDocument();
+    expect(screen.queryByText('integration_unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText('missing_active_template')).not.toBeInTheDocument();
   });
 
   it('uses only the read-only preview RPC path and renders human-readable blockers', async () => {

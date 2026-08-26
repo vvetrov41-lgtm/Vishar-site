@@ -8,6 +8,8 @@ import type {
   ClientLifecycleExecutionHistoryRow,
   LifecycleConfigurationHistoryCursor,
   LifecycleConfigurationHistoryRow,
+  LifecycleAutomationHealth,
+  LifecycleAutomationHealthBlocker,
   ClientLifecyclePreview,
   ClientLifecyclePreviewSession,
   ClientLifecyclePurpose,
@@ -24,6 +26,7 @@ import type {
 import { useApi } from '../lib/session';
 
 interface LifecycleData {
+  health: LifecycleAutomationHealth | null;
   rules: ClientLifecycleRule[];
   templates: ClientLifecycleTemplate[];
   purposes: ClientLifecyclePurpose[];
@@ -34,6 +37,7 @@ interface LifecycleData {
   canManage: boolean;
   canPreview: boolean;
   canHistory: boolean;
+  canViewHealth: boolean;
   workspaceId: string;
 }
 
@@ -62,6 +66,8 @@ const HISTORY_CAPABILITIES = [
   'view_integrations',
 ] as const;
 
+const HEALTH_CAPABILITIES = ['view_automations', 'view_integrations'] as const;
+
 export function LifecycleAutomationPage() {
   const api = useApi();
   const { language } = useLanguage();
@@ -74,7 +80,8 @@ export function LifecycleAutomationPage() {
   const state = useAsync<LifecycleData | null>(async () => {
     if (!selectedArtistId) return null;
 
-    const [rules, templates, purposes, variables, previewSessions, history, configurationHistory, capabilities, context] = await Promise.all([
+    const [health, rules, templates, purposes, variables, previewSessions, history, configurationHistory, capabilities, context] = await Promise.all([
+      api.getLifecycleAutomationHealth(selectedArtistId),
       api.listClientLifecycleRules(selectedArtistId),
       api.listClientLifecycleTemplates(selectedArtistId),
       api.listClientLifecycleTemplatePurposes(selectedArtistId),
@@ -95,6 +102,7 @@ export function LifecycleAutomationPage() {
     );
 
     return {
+      health,
       rules,
       templates,
       purposes,
@@ -105,6 +113,7 @@ export function LifecycleAutomationPage() {
       canManage: granted.has('manage_automations'),
       canPreview: PREVIEW_CAPABILITIES.every((capability) => granted.has(capability)),
       canHistory: HISTORY_CAPABILITIES.every((capability) => granted.has(capability)),
+      canViewHealth: HEALTH_CAPABILITIES.every((capability) => granted.has(capability)),
       workspaceId: context.workspace_id,
     };
   }, [api, selectedArtistId]);
@@ -164,6 +173,14 @@ export function LifecycleAutomationPage() {
       </div>
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
       {notice ? <div className="notice ok" role="status">{notice}</div> : null}
+
+      <Section title={ru ? 'Состояние автоматизаций' : 'Automation health'}>
+        <LifecycleAutomationHealthPanel
+          ru={ru}
+          health={data.health}
+          canView={data.canViewHealth}
+        />
+      </Section>
 
       <Section title={ru ? 'Предпросмотр' : 'Preview'}>
         <LifecyclePreviewPanel
@@ -346,6 +363,99 @@ export function LifecycleAutomationPage() {
       </Section>
     </div>
   );
+}
+
+function LifecycleAutomationHealthPanel({
+  ru,
+  health,
+  canView,
+}: {
+  ru: boolean;
+  health: LifecycleAutomationHealth | null;
+  canView: boolean;
+}) {
+  if (!canView || !health) {
+    return (
+      <EmptyState
+        compact
+        title={ru ? 'Состояние недоступно' : 'Health unavailable'}
+        hint={ru
+          ? 'Нужен доступ к автоматизациям и состоянию интеграций этого мастера.'
+          : 'Access to this artist’s automations and integration status is required.'}
+      />
+    );
+  }
+
+  const status = health.health_status === 'healthy'
+    ? (ru ? 'Всё работает' : 'Healthy')
+    : health.health_status === 'inactive'
+      ? (ru ? 'Нет активных правил' : 'No active rules')
+      : (ru ? 'Требует внимания' : 'Needs attention');
+  const summary = health.health_status === 'healthy'
+    ? (ru ? 'Все активные автоматизации готовы к работе.' : 'All active automations are ready.')
+    : health.health_status === 'inactive'
+      ? (ru ? 'Сейчас ни одна автоматизация не включена.' : 'No automations are currently enabled.')
+      : ru
+        ? `Причин для проверки: ${health.attention_item_count}.`
+        : `${health.attention_item_count} ${health.attention_item_count === 1 ? 'item needs' : 'items need'} attention.`;
+
+  return (
+    <article className="card">
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+        <div>
+          <strong>{summary}</strong>
+          <div className="meta" style={{ marginTop: 4 }}>
+            {ru ? 'Email-автоматизации этого мастера' : 'Email automations for this artist'}
+          </div>
+        </div>
+        <span className={`badge ${health.health_status === 'healthy' ? 'ok' : health.health_status === 'attention' ? 'warn' : ''}`}>
+          {status}
+        </span>
+      </div>
+
+      <div className="dashboard-metrics" style={{ marginTop: 16 }}>
+        <div className="dashboard-metric stat">
+          <span className="value">{health.active_rule_count}</span>
+          <span className="label">{ru ? 'включено' : 'active'}</span>
+        </div>
+        <div className="dashboard-metric stat">
+          <span className="value">{health.disabled_rule_count}</span>
+          <span className="label">{ru ? 'выключено' : 'disabled'}</span>
+        </div>
+        <div className="dashboard-metric stat">
+          <span className="value">{health.recent_failed_job_count}</span>
+          <span className="label">{ru ? 'ошибок за 7 дней' : 'failed in 7 days'}</span>
+        </div>
+      </div>
+
+      {health.blocker_codes.length > 0 ? (
+        <ul style={{ margin: '16px 0 0', paddingLeft: 20 }}>
+          {health.blocker_codes.map((blocker) => (
+            <li key={blocker}>{healthBlockerLabel(blocker, ru)}</li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  );
+}
+
+function healthBlockerLabel(blocker: LifecycleAutomationHealthBlocker, ru: boolean) {
+  const labels: Record<LifecycleAutomationHealthBlocker, [string, string]> = {
+    automation_paused: ['Automations are paused', 'Автоматизации приостановлены'],
+    integration_unavailable: ['Email connection is unavailable', 'Email не подключён или недоступен'],
+    missing_active_template: [
+      'An active rule is missing a usable email template',
+      'Для активного правила нет подходящего email-шаблона',
+    ],
+    invalid_rule: ['An active rule needs review', 'Настройки активного правила требуют проверки'],
+    repeated_delivery_failures: [
+      'Several recent email deliveries failed',
+      'Несколько недавних email не удалось отправить',
+    ],
+  };
+  const label = labels[blocker];
+  return label?.[ru ? 1 : 0]
+    ?? (ru ? 'Автоматизация требует проверки' : 'Automation needs review');
 }
 
 function LifecycleExecutionHistoryPanel({
