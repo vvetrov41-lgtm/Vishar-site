@@ -15,6 +15,8 @@ import type {
   LifecycleAppointmentType,
   LifecycleLocale,
   LifecycleScheduleAnchor,
+  LifecycleTimingDirection,
+  LifecycleTimingUnit,
 } from '../lib/lifecycle-api';
 import { useApi } from '../lib/session';
 
@@ -203,22 +205,33 @@ export function LifecycleAutomationPage() {
                     </span>
                   </div>
                   {data.canManage ? (
-                    <div className="actions" style={{ marginTop: 12 }}>
-                      <button
-                        type="button"
-                        disabled={busy || (!rule.is_enabled && !hasActiveTemplate)}
-                        title={!rule.is_enabled && !hasActiveTemplate
-                          ? (ru ? 'Сначала активируйте подходящий шаблон.' : 'Activate a matching template first.')
-                          : undefined}
-                        onClick={() => run(
-                          () => api.setAutomationRuleEnabled(rule.id, !rule.is_enabled),
-                          rule.is_enabled
-                            ? (ru ? 'Правило выключено.' : 'Rule disabled.')
-                            : (ru ? 'Правило включено.' : 'Rule enabled.'),
+                    <div style={{ marginTop: 12 }}>
+                      <div className="actions">
+                        <button
+                          type="button"
+                          disabled={busy || (!rule.is_enabled && !hasActiveTemplate)}
+                          title={!rule.is_enabled && !hasActiveTemplate
+                            ? (ru ? 'Сначала активируйте подходящий шаблон.' : 'Activate a matching template first.')
+                            : undefined}
+                          onClick={() => run(
+                            () => api.setAutomationRuleEnabled(rule.id, !rule.is_enabled),
+                            rule.is_enabled
+                              ? (ru ? 'Правило выключено.' : 'Rule disabled.')
+                              : (ru ? 'Правило включено.' : 'Rule enabled.'),
+                          )}
+                        >
+                          {rule.is_enabled ? (ru ? 'Выключить' : 'Disable') : (ru ? 'Включить' : 'Enable')}
+                        </button>
+                      </div>
+                      <RuleTimingEditor
+                        ru={ru}
+                        busy={busy}
+                        rule={rule}
+                        onSave={(timing) => run(
+                          () => api.updateClientLifecycleRuleTiming({ ruleId: rule.id, ...timing }),
+                          ru ? 'Время отправки обновлено.' : 'Timing updated.',
                         )}
-                      >
-                        {rule.is_enabled ? (ru ? 'Выключить' : 'Disable') : (ru ? 'Включить' : 'Enable')}
-                      </button>
+                      />
                     </div>
                   ) : null}
                 </article>
@@ -690,6 +703,115 @@ function RuleForm({
   );
 }
 
+function RuleTimingEditor({
+  ru,
+  busy,
+  rule,
+  onSave,
+}: {
+  ru: boolean;
+  busy: boolean;
+  rule: ClientLifecycleRule;
+  onSave: (timing: {
+    timingDirection: LifecycleTimingDirection;
+    amount: number;
+    unit: LifecycleTimingUnit;
+  }) => Promise<void>;
+}) {
+  const initial = timingEditorValue(rule);
+  const [editing, setEditing] = useState(false);
+  const [direction, setDirection] = useState<LifecycleTimingDirection>(initial.direction);
+  const [amount, setAmount] = useState(String(initial.amount));
+  const [unit, setUnit] = useState<LifecycleTimingUnit>(initial.unit);
+  const [validation, setValidation] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = timingEditorValue(rule);
+    setDirection(next.direction);
+    setAmount(String(next.amount));
+    setUnit(next.unit);
+    setValidation(null);
+  }, [rule.schedule_anchor, rule.anchor_offset_minutes]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const parsedAmount = Number(amount);
+    const minutes = parsedAmount * timingUnitMinutes(unit);
+    if (!Number.isSafeInteger(parsedAmount) || parsedAmount < 1) {
+      setValidation(ru ? 'Введите целое число не меньше 1.' : 'Enter a whole number of at least 1.');
+      return;
+    }
+    if (minutes > 43200) {
+      setValidation(ru ? 'Время должно быть не дальше 30 дней от записи.' : 'Timing must be within 30 days of the appointment.');
+      return;
+    }
+    if (minutes % 5 !== 0) {
+      setValidation(ru ? 'Минуты должны быть кратны 5.' : 'Minutes must be in 5-minute increments.');
+      return;
+    }
+    setValidation(null);
+    await onSave({ timingDirection: direction, amount: parsedAmount, unit });
+  }
+
+  if (!editing) {
+    return (
+      <div className="actions">
+        <button type="button" disabled={busy} onClick={() => setEditing(true)}>
+          {ru ? 'Изменить время' : 'Edit timing'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form className="stack card" style={{ marginTop: 12 }} onSubmit={(event) => { void submit(event); }}>
+      <div>
+        <strong>{ru ? 'Когда отправить' : 'When to send'}</strong>
+        <div className="meta" style={{ marginTop: 4 }}>
+          {timingChoiceLabel(direction, Number(amount), unit, ru)}
+        </div>
+      </div>
+      {validation ? <div className="notice warn" role="alert">{validation}</div> : null}
+      <label>
+        {ru ? 'Относительно записи' : 'Relative to appointment'}
+        <select
+          value={direction}
+          onChange={(event) => setDirection(event.target.value as LifecycleTimingDirection)}
+        >
+          <option value="before_session_start">{ru ? 'До начала записи' : 'Before appointment starts'}</option>
+          <option value="after_session_end">{ru ? 'После окончания записи' : 'After appointment ends'}</option>
+        </select>
+      </label>
+      <div className="field-row">
+        <label>
+          {ru ? 'Количество' : 'Amount'}
+          <input
+            type="number"
+            inputMode="numeric"
+            min="1"
+            max={Math.floor(43200 / timingUnitMinutes(unit))}
+            step={unit === 'minutes' ? 5 : 1}
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+          />
+        </label>
+        <label>
+          {ru ? 'Единица времени' : 'Time unit'}
+          <select value={unit} onChange={(event) => setUnit(event.target.value as LifecycleTimingUnit)}>
+            <option value="minutes">{ru ? 'Минуты' : 'Minutes'}</option>
+            <option value="hours">{ru ? 'Часы' : 'Hours'}</option>
+            <option value="days">{ru ? 'Дни' : 'Days'}</option>
+          </select>
+        </label>
+      </div>
+      <div className="actions">
+        <button className="primary" type="submit" disabled={busy}>{ru ? 'Сохранить время' : 'Save timing'}</button>
+        <button type="button" disabled={busy} onClick={() => setEditing(false)}>{ru ? 'Отмена' : 'Cancel'}</button>
+      </div>
+    </form>
+  );
+}
+
 function TemplateForm({
   ru,
   busy,
@@ -807,6 +929,37 @@ function scheduleLabel(rule: ClientLifecycleRule, ru: boolean): string {
   }
   if (minutes === 0) return ru ? 'в момент окончания' : 'at appointment end';
   return ru ? `${amount} после окончания` : `${amount} after end`;
+}
+
+function timingEditorValue(rule: ClientLifecycleRule): {
+  direction: LifecycleTimingDirection;
+  amount: number;
+  unit: LifecycleTimingUnit;
+} {
+  const minutes = Math.abs(rule.anchor_offset_minutes);
+  const direction = rule.schedule_anchor === 'session_end' ? 'after_session_end' : 'before_session_start';
+  if (minutes > 0 && minutes % 1440 === 0) return { direction, amount: minutes / 1440, unit: 'days' };
+  if (minutes > 0 && minutes % 60 === 0) return { direction, amount: minutes / 60, unit: 'hours' };
+  return { direction, amount: minutes, unit: 'minutes' };
+}
+
+function timingUnitMinutes(unit: LifecycleTimingUnit): number {
+  if (unit === 'days') return 1440;
+  if (unit === 'hours') return 60;
+  return 1;
+}
+
+function timingChoiceLabel(
+  direction: LifecycleTimingDirection,
+  amount: number,
+  unit: LifecycleTimingUnit,
+  ru: boolean,
+): string {
+  if (!Number.isFinite(amount) || amount < 1) return ru ? 'Укажите время' : 'Choose a time';
+  const duration = humanDuration(amount * timingUnitMinutes(unit), ru);
+  return direction === 'before_session_start'
+    ? (ru ? `${duration} до начала записи` : `${duration} before appointment starts`)
+    : (ru ? `${duration} после окончания записи` : `${duration} after appointment ends`);
 }
 
 function humanDuration(minutes: number, ru: boolean): string {

@@ -157,6 +157,32 @@ describe('lifecycle control-plane API boundary', () => {
     });
   });
 
+  it('changes timing only through the human timing RPC payload', async () => {
+    const update = {
+      rule_id: 'rule-1',
+      schedule_anchor: 'session_start',
+      anchor_offset_minutes: -2880,
+      rule_version: 2,
+      pending_jobs_rescheduled: 1,
+    };
+    const { client, rpc } = clientWithRpc({ data: [update], error: null });
+    const api = createLifecycleApi(client);
+
+    await expect(api.updateClientLifecycleRuleTiming({
+      ruleId: 'rule-1',
+      timingDirection: 'before_session_start',
+      amount: 2,
+      unit: 'days',
+    })).resolves.toEqual(update);
+
+    expect(rpc).toHaveBeenCalledWith('update_client_lifecycle_rule_timing', {
+      p_rule_id: 'rule-1',
+      p_timing_direction: 'before_session_start',
+      p_amount: 2,
+      p_unit: 'days',
+    });
+  });
+
   it('saves email templates as drafts through the existing template RPC', async () => {
     const { client, rpc } = clientWithRpc({ data: 'template-1', error: null });
     const api = createLifecycleApi(client);

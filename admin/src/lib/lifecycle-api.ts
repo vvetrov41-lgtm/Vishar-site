@@ -7,6 +7,8 @@ export type LifecycleAppointmentType =
   | 'touch_up';
 
 export type LifecycleScheduleAnchor = 'session_start' | 'session_end';
+export type LifecycleTimingDirection = 'before_session_start' | 'after_session_end';
+export type LifecycleTimingUnit = 'minutes' | 'hours' | 'days';
 export type LifecycleLocale = 'en' | 'ru';
 export type LifecycleSessionStatus =
   | 'draft'
@@ -130,6 +132,14 @@ export interface ClientLifecycleExecutionHistoryRow {
   updated_at: string;
 }
 
+export interface ClientLifecycleTimingUpdate {
+  rule_id: string;
+  schedule_anchor: LifecycleScheduleAnchor;
+  anchor_offset_minutes: number;
+  rule_version: number;
+  pending_jobs_rescheduled: number;
+}
+
 function unwrap<T>(result: { data: unknown; error: unknown }, action: string): T {
   if (result.error) throw new ApiError(`Could not ${action}.`, result.error);
   return (result.data ?? []) as T;
@@ -174,6 +184,25 @@ export function createLifecycleApi(client: CrmClient) {
       });
       if (result.error) throw new ApiError('Could not change lifecycle rule state.', result.error);
       return result.data === true;
+    },
+
+    async updateClientLifecycleRuleTiming(input: {
+      ruleId: string;
+      timingDirection: LifecycleTimingDirection;
+      amount: number;
+      unit: LifecycleTimingUnit;
+    }): Promise<ClientLifecycleTimingUpdate> {
+      const rows = unwrap<ClientLifecycleTimingUpdate[]>(
+        await client.rpc('update_client_lifecycle_rule_timing', {
+          p_rule_id: input.ruleId,
+          p_timing_direction: input.timingDirection,
+          p_amount: input.amount,
+          p_unit: input.unit,
+        }),
+        'change lifecycle rule timing',
+      );
+      if (!rows[0]) throw new ApiError('The lifecycle rule timing was not changed.', null);
+      return rows[0];
     },
 
     async listClientLifecycleTemplates(artistId: string): Promise<ClientLifecycleTemplate[]> {
