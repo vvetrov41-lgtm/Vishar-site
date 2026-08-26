@@ -740,6 +740,11 @@ insert into expected_function_acl values
   -- copy, client data or provider state in its result.
   ('public.list_lifecycle_configuration_history(uuid,integer,timestamptz,uuid)', false, true, false),
 
+  -- Lifecycle Studio health foundation (migration 0110). This is a bounded
+  -- aggregate read with exact Artist capability checks and no client data,
+  -- message copy, destinations or raw provider errors in its result.
+  ('public.get_lifecycle_automation_health(uuid)', false, true, false),
+
   -- Templates and the consent/suppression gate (migration 0082). The gate is
   -- readable by the backend as well, because every future send path must be
   -- able to ask it. Nothing here can record consent on the backend's behalf.
