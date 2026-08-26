@@ -119,6 +119,36 @@ describe('lifecycle control-plane API boundary', () => {
     });
   });
 
+  it('reads configuration history through the bounded cursor RPC', async () => {
+    const history = [{
+      activity_id: 'activity-1',
+      occurred_at: '2026-08-25T11:00:00Z',
+      event_type: 'automation.rule_updated',
+      entity_kind: 'rule',
+    }];
+    const { client, rpc } = clientWithRpc({ data: history, error: null });
+    const api = createLifecycleApi(client);
+
+    await expect(api.listLifecycleConfigurationHistory('artist-1')).resolves.toEqual(history);
+    expect(rpc).toHaveBeenLastCalledWith('list_lifecycle_configuration_history', {
+      p_artist_id: 'artist-1',
+      p_limit: 20,
+      p_before_occurred_at: null,
+      p_before_id: null,
+    });
+
+    await api.listLifecycleConfigurationHistory('artist-1', 10, {
+      occurredAt: '2026-08-25T11:00:00Z',
+      activityId: 'activity-1',
+    });
+    expect(rpc).toHaveBeenLastCalledWith('list_lifecycle_configuration_history', {
+      p_artist_id: 'artist-1',
+      p_limit: 10,
+      p_before_occurred_at: '2026-08-25T11:00:00Z',
+      p_before_id: 'activity-1',
+    });
+  });
+
   it('creates lifecycle rules through the typed RPC and cannot enable them during creation', async () => {
     const { client, rpc } = clientWithRpc({ data: 'rule-1', error: null });
     const api = createLifecycleApi(client);
