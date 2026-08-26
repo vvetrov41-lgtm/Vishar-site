@@ -3,12 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignedImage } from '../components/SignedImage';
 import type { EnquiryFile } from '../lib/types';
 
-const { signedFileUrl } = vi.hoisted(() => ({
-  signedFileUrl: vi.fn(),
-}));
+const { api, signedFileUrl } = vi.hoisted(() => {
+  const signedFileUrl = vi.fn();
+  return {
+    signedFileUrl,
+    api: { signedFileUrl },
+  };
+});
 
 vi.mock('../lib/session', () => ({
-  useApi: () => ({ signedFileUrl }),
+  useApi: () => api,
 }));
 
 vi.mock('../lib/i18n', () => ({
