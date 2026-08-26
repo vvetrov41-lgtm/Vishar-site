@@ -41,10 +41,12 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0104` | Lifecycle Automation Studio v2 read-only preview foundation | claimed on `agent/lifecycle-studio-preview-foundation` |
 | `0105` | Lifecycle Automation Studio v2 execution-history read foundation | claimed on `agent/lifecycle-execution-history-foundation` |
 | `0106` | Lifecycle Automation Studio v2 timing mutation foundation | claimed on `agent/lifecycle-timing-control` |
+| `0107` | Lifecycle Automation Studio v2 immutable template versioning | merged in PR #463 |
+| `0108` | Lifecycle Automation Studio v2 configuration mutation audit | claimed on `agent/lifecycle-configuration-audit` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0107`
+`0109`
 
 ## Allocation rule for unfinished phases
 
@@ -190,3 +192,11 @@ partial unique indexes make duplicate workspace or artist versions impossible.
 Activating a replacement continues to retire, rather than rewrite or delete,
 the previous active version, so execution history can retain the exact copy it
 used.
+
+Lifecycle Automation Studio v2 configuration mutation audit claims `0108`.
+Lifecycle rule creation and enablement now record stable rule identifiers plus
+bounded before/after state, while identical enablement requests are true
+no-ops. Artist-scoped template draft creation and activation record immutable
+template identifiers, slot fields, versions and status transitions. Audit
+metadata never copies template subjects or bodies and no mutation creates a
+job, email or provider-outbox row.
