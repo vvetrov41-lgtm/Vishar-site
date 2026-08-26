@@ -735,6 +735,11 @@ insert into expected_function_acl values
   -- checks; anon and the service backend receive no execute grant.
   ('public.update_client_lifecycle_rule_timing(uuid,text,integer,text)', false, true, false),
 
+  -- Lifecycle Studio configuration history (migration 0109). This is a
+  -- bounded typed Artist-scoped read with no raw activity metadata, template
+  -- copy, client data or provider state in its result.
+  ('public.list_lifecycle_configuration_history(uuid,integer,timestamptz,uuid)', false, true, false),
+
   -- Templates and the consent/suppression gate (migration 0082). The gate is
   -- readable by the backend as well, because every future send path must be
   -- able to ask it. Nothing here can record consent on the backend's behalf.
