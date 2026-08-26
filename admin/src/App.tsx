@@ -32,7 +32,7 @@ import { FocusedAppointmentPage } from './pages/FocusedAppointmentPage';
 import { InboxPage } from './pages/InboxPage';
 import { InstagramConnectionsPage } from './pages/InstagramConnectionsPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
-import { LifecycleAutomationPage } from './pages/LifecycleAutomationPage';
+import { LifecycleAutomationStudioPage } from './pages/LifecycleAutomationStudioPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
@@ -185,7 +185,7 @@ function Routes() {
     case '/availability':
       return <RequireCapability capability="viewSessions"><AvailabilityPage /></RequireCapability>;
     case '/automations':
-      return <RequireCapability capability="viewAutomations"><LifecycleAutomationPage /></RequireCapability>;
+      return <RequireCapability capability="viewAutomations"><LifecycleAutomationStudioPage /></RequireCapability>;
     case '/payments':
       return <RequireCapability capability="manageFinance"><PaymentsPage /></RequireCapability>;
     case '/integrations':

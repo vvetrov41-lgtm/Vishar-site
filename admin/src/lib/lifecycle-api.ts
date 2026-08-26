@@ -189,6 +189,12 @@ export interface LifecycleAutomationHealth {
   integration_available: boolean;
   recent_failed_job_count: number;
   blocker_codes: LifecycleAutomationHealthBlocker[];
+  pending_job_count: number;
+  overdue_pending_job_count: number;
+  next_scheduled_at: string | null;
+  oldest_overdue_pending_at: string | null;
+  last_completed_at: string | null;
+  last_failed_at: string | null;
 }
 
 export interface ClientLifecycleTimingUpdate {
