@@ -730,6 +730,11 @@ insert into expected_function_acl values
   -- internally and is unavailable to anon and the service backend.
   ('public.list_client_lifecycle_execution_history(uuid,integer)', false, true, false),
 
+  -- Lifecycle Studio timing control (migration 0106). The RPC is a narrow
+  -- authenticated mutation with its own artist capability and lifecycle-shape
+  -- checks; anon and the service backend receive no execute grant.
+  ('public.update_client_lifecycle_rule_timing(uuid,text,integer,text)', false, true, false),
+
   -- Templates and the consent/suppression gate (migration 0082). The gate is
   -- readable by the backend as well, because every future send path must be
   -- able to ask it. Nothing here can record consent on the backend's behalf.
