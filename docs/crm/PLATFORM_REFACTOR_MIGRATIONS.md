@@ -43,10 +43,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0106` | Lifecycle Automation Studio v2 timing mutation foundation | claimed on `agent/lifecycle-timing-control` |
 | `0107` | Lifecycle Automation Studio v2 immutable template versioning | merged in PR #463 |
 | `0108` | Lifecycle Automation Studio v2 configuration mutation audit | claimed on `agent/lifecycle-configuration-audit` |
+| `0109` | Lifecycle Automation Studio v2 configuration history read API | claimed on `agent/lifecycle-audit-history-read` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0109`
+`0110`
 
 ## Allocation rule for unfinished phases
 
@@ -200,3 +201,11 @@ no-ops. Artist-scoped template draft creation and activation record immutable
 template identifiers, slot fields, versions and status transitions. Audit
 metadata never copies template subjects or bodies and no mutation creates a
 job, email or provider-outbox row.
+
+Lifecycle Automation Studio v2 configuration history reads claim `0109`. A
+bounded cursor-paginated RPC projects only typed rule/template identifiers,
+versions, status/timing/enablement transitions and the internal actor display
+label for an authorized Artist. Raw activity metadata, template copy, client
+data and provider state are not part of the browser contract. Malformed legacy
+metadata normalizes to null instead of widening the projection or failing the
+whole history read.
