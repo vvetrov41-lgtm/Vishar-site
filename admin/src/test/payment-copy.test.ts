@@ -16,6 +16,7 @@ describe('Payments localisation', () => {
     expect(copy.createAmountLink(250)).toBe('Создать новый депозит сеанса на £250');
     expect(copy.requestDescription).toContain('7-часового сеанса');
     expect(copy.requestDescription).toContain('£250');
+    expect(copy.requestDescription).toContain('если деньги уже пришли');
     expect(copy.connectionConnected('Vladimir')).toContain('Подключение счёта Monzo');
   });
 
@@ -27,5 +28,6 @@ describe('Payments localisation', () => {
     expect(copy.confirmPayment).toBe('Confirm payment');
     expect(copy.createAmountLink(100)).toBe('Create new £100 session deposit');
     expect(copy.requestDescription).toContain('7-hour session');
+    expect(copy.requestDescription).toContain('already arrived');
   });
 });
