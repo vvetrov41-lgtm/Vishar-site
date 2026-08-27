@@ -173,7 +173,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       throw new ConfigurationError('rpc_not_allowed', 'That database operation is not available.');
     }
 
-    const response = await fetchImpl(`${url}/rest/v1/rpc/${name}`, {
+    const request = () => fetchImpl(`${url}/rest/v1/rpc/${name}`, {
       method: 'POST',
       headers: {
         ...authHeaders,
@@ -182,6 +182,18 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       },
       body: JSON.stringify(args ?? {}),
     });
+
+    let response = await request();
+
+    // Hosted Supabase secret keys are authenticated by the API gateway before
+    // PostgREST reaches PostgreSQL. Production has shown isolated gateway 401s
+    // while sibling RPCs with the same key succeed in the same cron tick. A
+    // single identical retry is therefore bounded to the only status proven to
+    // be pre-execution. Legacy JWT auth, every other 4xx and every 5xx keep the
+    // existing fail-closed behaviour.
+    if (!response.ok && response.status === 401 && keyKind === 'secret') {
+      response = await request();
+    }
 
     if (!response.ok) {
       throw new SupabaseError('database_unavailable', response.status);
