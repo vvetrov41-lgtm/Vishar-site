@@ -43,7 +43,10 @@ jobs:
         run: |
           set -euo pipefail
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
-          case "$GITHUB_REF_NAME" in release/private-crm-rc*-backend-auth-release-*|release/private-crm-rc*-backend-auth-observe-*) ;; *) exit 1 ;; esac
+          node --input-type=module >> "$GITHUB_ENV" <<'NODE'
+          import { operationFromRef } from './scripts/observe-backend-auth.mjs';
+          console.log('BACKEND_AUTH_OPERATION=' + operationFromRef(process.env.GITHUB_REF_NAME));
+          NODE
           [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
           [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
           [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
@@ -81,7 +84,7 @@ jobs:
           NODE
 
       - name: Dry-run Telegram shared scheduler
-        if: contains(github.ref_name, '-backend-auth-release-')
+        if: env.BACKEND_AUTH_OPERATION == 'release'
         shell: bash
         run: |
           set -euo pipefail
@@ -101,7 +104,7 @@ jobs:
           rm -f "$deploy_config"
 
       - name: Deploy Telegram shared scheduler
-        if: contains(github.ref_name, '-backend-auth-release-')
+        if: env.BACKEND_AUTH_OPERATION == 'release'
         shell: bash
         run: |
           set -euo pipefail
