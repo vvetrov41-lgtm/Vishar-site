@@ -32,7 +32,7 @@ scheduler-only release.
 
 ## Protected scheduler release and observation
 
-Create an `ops/backend-auth-release-*` branch at exact current canonical, then
+Create an `release/private-crm-rc*-backend-auth-release-*` branch at exact current canonical, then
 add one empty commit with identical tree. Branch creation does no work. The
 update runs the crm-production environment job, checks owner, immutable parent/
 tree/ref, current canonical and exact-head Static/CRM/Gmail success. It reuses
@@ -50,7 +50,7 @@ key-kind/client. SIGINT closes the tail, with a five-second termination bound.
 Only the safe JSON projection is uploaded, with seven-day retention. Version,
 secret names and relevant bindings are checked before and after observation.
 
-An `ops/backend-auth-observe-*` empty-commit branch uses the same guards and
+An `release/private-crm-rc*-backend-auth-observe-*` empty-commit branch uses the same guards and
 observer without any deploy. It requires the active version tag to match the
 approved canonical SHA. A window without 401 is inconclusive, never a fix.
 
@@ -65,3 +65,10 @@ Provider-side request-ID correlation may be needed for a definitive cause.
 Do not rotate keys, change auth headers or add retries based on status alone.
 After a proven bounded fix, require exact-head CI, deployed readback and multiple
 natural cron windows; successful ticks alone cannot establish remediation.
+
+The first diagnostic rollout attempt, run 33079058754, was rejected before any
+job steps because the protected environment does not allow `ops/*` branches.
+Use the existing approved `release/private-crm-rc*` namespace. Full private
+release and its observer explicitly reject `*-backend-auth-*` refs, including
+manual invocation, so these refs cannot apply migrations or deploy Pages.
+Environment protection rules are unchanged.
