@@ -1,3 +1,5 @@
+import { createBackendResponseObserver, readSafeSupabaseError } from './supabase-diagnostics.js';
+
 const BACKEND_RPCS = new Set([
   'service_resolve_gmail_target',
   'service_set_gmail_integration',
@@ -27,21 +29,22 @@ function safeJsonResponse(response) {
   return response.json().catch(() => null);
 }
 
-async function callRpc(origin, name, args, headers, fetchImpl) {
+async function callRpc(origin, name, args, headers, fetchImpl, observe) {
+  const startedAt = Date.now();
   const response = await fetchImpl(`${origin}/rest/v1/rpc/${name}`, {
     method: 'POST',
     headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(args || {}),
     redirect: 'error',
   });
-  const json = await safeJsonResponse(response);
+  const details = observe ? await observe(name, response, startedAt) : await readSafeSupabaseError(response);
   if (!response.ok) {
     const error = new Error(response.status === 401 || response.status === 403 ? 'gmail_rpc_forbidden' : 'gmail_rpc_failed');
     error.status = response.status;
-    error.code = typeof json?.code === 'string' ? json.code : null;
+    error.code = details.supabase_code;
     throw error;
   }
-  return json;
+  return safeJsonResponse(response);
 }
 
 export function createGmailSupabase(env, fetchImpl = fetch) {
@@ -50,11 +53,12 @@ export function createGmailSupabase(env, fetchImpl = fetch) {
   const publishable = String(env?.SUPABASE_PUBLISHABLE_KEY || '').trim();
   if (!secret.startsWith('sb_secret_')) throw new Error('gmail_supabase_secret_unavailable');
   if (!publishable.startsWith('sb_publishable_')) throw new Error('gmail_supabase_publishable_unavailable');
+  const observe = createBackendResponseObserver('gmail_backend', 'secret');
 
   return {
     async backendRpc(name, args) {
       if (!BACKEND_RPCS.has(name)) throw new Error('gmail_backend_rpc_not_allowed');
-      return callRpc(origin, name, args, { apikey: secret }, fetchImpl);
+      return callRpc(origin, name, args, { apikey: secret }, fetchImpl, observe);
     },
     async userRpc(name, args, bearer) {
       if (!USER_RPCS.has(name)) throw new Error('gmail_user_rpc_not_allowed');

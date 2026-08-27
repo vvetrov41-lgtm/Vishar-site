@@ -256,7 +256,10 @@ try {
   assert.equal(automationTickCalls, 1);
   assert.equal(automationHeartbeatCalls, 1);
   assert.ok(messages.includes('lifecycle failure alerts {"created":0}'));
-  assert.deepEqual(messages.filter((line) => !line.startsWith('lifecycle failure alerts')), [
+  const diagnosticLines = messages.filter(line => line.startsWith('{"event":"supabase_backend_response"'));
+  assert.equal(diagnosticLines.length, 3);
+  assert.ok(diagnosticLines.every(line => JSON.parse(line).status === 200));
+  assert.deepEqual(messages.filter((line) => !line.startsWith('lifecycle failure alerts') && !diagnosticLines.includes(line)), [
     'telegram outbox drain disabled',
     'gmail outbox shared drain disabled',
     'automation tick {"materialised":0,"withdrawn":0,"executed":0,"notified":0}',
@@ -292,7 +295,7 @@ try {
   );
   assert.equal(automationHeartbeatCalls, 0);
   assert.ok(messages.some((line) => line.includes('automation_tick_summary_invalid')));
-  assert.ok(messages.every((line) => !line.includes('materialised\":101')));
+  assert.ok(messages.every((line) => !line.includes('materialised":101')));
 
   // A fast failure must not let waitUntil settle while another responsibility
   // is still running. All shared-cron tasks retain their full execution window.

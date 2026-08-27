@@ -1,0 +1,168 @@
+name: Backend auth scheduler release
+
+on:
+  push:
+    branches:
+      - 'ops/backend-auth-release-*'
+      - 'ops/backend-auth-observe-*'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: backend-auth-scheduler-operation
+  cancel-in-progress: false
+
+jobs:
+  scheduler:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.event.before }}
+      WORKER_NAME: vishar-telegram-drain-production
+      DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      WRANGLER_LOG_PATH: /dev/null
+
+    steps:
+      - name: Checkout exact approved source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Gate immutable source and exact-head CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          case "$GITHUB_REF_NAME" in ops/backend-auth-release-*|ops/backend-auth-observe-*) ;; *) exit 1 ;; esac
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ -z "$(git status --short)" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$APPROVED_SHA" ]
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation'; do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+              --jq '.workflow_runs[] | {name,head_sha,status,conclusion}' | jq -s . > "$RUNNER_TEMP/auth-ci.json"
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/auth-ci.json" >/dev/null
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Privacy and deployment boundary tests
+        run: |
+          node scripts/test-supabase-secret-401-retry.mjs
+          node scripts/test-backend-auth-observer.mjs
+          node scripts/test-telegram-production-config.mjs
+          npm run scan:secrets
+
+      - name: Preflight unchanged live scheduler contract
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { snapshot } from './scripts/observe-backend-auth.mjs';
+          import { writeFile } from 'node:fs/promises';
+          const state = await snapshot(process.env);
+          await writeFile(process.env.RUNNER_TEMP + '/backend-auth-before.json', JSON.stringify(state));
+          console.log(JSON.stringify(state));
+          NODE
+
+      - name: Dry-run Telegram shared scheduler
+        if: startsWith(github.ref_name, 'ops/backend-auth-release-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy_config="$RUNNER_TEMP/telegram.deploy.toml"
+          node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config" --enable-linking
+          grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'GMAIL_SHARED_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'TELEGRAM_LINKING_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'binding = "GMAIL_SERVICE"' "$deploy_config"
+          grep -Fq 'service = "vishar-gmail-production"' "$deploy_config"
+          grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
+          npx wrangler deploy \
+            --config "$deploy_config" \
+            --name "$WORKER_NAME" \
+            --dry-run \
+            --outdir "$RUNNER_TEMP/telegram-production-generated"
+          rm -f "$deploy_config"
+
+      - name: Deploy Telegram shared scheduler
+        if: startsWith(github.ref_name, 'ops/backend-auth-release-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$DEPLOY_ENABLED" = 'true' ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$APPROVED_SHA" ]
+          node --input-type=module <<'NODE'
+          import { snapshot } from './scripts/observe-backend-auth.mjs';
+          import { readFile } from 'node:fs/promises';
+          const before = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/backend-auth-before.json', 'utf8'));
+          const now = await snapshot(process.env);
+          if (JSON.stringify(before) !== JSON.stringify(now)) throw new Error('Live scheduler changed before deploy');
+          NODE
+          deploy_config="$RUNNER_TEMP/telegram.deploy.toml"
+          deploy_output="$RUNNER_TEMP/telegram-production-wrangler-output.ndjson"
+          trap 'rm -f "$deploy_config" "$deploy_output"' EXIT
+          node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config" --enable-linking
+          node scripts/preflight-telegram-production.mjs "$deploy_config" --allow-linking
+          rm -f "$deploy_output"
+          WRANGLER_OUTPUT_FILE_PATH="$deploy_output" \
+            npx wrangler deploy --config "$deploy_config" --name "$WORKER_NAME" --tag "$APPROVED_SHA"
+          node scripts/preflight-telegram-production.mjs "$deploy_config" --allow-linking
+          node <<'NODE'
+          const fs = require('fs');
+          const lines = fs.readFileSync(process.env.RUNNER_TEMP + '/telegram-production-wrangler-output.ndjson', 'utf8')
+            .split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+          const deploys = lines.filter((entry) => entry?.type === 'deploy'
+            && entry?.worker_name === process.env.WORKER_NAME
+            && typeof entry?.version_id === 'string'
+            && entry.version_id.length > 0);
+          if (deploys.length !== 1) throw new Error('Unable to resolve exactly one Telegram deploy version');
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/telegram-deployed-version', deploys[0].version_id);
+          NODE
+          deployed_version="$(cat "$RUNNER_TEMP/telegram-deployed-version")"
+          versions="$(npx wrangler versions list --name "$WORKER_NAME" --json)"
+          VERSIONS="$versions" DEPLOYED_VERSION="$deployed_version" node <<'NODE'
+          const versions = JSON.parse(process.env.VERSIONS || '[]');
+          if (!Array.isArray(versions) || !versions.some((entry) => entry?.id === process.env.DEPLOYED_VERSION)) {
+            throw new Error('Deployed Telegram version is absent from Worker version readback');
+          }
+          NODE
+          rm -f "$deploy_config" "$deploy_output"
+          trap - EXIT
+
+      - name: Read back exact deployed source
+        run: |
+          node --input-type=module <<'NODE'
+          import { snapshot } from './scripts/observe-backend-auth.mjs';
+          const state = await snapshot(process.env);
+          if (state.source_sha !== process.env.APPROVED_SHA) throw new Error('Worker source tag mismatch');
+          console.log(JSON.stringify(state));
+          NODE
+
+      - name: Observe only natural cron responses
+        run: node scripts/observe-backend-auth.mjs "$RUNNER_TEMP/backend-auth-evidence.json"
+
+      - name: Upload only sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-auth-evidence-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/backend-auth-evidence.json
+          if-no-files-found: warn
+          retention-days: 7
