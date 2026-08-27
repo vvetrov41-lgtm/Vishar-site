@@ -134,9 +134,17 @@ export interface ClientLifecycleExecutionHistoryRow {
   email_status: LifecycleEmailStatus | null;
   outbox_status: LifecycleOutboxStatus | null;
   failure_reason: string | null;
+  retryable: boolean;
   attempt_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ClientLifecycleRetryResult {
+  job_id: string;
+  job_status: LifecycleAutomationJobStatus;
+  attempt_count: number;
+  scheduled_at: string;
 }
 
 export type LifecycleConfigurationEventType =
@@ -331,6 +339,15 @@ export function createLifecycleApi(client: CrmClient) {
         }),
         'load lifecycle execution history',
       );
+    },
+
+    async retryClientLifecycleJob(jobId: string): Promise<ClientLifecycleRetryResult> {
+      const rows = unwrap<ClientLifecycleRetryResult[]>(
+        await client.rpc('retry_client_lifecycle_job', { p_job_id: jobId }),
+        'retry lifecycle execution',
+      );
+      if (!rows[0]) throw new ApiError('The lifecycle execution was not retried.', null);
+      return rows[0];
     },
 
     async listLifecycleConfigurationHistory(
