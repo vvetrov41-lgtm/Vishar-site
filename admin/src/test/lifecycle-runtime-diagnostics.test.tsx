@@ -33,6 +33,8 @@ function health(overrides: Record<string, unknown> = {}) {
     oldest_overdue_pending_at: null,
     last_completed_at: '2026-08-26T09:00:00Z',
     last_failed_at: '2026-08-25T09:00:00Z',
+    scheduler_last_succeeded_at: '2026-08-27T09:55:00Z',
+    scheduler_stale: false,
     ...overrides,
   } as any;
 }
@@ -65,6 +67,8 @@ describe('Lifecycle runtime diagnostics', () => {
     render(<LifecycleAutomationStudioPage />);
 
     expect(await screen.findByText('Queue and execution')).toBeInTheDocument();
+    expect(screen.getByText('The scheduler is active.')).toBeInTheDocument();
+    expect(screen.getByText('Last successful scheduler run')).toBeInTheDocument();
     expect(screen.getByText('2 tasks are more than 15 minutes late.')).toBeInTheDocument();
     expect(screen.getByText('waiting')).toBeInTheDocument();
     expect(screen.getByText('overdue >15 min')).toBeInTheDocument();
@@ -89,9 +93,29 @@ describe('Lifecycle runtime diagnostics', () => {
     render(<LifecycleAutomationStudioPage />);
 
     expect(await screen.findByText('Очередь и выполнение')).toBeInTheDocument();
+    expect(screen.getByText('Планировщик работает.')).toBeInTheDocument();
     expect(screen.getByText('3 задачи ждут своего времени. Просроченных нет.')).toBeInTheDocument();
     expect(screen.queryByText('Самая старая просроченная задача')).not.toBeInTheDocument();
     expect(screen.getByText(/Диагностика только читает агрегированные данные/)).toBeInTheDocument();
+  });
+
+  it('warns about a missing scheduler heartbeat even when the queue is empty', async () => {
+    const getLifecycleAutomationHealth = vi.fn(async () => health({
+      pending_job_count: 0,
+      overdue_pending_job_count: 0,
+      next_scheduled_at: null,
+      scheduler_last_succeeded_at: null,
+      scheduler_stale: true,
+    }));
+    vi.mocked(useApi).mockReturnValue({ getLifecycleAutomationHealth } as any);
+
+    render(<LifecycleAutomationStudioPage />);
+
+    expect(await screen.findByText('A successful scheduler run has not been confirmed yet.')).toBeInTheDocument();
+    expect(screen.getByText(/After 15 minutes without a successful run/)).toBeInTheDocument();
+    expect(screen.getByText('The queue is empty. There are no overdue tasks.')).toBeInTheDocument();
+    expect(screen.getByText('Last successful scheduler run')).toBeInTheDocument();
+    expect(screen.getAllByText('None yet').length).toBeGreaterThan(0);
   });
 
   it('refreshes the same bounded health RPC on demand', async () => {

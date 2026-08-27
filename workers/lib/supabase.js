@@ -47,6 +47,11 @@ export const AUTOMATION_BACKEND_RPCS = new Set([
   'service_run_automation_tick',
 ]);
 
+/** Scheduler liveness proof is separate from the automation execution surface. */
+export const AUTOMATION_HEARTBEAT_RPCS = new Set([
+  'service_record_automation_scheduler_heartbeat',
+]);
+
 /** Appointment client-action capability surface, kept separate from booking resolvers. */
 export const APPOINTMENT_CLIENT_ACTION_RPCS = new Set([
   'service_resolve_appointment_client_action',
@@ -156,6 +161,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       !ALLOWED_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
+      && !AUTOMATION_HEARTBEAT_RPCS.has(name)
       && !APPOINTMENT_CLIENT_ACTION_RPCS.has(name)
       && !READ_ONLY_RPCS.has(name)
     ) {

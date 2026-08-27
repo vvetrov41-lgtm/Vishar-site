@@ -220,18 +220,26 @@ try {
 
   messages.length = 0;
   scheduledPromise = null;
-  let automationCalls = 0;
+  let automationTickCalls = 0;
+  let automationHeartbeatCalls = 0;
   globalThis.fetch = async (url, init = {}) => {
     const value = String(url);
-    assert.ok(value.endsWith('/rest/v1/rpc/service_run_automation_tick'));
-    assert.deepEqual(JSON.parse(init.body), { p_limit: 100 });
-    automationCalls += 1;
-    return Response.json([{
-      materialised: 0,
-      withdrawn: 0,
-      executed: 0,
-      notified: 0,
-    }]);
+    if (value.endsWith('/rest/v1/rpc/service_run_automation_tick')) {
+      assert.deepEqual(JSON.parse(init.body), { p_limit: 100 });
+      automationTickCalls += 1;
+      return Response.json([{
+        materialised: 0,
+        withdrawn: 0,
+        executed: 0,
+        notified: 0,
+      }]);
+    }
+    if (value.endsWith('/rest/v1/rpc/service_record_automation_scheduler_heartbeat')) {
+      assert.deepEqual(JSON.parse(init.body), {});
+      automationHeartbeatCalls += 1;
+      return Response.json('2026-08-27T09:55:00Z');
+    }
+    throw new Error(`unexpected automation backend call: ${value}`);
   };
   worker.scheduled({}, {
     TELEGRAM_DRAIN_ENABLED: 'false',
@@ -244,7 +252,8 @@ try {
   });
   assert.ok(scheduledPromise instanceof Promise);
   await scheduledPromise;
-  assert.equal(automationCalls, 1);
+  assert.equal(automationTickCalls, 1);
+  assert.equal(automationHeartbeatCalls, 1);
   assert.deepEqual(messages, [
     'telegram outbox drain disabled',
     'gmail outbox shared drain disabled',
@@ -253,7 +262,18 @@ try {
 
   messages.length = 0;
   scheduledPromise = null;
-  globalThis.fetch = async () => Response.json([{ materialised: 101, withdrawn: 0, executed: 0, notified: 0 }]);
+  automationHeartbeatCalls = 0;
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    if (value.endsWith('/rest/v1/rpc/service_run_automation_tick')) {
+      return Response.json([{ materialised: 101, withdrawn: 0, executed: 0, notified: 0 }]);
+    }
+    if (value.endsWith('/rest/v1/rpc/service_record_automation_scheduler_heartbeat')) {
+      automationHeartbeatCalls += 1;
+      return Response.json('should-not-be-written');
+    }
+    throw new Error(`unexpected automation backend call: ${value}`);
+  };
   worker.scheduled({}, {
     TELEGRAM_DRAIN_ENABLED: 'false',
     GMAIL_SHARED_DRAIN_ENABLED: 'false',
@@ -267,8 +287,9 @@ try {
     scheduledPromise,
     (error) => error?.code === 'automation_tick_summary_invalid',
   );
+  assert.equal(automationHeartbeatCalls, 0);
   assert.ok(messages.some((line) => line.includes('automation_tick_summary_invalid')));
-  assert.ok(messages.every((line) => !line.includes('materialised":101')));
+  assert.ok(messages.every((line) => !line.includes('materialised\":101')));
 
   // A fast failure must not let waitUntil settle while another responsibility
   // is still running. All shared-cron tasks retain their full execution window.
@@ -276,15 +297,22 @@ try {
   scheduledPromise = null;
   let releaseAutomation;
   let automationFinished = false;
-  globalThis.fetch = async () => {
-    await new Promise((resolve) => { releaseAutomation = resolve; });
-    automationFinished = true;
-    return Response.json([{
-      materialised: 0,
-      withdrawn: 0,
-      executed: 0,
-      notified: 0,
-    }]);
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    if (value.endsWith('/rest/v1/rpc/service_run_automation_tick')) {
+      await new Promise((resolve) => { releaseAutomation = resolve; });
+      return Response.json([{
+        materialised: 0,
+        withdrawn: 0,
+        executed: 0,
+        notified: 0,
+      }]);
+    }
+    if (value.endsWith('/rest/v1/rpc/service_record_automation_scheduler_heartbeat')) {
+      automationFinished = true;
+      return Response.json('2026-08-27T09:55:00Z');
+    }
+    throw new Error(`unexpected automation backend call: ${value}`);
   };
   worker.scheduled({}, {
     TELEGRAM_DRAIN_ENABLED: 'false',

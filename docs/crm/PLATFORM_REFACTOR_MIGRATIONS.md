@@ -44,10 +44,13 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0107` | Lifecycle Automation Studio v2 immutable template versioning | merged in PR #463 |
 | `0108` | Lifecycle Automation Studio v2 configuration mutation audit | claimed on `agent/lifecycle-configuration-audit` |
 | `0109` | Lifecycle Automation Studio v2 configuration history read API | claimed on `agent/lifecycle-audit-history-read` |
+| `0110` | Lifecycle Automation health projection | claimed on private CRM lineage |
+| `0111` | Lifecycle Automation runtime health diagnostics | claimed on private CRM lineage |
+| `0112` | Lifecycle scheduler heartbeat diagnostics | claimed on `agent/lifecycle-scheduler-heartbeat` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0110`
+`0113`
 
 ## Allocation rule for unfinished phases
 
@@ -209,3 +212,15 @@ label for an authorized Artist. Raw activity metadata, template copy, client
 data and provider state are not part of the browser contract. Malformed legacy
 metadata normalizes to null instead of widening the projection or failing the
 whole history read.
+
+Lifecycle Automation health and runtime diagnostics claim `0110` and `0111`.
+They provide the private CRM with a bounded read-only projection of rule,
+template, integration and queue state while keeping client addresses, message
+copy, destinations and raw provider errors out of the browser contract.
+
+Lifecycle scheduler heartbeat diagnostics claim `0112`. The migration adds a
+single private timestamp, writable only by the trusted backend after a valid
+scheduler tick result. The Artist health projection exposes only that timestamp
+and a 15-minute stale flag, allowing an empty queue to be distinguished from a
+scheduler that has stopped without storing Artist, client, appointment,
+message, provider or credential data.

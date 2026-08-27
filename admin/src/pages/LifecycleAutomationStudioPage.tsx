@@ -7,15 +7,20 @@ import type { LifecycleAutomationHealth } from '../lib/lifecycle-api';
 import { useApi } from '../lib/session';
 import { LifecycleAutomationPage } from './LifecycleAutomationPage';
 
+type LifecycleRuntimeHealth = LifecycleAutomationHealth & {
+  scheduler_last_succeeded_at: string | null;
+  scheduler_stale: boolean;
+};
+
 export function LifecycleAutomationStudioPage() {
   const api = useApi();
   const { selectedArtistId } = useArtistScope();
   const { language } = useLanguage();
   const ru = language === 'ru';
 
-  const diagnostics = useAsync<LifecycleAutomationHealth | null>(async () => {
+  const diagnostics = useAsync<LifecycleRuntimeHealth | null>(async () => {
     if (!selectedArtistId) return null;
-    return api.getLifecycleAutomationHealth(selectedArtistId);
+    return api.getLifecycleAutomationHealth(selectedArtistId) as Promise<LifecycleRuntimeHealth | null>;
   }, [api, selectedArtistId]);
 
   if (!selectedArtistId) return <LifecycleAutomationPage />;
@@ -51,7 +56,7 @@ function LifecycleRuntimeDiagnostics({
   onRetry,
 }: {
   ru: boolean;
-  health: LifecycleAutomationHealth | null;
+  health: LifecycleRuntimeHealth | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -88,8 +93,36 @@ function LifecycleRuntimeDiagnostics({
         ? 'Очередь пуста. Просроченных задач нет.'
         : 'The queue is empty. There are no overdue tasks.';
 
+  const schedulerSummary = health.scheduler_stale
+    ? health.scheduler_last_succeeded_at
+      ? ru
+        ? 'Планировщик давно не подтверждал успешный запуск.'
+        : 'The scheduler has not confirmed a successful run recently.'
+      : ru
+        ? 'Успешный запуск планировщика ещё не подтверждён.'
+        : 'A successful scheduler run has not been confirmed yet.'
+    : ru
+      ? 'Планировщик работает.'
+      : 'The scheduler is active.';
+
   return (
     <div className="stack" style={{ marginTop: 12 }}>
+      <div
+        className={health.scheduler_stale ? 'notice warn' : 'notice ok'}
+        role={health.scheduler_stale ? 'alert' : 'status'}
+      >
+        <strong>{schedulerSummary}</strong>
+        <div style={{ marginTop: 4 }}>
+          {ru
+            ? health.scheduler_stale
+              ? 'Он должен подтверждать работу примерно каждые 5 минут. После 15 минут без успешного запуска новые автоматизации нельзя считать гарантированно работающими.'
+              : 'Последний успешный запуск подтверждён сервером. Нормальный интервал планировщика — около 5 минут.'
+            : health.scheduler_stale
+              ? 'It should confirm work about every 5 minutes. After 15 minutes without a successful run, new automations should not be treated as reliably scheduled.'
+              : 'The last successful run was confirmed by the server. The normal scheduler interval is about 5 minutes.'}
+        </div>
+      </div>
+
       <div className={overdue > 0 ? 'notice warn' : 'notice ok'} role={overdue > 0 ? 'alert' : 'status'}>
         <strong>{queueSummary}</strong>
         {overdue > 0 ? (
@@ -113,6 +146,10 @@ function LifecycleRuntimeDiagnostics({
       </div>
 
       <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 6, margin: 0 }}>
+        <RuntimeRow
+          label={ru ? 'Последний успешный запуск планировщика' : 'Last successful scheduler run'}
+          value={runtimeDate(health.scheduler_last_succeeded_at, ru)}
+        />
         <RuntimeRow
           label={ru ? 'Следующая запланированная задача' : 'Next scheduled task'}
           value={runtimeDate(health.next_scheduled_at, ru)}

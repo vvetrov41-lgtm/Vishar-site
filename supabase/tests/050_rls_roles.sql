@@ -696,10 +696,12 @@ insert into expected_function_acl values
   ('public.snooze_follow_up(uuid,timestamptz)', false, true, false),
   ('public.set_notification_preference(public.notification_channel,boolean)', false, true, false),
 
-  -- Automation engine (migration 0081). The tick is backend-only; management
-  -- RPCs are browser-callable and enforce manage_automations in their bodies.
+  -- Automation engine (migration 0081) plus the privacy-safe scheduler
+  -- heartbeat recorder (migration 0112). Both calls are backend-only;
+  -- management RPCs remain browser-callable and enforce manage_automations.
   -- Every private helper stays uncallable by an API role.
   ('public.service_run_automation_tick(integer)', false, false, true),
+  ('public.service_record_automation_scheduler_heartbeat()', false, false, true),
   ('public.list_automation_rules(uuid)', false, true, false),
   ('public.create_automation_rule(uuid,text,text,text,text,text,text,integer,public.notification_priority)', false, true, false),
   ('public.set_automation_rule_enabled(uuid,boolean)', false, true, false),
