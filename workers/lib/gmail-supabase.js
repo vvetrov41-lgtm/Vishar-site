@@ -29,15 +29,27 @@ function safeJsonResponse(response) {
   return response.json().catch(() => null);
 }
 
-async function callRpc(origin, name, args, headers, fetchImpl, observe) {
-  const startedAt = Date.now();
-  const response = await fetchImpl(`${origin}/rest/v1/rpc/${name}`, {
-    method: 'POST',
-    headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify(args || {}),
-    redirect: 'error',
-  });
-  const details = observe ? await observe(name, response, startedAt) : await readSafeSupabaseError(response);
+async function callRpc(origin, name, args, headers, fetchImpl, observe, retrySecret401 = false) {
+  let details;
+  const request = async (attempt) => {
+    const startedAt = Date.now();
+    const response = await fetchImpl(`${origin}/rest/v1/rpc/${name}`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(args || {}),
+      redirect: 'error',
+    });
+    details = observe
+      ? await observe(name, response, startedAt, attempt)
+      : await readSafeSupabaseError(response);
+    return response;
+  };
+
+  let response = await request(1);
+  if (retrySecret401 && !response.ok && response.status === 401) {
+    response = await request(2);
+  }
+
   if (!response.ok) {
     const error = new Error(response.status === 401 || response.status === 403 ? 'gmail_rpc_forbidden' : 'gmail_rpc_failed');
     error.status = response.status;
@@ -58,7 +70,7 @@ export function createGmailSupabase(env, fetchImpl = fetch) {
   return {
     async backendRpc(name, args) {
       if (!BACKEND_RPCS.has(name)) throw new Error('gmail_backend_rpc_not_allowed');
-      return callRpc(origin, name, args, { apikey: secret }, fetchImpl, observe);
+      return callRpc(origin, name, args, { apikey: secret }, fetchImpl, observe, true);
     },
     async userRpc(name, args, bearer) {
       if (!USER_RPCS.has(name)) throw new Error('gmail_user_rpc_not_allowed');
