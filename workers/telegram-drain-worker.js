@@ -2,7 +2,7 @@ import {
   drainPersonalTelegramNotifications,
   drainTelegramOutbox,
 } from './lib/telegram-drain.js';
-import { runAutomationTick } from './lib/automation-tick.js';
+import { runAutomationTick, runLifecycleFailureAlerts } from './lib/automation-tick.js';
 import { ConfigurationError } from './lib/http.js';
 import { createSupabaseClient, SupabaseError } from './lib/supabase.js';
 import {
@@ -114,6 +114,19 @@ async function settleScheduledTasks(tasks) {
   const failed = results.find((result) => result.status === 'rejected');
   if (failed) throw failed.reason;
   return results.map((result) => result.value);
+}
+
+async function runScheduledLifecycleAlerts(env) {
+  try {
+    const summary = await runLifecycleFailureAlerts(env);
+    console.log('lifecycle failure alerts', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    console.error('lifecycle failure alerts failed', JSON.stringify({
+      code: safeFailureCode(error, 'lifecycle_alert_error'),
+    }));
+    throw error;
+  }
 }
 
 function json(status, value) {
@@ -254,7 +267,12 @@ export default {
     if (env.GMAIL_SHARED_DRAIN_ENABLED === 'true') tasks.push(runSharedGmailDrain(env));
     else console.log('gmail outbox shared drain disabled');
 
-    if (env.AUTOMATION_TICK_ENABLED === 'true') tasks.push(runScheduledAutomationTick(env));
+    if (env.AUTOMATION_TICK_ENABLED === 'true') {
+      tasks.push(runScheduledAutomationTick(env));
+      // Independent of the tick and provider drains: observe already-recorded
+      // failures even if another responsibility fails during this cron window.
+      tasks.push(runScheduledLifecycleAlerts(env));
+    }
     else console.log('automation tick disabled');
 
     if (!tasks.length) return;

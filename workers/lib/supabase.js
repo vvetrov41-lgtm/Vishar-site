@@ -52,6 +52,10 @@ export const AUTOMATION_HEARTBEAT_RPCS = new Set([
   'service_record_automation_scheduler_heartbeat',
 ]);
 
+export const LIFECYCLE_ALERT_RPCS = new Set([
+  'service_sweep_lifecycle_failure_alerts',
+]);
+
 /** Appointment client-action capability surface, kept separate from booking resolvers. */
 export const APPOINTMENT_CLIENT_ACTION_RPCS = new Set([
   'service_resolve_appointment_client_action',
@@ -162,6 +166,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
       && !AUTOMATION_HEARTBEAT_RPCS.has(name)
+      && !LIFECYCLE_ALERT_RPCS.has(name)
       && !APPOINTMENT_CLIENT_ACTION_RPCS.has(name)
       && !READ_ONLY_RPCS.has(name)
     ) {

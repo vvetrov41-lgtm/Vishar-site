@@ -48,3 +48,14 @@ export async function runAutomationTick(env, fetchImpl = fetch) {
 export const __testing = {
   TICK_LIMIT,
 };
+
+export async function runLifecycleFailureAlerts(env, fetchImpl = fetch) {
+  const supabase = createSupabaseClient(env, fetchImpl);
+  const created = await supabase.rpc('service_sweep_lifecycle_failure_alerts', { p_limit: 100 });
+  if (!Number.isSafeInteger(created) || created < 0 || created > 100) {
+    throw Object.assign(new Error('invalid lifecycle alert summary'), {
+      code: 'lifecycle_alert_summary_invalid',
+    });
+  }
+  return { created };
+}

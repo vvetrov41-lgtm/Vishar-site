@@ -17,7 +17,7 @@ import {
   snoozeUntil,
   type IntegrationStatus,
 } from '../lib/platform-api';
-import { describeDue } from '../pages/NotificationsPage';
+import { describeDue, notificationCopy } from '../pages/NotificationsPage';
 import { renderWithSession, VLADIMIR_ARTIST_ID } from './fixtures';
 
 function status(overrides: Partial<IntegrationStatus> = {}): IntegrationStatus {
@@ -192,5 +192,21 @@ describe('notification centre', () => {
   it('is reachable by a read-only account, because it shows only their own rows', async () => {
     renderWithSession(<App />, { role: 'read_only', path: '/notifications' });
     expect(await screen.findByRole('heading', { level: 2, name: /Unread/ })).toBeInTheDocument();
+  });
+});
+
+describe('lifecycle failure notification copy', () => {
+  it.each(['execution', 'delivery'])('localizes the %s alert without copying provider details', (category) => {
+    const notification = { notification_type: `automation.lifecycle_${category}_failed`, title: 'English title', body: 'English body' };
+    const ru = notificationCopy(notification, 'ru');
+    expect(ru.title).toMatch(/пись|писем/);
+    expect(ru.body).toContain('24 часа');
+    expect(ru.body).toContain('3 пис');
+    expect(ru.body).toContain('«Автоматизации»');
+    expect(notificationCopy(notification, 'en')).toEqual({ title: 'English title', body: 'English body' });
+  });
+  it('preserves ordinary notification copy', () => {
+    expect(notificationCopy({ notification_type: 'followup.due', title: 'Call client', body: null }, 'ru'))
+      .toEqual({ title: 'Call client', body: null });
   });
 });
