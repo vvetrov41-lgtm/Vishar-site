@@ -104,6 +104,7 @@ describe('lifecycle control-plane API boundary', () => {
       email_status: null,
       outbox_status: null,
       failure_reason: null,
+      retryable: false,
       attempt_count: 0,
       created_at: '2026-08-25T10:00:00Z',
       updated_at: '2026-08-25T10:00:00Z',
@@ -117,6 +118,31 @@ describe('lifecycle control-plane API boundary', () => {
       p_artist_id: 'artist-1',
       p_limit: 25,
     });
+  });
+
+  it('retries a failed lifecycle execution only through the dedicated server-validated RPC', async () => {
+    const retried = {
+      job_id: 'job-failed',
+      job_status: 'pending',
+      attempt_count: 2,
+      scheduled_at: '2026-08-25T16:00:00Z',
+    };
+    const { client, rpc } = clientWithRpc({ data: [retried], error: null });
+    const api = createLifecycleApi(client);
+
+    await expect(api.retryClientLifecycleJob('job-failed')).resolves.toEqual(retried);
+    expect(rpc).toHaveBeenCalledWith('retry_client_lifecycle_job', {
+      p_job_id: 'job-failed',
+    });
+  });
+
+  it('fails closed when the lifecycle recovery RPC returns no row', async () => {
+    const { client } = clientWithRpc({ data: [], error: null });
+    const api = createLifecycleApi(client);
+
+    await expect(api.retryClientLifecycleJob('job-missing')).rejects.toThrow(
+      'The lifecycle execution was not retried.',
+    );
   });
 
   it('reads configuration history through the bounded cursor RPC', async () => {
