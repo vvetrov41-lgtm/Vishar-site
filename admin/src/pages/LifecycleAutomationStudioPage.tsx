@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
-import type { LifecycleAutomationHealth } from '../lib/lifecycle-api';
+import type { ClientLifecycleExecutionHistoryRow, LifecycleAutomationHealth } from '../lib/lifecycle-api';
 import { useApi } from '../lib/session';
 import { LifecycleAutomationPage } from './LifecycleAutomationPage';
 
@@ -11,6 +12,11 @@ type LifecycleRuntimeHealth = LifecycleAutomationHealth & {
   scheduler_last_succeeded_at: string | null;
   scheduler_stale: boolean;
 };
+
+interface LifecycleRecoveryData {
+  rows: ClientLifecycleExecutionHistoryRow[];
+  canManage: boolean;
+}
 
 export function LifecycleAutomationStudioPage() {
   const api = useApi();
@@ -21,6 +27,18 @@ export function LifecycleAutomationStudioPage() {
   const diagnostics = useAsync<LifecycleRuntimeHealth | null>(async () => {
     if (!selectedArtistId) return null;
     return api.getLifecycleAutomationHealth(selectedArtistId) as Promise<LifecycleRuntimeHealth | null>;
+  }, [api, selectedArtistId]);
+
+  const recovery = useAsync<LifecycleRecoveryData | null>(async () => {
+    if (!selectedArtistId) return null;
+    const [rows, capabilities] = await Promise.all([
+      api.listClientLifecycleExecutionHistory(selectedArtistId),
+      api.listCapabilities(selectedArtistId),
+    ]);
+    const canManage = capabilities.some((grant) =>
+      grant.artist_id === selectedArtistId && grant.capability === 'manage_automations'
+    );
+    return { rows, canManage };
   }, [api, selectedArtistId]);
 
   if (!selectedArtistId) return <LifecycleAutomationPage />;
@@ -44,6 +62,157 @@ export function LifecycleAutomationStudioPage() {
           onRetry={diagnostics.reload}
         />
       </Section>
+
+      <Section
+        title={ru ? 'Безопасное восстановление ошибок' : 'Safe failure recovery'}
+        action={(
+          <button type="button" onClick={recovery.reload} disabled={recovery.loading}>
+            {ru ? 'Обновить' : 'Refresh'}
+          </button>
+        )}
+      >
+        <LifecycleRecoveryPanel
+          ru={ru}
+          data={recovery.data}
+          loading={recovery.loading}
+          error={recovery.error}
+          onRefresh={recovery.reload}
+          onRetry={async (jobId) => {
+            await api.retryClientLifecycleJob(jobId);
+            recovery.reload();
+            diagnostics.reload();
+          }}
+        />
+      </Section>
+    </div>
+  );
+}
+
+function LifecycleRecoveryPanel({
+  ru,
+  data,
+  loading,
+  error,
+  onRefresh,
+  onRetry,
+}: {
+  ru: boolean;
+  data: LifecycleRecoveryData | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+  onRetry: (jobId: string) => Promise<void>;
+}) {
+  const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  if (loading && !data) {
+    return <LoadingState label={ru ? 'Проверяем ошибки автоматизаций…' : 'Checking automation failures…'} />;
+  }
+
+  if (error && !data) return <ErrorState message={error} onRetry={onRefresh} />;
+
+  if (!data) {
+    return (
+      <EmptyState
+        compact
+        title={ru ? 'Восстановление недоступно' : 'Recovery unavailable'}
+        hint={ru
+          ? 'Для этой проверки нужен доступ к истории автоматизаций выбранного мастера.'
+          : 'This check requires access to the selected artist’s automation history.'}
+      />
+    );
+  }
+
+  const retryable = data.rows.filter((row) => row.retryable);
+
+  async function retry(jobId: string) {
+    setBusyJobId(jobId);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await onRetry(jobId);
+      setNotice(ru
+        ? 'Задача возвращена в очередь. Планировщик повторно проверит её перед выполнением.'
+        : 'The task was returned to the queue. The scheduler will validate it again before execution.');
+    } catch (cause) {
+      setActionError(cause instanceof Error
+        ? cause.message
+        : (ru ? 'Не удалось повторить задачу.' : 'Could not retry the task.'));
+    } finally {
+      setBusyJobId(null);
+    }
+  }
+
+  return (
+    <div className="stack" style={{ marginTop: 12 }}>
+      <div className="notice">
+        {ru
+          ? 'Повтор доступен только для ошибки, где сервер подтвердил, что email ещё не создавался. Ошибки доставки после создания письма здесь намеренно не повторяются, чтобы исключить дубли.'
+          : 'Retry is available only when the server confirms that no email was created. Delivery failures after email creation are deliberately not replayed here, preventing duplicate customer messages.'}
+      </div>
+      {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
+      {notice ? <div className="notice ok" role="status">{notice}</div> : null}
+      {error ? (
+        <div className="notice warn" role="alert">
+          {ru
+            ? 'Не удалось обновить список. Ниже остаётся последняя успешно загруженная версия.'
+            : 'Refresh failed. The last successfully loaded values remain visible.'}
+        </div>
+      ) : null}
+
+      {retryable.length === 0 ? (
+        <EmptyState
+          compact
+          title={ru ? 'Нет ошибок для безопасного повтора' : 'No failures are safe to retry'}
+          hint={ru
+            ? 'Сейчас нет failed-задач, которые сервер разрешает вернуть в очередь без риска повторной отправки.'
+            : 'There are currently no failed tasks that the server allows to requeue without duplicate-delivery risk.'}
+        />
+      ) : (
+        <div className="stack">
+          {retryable.map((row) => (
+            <article className="card" key={row.job_id}>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div>
+                  <strong>{row.rule_name}</strong>
+                  <div className="meta">
+                    {row.client_name}
+                    {' · '}{formatDateTime(row.scheduled_at, ru ? 'ru' : 'en')}
+                    {' · '}{ru ? `попыток: ${row.attempt_count}` : `attempts: ${row.attempt_count}`}
+                  </div>
+                </div>
+                <span className="badge warn">{ru ? 'Можно повторить' : 'Retryable'}</span>
+              </div>
+              {row.failure_reason ? (
+                <div className="meta" style={{ marginTop: 10 }}>
+                  {ru ? 'Ошибка выполнения до создания email.' : 'Execution failed before email creation.'}
+                </div>
+              ) : null}
+              {data.canManage ? (
+                <div className="actions" style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    disabled={busyJobId !== null}
+                    onClick={() => { void retry(row.job_id); }}
+                  >
+                    {busyJobId === row.job_id
+                      ? (ru ? 'Возвращаем в очередь…' : 'Requeueing…')
+                      : (ru ? 'Повторить безопасно' : 'Retry safely')}
+                  </button>
+                </div>
+              ) : (
+                <div className="meta" style={{ marginTop: 10 }}>
+                  {ru
+                    ? 'Для повтора нужен доступ к управлению автоматизациями.'
+                    : 'Managing automations permission is required to retry this task.'}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
