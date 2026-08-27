@@ -47,10 +47,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0110` | Lifecycle Automation health projection | claimed on private CRM lineage |
 | `0111` | Lifecycle Automation runtime health diagnostics | claimed on private CRM lineage |
 | `0112` | Lifecycle scheduler heartbeat diagnostics | claimed on `agent/lifecycle-scheduler-heartbeat` |
+| `0113` | Lifecycle failure alerts | claimed on `agent/lifecycle-failure-alerts-v2` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0113`
+`0114`
 
 ## Allocation rule for unfinished phases
 
@@ -224,3 +225,16 @@ scheduler tick result. The Artist health projection exposes only that timestamp
 and a 15-minute stale flag, allowing an empty queue to be distinguished from a
 scheduler that has stopped without storing Artist, client, appointment,
 message, provider or credential data.
+
+Lifecycle failure alerts claim `0113`. A backend-only bounded sweep uses the
+existing notification inbox and personal Telegram delivery. It counts distinct
+failed lifecycle jobs in the preceding 24 hours, separately for execution and
+provider delivery, and notifies current Artist recipients after three failures.
+The unique notification key limits each recipient to one alert per Artist,
+category and UTC day. Recovered sends, cancellations and old failures are
+excluded; global/workspace/Artist kill switches remain authoritative. At most
+100 notifications are created per sweep, with existing keys filtered before
+the limit. No new scheduler, customer email or provider credential is added.
+The shared scheduler runs this task independently of the automation tick and
+provider drains. These alerts do not detect a stopped scheduler: `0112` remains
+the read-only liveness signal. CRM alert copy supports English and Russian.

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   AUTOMATION_BACKEND_RPCS,
+  LIFECYCLE_ALERT_RPCS,
   TELEGRAM_SELF_SERVICE_RPCS,
 } from '../workers/lib/supabase.js';
 import { __testing as telegramDrainTesting } from '../workers/lib/telegram-drain.js';
@@ -45,6 +46,9 @@ if (JSON.stringify(telegramRpcSurface) !== JSON.stringify(expectedTelegramRpcSur
 }
 
 const automationRpcSurface = [...AUTOMATION_BACKEND_RPCS].sort();
+if (JSON.stringify([...LIFECYCLE_ALERT_RPCS]) !== JSON.stringify(['service_sweep_lifecycle_failure_alerts'])) {
+  throw new Error('Lifecycle alert backend RPC surface changed');
+}
 if (JSON.stringify(automationRpcSurface) !== JSON.stringify(['service_run_automation_tick'])) {
   throw new Error(`Automation backend Worker RPC surface changed: ${automationRpcSurface.join(', ')}`);
 }

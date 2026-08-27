@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { assertAutomationTickSummary } from '../workers/lib/automation-tick.js';
+import { assertAutomationTickSummary, runLifecycleFailureAlerts } from '../workers/lib/automation-tick.js';
 import worker, { __testing } from '../workers/telegram-drain-worker.js';
 
 assert.equal(typeof worker.scheduled, 'function');
@@ -132,7 +132,7 @@ try {
     waitUntil() { waited = true; },
   });
   assert.equal(waited, false);
-  assert.deepEqual(messages, [
+  assert.deepEqual(messages.filter((line) => !line.startsWith('lifecycle failure alerts')), [
     'telegram outbox drain disabled',
     'gmail outbox shared drain disabled',
     'automation tick disabled',
@@ -239,6 +239,7 @@ try {
       automationHeartbeatCalls += 1;
       return Response.json('2026-08-27T09:55:00Z');
     }
+    if (value.endsWith('/rest/v1/rpc/service_sweep_lifecycle_failure_alerts')) return Response.json(0);
     throw new Error(`unexpected automation backend call: ${value}`);
   };
   worker.scheduled({}, {
@@ -254,7 +255,8 @@ try {
   await scheduledPromise;
   assert.equal(automationTickCalls, 1);
   assert.equal(automationHeartbeatCalls, 1);
-  assert.deepEqual(messages, [
+  assert.ok(messages.includes('lifecycle failure alerts {"created":0}'));
+  assert.deepEqual(messages.filter((line) => !line.startsWith('lifecycle failure alerts')), [
     'telegram outbox drain disabled',
     'gmail outbox shared drain disabled',
     'automation tick {"materialised":0,"withdrawn":0,"executed":0,"notified":0}',
@@ -272,6 +274,7 @@ try {
       automationHeartbeatCalls += 1;
       return Response.json('should-not-be-written');
     }
+    if (value.endsWith('/rest/v1/rpc/service_sweep_lifecycle_failure_alerts')) return Response.json(0);
     throw new Error(`unexpected automation backend call: ${value}`);
   };
   worker.scheduled({}, {
@@ -312,6 +315,7 @@ try {
       automationFinished = true;
       return Response.json('2026-08-27T09:55:00Z');
     }
+    if (value.endsWith('/rest/v1/rpc/service_sweep_lifecycle_failure_alerts')) return Response.json(0);
     throw new Error(`unexpected automation backend call: ${value}`);
   };
   worker.scheduled({}, {
@@ -350,10 +354,48 @@ try {
     'automation tick {"materialised":0,"withdrawn":0,"executed":0,"notified":0}',
   ));
   assert.ok(messages.some((line) => line.includes('gmail_unit_test_failure')));
+
+  // Alert failure is isolated: a valid automation tick still records its real
+  // heartbeat, and the shared cron waits for both tasks before rejecting.
+  messages.length = 0;
+  let heartbeatAfterAlertFailure = false;
+  globalThis.fetch = async (url) => {
+    const path = String(url);
+    if (path.endsWith('/service_run_automation_tick')) return Response.json([{ materialised: 0, withdrawn: 0, executed: 0, notified: 0 }]);
+    if (path.endsWith('/service_record_automation_scheduler_heartbeat')) {
+      heartbeatAfterAlertFailure = true;
+      return Response.json('2026-08-27T10:00:00Z');
+    }
+    if (path.endsWith('/service_sweep_lifecycle_failure_alerts')) return Response.json({ message: 'private provider error' }, { status: 503 });
+    throw new Error('unexpected RPC');
+  };
+  worker.scheduled({}, {
+    AUTOMATION_TICK_ENABLED: 'true',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role',
+  }, { waitUntil(promise) { scheduledPromise = promise; } });
+  await assert.rejects(scheduledPromise, (error) => error?.code === 'database_unavailable');
+  assert.equal(heartbeatAfterAlertFailure, true);
+  assert.ok(messages.some((line) => line.startsWith('lifecycle failure alerts failed')));
+  assert.ok(messages.every((line) => !line.includes('private provider error')));
 } finally {
   console.log = originalLog;
   console.error = originalError;
   globalThis.fetch = originalFetch;
 }
+
+
+
+const alertEnv = { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-role' };
+assert.deepEqual(await runLifecycleFailureAlerts(alertEnv, async (url, init) => {
+  assert.ok(String(url).endsWith('/rest/v1/rpc/service_sweep_lifecycle_failure_alerts'));
+  assert.deepEqual(JSON.parse(init.body), { p_limit: 100 });
+  return Response.json(3);
+}), { created: 3 });
+for (const invalid of [-1, 101, 0.5, null, '3', { created: 3 }]) {
+  await assert.rejects(runLifecycleFailureAlerts(alertEnv, async () => Response.json(invalid)),
+    (error) => error?.code === 'lifecycle_alert_summary_invalid');
+}
+await assert.rejects(runLifecycleFailureAlerts(alertEnv, async () => { throw new Error('offline'); }));
 
 console.log('Telegram drain Worker tests passed: appointment actions share the bounded HTTP runtime while Telegram, Gmail and automation keep one isolated cron.');

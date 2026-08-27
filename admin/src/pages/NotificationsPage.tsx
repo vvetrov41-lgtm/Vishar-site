@@ -187,19 +187,20 @@ function NotificationCard({
 }) {
   const { language } = useLanguage();
   const overdue = describeDue(notification.scheduled_at, language);
+  const copy = notificationCopy(notification, language);
   const target = entityLink(notification);
   const canSnooze = Boolean(onSnooze) && notification.entity_type === 'follow_up';
 
   return (
     <li className="card" data-priority={notification.priority} data-status={notification.status}>
       <div className="card-header">
-        <strong>{notification.title}</strong>
+        <strong>{copy.title}</strong>
         {notification.artist_label ? (
           <span className="badge">{notification.artist_label}</span>
         ) : null}
       </div>
 
-      {notification.body ? <p>{notification.body}</p> : null}
+      {copy.body ? <p>{copy.body}</p> : null}
       <p className="muted">{overdue}</p>
 
       <div className="actions">
@@ -242,6 +243,25 @@ export function entityLink(notification: CrmNotification): string | null {
     case 'integration': return '/integrations';
     default: return null;
   }
+}
+
+export function notificationCopy(
+  notification: Pick<CrmNotification, 'notification_type' | 'title' | 'body'>,
+  language: 'en' | 'ru',
+): { title: string; body: string | null } {
+  if (language === 'ru' && notification.notification_type === 'automation.lifecycle_execution_failed') {
+    return {
+      title: 'Не удалось подготовить автоматические письма',
+      body: 'За последние 24 часа возникли ошибки при подготовке как минимум 3 писем. Открой раздел «Автоматизации» нужного мастера и проверь ошибки.',
+    };
+  }
+  if (language === 'ru' && notification.notification_type === 'automation.lifecycle_delivery_failed') {
+    return {
+      title: 'Возникли ошибки доставки автоматических писем',
+      body: 'За последние 24 часа ошибки доставки затронули как минимум 3 письма. Открой раздел «Автоматизации» нужного мастера и проверь историю отправок.',
+    };
+  }
+  return { title: notification.title, body: notification.body };
 }
 
 export function describeDue(scheduledAt: string, language: 'en' | 'ru', now = new Date()): string {
