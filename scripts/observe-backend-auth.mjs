@@ -10,6 +10,13 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const SECRET_NAMES = ['ARTIST_TELEGRAM_KRISTINA_HPRODUCTION', 'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
   'SUPABASE_SECRET_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET'].sort();
 
+// The operation comes from the first, anchored subtype, never from its suffix.
+export function operationFromRef(ref) {
+  const match = /^release\/private-crm-rc[0-9]+-backend-auth-(release|observe)-[a-z0-9]+(?:-[a-z0-9]+)*$/.exec(ref || '');
+  if (!match) throw new Error('backend_auth_ref_invalid');
+  return match[1];
+}
+
 // Wrangler prints pretty JSON objects, not NDJSON. Raw frames never leave memory.
 export function jsonFrames(accept) {
   let frame = '', depth = 0, quoted = false, escaped = false;

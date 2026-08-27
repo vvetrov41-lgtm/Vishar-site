@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { extractDiagnostics, jsonFrames, hasMixed401, snapshot, tailArguments, WORKER, OBSERVE_MS } from './observe-backend-auth.mjs';
+import { operationFromRef, extractDiagnostics, jsonFrames, hasMixed401, snapshot, tailArguments, WORKER, OBSERVE_MS } from './observe-backend-auth.mjs';
 const version = '12345678-abcd-4abc-8abc-123456789012';
 const sha = 'a'.repeat(40);
 const pii = 'private-customer@example.test';
@@ -71,3 +71,14 @@ for (const path of ['.github/workflows/private-production-release.yml', '.github
   assert.ok(source.includes("- '!release/private-crm-rc*-backend-auth-*'"));
   assert.ok(source.includes("release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;"));
 }
+
+assert.equal(operationFromRef('release/private-crm-rc123-backend-auth-release-diagnostic'), 'release');
+assert.equal(operationFromRef('release/private-crm-rc123-backend-auth-observe-diagnostic'), 'observe');
+assert.equal(operationFromRef('release/private-crm-rc122-backend-auth-observe-retry-backend-auth-release-check'), 'observe');
+assert.equal(operationFromRef('release/private-crm-rc122-backend-auth-release-retry-backend-auth-observe-check'), 'release');
+for (const invalid of ['ops/backend-auth-release-test', 'release/private-crm-rc123-other-backend-auth-release-test', 'release/private-crm-rc123-backend-auth-unknown-test']) {
+  assert.throws(() => operationFromRef(invalid), /backend_auth_ref_invalid/);
+}
+assert.equal(workflow.match(/if: env.BACKEND_AUTH_OPERATION == 'release'/g)?.length, 2);
+assert.ok(!workflow.includes('contains(github.ref_name'));
+assert.ok(workflow.includes("operationFromRef(process.env.GITHUB_REF_NAME)"));
