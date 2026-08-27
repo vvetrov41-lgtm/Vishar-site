@@ -1,0 +1,70 @@
+name: One-off lifecycle recovery bookkeeping
+
+on:
+  push:
+    branches:
+      - agent/lifecycle-failed-job-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  patch-bookkeeping:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch ACL inventory and migration ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          acl = Path('supabase/tests/050_rls_roles.sql')
+          text = acl.read_text()
+          needle = "  ('public.list_client_lifecycle_execution_history(uuid,integer)', false, true, false),\n"
+          addition = needle + "  ('public.retry_client_lifecycle_job(uuid)', false, true, false),\n"
+          if text.count(needle) != 1:
+              raise SystemExit('expected exactly one lifecycle history ACL entry')
+          if "('public.retry_client_lifecycle_job(uuid)'" in text:
+              raise SystemExit('recovery ACL entry already present')
+          acl.write_text(text.replace(needle, addition, 1))
+
+          ledger = Path('docs/crm/PLATFORM_REFACTOR_MIGRATIONS.md')
+          text = ledger.read_text()
+          row = "| `0113` | Lifecycle failure alerts | claimed on `agent/lifecycle-failure-alerts-v2` |\n"
+          new_row = row + "| `0114` | Lifecycle failed-job recovery | claimed on `agent/lifecycle-failed-job-recovery` |\n"
+          if text.count(row) != 1:
+              raise SystemExit('expected exactly one 0113 ledger row')
+          if '| `0114` |' in text:
+              raise SystemExit('0114 already claimed')
+          text = text.replace(row, new_row, 1)
+          old_next = "The next unclaimed migration number after the current stacked lineage is therefore:\n\n`0114`"
+          new_next = "The next unclaimed migration number after the current stacked lineage is therefore:\n\n`0115`"
+          if text.count(old_next) != 1:
+              raise SystemExit('expected next-free marker at 0114')
+          text = text.replace(old_next, new_next, 1)
+          text += "\n\nLifecycle failed-job recovery claims `0114`. It adds one explicit Artist-scoped\noperator mutation for retrying a failed lifecycle execution only before any\nemail artefact exists. The database keeps the historical attempt count, clears\nonly the resolved execution failure state, and exposes a server-authoritative\n`retryable` boolean in execution history. Jobs with an email row, completed\nwork and provider-delivery failures remain terminal to this recovery path, so\nthe operator action cannot replay a message that may already have left the\nautomation transaction. The mutation records bounded technical audit metadata\nand creates no email or provider outbox work by itself.\n"
+          ledger.write_text(text)
+
+          Path('.github/workflows/one-off-lifecycle-recovery-bookkeeping.yml').unlink()
+          PY
+
+      - name: Verify exact branch and commit bounded patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_sha="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
+          test "$remote_sha" = "$GITHUB_SHA"
+          git diff --check
+          git diff --exit-code -- . ':!supabase/tests/050_rls_roles.sql' ':!docs/crm/PLATFORM_REFACTOR_MIGRATIONS.md' ':!.github/workflows/one-off-lifecycle-recovery-bookkeeping.yml'
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add supabase/tests/050_rls_roles.sql docs/crm/PLATFORM_REFACTOR_MIGRATIONS.md .github/workflows/one-off-lifecycle-recovery-bookkeeping.yml
+          git commit -m "Register lifecycle failed-job recovery"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
