@@ -1,0 +1,221 @@
+name: Calendar backend production redeploy
+
+on:
+  push:
+    branches:
+      - 'ops/calendar-backend-redeploy-*'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: calendar-backend-production-redeploy
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    name: Redeploy Calendar backend at exact canonical SHA
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: crm-production
+    env:
+      PRODUCT_BRANCH: agent/platform-telegram-self-service
+      WORKER_NAME: ${{ vars.CRM_PRODUCTION_CALENDAR_WORKER }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      CALENDAR_ACCESS_AUD: ${{ vars.CRM_PRODUCTION_CALENDAR_ACCESS_AUD }}
+      CALENDAR_KV_STATE_ID: ${{ vars.CRM_PRODUCTION_CALENDAR_KV_STATE_ID }}
+      CALENDAR_KV_TOKENS_ID: ${{ vars.CRM_PRODUCTION_CALENDAR_KV_TOKENS_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CALENDAR_HOST: calendar.vishartattoo.com
+      CALENDAR_DEPLOY_CONFIG: ${{ github.workspace }}/.wrangler.calendar.production.redeploy.toml
+
+    steps:
+      - name: Verify isolated operator and production target boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^ops/calendar-backend-redeploy-[a-z0-9-]+$ ]]
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$WORKER_NAME" = 'vishar-calendar-production' ]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          [[ "$CALENDAR_ACCESS_AUD" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$CALENDAR_KV_STATE_ID" =~ ^[0-9a-f]{32}$ ]]
+          [[ "$CALENDAR_KV_TOKENS_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ "$CALENDAR_KV_STATE_ID" != "$CALENDAR_KV_TOKENS_ID" ]
+          [ "$CALENDAR_KV_STATE_ID" != 'dd43224461504e898addeba5b7915142' ]
+          [ "$CALENDAR_KV_TOKENS_ID" != '93302bc4f35242c38358a16fcd4ab9a2' ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+      - name: Checkout exact operator SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact canonical SHA, immutable operator ref and CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ -z "$(git status --short)" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+          operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ]
+          [ "$operator_sha" = "$GITHUB_SHA" ]
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation' 'Booking host validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate Calendar backend source and production bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run validate:calendar-production
+          npm run validate:calendar-production:deploy-ready
+          node scripts/test-calendar-worker.mjs
+          node scripts/test-calendar-availability-worker.mjs
+          node scripts/test-calendar-cancelled-event-recovery.mjs
+          node scripts/test-calendar-scheduler.mjs
+          node scripts/test-calendar-oauth-hardening.mjs
+          node scripts/test-calendar-metadata-rpc.mjs
+          node scripts/test-calendar-rate-limit.mjs
+          node scripts/test-calendar-production-config.mjs
+          node scripts/test-supabase-secret-401-retry.mjs
+          npm run check:calendar-production-bundle
+          npm run scan:secrets
+
+      - name: Read live Calendar state before mutation
+        id: live
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          settings="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$WORKER_NAME/settings")"
+          deployments="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$WORKER_NAME/deployments")"
+          schedules="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$WORKER_NAME/schedules")"
+          subdomain="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/services/$WORKER_NAME/environments/production/subdomain")"
+          secrets="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$WORKER_NAME/secrets")"
+          domains="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/domains?per_page=100")"
+          for payload in "$settings" "$deployments" "$schedules" "$subdomain" "$secrets" "$domains"; do jq -e '.success == true' <<<"$payload" >/dev/null; done
+
+          binding_value() { jq -r --arg name "$1" '.result.bindings[]? | select(.type == "plain_text" and .name == $name) | .text' <<<"$settings"; }
+          [ "$(binding_value CALENDAR_DRAIN_ENABLED)" = 'true' ]
+          [ "$(binding_value SUPABASE_URL)" = "$SUPABASE_URL" ]
+          state_id="$(jq -r '.result.bindings[]? | select(.type == "kv_namespace" and .name == "CALENDAR_OAUTH_STATE") | .namespace_id' <<<"$settings")"
+          tokens_id="$(jq -r '.result.bindings[]? | select(.type == "kv_namespace" and .name == "CALENDAR_OAUTH_TOKENS") | .namespace_id' <<<"$settings")"
+          [ "$state_id" = "$CALENDAR_KV_STATE_ID" ]
+          [ "$tokens_id" = "$CALENDAR_KV_TOKENS_ID" ]
+
+          SECRET_LIST="$secrets" node <<'NODE'
+          const payload = JSON.parse(process.env.SECRET_LIST || '{}');
+          const rows = Array.isArray(payload.result) ? payload.result : payload.result?.secrets || [];
+          const names = new Set(rows.map((row) => row?.name).filter(Boolean));
+          for (const name of ['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','CALENDAR_TOKEN_ENCRYPTION_KEY','SUPABASE_SECRET_KEY']) {
+            if (!names.has(name)) throw new Error(`Missing production Calendar secret name: ${name}`);
+          }
+          NODE
+
+          SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const rows = Array.isArray(payload.result) ? payload.result : payload.result?.schedules || [];
+          if (rows.length !== 1 || rows[0]?.cron !== '*/5 * * * *') throw new Error('Calendar cron is not the exact production schedule');
+          NODE
+          jq -e '.result.enabled == false and .result.previews_enabled == false' <<<"$subdomain" >/dev/null
+          jq -e --arg host "$CALENDAR_HOST" --arg worker "$WORKER_NAME" 'any(.result[]?; .hostname == $host and .service == $worker and .environment == "production")' <<<"$domains" >/dev/null
+          pre_deployment="$(jq -r 'if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end' <<<"$deployments")"
+          [ -n "$pre_deployment" ]
+          echo "pre_deployment=$pre_deployment" >> "$GITHUB_OUTPUT"
+
+      - name: Generate exact active Calendar config and dry-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/generate-calendar-production-deploy-config.mjs "$CALENDAR_DEPLOY_CONFIG"
+          grep -Fq 'main = "workers/calendar-oauth.js"' "$CALENDAR_DEPLOY_CONFIG"
+          grep -Fq 'CALENDAR_DRAIN_ENABLED = "true"' "$CALENDAR_DEPLOY_CONFIG"
+          grep -Fq 'crons = ["*/5 * * * *"]' "$CALENDAR_DEPLOY_CONFIG"
+          grep -Fq "id = \"$CALENDAR_KV_STATE_ID\"" "$CALENDAR_DEPLOY_CONFIG"
+          grep -Fq "id = \"$CALENDAR_KV_TOKENS_ID\"" "$CALENDAR_DEPLOY_CONFIG"
+          XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/calendar-backend-redeploy.log WRANGLER_SEND_METRICS=false \
+            npx wrangler deploy --config "$CALENDAR_DEPLOY_CONFIG" --name "$WORKER_NAME" --dry-run --outdir .wrangler/calendar-backend-redeploy
+
+      - name: Recheck immutable source immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+          operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ]
+          [ "$operator_sha" = "$GITHUB_SHA" ]
+
+      - name: Deploy only Calendar production Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config "$CALENDAR_DEPLOY_CONFIG" --name "$WORKER_NAME" --strict
+
+      - name: Read back exact Calendar production state
+        shell: bash
+        env:
+          PRE_DEPLOYMENT_ID: ${{ steps.live.outputs.pre_deployment }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          settings="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$WORKER_NAME/settings")"
+          deployments="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$WORKER_NAME/deployments")"
+          schedules="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$WORKER_NAME/schedules")"
+          subdomain="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/services/$WORKER_NAME/environments/production/subdomain")"
+          domains="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/domains?per_page=100")"
+          for payload in "$settings" "$deployments" "$schedules" "$subdomain" "$domains"; do jq -e '.success == true' <<<"$payload" >/dev/null; done
+          [ "$(jq -r '.result.bindings[]? | select(.type == "plain_text" and .name == "CALENDAR_DRAIN_ENABLED") | .text' <<<"$settings")" = 'true' ]
+          [ "$(jq -r '.result.bindings[]? | select(.type == "plain_text" and .name == "SUPABASE_URL") | .text' <<<"$settings")" = "$SUPABASE_URL" ]
+          [ "$(jq -r '.result.bindings[]? | select(.type == "kv_namespace" and .name == "CALENDAR_OAUTH_STATE") | .namespace_id' <<<"$settings")" = "$CALENDAR_KV_STATE_ID" ]
+          [ "$(jq -r '.result.bindings[]? | select(.type == "kv_namespace" and .name == "CALENDAR_OAUTH_TOKENS") | .namespace_id' <<<"$settings")" = "$CALENDAR_KV_TOKENS_ID" ]
+          SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const rows = Array.isArray(payload.result) ? payload.result : payload.result?.schedules || [];
+          if (rows.length !== 1 || rows[0]?.cron !== '*/5 * * * *') throw new Error('Calendar cron changed during redeploy');
+          NODE
+          jq -e '.result.enabled == false and .result.previews_enabled == false' <<<"$subdomain" >/dev/null
+          jq -e --arg host "$CALENDAR_HOST" --arg worker "$WORKER_NAME" 'any(.result[]?; .hostname == $host and .service == $worker and .environment == "production")' <<<"$domains" >/dev/null
+          post_deployment="$(jq -r 'if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end' <<<"$deployments")"
+          [ -n "$post_deployment" ]
+          [ "$post_deployment" != "$PRE_DEPLOYMENT_ID" ]
+          echo "Calendar deployment readback passed: $post_deployment"
+
+      - name: Verify Cloudflare Access still gates Calendar hostname
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "https://$CALENDAR_HOST/health" || true)"
+            case "$status" in
+              302|303|307|401|403) exit 0 ;;
+              200) echo 'Access is not gating Calendar production hostname.' >&2; exit 1 ;;
+            esac
+            sleep 6
+          done
+          echo 'Calendar Access boundary did not reach expected state.' >&2
+          exit 1
+
+      - name: Remove generated config
+        if: always()
+        run: rm -f "$CALENDAR_DEPLOY_CONFIG"
