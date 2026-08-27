@@ -26,8 +26,8 @@ export function ProjectsPage() {
       </strong>
       <p style={{ margin: '0 0 10px', color: 'var(--muted)', fontSize: '0.9rem' }}>
         {language === 'ru'
-          ? 'Проект создаётся из заявки клиента: откройте заявку, переведите её в статус «Принята», затем нажмите «Создать проект». Клиент и данные заявки перенесутся автоматически.'
-          : 'Projects are created from client enquiries: open the enquiry, move it to Accepted, then choose Create project. The client and enquiry data carry over automatically.'}
+          ? 'Откройте заявку клиента, переведите её в статус «Принята», затем нажмите «Создать проект». Клиент и данные заявки перенесутся автоматически.'
+          : 'Open the client enquiry, move it to Accepted, then choose Create project. The client and enquiry data carry over automatically.'}
       </p>
       <Link to="/enquiries" className="badge" style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', paddingInline: 14 }}>
         {language === 'ru' ? 'Перейти к заявкам' : 'Open enquiries'}
