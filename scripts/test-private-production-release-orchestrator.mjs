@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const workflow = read('.github/workflows/private-production-release.yml');
 const observer = read('.github/workflows/private-production-release-observer.yml');
+const crmOnly = read('.github/workflows/deploy-private-production-crm.yml');
 const telegramRollback = read('.github/workflows/deploy-private-production-telegram.yml');
 
 const expectIncludes = (text, needle, label) => {
@@ -22,7 +23,9 @@ const expectOrder = (text, first, second, label) => {
 
 expectIncludes(workflow, "- 'release/private-crm-rc*'", 'release trigger');
 expectIncludes(workflow, "- '!release/private-crm-rc*-inventory-*'", 'read-only inventory trigger exclusion');
+expectIncludes(workflow, "- '!release/private-crm-rc*-backend-auth-*'", 'isolated backend-auth trigger exclusion');
 expectIncludes(workflow, 'release/private-crm-rc*-inventory-*)', 'read-only inventory runtime exclusion');
+expectIncludes(workflow, 'release/private-crm-rc*-backend-auth*)', 'isolated backend-auth runtime exclusion');
 expectIncludes(workflow, 'workflow_dispatch:', 'release trigger');
 expectExcludes(workflow, 'approved_sha:', 'zero-input release');
 expectExcludes(workflow, 'approval_phrase:', 'zero-input release');
@@ -93,7 +96,9 @@ expectIncludes(deploySection, 'Verify live Telegram HTTP boundary', 'Telegram li
 
 expectIncludes(observer, "- 'release/private-crm-rc*'", 'release observer trigger');
 expectIncludes(observer, "- '!release/private-crm-rc*-inventory-*'", 'release observer inventory exclusion');
+expectIncludes(observer, "- '!release/private-crm-rc*-backend-auth-*'", 'release observer backend-auth exclusion');
 expectIncludes(observer, 'release/private-crm-rc*-inventory-*)', 'release observer runtime inventory exclusion');
+expectIncludes(observer, 'release/private-crm-rc*-backend-auth*)', 'release observer runtime backend-auth exclusion');
 expectIncludes(observer, 'actions: read', 'release observer permissions');
 expectIncludes(observer, 'statuses: write', 'release observer permissions');
 expectIncludes(observer, 'if: github.actor == github.repository_owner', 'release observer authorization');
@@ -118,6 +123,44 @@ for (const forbidden of [
 ]) {
   expectExcludes(observer, forbidden, 'release observer mutation boundary');
 }
+
+// The automatic CRM-only path deliberately reuses the already-isolated
+// backend-auth namespace. The full release and its observer exclude that whole
+// namespace, while the dedicated CRM workflow accepts only one exact subtype.
+expectIncludes(crmOnly, "- 'release/private-crm-rc*-backend-auth-crm-only'", 'CRM-only automatic trigger');
+expectIncludes(crmOnly, 'workflow_dispatch:', 'CRM-only emergency/manual path');
+expectIncludes(crmOnly, 'actions: read', 'CRM-only exact-head CI permission');
+expectIncludes(crmOnly, 'PRODUCT_BRANCH: agent/platform-telegram-self-service', 'CRM-only canonical source');
+expectIncludes(crmOnly, '^release/private-crm-rc[0-9]+-backend-auth-crm-only$', 'CRM-only anchored release ref');
+expectIncludes(crmOnly, '[ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]', 'CRM-only owner authorization');
+expectIncludes(crmOnly, 'canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH"', 'CRM-only canonical readback');
+expectIncludes(crmOnly, 'operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME"', 'CRM-only immutable ref readback');
+for (const required of [
+  'Static Validation',
+  'CRM and booking validation',
+  'Gmail production validation',
+  'Booking host validation',
+  'WhatsApp production onboarding validation',
+]) {
+  expectIncludes(crmOnly, `'${required}'`, 'CRM-only required exact-head CI');
+}
+expectIncludes(crmOnly, 'CRM_PRODUCTION_DEPLOY_ENABLED', 'CRM-only kill switch');
+expectIncludes(crmOnly, "'DEPLOY_PRIVATE_CRM_ONLY'", 'CRM-only explicit dispatch compatibility');
+expectIncludes(crmOnly, "[ \"$CRM_PAGES_PROJECT\" != 'vishar-crm-production' ]", 'CRM-only exact Pages target');
+expectIncludes(crmOnly, "[ \"$CRM_ORIGIN\" != 'https://crm.vishartattoo.com' ]", 'CRM-only exact origin');
+expectIncludes(crmOnly, 'node scripts/verify-crm-pages-production.mjs', 'CRM-only Pages and Access preflight');
+expectIncludes(crmOnly, 'Deploy CRM Pages project with its Functions', 'CRM-only mutation');
+expectIncludes(crmOnly, 'Read back exact CRM Pages deployment', 'CRM-only exact deployment readback');
+expectIncludes(crmOnly, 'deployment_trigger?.metadata?.commit_hash === process.env.GITHUB_SHA', 'CRM-only exact SHA readback');
+expectIncludes(crmOnly, 'Re-verify production Pages target and Access boundary', 'CRM-only post-deploy control-plane readback');
+expectIncludes(crmOnly, 'Verify private CRM HTTP remains Access-gated', 'CRM-only HTTP acceptance');
+expectOrder(crmOnly, '- name: Preflight exact production Pages target and Access boundary', '- name: Configure production Supabase Auth URLs', 'CRM-only pre-mutation control-plane check');
+expectOrder(crmOnly, '- name: Recheck automatic CRM-only source immediately before mutation', '- name: Configure production Supabase Auth URLs', 'CRM-only immutable source recheck');
+expectOrder(crmOnly, '- name: Deploy CRM Pages project with its Functions', '- name: Read back exact CRM Pages deployment', 'CRM-only Pages readback');
+expectExcludes(crmOnly, 'supabase db push', 'CRM-only database mutation boundary');
+expectExcludes(crmOnly, 'wrangler deploy --config', 'CRM-only Worker mutation boundary');
+expectExcludes(crmOnly, 'wrangler secret put', 'CRM-only secret mutation boundary');
+expectExcludes(crmOnly, 'wrangler secret bulk', 'CRM-only secret mutation boundary');
 
 for (const forbidden of [
   'activate-telegram-webhook.mjs',
