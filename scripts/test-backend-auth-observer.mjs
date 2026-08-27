@@ -58,10 +58,16 @@ await assert.rejects(snapshot(env, mockFetch), /observer_contract/);
 const workflow = readFileSync('.github/workflows/backend-auth-scheduler-release.yml', 'utf8');
 for (const boundary of ['github.actor == github.repository_owner', 'github.event.before !=', 'crm-production',
   'git rev-parse "$GITHUB_SHA^{tree}"', 'refs/heads/agent/platform-telegram-self-service',
-  'CRM and booking validation', 'retention-days: 7', '--tag "$APPROVED_SHA"', 'ops/backend-auth-release-']) assert.ok(workflow.includes(boundary), boundary);
+  'CRM and booking validation', 'retention-days: 7', '--tag "$APPROVED_SHA"', 'release/private-crm-rc*-backend-auth-release-']) assert.ok(workflow.includes(boundary), boundary);
 for (const forbidden of ['supabase db push', 'pages deploy', 'secrets.SUPABASE', 'secret put', 'workflow_dispatch']) assert.ok(!workflow.includes(forbidden), forbidden);
 const observer = readFileSync('scripts/observe-backend-auth.mjs', 'utf8');
 assert.ok(observer.includes("child.stderr.on('data', () => {})"));
 assert.ok(observer.includes("WRANGLER_LOG_PATH: '/dev/null'"));
 assert.ok(observer.includes('JSON.stringify(before) !== JSON.stringify(after)'));
 console.log('Backend auth observer privacy and release boundaries passed.');
+
+for (const path of ['.github/workflows/private-production-release.yml', '.github/workflows/private-production-release-observer.yml']) {
+  const source = readFileSync(path, 'utf8');
+  assert.ok(source.includes("- '!release/private-crm-rc*-backend-auth-*'"));
+  assert.ok(source.includes("release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;"));
+}

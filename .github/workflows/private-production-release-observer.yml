@@ -6,6 +6,7 @@ on:
       - 'release/private-crm-rc*'
       - '!release/private-crm-rc*-booking-host*'
       - '!release/private-crm-rc*-inventory-*'
+      - '!release/private-crm-rc*-backend-auth-*'
 
 permissions:
   contents: read
@@ -30,6 +31,7 @@ jobs:
           set -euo pipefail
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
           case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;
             release/private-crm-rc*-booking-host*) exit 1 ;;
             release/private-crm-rc*-inventory-*) exit 1 ;;
             release/private-crm-rc*) ;;
