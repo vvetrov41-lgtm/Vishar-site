@@ -27,7 +27,6 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: 'false'
-      WRANGLER_LOG_PATH: ${{ runner.temp }}/backend-auth-wrangler.log
 
     steps:
       - name: Checkout exact approved source
@@ -66,7 +65,11 @@ jobs:
           node-version: 22
       - run: npm ci --ignore-scripts
       - name: Discard Wrangler debug logs without writing raw data
-        run: ln -s /dev/null "$WRANGLER_LOG_PATH"
+        run: |
+          set -euo pipefail
+          WRANGLER_LOG_PATH="$RUNNER_TEMP/backend-auth-wrangler.log"
+          ln -s /dev/null "$WRANGLER_LOG_PATH"
+          echo "WRANGLER_LOG_PATH=$WRANGLER_LOG_PATH" >> "$GITHUB_ENV"
 
       - name: Privacy and deployment boundary tests
         run: |

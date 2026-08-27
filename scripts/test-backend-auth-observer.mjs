@@ -106,3 +106,6 @@ assert.ok(workflow.includes('ln -s /dev/null "$WRANGLER_LOG_PATH"'));
 assert.ok(workflow.includes("['merge-base', '--is-ancestor', state.source_sha, process.env.APPROVED_SHA]"));
 assert.ok(workflow.includes("['diff', '--quiet', state.source_sha, process.env.APPROVED_SHA"));
 assert.ok(observer.includes('source_sha: deployedSource, observer_source_sha: env.APPROVED_SHA'));
+
+assert.ok(!workflow.split('    steps:')[0].includes('runner.temp'), 'runner context is unavailable in job-level env');
+assert.ok(workflow.includes('echo "WRANGLER_LOG_PATH=$WRANGLER_LOG_PATH" >> "$GITHUB_ENV"'));
