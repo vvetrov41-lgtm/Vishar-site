@@ -7,6 +7,7 @@
 // The key is never logged, never echoed in an error, and never returned to a
 // caller.
 
+import { createBackendResponseObserver } from './supabase-diagnostics.js';
 import { ConfigurationError, RequestError } from './http.js';
 import { statusClass } from './logging.js';
 
@@ -159,6 +160,7 @@ export function readSupabaseConfig(env) {
 
 export function createSupabaseClient(env, fetchImpl = fetch) {
   const { url, authHeaders, keyKind } = readSupabaseConfig(env);
+  const observe = createBackendResponseObserver('shared_backend', keyKind);
 
   async function rpc(name, args) {
     if (
@@ -173,30 +175,35 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       throw new ConfigurationError('rpc_not_allowed', 'That database operation is not available.');
     }
 
-    const request = () => fetchImpl(`${url}/rest/v1/rpc/${name}`, {
-      method: 'POST',
-      headers: {
-        ...authHeaders,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(args ?? {}),
-    });
+    let diagnostics;
+    const request = async (attempt) => {
+      const startedAt = Date.now();
+      const response = await fetchImpl(`${url}/rest/v1/rpc/${name}`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(args ?? {}),
+      });
+      diagnostics = await observe(name, response, startedAt, attempt);
+      return response;
+    };
 
-    let response = await request();
+    let response = await request(1);
 
-    // Hosted Supabase secret keys are authenticated by the API gateway before
-    // PostgREST reaches PostgreSQL. Production has shown isolated gateway 401s
-    // while sibling RPCs with the same key succeed in the same cron tick. A
-    // single identical retry is therefore bounded to the only status proven to
-    // be pre-execution. Legacy JWT auth, every other 4xx and every 5xx keep the
-    // existing fail-closed behaviour.
+    // Preserve the retry shipped in #474 while diagnosing it. HTTP 401 alone
+    // does NOT establish a root cause. Observe each response before it can be
+    // hidden by the existing retry. No new retry scope is added here.
     if (!response.ok && response.status === 401 && keyKind === 'secret') {
-      response = await request();
+      response = await request(2);
     }
 
     if (!response.ok) {
-      throw new SupabaseError('database_unavailable', response.status);
+      const error = new SupabaseError('database_unavailable', response.status);
+      error.supabaseCode = diagnostics.supabase_code;
+      throw error;
     }
 
     return response.json();

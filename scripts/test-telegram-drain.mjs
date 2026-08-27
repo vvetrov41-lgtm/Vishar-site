@@ -597,7 +597,11 @@ await test('automatic aggregate and console output contain no provider credentia
   assert.ok(!evidence.includes(chatId));
   assert.ok(!evidence.includes(kristinaBotToken));
   assert.ok(!evidence.includes(kristinaChatId));
-  assert.deepEqual(messages, []);
+  assert.equal(messages.length, 1);
+  const diagnostic = JSON.parse(messages[0]);
+  assert.equal(diagnostic.event, 'supabase_backend_response');
+  assert.equal(diagnostic.rpc, 'claim_telegram_outbox');
+  assert.equal(diagnostic.status, 200);
 });
 
 if (failures) {
