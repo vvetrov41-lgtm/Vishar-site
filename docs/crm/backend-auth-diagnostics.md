@@ -72,3 +72,18 @@ Use the existing approved `release/private-crm-rc*` namespace. Full private
 release and its observer explicitly reject `*-backend-auth-*` refs, including
 manual invocation, so these refs cannot apply migrations or deploy Pages.
 Environment protection rules are unchanged.
+
+## First deployment and observer CLI correction
+
+Run 33080578147 deployed and read back scheduler version
+`072fbeb1-b7fa-4597-a478-6bbe68d56e1a`, tagged source
+`8416af51c8fc52079233f4b8817a24610eaa7d9f`. The observer then exited without
+records. The mock 401s in the preceding test step are NOT production evidence.
+Pinned Wrangler rejects a sampling rate of 1; omit that flag for full capture.
+Wrangler also treats a log path without `.log` as a directory. Use and validate
+an actual `.log` symlink to `/dev/null`, never a regular raw log file.
+
+An observe-only source may descend from the deployed source only when git proves
+all Worker sources, dependency manifests and scheduler deployment inputs are
+identical. The report separates deployed `source_sha` from `observer_source_sha`.
+This permits operator-only fixes without unnecessary production redeployment.

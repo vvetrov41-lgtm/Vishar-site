@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, lstat, readlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { DIAGNOSTIC_EVENT, sanitizeBackendDiagnostic } from '../workers/lib/supabase-diagnostics.js';
 
@@ -101,17 +101,38 @@ export async function snapshot(env, fetchImpl = fetch) {
 
 export const tailArguments = version => ['node_modules/wrangler/bin/wrangler.js', 'tail', WORKER,
   '--config', 'wrangler.telegram-drain.production.toml', '--format', 'json', '--version-id', version,
-  '--sampling-rate', '1', '--search', DIAGNOSTIC_EVENT];
+  '--search', DIAGNOSTIC_EVENT];
+
+// CLI errors get only fixed categories; raw stderr is never forwarded or saved.
+export function classifyTailError(chunk) {
+  const text = String(chunk).slice(0, 4096);
+  if (/A sampling rate must be between/.test(text)) return 'invalid_sampling_rate';
+  if (/Failed to write to log file/.test(text)) return 'log_sink';
+  if (/Authentication error|code: 10000/.test(text)) return 'authentication';
+  if (/not authorized|not allowed|code: 10001/i.test(text)) return 'authorization';
+  if (/ECONN|ETIMEDOUT|Could not connect|Network connection lost/.test(text)) return 'connection';
+  return 'unknown';
+}
+
+export async function assertDiscardLogSink(path) {
+  if (typeof path !== 'string' || !path.endsWith('.log')
+    || !(await lstat(path)).isSymbolicLink() || await readlink(path) !== '/dev/null') {
+    throw new Error('observer_log_sink_invalid');
+  }
+}
 
 export async function main(env = process.env, output = process.argv[2]) {
   if (!/^[a-f0-9]{40}$/.test(env.APPROVED_SHA || '') || !output) throw new Error('observer_source');
+  const deployedSource = env.DEPLOYED_SOURCE_SHA || env.APPROVED_SHA;
+  if (!/^[a-f0-9]{40}$/.test(deployedSource)) throw new Error('observer_source');
+  await assertDiscardLogSink(env.WRANGLER_LOG_PATH);
   const before = await snapshot(env);
-  if (before.source_sha !== env.APPROVED_SHA) throw new Error('observer_version_source');
+  if (before.source_sha !== deployedSource) throw new Error('observer_version_source');
   const records = [];
-  let reason = 'window_complete', stopRequested = false, force;
+  let reason = 'window_complete', stopRequested = false, force, tailExitCode = null, tailError = 'unknown';
   const child = spawn(process.execPath, tailArguments(before.version), {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...env, CI: 'true', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: '/dev/null' },
+    env: { ...env, CI: 'true', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: env.WRANGLER_LOG_PATH },
   });
   const stop = why => {
     if (stopRequested) return;
@@ -129,16 +150,19 @@ export async function main(env = process.env, output = process.argv[2]) {
   });
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', chunk => { try { consume(chunk); } catch { stop('frame_limit'); } });
-  child.stderr.on('data', () => {}); // Never forward or persist raw Wrangler diagnostics.
+  child.stderr.on('data', chunk => {
+    const category = classifyTailError(chunk);
+    if (category !== 'unknown') tailError = category;
+  }); // Raw stderr is discarded; only a closed enum survives.
   await new Promise(resolve => {
     child.on('error', () => { reason = 'tail_start_failed'; resolve(); });
-    child.on('close', () => { if (!stopRequested) reason = 'tail_closed'; resolve(); });
+    child.on('close', code => { tailExitCode = Number.isInteger(code) && code >= 0 && code <= 255 ? code : null; if (!stopRequested) reason = 'tail_closed'; resolve(); });
   });
   clearTimeout(deadline); clearTimeout(force);
   const after = await snapshot(env);
   if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error('observer_runtime_changed');
-  await writeFile(output, JSON.stringify({ schema_version: 1, source_sha: env.APPROVED_SHA, snapshot: after,
-    stopped_at: new Date().toISOString(), stop_reason: reason, natural_401_captured: hasMixed401(records), records }, null, 2), { mode: 0o600 });
+  await writeFile(output, JSON.stringify({ schema_version: 1, source_sha: deployedSource, observer_source_sha: env.APPROVED_SHA, snapshot: after,
+    stopped_at: new Date().toISOString(), stop_reason: reason, tail_exit_code: tailExitCode, tail_error: tailError, natural_401_captured: hasMixed401(records), records }, null, 2), { mode: 0o600 });
   console.log(`Backend auth observer: ${reason}; safe_records=${records.length}`);
   if (['frame_limit', 'tail_start_failed', 'tail_closed'].includes(reason)) process.exitCode = 1;
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { operationFromRef, extractDiagnostics, jsonFrames, hasMixed401, snapshot, tailArguments, WORKER, OBSERVE_MS } from './observe-backend-auth.mjs';
+import { classifyTailError, assertDiscardLogSink, operationFromRef, extractDiagnostics, jsonFrames, hasMixed401, snapshot, tailArguments, WORKER, OBSERVE_MS } from './observe-backend-auth.mjs';
 const version = '12345678-abcd-4abc-8abc-123456789012';
 const sha = 'a'.repeat(40);
 const pii = 'private-customer@example.test';
@@ -61,8 +61,12 @@ for (const boundary of ['github.actor == github.repository_owner', 'github.event
   'CRM and booking validation', 'retention-days: 7', '--tag "$APPROVED_SHA"', 'release/private-crm-rc*-backend-auth-release-']) assert.ok(workflow.includes(boundary), boundary);
 for (const forbidden of ['supabase db push', 'pages deploy', 'secrets.SUPABASE', 'secret put', 'workflow_dispatch']) assert.ok(!workflow.includes(forbidden), forbidden);
 const observer = readFileSync('scripts/observe-backend-auth.mjs', 'utf8');
-assert.ok(observer.includes("child.stderr.on('data', () => {})"));
-assert.ok(observer.includes("WRANGLER_LOG_PATH: '/dev/null'"));
+assert.ok(observer.includes('const category = classifyTailError(chunk)'));
+assert.equal(classifyTailError('Authentication error secret@example.test'), 'authentication');
+assert.equal(classifyTailError('private response body'), 'unknown');
+assert.equal(classifyTailError('A sampling rate must be between 0 and 1'), 'invalid_sampling_rate');
+assert.ok(observer.includes('await assertDiscardLogSink(env.WRANGLER_LOG_PATH)'));
+assert.ok(!tailArguments(version).includes('--sampling-rate'), 'Wrangler rejects 1; omission means full stream');
 assert.ok(observer.includes('JSON.stringify(before) !== JSON.stringify(after)'));
 console.log('Backend auth observer privacy and release boundaries passed.');
 
@@ -82,3 +86,23 @@ for (const invalid of ['ops/backend-auth-release-test', 'release/private-crm-rc1
 assert.equal(workflow.match(/if: env.BACKEND_AUTH_OPERATION == 'release'/g)?.length, 2);
 assert.ok(!workflow.includes('contains(github.ref_name'));
 assert.ok(workflow.includes("operationFromRef(process.env.GITHUB_REF_NAME)"));
+
+const { mkdtemp, symlink, writeFile, readFile, rm } = await import('node:fs/promises');
+const { tmpdir } = await import('node:os');
+const { join } = await import('node:path');
+const sinkDir = await mkdtemp(join(tmpdir(), 'auth-sink-test-'));
+try {
+  const sink = join(sinkDir, 'discard.log');
+  await symlink('/dev/null', sink);
+  await assertDiscardLogSink(sink);
+  await writeFile(sink, 'synthetic-private-text');
+  assert.equal(await readFile(sink, 'utf8'), '');
+  await assert.rejects(assertDiscardLogSink('/dev/null'), /observer_log_sink_invalid/);
+  const normal = join(sinkDir, 'normal.log');
+  await writeFile(normal, '');
+  await assert.rejects(assertDiscardLogSink(normal), /observer_log_sink_invalid/);
+} finally { await rm(sinkDir, { recursive: true, force: true }); }
+assert.ok(workflow.includes('ln -s /dev/null "$WRANGLER_LOG_PATH"'));
+assert.ok(workflow.includes("['merge-base', '--is-ancestor', state.source_sha, process.env.APPROVED_SHA]"));
+assert.ok(workflow.includes("['diff', '--quiet', state.source_sha, process.env.APPROVED_SHA"));
+assert.ok(observer.includes('source_sha: deployedSource, observer_source_sha: env.APPROVED_SHA'));
