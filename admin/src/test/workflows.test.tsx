@@ -129,7 +129,7 @@ describe('appointment workflow', () => {
     expect(await screen.findByText('£700.00')).toBeInTheDocument();
     expect(rpcCalls.some((entry) => entry.name === 'preview_project_deposit')).toBe(true);
 
-    fireEvent.click(screen.getByRole('button', { name: /create deposit request/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create deposit link for £700\.00/i }));
 
     await waitFor(() => {
       const call = rpcCalls.find((entry) => entry.name === 'request_project_deposit');
