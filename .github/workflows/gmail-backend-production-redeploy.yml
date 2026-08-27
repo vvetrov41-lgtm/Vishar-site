@@ -1,0 +1,236 @@
+name: Gmail backend production redeploy
+
+on:
+  push:
+    branches:
+      - 'ops/gmail-backend-redeploy-*'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gmail-backend-production-redeploy
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    name: Redeploy Gmail backend at exact canonical SHA
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: crm-production
+    env:
+      PRODUCT_BRANCH: agent/platform-telegram-self-service
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      GMAIL_WORKER_NAME: vishar-gmail-production
+      GMAIL_HOST: gmail.vishartattoo.com
+      OPERATIONS_HOST: gpt-operations.vishartattoo.com
+      GMAIL_DEPLOY_CONFIG: ${{ github.workspace }}/.wrangler.gmail.production.redeploy.toml
+
+    steps:
+      - name: Verify isolated operator boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^ops/gmail-backend-redeploy-[a-z0-9-]+$ ]]
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+      - name: Checkout exact operator SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact canonical SHA, immutable operator ref and CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ -z "$(git status --short)" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+          operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ]
+          [ "$operator_sha" = "$GITHUB_SHA" ]
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation' 'Booking host validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate Gmail backend source and production bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          node scripts/test-gmail-production.mjs
+          node scripts/test-gmail-rollout-phases.mjs
+          node scripts/test-supabase-secret-401-retry.mjs
+          npm run scan:secrets
+          npx wrangler deploy --config wrangler.gmail.production.toml --dry-run --outdir .wrangler/gmail-backend-redeploy-template
+
+      - name: Read live Gmail state before mutation
+        id: live
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          settings="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/settings")"
+          deployments="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/deployments")"
+          schedules="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
+          subdomain="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/services/$GMAIL_WORKER_NAME/environments/production/subdomain")"
+          secrets="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/secrets")"
+          domains="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/domains?per_page=100")"
+
+          for payload in "$settings" "$deployments" "$schedules" "$subdomain" "$secrets" "$domains"; do
+            jq -e '.success == true' <<<"$payload" >/dev/null
+          done
+
+          binding_value() {
+            jq -r --arg name "$1" '.result.bindings[]? | select(.type == "plain_text" and .name == $name) | .text' <<<"$settings"
+          }
+          for flag in GMAIL_OAUTH_ENABLED GMAIL_READ_ENABLED GMAIL_DRAIN_ENABLED GMAIL_VLADIMIR_ENABLED GMAIL_KRISTINA_ENABLED; do
+            [ "$(binding_value "$flag")" = 'true' ]
+          done
+          [ "$(binding_value SUPABASE_URL)" = "$SUPABASE_URL" ]
+
+          kv_id() {
+            jq -r --arg name "$1" '.result.bindings[]? | select(.type == "kv_namespace" and .name == $name) | .namespace_id' <<<"$settings"
+          }
+          state_id="$(kv_id GMAIL_OAUTH_STATE)"
+          tokens_id="$(kv_id GMAIL_OAUTH_TOKENS)"
+          [[ "$state_id" =~ ^[0-9a-f]{32}$ ]]
+          [[ "$tokens_id" =~ ^[0-9a-f]{32}$ ]]
+          [ "$state_id" != "$tokens_id" ]
+
+          SECRET_LIST="$secrets" node <<'NODE'
+          const payload = JSON.parse(process.env.SECRET_LIST || '{}');
+          const rows = Array.isArray(payload.result) ? payload.result : payload.result?.secrets || [];
+          const names = new Set(rows.map((row) => row?.name).filter(Boolean));
+          for (const name of ['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_TOKEN_ENCRYPTION_KEY','SUPABASE_SECRET_KEY']) {
+            if (!names.has(name)) throw new Error(`Missing production Gmail secret name: ${name}`);
+          }
+          NODE
+
+          SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const rows = Array.isArray(payload.result) ? payload.result : payload.result?.schedules || [];
+          if (rows.length !== 0) throw new Error('Gmail Worker must have zero direct Cron Triggers');
+          NODE
+          jq -e '.result.enabled == false and .result.previews_enabled == false' <<<"$subdomain" >/dev/null
+          jq -e --arg host "$GMAIL_HOST" --arg worker "$GMAIL_WORKER_NAME" \
+            'any(.result[]?; .hostname == $host and .service == $worker and .environment == "production")' <<<"$domains" >/dev/null
+
+          pre_deployment="$(jq -r 'if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end' <<<"$deployments")"
+          [ -n "$pre_deployment" ]
+          echo "state_id=$state_id" >> "$GITHUB_OUTPUT"
+          echo "tokens_id=$tokens_id" >> "$GITHUB_OUTPUT"
+          echo "pre_deployment=$pre_deployment" >> "$GITHUB_OUTPUT"
+
+      - name: Generate exact activated Gmail config and dry-run
+        shell: bash
+        env:
+          GMAIL_KV_STATE_ID: ${{ steps.live.outputs.state_id }}
+          GMAIL_KV_TOKENS_ID: ${{ steps.live.outputs.tokens_id }}
+        run: |
+          set -euo pipefail
+          node scripts/generate-gmail-production-deploy-config.mjs "$GMAIL_DEPLOY_CONFIG" kristina-send
+          grep -Fq 'main = "workers/gmail-production-entrypoint.js"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq 'GMAIL_OAUTH_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq 'GMAIL_READ_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq 'GMAIL_DRAIN_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq 'GMAIL_VLADIMIR_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq 'GMAIL_KRISTINA_ENABLED = "true"' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq 'crons = []' "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq "id = \"$GMAIL_KV_STATE_ID\"" "$GMAIL_DEPLOY_CONFIG"
+          grep -Fq "id = \"$GMAIL_KV_TOKENS_ID\"" "$GMAIL_DEPLOY_CONFIG"
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --dry-run --outdir .wrangler/gmail-backend-redeploy
+
+      - name: Recheck immutable source immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+          operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ]
+          [ "$operator_sha" = "$GITHUB_SHA" ]
+
+      - name: Deploy only Gmail production Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME"
+
+      - name: Read back exact Gmail production state
+        shell: bash
+        env:
+          EXPECTED_STATE_ID: ${{ steps.live.outputs.state_id }}
+          EXPECTED_TOKENS_ID: ${{ steps.live.outputs.tokens_id }}
+          PRE_DEPLOYMENT_ID: ${{ steps.live.outputs.pre_deployment }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+          settings="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/settings")"
+          deployments="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/deployments")"
+          schedules="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/schedules")"
+          subdomain="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/services/$GMAIL_WORKER_NAME/environments/production/subdomain")"
+          domains="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/domains?per_page=100")"
+          for payload in "$settings" "$deployments" "$schedules" "$subdomain" "$domains"; do jq -e '.success == true' <<<"$payload" >/dev/null; done
+
+          binding_value() { jq -r --arg name "$1" '.result.bindings[]? | select(.type == "plain_text" and .name == $name) | .text' <<<"$settings"; }
+          for flag in GMAIL_OAUTH_ENABLED GMAIL_READ_ENABLED GMAIL_DRAIN_ENABLED GMAIL_VLADIMIR_ENABLED GMAIL_KRISTINA_ENABLED; do [ "$(binding_value "$flag")" = 'true' ]; done
+          [ "$(binding_value SUPABASE_URL)" = "$SUPABASE_URL" ]
+          state_id="$(jq -r '.result.bindings[]? | select(.type == "kv_namespace" and .name == "GMAIL_OAUTH_STATE") | .namespace_id' <<<"$settings")"
+          tokens_id="$(jq -r '.result.bindings[]? | select(.type == "kv_namespace" and .name == "GMAIL_OAUTH_TOKENS") | .namespace_id' <<<"$settings")"
+          [ "$state_id" = "$EXPECTED_STATE_ID" ]
+          [ "$tokens_id" = "$EXPECTED_TOKENS_ID" ]
+          SCHEDULES="$schedules" node <<'NODE'
+          const payload = JSON.parse(process.env.SCHEDULES || '{}');
+          const rows = Array.isArray(payload.result) ? payload.result : payload.result?.schedules || [];
+          if (rows.length !== 0) throw new Error('Gmail direct cron changed during redeploy');
+          NODE
+          jq -e '.result.enabled == false and .result.previews_enabled == false' <<<"$subdomain" >/dev/null
+          jq -e --arg host "$GMAIL_HOST" --arg worker "$GMAIL_WORKER_NAME" 'any(.result[]?; .hostname == $host and .service == $worker and .environment == "production")' <<<"$domains" >/dev/null
+          post_deployment="$(jq -r 'if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end' <<<"$deployments")"
+          [ -n "$post_deployment" ]
+          [ "$post_deployment" != "$PRE_DEPLOYMENT_ID" ]
+          echo "Gmail deployment readback passed: $post_deployment"
+
+      - name: Verify live Gmail HTTP boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/privacy" || true)"
+            protected="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/enquiries/11111111-1111-4111-8111-111111111111/gmail/history" || true)"
+            start_headers="$(curl -sS -D - -o /dev/null --max-time 10 "https://$GMAIL_HOST/oauth/google/start/kristina" || true)"
+            start_status="$(printf '%s' "$start_headers" | awk 'toupper($1) ~ /^HTTP\// {status=$2} END {print status}')"
+            if [ "$privacy" = 200 ] && [ "$protected" = 401 ] && [ "$start_status" = 302 ] && grep -qi '^location: https://accounts.google.com/' <<<"$start_headers"; then
+              exit 0
+            fi
+            sleep 6
+          done
+          echo 'Gmail HTTP acceptance did not reach expected state.' >&2
+          exit 1
+
+      - name: Remove generated config
+        if: always()
+        run: rm -f "$GMAIL_DEPLOY_CONFIG"
