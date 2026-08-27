@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { classifyTailError, assertDiscardLogSink, operationFromRef, extractDiagnostics, jsonFrames, hasMixed401, snapshot, tailArguments, WORKER, OBSERVE_MS } from './observe-backend-auth.mjs';
+import { createTailErrorClassifier, classifyTailError, assertDiscardLogSink, operationFromRef, extractDiagnostics, jsonFrames, hasMixed401, snapshot, tailArguments, WORKER, OBSERVE_MS } from './observe-backend-auth.mjs';
 const version = '12345678-abcd-4abc-8abc-123456789012';
 const sha = 'a'.repeat(40);
 const pii = 'private-customer@example.test';
@@ -61,7 +61,15 @@ for (const boundary of ['github.actor == github.repository_owner', 'github.event
   'CRM and booking validation', 'retention-days: 7', '--tag "$APPROVED_SHA"', 'release/private-crm-rc*-backend-auth-release-']) assert.ok(workflow.includes(boundary), boundary);
 for (const forbidden of ['supabase db push', 'pages deploy', 'secrets.SUPABASE', 'secret put', 'workflow_dispatch']) assert.ok(!workflow.includes(forbidden), forbidden);
 const observer = readFileSync('scripts/observe-backend-auth.mjs', 'utf8');
-assert.ok(observer.includes('const category = classifyTailError(chunk)'));
+assert.ok(observer.includes('tailError = classifyStderr(chunk)'));
+const splitClassifier = createTailErrorClassifier();
+assert.equal(splitClassifier('private-user@example.test Authenti'), 'unknown');
+assert.equal(splitClassifier('cation error'), 'authentication');
+assert.equal(splitClassifier('private trailing body'), 'authentication');
+const boundedClassifier = createTailErrorClassifier();
+assert.equal(boundedClassifier('private'.repeat(10000)), 'unknown');
+assert.equal(boundedClassifier('A sampling rate must be '), 'unknown');
+assert.equal(boundedClassifier('between 0 and 1'), 'invalid_sampling_rate');
 assert.equal(classifyTailError('Authentication error secret@example.test'), 'authentication');
 assert.equal(classifyTailError('private response body'), 'unknown');
 assert.equal(classifyTailError('A sampling rate must be between 0 and 1'), 'invalid_sampling_rate');

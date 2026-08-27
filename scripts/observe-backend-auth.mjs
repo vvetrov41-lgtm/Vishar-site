@@ -114,6 +114,16 @@ export function classifyTailError(chunk) {
   return 'unknown';
 }
 
+export function createTailErrorClassifier() {
+  let suffix = '', category = 'unknown';
+  return chunk => {
+    suffix = (suffix + String(chunk).slice(-4096)).slice(-4096);
+    const next = classifyTailError(suffix);
+    if (next !== 'unknown') category = next;
+    return category;
+  };
+}
+
 export async function assertDiscardLogSink(path) {
   if (typeof path !== 'string' || !path.endsWith('.log')
     || !(await lstat(path)).isSymbolicLink() || await readlink(path) !== '/dev/null') {
@@ -150,10 +160,8 @@ export async function main(env = process.env, output = process.argv[2]) {
   });
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', chunk => { try { consume(chunk); } catch { stop('frame_limit'); } });
-  child.stderr.on('data', chunk => {
-    const category = classifyTailError(chunk);
-    if (category !== 'unknown') tailError = category;
-  }); // Raw stderr is discarded; only a closed enum survives.
+  const classifyStderr = createTailErrorClassifier();
+  child.stderr.on('data', chunk => { tailError = classifyStderr(chunk); }); // Raw stderr is discarded; only a closed enum survives.
   await new Promise(resolve => {
     child.on('error', () => { reason = 'tail_start_failed'; resolve(); });
     child.on('close', code => { tailExitCode = Number.isInteger(code) && code >= 0 && code <= 255 ? code : null; if (!stopRequested) reason = 'tail_closed'; resolve(); });
