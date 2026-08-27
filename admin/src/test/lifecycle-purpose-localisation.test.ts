@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { lifecyclePurposeLabel } from '../pages/LifecycleAutomationPage';
 import type { ClientLifecyclePurpose } from '../lib/lifecycle-api';
@@ -48,7 +49,7 @@ describe('lifecycle purpose localisation', () => {
 
   it('routes every visible purpose surface through the shared label helper', () => {
     const source = fs.readFileSync(
-      new URL('../pages/LifecycleAutomationPage.tsx', import.meta.url),
+      path.resolve(process.cwd(), 'src/pages/LifecycleAutomationPage.tsx'),
       'utf8',
     );
 
