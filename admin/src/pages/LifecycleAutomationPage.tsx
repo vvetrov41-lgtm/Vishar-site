@@ -198,6 +198,7 @@ export function LifecycleAutomationPage() {
           key={selectedArtistId}
           ru={ru}
           rows={data.history}
+          purposes={data.purposes}
           canView={data.canHistory}
         />
       </Section>
@@ -237,7 +238,7 @@ export function LifecycleAutomationPage() {
                       <div className="meta">
                         {appointmentLabel(rule.appointment_type, ru)}
                         {' · '}{scheduleLabel(rule, ru)}
-                        {' · '}{rule.message_purpose}
+                        {' · '}{lifecyclePurposeLabel(rule.message_purpose, data.purposes, ru)}
                         {' · '}{rule.message_locale.toUpperCase()}
                       </div>
                     </div>
@@ -312,9 +313,9 @@ export function LifecycleAutomationPage() {
               <article className="card" key={template.id}>
                 <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <strong>{template.subject || template.purpose}</strong>
+                    <strong>{template.subject || lifecyclePurposeLabel(template.purpose, data.purposes, ru)}</strong>
                     <div className="meta">
-                      {template.purpose}
+                      {lifecyclePurposeLabel(template.purpose, data.purposes, ru)}
                       {' · '}{template.locale.toUpperCase()}
                       {' · '}{template.template_scope === 'artist' ? (ru ? 'для мастера' : 'artist override') : (ru ? 'для организации' : 'workspace')}
                       {' · '}v{template.version}
@@ -461,10 +462,12 @@ function healthBlockerLabel(blocker: LifecycleAutomationHealthBlocker, ru: boole
 function LifecycleExecutionHistoryPanel({
   ru,
   rows,
+  purposes,
   canView,
 }: {
   ru: boolean;
   rows: ClientLifecycleExecutionHistoryRow[];
+  purposes: ClientLifecyclePurpose[];
   canView: boolean;
 }) {
   if (!canView) {
@@ -506,7 +509,7 @@ function LifecycleExecutionHistoryPanel({
               <div className="meta">
                 {row.client_name}
                 {' · '}{appointmentLabel(row.appointment_type, ru)}
-                {' · '}{row.message_purpose}
+                {' · '}{lifecyclePurposeLabel(row.message_purpose, purposes, ru)}
                 {' · '}v{row.rule_version}
               </div>
             </div>
@@ -908,7 +911,7 @@ function RuleForm({
         {ru ? 'Назначение сообщения' : 'Message purpose'}
         <select value={purpose} onChange={(event) => setPurpose(event.target.value)}>
           <option value="">{ru ? 'Выберите назначение' : 'Choose a purpose'}</option>
-          {purposes.map((item) => <option key={item.purpose} value={item.purpose}>{item.purpose}</option>)}
+          {purposes.map((item) => <option key={item.purpose} value={item.purpose}>{lifecyclePurposeLabel(item.purpose, purposes, ru)}</option>)}
         </select>
       </label>
       <label>
@@ -1113,7 +1116,7 @@ function TemplateForm({
         <select value={purpose} onChange={(event) => setPurpose(event.target.value)}>
           <option value="">{ru ? 'Выберите назначение' : 'Choose a purpose'}</option>
           {purposes.map((item) => (
-            <option key={item.purpose} value={item.purpose}>{item.purpose}</option>
+            <option key={item.purpose} value={item.purpose}>{lifecyclePurposeLabel(item.purpose, purposes, ru)}</option>
           ))}
         </select>
       </label>
@@ -1167,26 +1170,33 @@ function configurationEntityName(
 
   const purpose = row.purpose
     ?? (row.template_id ? templates.find((candidate) => candidate.id === row.template_id)?.purpose : null);
-  if (purpose) return configurationPurposeLabel(purpose, purposes, ru);
+  if (purpose) return lifecyclePurposeLabel(purpose, purposes, ru);
   return row.entity_kind === 'rule'
     ? (ru ? 'Без названия' : 'Untitled rule')
     : (ru ? 'Email-шаблон' : 'Email template');
 }
 
-function configurationPurposeLabel(
+export function lifecyclePurposeLabel(
   purpose: string,
   purposes: ClientLifecyclePurpose[],
   ru: boolean,
 ): string {
   const known: Record<string, [string, string]> = {
+    consultation_reminder: ['Consultation reminder', 'Напоминание о консультации'],
+    deposit_confirmation: ['Deposit confirmation', 'Подтверждение депозита'],
+    deposit_policy: ['Deposit policy', 'Условия депозита'],
+    deposit_request: ['Deposit request', 'Запрос депозита'],
+    new_enquiry_ack: ['New enquiry acknowledgement', 'Подтверждение новой заявки'],
+    no_response_followup: ['No-response follow-up', 'Напоминание без ответа'],
+    post_session_checkin: ['Post-session check-in', 'Сообщение после сеанса'],
     session_reminder_24h: ['24-hour session reminder', 'Напоминание о сеансе за 24 часа'],
     session_reminder_72h: ['72-hour session reminder', 'Напоминание о сеансе за 72 часа'],
-    consultation_reminder: ['Consultation reminder', 'Напоминание о консультации'],
-    post_session_checkin: ['Post-session check-in', 'Сообщение после сеанса'],
+    session_reminder_7d: ['7-day session reminder', 'Напоминание о сеансе за 7 дней'],
   };
   if (known[purpose]) return known[purpose][ru ? 1 : 0];
+  if (ru) return 'Сервисное сообщение';
   const description = purposes.find((candidate) => candidate.purpose === purpose)?.description;
-  return description || (ru ? 'Сервисное сообщение' : 'Service message');
+  return description || 'Service message';
 }
 
 function configurationEventLabel(
