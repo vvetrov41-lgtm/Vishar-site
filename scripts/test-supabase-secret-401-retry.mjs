@@ -20,6 +20,7 @@ function makeFetch(responses, calls) {
       method: init.method,
       headers: new Headers(init.headers),
       body: init.body,
+      redirect: init.redirect,
     });
     const response = responses[index];
     index += 1;
@@ -149,9 +150,14 @@ try {
   assert.equal(capped.length, 16);
   assert.equal(JSON.parse(capped[0]).key_kind, 'legacy_service_role');
   await createBackendResponseObserver('shared_backend', 'secret', () => { throw Error('sink'); })('claim_telegram_outbox', Response.json([]), Date.now());
-  const gmail = createGmailSupabase({ SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
-    SUPABASE_SECRET_KEY: secretEnv.SUPABASE_SECRET_KEY, SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test-only' },
-  async () => Response.json({ code: '42501', message: privateText }, { status: 403 }));
+
+  const gmailEnv = {
+    SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
+    SUPABASE_SECRET_KEY: secretEnv.SUPABASE_SECRET_KEY,
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test-only',
+  };
+  const gmail = createGmailSupabase(gmailEnv,
+    async () => Response.json({ code: '42501', message: privateText }, { status: 403 }));
   const before = messages.length;
   await assert.rejects(gmail.backendRpc('claim_email_outbox', {}), e => e.status === 403 && e.code === '42501');
   assert.equal(messages.length, before + 1);
@@ -159,6 +165,73 @@ try {
   assert.equal(JSON.parse(messages.at(-1)).classification, 'forbidden');
   await assert.rejects(gmail.userRpc('gpt_authorize_gmail_enquiry', {}, 'test-user-bearer-token'), e => e.status === 403);
   assert.equal(messages.length, before + 1, 'user RPC must never emit backend telemetry');
+
+  const gmailRetryCalls = [];
+  const retryBefore = messages.length;
+  const gmailRetry = createGmailSupabase(gmailEnv, makeFetch([
+    Response.json({ code: 'PGRST303', message: 'JWT expired', details: privateText }, { status: 401 }),
+    Response.json([{ id: 'email-outbox-synthetic' }]),
+  ], gmailRetryCalls));
+  assert.deepEqual(await gmailRetry.backendRpc('claim_email_outbox', { p_limit: 5 }), [{ id: 'email-outbox-synthetic' }]);
+  assert.equal(gmailRetryCalls.length, 2, 'Gmail backend secret-key 401 must receive exactly one retry');
+  for (const call of gmailRetryCalls) {
+    assert.equal(call.url, `${gmailEnv.SUPABASE_URL}/rest/v1/rpc/claim_email_outbox`);
+    assert.equal(call.method, 'POST');
+    assert.equal(call.headers.get('apikey'), gmailEnv.SUPABASE_SECRET_KEY);
+    assert.equal(call.headers.get('authorization'), null);
+    assert.equal(call.body, JSON.stringify({ p_limit: 5 }));
+    assert.equal(call.redirect, 'error');
+  }
+  const gmailRetryRows = messages.slice(retryBefore).map(x => JSON.parse(x));
+  assert.deepEqual(gmailRetryRows.map(x => [x.client, x.status, x.attempt]), [
+    ['gmail_backend', 401, 1],
+    ['gmail_backend', 200, 2],
+  ]);
+
+  const persistentCalls = [];
+  const persistentBefore = messages.length;
+  const gmailPersistent = createGmailSupabase(gmailEnv, makeFetch([
+    Response.json({ code: 'PGRST303', message: 'JWT expired' }, { status: 401 }),
+    Response.json({ code: 'PGRST303', message: 'JWT expired' }, { status: 401 }),
+  ], persistentCalls));
+  await assert.rejects(
+    gmailPersistent.backendRpc('claim_email_outbox', { p_limit: 5 }),
+    e => e.message === 'gmail_rpc_forbidden' && e.status === 401 && e.code === 'PGRST303',
+  );
+  assert.equal(persistentCalls.length, 2, 'persistent Gmail backend 401 must fail after one retry');
+  const persistentRows = messages.slice(persistentBefore).map(x => JSON.parse(x));
+  assert.deepEqual(persistentRows.map(x => [x.status, x.attempt]), [[401, 1], [401, 2]]);
+
+  for (const status of [403, 429, 500]) {
+    const non401Calls = [];
+    const non401 = createGmailSupabase(gmailEnv, makeFetch([
+      Response.json({ code: '42501', message: privateText }, { status }),
+      Response.json({ should_not_be_reached: true }),
+    ], non401Calls));
+    await assert.rejects(non401.backendRpc('claim_email_outbox', {}), e => e.status === status);
+    assert.equal(non401Calls.length, 1, `Gmail backend HTTP ${status} must not be retried`);
+  }
+
+  let networkCalls = 0;
+  const gmailNetwork = createGmailSupabase(gmailEnv, async () => {
+    networkCalls += 1;
+    throw new Error('synthetic network failure');
+  });
+  await assert.rejects(gmailNetwork.backendRpc('claim_email_outbox', {}), /synthetic network failure/);
+  assert.equal(networkCalls, 1, 'ambiguous Gmail backend network failure must not be retried');
+
+  const user401Calls = [];
+  const user401Before = messages.length;
+  const gmailUser401 = createGmailSupabase(gmailEnv, makeFetch([
+    Response.json({ code: 'PGRST303', message: privateText }, { status: 401 }),
+    Response.json({ should_not_be_reached: true }),
+  ], user401Calls));
+  await assert.rejects(
+    gmailUser401.userRpc('gpt_authorize_gmail_enquiry', {}, 'test-user-bearer-token'),
+    e => e.status === 401 && e.message === 'gmail_rpc_forbidden',
+  );
+  assert.equal(user401Calls.length, 1, 'Gmail user RPC 401 must not be retried');
+  assert.equal(messages.length, user401Before, 'Gmail user RPC must not emit backend telemetry');
   assert.ok(!messages.join('').includes(privateText));
 } finally { console.log = log; }
 console.log('Backend auth diagnostics privacy, attempt, body-limit and Gmail tests passed.');
