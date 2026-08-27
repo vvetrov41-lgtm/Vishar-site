@@ -1,6 +1,9 @@
 name: Deploy private production CRM
 
 on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-backend-auth-crm-only'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -19,6 +22,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -29,9 +33,10 @@ jobs:
   private-crm:
     name: Private CRM production gate
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: crm-production
     env:
+      PRODUCT_BRANCH: agent/platform-telegram-self-service
       VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
       VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
@@ -42,25 +47,37 @@ jobs:
       # both artist connection controls in a successful Pages deployment.
       VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
       CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
+      CRM_ORIGIN: ${{ vars.CRM_PRODUCTION_ORIGIN }}
 
     steps:
       - name: Verify exact release branch and explicit production gate
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
-          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
+          APPROVAL_PHRASE: ${{ github.event_name == 'push' && 'DEPLOY_PRIVATE_CRM_ONLY' || inputs.approval_phrase }}
           DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
 
-          case "$GITHUB_REF_NAME" in
-            release/private-crm-rc*) ;;
-            *)
-              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-backend-auth-crm-only$ ]] || {
+              echo 'Automatic CRM-only rollout requires the exact isolated backend-auth-crm-only release ref.' >&2
               exit 1
-              ;;
-          esac
+            }
+            [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ] || {
+              echo 'Only the repository owner may trigger an automatic CRM-only production rollout.' >&2
+              exit 1
+            }
+          else
+            case "$GITHUB_REF_NAME" in
+              release/private-crm-rc*) ;;
+              *)
+                echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
+                exit 1
+                ;;
+            esac
+          fi
 
           if [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
             echo 'approved_sha must exactly match the workflow source SHA.' >&2
@@ -129,20 +146,60 @@ jobs:
             exit 1
           fi
 
+          if [ "$CRM_ORIGIN" != 'https://crm.vishartattoo.com' ]; then
+            echo 'CRM_PRODUCTION_ORIGIN must be the exact private CRM production origin.' >&2
+            exit 1
+          fi
+
       - name: Checkout exact approved SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.approved_sha }}
+          ref: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
+          fetch-depth: 0
 
       - name: Verify checkout SHA
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
+          APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           test "$actual" = "$APPROVED_SHA"
           test -z "$(git status --short)"
+
+      - name: Verify automatic CRM-only exact canonical source and CI
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+          operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ] || {
+            echo 'Canonical CRM branch moved or does not match this release SHA.' >&2
+            exit 1
+          }
+          [ "$operator_sha" = "$GITHUB_SHA" ] || {
+            echo 'CRM-only release ref moved after the workflow started.' >&2
+            exit 1
+          }
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/crm-only-ci.json"
+          for workflow in \
+            'Static Validation' \
+            'CRM and booking validation' \
+            'Gmail production validation' \
+            'Booking host validation' \
+            'WhatsApp production onboarding validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/crm-only-ci.json" >/dev/null || {
+                echo "Required exact-head workflow is not green: $workflow" >&2
+                exit 1
+              }
+          done
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -182,30 +239,34 @@ jobs:
           test -f admin/functions/api/whatsapp/embedded-signup/provision.js
 
       - name: Install pinned root deployment tooling
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         run: npm ci
 
       - name: Preflight exact production Pages target and Access boundary
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/verify-crm-pages-production.mjs
 
+      - name: Recheck automatic CRM-only source immediately before mutation
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+          operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ]
+          [ "$operator_sha" = "$GITHUB_SHA" ]
+
       - name: Configure production Supabase Auth URLs
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         shell: bash
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
           PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
-          CRM_ORIGIN: ${{ vars.CRM_PRODUCTION_ORIGIN }}
         run: |
           set -euo pipefail
-
-          if [ "$CRM_ORIGIN" != 'https://crm.vishartattoo.com' ]; then
-            echo 'CRM_PRODUCTION_ORIGIN must be the exact private CRM production origin.' >&2
-            exit 1
-          fi
 
           if ! [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
             echo 'CRM_PRODUCTION_SUPABASE_PROJECT_REF is missing or malformed.' >&2
@@ -273,7 +334,7 @@ jobs:
           NODE
 
       - name: Deploy CRM Pages project with its Functions
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         working-directory: admin
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -285,23 +346,76 @@ jobs:
           --commit-hash "$GITHUB_SHA"
           --commit-dirty=false
 
+      - name: Read back exact CRM Pages deployment
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          deployments="$(curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${CRM_PAGES_PROJECT}/deployments")"
+          DEPLOYMENTS="$deployments" node <<'NODE'
+          const body = JSON.parse(process.env.DEPLOYMENTS || '{}');
+          if (body.success !== true || !Array.isArray(body.result)) {
+            throw new Error('Cloudflare Pages deployment readback failed');
+          }
+          const matching = body.result.find((entry) => (
+            entry?.environment === 'production'
+            && entry?.deployment_trigger?.metadata?.commit_hash === process.env.GITHUB_SHA
+          ));
+          if (!matching) throw new Error('Exact production Pages commit was not found in deployment readback');
+          NODE
+
+      - name: Re-verify production Pages target and Access boundary
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/verify-crm-pages-production.mjs
+
+      - name: Verify private CRM HTTP remains Access-gated
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "$CRM_ORIGIN/" || true)"
+            case "$status" in
+              302|303|307|401|403) exit 0 ;;
+              200)
+                echo 'Private CRM production origin is no longer gated by Cloudflare Access.' >&2
+                exit 1
+                ;;
+            esac
+            sleep 6
+          done
+          echo 'Private CRM Access boundary did not reach an accepted gated state.' >&2
+          exit 1
+
       - name: Production boundary summary
         if: always()
         shell: bash
         env:
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
         run: |
           {
             echo '### Private CRM production gate'
             echo
             echo "- Exact SHA: \`$GITHUB_SHA\`"
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Event: \`$GITHUB_EVENT_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
+            echo '- Automatic path: exact canonical SHA + exact-head CI + immutable isolated release ref'
             echo '- Source build scope: `admin/` only'
             echo '- Upload scope: `admin/dist` plus `admin/functions` discovered from the Pages project root'
             echo '- Production Auth site URL target: `https://crm.vishartattoo.com`'
             echo '- Calendar connector in this build: `https://calendar.vishartattoo.com`'
             echo '- Monzo connector in this build: `https://monzo.vishartattoo.com` (owner-only launcher; no token, account id or webhook key reaches the browser)'
             echo '- WhatsApp onboarding: owner-only Meta Embedded Signup for exact Vladimir/Kristina routes; credentials go only to encrypted Worker bindings'
-            echo '- Public site / booking Worker deploy commands: none'
+            echo '- Post-deploy acceptance: exact Pages commit readback + Pages/Access recheck + HTTP Access gate'
+            echo '- Supabase migration / public site / booking Worker / shared scheduler deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"
