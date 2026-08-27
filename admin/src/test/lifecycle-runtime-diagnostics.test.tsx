@@ -67,7 +67,7 @@ describe('Lifecycle runtime diagnostics', () => {
     render(<LifecycleAutomationStudioPage />);
 
     expect(await screen.findByText('Queue and execution')).toBeInTheDocument();
-    expect(screen.getByText('Scheduler is active.')).toBeInTheDocument();
+    expect(screen.getByText('The scheduler is active.')).toBeInTheDocument();
     expect(screen.getByText('Last successful scheduler run')).toBeInTheDocument();
     expect(screen.getByText('2 tasks are more than 15 minutes late.')).toBeInTheDocument();
     expect(screen.getByText('waiting')).toBeInTheDocument();
