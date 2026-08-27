@@ -85,6 +85,15 @@ declare
 begin
   select * into v_session from public.sessions where artist_id=p_artist order by id limit 1;
   select id into v_rule from public.automation_rules where artist_id=p_artist order by id limit 1;
+  -- Lifecycle jobs are unique per rule/session. Each distinct failure needs
+  -- its own appointment, rather than bypassing the production dedupe index.
+  v_session.id := gen_random_uuid();
+  insert into public.sessions (
+    id,artist_id,client_id,project_id,appointment_type,start_at,end_at,status
+  ) values (
+    v_session.id,p_artist,v_session.client_id,v_session.project_id,
+    v_session.appointment_type,v_session.start_at,v_session.end_at,v_session.status
+  );
   insert into public.automation_events (id,activity_id,artist_id,event_type,entity_kind,entity_id,occurred_at)
   values(v_event,gen_random_uuid(),p_artist,'appointment.scheduled','session',v_session.id,now()-p_age);
   insert into public.automation_jobs (
@@ -108,7 +117,8 @@ declare
   v_job uuid := pg_temp.alert_job(v_artist,'completed',p_age);
   v_email uuid := gen_random_uuid(); v_session public.sessions%rowtype;
 begin
-  select s.* into v_session from public.sessions s where s.artist_id=v_artist order by s.id limit 1;
+  select s.* into v_session from public.sessions s
+  join public.automation_jobs j on j.session_id=s.id where j.id=v_job;
   insert into public.email_messages (
     id,artist_id,automation_job_id,client_id,enquiry_id,project_id,to_email,subject,body,
     created_by_kind,status,approved_at,sent_at,updated_at
