@@ -35,7 +35,14 @@ export async function runAutomationTick(env, fetchImpl = fetch) {
   const result = await supabase.rpc('service_run_automation_tick', {
     p_limit: TICK_LIMIT,
   });
-  return assertAutomationTickSummary(result);
+  const summary = assertAutomationTickSummary(result);
+
+  // The heartbeat is deliberately recorded only after the scheduler result is
+  // structurally valid. A failed heartbeat makes this scheduled task fail
+  // closed, so CRM never receives false proof that the scheduler completed.
+  await supabase.rpc('service_record_automation_scheduler_heartbeat', {});
+
+  return summary;
 }
 
 export const __testing = {
