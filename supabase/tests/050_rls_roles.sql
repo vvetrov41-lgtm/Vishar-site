@@ -732,6 +732,7 @@ insert into expected_function_acl values
   -- bounded authenticated read that re-checks the exact artist capabilities
   -- internally and is unavailable to anon and the service backend.
   ('public.list_client_lifecycle_execution_history(uuid,integer)', false, true, false),
+  ('public.retry_client_lifecycle_job(uuid)', false, true, false),
 
   -- Lifecycle Studio timing control (migration 0106). The RPC is a narrow
   -- authenticated mutation with its own artist capability and lifecycle-shape

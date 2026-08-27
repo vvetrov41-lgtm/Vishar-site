@@ -48,10 +48,11 @@ This file supersedes the migration-number column in `docs/crm/PLATFORM_REFACTOR.
 | `0111` | Lifecycle Automation runtime health diagnostics | claimed on private CRM lineage |
 | `0112` | Lifecycle scheduler heartbeat diagnostics | claimed on `agent/lifecycle-scheduler-heartbeat` |
 | `0113` | Lifecycle failure alerts | claimed on `agent/lifecycle-failure-alerts-v2` |
+| `0114` | Lifecycle failed-job recovery | claimed on `agent/lifecycle-failed-job-recovery` |
 
 The next unclaimed migration number after the current stacked lineage is therefore:
 
-`0114`
+`0115`
 
 ## Allocation rule for unfinished phases
 
@@ -238,3 +239,14 @@ the limit. No new scheduler, customer email or provider credential is added.
 The shared scheduler runs this task independently of the automation tick and
 provider drains. These alerts do not detect a stopped scheduler: `0112` remains
 the read-only liveness signal. CRM alert copy supports English and Russian.
+
+
+Lifecycle failed-job recovery claims `0114`. It adds one explicit Artist-scoped
+operator mutation for retrying a failed lifecycle execution only before any
+email artefact exists. The database keeps the historical attempt count, clears
+only the resolved execution failure state, and exposes a server-authoritative
+`retryable` boolean in execution history. Jobs with an email row, completed
+work and provider-delivery failures remain terminal to this recovery path, so
+the operator action cannot replay a message that may already have left the
+automation transaction. The mutation records bounded technical audit metadata
+and creates no email or provider outbox work by itself.
