@@ -3,7 +3,7 @@ name: Gmail backend production redeploy
 on:
   push:
     branches:
-      - 'ops/gmail-backend-redeploy-*'
+      - 'release/private-crm-rc*-backend-auth-gmail-redeploy-*'
 
 permissions:
   actions: read
@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF_NAME" =~ ^ops/gmail-backend-redeploy-[a-z0-9-]+$ ]]
+          [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-backend-auth-gmail-redeploy-[a-z0-9-]+$ ]]
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
           [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
           case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac

@@ -3,7 +3,7 @@ name: Calendar backend production redeploy
 on:
   push:
     branches:
-      - 'ops/calendar-backend-redeploy-*'
+      - 'release/private-crm-rc*-backend-auth-calendar-redeploy-*'
 
 permissions:
   actions: read
@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF_NAME" =~ ^ops/calendar-backend-redeploy-[a-z0-9-]+$ ]]
+          [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-backend-auth-calendar-redeploy-[a-z0-9-]+$ ]]
           [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
           [ "$WORKER_NAME" = 'vishar-calendar-production' ]
           [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
