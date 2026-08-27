@@ -30,7 +30,7 @@
     "check:monzo-api-bundle": "XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/monzo-api-wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.monzo-api.toml --dry-run --outdir .wrangler/monzo-api-dry-run",
     "check:crm-artifact": "node scripts/check-private-crm-artifact.mjs admin/dist",
     "scan:secrets": "node scripts/scan-secrets.mjs",
-    "vendor:3d-libs": "node scripts/vendor-3d-libs.mjs --check",
+    "vendor:3d-libs": "node scripts/vendor-3d-libs.mjs",
     "vendor:3d-libs:check": "node scripts/vendor-3d-libs.mjs --check",
     "vendor:fonts": "node scripts/vendor-fonts.mjs",
     "vendor:fonts:check": "node scripts/vendor-fonts.mjs --check",
