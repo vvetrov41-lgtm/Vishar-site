@@ -7,13 +7,16 @@ describe('Payments localisation', () => {
 
     expect(copy.connectionTitle).toBe('Подключение Monzo');
     expect(copy.depositsTitle).toBe('Депозиты');
-    expect(copy.requestTitle).toBe('Запросить депозит');
-    expect(copy.reconciliationTitle).toBe('Сверка платежей Monzo');
+    expect(copy.requestTitle).toBe('Создать новый депозит для отдельного сеанса');
+    expect(copy.reconciliationTitle).toBe('Деньги уже пришли? Сопоставить платёж Monzo');
     expect(copy.noCandidates).toBe('Нет платежей Monzo для сверки.');
     expect(copy.match).toBe('Сопоставить');
     expect(copy.confirmPayment).toBe('Подтвердить платёж');
     expect(copy.ignore).toBe('Игнорировать');
-    expect(copy.createAmountLink(250)).toBe('Создать ссылку на £250');
+    expect(copy.createAmountLink(250)).toBe('Создать новый депозит сеанса на £250');
+    expect(copy.requestDescription).toContain('7-часового сеанса');
+    expect(copy.requestDescription).toContain('£250');
+    expect(copy.requestDescription).toContain('если деньги уже пришли');
     expect(copy.connectionConnected('Vladimir')).toContain('Подключение счёта Monzo');
   });
 
@@ -21,8 +24,10 @@ describe('Payments localisation', () => {
     const copy = paymentCopy('en');
 
     expect(copy.connectionTitle).toBe('Monzo account connection');
-    expect(copy.reconciliationTitle).toBe('Monzo reconciliation');
+    expect(copy.reconciliationTitle).toBe('Already received money? Reconcile Monzo payment');
     expect(copy.confirmPayment).toBe('Confirm payment');
-    expect(copy.createAmountLink(100)).toBe('Create £100 link');
+    expect(copy.createAmountLink(100)).toBe('Create new £100 session deposit');
+    expect(copy.requestDescription).toContain('7-hour session');
+    expect(copy.requestDescription).toContain('already arrived');
   });
 });
