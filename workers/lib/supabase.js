@@ -45,6 +45,7 @@ export const TELEGRAM_SELF_SERVICE_RPCS = new Set([
 /** Existing generic automation engine backend surface. Never exposed to public callers. */
 export const AUTOMATION_BACKEND_RPCS = new Set([
   'service_run_automation_tick',
+  'service_record_automation_scheduler_heartbeat',
 ]);
 
 /** Appointment client-action capability surface, kept separate from booking resolvers. */
