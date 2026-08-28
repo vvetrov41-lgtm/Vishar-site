@@ -59,6 +59,9 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
       type: 'WA_EMBEDDED_SIGNUP', event: 'CANCEL', data: {},
     })).toEqual({ event: 'CANCEL', wabaId: null, phoneNumberId: null });
     expect(parseEmbeddedSignupMessage('https://web.facebook.com', {
+      type: 'WA_EMEDDED_SIGNUP', event: 'ERROR', data: {},
+    })).toBeNull();
+    expect(parseEmbeddedSignupMessage('https://web.facebook.com', {
       type: 'WA_EMBEDDED_SIGNUP', event: 'ERROR', data: {},
     })).toEqual({ event: 'ERROR', wabaId: null, phoneNumberId: null });
   });
@@ -80,6 +83,42 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
       await prepareWhatsAppEmbeddedSignup();
       const result = launchWhatsAppEmbeddedSignup();
       expect(loginCalls).toBe(1);
+      await expect(result).rejects.toThrow('Meta authorization was not granted.');
+    } finally {
+      window.FB = originalFb;
+      window.fbAsyncInit = originalAsyncInit;
+    }
+  });
+
+  it('re-initializes a replaced FB object synchronously before login', async () => {
+    const originalFb = window.FB;
+    const originalAsyncInit = window.fbAsyncInit;
+    let replacementInitCalls = 0;
+    let replacementLoginCalls = 0;
+
+    window.FB = {
+      init() {},
+      login(callback) {
+        callback({ status: 'not_authorized' });
+      },
+    };
+
+    try {
+      await prepareWhatsAppEmbeddedSignup();
+
+      window.FB = {
+        init() {
+          replacementInitCalls += 1;
+        },
+        login(callback) {
+          replacementLoginCalls += 1;
+          callback({ status: 'not_authorized' });
+        },
+      };
+
+      const result = launchWhatsAppEmbeddedSignup();
+      expect(replacementInitCalls).toBe(1);
+      expect(replacementLoginCalls).toBe(1);
       await expect(result).rejects.toThrow('Meta authorization was not granted.');
     } finally {
       window.FB = originalFb;
