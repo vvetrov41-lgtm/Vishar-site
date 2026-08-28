@@ -166,3 +166,41 @@ affected by anonymisation, and URL Inspection returns cached index information,
 not a live test. Do not infer zero organic visibility from an empty query export
 without checking page-level totals, date coverage, property access, and URL
 Inspection evidence.
+
+## Spec-driven product development
+
+Substantial Vishar CRM product and architecture work should use the repository
+spec-driven workflow before implementation. Read
+`.agents/skills/vishar-feature-development/SKILL.md` to classify the task and
+`docs/ai/spec-driven-development.md` for the artifact model.
+
+Use the full Spec Kit-compatible workflow when work introduces a new capability,
+changes architecture or trust boundaries, spans multiple implementation layers,
+requires multiple migrations/PRs/rollout stages, or is expected to continue
+across multiple agent sessions.
+
+Do not require Spec Kit artifacts for every small fix. Narrow copy changes,
+small documentation corrections, isolated test repairs with a proven cause, and
+other low-risk bounded changes should continue through the relevant repository
+skill without unnecessary ceremony.
+
+For substantial work, durable feature intent belongs under `specs/<feature-id>/`
+using `spec.md`, `plan.md`, `tasks.md`, and optional `checklists/`.
+
+The stable engineering principles for this workflow live in
+`.specify/memory/constitution.md`.
+
+The Spec Kit layer defines feature intent, planning, task decomposition, and
+convergence. It does not override Vishar-specific procedures for:
+
+- exact-head and stacked-PR verification;
+- repository/code navigation;
+- ordered Supabase migration analysis;
+- RLS, grants, authorization, and security review;
+- CI evidence;
+- staging/production approvals and deployment;
+- Cloudflare/Supabase/provider/account/secret mutation.
+
+A completed specification or task list never grants permission to deploy or to
+mutate production. Code presence, merge state, and green CI are not production
+verification.
