@@ -377,14 +377,11 @@ select throws_ok(
   '42501', 'email outbox lease is not owned by this worker', 'an expired lease cannot authorize delivery');
 update public.integration_outbox set lease_expires_at = now() + interval '120 seconds'
 where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation');
-update public.integration_outbox set artist_id = 'a2222222-2222-4222-8222-222222222222'
-where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation');
 select throws_ok(
-  $$select * from public.service_resolve_gmail_outbox_target(
-    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'), 'deposit-test-worker')$$,
-  '22023', 'Gmail CRM target is unavailable', 'a cross-artist outbox cannot route the payment email');
-update public.integration_outbox set artist_id = (select id from t_artist)
-where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation');
+  $$update public.integration_outbox set artist_id = 'a2222222-2222-4222-8222-222222222222'
+    where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation')$$,
+  '23514', 'integration_outbox.artist_id is immutable; use the protected routing workflow',
+  'the authoritative outbox artist cannot be swapped before target resolution');
 
 select ok(
   (select not delivery_allowed from public.service_resolve_gmail_outbox_target(
