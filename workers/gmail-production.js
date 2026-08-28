@@ -420,11 +420,20 @@ function workerId() {
 }
 
 async function processEmailJob(job, env, db, id, fetchImpl) {
-  if (!job?.outbox_id || !uuid(job.artist_id) || !uuid(job.email_message_id) || !uuid(job.client_id) || !uuid(job.enquiry_id) || job.job_valid !== true) {
+  if (!uuid(job?.outbox_id) || !uuid(job.artist_id) || !uuid(job.email_message_id) || !uuid(job.client_id)
+      || (job.enquiry_id !== null && !uuid(job.enquiry_id)) || job.job_valid !== true) {
     throw new Error('gmail_email_job_invalid');
   }
   const auth = { artist_id: job.artist_id, enquiry_id: job.enquiry_id, client_id: job.client_id };
-  const target = await resolveTarget(db, auth);
+  const target = firstRow(await db.backendRpc('service_resolve_gmail_outbox_target', {
+    p_outbox_id: job.outbox_id, p_worker_id: id,
+  }));
+  if (!target || target.outbox_id !== job.outbox_id || target.email_message_id !== job.email_message_id
+      || target.artist_id !== auth.artist_id || target.client_id !== auth.client_id
+      || target.enquiry_id !== auth.enquiry_id || typeof target.delivery_allowed !== 'boolean') {
+    throw new Error('gmail_target_scope_invalid');
+  }
+  if (!target.delivery_allowed) throw new Error('gmail_deposit_email_obsolete');
   if (target.integration_key !== job.integration_key || target.mailbox_email !== job.mailbox_email || target.client_email !== String(job.to_email || '').trim().toLowerCase()) {
     throw new Error('gmail_email_route_changed');
   }

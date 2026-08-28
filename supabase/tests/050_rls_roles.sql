@@ -549,6 +549,7 @@ insert into expected_function_acl values
   ('public.resolve_monzo_deposit_redirect(uuid)', false, false, true),
   ('public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', false, false, true),
   ('public.service_resolve_gmail_target(uuid,uuid,uuid)', false, false, true),
+  ('public.service_resolve_gmail_outbox_target(uuid,text)', false, false, true),
   ('public.service_set_gmail_integration(uuid,text,text,text[])', false, false, true),
   ('public.service_disable_gmail_integration(uuid,text,text)', false, false, true),
   ('public.service_upsert_gmail_thread_context(uuid,uuid,uuid,text,text,text,text)', false, false, true),

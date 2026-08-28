@@ -242,6 +242,16 @@ select is(
   're-requesting cannot duplicate the request outbox item'
 );
 
+-- Cancellation must be tested before any funds are recorded: the financial
+-- guard correctly forbids cancelling a paid request.
+savepoint cancelled_delivery;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update public.payment_requests set status = 'cancelled' where id = (select id from t_payment);
+select ok(crm_private.gmail_deposit_email_obsolete(
+  (select id from public.email_messages where payment_request_id = (select id from t_payment) and template_key = 'deposit_request')),
+  'a cancelled payment request makes its queued deposit request obsolete');
+rollback to savepoint cancelled_delivery;
+
 select pg_temp.as_owner();
 set local role authenticated;
 select lives_ok(
@@ -342,6 +352,111 @@ select throws_ok(
   '23514', null,
   'a payment email cannot also claim lifecycle provenance'
 );
+
+-- Delivery uses the existing synthetic payment records, not a fabricated
+-- enquiry on payment emails. Provider calls remain outside this SQL test.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select public.service_set_gmail_integration(
+  (select id from t_artist), 'google_gmail_vladimir', 'vvetrov41@gmail.com',
+  array['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send']
+);
+create temporary table t_delivery_jobs as
+select c.*, m.template_key from public.claim_email_outbox('deposit-test-worker', 20, 120) c
+join public.email_messages m on m.id = c.email_message_id
+where m.payment_request_id = (select id from t_payment);
+select is((select count(*)::int from t_delivery_jobs), 2, 'both payment email jobs can be leased');
+select ok((select bool_and(enquiry_id is null and job_valid) from t_delivery_jobs),
+  'payment jobs deliberately have no enquiry and satisfy the claim contract');
+
+select throws_ok(
+  $$select * from public.service_resolve_gmail_outbox_target(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'), 'wrong-worker')$$,
+  '42501', 'email outbox lease is not owned by this worker', 'another worker cannot resolve this lease');
+select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+select throws_ok(
+  $$select * from public.service_resolve_gmail_outbox_target(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'), 'deposit-test-worker')$$,
+  '42501', 'Gmail outbox target resolution is backend-only', 'the resolver also checks the backend role internally');
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+update public.integration_outbox set lease_expires_at = now() - interval '1 second'
+where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation');
+select throws_ok(
+  $$select * from public.service_resolve_gmail_outbox_target(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'), 'deposit-test-worker')$$,
+  '42501', 'email outbox lease is not owned by this worker', 'an expired lease cannot authorize delivery');
+update public.integration_outbox set lease_expires_at = now() + interval '120 seconds'
+where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation');
+select throws_ok(
+  $$update public.integration_outbox set artist_id = 'a2222222-2222-4222-8222-222222222222'
+    where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation')$$,
+  '23514', 'integration_outbox.artist_id is immutable; use the protected routing workflow',
+  'the authoritative outbox artist cannot be swapped before target resolution');
+
+select ok(
+  (select not delivery_allowed from public.service_resolve_gmail_outbox_target(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_request'), 'deposit-test-worker')),
+  'an unpaid-deposit request becomes obsolete once the authoritative request is paid');
+
+savepoint mismatched_project;
+update public.integration_outbox set project_id = null
+where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation');
+select throws_ok(
+  $$select * from public.service_resolve_gmail_outbox_target(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'), 'deposit-test-worker')$$,
+  '22023', 'Gmail CRM target is unavailable', 'the outbox must carry the authoritative payment project');
+rollback to savepoint mismatched_project;
+
+select ok(
+  (select delivery_allowed and enquiry_id is null and artist_id = (select id from t_artist)
+     and client_email = 'deposit-policy-client@example.test'
+   from public.service_resolve_gmail_outbox_target(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'), 'deposit-test-worker')),
+  'paid confirmation resolves through payment/project ownership without an enquiry');
+
+select throws_ok(
+  $$update public.email_messages set status = 'failed', failed_at = now(),
+      error_code = 'gmail_deposit_email_obsolete', body = body || ' changed'
+    where payment_request_id = (select id from t_payment) and template_key = 'deposit_request'$$,
+  '23514', 'payment email does not match the deposit request state',
+  'terminal obsolete acknowledgement cannot alter the approved email content');
+
+select is(
+  (public.record_email_outbox_result(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_request'),
+    'deposit-test-worker', false, null, 'gmail_deposit_email_obsolete') ->> 'status'),
+  'dead', 'DB-confirmed obsolete request ends immediately without delivery retries');
+select ok(
+  (select sent_at is null and provider_message_id is null and error_code = 'gmail_deposit_email_obsolete'
+   from public.email_messages where payment_request_id = (select id from t_payment) and template_key = 'deposit_request'),
+  'obsolete request is not reported as sent');
+select throws_ok(
+  $$update public.email_messages set status = 'approved', error_code = null, failed_at = null
+    where payment_request_id = (select id from t_payment) and template_key = 'deposit_request'$$,
+  '23514', 'payment email does not match the deposit request state',
+  'an obsolete request cannot be made sendable again');
+
+select is(
+  (public.record_email_outbox_result(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'),
+    'deposit-test-worker', false, null, 'gmail_deposit_email_obsolete') ->> 'status'),
+  'failed', 'an incorrect obsolete code cannot terminally suppress a valid paid confirmation');
+update public.integration_outbox set next_attempt_at = now()
+where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation');
+select is((select count(*)::int from public.claim_email_outbox('deposit-test-worker', 20, 120)),
+  1, 'only the valid confirmation is retryable');
+select is(
+  (public.record_email_outbox_result(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'),
+    'deposit-test-worker', true, 'synthetic_provider_1234', null) ->> 'status'),
+  'succeeded', 'valid confirmation can be acknowledged with its deterministic send result');
+select is(
+  (public.record_email_outbox_result(
+    (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'),
+    'deposit-test-worker', true, 'synthetic_provider_1234', null) ->> 'changed'),
+  'false', 'replaying successful acknowledgement is idempotent');
+select is((select count(*)::int from public.claim_email_outbox('deposit-test-worker', 20, 120)),
+  0, 'neither completed payment email is claimable again');
 
 select * from finish();
 rollback;

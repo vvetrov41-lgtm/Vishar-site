@@ -394,6 +394,68 @@ await test('malformed Gmail send response fails closed and is not reported as se
   );
 });
 
+await test('leased payment email without an enquiry sends once and deduplicates acknowledgement retries', async () => {
+  const env = oauthEnv();
+  const job = {
+    outbox_id: 'f1111111-1111-4111-8111-111111111111',
+    email_message_id: 'f2222222-2222-4222-8222-222222222222',
+    artist_id: 'a1111111-1111-4111-8111-111111111111',
+    client_id: 'f3333333-3333-4333-8333-333333333333', enquiry_id: null,
+    integration_key: 'google_gmail_vladimir', mailbox_email: 'vvetrov41@gmail.com',
+    to_email: 'local-client@example.test', subject: 'Local confirmation', body: 'Local paid deposit', job_valid: true,
+  };
+  await storeRefreshToken(env, {
+    artist_id: job.artist_id, integration_key: job.integration_key, mailbox_email: job.mailbox_email,
+    refresh_token: syntheticSecret('refresh-'), scope: `${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE}`,
+  });
+  const acks = [];
+  const db = { async backendRpc(name, args) {
+    if (name === 'service_resolve_gmail_outbox_target') {
+      assert.deepEqual(args, { p_outbox_id: job.outbox_id, p_worker_id: 'local-worker' });
+      return [{ ...job, client_email: job.to_email, delivery_allowed: true }];
+    }
+    assert.equal(name, 'record_email_outbox_result');
+    acks.push(args);
+    return { changed: acks.length === 1 };
+  } };
+  let sends = 0;
+  const fetchImpl = async (url, options) => {
+    assert.equal(options.redirect, 'manual');
+    if (String(url).includes('oauth2.googleapis.com/token')) return Response.json({ access_token: 'synthetic-access' });
+    if (String(url).endsWith('/profile')) return Response.json({ emailAddress: job.mailbox_email });
+    if (String(url).includes('/messages?')) {
+      assert.equal(new URL(url).searchParams.get('q'), `rfc822msgid:<vishar-email-${job.email_message_id}@vishartattoo.com>`);
+      return Response.json({ messages: sends ? [{ id: 'local_sent_1234', threadId: 'local_thread_1234' }] : [] });
+    }
+    assert(String(url).endsWith('/messages/send'));
+    assert.equal(options.method, 'POST');
+    sends += 1;
+    return Response.json({ id: 'local_sent_1234', threadId: 'local_thread_1234' });
+  };
+  assert.equal((await worker.processEmailJob(job, env, db, 'local-worker', fetchImpl)).outcome, 'sent');
+  assert.equal((await worker.processEmailJob(job, env, db, 'local-worker', fetchImpl)).outcome, 'deduplicated');
+  assert.equal(sends, 1);
+  assert.equal(acks.length, 2);
+  assert(acks.every(x => x.p_succeeded && x.p_provider_message_id === 'local_sent_1234'));
+
+  for (const [change, error] of [
+    [{ delivery_allowed: false }, 'gmail_deposit_email_obsolete'],
+    [{ artist_id: 'a2222222-2222-4222-8222-222222222222' }, 'gmail_target_scope_invalid'],
+    [{ email_message_id: job.outbox_id }, 'gmail_target_scope_invalid'],
+    [{ enquiry_id: job.outbox_id }, 'gmail_target_scope_invalid'],
+    [{ client_email: 'different@example.test' }, 'gmail_email_route_changed'],
+    [{ mailbox_email: 'different@example.test' }, 'gmail_email_route_changed'],
+  ]) {
+    const deniedDb = { async backendRpc(name) {
+      assert.equal(name, 'service_resolve_gmail_outbox_target');
+      return [{ ...job, client_email: job.to_email, delivery_allowed: true, ...change }];
+    } };
+    await assert.rejects(worker.processEmailJob(job, env, deniedDb, 'local-worker', () => {
+      throw new Error('provider must not be called');
+    }), { message: error });
+  }
+});
+
 await test('production config enables Vladimir and keeps Kristina independently gated', () => {
   const env = {
     VISHAR_ENVIRONMENT: 'production',
@@ -414,6 +476,7 @@ await test('production config enables Vladimir and keeps Kristina independently 
 
 await test('backend/user RPC gateways are explicit allow-lists and expose no generic provider proxy', () => {
   assert(gateway.BACKEND_RPCS.has('service_resolve_gmail_target'));
+  assert(gateway.BACKEND_RPCS.has('service_resolve_gmail_outbox_target'));
   assert(gateway.USER_RPCS.has('gpt_authorize_gmail_enquiry'));
   assert(!gateway.BACKEND_RPCS.has('sql'));
   assert(!gateway.USER_RPCS.has('rpc'));
