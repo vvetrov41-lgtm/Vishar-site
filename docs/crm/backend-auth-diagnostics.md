@@ -142,3 +142,14 @@ The bounded investigation started after the 2026-08-28 read-only reconciliation
 found two due `approved_email` jobs with zero attempts, while API log samples
 contained no `claim_email_outbox` calls. Enabled flags and an installed service
 binding alone are not evidence of successful outbound delivery.
+
+If the scheduler only reports `gmail_shared_drain_error`, the dedicated
+`gmail-shared-drain-observe.yml` workflow can observe both fixed production
+Workers for at most eight minutes. It uses an exact canonical, same-tree empty
+trigger in `release/private-crm-rc*-backend-auth-gmail-observe-*`, protected
+credentials and exact-head CI. It reads current Gmail version/configuration and
+source markers, then listens for the existing RPC and cron events. It never
+invokes the drain or a Supabase RPC and never deploys a Worker. Only fixed
+exception categories, known function names and sanitized backend diagnostics
+survive; raw source, logs, exception text, arguments and credentials are not
+saved. Both Worker snapshots must remain unchanged at completion.

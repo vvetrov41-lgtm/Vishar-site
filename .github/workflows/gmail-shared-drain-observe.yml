@@ -1,0 +1,71 @@
+name: Gmail shared drain read-only observation
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-backend-auth-gmail-observe-*'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: backend-auth-scheduler-operation
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.event.before }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+      - name: Gate immutable canonical source and exact-head CI
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ -z "$(git status --short)" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$APPROVED_SHA" ]
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,head_sha,status,conclusion}' | jq -s . > "$RUNNER_TEMP/gmail-ci.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation'; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/gmail-ci.json" >/dev/null
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Verify observer privacy and read-only boundary
+        run: |
+          node scripts/test-backend-auth-observer.mjs
+          npm run scan:secrets
+      - name: Discard raw Wrangler logs
+        run: |
+          set -euo pipefail
+          ln -s /dev/null "$RUNNER_TEMP/gmail-observer-wrangler.log"
+          echo "WRANGLER_LOG_PATH=$RUNNER_TEMP/gmail-observer-wrangler.log" >> "$GITHUB_ENV"
+      - name: Observe existing natural shared drain only
+        run: node scripts/observe-gmail-shared-drain.mjs
+      - name: Upload sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmail-shared-drain-${{ env.APPROVED_SHA }}
+          path: ${{ runner.temp }}/gmail-shared-drain-evidence.json
+          if-no-files-found: error
+          retention-days: 7

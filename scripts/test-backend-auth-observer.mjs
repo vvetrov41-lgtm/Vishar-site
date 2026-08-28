@@ -139,3 +139,60 @@ assert.ok(observer.includes('source_sha: deployedSource, observer_source_sha: en
 
 assert.ok(!workflow.split('    steps:')[0].includes('runner.temp'), 'runner context is unavailable in job-level env');
 assert.ok(workflow.includes('echo "WRANGLER_LOG_PATH=$WRANGLER_LOG_PATH" >> "$GITHUB_ENV"'));
+
+const { GMAIL, WINDOW_MS, safeException, extractGmailRpc, gmailSnapshot } = await import('./observe-gmail-shared-drain.mjs');
+assert.equal(WINDOW_MS, 8 * 60 * 1000);
+const gmailRpc = { scriptName: GMAIL, scriptVersion: { id: version },
+  event: { rpcMethod: 'drainApprovedEmailOutbox', arguments: [pii] }, outcome: 'exception',
+  exceptions: [{ name: 'Error', message: 'gmail_supabase_secret_unavailable', stack: `at createGmailSupabase (${pii})` }],
+  logs: [{ message: [JSON.stringify({ ...row, client: 'gmail_backend', rpc: 'claim_email_outbox' })] }] };
+const rpcObservation = extractGmailRpc(gmailRpc, version);
+assert.equal(rpcObservation.exceptions[0].code, 'gmail_supabase_secret_unavailable');
+assert.deepEqual(rpcObservation.exceptions[0].frames, ['createGmailSupabase']);
+assert.equal(rpcObservation.diagnostics[0].rpc, 'claim_email_outbox');
+assert.ok(!JSON.stringify(rpcObservation).includes(pii));
+for (const overrides of [{ scriptName: 'other' }, { scriptVersion: { id: 'other' } }, { event: { request: { body: pii } } }]) {
+  assert.equal(extractGmailRpc({ ...gmailRpc, ...overrides }, version), null);
+}
+assert.deepEqual(safeException({ name: pii, message: pii, stack: pii }), { code: 'unclassified', name: null, frames: [] });
+assert.equal(safeException({ message: 'gmail_rpc_failed ' + pii }).code, 'unclassified');
+assert.equal(safeException({ message: 'x'.repeat(8193) }), null);
+const gmailNames = ['GMAIL_TOKEN_ENCRYPTION_KEY', 'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET', 'SUPABASE_SECRET_KEY'];
+const gmailValues = {
+  '/settings': { bindings: [
+    { name: 'SUPABASE_URL', text: 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' },
+    { name: 'SUPABASE_PUBLISHABLE_KEY', text: 'sb_publishable_' + pii },
+    ...['GMAIL_DRAIN_ENABLED', 'GMAIL_READ_ENABLED', 'GMAIL_OAUTH_ENABLED', 'GMAIL_VLADIMIR_ENABLED', 'GMAIL_KRISTINA_ENABLED'].map(name => ({ name, text: 'true' })),
+    ...['GMAIL_OAUTH_STATE', 'GMAIL_OAUTH_TOKENS'].map((name, i) => ({ name, namespace_id: String(i + 1).repeat(32) })),
+  ] },
+  '/secrets': gmailNames.map(name => ({ name, value: pii })),
+  '/deployments': { deployments: [{ versions: [{ version_id: version, percentage: 100 }] }] },
+  '/schedules': { schedules: [] }, '/subdomain': { enabled: false, previews_enabled: false },
+  [`/versions/${version}`]: { annotations: { 'workers/tag': sha } },
+};
+let gmailReads = 0;
+const gmailState = await gmailSnapshot(env, async (url, init) => {
+  gmailReads++;
+  assert.equal(init.method, 'GET');
+  assert.equal(init.redirect, 'error');
+  const root = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${GMAIL}`;
+  assert.ok(url.startsWith(root));
+  const path = url.slice(root.length);
+  return path ? Response.json({ success: true, result: gmailValues[path] })
+    : new Response(`WorkerEntrypoint drainApprovedEmailOutbox claim_email_outbox ${pii}`);
+});
+assert.equal(gmailReads, 7);
+assert.equal(gmailState.version, version);
+assert.equal(gmailState.publishable_kind_valid, true);
+assert.equal(gmailState.code_markers.rpc_method_marker, true);
+assert.ok(!JSON.stringify(gmailState).includes(pii));
+const gmailWorkflow = readFileSync('.github/workflows/gmail-shared-drain-observe.yml', 'utf8');
+for (const required of ['github.actor == github.repository_owner', 'crm-production', 'git rev-parse "$GITHUB_SHA^{tree}"',
+  'refs/heads/agent/platform-telegram-self-service', 'Gmail production validation', 'ln -s /dev/null', 'retention-days: 7']) {
+  assert.ok(gmailWorkflow.includes(required));
+}
+assert.doesNotMatch(gmailWorkflow, /wrangler deploy|secret put|SUPABASE_ACCESS_TOKEN|db push|workflow_dispatch/);
+const gmailObserver = readFileSync('scripts/observe-gmail-shared-drain.mjs', 'utf8');
+assert.doesNotMatch(gmailObserver, /\.drainApprovedEmailOutbox\(/);
+assert.ok(gmailObserver.includes('JSON.stringify(before) !== JSON.stringify(after)'));
+console.log('Gmail RPC observer: fixed targets, GET-only snapshots, natural-traffic and privacy checks passed.');
