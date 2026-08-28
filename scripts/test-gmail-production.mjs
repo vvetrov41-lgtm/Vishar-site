@@ -163,10 +163,11 @@ await test('real Workers runtime reaches shared Gmail claim and rejects backend/
   } });
   let redirect = false;
   const calls = [];
+  const supabaseHost = `${'a'.repeat(20)}.supabase.co`;
   const outboundService = async (request) => {
     const url = new URL(request.url);
     calls.push(url.href);
-    assert(['syntheticproject00000.supabase.co', 'gmail.googleapis.com'].includes(url.hostname));
+    assert([supabaseHost, 'gmail.googleapis.com'].includes(url.hostname));
     if (redirect) return new Response(null, { status: 302, headers: { location: 'https://untrusted.example/stolen' } });
     if (url.pathname === '/rest/v1/rpc/claim_email_outbox') return Response.json([]);
     if (url.pathname === '/gmail/v1/users/me/profile') return Response.json({ emailAddress: 'local@example.com' });
@@ -182,7 +183,7 @@ await test('real Workers runtime reaches shared Gmail claim and rejects backend/
     },
     { name: 'gmail', compatibilityDate: '2026-05-25', modules: true,
       script: gmailBundle.outputFiles[0].text, outboundService,
-      bindings: { GMAIL_DRAIN_ENABLED: 'true', SUPABASE_URL: 'https://syntheticproject00000.supabase.co',
+      bindings: { GMAIL_DRAIN_ENABLED: 'true', SUPABASE_URL: `https://${supabaseHost}`,
         SUPABASE_SECRET_KEY: syntheticSupabaseKey('secret'), SUPABASE_PUBLISHABLE_KEY: syntheticSupabaseKey('publishable') },
     },
     { name: 'profile', compatibilityDate: '2026-05-25', modules: true,
