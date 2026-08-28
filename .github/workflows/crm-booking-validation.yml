@@ -105,7 +105,9 @@ jobs:
         run: node scripts/test-cloudflare-production-inventory.mjs
 
       - name: Backend auth observer privacy and release boundaries
-        run: node scripts/test-backend-auth-observer.mjs
+        run: |
+          node scripts/test-backend-auth-observer.mjs
+          node scripts/test-worker-import-closure.mjs
 
       - name: Test exact CRM Pages production preflight
         run: node scripts/test-crm-pages-production-preflight.mjs
