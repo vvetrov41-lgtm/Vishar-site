@@ -193,7 +193,7 @@ try {
     assert.equal(call.headers.get('apikey'), gmailEnv.SUPABASE_SECRET_KEY);
     assert.equal(call.headers.get('authorization'), null);
     assert.equal(call.body, JSON.stringify({ p_limit: 5 }));
-    assert.equal(call.redirect, 'error');
+    assert.equal(call.redirect, 'manual');
   }
   const gmailRetryRows = messages.slice(retryBefore).map(x => JSON.parse(x));
   assert.deepEqual(gmailRetryRows.map(x => [x.client, x.status, x.attempt]), [

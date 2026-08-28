@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { Miniflare } from 'miniflare';
 import {
   GMAIL_READ_SCOPE,
   GMAIL_SEND_SCOPE,
   authorizationUrl,
+  exchangeAuthorizationCode,
   storeRefreshToken,
   refreshAccessToken,
   searchThreads,
@@ -122,6 +125,80 @@ await test('OAuth callback rejects a valid token issued for the wrong Google acc
   assert.equal(calls, 2);
   assert.equal(env.GMAIL_OAUTH_TOKENS.values.size, 0);
   assert.equal(env.GMAIL_OAUTH_STATE.values.size, 0);
+});
+
+await test('OAuth exchange and refresh reject redirects without following them', async () => {
+  const env = oauthEnv();
+  const artistId = 'a1111111-1111-4111-8111-111111111111';
+  await storeRefreshToken(env, {
+    artist_id: artistId, integration_key: 'google_gmail_vladimir',
+    mailbox_email: 'vvetrov41@gmail.com', refresh_token: syntheticSecret('refresh-'),
+    scope: `${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE}`,
+  });
+  let calls = 0;
+  const redirect = async (_url, options) => {
+    calls += 1;
+    assert.equal(options.redirect, 'manual');
+    return new Response(null, { status: 302, headers: { location: 'https://untrusted.example/token' } });
+  };
+  await assert.rejects(exchangeAuthorizationCode({ clientId: 'synthetic', clientSecret: syntheticSecret(),
+    redirectUri: 'https://gmail.example/callback', code: 'synthetic', verifier: 'synthetic', fetchImpl: redirect,
+  }), /gmail_oauth_code_exchange_failed/);
+  await assert.rejects(refreshAccessToken(env, artistId, redirect), /gmail_token_refresh_failed/);
+  assert.equal(calls, 2);
+});
+
+await test('real Workers runtime reaches shared Gmail claim and rejects backend/provider redirects', async () => {
+  // Exercise native workerd fetch: a Node fetch stub accepts unsupported redirect modes.
+  // Every outbound request is intercepted locally; this never contacts production or Google.
+  const options = { bundle: true, write: false, format: 'esm', platform: 'neutral', external: ['cloudflare:workers'] };
+  const gmailBundle = await build({ ...options, entryPoints: ['workers/gmail-production-entrypoint.js'] });
+  const profileBundle = await build({ ...options, stdin: {
+    resolveDir: process.cwd(), contents: `
+      import { getProfile } from './workers/lib/google-gmail.js';
+      export default { async fetch() {
+        try { return Response.json(await getProfile('synthetic-access-token')); }
+        catch (error) { return Response.json({ error: error.message }, { status: 502 }); }
+      }};`,
+  } });
+  let redirect = false;
+  const calls = [];
+  const supabaseHost = `${'a'.repeat(20)}.supabase.co`;
+  const outboundService = async (request) => {
+    const url = new URL(request.url);
+    calls.push(url.href);
+    assert([supabaseHost, 'gmail.googleapis.com'].includes(url.hostname));
+    if (redirect) return new Response(null, { status: 302, headers: { location: 'https://untrusted.example/stolen' } });
+    if (url.pathname === '/rest/v1/rpc/claim_email_outbox') return Response.json([]);
+    if (url.pathname === '/gmail/v1/users/me/profile') return Response.json({ emailAddress: 'local@example.com' });
+    throw new Error('unexpected local outbound request');
+  };
+  const mf = new Miniflare({ workers: [
+    { name: 'scheduler', compatibilityDate: '2026-05-25', modules: true,
+      serviceBindings: { GMAIL_SERVICE: 'gmail' },
+      script: `export default { async fetch(request, env) {
+        try { return Response.json(await env.GMAIL_SERVICE.drainApprovedEmailOutbox()); }
+        catch (error) { return Response.json({ error: error.message }, { status: 502 }); }
+      }};`,
+    },
+    { name: 'gmail', compatibilityDate: '2026-05-25', modules: true,
+      script: gmailBundle.outputFiles[0].text, outboundService,
+      bindings: { GMAIL_DRAIN_ENABLED: 'true', SUPABASE_URL: `https://${supabaseHost}`,
+        SUPABASE_SECRET_KEY: syntheticSupabaseKey('secret'), SUPABASE_PUBLISHABLE_KEY: syntheticSupabaseKey('publishable') },
+    },
+    { name: 'profile', compatibilityDate: '2026-05-25', modules: true,
+      script: profileBundle.outputFiles[0].text, outboundService },
+  ] });
+  try {
+    const profile = await mf.getWorker('profile');
+    assert.deepEqual(await (await mf.dispatchFetch('http://local.test')).json(),
+      { skipped: false, processed: 0, sent: 0, deduplicated: 0, failed: 0 });
+    assert.equal((await (await profile.fetch('http://local.test')).json()).emailAddress, 'local@example.com');
+    redirect = true;
+    assert.deepEqual(await (await mf.dispatchFetch('http://local.test')).json(), { error: 'gmail_rpc_failed' });
+    assert.deepEqual(await (await profile.fetch('http://local.test')).json(), { error: 'gmail_api_error' });
+    assert.equal(calls.length, 4); // No redirect follow or extra retry for either 302 response.
+  } finally { await mf.dispose(); }
 });
 
 await test('refresh token envelope is encrypted and artist-bound', async () => {

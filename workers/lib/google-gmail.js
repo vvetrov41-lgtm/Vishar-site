@@ -145,7 +145,7 @@ async function exchangeAuthorizationCode({ clientId, clientSecret, redirectUri, 
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body,
-    redirect: 'error',
+    redirect: 'manual',
   });
   const json = await response.json().catch(() => null);
   if (!response.ok || !json || typeof json.access_token !== 'string') throw new Error('gmail_oauth_code_exchange_failed');
@@ -166,7 +166,7 @@ async function refreshAccessToken(env, artistId, fetchImpl = fetch) {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body,
-    redirect: 'error',
+    redirect: 'manual',
   });
   const json = await response.json().catch(() => null);
   if (!response.ok || !json || typeof json.access_token !== 'string') {
@@ -185,7 +185,7 @@ async function gmailFetch(path, accessToken, { method = 'GET', body, fetchImpl =
       ...(body ? { 'content-type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
-    redirect: 'error',
+    redirect: 'manual',
   });
   const json = await response.json().catch(() => null);
   if (!response.ok || !json) {

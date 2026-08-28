@@ -37,7 +37,8 @@ async function callRpc(origin, name, args, headers, fetchImpl, observe, retrySec
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(args || {}),
-      redirect: 'error',
+      // Workers supports manual/follow only. Reject 3xx below without forwarding credentials.
+      redirect: 'manual',
     });
     details = observe
       ? await observe(name, response, startedAt, attempt)
