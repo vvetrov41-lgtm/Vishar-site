@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { snapshot } from './observe-backend-auth.mjs';
 
 export const PROJECT = 'vfjexhfdbrjmuxfdvbdx';
+export const EXPECTED_MIGRATION = '0115';
 export const EVIDENCE_RUN = 33191205274;
 export const EVIDENCE_SOURCE = '1d88d6158320025a7a7b9aaa18fa6b20cd54f781';
 const ROOT = `https://api.supabase.com/v1/projects/${PROJECT}`;
@@ -39,7 +40,7 @@ export function projectState(value) {
 export function healthState(rows) {
   if (!Array.isArray(rows) || rows.length !== 1) fail('restart_health');
   const row = rows[0], out = {};
-  if (row.migration !== '0114' || !Number.isFinite(Date.parse(row.heartbeat))) fail('restart_health');
+  if (row.migration !== EXPECTED_MIGRATION || !Number.isFinite(Date.parse(row.heartbeat))) fail('restart_health');
   out.migration = row.migration;
   for (const key of ['artists', 'rules', 'integrations', 'integration_errors', 'failed', 'pending',
     'overdue', 'running', 'due_soon', 'leased', 'active_transactions']) {
