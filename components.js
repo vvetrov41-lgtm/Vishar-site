@@ -22,9 +22,9 @@ const CONSENT_KEY = 'vishar-cookie-consent-v2';
 
 const NAV_LINKS = [
 { id: 'home',           label: 'Home',           href: '/' },
-{ id: 'colour-realism', label: 'Colour Realism', href: '/colour-realism-tattoo-manchester/' },
-{ id: 'black-grey',     label: 'Black & Grey',   href: '/black-and-grey-realism-manchester/' },
-{ id: 'cover-up',       label: 'Cover-ups',      href: '/cover-up-tattoo-manchester/' },
+{ id: 'colour-realism', label: 'Colour Realism', href: '/colour-realism-tattoo-london/' },
+{ id: 'black-grey',     label: 'Black & Grey',   href: '/black-and-grey-realism-london/' },
+{ id: 'cover-up',       label: 'Cover-ups',      href: '/cover-up-tattoo-london/' },
 { id: 'booking',        label: 'Book a Tattoo',  href: '/booking/' },
 { id: 'about',          label: 'About',           href: '/about/' },
 { id: 'book',           label: 'The Book',        href: '/book/' },
