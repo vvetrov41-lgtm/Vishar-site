@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createTailErrorClassifier, classifyTailError, assertDiscardLogSink, operationFromRef, extractDiagnostics, jsonFrames, hasMixed401, snapshot, tailArguments, WORKER, OBSERVE_MS } from './observe-backend-auth.mjs';
+import { createTailErrorClassifier, classifyTailError, assertDiscardLogSink, operationFromRef, extractDiagnostics, extractGmailDiagnostics, jsonFrames, hasMixed401, snapshot, tailArguments, WORKER, OBSERVE_MS } from './observe-backend-auth.mjs';
 const version = '12345678-abcd-4abc-8abc-123456789012';
 const sha = 'a'.repeat(40);
 const pii = 'private-customer@example.test';
@@ -25,6 +25,28 @@ assert.ok(!hasMixed401([rows[0], { ...rows[1], key_kind: 'legacy_service_role' }
 assert.equal(extractDiagnostics({ ...envelope, event: { request: {} } }, version).length, 0);
 assert.equal(extractDiagnostics({ ...envelope, scriptName: 'another-worker' }, version).length, 0);
 assert.equal(extractDiagnostics({ ...envelope, scriptVersion: { id: 'different' } }, version).length, 0);
+const gmailEnvelope = { ...envelope, logs: [
+  { message: ['gmail outbox shared drain', JSON.stringify({ skipped: false, processed: 2, sent: 1, deduplicated: 0, failed: 1, private: pii })] },
+  { message: ['gmail outbox shared drain failed', JSON.stringify({ code: 'gmail_service_binding_unavailable', private: pii })] },
+  { message: ['gmail outbox shared drain failed', JSON.stringify({ code: pii })] },
+  { message: ['arbitrary', JSON.stringify({ code: 'gmail_rpc_failed' })] },
+], exceptions: [{ message: 'Error: gmail_supabase_publishable_unavailable', stack: pii },
+  { message: `Error: gmail_rpc_failed ${pii}` }, { message: pii }] };
+const gmailRows = extractGmailDiagnostics(gmailEnvelope, version);
+assert.equal(gmailRows.length, 3);
+assert.equal(gmailRows[0].processed, 2);
+assert.equal(gmailRows[1].code, 'gmail_service_binding_unavailable');
+assert.equal(gmailRows[2].code, 'gmail_supabase_publishable_unavailable');
+assert.ok(!JSON.stringify(gmailRows).includes(pii));
+assert.equal(extractGmailDiagnostics({ ...gmailEnvelope, scriptVersion: { id: 'different' } }, version).length, 0);
+assert.equal(extractGmailDiagnostics({ ...gmailEnvelope, scriptName: 'another-worker' }, version).length, 0);
+assert.equal(extractGmailDiagnostics({ ...gmailEnvelope, event: { request: {} } }, version).length, 0);
+for (const counts of [{ processed: -1, sent: 0, deduplicated: 0, failed: 0 },
+  { processed: 1, sent: 1, deduplicated: 1, failed: 0 },
+  { processed: 21, sent: 0, deduplicated: 0, failed: 0 }]) {
+  assert.equal(extractGmailDiagnostics({ ...envelope, logs: [{ message: ['gmail outbox shared drain',
+    JSON.stringify({ skipped: false, ...counts })] }] }, version).length, 0);
+}
 assert.throws(() => jsonFrames(() => {})('{' + ' '.repeat(1024 * 1024)), /frame_limit/);
 assert.equal(OBSERVE_MS, 1200000);
 assert.ok(tailArguments(version).includes(version));
