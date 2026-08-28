@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 const PROJECT = 'vfjexhfdbrjmuxfdvbdx';
 const MIGRATION = '0115_gmail_deposit_outbox_target.sql';
-const FUNCTIONS = ['gmail_deposit_email_obsolete', 'service_resolve_gmail_outbox_target', 'record_email_outbox_result'];
+const FUNCTIONS = ['gmail_deposit_email_obsolete', 'guard_email_automation_job', 'service_resolve_gmail_outbox_target', 'record_email_outbox_result'];
 export const STATE_SQL = `select
   (select jsonb_agg(version order by version) from supabase_migrations.schema_migrations) as versions,
   (select count(*) from public.integration_outbox where kind='approved_email' and status='leased') as leases,
@@ -19,7 +19,7 @@ export const STATE_SQL = `select
      'service',has_function_privilege('service_role',p.oid,'EXECUTE')) order by p.proname)
    from pg_proc p join pg_namespace n on n.oid=p.pronamespace
    where (n.nspname='public' and p.proname in ('service_resolve_gmail_outbox_target','record_email_outbox_result'))
-     or (n.nspname='crm_private' and p.proname='gmail_deposit_email_obsolete')) as functions`;
+     or (n.nspname='crm_private' and p.proname in ('gmail_deposit_email_obsolete','guard_email_automation_job'))) as functions`;
 
 export function expectedBodies(sql) {
   return Object.fromEntries(FUNCTIONS.map(name => {
@@ -40,13 +40,14 @@ export function assertState(project, row, versions, bodies, phase, previous, now
   if (row.leases !== 0 || row.failed !== 0 || row.overdue !== 0
     || !Number.isFinite(age) || age < 0 || age > 900000 || !/^[a-f0-9]{32}$/.test(row.queue_digest)) throw Error('gmail_migration_health');
   if (previous && previous.queue_digest !== row.queue_digest) throw Error('gmail_migration_queue_changed');
-  if (phase === 'before' && row.functions?.some(f => f.name !== 'record_email_outbox_result')) throw Error('gmail_migration_already_applied');
+  if (phase === 'before' && (row.functions?.length !== 2
+    || row.functions.some(f => !['record_email_outbox_result', 'guard_email_automation_job'].includes(f.name)))) throw Error('gmail_migration_already_applied');
   if (phase === 'after') {
     if (!previous || row.functions?.length !== FUNCTIONS.length) throw Error('gmail_migration_readback');
     for (const name of FUNCTIONS) {
       const f = row.functions.find(f => f.name === name);
       if (!f || f.body_md5 !== bodies[name] || f.anon !== false || f.authenticated !== false
-        || f.service !== (name !== 'gmail_deposit_email_obsolete')) throw Error('gmail_migration_readback');
+        || f.service !== (name === 'service_resolve_gmail_outbox_target' || name === 'record_email_outbox_result')) throw Error('gmail_migration_readback');
     }
   }
   return { project: PROJECT, phase, migration: expected.at(-1), queue_digest: row.queue_digest,

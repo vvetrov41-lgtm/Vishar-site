@@ -414,6 +414,13 @@ select ok(
     (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation'), 'deposit-test-worker')),
   'paid confirmation resolves through payment/project ownership without an enquiry');
 
+select throws_ok(
+  $$update public.email_messages set status = 'failed', failed_at = now(),
+      error_code = 'gmail_deposit_email_obsolete', body = body || ' changed'
+    where payment_request_id = (select id from t_payment) and template_key = 'deposit_request'$$,
+  '23514', 'payment email does not match the deposit request state',
+  'terminal obsolete acknowledgement cannot alter the approved email content');
+
 select is(
   (public.record_email_outbox_result(
     (select outbox_id from t_delivery_jobs where template_key = 'deposit_request'),
@@ -423,6 +430,11 @@ select ok(
   (select sent_at is null and provider_message_id is null and error_code = 'gmail_deposit_email_obsolete'
    from public.email_messages where payment_request_id = (select id from t_payment) and template_key = 'deposit_request'),
   'obsolete request is not reported as sent');
+select throws_ok(
+  $$update public.email_messages set status = 'approved', error_code = null, failed_at = null
+    where payment_request_id = (select id from t_payment) and template_key = 'deposit_request'$$,
+  '23514', 'payment email does not match the deposit request state',
+  'an obsolete request cannot be made sendable again');
 
 select is(
   (public.record_email_outbox_result(

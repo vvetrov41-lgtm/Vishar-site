@@ -219,3 +219,109 @@ begin
   return jsonb_build_object('outbox_id', p_outbox_id, 'status', v_status, 'attempt_count', v_attempt_count, 'changed', true);
 end;
 $function$;
+
+-- Preserve the payment provenance guard while allowing its terminal, unsent
+-- obsolete acknowledgement. Creation, reapproval and sending remain denied.
+create or replace function crm_private.guard_email_automation_job()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_job_artist uuid;
+  v_action public.automation_action_type;
+  v_session_id uuid;
+  v_session public.sessions%rowtype;
+  v_payment public.payment_requests%rowtype;
+begin
+  if new.automation_job_id is not null and new.payment_request_id is not null then
+    raise exception 'system email may have only one provenance source'
+      using errcode = '23514';
+  end if;
+
+  if new.automation_job_id is not null then
+    if new.created_by_kind <> 'system'
+       or new.created_by is not null
+       or new.approved_by is not null then
+      raise exception 'automation email provenance must be system-only'
+        using errcode = '23514';
+    end if;
+
+    select j.artist_id, j.action_type, j.session_id
+      into v_job_artist, v_action, v_session_id
+    from public.automation_jobs j
+    where j.id = new.automation_job_id;
+
+    if v_job_artist is null
+       or v_action <> 'send_client_message'::public.automation_action_type
+       or v_session_id is null
+       or v_job_artist <> new.artist_id then
+      raise exception 'automation email does not match its lifecycle job'
+        using errcode = '23514';
+    end if;
+
+    select s.* into v_session
+    from public.sessions s
+    where s.id = v_session_id;
+
+    if not found
+       or v_session.artist_id <> new.artist_id
+       or v_session.client_id is distinct from new.client_id
+       or v_session.enquiry_id is distinct from new.enquiry_id
+       or v_session.project_id is distinct from new.project_id then
+      raise exception 'automation email links do not match the authoritative session'
+        using errcode = '23514';
+    end if;
+
+    return new;
+  end if;
+
+  if new.payment_request_id is not null then
+    if new.created_by_kind <> 'system'
+       or new.created_by is not null
+       or new.approved_by is not null then
+      raise exception 'payment email provenance must be system-only'
+        using errcode = '23514';
+    end if;
+
+    select r.* into v_payment
+    from public.payment_requests r
+    where r.id = new.payment_request_id;
+
+    if not found
+       or v_payment.purpose <> 'deposit'
+       or v_payment.artist_id <> new.artist_id
+       or v_payment.client_id is distinct from new.client_id
+       or v_payment.project_id is distinct from new.project_id
+       or new.enquiry_id is not null
+       or new.template_key not in ('deposit_request', 'deposit_confirmation') then
+      raise exception 'payment email does not match its authoritative deposit request'
+        using errcode = '23514';
+    end if;
+
+    if (new.template_key = 'deposit_request'
+        and v_payment.status not in ('pending', 'partially_paid'))
+       or (new.template_key = 'deposit_confirmation'
+           and v_payment.status <> 'paid') then
+      -- The owned-lease acknowledgement may close an obsolete approved email.
+      -- It cannot change content, routing, provenance or sent/provider fields,
+      -- and cannot turn an obsolete payment email back into a sendable state.
+      if tg_op = 'UPDATE' and old.status = 'approved' and new.status = 'failed'
+         and new.error_code = 'gmail_deposit_email_obsolete'
+         and crm_private.is_service_backend()
+         and (to_jsonb(new) - array['status','failed_at','error_code','updated_at'])
+           = (to_jsonb(old) - array['status','failed_at','error_code','updated_at']) then
+        return new;
+      end if;
+      raise exception 'payment email does not match the deposit request state'
+        using errcode = '23514';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function crm_private.guard_email_automation_job()
+  from public, anon, authenticated, service_role;

@@ -79,10 +79,12 @@ const project = { id: 'vfjexhfdbrjmuxfdvbdx', name: 'vishar-crm-production', reg
 const versions = ['0113', '0114', '0115'];
 const bodies = expectedBodies(readFileSync('supabase/migrations/0115_gmail_deposit_outbox_target.sql', 'utf8'));
 const before = { versions: ['0113', '0114'], leases: 0, failed: 0, overdue: 0,
-  queue_digest: 'a'.repeat(32), heartbeat: new Date().toISOString(), functions: [{ name: 'record_email_outbox_result' }] };
+  queue_digest: 'a'.repeat(32), heartbeat: new Date().toISOString(),
+  functions: [{ name: 'record_email_outbox_result' }, { name: 'guard_email_automation_job' }] };
 const previous = assertState(project, before, versions, bodies, 'before');
 const after = { ...before, versions, functions: Object.keys(bodies).map(name => ({
-  name, body_md5: bodies[name], anon: false, authenticated: false, service: name !== 'gmail_deposit_email_obsolete',
+  name, body_md5: bodies[name], anon: false, authenticated: false,
+  service: name === 'service_resolve_gmail_outbox_target' || name === 'record_email_outbox_result',
 })) };
 assert.equal(assertState(project, after, versions, bodies, 'after', previous).functions_verified, true);
 for (const change of [{ versions }, { versions: ['0114'] }, { leases: 1 }, { leases: null },
