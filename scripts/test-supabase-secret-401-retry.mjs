@@ -113,8 +113,14 @@ try {
   const id = '12345678-abcd-4abc-8abc-123456789012';
   const client = createSupabaseClient(secretEnv, makeFetch([
     Response.json({ code: 'PGRST303', message: 'JWT expired', details: privateText, credential: secretEnv.SUPABASE_SECRET_KEY },
-      { status: 401, headers: { 'sb-request-id': id, 'cf-ray': '1234567890abcdef-LHR', 'x-request-id': privateText } }),
-    Response.json([{ ok: true, privateText }]),
+      { status: 401, headers: {
+        'sb-request-id': id,
+        'cf-ray': '1234567890abcdef-LHR',
+        'x-request-id': privateText,
+        'sb-gateway-version': '2',
+        'x-sb-error-code': 'bad_jwt',
+      } }),
+    Response.json([{ ok: true, privateText }], { headers: { 'sb-gateway-version': '1' } }),
   ], calls));
   assert.deepEqual(await client.rpc('service_run_automation_tick', { customer: privateText }), [{ ok: true, privateText }]);
   assert.equal(calls.length, 2);
@@ -122,19 +128,26 @@ try {
   assert.deepEqual(rows.map(x => [x.status, x.attempt]), [[401, 1], [200, 2]]);
   assert.equal(rows[0].supabase_code, 'PGRST303');
   assert.equal(rows[0].auth_reason, 'jwt_expired');
+  assert.equal(rows[0].sb_gateway_version, '2');
+  assert.equal(rows[0].x_sb_error_code, 'bad_jwt');
   assert.equal(rows[0].sb_request_id, id);
   assert.equal(rows[0].request_id, null);
   assert.equal(rows[0].cf_ray, '1234567890abcdef-lhr');
   assert.equal(rows[0].classification, 'unauthorized');
   assert.equal(rows[1].body_state, 'not_read');
+  assert.equal(rows[1].sb_gateway_version, '1');
+  assert.equal(rows[1].x_sb_error_code, null);
   for (const forbidden of [privateText, secretEnv.SUPABASE_SECRET_KEY, 'authorization', 'apikey', 'credential']) {
     assert.ok(!messages.join('').toLowerCase().includes(forbidden.toLowerCase()));
   }
   assert.equal(sanitizeBackendDiagnostic({ ...rows[0], rpc: 'toString' }), null);
   const projected = sanitizeBackendDiagnostic({ ...rows[0], task: privateText, classification: privateText,
-    request_id: secretEnv.SUPABASE_SECRET_KEY, supabase_code: privateText, auth_reason: privateText, payload: privateText });
+    request_id: secretEnv.SUPABASE_SECRET_KEY, supabase_code: privateText, auth_reason: privateText,
+    sb_gateway_version: privateText, x_sb_error_code: privateText, payload: privateText });
   assert.equal(projected.task, 'automation_tick');
   assert.equal(projected.supabase_code, null);
+  assert.equal(projected.sb_gateway_version, null);
+  assert.equal(projected.x_sb_error_code, null);
   assert.ok(!JSON.stringify(projected).includes(privateText));
   assert.equal((await readSafeSupabaseError(Response.json({ code: privateText, message: privateText }, { status: 401 }))).supabase_code, null);
   assert.equal((await readSafeSupabaseError(new Response('<html>private</html>', { status: 401 }))).body_state, 'not_json');
