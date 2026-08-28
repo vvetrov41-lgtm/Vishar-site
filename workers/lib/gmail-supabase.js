@@ -2,6 +2,7 @@ import { createBackendResponseObserver, readSafeSupabaseError } from './supabase
 
 const BACKEND_RPCS = new Set([
   'service_resolve_gmail_target',
+  'service_resolve_gmail_outbox_target',
   'service_set_gmail_integration',
   'service_disable_gmail_integration',
   'service_upsert_gmail_thread_context',
