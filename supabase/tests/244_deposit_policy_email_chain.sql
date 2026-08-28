@@ -242,6 +242,16 @@ select is(
   're-requesting cannot duplicate the request outbox item'
 );
 
+-- Cancellation must be tested before any funds are recorded: the financial
+-- guard correctly forbids cancelling a paid request.
+savepoint cancelled_delivery;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update public.payment_requests set status = 'cancelled' where id = (select id from t_payment);
+select ok(crm_private.gmail_deposit_email_obsolete(
+  (select id from public.email_messages where payment_request_id = (select id from t_payment) and template_key = 'deposit_request')),
+  'a cancelled payment request makes its queued deposit request obsolete');
+rollback to savepoint cancelled_delivery;
+
 select pg_temp.as_owner();
 set local role authenticated;
 select lives_ok(
@@ -387,14 +397,6 @@ select ok(
   (select not delivery_allowed from public.service_resolve_gmail_outbox_target(
     (select outbox_id from t_delivery_jobs where template_key = 'deposit_request'), 'deposit-test-worker')),
   'an unpaid-deposit request becomes obsolete once the authoritative request is paid');
-
-savepoint cancelled_delivery;
-update public.payment_requests set status = 'cancelled' where id = (select id from t_payment);
-select ok(
-  (select not delivery_allowed from public.service_resolve_gmail_outbox_target(
-    (select outbox_id from t_delivery_jobs where template_key = 'deposit_request'), 'deposit-test-worker')),
-  'a cancelled payment request cannot authorize its queued deposit request');
-rollback to savepoint cancelled_delivery;
 
 savepoint mismatched_project;
 update public.integration_outbox set project_id = null
