@@ -11,20 +11,22 @@ website or publish new pages.
 - Brand: Vladimir Vishar / Vishar Tattoo.
 - Website: https://vishartattoo.com/
 - Business model: personal artist portfolio and qualified-enquiry website.
-- Vladimir works from No Regrets Studios Manchester in Salford. He does not own
-  the studio and the agent must not present the studio as Vladimir's business.
+- The website is now positioned for future London appointments. Do not present
+  a permanent London studio address until one is explicitly verified; the exact
+  studio is confirmed with each appointment.
 - Primary conversion: a relevant project enquiry followed by consultation.
 - Appointments only; no walk-ins.
 
 ## Location hierarchy
 
-1. Physical working location: Salford.
-2. Primary commercial search market: Manchester.
-3. Wider service area: Greater Manchester.
+1. Primary commercial search market: London.
+2. Appointment market: London, with the exact studio confirmed per appointment.
+3. Do not infer or publish a permanent studio address, borough, or neighbourhood
+   until it is explicitly verified.
 
-Do not create near-duplicate pages for Manchester, Salford, Greater Manchester,
-or nearby towns. A new local page requires evidence of distinct demand and
-enough genuinely location-specific content.
+Do not create near-duplicate pages for London boroughs, neighbourhoods, or
+nearby towns. A new local page requires evidence of distinct demand and enough
+genuinely location-specific content.
 
 ## Core services and subject fit
 
@@ -41,15 +43,15 @@ and existing business facts must support every claimed specialty.
 
 ## Approved starting query cluster
 
-- realism tattoo artist Manchester
-- black and grey realism tattoo Manchester
-- colour realism tattoo Manchester
-- tattoo cover up Manchester
-- custom tattoo artist Manchester
-- realism tattoo artist Salford
-- tattoo artist Salford
-- tattoo consultation Manchester
-- portrait tattoo artist Manchester
+- realism tattoo artist London
+- black and grey realism tattoo London
+- colour realism tattoo London
+- tattoo cover up London
+- custom tattoo artist London
+- tattoo consultation London
+- portrait tattoo artist London
+- large scale realism tattoo artist London
+- realism sleeve tattoo artist London
 - Vladimir Vishar tattoo artist
 
 This is a starting monitoring and research cluster, not a mandate to create one
@@ -73,10 +75,10 @@ successful fetch does not guarantee an LLM citation or recommendation.
 ## Content and claims guardrails
 
 - Do not invent or silently update prices, booking windows, availability,
-  awards, reviews, qualifications, medical advice, or studio policies.
+  awards, reviews, qualifications, medical advice, studio addresses, or studio
+  policies.
 - Do not use unsupported superlatives such as “best”, “leading”, or “top-rated”.
-- Do not over-promote No Regrets Studios; mention it only where location,
-  enquiry handling, finance, or studio process makes it materially relevant.
+- Do not infer a London borough or permanent studio from an appointment location.
 - Do not mass-generate location, service, FAQ, or comparison pages.
 - Do not rewrite visible copy during an audit without an approved patch plan.
 - Preserve British English (`en-GB`).
@@ -93,6 +95,10 @@ marketplace; do not compare unlike entities without labelling the difference.
 
 - Deep context was collected from the repository's seven core HTML pages.
 - Brand variants were explicitly confirmed by Vladimir Vishar on 2026-07-14.
+- The London commercial-positioning migration and metadata cleanup were approved
+  in the project chat on 2026-08-24. PR #426 migrated the three indexed specialty
+  routes to London slugs and preserves their former Manchester URLs with permanent
+  301 redirects.
 - Technical SEO and LLM crawler remediation through PR #159 is existing
   evidence, but future live measurements must still record their own date,
   method, location, device, and provider.
