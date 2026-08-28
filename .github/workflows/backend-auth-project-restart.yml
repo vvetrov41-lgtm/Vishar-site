@@ -86,8 +86,12 @@ jobs:
           assertWorkerImportClosureUnchanged(EVIDENCE_SOURCE, process.env.APPROVED_SHA, 'workers/telegram-drain-worker.js');
           execFileSync('git', ['diff', '--quiet', EVIDENCE_SOURCE, process.env.APPROVED_SHA, '--',
             'package.json', 'package-lock.json', 'wrangler.telegram-drain.production.toml',
-            'scripts/generate-telegram-production-deploy-config.mjs', 'scripts/preflight-telegram-production.mjs',
-            'supabase/migrations']);
+            'scripts/generate-telegram-production-deploy-config.mjs', 'scripts/preflight-telegram-production.mjs']);
+          const migrationDelta = execFileSync('git', ['diff', '--name-only', EVIDENCE_SOURCE, process.env.APPROVED_SHA, '--',
+            'supabase/migrations'], { encoding: 'utf8' }).trim();
+          if (migrationDelta !== 'supabase/migrations/0115_gmail_deposit_outbox_target.sql') {
+            throw new Error('restart_migration_lineage_changed');
+          }
           await appendFile(process.env.GITHUB_ENV, 'DEPLOYED_SOURCE_SHA=' + state.source_sha + '\n');
           NODE
       - name: Restart once during a quiet interval and verify recovery
