@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PROJECT, EVIDENCE_SOURCE, HEALTH_SQL, projectState, healthState, healthy, quiet,
+import { PROJECT, EXPECTED_MIGRATION, EVIDENCE_SOURCE, HEALTH_SQL, projectState, healthState, healthy, quiet,
   evidenceState, restartOnce } from './restart-backend-auth-project.mjs';
 
 const now = Date.parse('2026-08-28T17:01:15Z');
-const baseline = { migration: '0114', artists: 2, rules: 12, integrations: 13, integration_errors: 0,
+const baseline = { migration: EXPECTED_MIGRATION, artists: 2, rules: 12, integrations: 13, integration_errors: 0,
   failed: 0, pending: 13, overdue: 0, running: 0, due_soon: 0, leased: 0, active_transactions: 0,
   heartbeat: '2026-08-28T17:00:53Z' };
+assert.equal(EXPECTED_MIGRATION, '0115');
 const health = healthState([{ ...baseline, arbitrary: 'private-value' }]);
 assert.equal(JSON.stringify(health).includes('private-value'), false);
 assert.equal(healthy(health, now), true);
@@ -18,8 +19,9 @@ assert.equal(quiet(health, Date.parse('2026-08-28T17:00:59Z')), false);
 assert.equal(quiet(health, Date.parse('2026-08-28T17:02:00Z')), false);
 assert.equal(healthy({ ...health, heartbeat: '2026-08-28T16:30:00Z' }, now), false);
 assert.equal(healthy({ ...health, heartbeat: '2026-08-28T18:00:00Z' }, now), false);
-for (const value of [[], [{ ...baseline, migration: '0115' }], [{ ...baseline, leased: -1 }],
-  [{ ...baseline, running: null }], [{ ...baseline, heartbeat: 'private-value' }]]) {
+for (const value of [[], [{ ...baseline, migration: '0114' }], [{ ...baseline, migration: '0116' }],
+  [{ ...baseline, leased: -1 }], [{ ...baseline, running: null }],
+  [{ ...baseline, heartbeat: 'private-value' }]]) {
   assert.throws(() => healthState(value), /restart_health/);
 }
 assert.deepEqual(projectState({ id: PROJECT, name: 'vishar-crm-production', region: 'eu-west-2',
@@ -55,6 +57,8 @@ const workflow = readFileSync(new URL('../.github/workflows/backend-auth-project
 assert.match(workflow, /github.run_attempt == 1/);
 assert.match(workflow, /environment: crm-production/);
 assert.match(workflow, /group: backend-auth-scheduler-operation/);
+assert.match(workflow, /supabase\/migrations\/0115_gmail_deposit_outbox_target\.sql/);
+assert.match(workflow, /restart_migration_lineage_changed/);
 assert.doesNotMatch(workflow, /wrangler deploy|db push|apply.migration|workflow_dispatch/);
 for (const path of ['private-production-release.yml', 'private-production-release-observer.yml']) {
   assert.match(readFileSync(new URL(`../.github/workflows/${path}`, import.meta.url), 'utf8'), /!release\/private-crm-rc\*-backend-auth-\*/);
