@@ -19,6 +19,7 @@ const REASONS = Object.freeze({
 });
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const RAY = /^[a-f0-9]{16}-[a-z]{3}$/i;
+const GATEWAY_VERSION = /^[0-9]{1,3}$/;
 const BODY_STATES = new Set(['not_read', 'not_json', 'too_large', 'parsed', 'timeout', 'unavailable']);
 const MAX_BYTES = 4096;
 const TIMEOUT_MS = 500;
@@ -48,6 +49,9 @@ export function sanitizeBackendDiagnostic(value) {
     status: value.status, classification: classifyBackendStatus(value.status), attempt: value.attempt,
     supabase_code: CODES.has(value.supabase_code) ? value.supabase_code : null,
     auth_reason: Object.values(REASONS).includes(value.auth_reason) ? value.auth_reason : null,
+    sb_gateway_version: typeof value.sb_gateway_version === 'string' && GATEWAY_VERSION.test(value.sb_gateway_version)
+      ? value.sb_gateway_version : null,
+    x_sb_error_code: CODES.has(value.x_sb_error_code) ? value.x_sb_error_code : null,
     sb_request_id: safeId(value.sb_request_id, UUID), request_id: safeId(value.request_id, UUID),
     cf_ray: safeId(value.cf_ray, RAY), received_at: value.received_at,
     duration_ms: Number.isFinite(value.duration_ms) ? Math.max(0, Math.min(60000, Math.round(value.duration_ms))) : null,
@@ -102,6 +106,8 @@ export function createBackendResponseObserver(client, keyKind, emit = line => co
       const diagnostic = sanitizeBackendDiagnostic({
         event: DIAGNOSTIC_EVENT, schema_version: 1, rpc, client, key_kind: keyKind,
         status: response.status, attempt, ...details,
+        sb_gateway_version: response.headers.get('sb-gateway-version'),
+        x_sb_error_code: response.headers.get('x-sb-error-code'),
         sb_request_id: response.headers.get('sb-request-id'), request_id: response.headers.get('x-request-id'),
         cf_ray: response.headers.get('cf-ray'), received_at: receivedAt, duration_ms: duration,
       });
