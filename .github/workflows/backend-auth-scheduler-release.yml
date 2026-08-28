@@ -75,6 +75,7 @@ jobs:
         run: |
           node scripts/test-supabase-secret-401-retry.mjs
           node scripts/test-backend-auth-observer.mjs
+          node scripts/test-worker-import-closure.mjs
           node scripts/test-telegram-production-config.mjs
           npm run scan:secrets
 
@@ -159,6 +160,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { snapshot } from './scripts/observe-backend-auth.mjs';
+          import { assertWorkerImportClosureUnchanged } from './scripts/verify-worker-import-closure.mjs';
           import { execFileSync } from 'node:child_process';
           import { appendFile } from 'node:fs/promises';
           const state = await snapshot(process.env);
@@ -166,10 +168,11 @@ jobs:
           if (process.env.BACKEND_AUTH_OPERATION === 'release' && state.source_sha !== process.env.APPROVED_SHA) {
             throw new Error('Worker source tag mismatch');
           }
-          // An observer-only fix need not redeploy an identical Worker bundle.
+          // Observer tooling may advance without a redeploy only when the actual scheduler import closure is byte-identical.
           execFileSync('git', ['merge-base', '--is-ancestor', state.source_sha, process.env.APPROVED_SHA]);
+          assertWorkerImportClosureUnchanged(state.source_sha, process.env.APPROVED_SHA, 'workers/telegram-drain-worker.js');
           execFileSync('git', ['diff', '--quiet', state.source_sha, process.env.APPROVED_SHA, '--',
-            'workers/', 'package.json', 'package-lock.json', 'wrangler.telegram-drain.production.toml',
+            'package.json', 'package-lock.json', 'wrangler.telegram-drain.production.toml',
             'scripts/generate-telegram-production-deploy-config.mjs', 'scripts/preflight-telegram-production.mjs']);
           await appendFile(process.env.GITHUB_ENV, 'DEPLOYED_SOURCE_SHA=' + state.source_sha + '\n');
           console.log(JSON.stringify(state));
