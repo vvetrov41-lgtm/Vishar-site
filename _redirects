@@ -1,0 +1,10 @@
+# London specialty URL migration - permanent redirects
+/colour-realism-tattoo-manchester /colour-realism-tattoo-london/ 301
+/colour-realism-tattoo-manchester/ /colour-realism-tattoo-london/ 301
+/colour-realism-tattoo-manchester/index.html /colour-realism-tattoo-london/ 301
+/black-and-grey-realism-manchester /black-and-grey-realism-london/ 301
+/black-and-grey-realism-manchester/ /black-and-grey-realism-london/ 301
+/black-and-grey-realism-manchester/index.html /black-and-grey-realism-london/ 301
+/cover-up-tattoo-manchester /cover-up-tattoo-london/ 301
+/cover-up-tattoo-manchester/ /cover-up-tattoo-london/ 301
+/cover-up-tattoo-manchester/index.html /cover-up-tattoo-london/ 301
