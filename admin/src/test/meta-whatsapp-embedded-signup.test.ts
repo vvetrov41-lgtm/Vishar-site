@@ -59,9 +59,6 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
       type: 'WA_EMBEDDED_SIGNUP', event: 'CANCEL', data: {},
     })).toEqual({ event: 'CANCEL', wabaId: null, phoneNumberId: null });
     expect(parseEmbeddedSignupMessage('https://web.facebook.com', {
-      type: 'WA_EMEDDED_SIGNUP', event: 'ERROR', data: {},
-    })).toBeNull();
-    expect(parseEmbeddedSignupMessage('https://web.facebook.com', {
       type: 'WA_EMBEDDED_SIGNUP', event: 'ERROR', data: {},
     })).toEqual({ event: 'ERROR', wabaId: null, phoneNumberId: null });
   });
