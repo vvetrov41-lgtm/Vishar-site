@@ -1,0 +1,83 @@
+name: Gmail deposit database release
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-backend-auth-gmail-deposit-db-*'
+
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: deploy-private-production-crm-database
+  cancel-in-progress: false
+
+jobs:
+  migration:
+    if: github.actor == github.repository_owner && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crm-production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Gate isolated immutable source and exact-head CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-backend-auth-gmail-deposit-db-[a-z0-9-]+$ ]]
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$GITHUB_RUN_ATTEMPT" = 1 ]
+          [ "$DEPLOY_ENABLED" = true ]
+          [ "$PROJECT_REF" = vfjexhfdbrjmuxfdvbdx ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          git merge-base --is-ancestor cbcb5fa1e5e8559fadd98c9681c6de7ea8549687 "$GITHUB_SHA"
+          [ -z "$(git status --short)" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,head_sha,status,conclusion}' | jq -s . > "$RUNNER_TEMP/gmail-db-ci.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/gmail-db-ci.json" >/dev/null
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: node scripts/test-gmail-rollout-phases.mjs
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+      - name: Verify exact production ledger and quiet Gmail queue
+        run: node scripts/verify-gmail-deposit-migration.mjs before
+      - run: supabase link --project-ref "$PROJECT_REF"
+      - name: Dry-run only approved migration 0115
+        run: supabase db push --dry-run
+      - name: Recheck source and target immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          node scripts/verify-gmail-deposit-migration.mjs before
+      - name: Apply only approved migration 0115 without seed
+        run: supabase db push --yes
+      - name: Read back exact function bodies, ACLs, ledger and unchanged queue
+        run: node scripts/verify-gmail-deposit-migration.mjs after
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gmail-deposit-migration-${{ github.sha }}
+          path: ${{ runner.temp }}/gmail-deposit-migration-*.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -165,18 +165,23 @@ jobs:
 
       - name: Recheck immutable source immediately before mutation
         shell: bash
+        env:
+          PRE_DEPLOYMENT_ID: ${{ steps.live.outputs.pre_deployment }}
         run: |
           set -euo pipefail
           canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
           operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
           [ "$canonical_sha" = "$GITHUB_SHA" ]
           [ "$operator_sha" = "$GITHUB_SHA" ]
+          live="$(curl --fail --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/deployments")"
+          jq -e --arg id "$PRE_DEPLOYMENT_ID" '.success == true and (if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end) == $id' <<<"$live" >/dev/null
 
       - name: Deploy only Gmail production Worker
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME"
+          npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --tag "$GITHUB_SHA"
 
       - name: Read back exact Gmail production state
         shell: bash
@@ -212,6 +217,22 @@ jobs:
           post_deployment="$(jq -r 'if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end' <<<"$deployments")"
           [ -n "$post_deployment" ]
           [ "$post_deployment" != "$PRE_DEPLOYMENT_ID" ]
+          jq -e '(if (.result|type)=="array" then .result[0] else .result.deployments[0] end) | (.versions|length) == 1 and .versions[0].percentage == 100' <<<"$deployments" >/dev/null
+          version="$(jq -r 'if (.result|type)=="array" then .result[0].versions[0].version_id else .result.deployments[0].versions[0].version_id end' <<<"$deployments")"
+          [[ "$version" =~ ^[0-9a-f-]{36}$ ]]
+          version_state="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/versions/$version")"
+          jq -e --arg sha "$GITHUB_SHA" '.success == true and .result.annotations["workers/tag"] == $sha' <<<"$version_state" >/dev/null
+          secrets="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/secrets")"
+          jq -e '.success == true' <<<"$secrets" >/dev/null
+          SECRET_LIST="$secrets" node <<'NODE'
+          const payload = JSON.parse(process.env.SECRET_LIST || '{}');
+          const rows = Array.isArray(payload.result) ? payload.result : payload.result?.secrets || [];
+          const names = new Set(rows.map(row => row.name));
+          for (const name of ['GOOGLE_OAUTH_CLIENT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_TOKEN_ENCRYPTION_KEY','SUPABASE_SECRET_KEY']) {
+            if (!names.has(name)) throw new Error('Gmail secret-name readback failed');
+          }
+          NODE
+          echo "Gmail source readback passed: $GITHUB_SHA version=$version"
           echo "Gmail deployment readback passed: $post_deployment"
 
       - name: Verify live Gmail HTTP boundary
