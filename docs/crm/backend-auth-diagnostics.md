@@ -125,3 +125,20 @@ than the restart request. A new natural-cron observer follows. A 20-minute windo
 without 401 is observation, not proof that the upstream incident is resolved.
 Only sanitized aggregate health, timestamps, version identifiers and observer
 records are uploaded for seven days.
+## Shared Gmail drain observation
+
+The read-only scheduler observer also extracts existing shared Gmail drain log
+summaries into `gmail_records`. It retains only exact Worker/version/cron
+metadata, bounded counters, and a closed set of diagnostic error codes. Exact
+known exception messages may be reduced to the same closed codes; raw messages,
+stacks, job identifiers, request data and credentials are discarded.
+
+This does not call the drain, change Worker code, or send email. The existing
+natural cron and unchanged runtime snapshot remain authoritative. Missing Gmail
+records do not prove that the Gmail Worker ran successfully. Pending mail must
+not be manually retried just to obtain diagnostics.
+
+The bounded investigation started after the 2026-08-28 read-only reconciliation
+found two due `approved_email` jobs with zero attempts, while API log samples
+contained no `claim_email_outbox` calls. Enabled flags and an installed service
+binding alone are not evidence of successful outbound delivery.

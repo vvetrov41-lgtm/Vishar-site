@@ -42,12 +42,16 @@ export function jsonFrames(accept) {
   };
 }
 
-export function extractDiagnostics(envelope, version) {
-  if (!UUID.test(version) || envelope?.event?.cron !== '*/5 * * * *'
+function matchesCron(envelope, version) {
+  return !(!UUID.test(version) || envelope?.event?.cron !== '*/5 * * * *'
     || !Number.isSafeInteger(envelope.event.scheduledTime) || envelope.event.scheduledTime < 0
     || envelope.event.scheduledTime > 8640000000000000
     || (envelope.scriptName && envelope.scriptName !== WORKER)
-    || (envelope.scriptVersion?.id && envelope.scriptVersion.id !== version)) return [];
+    || (envelope.scriptVersion?.id && envelope.scriptVersion.id !== version));
+}
+
+export function extractDiagnostics(envelope, version) {
+  if (!matchesCron(envelope, version)) return [];
   const result = [];
   for (const entry of (Array.isArray(envelope.logs) ? envelope.logs : []).slice(0, 500)) {
     if (!Array.isArray(entry?.message) || entry.message.length !== 1
@@ -56,6 +60,45 @@ export function extractDiagnostics(envelope, version) {
     try { value = sanitizeBackendDiagnostic(JSON.parse(entry.message[0])); } catch { continue; }
     if (value) result.push({ ...value, worker: WORKER, worker_version: version,
       scheduled_at: new Date(envelope.event.scheduledTime).toISOString() });
+  }
+  return result;
+}
+
+const GMAIL_CODES = new Set(['gmail_service_binding_unavailable', 'gmail_shared_drain_summary_invalid',
+  'gmail_shared_drain_error', 'gmail_supabase_url_invalid', 'gmail_supabase_secret_unavailable',
+  'gmail_supabase_publishable_unavailable', 'gmail_rpc_forbidden', 'gmail_rpc_failed']);
+
+// Only fixed labels, closed error codes and bounded counters survive. No job IDs,
+// exception text, stack, customer payload, credentials or arbitrary log fields.
+export function extractGmailDiagnostics(envelope, version) {
+  if (!matchesCron(envelope, version)) return [];
+  const common = { worker: WORKER, worker_version: version,
+    scheduled_at: new Date(envelope.event.scheduledTime).toISOString() };
+  const result = [];
+  for (const entry of (Array.isArray(envelope.logs) ? envelope.logs : []).slice(0, 500)) {
+    const message = entry?.message;
+    if (!Array.isArray(message) || message.length !== 2 || typeof message[1] !== 'string'
+      || message[1].length > 4096) continue;
+    let value;
+    try { value = JSON.parse(message[1]); } catch { continue; }
+    if (message[0] === 'gmail outbox shared drain failed' && GMAIL_CODES.has(value?.code)) {
+      result.push({ ...common, outcome: 'error', code: value.code });
+    } else if (message[0] === 'gmail outbox shared drain' && typeof value?.skipped === 'boolean') {
+      const keys = ['processed', 'sent', 'deduplicated', 'failed'];
+      if (!keys.every(k => Number.isInteger(value[k]) && value[k] >= 0 && value[k] <= 20)
+        || value.sent + value.deduplicated + value.failed > value.processed) continue;
+      result.push({ ...common, outcome: 'summary', skipped: value.skipped,
+        ...Object.fromEntries(keys.map(k => [k, value[k]])) });
+    }
+  }
+  for (const entry of (Array.isArray(envelope.exceptions) ? envelope.exceptions : []).slice(0, 20)) {
+    if (typeof entry?.message !== 'string' || entry.message.length > 4096) continue;
+    for (const code of GMAIL_CODES) {
+      if (entry.message === code || entry.message === `Error: ${code}`) {
+        result.push({ ...common, outcome: 'exception_code', code });
+        break;
+      }
+    }
   }
   return result;
 }
@@ -138,7 +181,7 @@ export async function main(env = process.env, output = process.argv[2]) {
   await assertDiscardLogSink(env.WRANGLER_LOG_PATH);
   const before = await snapshot(env);
   if (before.source_sha !== deployedSource) throw new Error('observer_version_source');
-  const records = [];
+  const records = [], gmailRecords = [];
   let reason = 'window_complete', stopRequested = false, force, tailExitCode = null, tailError = 'unknown';
   const child = spawn(process.execPath, tailArguments(before.version), {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -151,6 +194,11 @@ export async function main(env = process.env, output = process.argv[2]) {
   };
   const deadline = setTimeout(() => stop('window_complete'), OBSERVE_MS);
   const consume = jsonFrames(envelope => {
+    for (const record of extractGmailDiagnostics(envelope, before.version)) {
+      if (gmailRecords.length >= MAX_RECORDS) { stop('record_limit'); break; }
+      gmailRecords.push(record);
+      console.log(JSON.stringify({ event: 'gmail_shared_drain_observation', ...record }));
+    }
     for (const record of extractDiagnostics(envelope, before.version)) {
       if (records.length >= MAX_RECORDS) { stop('record_limit'); break; }
       records.push(record);
@@ -170,7 +218,7 @@ export async function main(env = process.env, output = process.argv[2]) {
   const after = await snapshot(env);
   if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error('observer_runtime_changed');
   await writeFile(output, JSON.stringify({ schema_version: 1, source_sha: deployedSource, observer_source_sha: env.APPROVED_SHA, snapshot: after,
-    stopped_at: new Date().toISOString(), stop_reason: reason, tail_exit_code: tailExitCode, tail_error: tailError, natural_401_captured: hasMixed401(records), records }, null, 2), { mode: 0o600 });
+    stopped_at: new Date().toISOString(), stop_reason: reason, tail_exit_code: tailExitCode, tail_error: tailError, natural_401_captured: hasMixed401(records), records, gmail_records: gmailRecords }, null, 2), { mode: 0o600 });
   console.log(`Backend auth observer: ${reason}; safe_records=${records.length}`);
   if (['frame_limit', 'tail_start_failed', 'tail_closed'].includes(reason)) process.exitCode = 1;
 }
