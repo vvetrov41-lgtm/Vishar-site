@@ -1,0 +1,111 @@
+name: Backend auth controlled project restart
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-backend-auth-restart-*'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: backend-auth-scheduler-operation
+  cancel-in-progress: false
+
+jobs:
+  restart:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.event.before }}
+      DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+      - name: Gate exact source, single attempt and green CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$GITHUB_RUN_ATTEMPT" = 1 ]
+          [ "$DEPLOY_ENABLED" = true ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ -z "$(git status --short)" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$APPROVED_SHA" ]
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,head_sha,status,conclusion}' | jq -s . > "$RUNNER_TEMP/restart-ci.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation'; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/restart-ci.json" >/dev/null
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Test fixed target, no-retry and privacy guards
+        run: |
+          node scripts/test-backend-auth-restart.mjs
+          node scripts/test-backend-auth-observer.mjs
+          node scripts/test-supabase-secret-401-retry.mjs
+          npm run scan:secrets
+      - name: Download exact successful diagnostic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/33191205274" \
+            --jq '{head_sha,status,conclusion,path}' > "$RUNNER_TEMP/evidence-run.json"
+          jq -e '.head_sha == "379eb459795b20de6511b9b66f3a69f938878e83" and .status == "completed" and .conclusion == "success" and .path == ".github/workflows/backend-auth-scheduler-release.yml"' \
+            "$RUNNER_TEMP/evidence-run.json" >/dev/null
+          gh run download 33191205274 --repo "$GITHUB_REPOSITORY" \
+            --name backend-auth-evidence-1d88d6158320025a7a7b9aaa18fa6b20cd54f781 --dir "$RUNNER_TEMP"
+      - name: Prove unchanged Worker dependency closure
+        run: |
+          node --input-type=module <<'NODE'
+          import { snapshot } from './scripts/observe-backend-auth.mjs';
+          import { assertWorkerImportClosureUnchanged } from './scripts/verify-worker-import-closure.mjs';
+          import { EVIDENCE_SOURCE } from './scripts/restart-backend-auth-project.mjs';
+          import { execFileSync } from 'node:child_process';
+          import { appendFile } from 'node:fs/promises';
+          const state = await snapshot(process.env);
+          if (state.source_sha !== EVIDENCE_SOURCE) throw new Error('restart_source_changed');
+          execFileSync('git', ['merge-base', '--is-ancestor', EVIDENCE_SOURCE, process.env.APPROVED_SHA]);
+          assertWorkerImportClosureUnchanged(EVIDENCE_SOURCE, process.env.APPROVED_SHA, 'workers/telegram-drain-worker.js');
+          execFileSync('git', ['diff', '--quiet', EVIDENCE_SOURCE, process.env.APPROVED_SHA, '--',
+            'package.json', 'package-lock.json', 'wrangler.telegram-drain.production.toml',
+            'scripts/generate-telegram-production-deploy-config.mjs', 'scripts/preflight-telegram-production.mjs',
+            'supabase/migrations']);
+          await appendFile(process.env.GITHUB_ENV, 'DEPLOYED_SOURCE_SHA=' + state.source_sha + '\n');
+          NODE
+      - name: Restart once during a quiet interval and verify recovery
+        run: node scripts/restart-backend-auth-project.mjs
+      - name: Discard raw Wrangler logs
+        run: |
+          set -euo pipefail
+          ln -s /dev/null "$RUNNER_TEMP/backend-auth-restart-wrangler.log"
+          echo "WRANGLER_LOG_PATH=$RUNNER_TEMP/backend-auth-restart-wrangler.log" >> "$GITHUB_ENV"
+      - name: Observe natural cron after project recovery
+        run: node scripts/observe-backend-auth.mjs "$RUNNER_TEMP/backend-auth-after-restart.json"
+      - name: Upload sanitized restart and observation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-auth-restart-${{ env.APPROVED_SHA }}
+          path: |
+            ${{ runner.temp }}/backend-auth-restart.json
+            ${{ runner.temp }}/backend-auth-after-restart.json
+          if-no-files-found: warn
+          retention-days: 7

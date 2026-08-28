@@ -107,6 +107,7 @@ jobs:
       - name: Backend auth observer privacy and release boundaries
         run: |
           node scripts/test-backend-auth-observer.mjs
+          node scripts/test-backend-auth-restart.mjs
           node scripts/test-worker-import-closure.mjs
 
       - name: Test exact CRM Pages production preflight

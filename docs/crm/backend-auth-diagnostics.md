@@ -87,3 +87,41 @@ An observe-only source may descend from the deployed source only when git proves
 all Worker sources, dependency manifests and scheduler deployment inputs are
 identical. The report separates deployed `source_sha` from `observer_source_sha`.
 This permits operator-only fixes without unnecessary production redeployment.
+
+## Controlled project restart after gateway evidence
+
+The official Supabase incident update on 2026-08-27 recommends a project restart
+after the PostgREST 14.17 rollout, then Support escalation if 401s continue:
+https://supabase.statuspage.io/ ("401 errors due to JWT rejections").
+
+`backend-auth-project-restart.yml` is a separate, owner-only, exact-head operation
+on `release/private-crm-rc*-backend-auth-restart-*` empty-child refs. These refs
+remain excluded from the full production release. The workflow never deploys a
+Worker, changes a secret, applies SQL migrations, or pauses/restores the project.
+It uses the existing protected management credential to call exactly
+`POST /v1/projects/vfjexhfdbrjmuxfdvbdx/restart` once, without an automatic retry.
+Rerunning a workflow attempt is deliberately disabled, including after an
+ambiguous request outcome. Inspect the sanitized report and current project
+state before considering a new separately authorized operation.
+
+This incident-specific operation requires the successful diagnostic release run
+33191205274 and its fresh natural PGRST303 evidence from source
+`1d88d6158320025a7a7b9aaa18fa6b20cd54f781`. The exact Worker version, import
+closure, dependencies, deployment config and migration tree must be unchanged.
+The code pins production migration 0114 and the observed 2-Artist/12-rule/
+13-integration baseline. A changed baseline fails closed instead of being
+silently accepted.
+
+Before requesting restart, aggregate SELECTs require a healthy heartbeat, no
+failed/overdue lifecycle jobs, no unresolved integration errors, no running
+lifecycle jobs or outbox leases, no imminent lifecycle work, and no other active
+database transaction. The request is limited to the interval 60-120 seconds after
+a five-minute cron boundary. This reduces disruption but does not eliminate
+restart downtime or lock out newly arriving traffic. No customer data is read.
+
+Recovery requires ACTIVE_HEALTHY, the unchanged migration/rule/integration
+baseline, the same Worker deployment, and a successful scheduler heartbeat newer
+than the restart request. A new natural-cron observer follows. A 20-minute window
+without 401 is observation, not proof that the upstream incident is resolved.
+Only sanitized aggregate health, timestamps, version identifiers and observer
+records are uploaded for seven days.
