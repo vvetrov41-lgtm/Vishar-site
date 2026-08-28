@@ -86,4 +86,40 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
       window.fbAsyncInit = originalAsyncInit;
     }
   });
+
+  it('re-initializes a replaced FB object synchronously before login', async () => {
+    const originalFb = window.FB;
+    const originalAsyncInit = window.fbAsyncInit;
+    let replacementInitCalls = 0;
+    let replacementLoginCalls = 0;
+
+    window.FB = {
+      init() {},
+      login(callback) {
+        callback({ status: 'not_authorized' });
+      },
+    };
+
+    try {
+      await prepareWhatsAppEmbeddedSignup();
+
+      window.FB = {
+        init() {
+          replacementInitCalls += 1;
+        },
+        login(callback) {
+          replacementLoginCalls += 1;
+          callback({ status: 'not_authorized' });
+        },
+      };
+
+      const result = launchWhatsAppEmbeddedSignup();
+      expect(replacementInitCalls).toBe(1);
+      expect(replacementLoginCalls).toBe(1);
+      await expect(result).rejects.toThrow('Meta authorization was not granted.');
+    } finally {
+      window.FB = originalFb;
+      window.fbAsyncInit = originalAsyncInit;
+    }
+  });
 });

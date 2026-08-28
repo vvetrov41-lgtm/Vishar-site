@@ -172,7 +172,10 @@ export async function prepareWhatsAppEmbeddedSignup(): Promise<void> {
 }
 
 export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupResult> {
-  const fb = window.FB && initializedSdk === window.FB ? window.FB : null;
+  // iOS/WebKit can replace the global FB object after the page was prepared
+  // (for example after app switching). Re-initialize that current object
+  // synchronously so FB.login still remains inside the user's click gesture.
+  const fb = window.FB ? initializeFacebookSdk(window.FB) : null;
   if (!fb) {
     return Promise.reject(new Error('Meta SDK is still loading. Please try again in a moment.'));
   }
