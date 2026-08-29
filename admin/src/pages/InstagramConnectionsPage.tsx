@@ -14,6 +14,7 @@ import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
+import { canShowArtistIntegration } from '../lib/integration-visibility';
 import { useSession } from '../lib/session';
 import type { Artist } from '../lib/types';
 import type {
@@ -74,19 +75,6 @@ interface ConnectionsData {
   statuses: Record<string, InstagramConnectionStatus | null>;
 }
 
-function canManageArtist(
-  role: string | null | undefined,
-  artistId: string,
-  memberships: ReturnType<typeof useSession>['memberships'],
-): boolean {
-  if (role === 'owner') return true;
-  return memberships.some(
-    (membership) => membership.artist_id === artistId
-      && membership.is_active
-      && membership.can_manage_integrations,
-  );
-}
-
 export function InstagramConnectionsPage() {
   const { api, profile, memberships } = useSession();
   const { language } = useLanguage();
@@ -103,7 +91,7 @@ export function InstagramConnectionsPage() {
       api.listInstagramIntegrations(),
     ]);
     const artists = allArtists.filter(
-      (artist) => artist.is_active && canManageArtist(profile?.role, artist.id, memberships),
+      (artist) => artist.is_active && canShowArtistIntegration(profile, artist, memberships),
     );
 
     const statuses: Record<string, InstagramConnectionStatus | null> = {};
@@ -119,7 +107,7 @@ export function InstagramConnectionsPage() {
       }));
     }
     return { artists, integrations, statuses };
-  }, [api, configured, memberships, profile?.role]);
+  }, [api, configured, memberships, profile]);
 
   async function run(artistId: string, action: () => Promise<unknown>) {
     setBusyArtistId(artistId);
