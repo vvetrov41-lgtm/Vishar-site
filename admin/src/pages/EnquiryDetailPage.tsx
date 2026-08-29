@@ -11,6 +11,7 @@ import { SignedImage } from '../components/SignedImage';
 import { Link, useRouter } from '../lib/router';
 import { availableTransitions, can } from '../lib/permissions';
 import { formatDateTime, localiseKnownValue, localiseSystemSubject, relativeDue } from '../lib/format';
+import { formatPhoneForDisplay } from '../lib/phone';
 import { useLanguage } from '../lib/i18n';
 import type {
   ActivityEntry, Client, Enquiry, EnquiryFile, FollowUp, InternalNote, Profile, StatusTransition,
@@ -207,7 +208,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
             <dl className="definition">
               <dt>{t('enquiry.name')}</dt><dd>{client.full_name}</dd>
               <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
-              <dt>{t('enquiry.phone')}</dt><dd>{client.phone ?? '—'}</dd>
+              <dt>{t('enquiry.phone')}</dt><dd>{formatPhoneForDisplay(client.phone) ?? '—'}</dd>
               <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
               <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
               <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
@@ -225,7 +226,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <dl className="definition">
             <dt>{t('enquiry.name')}</dt><dd>{enquiry.submitted_full_name ?? '—'}</dd>
             <dt>{t('enquiry.email')}</dt><dd>{enquiry.submitted_email ?? '—'}</dd>
-            <dt>{t('enquiry.phone')}</dt><dd>{enquiry.submitted_phone ?? '—'}</dd>
+            <dt>{t('enquiry.phone')}</dt><dd>{formatPhoneForDisplay(enquiry.submitted_phone) ?? '—'}</dd>
             <dt>{t('enquiry.instagram')}</dt><dd>{enquiry.submitted_instagram ?? '—'}</dd>
             <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(enquiry.submitted_preferred_contact, language)}</dd>
             <dt>{t('enquiry.travellingFrom')}</dt><dd>{enquiry.submitted_travelling_from ?? '—'}</dd>

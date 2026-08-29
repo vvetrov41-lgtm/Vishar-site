@@ -28,7 +28,8 @@ insert into public.clients (id,full_name,email,phone) values
  ('cb111111-1111-4111-8111-111111111111','WA CRM Vladimir','wa.crm.v@example.test','+44 7700 900111'),
  ('cb222222-2222-4222-8222-222222222222','WA CRM Kristina','wa.crm.k@example.test','+44 7700 900222'),
  ('cb333333-3333-4333-8333-333333333333','WA Local Phone','wa.crm.local@example.test','07700 900333'),
- ('cb444444-4444-4444-8444-444444444444','WA Collision','wa.crm.collision@example.test','+44 7700 900111');
+ ('cb444444-4444-4444-8444-444444444444','WA Collision','wa.crm.collision@example.test','+44 7700 900111'),
+ ('cb555555-5555-4555-8555-555555555555','WA Ambiguous Local','wa.crm.ambiguous@example.test','020 7946 0958');
 
 insert into public.enquiries
  (id,client_id,idempotency_key,intake_fingerprint,intake_state,submitted_full_name,submitted_email,submitted_phone,
@@ -37,7 +38,8 @@ values
  ('eb111111-1111-4111-8111-111111111111','cb111111-1111-4111-8111-111111111111','7b111111-1111-4111-8111-111111111111',repeat('a',64),'complete','WA CRM Vladimir','wa.crm.v@example.test','+44 7700 900111','WhatsApp','2026-07-29',now(),'a1111111-1111-4111-8111-111111111111'),
  ('eb222222-2222-4222-8222-222222222222','cb222222-2222-4222-8222-222222222222','7b222222-2222-4222-8222-222222222222',repeat('b',64),'complete','WA CRM Kristina','wa.crm.k@example.test','+44 7700 900222','WhatsApp','2026-07-29',now(),'a2222222-2222-4222-8222-222222222222'),
  ('eb333333-3333-4333-8333-333333333333','cb333333-3333-4333-8333-333333333333','7b333333-3333-4333-8333-333333333333',repeat('c',64),'complete','WA Local Phone','wa.crm.local@example.test','07700 900333','WhatsApp','2026-07-29',now(),'a1111111-1111-4111-8111-111111111111'),
- ('eb444444-4444-4444-8444-444444444444','cb444444-4444-4444-8444-444444444444','7b444444-4444-4444-8444-444444444444',repeat('d',64),'complete','WA Collision','wa.crm.collision@example.test','+44 7700 900111','WhatsApp','2026-07-29',now(),'a1111111-1111-4111-8111-111111111111');
+ ('eb444444-4444-4444-8444-444444444444','cb444444-4444-4444-8444-444444444444','7b444444-4444-4444-8444-444444444444',repeat('d',64),'complete','WA Collision','wa.crm.collision@example.test','+44 7700 900111','WhatsApp','2026-07-29',now(),'a1111111-1111-4111-8111-111111111111'),
+ ('eb555555-5555-4555-8555-555555555555','cb555555-5555-4555-8555-555555555555','7b555555-5555-4555-8555-555555555555',repeat('e',64),'complete','WA Ambiguous Local','wa.crm.ambiguous@example.test','020 7946 0958','WhatsApp','2026-07-29',now(),'a1111111-1111-4111-8111-111111111111');
 
 insert into auth.users(id,email) values
  ('6b111111-1111-4111-8111-111111111111','wa.crm.owner@example.test'),
@@ -63,8 +65,10 @@ select is((public.ensure_whatsapp_conversation_for_enquiry('eb111111-1111-4111-8
           false,'opening the same enquiry is idempotent');
 select throws_ok($$select public.ensure_whatsapp_conversation_for_enquiry('eb222222-2222-4222-8222-222222222222')$$,
                  '42501','artist access is not permitted','Vladimir manager cannot open Kristina WhatsApp');
-select throws_ok($$select public.ensure_whatsapp_conversation_for_enquiry('eb333333-3333-4333-8333-333333333333')$$,
-                 '22023',null,'local-format phone fails closed instead of guessing a country');
+select is((public.ensure_whatsapp_conversation_for_enquiry('eb333333-3333-4333-8333-333333333333')->>'contact_wa_id'),
+          '447700900333','UK local mobile is safely normalised before opening WhatsApp');
+select throws_ok($$select public.ensure_whatsapp_conversation_for_enquiry('eb555555-5555-4555-8555-555555555555')$$,
+                 '22023',null,'ambiguous local phone still fails closed instead of guessing a country');
 select throws_ok($$select public.ensure_whatsapp_conversation_for_enquiry('eb444444-4444-4444-8444-444444444444')$$,
                  '23514',null,'one artist phone cannot silently attach to a second client');
 reset role;

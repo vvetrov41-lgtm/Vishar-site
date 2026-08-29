@@ -25,9 +25,9 @@ describe('enquiry workflow', () => {
       path: `/enquiries/${ENQUIRY_ID}`,
     });
 
-    expect(await screen.findByText('+447700900099')).toBeInTheDocument();
+    expect(await screen.findByText('+44 7700 900 099')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(/matched different client cards/i);
-    expect(screen.getByText('+447700900000')).toBeInTheDocument();
+    expect(screen.getByText('+44 7700 900 000')).toBeInTheDocument();
   });
 
   it('changes status through transition_enquiry_status', async () => {

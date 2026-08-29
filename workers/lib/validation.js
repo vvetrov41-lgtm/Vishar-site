@@ -66,6 +66,33 @@ export function cleanText(value, maxLength) {
     .slice(0, maxLength);
 }
 
+/**
+ * Canonicalise only phone formats whose country can be established safely.
+ * The public booking form is UK-facing, so an 11-digit UK mobile beginning 07
+ * can be converted to E.164. Ambiguous local numbers are preserved verbatim.
+ */
+export function normalizePhoneForStorage(value) {
+  let phone = cleanText(value, FIELD_LIMITS.phone);
+  if (!phone) return '';
+  if (!/^\+?[-0-9 ()./]+$/.test(phone)) return phone;
+
+  phone = phone.replace('(0)', '');
+  if (/[()]/.test(phone)) return phone;
+
+  let digits = phone.replace(/[^0-9]/g, '');
+  if (phone.startsWith('+')) {
+    // Already international.
+  } else if (digits.startsWith('00')) {
+    digits = digits.slice(2);
+  } else if (/^07[0-9]{9}$/.test(digits)) {
+    digits = `44${digits.slice(1)}`;
+  } else {
+    return phone;
+  }
+
+  return /^[1-9][0-9]{6,14}$/.test(digits) ? `+${digits}` : phone;
+}
+
 export function isUuid(value) {
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
@@ -93,7 +120,7 @@ export function parseEnquiryFields(form) {
   const enquiry = {
     name: cleanText(field(form, 'name'), FIELD_LIMITS.name),
     email: cleanText(field(form, 'email'), FIELD_LIMITS.email),
-    phone: cleanText(field(form, 'phone'), FIELD_LIMITS.phone),
+    phone: normalizePhoneForStorage(field(form, 'phone')),
     instagram: cleanText(field(form, 'instagram'), FIELD_LIMITS.instagram),
     preferredReply: cleanText(field(form, 'preferredReply'), FIELD_LIMITS.preferredReply),
     travellingFrom: cleanText(field(form, 'travellingFrom'), FIELD_LIMITS.travellingFrom),

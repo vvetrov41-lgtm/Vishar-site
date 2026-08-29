@@ -3,6 +3,7 @@ import type { Api } from '../lib/api';
 import type { CrmRole } from '../lib/types';
 import { can } from '../lib/permissions';
 import { formatDateTime } from '../lib/format';
+import { whatsappDigits } from '../lib/phone';
 
 interface Conversation {
   id: string;
@@ -21,21 +22,6 @@ interface Message {
   message_type: string;
   body: string | null;
   created_at: string;
-}
-
-function safeWhatsappDigits(phone: string | null | undefined): string | null {
-  let value = (phone ?? '').trim().replace('(0)', '');
-  if (!value || !/^\+?[-0-9 ()./]+$/.test(value) || /[()]/.test(value)) return null;
-  let digits = value.replace(/[^0-9]/g, '');
-  if (value.startsWith('+')) {
-    // already international
-  } else if (digits.startsWith('00')) {
-    digits = digits.slice(2);
-  } else {
-    return null;
-  }
-  if (!/^[1-9][0-9]{6,14}$/.test(digits)) return null;
-  return digits;
 }
 
 export function EnquiryWhatsAppPanel({
@@ -61,7 +47,7 @@ export function EnquiryWhatsAppPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canSend = can(role, 'editEnquiry');
-  const waDigits = useMemo(() => safeWhatsappDigits(phone), [phone]);
+  const waDigits = useMemo(() => whatsappDigits(phone), [phone]);
 
   async function load() {
     const found = await api.getWhatsAppConversationForClient(clientId, artistId);
@@ -137,8 +123,8 @@ export function EnquiryWhatsAppPanel({
       {!waDigits ? (
         <p className="notice warn" role="status">
           {language === 'ru'
-            ? 'Для CRM WhatsApp нужен номер в международном формате, например +44…'
-            : 'CRM WhatsApp requires an international phone number such as +44…'}
+            ? 'Для CRM WhatsApp нужен международный номер или британский мобильный номер вида 07…'
+            : 'CRM WhatsApp requires an international number or a UK mobile number beginning 07…'}
         </p>
       ) : null}
       {error ? <p className="notice warn" role="alert">{error}</p> : null}
