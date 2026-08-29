@@ -62,10 +62,10 @@
 
     return `
       <figure class="overflow-hidden bg-white/5 rounded-2xl">
-        <a href="${image.source}" target="_blank" rel="noopener" class="block aspect-[3/4] overflow-hidden" aria-label="Open image ${index + 1}">
+        <a href="${image.source}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden" aria-label="Open image ${index + 1}">
           <picture>
             <source type="image/webp" srcset="${srcset}" sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw">
-            <img src="${image.source}" loading="lazy" decoding="async" width="900" height="1200" alt="${escapeHtml(alt)}" class="w-full h-full object-cover transition-transform duration-1000 hover:scale-105">
+            <img src="${image.source}" loading="lazy" decoding="async" width="900" height="1200" alt="${escapeHtml(alt)}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">
           </picture>
         </a>
         ${caption ? `<figcaption class="p-4 text-sm text-white/50">${escapeHtml(caption)}</figcaption>` : ''}
