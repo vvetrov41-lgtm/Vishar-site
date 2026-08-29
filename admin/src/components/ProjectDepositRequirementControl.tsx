@@ -33,7 +33,7 @@ export function ProjectDepositRequirementControl({
     void loadFinance();
   }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!['not_required'].includes(project.deposit_status)) return null;
+  if (project.deposit_status !== 'not_required') return null;
   if (loading) return <div className="notice">{copy.loading}</div>;
   if (!finance) return null;
 
@@ -44,11 +44,10 @@ export function ProjectDepositRequirementControl({
     setBusy(true);
     setError(null);
     try {
-      await api.updateDeposit(
-        project.id,
-        required ? null : 0,
-        'not_required'
-      );
+      // The legacy RPC accepts SQL NULL for the pre-request amount, while the
+      // older browser wrapper still types the amount as number-only.
+      const amount = required ? (null as unknown as number) : 0;
+      await api.updateDeposit(project.id, amount, 'not_required');
       await loadFinance();
       onChanged();
     } catch (cause) {
