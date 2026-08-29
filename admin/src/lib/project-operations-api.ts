@@ -1,5 +1,5 @@
 import { ApiError, friendlyMessage, type CrmClient } from './api';
-import type { Project, ProjectStatus } from './types';
+import type { DepositStatus, Project, ProjectStatus } from './types';
 
 function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
   if (result.error) throw new ApiError(friendlyMessage(result.error, what), result.error);
@@ -36,6 +36,16 @@ export function createProjectOperationsApi(client: CrmClient) {
           p_status: status,
         }),
         'change that project status'
+      );
+    },
+
+    async setProjectDepositRequirement(projectId: string, required: boolean) {
+      return unwrap<{ project_id: string; deposit_status: DepositStatus; required: boolean }>(
+        await client.rpc('set_project_deposit_requirement', {
+          p_project_id: projectId,
+          p_required: required,
+        }),
+        'change that project deposit requirement'
       );
     },
 
