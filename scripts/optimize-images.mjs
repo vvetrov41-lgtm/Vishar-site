@@ -8,6 +8,9 @@ const TARGET_MAP = {
   'black-and-grey': 'assets/black-grey',
   'colour-realism': 'assets/colour-realism',
   hero: 'assets/hero',
+  'large-scale': 'assets/large-scale',
+  portraits: 'assets/portraits',
+  healed: 'assets/healed',
 };
 
 const VALID_EXTENSIONS = new Set(['.jpg', '.jpeg']);
