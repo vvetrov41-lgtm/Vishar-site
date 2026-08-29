@@ -16,7 +16,8 @@ module.exports = {
     './booking/index.html',
     './privacy/index.html',
     './404.html',
-    './components.js'
+    './components.js',
+    './assets/js/speciality-gallery.js'
   ],
   theme: {
     extend: {
