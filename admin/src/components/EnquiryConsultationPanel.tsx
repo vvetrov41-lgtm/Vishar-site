@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import { useApi } from '../lib/session';
 import type { AppointmentType } from '../lib/appointment-api';
@@ -41,6 +42,16 @@ export function EnquiryConsultationPanel({
     setError(null);
     setNotice(null);
     try {
+      const conflicts = await api.listAppointmentConflicts({
+        artistId: enquiry.artist_id,
+        startAt: start.toISOString(),
+        endAt: end.toISOString(),
+      });
+      if (conflicts.length > 0) {
+        setError(copy.conflict(conflicts.length, formatDateTime(conflicts[0].start_at, language)));
+        return;
+      }
+
       await api.scheduleAppointment({
         artistId: enquiry.artist_id,
         clientId: enquiry.client_id,
@@ -145,9 +156,10 @@ const COPY = {
     notes: 'Notes (optional)',
     minutes: (value: number) => `${value} min`,
     schedule: 'Schedule consultation',
-    saving: 'Scheduling…',
+    saving: 'Checking schedule…',
     created: 'Consultation scheduled and linked to this enquiry.',
     invalidStart: 'Choose a valid consultation date and time.',
+    conflict: (count: number, first: string) => `This time overlaps ${count} active appointment${count === 1 ? '' : 's'}. The first starts ${first}. Choose another time.`,
     failed: 'Could not schedule that consultation.',
   },
   ru: {
@@ -159,9 +171,10 @@ const COPY = {
     notes: 'Заметка (необязательно)',
     minutes: (value: number) => `${value} мин`,
     schedule: 'Записать на консультацию',
-    saving: 'Сохраняю…',
+    saving: 'Проверяю расписание…',
     created: 'Консультация создана и привязана к этой заявке.',
     invalidStart: 'Укажи корректные дату и время консультации.',
+    conflict: (count: number, first: string) => `Это время пересекается с активными записями: ${count}. Первая начинается ${first}. Выбери другое время.`,
     failed: 'Не удалось создать консультацию.',
   },
 } as const;
