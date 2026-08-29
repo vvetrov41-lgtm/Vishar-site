@@ -9,11 +9,15 @@ module.exports = {
     './black-and-grey-realism-london/index.html',
     './colour-realism-tattoo-london/index.html',
     './cover-up-tattoo-london/index.html',
+    './large-scale-realism-tattoo-london/index.html',
+    './portrait-tattoo-artist-london/index.html',
+    './healed-tattoos/index.html',
     './book/index.html',
     './booking/index.html',
     './privacy/index.html',
     './404.html',
-    './components.js'
+    './components.js',
+    './assets/js/speciality-gallery.js'
   ],
   theme: {
     extend: {
