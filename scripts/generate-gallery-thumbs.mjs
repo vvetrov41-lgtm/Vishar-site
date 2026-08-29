@@ -5,15 +5,13 @@ import sharp from 'sharp';
 const WIDTHS = [320, 480, 720, 960];
 const WEBP_QUALITY = 80;
 const WEBP_EFFORT = 6;
+const OPTIONAL_NUMBERED_STEMS = Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0'));
 
 const GALLERIES = [
   {
     name: 'colour-realism',
     sourceDir: path.resolve('assets/colour-realism'),
     outputDir: path.resolve('assets/colour-realism', 'thumbs'),
-    // Image 03's full-size WebP sidecar is "03.jpg.webp" (irregular double
-    // extension carried over from the original "03.jpg.JPG" source), so its
-    // stem is "03.jpg" rather than a plain zero-padded number.
     stems: ['01', '02', '03.jpg', '04', '05', '06', '07', '08', '09', '10', '11', '12'],
   },
   {
@@ -40,13 +38,32 @@ const GALLERIES = [
     sourceDir: path.resolve('assets/gallery'),
     outputDir: path.resolve('assets/gallery', 'thumbs'),
     stems: ['01', '02', '03', '04', '05', '06'],
-    // This gallery's canonical source is JPG (no full-size WebP sidecar),
-    // unlike the WebP-sourced galleries above.
     sourceExtension: '.jpg',
-    // Homepage Studio Gallery cards are square with a centred `object-cover`
-    // crop, so thumbnails must be pre-cropped to match — the other
-    // galleries use a proportional width-only resize instead.
     crop: { square: true },
+  },
+  {
+    name: 'large-scale',
+    sourceDir: path.resolve('assets/large-scale'),
+    outputDir: path.resolve('assets/large-scale', 'thumbs'),
+    stems: OPTIONAL_NUMBERED_STEMS,
+    sourceExtension: '.jpg',
+    optional: true,
+  },
+  {
+    name: 'portraits',
+    sourceDir: path.resolve('assets/portraits'),
+    outputDir: path.resolve('assets/portraits', 'thumbs'),
+    stems: OPTIONAL_NUMBERED_STEMS,
+    sourceExtension: '.jpg',
+    optional: true,
+  },
+  {
+    name: 'healed',
+    sourceDir: path.resolve('assets/healed'),
+    outputDir: path.resolve('assets/healed', 'thumbs'),
+    stems: OPTIONAL_NUMBERED_STEMS,
+    sourceExtension: '.jpg',
+    optional: true,
   },
 ];
 
@@ -82,16 +99,9 @@ async function generateThumb(sourcePath, outputPath, width) {
   return buffer.length;
 }
 
-// Square, centre-cropped variant used only by galleries with `crop.square`
-// (currently Studio Gallery). Kept as a separate function, rather than a
-// branch inside generateThumb(), so the proportional resize path used by
-// every other gallery is untouched and stays byte-identical.
 async function generateSquareThumb(sourcePath, outputPath, size) {
   const buffer = await sharp(sourcePath)
     .resize({ width: size, height: size, fit: 'cover', position: 'centre', withoutEnlargement: true })
-    // Normalize to sRGB explicitly rather than relying on the decoder's
-    // default interpretation, since a couple of the source JPGs carry a
-    // small embedded ICC profile.
     .toColorspace('srgb')
     .webp({ quality: WEBP_QUALITY, effort: WEBP_EFFORT, smartSubsample: true })
     .toBuffer();
@@ -107,6 +117,7 @@ async function processGallery(gallery) {
   let outputBytesTotal = 0;
   let generatedCount = 0;
   let skippedCount = 0;
+  let sourceCount = 0;
 
   const sourceExtension = gallery.sourceExtension ?? '.webp';
 
@@ -114,9 +125,11 @@ async function processGallery(gallery) {
     const sourcePath = path.join(gallery.sourceDir, `${stem}${sourceExtension}`);
 
     if (!await fileExists(sourcePath)) {
+      if (gallery.optional) continue;
       throw new Error(`Required full-size source is missing: ${path.relative(process.cwd(), sourcePath)}`);
     }
 
+    sourceCount += 1;
     const sourceStat = await fs.stat(sourcePath);
     inputBytesTotal += sourceStat.size;
 
@@ -138,7 +151,7 @@ async function processGallery(gallery) {
     }
   }
 
-  return { generatedCount, skippedCount, inputBytesTotal, outputBytesTotal };
+  return { generatedCount, skippedCount, inputBytesTotal, outputBytesTotal, sourceCount };
 }
 
 async function main() {
@@ -155,16 +168,15 @@ async function main() {
     outputBytesGrand += result.outputBytesTotal;
 
     const sourceLabel = (gallery.sourceExtension ?? '.webp').replace(/^\./, '').toUpperCase();
-
     console.log('');
-    console.log(`${gallery.name}: generated ${result.generatedCount}, skipped (up to date) ${result.skippedCount}`);
+    console.log(`${gallery.name}: sources ${result.sourceCount}, generated ${result.generatedCount}, skipped (up to date) ${result.skippedCount}`);
     console.log(`${gallery.name}: source (full-size ${sourceLabel}) total ${formatBytes(result.inputBytesTotal)}`);
     console.log(`${gallery.name}: thumbnail output total ${formatBytes(result.outputBytesTotal)}`);
   }
 
   console.log('');
   console.log(`Generated: ${generatedTotal}, skipped (up to date): ${skippedTotal}`);
-  console.log(`Source (full-size WebP) grand total: ${formatBytes(inputBytesGrand)}`);
+  console.log(`Source grand total: ${formatBytes(inputBytesGrand)}`);
   console.log(`Thumbnail output grand total: ${formatBytes(outputBytesGrand)}`);
 }
 
