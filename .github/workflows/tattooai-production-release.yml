@@ -65,7 +65,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse "origin/${GITHUB_REF_NAME}")" = "$GITHUB_SHA"
           test "$(sed -n 's/^name = "\([^"]*\)"/\1/p' wrangler.toml | head -n1)" = "tattooai"
-          grep -Fxq 'main = "workers/tattooai.js"' wrangler.toml
+          grep -Fxq 'main = "workers/tattooai-entry.js"' wrangler.toml
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -101,4 +101,11 @@ jobs:
           test "$post_status" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
 
-          echo "Live tattooai boundary matches the durable multipart Worker at $GITHUB_SHA"
+          lead_status="$(curl -sS -o /tmp/tattooai-lead.txt -w '%{http_code}' \
+            -X POST "$endpoint" \
+            -H 'content-type: application/json' \
+            --data '{"type":"lead"}')"
+          test "$lead_status" = '400'
+          grep -Fq 'Contact is required.' /tmp/tattooai-lead.txt
+
+          echo "Live tattooai boundary and lead route match the release snapshot at $GITHUB_SHA"
