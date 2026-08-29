@@ -23,7 +23,11 @@ export function ProjectDepositRequirementControl({
     setBusy(true);
     setError(null);
     try {
-      await api.setProjectDepositRequirement(project.id, required);
+      if (required) {
+        await api.setProjectDepositOverride({ projectId: project.id, amount: null });
+      } else {
+        await api.updateDeposit(project.id, 0, 'not_required');
+      }
       onChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : copy.failed);
