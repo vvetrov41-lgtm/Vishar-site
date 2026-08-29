@@ -92,3 +92,39 @@ revoke all on function public.set_project_deposit_requirement(uuid,boolean)
   from public, anon, authenticated, service_role;
 grant execute on function public.set_project_deposit_requirement(uuid,boolean)
   to authenticated;
+
+-- An explicit waiver is a server-side invariant, not just a UI label. Project-
+-- level deposit requests cannot be created until the waiver is deliberately
+-- restored to not_requested. Session-level deposit requests are unaffected.
+create or replace function crm_private.guard_project_deposit_waiver()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+begin
+  if new.purpose = 'deposit'
+     and new.project_id is not null
+     and new.session_id is null
+     and exists (
+       select 1
+       from public.projects p
+       where p.id = new.project_id
+         and p.deposit_status = 'not_required'
+     ) then
+    raise exception 'this project is explicitly marked as not requiring a deposit; mark the deposit as required before creating a request'
+      using errcode = '22023';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function crm_private.guard_project_deposit_waiver()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists payment_requests_guard_project_deposit_waiver
+  on public.payment_requests;
+create trigger payment_requests_guard_project_deposit_waiver
+before insert on public.payment_requests
+for each row execute function crm_private.guard_project_deposit_waiver();
