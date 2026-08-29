@@ -13,6 +13,9 @@ on:
           - black-and-grey
           - colour-realism
           - hero
+          - large-scale
+          - portraits
+          - healed
 
 jobs:
   optimize-images:
@@ -37,6 +40,9 @@ jobs:
           OPTIMIZE_TARGET: ${{ inputs.target }}
         run: node scripts/optimize-images.mjs
 
+      - name: Generate gallery thumbnails
+        run: npm run thumbs:galleries
+
       - name: Validate site
         run: npm run validate:site
 
@@ -51,3 +57,4 @@ jobs:
           add-paths: |
             assets/**/*.jpg
             assets/**/*.jpeg
+            assets/**/thumbs/*.webp
