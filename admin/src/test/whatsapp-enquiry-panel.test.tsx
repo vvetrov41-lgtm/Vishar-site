@@ -42,7 +42,7 @@ function renderPanel(api: Api, options: { phone?: string | null; role?: 'owner' 
 }
 
 describe('WhatsApp enquiry panel', () => {
-  it('builds the direct WhatsApp link only from an already-international client number', async () => {
+  it('builds the direct WhatsApp link from an international client number', async () => {
     const api = apiStub();
     renderPanel(api);
 
@@ -51,11 +51,20 @@ describe('WhatsApp enquiry panel', () => {
     expect(api.getWhatsAppConversationForClient).toHaveBeenCalledWith(CLIENT_ID, ARTIST_ID);
   });
 
-  it('fails the direct-link UI closed for a local-format phone number', async () => {
+  it('normalizes a UK local mobile number for the direct WhatsApp link', async () => {
     const api = apiStub();
     renderPanel(api, { phone: '07700 900123' });
 
-    expect(await screen.findByText(/requires an international phone number/i)).toBeInTheDocument();
+    const link = await screen.findByRole('link', { name: 'Open in WhatsApp' });
+    expect(link).toHaveAttribute('href', 'https://wa.me/447700900123');
+    expect(screen.queryByText(/requires an international number or a UK mobile/i)).not.toBeInTheDocument();
+  });
+
+  it('still fails closed for an ambiguous local phone number', async () => {
+    const api = apiStub();
+    renderPanel(api, { phone: '020 7946 0958' });
+
+    expect(await screen.findByText(/requires an international number or a UK mobile/i)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open in WhatsApp' })).not.toBeInTheDocument();
   });
 
