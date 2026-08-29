@@ -157,7 +157,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         <div>
           <span className="badge">{projectStatusLabel(project.status, language)}</span>{' '}
           <span className={project.deposit_status === 'paid' ? 'badge ok' : 'badge'}>
-            {copy.deposit}: {depositStatusLabel(project.deposit_status, language)}
+            {copy.deposit}: {depositStatusLabel(project.deposit_status, language, finance?.deposit_amount ?? null)}
             {mayViewFinance && finance?.deposit_amount !== null && finance?.deposit_amount !== undefined
               ? ` · ${formatMoney(finance.deposit_amount, project.currency, language)}`
               : ''}
@@ -466,10 +466,20 @@ function projectStatusLabel(status: ProjectStatus, language: Language): string {
   return labels[language][status];
 }
 
-function depositStatusLabel(status: Project['deposit_status'], language: Language): string {
+function depositStatusLabel(
+  status: Project['deposit_status'],
+  language: Language,
+  depositAmount: number | null,
+): string {
+  if (status === 'not_required') {
+    return depositAmount === 0
+      ? (language === 'ru' ? 'не требуется' : 'not required')
+      : (language === 'ru' ? 'ещё не запрошен' : 'not requested yet');
+  }
+
   const labels = {
-    en: { not_requested: 'not requested', not_required: 'not required', requested: 'requested', paid: 'paid', refunded: 'refunded', forfeited: 'forfeited' },
-    ru: { not_requested: 'не запрошен', not_required: 'не требуется', requested: 'запрошен', paid: 'оплачен', refunded: 'возвращён', forfeited: 'удержан' },
+    en: { requested: 'requested', paid: 'paid', refunded: 'refunded', forfeited: 'forfeited' },
+    ru: { requested: 'запрошен', paid: 'оплачен', refunded: 'возвращён', forfeited: 'удержан' },
   } as const;
   return labels[language][status];
 }
