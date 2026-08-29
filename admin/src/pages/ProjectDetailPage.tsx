@@ -5,6 +5,7 @@ import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
 import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
+import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
 import { ProjectEstimatePanel } from '../components/ProjectEstimatePanel';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { Link } from '../lib/router';
@@ -386,6 +387,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
       {mayManageFinance ? (
         <Section title={copy.deposit}>
+          <ProjectDepositRequirementControl project={project} onChanged={reload} />
           <ProjectDepositPanel
             project={project}
             finance={finance}
@@ -466,8 +468,8 @@ function projectStatusLabel(status: ProjectStatus, language: Language): string {
 
 function depositStatusLabel(status: Project['deposit_status'], language: Language): string {
   const labels = {
-    en: { not_required: 'not required', requested: 'requested', paid: 'paid', refunded: 'refunded', forfeited: 'forfeited' },
-    ru: { not_required: 'не требуется', requested: 'запрошен', paid: 'оплачен', refunded: 'возвращён', forfeited: 'удержан' },
+    en: { not_requested: 'not requested', not_required: 'not required', requested: 'requested', paid: 'paid', refunded: 'refunded', forfeited: 'forfeited' },
+    ru: { not_requested: 'не запрошен', not_required: 'не требуется', requested: 'запрошен', paid: 'оплачен', refunded: 'возвращён', forfeited: 'удержан' },
   } as const;
   return labels[language][status];
 }
