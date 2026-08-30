@@ -3,6 +3,8 @@ import type { Language } from './i18n';
 export interface PaymentCopy {
   loadingPayments: string;
   chooseArtist: string;
+  noAssignedArtists: string;
+  clientUnknown: string;
   connectionTitle: string;
   connectionDescription: (artist: string) => string;
   connectionAuthorized: (artist: string) => string;
@@ -116,6 +118,8 @@ export interface PaymentCopy {
 const EN: PaymentCopy = {
   loadingPayments: 'Loading payments…',
   chooseArtist: 'Choose one artist to manage payments.',
+  noAssignedArtists: 'This account is not assigned to any artist yet. Ask the owner for access.',
+  clientUnknown: 'Client not available',
   connectionTitle: 'Monzo account connection',
   connectionDescription: (artist) => `${artist}: protected bank-account connection for payment reconciliation.`,
   connectionAuthorized: (artist) => `${artist}’s Monzo login is authorised. If Monzo asks for approval in the app, approve it there, then open Manage Monzo connection to select the receiving account.`,
@@ -229,6 +233,8 @@ const EN: PaymentCopy = {
 const RU: PaymentCopy = {
   loadingPayments: 'Загружаем платежи…',
   chooseArtist: 'Выберите одного мастера для управления платежами.',
+  noAssignedArtists: 'У этой учётной записи пока нет доступа ни к одному мастеру. Попросите владельца выдать доступ.',
+  clientUnknown: 'Клиент недоступен',
   connectionTitle: 'Подключение Monzo',
   connectionDescription: (artist) => `${artist}: защищённое подключение банковского счёта для сверки платежей.`,
   connectionAuthorized: (artist) => `Вход в Monzo для ${artist} подтверждён. Если Monzo просит подтвердить доступ в приложении, подтвердите его там, затем снова откройте управление подключением Monzo и выберите счёт для приёма платежей.`,
