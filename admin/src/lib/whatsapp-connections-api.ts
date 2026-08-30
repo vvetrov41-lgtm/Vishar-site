@@ -89,6 +89,19 @@ function assertProvisioningResponse(value: unknown, expectedIntegrationKey: stri
   return value as WhatsAppProvisioningResult;
 }
 
+function safeProvisioningDiagnostic(payload: Record<string, unknown> | null, responseStatus: number): string {
+  const error = payload && typeof payload.error === 'string'
+    ? payload.error
+    : `provisioning_failed_http_${responseStatus}`;
+  if (error !== 'meta_request_failed' || !payload) return error;
+
+  const details: string[] = [error];
+  if (Number.isInteger(payload.graph_code)) details.push(`graph_code=${payload.graph_code}`);
+  if (Number.isInteger(payload.graph_subcode)) details.push(`graph_subcode=${payload.graph_subcode}`);
+  if (Number.isInteger(payload.upstream_status)) details.push(`upstream_status=${payload.upstream_status}`);
+  return details.join(' ');
+}
+
 export function createWhatsAppConnectionsApi(client: CrmClient) {
   async function configure(artist: WhatsAppArtist, supabaseUrl: string, enabled: boolean) {
     const integrationKey = whatsappIntegrationKey(supabaseUrl, artist.slug);
@@ -172,15 +185,12 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
 
       const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
       if (!response.ok) {
-        // A failure without a JSON body did not come from the provisioning
-        // endpoint, which always answers in JSON: something between it and the
-        // browser replaced the response. Reporting the status keeps that case
-        // distinguishable from a genuine backend error instead of collapsing
-        // every one of them into the same opaque string.
-        const error = payload && typeof payload.error === 'string'
-          ? payload.error
-          : `provisioning_failed_http_${response.status}`;
-        throw new ApiError(`WhatsApp provisioning failed: ${error}.`);
+        // Keep Meta's numeric Graph diagnostics visible to operators. They are
+        // safe identifiers (not tokens or credentials) and distinguish a spent
+        // authorization code from a permission/configuration failure without
+        // requiring production log access from the browser.
+        const diagnostic = safeProvisioningDiagnostic(payload, response.status);
+        throw new ApiError(`WhatsApp provisioning failed: ${diagnostic}.`);
       }
       return assertProvisioningResponse(payload, expectedIntegrationKey);
     },
