@@ -196,7 +196,7 @@ assert.match(v2Spec, /Google Calendar/);
 assert.match(v2Spec, /Monzo/);
 assert.match(v2Spec, /Telegram/);
 assert.match(v2Spec, /Project Web References/);
-assert.match(v2Spec, /persistent generic CRM Research/i);
+assert.match(v2Spec, /persistent generic Research/i);
 assert.match(v2Spec, /MUST maintain an explicit operator-parity matrix/i);
 assert.match(v2Spec, /MUST NOT disable or mutate the two legacy artist-bound clients in the same step/);
 assert.match(v2Plan, /Restore a dedicated Communications import schema/i);
