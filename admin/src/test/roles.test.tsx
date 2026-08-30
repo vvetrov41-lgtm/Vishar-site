@@ -54,14 +54,17 @@ describe('navigation by role', () => {
     expect(screen.queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument();
   });
 
-  it('hides Payments and Calendar from a booking manager with no membership capability flags', async () => {
+  // Calendar Connections live inside the integrations hub, so the hub entry is
+  // what the membership flag actually gates. The nav link named 'Calendar' is
+  // the appointment diary, which every role with viewSessions reaches.
+  it('hides Payments and the integrations hub from a booking manager with no membership capability flags', async () => {
     renderWithSession(<App />, { role: 'booking_manager' });
     expect((await screen.findAllByRole('link', { name: 'Enquiries' })).length).toBeGreaterThan(0);
     expect(screen.queryByRole('link', { name: 'Payments' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Calendar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Integrations' })).not.toBeInTheDocument();
   });
 
-  it('shows Payments to a booking manager whose membership grants can_manage_finance, but not Calendar', async () => {
+  it('shows Payments to a booking manager whose membership grants can_manage_finance, but not the integrations hub', async () => {
     // Mirrors Kristina's real production membership: finance granted,
     // integrations not - the exact combination the scoped-membership read
     // must distinguish, which the coarse global role alone cannot.
@@ -79,7 +82,7 @@ describe('navigation by role', () => {
       }],
     });
     expect(await screen.findByRole('link', { name: 'Payments' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Calendar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Integrations' })).not.toBeInTheDocument();
   });
 
   it('shows the integrations hub to a booking manager whose membership grants can_manage_integrations', async () => {
@@ -117,7 +120,7 @@ describe('navigation by role', () => {
     });
     expect((await screen.findAllByRole('link', { name: 'Enquiries' })).length).toBeGreaterThan(0);
     expect(screen.queryByRole('link', { name: 'Payments' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Calendar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Integrations' })).not.toBeInTheDocument();
   });
 });
 

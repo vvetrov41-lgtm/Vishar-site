@@ -37,10 +37,11 @@ const NAV_KEYS: Record<string, string> = {
   '/activity': 'nav.activity',
 };
 
-// Order is deliberate. Filtering the general navigation list through a Set
-// preserved membership but inherited the desktop ordering, which put Clients
-// before Appointments. Keep the phone task order explicit as the CRM expands.
-const MOBILE_PRIMARY_PATHS = ['/', '/enquiries', '/appointments', '/projects'] as const;
+// The four thumb slots go to where a day is actually spent: what needs me, who
+// is waiting, who this is, and when. Enquiries and Projects are reached from
+// those - an enquiry is an inbound message, and a project is something a client
+// wants - so both moved into the overflow sheet rather than holding a slot.
+const MOBILE_PRIMARY_PATHS = ['/', '/inbox', '/clients', '/appointments'] as const;
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -52,9 +53,17 @@ const FOCUSABLE_SELECTOR = [
 ].join(',');
 
 type PageScope = 'artist' | 'shared' | 'global';
-type OverflowGroupId = 'operations' | 'finance' | 'administration';
 
-const OVERFLOW_GROUP_ORDER: OverflowGroupId[] = ['operations', 'finance', 'administration'];
+/**
+ * One grouping, used by the sidebar and the phone's overflow sheet alike.
+ *
+ * The sheet already grouped its destinations while the sidebar - the roomier
+ * surface - was a flat list of thirteen. Both now say the same thing: the work,
+ * the money, and the things you set up once.
+ */
+type NavGroupId = 'work' | 'money' | 'setup';
+
+const NAV_GROUP_ORDER: NavGroupId[] = ['work', 'money', 'setup'];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { profile, memberships, signOut } = useSession();
@@ -97,7 +106,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     .filter((item): item is NavItem => Boolean(item));
   const primaryPaths = new Set(primaryItems.map((item) => item.path));
   const overflowItems = items.filter((item) => !primaryPaths.has(item.path));
-  const overflowGroups = groupOverflowItems(overflowItems);
+  const overflowGroups = groupNavItems(overflowItems);
+  const sidebarGroups = groupNavItems(items);
   const overflowIsActive = overflowItems.some((item) => isActivePath(item.path, path));
   const activeItem = items.find((item) => isActivePath(item.path, path));
   const profileName = profile?.display_name || profile?.email || 'CRM';
@@ -174,15 +184,34 @@ export function AppShell({ children }: { children: ReactNode }) {
             <small>CRM</small>
           </span>
         </div>
+        {/* Grouped exactly as the phone's overflow sheet groups, so the two
+            surfaces tell one story. This was a flat list of thirteen. */}
         <nav className="sidebar-nav">
-          {items.map((item) => (
-            <NavigationLink
-              key={item.path}
-              item={item}
-              path={path}
-              label={t(NAV_KEYS[item.path] ?? item.label)}
-            />
-          ))}
+          {sidebarGroups.map((group) => {
+            // Named through `aria-label` rather than a heading: the group label
+            // is a divider, and adding it to the document outline would put
+            // three headings above every page's own.
+            return (
+              <div
+                key={group.id}
+                className="sidebar-group"
+                role="group"
+                aria-label={navGroupLabel(group.id, language)}
+              >
+                <span className="sidebar-group-heading" aria-hidden="true">
+                  {navGroupLabel(group.id, language)}
+                </span>
+                {group.items.map((item) => (
+                  <NavigationLink
+                    key={item.path}
+                    item={item}
+                    path={path}
+                    label={t(NAV_KEYS[item.path] ?? item.label)}
+                  />
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="sidebar-user">
           <span className="profile-avatar" aria-hidden="true">{initials(profileName)}</span>
@@ -283,7 +312,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     role="group"
                     aria-labelledby={headingId}
                   >
-                    <h3 id={headingId}>{overflowGroupLabel(group.id, language)}</h3>
+                    <h3 id={headingId}>{navGroupLabel(group.id, language)}</h3>
                     <div className="nav-sheet-list">
                       {group.items.map((item) => (
                         <NavigationLink
@@ -426,44 +455,52 @@ function NavigationLink({
   );
 }
 
-function groupOverflowItems(items: NavItem[]): { id: OverflowGroupId; items: NavItem[] }[] {
-  const grouped = new Map<OverflowGroupId, NavItem[]>();
+export function groupNavItems(items: NavItem[]): { id: NavGroupId; items: NavItem[] }[] {
+  const grouped = new Map<NavGroupId, NavItem[]>();
   for (const item of items) {
-    const id = overflowGroupFor(item.path);
+    const id = navGroupFor(item.path);
     const group = grouped.get(id) ?? [];
     group.push(item);
     grouped.set(id, group);
   }
-  return OVERFLOW_GROUP_ORDER
+  return NAV_GROUP_ORDER
     .map((id) => ({ id, items: grouped.get(id) ?? [] }))
     .filter((group) => group.items.length > 0);
 }
 
-function overflowGroupFor(path: string): OverflowGroupId {
-  if (path === '/finance' || path === '/payments') return 'finance';
+/**
+ * Frequency, not entity. A destination belongs to `setup` when it is configured
+ * and then left alone - which is what "Time off", "Automations" and the whole
+ * administration group have in common, whatever table they read.
+ */
+export function navGroupFor(path: string): NavGroupId {
+  if (path === '/finance' || path === '/payments') return 'money';
   if (
-    path === '/users'
+    path === '/availability'
+    || path === '/automations'
+    || path === '/notifications'
+    || path === '/activity'
+    || path === '/users'
     || path === '/workspaces'
     || path.startsWith('/workspaces/')
     || path.startsWith('/artists/')
     || path.startsWith('/integrations')
     || path === '/settings'
-  ) return 'administration';
-  if (path === '/notifications') return 'operations';
-  return 'operations';
+  ) return 'setup';
+  return 'work';
 }
 
-function overflowGroupLabel(group: OverflowGroupId, language: Language): string {
-  const labels: Record<Language, Record<OverflowGroupId, string>> = {
+function navGroupLabel(group: NavGroupId, language: Language): string {
+  const labels: Record<Language, Record<NavGroupId, string>> = {
     en: {
-      operations: 'Operations',
-      finance: 'Finance',
-      administration: 'Administration',
+      work: 'Work',
+      money: 'Money',
+      setup: 'Setup',
     },
     ru: {
-      operations: 'Работа',
-      finance: 'Финансы',
-      administration: 'Администрирование',
+      work: 'Работа',
+      money: 'Деньги',
+      setup: 'Настройки',
     },
   };
   return labels[language][group];
@@ -548,6 +585,10 @@ function NavIcon({ path }: { path: string }) {
   switch (path) {
     case '/':
       return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>;
+    // The Inbox holds a thumb slot, so it cannot fall through to the default
+    // glyph: that is the same three dots the More trigger uses.
+    case '/inbox':
+      return <svg {...common}><path d="M4 5h16v11H9l-4 3.5V16H4z" /></svg>;
     case '/enquiries':
       return <svg {...common}><path d="M4 5h16v14H4z" /><path d="M4 13h4l2 3h4l2-3h4" /></svg>;
     case '/clients':

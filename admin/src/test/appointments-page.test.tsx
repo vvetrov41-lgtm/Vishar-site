@@ -16,7 +16,7 @@ describe('appointments queue', () => {
       rpcCalls,
     });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Appointments' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Calendar' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Project: Raven sleeve' }))
       .toHaveAttribute('href', `#/projects/${PROJECT_ID}`);
 
@@ -36,7 +36,7 @@ describe('appointments queue', () => {
   it('offers only 15 to 30 minute consultation shortcuts', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Appointments' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Calendar' })).toBeInTheDocument();
     fireEvent.change(screen.getByRole('combobox', { name: 'Appointment type' }), {
       target: { value: 'video_consultation' },
     });
@@ -50,7 +50,7 @@ describe('appointments queue', () => {
   it('keeps lifecycle controls hidden from read-only users', async () => {
     renderWithSession(<App />, { role: 'read_only', path: '/appointments' });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Appointments' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Calendar' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Confirm:/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Cancel:/ })).not.toBeInTheDocument();
   });

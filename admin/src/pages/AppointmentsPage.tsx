@@ -767,7 +767,7 @@ const TYPE_LABELS: Record<Language, Record<AppointmentType, string>> = {
 
 const COPY: Record<Language, Record<string, string>> = {
   en: {
-    title: 'Appointments',
+    title: 'Calendar',
     loading: 'Loading appointments…',
     none: 'No appointments yet',
     filterType: 'Filter by type',
@@ -820,7 +820,7 @@ const COPY: Record<Language, Record<string, string>> = {
     calendar: 'Calendar',
   },
   ru: {
-    title: 'Записи',
+    title: 'Календарь',
     loading: 'Загрузка записей…',
     none: 'Записей пока нет',
     filterType: 'Фильтр по типу',

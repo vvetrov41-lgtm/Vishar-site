@@ -596,6 +596,21 @@ a.client-workspace-fact { min-height: var(--tap); }
 }
 .conflict-acknowledgement input { width: 20px; height: 20px; min-height: 0; flex: 0 0 auto; }
 
+/* Grouped sidebar. The overflow sheet already grouped; the roomier surface
+   should not be the flatter one. */
+.sidebar-group { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-group + .sidebar-group { margin-top: 14px; }
+.sidebar-group-heading {
+  display: block;
+  margin: 0 0 4px;
+  padding-inline: 12px;
+  color: var(--faint);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 /* Payments setup, collapsed out of the daily surface. */
 .payments-setup > summary {
   min-height: var(--tap);

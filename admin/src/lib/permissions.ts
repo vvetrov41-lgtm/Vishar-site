@@ -192,11 +192,11 @@ export interface NavItem {
 // appends that entry from public.control_plane_access() instead.
 export const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Today', capability: 'viewEnquiries' },
-  { path: '/inbox', label: 'Communications', capability: 'viewEnquiries' },
+  { path: '/inbox', label: 'Inbox', capability: 'viewEnquiries' },
   { path: '/enquiries', label: 'Enquiries', capability: 'viewEnquiries' },
   { path: '/clients', label: 'Clients', capability: 'viewClients' },
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
-  { path: '/appointments', label: 'Appointments', capability: 'viewSessions' },
+  { path: '/appointments', label: 'Calendar', capability: 'viewSessions' },
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
   { path: '/automations', label: 'Automations', capability: 'viewAutomations' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
