@@ -1,4 +1,4 @@
-import { ApiError, type CrmClient } from './api';
+import { apiMessage, ApiError, type CrmClient } from './api';
 import type { WhatsAppEmbeddedSignupResult } from './meta-whatsapp-embedded-signup';
 import type { Artist } from './types';
 
@@ -36,23 +36,23 @@ export function whatsappCrmEnvironment(supabaseUrl: string): WhatsAppCrmEnvironm
   try {
     origin = new URL(supabaseUrl).origin;
   } catch {
-    throw new ApiError('WhatsApp integration controls are unavailable in this CRM environment.');
+    throw new ApiError(apiMessage('WhatsApp integration controls are unavailable in this CRM environment.'));
   }
   if (origin === PRODUCTION_SUPABASE_ORIGIN) return 'production';
   if (origin === STAGING_SUPABASE_ORIGIN) return 'staging';
-  throw new ApiError('WhatsApp integration controls are unavailable in this CRM environment.');
+  throw new ApiError(apiMessage('WhatsApp integration controls are unavailable in this CRM environment.'));
 }
 
 export function whatsappIntegrationKey(supabaseUrl: string, artistSlug: string): string {
   const slug = artistSlug.trim().toLowerCase();
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-    throw new ApiError('The artist routing key is not valid for WhatsApp.');
+    throw new ApiError(apiMessage('The artist routing key is not valid for WhatsApp.'));
   }
   return `${slug}-${whatsappCrmEnvironment(supabaseUrl)}`;
 }
 
 function assertSafeMetadata(value: unknown): WhatsAppIntegrationMetadata[] {
-  if (!Array.isArray(value)) throw new ApiError('Could not load WhatsApp connections.');
+  if (!Array.isArray(value)) throw new ApiError(apiMessage('Could not load WhatsApp connections.'));
   return value.map((row) => {
     if (
       !row
@@ -66,7 +66,7 @@ function assertSafeMetadata(value: unknown): WhatsAppIntegrationMetadata[] {
       || typeof (row as any).is_enabled !== 'boolean'
       || typeof (row as any).updated_at !== 'string'
     ) {
-      throw new ApiError('Could not load WhatsApp connections.');
+      throw new ApiError(apiMessage('Could not load WhatsApp connections.'));
     }
     return row as WhatsAppIntegrationMetadata;
   });
@@ -74,7 +74,7 @@ function assertSafeMetadata(value: unknown): WhatsAppIntegrationMetadata[] {
 
 function assertProvisioningResponse(value: unknown, expectedIntegrationKey: string): WhatsAppProvisioningResult {
   if (!value || typeof value !== 'object') {
-    throw new ApiError('WhatsApp provisioning returned an invalid response.');
+    throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   const row = value as Record<string, unknown>;
   if (
@@ -84,7 +84,7 @@ function assertProvisioningResponse(value: unknown, expectedIntegrationKey: stri
     || (row.display_phone_number !== null && typeof row.display_phone_number !== 'string')
     || (row.verified_name !== null && typeof row.verified_name !== 'string')
   ) {
-    throw new ApiError('WhatsApp provisioning returned an invalid response.');
+    throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   return value as WhatsAppProvisioningResult;
 }
@@ -130,7 +130,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
         .select('id, artist_id, provider, integration_key, external_account_label, is_enabled, updated_at')
         .eq('integration_type', 'whatsapp')
         .order('updated_at', { ascending: false });
-      if (result.error) throw new ApiError('Could not load WhatsApp connections.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not load WhatsApp connections.'), result.error);
       return assertSafeMetadata(result.data ?? []);
     },
 
@@ -148,21 +148,21 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       signup: WhatsAppEmbeddedSignupResult,
     ): Promise<WhatsAppProvisioningResult> {
       if (whatsappCrmEnvironment(supabaseUrl) !== 'production') {
-        throw new ApiError('Production WhatsApp provisioning is unavailable in this CRM environment.');
+        throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
       }
       const approvedSlug = PRODUCTION_ONBOARDING_ARTISTS.get(artist.id);
       if (!approvedSlug || artist.slug !== approvedSlug) {
-        throw new ApiError('Production WhatsApp onboarding is unavailable for this artist.');
+        throw new ApiError(apiMessage('Production WhatsApp onboarding is unavailable for this artist.'));
       }
       if (signup.event !== 'FINISH' && signup.event !== 'CODE_ONLY') {
-        throw new ApiError('Meta Embedded Signup did not finish authorization.');
+        throw new ApiError(apiMessage('Meta Embedded Signup did not finish authorization.'));
       }
 
       const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, approvedSlug);
       const session = await client.auth.getSession();
       const accessToken = session.data?.session?.access_token;
       if (!accessToken) {
-        throw new ApiError('Your CRM session expired. Sign in again before connecting WhatsApp.');
+        throw new ApiError(apiMessage('Your CRM session expired. Sign in again before connecting WhatsApp.'));
       }
 
       const response = await fetch('/api/whatsapp/embedded-signup/provision', {

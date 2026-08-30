@@ -15,7 +15,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { createApi, type Api, type CrmClient } from './api';
+import { apiMessage, createApi, type Api, type CrmClient } from './api';
 import { createAppointmentApi, type AppointmentApi } from './appointment-api';
 import { createAvailabilityApi, type AvailabilityApi } from './availability-api';
 import {
@@ -185,13 +185,13 @@ export function SessionProvider({
   }, [client, load]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    if (!client) throw new Error('The CRM is not configured.');
+    if (!client) throw new Error(apiMessage('The CRM is not configured.'));
     setError(null);
     const result = await client.auth.signInWithPassword({ email, password });
     if (result.error) {
       // Deliberately generic: distinguishing "no such account" from "wrong
       // password" tells an attacker which addresses are staff addresses.
-      setError('That email address and password did not match.');
+      setError(apiMessage('That email address and password did not match.'));
       throw new Error('sign in failed');
     }
     await load();
@@ -222,7 +222,7 @@ export function SessionProvider({
     const auth = client.auth as PasswordUpdateAuth;
     const updated = await auth.updateUser({ password });
     if (updated.error) {
-      throw new Error('Could not set that password. Choose a stronger password and try again.');
+      throw new Error(apiMessage('Could not set that password. Choose a stronger password and try again.'));
     }
 
     // End the invitation-derived session. The next access must prove the new
@@ -266,6 +266,6 @@ export function useSession(): SessionValue {
 
 export function useApi(): CrmApi {
   const { api } = useSession();
-  if (!api) throw new Error('The CRM is not configured.');
+  if (!api) throw new Error(apiMessage('The CRM is not configured.'));
   return api;
 }

@@ -5,7 +5,7 @@
 // here asserts an artist, a provider account or a recipient: the browser names
 // a conversation, and the database resolves everything else from it.
 
-import { ApiError, type CrmClient } from './api';
+import { apiMessage, ApiError, type CrmClient } from './api';
 
 export type CommunicationChannel = 'whatsapp' | 'instagram';
 export type CommunicationDirection = 'inbound' | 'outbound';
@@ -93,7 +93,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
  * not something to render half of.
  */
 function assertConversations(value: unknown): ConversationSummary[] {
-  if (!Array.isArray(value)) throw new ApiError('Could not load the inbox.');
+  if (!Array.isArray(value)) throw new ApiError(apiMessage('Could not load the inbox.'));
   return value.map((row: any) => {
     if (
       !row
@@ -105,7 +105,7 @@ function assertConversations(value: unknown): ConversationSummary[] {
       || (row.state !== 'open' && row.state !== 'archived')
       || typeof row.has_unread !== 'boolean'
     ) {
-      throw new ApiError('Could not load the inbox.');
+      throw new ApiError(apiMessage('Could not load the inbox.'));
     }
     return row as ConversationSummary;
   });
@@ -178,7 +178,7 @@ export function createCommunicationsApi(client: CrmClient) {
         p_limit: filter.limit ?? 30,
         p_before: filter.before ?? null,
       });
-      if (result.error) throw new ApiError('Could not load the inbox.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not load the inbox.'), result.error);
       return assertConversations(result.data ?? []);
     },
 
@@ -191,7 +191,7 @@ export function createCommunicationsApi(client: CrmClient) {
         )
         .eq('id', conversationId)
         .maybeSingle();
-      if (result.error) throw new ApiError('Could not load that conversation.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not load that conversation.'), result.error);
       return (result.data as ConversationDetail | null) ?? null;
     },
 
@@ -213,7 +213,7 @@ export function createCommunicationsApi(client: CrmClient) {
         .eq('client_id', clientId)
         .order('last_message_at', { ascending: false })
         .limit(limit);
-      if (result.error) throw new ApiError('Could not load that client\'s conversations.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not load that client\'s conversations.'), result.error);
       return (result.data ?? []) as ClientConversation[];
     },
 
@@ -226,7 +226,7 @@ export function createCommunicationsApi(client: CrmClient) {
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true })
         .limit(limit);
-      if (result.error) throw new ApiError('Could not load those messages.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not load those messages.'), result.error);
       return (result.data ?? []) as ConversationMessage[];
     },
 
@@ -236,7 +236,7 @@ export function createCommunicationsApi(client: CrmClient) {
         p_body: body,
         p_request_id: requestId,
       });
-      if (result.error) throw new ApiError('Could not queue that reply.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not queue that reply.'), result.error);
       return result.data;
     },
 
@@ -244,7 +244,7 @@ export function createCommunicationsApi(client: CrmClient) {
       const result = await client.rpc('mark_communication_conversation_read', {
         p_conversation_id: conversationId,
       });
-      if (result.error) throw new ApiError('Could not update that conversation.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not update that conversation.'), result.error);
       return result.data;
     },
 
@@ -253,7 +253,7 @@ export function createCommunicationsApi(client: CrmClient) {
         p_conversation_id: conversationId,
         p_state: state,
       });
-      if (result.error) throw new ApiError('Could not update that conversation.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not update that conversation.'), result.error);
       return result.data;
     },
 
@@ -262,7 +262,7 @@ export function createCommunicationsApi(client: CrmClient) {
         p_conversation_id: conversationId,
         p_client_id: clientId,
       });
-      if (result.error) throw new ApiError('Could not link that client.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not link that client.'), result.error);
       return result.data;
     },
 
@@ -279,7 +279,7 @@ export function createCommunicationsApi(client: CrmClient) {
         p_phone: details.phone || null,
         p_instagram: details.instagram || null,
       });
-      if (result.error) throw new ApiError('Could not create that client.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not create that client.'), result.error);
       return result.data;
     },
 
@@ -296,7 +296,7 @@ export function createCommunicationsApi(client: CrmClient) {
         p_enquiry: payload.enquiry,
         p_privacy_acknowledged: payload.privacyAcknowledged,
       });
-      if (result.error) throw new ApiError('Could not create that enquiry.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not create that enquiry.'), result.error);
       return result.data;
     },
   };

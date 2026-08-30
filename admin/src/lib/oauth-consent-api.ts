@@ -1,4 +1,4 @@
-import { ApiError, type CrmClient } from './api';
+import { apiMessage, ApiError, type CrmClient } from './api';
 
 interface OAuthMethods {
   getAuthorizationDetails: (authorizationId: string) => Promise<{ data: any; error: any }>;
@@ -64,25 +64,25 @@ function validAuthorizationId(value: string): string {
     || clean.length > 500
     || !/^[A-Za-z0-9._~-]+$/.test(clean)
   ) {
-    throw new ApiError('This authorization request is invalid or has expired.');
+    throw new ApiError(apiMessage('This authorization request is invalid or has expired.'));
   }
   return clean;
 }
 
 function safeRedirectUrl(value: unknown): string {
   if (typeof value !== 'string') {
-    throw new ApiError('The authorization server did not return a safe redirect.');
+    throw new ApiError(apiMessage('The authorization server did not return a safe redirect.'));
   }
 
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
-    throw new ApiError('The authorization server did not return a safe redirect.');
+    throw new ApiError(apiMessage('The authorization server did not return a safe redirect.'));
   }
 
   if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
-    throw new ApiError('The authorization server did not return a safe redirect.');
+    throw new ApiError(apiMessage('The authorization server did not return a safe redirect.'));
   }
   return parsed.toString();
 }
@@ -108,7 +108,7 @@ function requestedScopes(data: any): string[] {
     ? data.scope.split(/\s+/).map((scope: string) => scope.trim()).filter(Boolean)
     : [];
   if (scopes.length !== 1 || scopes[0] !== 'email') {
-    throw new ApiError('This GPT requested an unexpected OAuth scope.');
+    throw new ApiError(apiMessage('This GPT requested an unexpected OAuth scope.'));
   }
   return scopes;
 }
@@ -116,14 +116,14 @@ function requestedScopes(data: any): string[] {
 function oauthMethods(client: CrmClient): OAuthMethods {
   const methods = (client as OAuthCapableClient).auth.oauth;
   if (!methods) {
-    throw new ApiError('OAuth consent is not available in this CRM build.');
+    throw new ApiError(apiMessage('OAuth consent is not available in this CRM build.'));
   }
   return methods;
 }
 
 function consentSummary(data: any): GptConsentSummary {
   if (!Array.isArray(data) || data.length !== 1) {
-    throw new ApiError('This GPT is not enabled for your CRM access.');
+    throw new ApiError(apiMessage('This GPT is not enabled for your CRM access.'));
   }
   const row = data[0] as Partial<GptConsentSummary>;
   if (
@@ -134,7 +134,7 @@ function consentSummary(data: any): GptConsentSummary {
     || typeof row.can_read_appointments !== 'boolean'
     || typeof row.can_manage_appointments !== 'boolean'
   ) {
-    throw new ApiError('This GPT is not enabled for your CRM access.');
+    throw new ApiError(apiMessage('This GPT is not enabled for your CRM access.'));
   }
   return row as GptConsentSummary;
 }
@@ -143,7 +143,7 @@ const UNIFIED_ARTIST_SCOPE_LABEL = 'Artists available to your CRM profile';
 
 function consentDetails(data: any): GptConsentDetails {
   if (!data || Array.isArray(data) || typeof data !== 'object') {
-    throw new ApiError('This GPT is not enabled for your CRM access.');
+    throw new ApiError(apiMessage('This GPT is not enabled for your CRM access.'));
   }
   const row = data as Partial<GptConsentDetails>;
   if (
@@ -156,16 +156,16 @@ function consentDetails(data: any): GptConsentDetails {
     || typeof row.can_read_appointments !== 'boolean'
     || typeof row.can_manage_appointments !== 'boolean'
   ) {
-    throw new ApiError('This GPT is not enabled for your CRM access.');
+    throw new ApiError(apiMessage('This GPT is not enabled for your CRM access.'));
   }
   // A GPT fixed to one artist must name that artist. One bound to a profile
   // must not, because it is fixed to none.
   if (row.binding_mode === 'artist') {
     if (typeof row.artist_display_name !== 'string' || !row.artist_display_name.trim()) {
-      throw new ApiError('This GPT is not enabled for your CRM access.');
+      throw new ApiError(apiMessage('This GPT is not enabled for your CRM access.'));
     }
   } else if (row.artist_display_name != null) {
-    throw new ApiError('This GPT is not enabled for your CRM access.');
+    throw new ApiError(apiMessage('This GPT is not enabled for your CRM access.'));
   }
   return {
     integration_key: row.integration_key,
@@ -186,7 +186,7 @@ export function createOAuthConsentApi(client: CrmClient): OAuthConsentApi {
       const cleanId = validAuthorizationId(authorizationId);
       const result = await oauthMethods(client).getAuthorizationDetails(cleanId);
       if (result.error || !result.data) {
-        throw new ApiError('This authorization request is invalid or has expired.');
+        throw new ApiError(apiMessage('This authorization request is invalid or has expired.'));
       }
 
       if (
@@ -197,12 +197,12 @@ export function createOAuthConsentApi(client: CrmClient): OAuthConsentApi {
       }
 
       if (result.data.authorization_id !== cleanId) {
-        throw new ApiError('The authorization server returned a mismatched request.');
+        throw new ApiError(apiMessage('The authorization server returned a mismatched request.'));
       }
 
       const clientId = oauthClientId(result.data);
       if (!clientId) {
-        throw new ApiError('The authorization server did not identify the requesting GPT.');
+        throw new ApiError(apiMessage('The authorization server did not identify the requesting GPT.'));
       }
 
       // Prefer the detail contract, which carries the binding mode. Fall back
@@ -220,7 +220,7 @@ export function createOAuthConsentApi(client: CrmClient): OAuthConsentApi {
           p_oauth_client_id: clientId,
         });
         if (summaryResult.error) {
-          throw new ApiError('This GPT is not enabled for your CRM access.');
+          throw new ApiError(apiMessage('This GPT is not enabled for your CRM access.'));
         }
         summary = consentSummary(summaryResult.data);
       } else {
@@ -256,7 +256,7 @@ export function createOAuthConsentApi(client: CrmClient): OAuthConsentApi {
         ? await oauth.approveAuthorization(cleanId)
         : await oauth.denyAuthorization(cleanId);
       if (result.error || !result.data) {
-        throw new ApiError('The authorization decision could not be completed.');
+        throw new ApiError(apiMessage('The authorization decision could not be completed.'));
       }
       return safeRedirectUrl(result.data.redirect_url);
     },

@@ -4,7 +4,7 @@
 // routing keys. Booking-source mutations are named RPCs introduced by 0079;
 // database capability checks remain authoritative.
 
-import { ApiError, type CrmClient } from './api';
+import { apiMessage, ApiError, type CrmClient } from './api';
 
 export type IntegrationOwnerKind = 'artist' | 'workspace';
 
@@ -211,7 +211,7 @@ export function createPlatformApi(client: CrmClient) {
 
     async markNotificationRead(id: string): Promise<boolean> {
       const result = await client.rpc('mark_notification_read', { p_notification_id: id });
-      if (result.error) throw new ApiError('Could not update that notification.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not update that notification.'), result.error);
       return result.data === true;
     },
 
@@ -220,7 +220,7 @@ export function createPlatformApi(client: CrmClient) {
         p_follow_up_id: followUpId,
         p_until: until.toISOString(),
       });
-      if (result.error) throw new ApiError('Could not snooze that reminder.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not snooze that reminder.'), result.error);
     },
 
     async listCapabilities(artistId?: string): Promise<CapabilityGrant[]> {
@@ -250,8 +250,8 @@ export function createPlatformApi(client: CrmClient) {
         p_form_template: 'tattoo-enquiry',
         p_activate: false,
       });
-      if (result.error) throw new ApiError('Could not create that form or website source.', result.error);
-      if (typeof result.data !== 'string') throw new ApiError('The booking source was not created.', null);
+      if (result.error) throw new ApiError(apiMessage('Could not create that form or website source.'), result.error);
+      if (typeof result.data !== 'string') throw new ApiError(apiMessage('The booking source was not created.'), null);
       return result.data;
     },
 
@@ -262,7 +262,7 @@ export function createPlatformApi(client: CrmClient) {
         p_allowed_origin: input.allowedOrigin ?? null,
         p_is_active: input.isActive,
       });
-      if (result.error) throw new ApiError('Could not update that form or website source.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not update that form or website source.'), result.error);
       return result.data === true;
     },
   };

@@ -8,9 +8,23 @@
 // table directly: they go through the SECURITY DEFINER RPCs, which re-check the
 // caller's role and write the audit trail in the same transaction.
 
-import { describeApiFailure, type ApiOperation } from './api-errors';
+import {
+  describeApiFailure,
+  translateApiMessage,
+  type ApiMessage,
+  type ApiOperation,
+} from './api-errors';
 
-export type { ApiOperation };
+export type { ApiMessage, ApiOperation };
+
+/**
+ * A failure a module states in its own words, in the operator's language.
+ * `message` is typed as ApiMessage, so a new English-only sentence in any API
+ * module fails to compile until it is translated.
+ */
+export function apiMessage(message: ApiMessage): string {
+  return translateApiMessage(message, currentLanguage());
+}
 import { currentLanguage } from './i18n';
 import { phoneSearchCandidates } from './phone';
 import type {
@@ -196,11 +210,11 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     },
 
     async inviteStaff(invite: StaffInviteRequest): Promise<StaffInviteResult> {
-      if (!teamInviteUrl) throw new ApiError('Staff invitations are not configured.');
+      if (!teamInviteUrl) throw new ApiError(apiMessage('Staff invitations are not configured.'));
       const session = await client.auth.getSession();
       const accessToken = session.data?.session?.access_token;
       if (session.error || typeof accessToken !== 'string' || !accessToken) {
-        throw new ApiError('Your session has expired. Sign in again.');
+        throw new ApiError(apiMessage('Your session has expired. Sign in again.'));
       }
 
       let response: Response;
@@ -214,7 +228,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
           body: JSON.stringify(invite),
         });
       } catch (cause) {
-        throw new ApiError('Could not reach the staff invitation service.', cause);
+        throw new ApiError(apiMessage('Could not reach the staff invitation service.'), cause);
       }
 
       let payload: any = null;
@@ -246,7 +260,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
         || typeof payload?.idempotent_replay !== 'boolean'
         || !['sent', 'existing_account', 'not_repeated'].includes(payload?.delivery)
       ) {
-        throw new ApiError('The staff invitation service returned an invalid response.');
+        throw new ApiError(apiMessage('The staff invitation service returned an invalid response.'));
       }
 
       return {

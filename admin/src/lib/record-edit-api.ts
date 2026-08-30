@@ -1,4 +1,4 @@
-import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
+import { apiMessage, ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
 import type { EnquiryFile } from './types';
 
 export interface ClientDetailsUpdate {
@@ -56,8 +56,8 @@ function archiveResult<T>(
   if (result.error) {
     if (result.error?.code === '55000') {
       const message = record === 'client'
-        ? 'This client has an active project. Archive or close that project before deleting the client.'
-        : 'This enquiry has an active project. Archive or close that project before deleting the enquiry.';
+        ? apiMessage('This client has an active project. Archive or close that project before deleting the client.')
+        : apiMessage('This enquiry has an active project. Archive or close that project before deleting the enquiry.');
       throw new ApiError(message, result.error);
     }
     throw new ApiError(friendlyMessage(result.error, record === 'client' ? 'delete that client' : 'delete that enquiry'), result.error);
@@ -130,10 +130,10 @@ export function createRecordEditApi(client: CrmClient) {
 
     async addEnquiryReference(enquiryId: string, file: File): Promise<PreparedReference> {
       if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-        throw new ApiError('Only JPG, PNG or WebP reference images are allowed.');
+        throw new ApiError(apiMessage('Only JPG, PNG or WebP reference images are allowed.'));
       }
       if (file.size <= 0 || file.size > 4 * 1024 * 1024) {
-        throw new ApiError('Reference images must be no larger than 4 MB.');
+        throw new ApiError(apiMessage('Reference images must be no larger than 4 MB.'));
       }
 
       const prepared = rpcResult<PreparedReference>(
