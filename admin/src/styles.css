@@ -454,6 +454,96 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .timeline li { border-left: 2px solid var(--border); padding-left: 12px; }
 .timeline .when { color: var(--faint); font-size: 0.75rem; }
 
+/* An anchor that has to read as a primary action. Matches `button` so the
+   recommended next action on the client workspace is the same size and weight
+   as a real button, and clears the 44px tap target on a phone. */
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-weight: 550;
+  font-size: 0.9rem;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.action-link.primary { background: var(--text); color: #000; border-color: transparent; }
+
+/* Client workspace ------------------------------------------------------- */
+
+.client-workspace-header .client-workspace-name {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.client-workspace-contact {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.client-workspace-artists { margin-top: 8px; }
+
+/* The four facts that decide what happens next. One column on a phone so each
+   answer reads as a line rather than a table cell. */
+.client-workspace-state {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+}
+.client-workspace-state > div { min-width: 0; }
+.client-workspace-state dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.client-workspace-state dd { margin: 2px 0 0; min-width: 0; }
+.client-workspace-fact {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+a.client-workspace-fact { min-height: var(--tap); }
+.client-workspace-fact.muted, .client-workspace-fact .muted { color: var(--muted); }
+.client-workspace-link {
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 12px;
+}
+
+.client-next-action .client-next-action-why {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.client-next-action .client-next-action-idle {
+  margin: 10px 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+@media (min-width: 640px) {
+  .client-workspace-state { grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+}
+
 .notice { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-size: 0.85rem; color: var(--muted); }
 .notice.warn { border-color: rgba(255, 204, 102, 0.4); color: var(--warn); }
 
