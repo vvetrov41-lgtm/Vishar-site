@@ -112,9 +112,14 @@ function authorizedFetch(calls, {
       }]);
     }
     if (target.includes('/oauth/access_token')) {
-      assert.ok(target.includes('client_id=1481226093843982'));
-      assert.ok(target.includes('client_secret='));
-      assert.ok(target.includes('code='));
+      const exchangeUrl = new URL(target);
+      assert.equal(exchangeUrl.search, '', 'Meta OAuth credentials must not be placed in the request URL');
+      assert.equal(init.method, 'POST');
+      assert.match(String(init.headers?.['content-type'] || ''), /^application\/x-www-form-urlencoded/i);
+      const form = new URLSearchParams(String(init.body));
+      assert.equal(form.get('client_id'), '1481226093843982');
+      assert.equal(form.get('client_secret'), 'meta-app-secret-for-unit-test-only');
+      assert.equal(form.get('code'), 'one-time-meta-code-for-test');
       return Response.json({ access_token: 'meta-access-token-for-test' });
     }
     if (target.includes(`/${bodyFor(artistId).session.waba_id}?fields=id%2Cname`)) {
@@ -422,7 +427,11 @@ assert.deepEqual(__testing.approvedArtists, {
     });
     assert.equal(response.status, 200);
     const exchange = calls.find((call) => call.target.includes('/oauth/access_token'));
-    assert.equal(new URL(exchange.target).searchParams.get('client_secret'), 'meta-app-secret-for-unit-test-only');
+    assert.equal(new URL(exchange.target).search, '', 'Meta app secret must not appear in the OAuth URL');
+    assert.equal(exchange.init.method, 'POST');
+    const form = new URLSearchParams(String(exchange.init.body));
+    assert.equal(form.get('client_secret'), 'meta-app-secret-for-unit-test-only');
+    assert.equal(String(exchange.init.body).includes('\n'), false, 'OAuth form carried raw whitespace');
     const write = calls.find((call) => call.target.includes('/workers/scripts/'));
     assert.equal(JSON.parse(String(write.init.body)).text.includes('\n'), false, 'envelope carried raw whitespace');
   } finally {
