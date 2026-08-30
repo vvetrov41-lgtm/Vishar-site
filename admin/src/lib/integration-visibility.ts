@@ -12,8 +12,8 @@ function normaliseIdentity(value: string | null | undefined): string {
  *
  * Database/RPC permissions remain authoritative. The owner role is intentionally
  * narrowed here to the artist whose slug/display name matches the signed-in
- * profile, so one artist's ordinary integration screen does not expose the
- * other artist's WhatsApp/Instagram controls. A mismatch fails closed.
+ * profile, so one artist's ordinary integration surfaces do not expose another
+ * artist's provider controls or status. A mismatch fails closed.
  */
 export function canShowArtistIntegration(
   profile: Profile | null | undefined,
@@ -33,5 +33,17 @@ export function canShowArtistIntegration(
     (membership) => membership.artist_id === artist.id
       && membership.is_active
       && membership.can_manage_integrations,
+  );
+}
+
+export function visibleIntegrationArtistIds(
+  profile: Profile | null | undefined,
+  artists: Array<Pick<Artist, 'id' | 'slug' | 'display_name' | 'is_active'>>,
+  memberships: ArtistMembership[],
+): Set<string> {
+  return new Set(
+    artists
+      .filter((artist) => artist.is_active && canShowArtistIntegration(profile, artist, memberships))
+      .map((artist) => artist.id),
   );
 }
