@@ -108,7 +108,6 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
     const originalFb = window.FB;
     const originalAsyncInit = window.fbAsyncInit;
     let loginCalls = 0;
-
     window.FB = {
       init() {},
       login(callback) {
@@ -116,7 +115,6 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
         callback({ status: 'not_authorized' });
       },
     };
-
     try {
       await prepareWhatsAppEmbeddedSignup();
       const result = launchWhatsAppEmbeddedSignup();
@@ -133,27 +131,21 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
     const originalAsyncInit = window.fbAsyncInit;
     let replacementInitCalls = 0;
     let replacementLoginCalls = 0;
-
     window.FB = {
       init() {},
       login(callback) {
         callback({ status: 'not_authorized' });
       },
     };
-
     try {
       await prepareWhatsAppEmbeddedSignup();
-
       window.FB = {
-        init() {
-          replacementInitCalls += 1;
-        },
+        init() { replacementInitCalls += 1; },
         login(callback) {
           replacementLoginCalls += 1;
           callback({ status: 'not_authorized' });
         },
       };
-
       const result = launchWhatsAppEmbeddedSignup();
       expect(replacementInitCalls).toBe(1);
       expect(replacementLoginCalls).toBe(1);
@@ -174,11 +166,8 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
     const originalAsyncInit = window.fbAsyncInit;
     window.FB = {
       init() {},
-      login(callback) {
-        callback({ status });
-      },
+      login(callback) { callback({ status }); },
     };
-
     try {
       await prepareWhatsAppEmbeddedSignup();
       await expect(launchWhatsAppEmbeddedSignup()).rejects.toMatchObject({ code });
@@ -193,7 +182,6 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
     const originalAsyncInit = window.fbAsyncInit;
     let loginCallback: ((response: { authResponse?: { code?: string }; status?: string }) => void) | null = null;
     let loginOptions: Record<string, unknown> | null = null;
-
     window.FB = {
       init() {},
       login(callback, options) {
@@ -201,7 +189,6 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
         loginOptions = options;
       },
     };
-
     try {
       await prepareWhatsAppEmbeddedSignup();
       const result = launchWhatsAppEmbeddedSignup();
@@ -211,7 +198,6 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
         response_type: 'code',
         override_default_response_type: true,
       });
-
       window.dispatchEvent(new MessageEvent('message', {
         origin: 'https://www.facebook.com',
         data: {
@@ -226,7 +212,6 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
       }) => void);
       if (!capturedLoginCallback) throw new Error('FB.login callback was not captured');
       capturedLoginCallback({ status: 'connected', authResponse: { code: ' one-time-code ' } });
-
       await expect(result).resolves.toEqual({
         authorizationCode: 'one-time-code',
         wabaId: '12345678901',
@@ -239,26 +224,44 @@ describe('Meta WhatsApp Embedded Signup event boundary', () => {
     }
   });
 
-  it.each([
-    [false, 'WA_META_TIMEOUT_WAITING_FOR_LOGIN'],
-    [true, 'WA_META_TIMEOUT_WAITING_FOR_SESSION'],
-  ] as const)('classifies the timeout phase when loginCode=%s', async (loginCode, code) => {
+  it('fails when Meta never returns the login callback', async () => {
+    const originalFb = window.FB;
+    const originalAsyncInit = window.fbAsyncInit;
+    vi.useFakeTimers();
+    window.FB = { init() {}, login() {} };
+    try {
+      await prepareWhatsAppEmbeddedSignup();
+      const result = launchWhatsAppEmbeddedSignup();
+      const rejection = expect(result).rejects.toMatchObject({ code: 'WA_META_TIMEOUT_WAITING_FOR_LOGIN' });
+      await vi.advanceTimersByTimeAsync(60000);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+      window.FB = originalFb;
+      window.fbAsyncInit = originalAsyncInit;
+    }
+  });
+
+  it('returns a code-only result when Meta omits the WhatsApp session message', async () => {
     const originalFb = window.FB;
     const originalAsyncInit = window.fbAsyncInit;
     vi.useFakeTimers();
     window.FB = {
       init() {},
       login(callback) {
-        if (loginCode) callback({ status: 'connected', authResponse: { code: 'one-time-code' } });
+        callback({ status: 'connected', authResponse: { code: 'one-time-code' } });
       },
     };
-
     try {
       await prepareWhatsAppEmbeddedSignup();
       const result = launchWhatsAppEmbeddedSignup();
-      const rejection = expect(result).rejects.toMatchObject({ code });
-      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-      await rejection;
+      await vi.advanceTimersByTimeAsync(5000);
+      await expect(result).resolves.toEqual({
+        authorizationCode: 'one-time-code',
+        event: 'CODE_ONLY',
+        wabaId: null,
+        phoneNumberId: null,
+      });
     } finally {
       vi.useRealTimers();
       window.FB = originalFb;
