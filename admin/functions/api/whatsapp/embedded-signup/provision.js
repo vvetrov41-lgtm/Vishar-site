@@ -49,20 +49,32 @@ async function responseJson(response) {
   return response.json().catch(() => ({}));
 }
 
+function supabasePublishableKey(env) {
+  return typeof env.SUPABASE_PUBLISHABLE_KEY === 'string'
+    ? env.SUPABASE_PUBLISHABLE_KEY.trim()
+    : '';
+}
+
 async function requireCrmOperator(request, env) {
   const token = bearerToken(request);
   if (!token) throw Object.assign(new Error('crm_auth_required'), { status: 401 });
-  if (!env.SUPABASE_PUBLISHABLE_KEY) throw Object.assign(new Error('server_not_configured'), { status: 503 });
+  const publishableKey = supabasePublishableKey(env);
+  if (!publishableKey) throw Object.assign(new Error('server_not_configured'), { status: 503 });
 
-  const authResponse = await fetch(`${PRODUCTION_SUPABASE_ORIGIN}/auth/v1/user`, {
-    method: 'GET',
-    headers: {
-      apikey: env.SUPABASE_PUBLISHABLE_KEY,
-      authorization: `Bearer ${token}`,
-      accept: 'application/json',
-    },
-    redirect: 'error',
-  });
+  let authResponse;
+  try {
+    authResponse = await fetch(`${PRODUCTION_SUPABASE_ORIGIN}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        apikey: publishableKey,
+        authorization: `Bearer ${token}`,
+        accept: 'application/json',
+      },
+      redirect: 'error',
+    });
+  } catch {
+    throw Object.assign(new Error('crm_auth_transport_failed'), { status: 502 });
+  }
   if (!authResponse.ok) throw Object.assign(new Error('crm_auth_rejected'), { status: 401 });
   const user = await responseJson(authResponse);
   const userId = typeof user.id === 'string' ? user.id : '';
@@ -72,15 +84,20 @@ async function requireCrmOperator(request, env) {
   profileUrl.searchParams.set('id', `eq.${userId}`);
   profileUrl.searchParams.set('select', 'id,role,is_active');
   profileUrl.searchParams.set('limit', '1');
-  const profileResponse = await fetch(profileUrl.toString(), {
-    method: 'GET',
-    headers: {
-      apikey: env.SUPABASE_PUBLISHABLE_KEY,
-      authorization: `Bearer ${token}`,
-      accept: 'application/json',
-    },
-    redirect: 'error',
-  });
+  let profileResponse;
+  try {
+    profileResponse = await fetch(profileUrl.toString(), {
+      method: 'GET',
+      headers: {
+        apikey: publishableKey,
+        authorization: `Bearer ${token}`,
+        accept: 'application/json',
+      },
+      redirect: 'error',
+    });
+  } catch {
+    throw Object.assign(new Error('crm_profile_transport_failed'), { status: 502 });
+  }
   if (!profileResponse.ok) throw Object.assign(new Error('crm_profile_check_failed'), { status: 503 });
   const profiles = await responseJson(profileResponse);
   const profile = Array.isArray(profiles) && profiles.length === 1 ? profiles[0] : null;
@@ -96,6 +113,7 @@ async function requireCrmOperator(request, env) {
 }
 
 async function requireArtistIntegrationCapability(operator, env, artistId) {
+  const publishableKey = supabasePublishableKey(env);
   const membershipUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_memberships`);
   membershipUrl.searchParams.set('profile_id', `eq.${operator.userId}`);
   membershipUrl.searchParams.set('artist_id', `eq.${artistId}`);
@@ -104,7 +122,7 @@ async function requireArtistIntegrationCapability(operator, env, artistId) {
   const membershipResponse = await fetch(membershipUrl.toString(), {
     method: 'GET',
     headers: {
-      apikey: env.SUPABASE_PUBLISHABLE_KEY,
+      apikey: publishableKey,
       authorization: `Bearer ${operator.token}`,
       accept: 'application/json',
     },
@@ -126,6 +144,7 @@ async function requireArtistIntegrationCapability(operator, env, artistId) {
 }
 
 async function requireApprovedRoute(token, env, artistId, approvedArtist) {
+  const publishableKey = supabasePublishableKey(env);
   const routeUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_integrations`);
   routeUrl.searchParams.set('artist_id', `eq.${artistId}`);
   routeUrl.searchParams.set('integration_type', 'eq.whatsapp');
@@ -134,7 +153,7 @@ async function requireApprovedRoute(token, env, artistId, approvedArtist) {
   const routeResponse = await fetch(routeUrl.toString(), {
     method: 'GET',
     headers: {
-      apikey: env.SUPABASE_PUBLISHABLE_KEY,
+      apikey: publishableKey,
       authorization: `Bearer ${token}`,
       accept: 'application/json',
     },
