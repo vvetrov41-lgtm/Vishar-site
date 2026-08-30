@@ -3,23 +3,10 @@ name: WhatsApp production onboarding validation
 on:
   push:
     branches:
+      - agent/platform-telegram-self-service
       - agent/kristina-whatsapp-production-onboarding
       - agent/kristina-self-service-whatsapp-connect
       - release/private-crm-rc*
-    paths:
-      - .github/workflows/whatsapp-production-onboarding-validation.yml
-      - .github/workflows/deploy-private-production-crm.yml
-      - admin/public/_headers
-      - admin/functions/api/whatsapp/embedded-signup/provision.js
-      - admin/src/lib/meta-whatsapp-embedded-signup.ts
-      - admin/src/lib/whatsapp-connections-api.ts
-      - admin/src/pages/WhatsAppConnectionsPage.tsx
-      - admin/src/test/meta-whatsapp-embedded-signup.test.ts
-      - admin/src/test/whatsapp-connections.test.ts
-      - scripts/check-private-crm-artifact.mjs
-      - scripts/test-whatsapp-production-onboarding.mjs
-      - scripts/test-worker-fetch-redirect-mode.mjs
-      - scripts/test-private-production-release-workflows.mjs
   pull_request:
     paths:
       - .github/workflows/whatsapp-production-onboarding-validation.yml
@@ -55,7 +42,7 @@ jobs:
             test -n "${GITHUB_HEAD_REF:-}"
           else
             case "$branch" in
-              agent/kristina-whatsapp-production-onboarding|agent/kristina-self-service-whatsapp-connect|release/private-crm-rc*) ;;
+              agent/platform-telegram-self-service|agent/kristina-whatsapp-production-onboarding|agent/kristina-self-service-whatsapp-connect|release/private-crm-rc*) ;;
               *) echo "Unexpected WhatsApp onboarding branch: $branch" >&2; exit 1 ;;
             esac
           fi
