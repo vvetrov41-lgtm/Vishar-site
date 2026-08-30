@@ -605,6 +605,7 @@ insert into expected_function_acl values
   ('public.create_artist_payment_policy(uuid,integer,public.payment_policy_mode,numeric,numeric,integer,boolean,text,timestamptz)', false, true, false),
   ('public.create_payment_request(uuid,uuid,uuid,public.payment_request_purpose,numeric,uuid,uuid,text,timestamptz)', false, true, false),
   ('public.record_manual_payment(uuid,uuid,numeric,timestamptz,text)', false, true, false),
+  ('public.confirm_project_deposit_manually(uuid,uuid,timestamptz)', false, true, false),
   ('public.record_manual_refund(uuid,uuid,numeric,boolean,timestamptz,text)', false, true, false),
   ('public.cancel_payment_request(uuid)', false, true, false),
   ('public.transfer_work_to_artist(uuid,uuid,uuid,text)', false, true, false),

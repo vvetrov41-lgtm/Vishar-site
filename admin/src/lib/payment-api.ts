@@ -147,6 +147,17 @@ export interface ProjectDepositRequestResult {
   replayed: boolean;
 }
 
+export interface ManualProjectDepositResult {
+  payment_request_id: string;
+  payment_transaction_id: string | null;
+  amount: number;
+  manually_recorded: number;
+  currency: string;
+  request_created: boolean;
+  already_paid: boolean;
+  replayed: boolean;
+}
+
 export interface OneOffPaymentDestinationResult {
   payment_request_id: string;
   public_path: string;
@@ -335,6 +346,26 @@ export function createPaymentApi(client: CrmClient) {
           p_delivery_channel: input.deliveryChannel,
         }),
         'create that project deposit request'
+      );
+    },
+
+    /**
+     * Manual confirmation is deliberately project-scoped and amount-free in
+     * the browser. The server either settles the outstanding project deposit
+     * request or creates provider-neutral immutable request evidence first.
+     */
+    async confirmProjectDepositManually(input: {
+      projectId: string;
+      occurredAt?: string;
+      idempotencyKey?: string;
+    }): Promise<ManualProjectDepositResult> {
+      return unwrap<ManualProjectDepositResult>(
+        await client.rpc('confirm_project_deposit_manually', {
+          p_project_id: input.projectId,
+          p_idempotency_key: input.idempotencyKey ?? crypto.randomUUID(),
+          p_occurred_at: input.occurredAt ?? new Date().toISOString(),
+        }),
+        'confirm that project deposit manually'
       );
     },
 
