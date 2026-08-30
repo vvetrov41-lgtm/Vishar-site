@@ -78,7 +78,28 @@ The following remain authoritative for their domain:
 
 If a spec conflicts with current architecture or a newer ADR, stop before high-risk mutation and make the conflict explicit.
 
-## 4. Safety boundary
+## 4. CRM operator-parity decision
+
+For every new or materially changed **user-facing Vishar CRM capability**, explicitly reconcile the change against `docs/gpt-actions/operator-parity.mjs` before declaring the feature complete.
+
+The parity decision must classify the capability as one of:
+
+- `available`: an existing bounded GPT/MCP operation already covers the same authorized user action;
+- `gap`: a safe bounded server contract exists but GPT exposure still needs implementation;
+- `planned`: the product behavior is accepted but the safe server/provider contract is not complete yet;
+- `ui_only`: an unavoidable provider consent, account-security, device-local binary interaction, or similarly concrete interactive boundary prevents safe tool execution.
+
+Rules:
+
+1. Missing GPT coverage by accident is a product gap, not an implicit UI-only decision.
+2. Adding a CRM screen, button, RPC, or provider-management action must update the parity inventory when it introduces or changes a meaningful operator action.
+3. New Action operations must use one of the semantic domains in the parity inventory and preserve the repository hard limit of 30 operations per imported schema with a target of at most 25.
+4. Do not create generic SQL, arbitrary RPC, arbitrary provider proxy, or broad execute endpoints to obtain parity.
+5. The GPT/MCP transport never becomes an authorization layer. Existing profile, workspace, Artist membership, and capability checks remain authoritative.
+6. Provider OAuth/consent may be initiated by a bounded tool, but the human-only consent screen itself remains a documented UI-only boundary.
+7. A substantial CRM feature is not converged while a newly introduced operator action is absent from the parity inventory without an explicit classification.
+
+## 5. Safety boundary
 
 Spec completion never grants permission to:
 
@@ -90,7 +111,7 @@ Spec completion never grants permission to:
 
 Use the permissions and deployment rules of the active workstream.
 
-## 5. Handoff expectation
+## 6. Handoff expectation
 
 For substantial features, future handoffs should point to the durable artifacts instead of restating the whole feature history.
 
