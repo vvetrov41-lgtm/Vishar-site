@@ -57,6 +57,8 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const [appointmentStart, setAppointmentStart] = useState('');
   const [appointmentEnd, setAppointmentEnd] = useState('');
   const [conflicts, setConflicts] = useState<AppointmentConflict[]>([]);
+  const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
+  const [bookedNotice, setBookedNotice] = useState<string | null>(null);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [projectStatus, setProjectStatus] = useState<ProjectStatus>('draft');
 
@@ -111,6 +113,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
     if (!artistId || !startIso || !endIso || endIso <= startIso) {
       setConflicts([]);
+      setConflictAcknowledged(false);
       setCheckingConflicts(false);
       return undefined;
     }
@@ -331,6 +334,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
             <form
               onSubmit={(event) => {
                 event.preventDefault();
+                setBookedNotice(null);
                 void run(async () => {
                   const start = inputToIso(appointmentStart);
                   const end = inputToIso(appointmentEnd);
@@ -347,9 +351,18 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     enquiryId: project.enquiry_id,
                     projectId,
                   });
+                  // Say what was booked, for whom and when. The form used to
+                  // clear itself and leave a new row somewhere in the list as
+                  // the only evidence anything had happened.
+                  setBookedNotice(copy.booked(
+                    typeLabel(appointmentType, language),
+                    clientName ?? project.title,
+                    formatDateTime(start, language),
+                  ));
                   setAppointmentStart('');
                   setAppointmentEnd('');
                   setConflicts([]);
+                  setConflictAcknowledged(false);
                 });
               }}
             >
@@ -402,9 +415,34 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                 ))}
               </div>
               {checkingConflicts ? <div className="notice">{copy.checking}</div> : null}
-              {conflictMessage ? <div className="notice warn" role="alert">{conflictMessage}</div> : null}
+              {/* Same conflict policy as every other booking form: state the
+                  clash assertively, and require the operator to say they meant
+                  it rather than letting them scroll past a polite notice. */}
+              {conflictMessage ? (
+                <div className="notice warn" role="alert">
+                  <p style={{ margin: 0 }}>{conflictMessage}</p>
+                  <label className="conflict-acknowledgement">
+                    <input
+                      type="checkbox"
+                      checked={conflictAcknowledged}
+                      onChange={(event) => setConflictAcknowledged(event.target.checked)}
+                    />
+                    <span>{copy.bookAnyway}</span>
+                  </label>
+                </div>
+              ) : null}
+              {bookedNotice ? <div className="notice ok" role="status">{bookedNotice}</div> : null}
               <div className="actions">
-                <button type="submit" disabled={busy || !appointmentStart || !appointmentEnd}>
+                <button
+                  type="submit"
+                  className="primary"
+                  disabled={
+                    busy
+                    || !appointmentStart
+                    || !appointmentEnd
+                    || (conflicts.length > 0 && !conflictAcknowledged)
+                  }
+                >
                   {copy.propose}
                 </button>
               </div>
@@ -534,7 +572,9 @@ const COPY = {
     proposedEnd: 'Proposed end',
     duration: 'Duration shortcuts',
     checking: 'Checking the schedule…',
-    conflicts: (count: number, date: string) => `Conflicting active appointments: ${count}. The first starts ${date}. You can still propose this time if the overlap is intentional.`,
+    conflicts: (count: number, date: string) => `Conflicting active appointments: ${count}. The first starts ${date}.`,
+    bookAnyway: 'I mean to book over this clash',
+    booked: (type: string, client: string, date: string) => `${type} booked for ${client}, ${date}. It is proposed until you confirm it.`,
     propose: 'Propose appointment',
     calendarNotice: 'CRM is the schedule source of truth. Proposed appointments stay in CRM; each confirmed appointment shows its actual Google Calendar sync state above.',
   },
@@ -557,7 +597,9 @@ const COPY = {
     proposedEnd: 'Предлагаемое окончание',
     duration: 'Быстрый выбор длительности',
     checking: 'Проверяем расписание…',
-    conflicts: (count: number, date: string) => `Пересекающихся активных записей: ${count}. Первая начинается ${date}. Время всё равно можно предложить, если пересечение намеренное.`,
+    conflicts: (count: number, date: string) => `Пересекающихся активных записей: ${count}. Первая начинается ${date}.`,
+    bookAnyway: 'Я осознанно записываю поверх пересечения',
+    booked: (type: string, client: string, date: string) => `${type} для ${client} записан на ${date}. Запись предложена и ждёт подтверждения.`,
     propose: 'Предложить запись',
     calendarNotice: 'Расписание в CRM является основным. Предложенные записи остаются в CRM, а у каждой подтверждённой записи выше показывается фактический статус синхронизации с Google Calendar.',
   },

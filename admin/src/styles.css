@@ -580,6 +580,51 @@ a.client-workspace-fact { min-height: var(--tap); }
 
 .notice { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-size: 0.85rem; color: var(--muted); }
 .notice.warn { border-color: rgba(255, 204, 102, 0.4); color: var(--warn); }
+.notice.ok { border-color: rgba(93, 219, 160, 0.4); color: var(--ok); }
+.notice a { color: inherit; }
+
+/* One acknowledgement control, shared by every booking form. */
+.conflict-acknowledgement {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.conflict-acknowledgement input { width: 20px; height: 20px; min-height: 0; flex: 0 0 auto; }
+
+/* Client picker ---------------------------------------------------------- */
+
+.client-picker { min-width: 0; display: block; }
+.client-picker-field { min-width: 0; display: block; }
+.client-picker-heading,
+.client-picker-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 6px;
+}
+.client-picker-chosen {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.client-picker-change { margin-top: 8px; }
+.client-picker-results { margin-top: 10px; max-height: 320px; overflow-y: auto; }
+.client-picker-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-weight: 400;
+}
+.client-picker-result .title { display: block; font-weight: 600; }
+.client-picker-result .meta { display: block; margin-top: 4px; overflow-wrap: anywhere; }
 
 .visually-hidden {
   position: absolute;
