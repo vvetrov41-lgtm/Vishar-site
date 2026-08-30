@@ -13,6 +13,16 @@ deploy, a Cloudflare secret and a hand-written SQL statement.
 It records the audit that the plan rests on, so a later reader can tell which
 statements were verified and which are intent.
 
+**Roadmap extension, 2026-08-30.** Phases V–W below add Web Research as a
+first-class Vishar capability: a Firecrawl-backed research gateway for the
+unified GPT, followed by persistent Research inside the CRM. This extension was
+planned from `agent/platform-telegram-self-service` at exact SHA
+`7f652cc9fbb6cf0ec6a477332117047948a49bad`. It records intent only and does
+not assert that Firecrawl, a unified production GPT, new database objects or new
+Cloudflare bindings are deployed. Before implementation, re-resolve the current
+repository lineage, exact-head CI, production migration head, Worker routes and
+bindings, and the actual GPT/OAuth configuration.
+
 ---
 
 ## 0. Evidence and exact refs
@@ -214,7 +224,7 @@ privilege rather than by policy, which is the intended design. No action.
 
 ## 2. Target model
 
-Thirteen concepts, deliberately kept distinct:
+Fourteen concepts, deliberately kept distinct:
 
 ```
 Profile          who a person is                     (platform identity)
@@ -230,6 +240,7 @@ Follow-up / task work assigned to a person, due at a time
 Automation       trigger → conditions → delay → action
 Communication    CRM ↔ a client                      (already exists, 0069)
 Campaign         many clients, consent-gated         (foundation only)
+Research         workspace-owned web evidence, sources and snapshots
 ```
 
 The authorization rule for the whole platform, in one line:
@@ -239,7 +250,9 @@ The authorization rule for the whole platform, in one line:
 > the other, and the browser is authority for nothing.**
 
 Everything — CRM UI, MCP, unified GPT — reaches the database through the same
-capability layer. There is no second permission system.
+capability layer. There is no second permission system. Web Research does not
+create one either: Firecrawl is a provider behind a Vishar-controlled gateway,
+not an authority and not a place where CRM permissions are delegated.
 
 ---
 
@@ -265,6 +278,13 @@ Canonical logical capabilities, each resolved per (profile, artist):
 | Automations | `view_automations`, `manage_automations` |
 | Team | `manage_team` |
 | Workspace | `manage_workspace` |
+
+Phase W will extend this registry for artist-scoped Research rather than
+hard-coding research permissions in the CRM or GPT. The intended logical names
+are `view_research`, `run_research` and `manage_research`. Workspace-owned
+research must use the workspace authorization layer, and the implementation
+spec must define the exact mapping before any migration is written. A
+workspace grant must never imply access to an artist's private CRM data.
 
 **How this lands without breaking production.** The six legacy capability
 strings (`view`, `manage`, `view_finance`, `manage_finance`,
@@ -389,6 +409,8 @@ bounded release.
 | Q–R | MCP domain contracts and surface | none | transport over the same capability layer |
 | S–T | Unified GPT: OAuth client → profile, not artist | `0081` | `gpt_action_clients` gains a profile-bound mode |
 | U | Full golden-path validation | none | §77–§82 of the brief |
+| V | Unified GPT Web Research gateway: Firecrawl Search/Scrape/Crawl | none | backend-only, bounded, cache/transient results, no Interact; see §6.6 |
+| W | CRM Research: saved runs, sources, snapshots and comparisons | TBD at implementation fresh-check | workspace/artist scoped; recurring monitoring only after persistence is proven; see §6.6 |
 
 ### 6.1 What `0077` actually fixed
 
@@ -596,6 +618,201 @@ revocation hides the row and restoring the membership brings it back, the same
 posture the unified GPT takes with a stale Artist selector. The golden path
 asserts both halves.
 
+### 6.6 Phases V–W: Web Research and Firecrawl as one CRM capability
+
+Firecrawl is deliberately **not** added as a second generic search engine and
+is not connected directly to ChatGPT. It is an external web-data provider
+behind the existing Vishar backend boundary:
+
+```
+Unified Vishar GPT            Vishar CRM Research UI
+          \                         /
+           \                       /
+            → Vishar Tool / Research Gateway
+                       |
+             Firecrawl adapter
+              /       |       \
+           Search   Scrape    Crawl
+                       |
+                 public internet
+```
+
+The same gateway serves both the unified GPT and the CRM so research is one
+platform capability, not a GPT-only integration. The Firecrawl credential is a
+server-side Worker secret. It is never stored in Postgres, returned by an RPC,
+placed in an OpenAPI schema, exposed to a browser or sent to ChatGPT.
+
+#### Phase V: bounded, transient Web Research for the unified GPT
+
+V1 exposes only three semantic tools through the Vishar action surface:
+
+```
+deep_web_search(query, domains?, limit?)
+read_web_page(url, extraction_schema?)
+crawl_website(url, include_paths?, exclude_paths?, max_pages?)
+```
+
+The provider implementation may use Firecrawl Search, Scrape and Crawl, but the
+GPT sees Vishar operations rather than Firecrawl's raw API. This lets the
+backend change provider, add caching, narrow limits or disable one operation
+without editing every GPT instruction.
+
+**Routing rule.** Built-in GPT web search remains the normal path for a fresh
+fact, news, one-off lookup, location or a small number of sources. The Research
+gateway is selected when the task needs deep reading of a concrete URL,
+bounded traversal of a site/section, the same structured fields across several
+sites, or a repeatable research run. A request that could be answered by normal
+web search must not consume Firecrawl merely because it is available.
+
+Default V1 limits are intentionally small:
+
+- `deep_web_search`: at most 10 results;
+- `read_web_page`: one URL per call;
+- `crawl_website`: 10 pages by default, hard maximum 20;
+- explicit backend time, response-size and concurrency limits;
+- no Firecrawl Interact, browser clicks, form filling or login automation.
+
+The backend owns URL safety. It accepts only `http`/`https`, rejects localhost,
+private/link-local/reserved address space and cloud metadata targets, resolves
+and re-validates DNS, and re-checks every redirect before following it. The
+caller cannot provide cookies, `Authorization` headers, provider credentials or
+other arbitrary outbound headers. A URL that changes from public to private
+through DNS or redirect fails closed.
+
+**Scraped content is untrusted data.** Instructions found in a page, including
+prompt injection such as "ignore previous instructions", have no authority.
+They may be quoted or summarized as page content but cannot change tool policy,
+request CRM mutations, select another artist, broaden permissions or cause a
+second privileged tool call. Tool output is data, not an instruction channel.
+
+**CRM data does not travel to Firecrawl.** Client names, email addresses,
+telephone numbers, enquiry notes, project notes, private images, finance data,
+OAuth material, provider tokens and other private CRM content are never sent to
+Firecrawl. When a question combines public research with CRM facts, Vishar
+retrieves the public evidence first and combines it with authorized CRM data on
+our side of the boundary.
+
+Phase V is transient by design:
+
+```
+Firecrawl → bounded normalized result → short-lived cache → GPT/CRM caller
+```
+
+It does not create a database row for every scrape. Cache keys must be derived
+from normalized public request inputs, scoped so one workspace cannot recover
+another workspace's private request metadata, and carry a finite TTL. At
+minimum observability records operation type, timing, provider status, cache
+hit/miss and bounded usage/credit metadata; it must not log page bodies,
+credentials or private CRM data.
+
+Three server-side kill switches are part of the first release:
+
+```
+FIRECRAWL_ENABLED
+FIRECRAWL_SEARCH_ENABLED
+FIRECRAWL_CRAWL_ENABLED
+```
+
+Disabling the provider changes no CRM authorization and corrupts no CRM data.
+The GPT receives an explicit tool-unavailable/provider-error result and must not
+invent the missing research.
+
+#### Phase W: Research becomes a persistent CRM domain
+
+Only after Phase V is stable does CRM gain a durable Research area. The first
+product surface is intentionally narrow:
+
+```
+Research
+├── Competitors
+├── Studios
+├── Pricing
+├── SEO
+└── Market research
+```
+
+The durable model is based on three concepts, with exact columns assigned only
+after the implementation fresh-check and Spec Kit plan:
+
+```
+research_runs       one requested/repeated research operation
+research_sources    the public sources used by that run
+research_snapshots  normalized evidence that can be compared over time
+```
+
+A run is workspace-owned and may optionally carry an artist context. Workspace
+ownership never grants access to that artist's CRM records: any operation that
+joins research with clients, finance, sessions, communications or another
+artist-scoped domain must independently pass the existing artist capability
+check. Research permissions are added to the existing registry/workspace model,
+not implemented as Firecrawl roles or a parallel ACL.
+
+The CRM must be able to save a useful normalized result, reopen its sources,
+repeat the same bounded research later and compare snapshots. This is what
+turns Firecrawl into a CRM feature rather than a better search box. Examples of
+the intended product behavior are:
+
+- repeat a saved competitor-pricing study and show changed prices/deposits;
+- monitor selected studio booking/cancellation policy pages;
+- compare public SEO/content structure across selected sites;
+- show when a watched public page materially changed and retain the evidence
+  that justified the comparison.
+
+Recurring monitoring is a later enablement inside Phase W, not part of the
+first persistent write. It uses the existing scheduler/automation principles:
+explicit ownership, bounded frequency, idempotent execution, kill switches,
+usage limits and a durable audit trail. A failed provider fetch never deletes a
+last-known-good snapshot and never becomes an invented "no change" result.
+
+#### Implementation order and release boundary
+
+Because this adds a new external provider and trust boundary, implementation is
+**Substantial** under the repository feature-development rules. Before code,
+create/update durable Spec Kit artifacts under `specs/` and prove the exact
+release lineage again. The intended order is:
+
+1. fresh-check unified GPT/OAuth state, Worker/action surface, current migration
+   head, CI and production target;
+2. specify the Research domain, permission mapping, retention and cache contract;
+3. add the server-side Firecrawl adapter and secret binding with all switches
+   off by default;
+4. add URL/redirect/SSRF guards and provider response normalization;
+5. add `deep_web_search`, `read_web_page` and bounded `crawl_website` behind
+   the existing Vishar gateway;
+6. extend the unified GPT OpenAPI/action surface and routing instructions without
+   creating a separate Firecrawl OAuth/client surface;
+7. validate staging with positive and denial cases, usage limits and cache;
+8. release Phase V through exact-head CI → deploy → readback → unified-GPT E2E;
+9. design and migrate Phase W persistence only from the then-current production
+   migration head;
+10. add the CRM Research UI, saved runs and snapshot comparison, then enable
+    recurrence only after persistent acceptance is proven.
+
+Phase V acceptance requires all of the following:
+
+1. a URL can be read and a public deposit/policy fact returned with its source;
+2. five public studio/artist sites can be compared using the same requested
+   fields without silently changing the schema between sources;
+3. a crawl can be constrained to paths such as `/booking` and `/faq` and cannot
+   exceed the hard page limit;
+4. localhost, private IP, metadata endpoints, unsafe redirects and non-HTTP(S)
+   schemes are rejected before credentials are sent;
+5. prompt-injection text in a scraped page does not alter GPT/tool behavior;
+6. an equivalent repeated request can use the cache without crossing workspace
+   metadata boundaries;
+7. provider `429`, timeout and malformed output produce an explicit failure and
+   no fabricated answer;
+8. each kill switch demonstrably stops the intended operation;
+9. the production-deployed SHA and Worker configuration are read back after
+   rollout;
+10. E2E through the unified Vishar GPT proves the active human/profile and
+    selected artist remain governed by the existing membership/capability layer.
+
+Phase W acceptance adds: saved runs are correctly workspace/artist scoped,
+revoked users lose access immediately, snapshot comparison is reproducible from
+stored evidence, repeated monitoring is idempotent, and no private CRM/client
+content is present in provider requests or research-source payloads.
+
 ### Telegram migration order (Phase F/G), stated once
 
 1. Add `crm_private.telegram_destinations`; write nothing.
@@ -626,6 +843,8 @@ as a delivery failure, not as a reason to try another destination.
 | Forms | Per-source `is_active = false` disables one source without touching others. |
 | Notifications | Delivery can be disabled without deleting follow-ups or notifications. |
 | Automations | Kill switch at global, workspace and artist level; disabling never deletes history. |
+| Firecrawl / Phase V | `FIRECRAWL_ENABLED=false` removes the provider from the usable surface; transient/cache results expire and no CRM business record depends on provider availability. |
+| Research / Phase W | Stop recurrence and writes first; saved runs/sources/snapshots remain readable historical evidence. Provider disablement must not delete or rewrite last-known-good snapshots. |
 
 ---
 
@@ -634,4 +853,7 @@ as a delivery failure, not as a reason to try another destination.
 Deliberately out of scope, per §87 of the brief: drag-and-drop form builder,
 visual automation editor, campaign builder, marketing analytics, billing,
 studio analytics, and any autonomous AI receptionist. The goal is correct
-foundations plus the minimum usable surface.
+foundations plus the minimum usable surface. Firecrawl does not change that:
+Phase V is read-only public web research, and Phase W persists research evidence
+inside CRM without granting autonomous browser interaction or client-facing
+actions.
