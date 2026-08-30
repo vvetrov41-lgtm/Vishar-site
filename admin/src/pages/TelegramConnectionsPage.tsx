@@ -3,19 +3,28 @@ import { TelegramConnectionCard } from '../components/TelegramConnectionCard';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useLanguage } from '../lib/i18n';
+import { visibleIntegrationArtistIds } from '../lib/integration-visibility';
 import { useApi, useSession } from '../lib/session';
 
 export function TelegramConnectionsPage() {
   const api = useApi();
-  const { profile } = useSession();
+  const { profile, memberships } = useSession();
   const { language } = useLanguage();
   const state = useAsync(async () => {
-    const [info, destinations] = await Promise.all([
+    const [info, destinations, artists] = await Promise.all([
       api.getTelegramConnectorInfo(),
       api.listTelegramDestinations(),
+      api.listAccessibleArtists(),
     ]);
-    return { info, destinations };
-  }, [api]);
+    const visibleArtistIds = visibleIntegrationArtistIds(profile, artists, memberships);
+    return {
+      info,
+      destinations: destinations.filter(
+        (destination) => destination.destination_kind !== 'artist'
+          || Boolean(destination.artist_id && visibleArtistIds.has(destination.artist_id)),
+      ),
+    };
+  }, [api, memberships, profile]);
   const [botUsername, setBotUsername] = useState('');
   const [savingBot, setSavingBot] = useState(false);
   const [botError, setBotError] = useState<string | null>(null);
