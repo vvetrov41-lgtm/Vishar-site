@@ -1,7 +1,6 @@
 const APP_ID = '1481226093843982';
 const GRAPH_VERSION = 'v25.0';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
-const META_OAUTH_REDIRECT_URI = `${PRODUCTION_CRM_ORIGIN}/`;
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const WEBHOOK_WORKER = 'vishar-whatsapp-webhook-production';
 const DRAIN_WORKER = 'vishar-whatsapp-drain-production';
@@ -216,7 +215,6 @@ async function exchangeCode(code, appSecret) {
     client_secret: appSecret,
     code,
     grant_type: 'authorization_code',
-    redirect_uri: META_OAUTH_REDIRECT_URI,
   });
   let payload;
   try {
