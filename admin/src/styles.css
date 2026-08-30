@@ -596,6 +596,20 @@ a.client-workspace-fact { min-height: var(--tap); }
 }
 .conflict-acknowledgement input { width: 20px; height: 20px; min-height: 0; flex: 0 0 auto; }
 
+/* Payments setup, collapsed out of the daily surface. */
+.payments-setup > summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.payments-setup > summary::-webkit-details-marker { display: none; }
+.payments-setup > summary::before { content: '▸'; margin-right: 8px; color: var(--muted); }
+.payments-setup[open] > summary::before { content: '▾'; }
+.payments-setup > .panel { border: 0; padding-inline: 0; }
+
 /* Agenda ----------------------------------------------------------------- */
 
 .agenda { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
