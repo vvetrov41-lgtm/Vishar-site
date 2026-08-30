@@ -4,7 +4,10 @@ import { useAsync } from '../components/AsyncData';
 import { useLanguage } from '../lib/i18n';
 import { canShowArtistIntegration } from '../lib/integration-visibility';
 import {
+  describeWhatsAppEmbeddedSignupError,
   launchWhatsAppEmbeddedSignup,
+  META_WHATSAPP_APP_ID,
+  META_WHATSAPP_CONFIG_ID,
   prepareWhatsAppEmbeddedSignup,
 } from '../lib/meta-whatsapp-embedded-signup';
 import { Link } from '../lib/router';
@@ -70,13 +73,13 @@ export function WhatsAppConnectionsPage() {
       })
       .catch((cause) => {
         if (!active) return;
-        setMetaSdkError(cause instanceof Error ? cause.message : 'Could not load Meta SDK.');
+        setMetaSdkError(describeWhatsAppEmbeddedSignupError(cause, language));
       });
 
     return () => {
       active = false;
     };
-  }, [canManageAnyArtist, supabaseUrl]);
+  }, [canManageAnyArtist, language, supabaseUrl]);
 
   const { data, loading, error, reload } = useAsync<ConnectionsData>(async () => {
     if (!api) throw new Error('CRM API unavailable.');
@@ -119,7 +122,7 @@ export function WhatsAppConnectionsPage() {
     void prepareWhatsAppEmbeddedSignup()
       .then(() => setMetaSdkReady(true))
       .catch((cause) => {
-        setMetaSdkError(cause instanceof Error ? cause.message : 'Could not load Meta SDK.');
+        setMetaSdkError(describeWhatsAppEmbeddedSignupError(cause, language));
       });
   }
 
@@ -152,13 +155,7 @@ export function WhatsAppConnectionsPage() {
       );
       reload();
     } catch (cause) {
-      setActionError(
-        cause instanceof Error
-          ? cause.message
-          : language === 'ru'
-            ? 'Не удалось подключить WhatsApp через Meta.'
-            : 'Could not connect WhatsApp through Meta.',
-      );
+      setActionError(describeWhatsAppEmbeddedSignupError(cause, language));
     } finally {
       setMetaBusyArtistId(null);
     }
@@ -190,9 +187,18 @@ export function WhatsAppConnectionsPage() {
       </div>
 
       <div className="notice">
-        {language === 'ru'
-          ? `Среда CRM: ${data.environment}. Включайте маршрут только после отдельной проверки Meta и encrypted Worker bindings.`
-          : `CRM environment: ${data.environment}. Enable a route only after the Meta account and encrypted Worker bindings have been verified separately.`}
+        <p>
+          {language === 'ru'
+            ? `Среда CRM: ${data.environment}. Включайте маршрут только после отдельной проверки Meta и encrypted Worker bindings.`
+            : `CRM environment: ${data.environment}. Enable a route only after the Meta account and encrypted Worker bindings have been verified separately.`}
+        </p>
+        {data.environment === 'production' ? (
+          <p>
+            Meta App ID: <code>{META_WHATSAPP_APP_ID}</code>
+            {' · '}
+            Config ID: <code>{META_WHATSAPP_CONFIG_ID}</code>
+          </p>
+        ) : null}
       </div>
 
       {canManageAnyArtist && data.environment === 'production' && metaSdkError ? (

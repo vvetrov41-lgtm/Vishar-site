@@ -20,6 +20,17 @@ const requiredProductionConnectOrigins = [
   'https://instagram.vishartattoo.com',
 ];
 
+const requiredMetaCspOrigins = {
+  'script-src': ['https://connect.facebook.net'],
+  'connect-src': ['https://www.facebook.com', 'https://graph.facebook.com'],
+  'frame-src': [
+    'https://www.facebook.com',
+    'https://web.facebook.com',
+    'https://m.facebook.com',
+    'https://staticxx.facebook.com',
+  ],
+};
+
 // The retained staging Supabase project ref is deliberately NOT banned here.
 // `admin/src/lib/whatsapp-connections-api.ts` carries both project origins as
 // constants so it can classify which environment the CRM is pointed at and
@@ -82,14 +93,30 @@ if (!fs.existsSync(headersPath)) {
 } else {
   const headers = fs.readFileSync(headersPath, 'utf8');
   const cspLine = headers.split(/\r?\n/).find((line) => line.trim().startsWith('Content-Security-Policy:')) ?? '';
-  const connectSrc = /(?:^|;)\s*connect-src\s+([^;]+)/.exec(cspLine)?.[1] ?? '';
+  const directiveValues = (directive) => (
+    new RegExp(`(?:^|;)\\s*${directive}\\s+([^;]+)`).exec(cspLine)?.[1].split(/\s+/).filter(Boolean) ?? []
+  );
+  const connectSrc = directiveValues('connect-src');
   for (const origin of requiredProductionConnectOrigins) {
-    if (!connectSrc.split(/\s+/).includes(origin)) {
+    if (!connectSrc.includes(origin)) {
       findings.push(`_headers connect-src is missing reviewed production origin ${origin}`);
     }
   }
   if (connectSrc.includes('https://*.vishartattoo.com')) {
     findings.push('_headers connect-src must not wildcard Vishar connector hosts');
+  }
+  for (const [directive, origins] of Object.entries(requiredMetaCspOrigins)) {
+    const values = directiveValues(directive);
+    for (const origin of origins) {
+      if (!values.includes(origin)) {
+        findings.push(`_headers ${directive} is missing reviewed Meta origin ${origin}`);
+      }
+    }
+  }
+  if (!headers.split(/\r?\n/).some(
+    (line) => line.trim() === 'Cross-Origin-Opener-Policy: same-origin-allow-popups',
+  )) {
+    findings.push('_headers must preserve Cross-Origin-Opener-Policy: same-origin-allow-popups');
   }
 }
 
