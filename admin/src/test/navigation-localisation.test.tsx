@@ -53,7 +53,7 @@ describe('navigation localisation', () => {
 
     expect(labels).toContain('Сообщения');
     expect(labels).toContain('Платежи');
-    expect(labels).toContain('Записи');
+    expect(labels).toContain('Календарь');
     expect(labels).toContain('Выходные');
     expect(labels).toContain('Автоматизации');
 
@@ -83,9 +83,9 @@ describe('navigation localisation', () => {
       .getAllByRole('link')
       .map((link) => link.textContent?.trim() ?? '');
 
-    expect(labels).toContain('Communications');
+    expect(labels).toContain('Inbox');
     expect(labels).toContain('Payments');
-    expect(labels).toContain('Appointments');
+    expect(labels).toContain('Calendar');
     expect(labels).toContain('Time off');
     expect(labels).toContain('Automations');
   });

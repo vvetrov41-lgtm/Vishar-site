@@ -41,7 +41,7 @@ describe('choosing a client', () => {
   it('searches rather than listing every client in a native picker', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
 
-    await screen.findByRole('heading', { level: 2, name: 'Appointments' });
+    await screen.findByRole('heading', { level: 2, name: 'Calendar' });
 
     // A native select over the 200 most recent clients is a wheel picker on a
     // phone, and cannot offer the 201st client at all.
@@ -53,7 +53,7 @@ describe('choosing a client', () => {
     const queryCalls: { table: string; method: string; args: unknown[] }[] = [];
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments', queryCalls });
 
-    await screen.findByRole('heading', { level: 2, name: 'Appointments' });
+    await screen.findByRole('heading', { level: 2, name: 'Calendar' });
 
     fireEvent.change(screen.getByLabelText('Find the client'), {
       target: { value: '07700900000' },
@@ -77,7 +77,7 @@ describe('choosing a client', () => {
   it('names the client on the project and enquiry pickers', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
 
-    await screen.findByRole('heading', { level: 2, name: 'Appointments' });
+    await screen.findByRole('heading', { level: 2, name: 'Calendar' });
 
     const projectPicker = screen.getByRole('combobox', { name: /^Project/ });
     expect(within(projectPicker).getByRole('option', { name: 'Fixture Client · Raven sleeve' }))
@@ -97,7 +97,7 @@ describe('one conflict policy', () => {
       appointmentConflicts: [CONFLICT],
     });
 
-    await screen.findByRole('heading', { level: 2, name: 'Appointments' });
+    await screen.findByRole('heading', { level: 2, name: 'Calendar' });
 
     fireEvent.change(screen.getByRole('combobox', { name: /^Project/ }), {
       target: { value: PROJECT_ID },
@@ -147,7 +147,7 @@ describe('booking feedback', () => {
       path: '/appointments',
     });
 
-    await screen.findByRole('heading', { level: 2, name: 'Appointments' });
+    await screen.findByRole('heading', { level: 2, name: 'Calendar' });
 
     fireEvent.change(screen.getByRole('combobox', { name: /^Project/ }), {
       target: { value: PROJECT_ID },

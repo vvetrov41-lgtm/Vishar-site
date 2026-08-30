@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
+import { groupNavItems, navGroupFor } from '../components/AppShell';
 import { ARTIST_SCOPE_STORAGE_KEY } from '../lib/artist-scope';
+import { NAV_ITEMS } from '../lib/permissions';
 import {
   ENQUIRY_ID,
   KRISTINA_ARTIST_ID,
@@ -28,25 +30,28 @@ describe('responsive navigation shell', () => {
     expect(tabbar).not.toBeNull();
     const links = within(tabbar as HTMLElement).getAllByRole('link');
 
+    // What a day is actually spent on: what needs me, who is waiting, who this
+    // is, and when. Enquiries and Projects are reached from those, so neither
+    // holds a thumb slot any more.
     expect(links.map((link) => link.textContent)).toEqual([
       'Today',
-      'Enquiries',
-      'Appointments',
-      'Projects',
+      'Inbox',
+      'Clients',
+      'Calendar',
     ]);
-    expect(within(tabbar as HTMLElement).getByRole('link', { name: 'Appointments' }))
+    expect(within(tabbar as HTMLElement).getByRole('link', { name: 'Calendar' }))
       .toHaveAttribute('href', '#/appointments');
-    expect(within(tabbar as HTMLElement).getByRole('link', { name: 'Projects' }))
-      .toHaveAttribute('href', '#/projects');
+    expect(within(tabbar as HTMLElement).getByRole('link', { name: 'Inbox' }))
+      .toHaveAttribute('href', '#/inbox');
     expect(within(tabbar as HTMLElement).getByRole('button', { name: 'More' })).toBeInTheDocument();
   });
 
   it('keeps /sessions as an artist-scoped compatibility alias', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/sessions' });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Appointments' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Calendar' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Artist' })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'Appointments' }).some(
+    expect(screen.getAllByRole('link', { name: 'Calendar' }).some(
       (link) => link.getAttribute('aria-current') === 'page'
     )).toBe(true);
   });
@@ -60,22 +65,26 @@ describe('responsive navigation shell', () => {
     await waitFor(() => expect(more).toHaveAttribute('aria-expanded', 'true'));
 
     const dialog = screen.getByRole('dialog', { name: 'Sections' });
-    const operations = within(dialog).getByRole('group', { name: 'Operations' });
-    const administration = within(dialog).getByRole('group', { name: 'Administration' });
+    const work = within(dialog).getByRole('group', { name: 'Work' });
+    const money = within(dialog).getByRole('group', { name: 'Money' });
+    const setup = within(dialog).getByRole('group', { name: 'Setup' });
 
-    expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Communications',
-      'Clients',
+    expect(within(work).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Enquiries',
+      'Projects',
+    ]);
+    expect(within(money).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Payments',
+    ]);
+    expect(within(setup).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Time off',
       'Automations',
-      'Notifications',
-      'Activity',
-    ]);
-    expect(within(administration).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Integrations',
       // Organizations is absent here on purpose: it is appended from
       // public.control_plane_access(), and this session belongs to none.
+      'Integrations',
+      'Notifications',
       'Users',
+      'Activity',
     ]);
   });
 
@@ -84,17 +93,18 @@ describe('responsive navigation shell', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'More' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Sections' });
-    const operations = within(dialog).getByRole('group', { name: 'Operations' });
 
-    expect(within(operations).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Communications',
-      'Clients',
+    expect(within(dialog).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Enquiries',
+      'Projects',
       'Time off',
       'Automations',
       'Notifications',
     ]);
-    expect(within(dialog).queryByRole('group', { name: 'Administration' })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('group', { name: 'Finance' })).not.toBeInTheDocument();
+    // A read-only account reaches no money and no administration destination,
+    // so neither group is rendered as an empty shell.
+    expect(within(dialog).queryByRole('group', { name: 'Money' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('group', { name: 'Setup' })).toBeInTheDocument();
   });
 
   it('shows artist scope only where it affects the page', async () => {
@@ -184,5 +194,34 @@ describe('detail-route continuity', () => {
     renderWithSession(<App />, { role: 'owner', path: '/' });
     const followUp = await screen.findByRole('link', { name: /Chase references/ });
     expect(followUp).toHaveAttribute('href', `#/enquiries/${ENQUIRY_ID}`);
+  });
+});
+describe('one navigation grouping', () => {
+  it('places every navigation destination in a group, in a stable order', () => {
+    const groups = groupNavItems(NAV_ITEMS);
+    expect(groups.map((group) => group.id)).toEqual(['work', 'money', 'setup']);
+    expect(groups.flatMap((group) => group.items).length).toBe(NAV_ITEMS.length);
+  });
+
+  it('groups by how often a destination is opened, not by which table it reads', () => {
+    // Time off reads the same schedule as the diary and is still setup: it is
+    // configured once and then left alone.
+    expect(navGroupFor('/appointments')).toBe('work');
+    expect(navGroupFor('/availability')).toBe('setup');
+    expect(navGroupFor('/payments')).toBe('money');
+    expect(navGroupFor('/integrations/calendar')).toBe('setup');
+    expect(navGroupFor('/workspaces/anything')).toBe('setup');
+  });
+
+  it('gives the desktop sidebar the same groups as the phone overflow sheet', async () => {
+    const { container } = renderWithSession(<App />, { role: 'owner', path: '/' });
+    await screen.findByRole('heading', { level: 2, name: 'Needs you now' });
+
+    const sidebar = container.querySelector('.sidebar-nav') as HTMLElement;
+    expect(within(sidebar).getAllByRole('group').map((group) => group.getAttribute('aria-label')))
+      .toEqual(['Work', 'Money', 'Setup']);
+    // The group label is a divider, not part of the document outline: three
+    // headings above every page's own would bury the page title.
+    expect(within(sidebar).queryAllByRole('heading')).toHaveLength(0);
   });
 });
