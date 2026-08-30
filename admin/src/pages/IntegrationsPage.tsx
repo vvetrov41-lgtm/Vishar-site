@@ -8,6 +8,7 @@ import { useMemo } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useLanguage } from '../lib/i18n';
+import { visibleIntegrationArtistIds } from '../lib/integration-visibility';
 import {
   integrationHealth,
   type IntegrationChannel,
@@ -15,7 +16,7 @@ import {
   type IntegrationStatus,
 } from '../lib/platform-api';
 import { Link } from '../lib/router';
-import { useApi } from '../lib/session';
+import { useApi, useSession } from '../lib/session';
 
 const CHANNEL_ORDER: IntegrationChannel[] = [
   'telegram',
@@ -54,8 +55,18 @@ const HEALTH_LABELS: Record<IntegrationHealth, { en: string; ru: string }> = {
 
 export function IntegrationsPage() {
   const api = useApi();
+  const { profile, memberships } = useSession();
   const { language, t } = useLanguage();
-  const state = useAsync(() => api.listIntegrationStatus(), [api]);
+  const state = useAsync(async () => {
+    const [statuses, artists] = await Promise.all([
+      api.listIntegrationStatus(),
+      api.listAccessibleArtists(),
+    ]);
+    const visibleArtistIds = visibleIntegrationArtistIds(profile, artists, memberships);
+    return statuses.filter(
+      (status) => status.owner_kind !== 'artist' || visibleArtistIds.has(status.owner_id),
+    );
+  }, [api, memberships, profile]);
 
   const byChannel = useMemo(() => {
     const groups = new Map<IntegrationChannel, IntegrationStatus[]>();

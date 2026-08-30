@@ -9,7 +9,7 @@
 //   * a notification is addressed to a person, and the screen must not invent
 //     an action for a notification that has nothing to act on.
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { screen, waitFor, within, fireEvent } from '@testing-library/react';
 import { App } from '../App';
 import {
@@ -18,7 +18,7 @@ import {
   type IntegrationStatus,
 } from '../lib/platform-api';
 import { describeDue, notificationCopy } from '../pages/NotificationsPage';
-import { renderWithSession, VLADIMIR_ARTIST_ID } from './fixtures';
+import { PROFILES, renderWithSession, VLADIMIR_ARTIST_ID } from './fixtures';
 
 function status(overrides: Partial<IntegrationStatus> = {}): IntegrationStatus {
   return {
@@ -110,12 +110,24 @@ describe('due description', () => {
 });
 
 describe('integrations hub', () => {
+  const originalOwnerDisplayName = PROFILES.owner.display_name;
+
+  beforeEach(() => {
+    // The production owner identity is the artist identity. Keep this older
+    // generic fixture aligned with that rule for integration-surface tests.
+    PROFILES.owner.display_name = 'Vladimir Vishar';
+  });
+
+  afterEach(() => {
+    PROFILES.owner.display_name = originalOwnerDisplayName;
+  });
+
   it('groups every visible channel under one screen', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/integrations' });
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Telegram' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: 'Calendar' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'WhatsApp' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Calendar' })).not.toBeInTheDocument();
   });
 
   it('labels a workspace-owned connection as the studio, not an artist', async () => {
@@ -127,12 +139,13 @@ describe('integrations hub', () => {
     expect(within(whatsapp).getByText('Not connected')).toBeInTheDocument();
   });
 
-  it('shows an expired credential as needing attention rather than as an error', async () => {
+  it('does not expose another artist credential status', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/integrations' });
 
-    const calendar = (await screen.findByRole('heading', { level: 2, name: 'Calendar' }))
-      .closest('section') as HTMLElement;
-    expect(within(calendar).getByText('Needs attention')).toBeInTheDocument();
+    await screen.findByRole('heading', { level: 2, name: 'Telegram' });
+    expect(screen.queryByRole('heading', { level: 2, name: 'Calendar' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Kristina Vishar')).not.toBeInTheDocument();
+    expect(screen.queryByText('kristina@example.test')).not.toBeInTheDocument();
   });
 
   it('never renders a raw owner identifier', async () => {

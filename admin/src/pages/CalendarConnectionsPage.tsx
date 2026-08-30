@@ -7,8 +7,9 @@ import type {
 } from '../lib/calendar-connections-api';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
+import { canShowArtistIntegration } from '../lib/integration-visibility';
 import { operationalLabel } from '../lib/operational-labels';
-import { useApi } from '../lib/session';
+import { useApi, useSession } from '../lib/session';
 import { readCalendarConnectorOrigin } from '../lib/supabase';
 
 const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
@@ -34,11 +35,16 @@ export function calendarConnectorUrl(
   return `${connectorOrigin}/oauth/google/${action}/${alias}`;
 }
 
-export function connectionResultNotice(search: string, language: Language): string | null {
+export function connectionResultNotice(
+  search: string,
+  language: Language,
+  visibleArtists?: ReadonlySet<string>,
+): string | null {
   const params = new URLSearchParams(search);
   const result = params.get('calendar');
   const artist = params.get('artist');
   if ((artist !== 'vladimir' && artist !== 'kristina') || !result) return null;
+  if (visibleArtists && !visibleArtists.has(artist)) return null;
   const name = artist === 'vladimir' ? 'Vladimir' : 'Kristina';
   if (result === 'connected') {
     return language === 'ru'
@@ -65,15 +71,28 @@ export function calendarConnectionHealth(
 
 export function CalendarConnectionsPage() {
   const api = useApi();
+  const { profile, memberships } = useSession();
   const { language } = useLanguage();
   const copy = COPY[language];
-  const { data, loading, error, reload } = useAsync(
-    () => api.listCalendarConnectionStatus(),
-    [api],
+  const { data, loading, error, reload } = useAsync(async () => {
+    const connections = await api.listCalendarConnectionStatus();
+    return connections.filter((connection) => canShowArtistIntegration(
+      profile,
+      {
+        id: connection.artist_id,
+        slug: connection.artist_slug,
+        display_name: connection.artist_display_name,
+      },
+      memberships,
+    ));
+  }, [api, memberships, profile]);
+  const visibleArtists = useMemo(
+    () => new Set((data ?? []).map((connection) => connection.artist_slug)),
+    [data],
   );
   const resultNotice = useMemo(
-    () => connectionResultNotice(window.location.search, language),
-    [language],
+    () => connectionResultNotice(window.location.search, language, visibleArtists),
+    [language, visibleArtists],
   );
 
   if (loading) return <LoadingState label={copy.loading} />;
@@ -210,7 +229,7 @@ const COPY: Record<Language, Record<string, string>> = {
     loading: 'Loading calendar connections…',
     noneTitle: 'No calendar connections are available',
     noneHint: 'Your current artist memberships do not allow integration management.',
-    intro: 'Vladimir and Kristina use separate Google accounts, encrypted token envelopes and primary calendars. The CRM never receives provider credentials.',
+    intro: 'Each artist uses a separate Google account, encrypted token envelope and primary calendar. The CRM never receives provider credentials.',
     connectorDisabled: 'Calendar connection controls are disabled in this environment. Existing CRM metadata remains read-only.',
     securityNotice: 'Connect and disconnect use a top-level navigation through the Access-protected Calendar connector. Query parameters only display a notice; Supabase remains the source of truth.',
     connected: 'Connected',
@@ -234,7 +253,7 @@ const COPY: Record<Language, Record<string, string>> = {
     loading: 'Загрузка подключений календаря…',
     noneTitle: 'Нет доступных подключений календаря',
     noneHint: 'Ваши текущие права на мастеров не разрешают управление интеграциями.',
-    intro: 'Владимир и Кристина используют отдельные Google-аккаунты, зашифрованные token envelopes и основные календари. CRM не получает данные доступа провайдера.',
+    intro: 'У каждого мастера отдельный Google-аккаунт, зашифрованный token envelope и основной календарь. CRM не получает данные доступа провайдера.',
     connectorDisabled: 'Управление подключением календаря отключено в этом окружении. Существующие метаданные CRM доступны только для просмотра.',
     securityNotice: 'Подключение и отключение открываются отдельной страницей через Calendar connector, защищённый Access. Параметры URL показывают только уведомление; источником истины остаётся Supabase.',
     connected: 'Подключён',
