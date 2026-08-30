@@ -99,10 +99,7 @@ async function requireArtistIntegrationCapability(operator, env, artistId) {
   const membershipUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_memberships`);
   membershipUrl.searchParams.set('profile_id', `eq.${operator.userId}`);
   membershipUrl.searchParams.set('artist_id', `eq.${artistId}`);
-  membershipUrl.searchParams.set(
-    'select',
-    'profile_id,artist_id,access_level,can_manage_integrations,is_active',
-  );
+  membershipUrl.searchParams.set('select', 'profile_id,artist_id,access_level,can_manage_integrations,is_active');
   membershipUrl.searchParams.set('limit', '2');
   const membershipResponse = await fetch(membershipUrl.toString(), {
     method: 'GET',
@@ -113,13 +110,9 @@ async function requireArtistIntegrationCapability(operator, env, artistId) {
     },
     redirect: 'error',
   });
-  if (!membershipResponse.ok) {
-    throw Object.assign(new Error('crm_membership_check_failed'), { status: 503 });
-  }
+  if (!membershipResponse.ok) throw Object.assign(new Error('crm_membership_check_failed'), { status: 503 });
   const memberships = await responseJson(membershipResponse);
-  const membership = Array.isArray(memberships) && memberships.length === 1
-    ? memberships[0]
-    : null;
+  const membership = Array.isArray(memberships) && memberships.length === 1 ? memberships[0] : null;
   if (
     !membership
     || membership.profile_id !== operator.userId
@@ -190,6 +183,38 @@ async function exchangeCode(code, appSecret) {
   const token = typeof payload.access_token === 'string' ? payload.access_token : '';
   if (!token) throw Object.assign(new Error('meta_token_exchange_failed'), { status: 502 });
   return token;
+}
+
+function extractUniqueWhatsappTargetIds(debugData) {
+  if (!debugData || debugData.is_valid !== true || String(debugData.app_id || '') !== APP_ID) {
+    throw Object.assign(new Error('meta_token_invalid'), { status: 409 });
+  }
+  const granular = Array.isArray(debugData.granular_scopes) ? debugData.granular_scopes : [];
+  const ids = new Set();
+  for (const grant of granular) {
+    if (grant?.scope !== 'whatsapp_business_management' || !Array.isArray(grant.target_ids)) continue;
+    for (const targetId of grant.target_ids) {
+      const normalized = String(targetId || '').trim();
+      if (PROVIDER_ID.test(normalized)) ids.add(normalized);
+    }
+  }
+  return [...ids];
+}
+
+async function discoverWabaFromToken(accessToken, appSecret) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/debug_token`);
+  url.searchParams.set('input_token', accessToken);
+  const debug = await graph(url.toString(), {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${APP_ID}|${appSecret}`,
+      accept: 'application/json',
+    },
+  });
+  const targetIds = extractUniqueWhatsappTargetIds(debug?.data);
+  if (targetIds.length === 0) throw Object.assign(new Error('meta_waba_not_discoverable'), { status: 409 });
+  if (targetIds.length !== 1) throw Object.assign(new Error('meta_waba_selection_ambiguous'), { status: 409 });
+  return targetIds[0];
 }
 
 async function verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId) {
@@ -284,15 +309,18 @@ export async function onRequestPost(context) {
     const code = typeof body?.code === 'string' ? body.code.trim() : '';
     const artistId = typeof body?.artist_id === 'string' ? body.artist_id : '';
     const approvedArtist = APPROVED_ARTISTS[artistId];
-    const wabaId = typeof body?.session?.waba_id === 'string' ? body.session.waba_id.trim() : '';
-    const phoneNumberId = typeof body?.session?.phone_number_id === 'string' ? body.session.phone_number_id.trim() : '';
+    const browserWabaId = typeof body?.session?.waba_id === 'string' ? body.session.waba_id.trim() : '';
+    const browserPhoneNumberId = typeof body?.session?.phone_number_id === 'string'
+      ? body.session.phone_number_id.trim()
+      : '';
 
     if (!approvedArtist) return json({ ok: false, error: 'artist_scope_not_allowed' }, 403);
     if (
       code.length < 10
       || code.length > 2048
-      || !PROVIDER_ID.test(wabaId)
-      || (phoneNumberId && !PROVIDER_ID.test(phoneNumberId))
+      || (browserWabaId && !PROVIDER_ID.test(browserWabaId))
+      || (browserPhoneNumberId && !PROVIDER_ID.test(browserPhoneNumberId))
+      || (browserPhoneNumberId && !browserWabaId)
     ) {
       return json({ ok: false, error: 'invalid_signup_session' }, 400);
     }
@@ -300,7 +328,8 @@ export async function onRequestPost(context) {
     await requireArtistIntegrationCapability(operator, env, artistId);
     await requireApprovedRoute(operator.token, env, artistId, approvedArtist);
     const accessToken = await exchangeCode(code, env.META_APP_SECRET);
-    const safeMeta = await verifyMetaSelection(accessToken, wabaId, phoneNumberId || null);
+    const wabaId = browserWabaId || await discoverWabaFromToken(accessToken, env.META_APP_SECRET);
+    const safeMeta = await verifyMetaSelection(accessToken, wabaId, browserPhoneNumberId || null);
     const envelope = JSON.stringify({
       phoneNumberId: safeMeta.phoneNumberId,
       accessToken,
@@ -308,9 +337,6 @@ export async function onRequestPost(context) {
       appSecret: env.META_APP_SECRET,
     });
 
-    // The drain Worker is intentionally disabled, but it still receives the
-    // exact artist-owned credential first. The live webhook binding is written
-    // second, and Meta subscription is activated only after both writes pass.
     await putWorkerSecret(env, DRAIN_WORKER, approvedArtist.bindingName, envelope);
     await putWorkerSecret(env, WEBHOOK_WORKER, approvedArtist.bindingName, envelope);
     await subscribeWaba(accessToken, wabaId);
@@ -345,4 +371,5 @@ export const __testing = {
   approvedArtists: APPROVED_ARTISTS,
   bearerToken,
   requireServerConfiguration,
+  extractUniqueWhatsappTargetIds,
 };
