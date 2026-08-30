@@ -15,13 +15,21 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 import { useArtistScope } from '../lib/artist-scope';
 import { useControlPlaneAccess } from '../lib/control-plane-access';
 
+// Every navigation destination, so a label can never fall through to its
+// English NavItem.label. Communications and Payments had no entry here and
+// rendered in English inside the Russian interface, because translate()
+// returns the key it was given when the key is not in the dictionary.
 const NAV_KEYS: Record<string, string> = {
   '/': 'nav.dashboard',
+  '/inbox': 'nav.inbox',
   '/enquiries': 'nav.enquiries',
   '/clients': 'nav.clients',
   '/projects': 'nav.projects',
-  '/appointments': 'nav.sessions',
-  '/sessions': 'nav.sessions',
+  '/appointments': 'nav.appointments',
+  '/sessions': 'nav.appointments',
+  '/availability': 'nav.availability',
+  '/automations': 'nav.automations',
+  '/payments': 'nav.payments',
   '/integrations': 'nav.integrations',
   '/notifications': 'nav.notifications',
   '/workspaces': 'nav.workspaces',
@@ -172,7 +180,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               key={item.path}
               item={item}
               path={path}
-              label={navigationLabel(item.path, language, t(NAV_KEYS[item.path] ?? item.label))}
+              label={t(NAV_KEYS[item.path] ?? item.label)}
             />
           ))}
         </nav>
@@ -192,13 +200,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <h1>
                 <span className="topbar-brand">Vishar CRM</span>
                 <span className="topbar-page-title">
-                  {activeItem
-                    ? navigationLabel(
-                        activeItem.path,
-                        language,
-                        t(NAV_KEYS[activeItem.path] ?? activeItem.label)
-                      )
-                    : 'Vishar CRM'}
+                  {activeItem ? t(NAV_KEYS[activeItem.path] ?? activeItem.label) : 'Vishar CRM'}
                 </span>
               </h1>
             </div>
@@ -232,7 +234,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             key={item.path}
             item={item}
             path={path}
-            label={navigationLabel(item.path, language, t(NAV_KEYS[item.path] ?? item.label))}
+            label={t(NAV_KEYS[item.path] ?? item.label)}
             mobile
           />
         ))}
@@ -288,11 +290,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                           key={item.path}
                           item={item}
                           path={path}
-                          label={navigationLabel(
-                            item.path,
-                            language,
-                            t(NAV_KEYS[item.path] ?? item.label)
-                          )}
+                          label={t(NAV_KEYS[item.path] ?? item.label)}
                           sheet
                         />
                       ))}
@@ -469,13 +467,6 @@ function overflowGroupLabel(group: OverflowGroupId, language: Language): string 
     },
   };
   return labels[language][group];
-}
-
-function navigationLabel(path: string, language: Language, fallback: string): string {
-  if (path === '/appointments') return language === 'ru' ? 'Записи' : 'Appointments';
-  if (path === '/availability') return language === 'ru' ? 'Выходные' : 'Time off';
-  if (path === '/automations') return language === 'ru' ? 'Автоматизации' : 'Automations';
-  return fallback;
 }
 
 function pageScopeFor(path: string): PageScope {
