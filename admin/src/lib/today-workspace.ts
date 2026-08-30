@@ -13,7 +13,7 @@
 // Pure, and given `now` explicitly, so the ordering rules are tested directly.
 
 import type { Appointment } from './appointment-api';
-import type { ConversationSummary } from './communications-api';
+import { conversationNeedsReply, type ConversationSummary } from './communications-api';
 import type { MonzoReconciliationCandidate } from './payment-api';
 import type { Enquiry, FollowUp, Project } from './types';
 
@@ -134,8 +134,11 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
     });
   }
 
+  // Needing a reply, not being unread: opening a thread marks it read, so an
+  // unread-only rule dropped conversations the operator had looked at and not
+  // answered while the client carried on waiting.
   for (const conversation of input.conversations) {
-    if (!conversation.has_unread) continue;
+    if (!conversationNeedsReply(conversation)) continue;
     items.push({
       key: `reply-${conversation.id}`,
       kind: 'reply',

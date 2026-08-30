@@ -19,6 +19,7 @@ import { Link } from '../lib/router';
 import { useApi } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
 import {
+  conversationNeedsReply,
   participantLabel,
   type CommunicationChannel,
   type CommunicationLinkState,
@@ -31,22 +32,24 @@ const COPY = {
     all: 'All',
     instagram: 'Instagram',
     whatsapp: 'WhatsApp',
-    email: 'Email',
     everyone: 'Everyone',
+    needsReply: 'Needs reply',
     unmatched: 'Unmatched',
     linked: 'Linked clients',
     loading: 'Loading conversations…',
     empty: 'No conversations yet',
     emptyHint: 'Messages appear here as soon as a connected channel receives one.',
     emptyFiltered: 'Nothing matches this filter',
-    emptyFilteredHint: 'Try All, or clear the unmatched filter.',
+    emptyFilteredHint: 'Try All, or clear the filter.',
+    nobodyWaiting: 'Nobody is waiting on a reply',
+    nobodyWaitingHint: 'Every open conversation was answered last by you.',
     unknownSender: 'Unknown sender',
     needsAttention: 'Unread',
+    awaitingReply: 'Needs reply',
+    youRepliedLast: 'You replied last',
     notLinked: 'Not linked',
     archived: 'Archived',
     noPreview: 'No message yet',
-    emailNotice:
-      'Email conversations still live on the enquiry, under Email drafts. They are not duplicated here.',
     attachment: 'Attachment',
   },
   ru: {
@@ -54,28 +57,37 @@ const COPY = {
     all: 'Все',
     instagram: 'Instagram',
     whatsapp: 'WhatsApp',
-    email: 'Email',
     everyone: 'Все',
+    needsReply: 'Ждут ответа',
     unmatched: 'Без клиента',
     linked: 'С клиентом',
     loading: 'Загружаем диалоги…',
     empty: 'Диалогов пока нет',
     emptyHint: 'Сообщения появятся здесь, как только подключённый канал что-то получит.',
     emptyFiltered: 'Ничего не найдено по этому фильтру',
-    emptyFilteredHint: 'Попробуйте «Все» или снимите фильтр «Без клиента».',
+    emptyFilteredHint: 'Попробуйте «Все» или снимите фильтр.',
+    nobodyWaiting: 'Никто не ждёт ответа',
+    nobodyWaitingHint: 'В каждом открытом диалоге последним ответили вы.',
     unknownSender: 'Неизвестный отправитель',
     needsAttention: 'Не прочитано',
+    awaitingReply: 'Ждёт ответа',
+    youRepliedLast: 'Вы ответили последним',
     notLinked: 'Без клиента',
     archived: 'В архиве',
     noPreview: 'Сообщений пока нет',
-    emailNotice:
-      'Переписка по email остаётся в карточке заявки, в разделе черновиков. Здесь она не дублируется.',
     attachment: 'Вложение',
   },
 } as const;
 
-type ChannelFilter = '' | CommunicationChannel | 'email';
-type LinkFilter = '' | CommunicationLinkState;
+type ChannelFilter = '' | CommunicationChannel;
+
+/**
+ * "Who needs a reply?" is the question the operator actually opens this screen
+ * with, so it is a view of its own rather than something to work out from the
+ * unread badges. The other two views are about the record rather than the
+ * person, and stay available behind it.
+ */
+type ViewFilter = '' | 'needs_reply' | CommunicationLinkState;
 
 export function InboxPage() {
   const api = useApi();
@@ -83,16 +95,21 @@ export function InboxPage() {
   const copy = COPY[language];
   const { selectedArtistId } = useArtistScope();
   const [channel, setChannel] = useState<ChannelFilter>('');
-  const [linkState, setLinkState] = useState<LinkFilter>('');
+  const [view, setView] = useState<ViewFilter>('');
+
+  // Needs-reply is decided from the newest message's direction, which the
+  // projection already carries, so it is applied here rather than asked of the
+  // server. Link state is a server filter because the database indexes it.
+  const linkState: CommunicationLinkState | undefined = view === 'unmatched' || view === 'linked'
+    ? view
+    : undefined;
 
   const { data, loading, error, reload } = useAsync<ConversationSummary[]>(
-    () => (channel === 'email'
-      ? Promise.resolve([])
-      : api.listConversations({
-        channel: channel || undefined,
-        linkState: linkState || undefined,
-        limit: 50,
-      })),
+    () => api.listConversations({
+      channel: channel || undefined,
+      linkState,
+      limit: 50,
+    }),
     [api, channel, linkState],
   );
 
@@ -101,12 +118,13 @@ export function InboxPage() {
   // can reach.
   const conversations = useMemo(
     () => (data ?? []).filter(
-      (conversation) => !selectedArtistId || conversation.artist_id === selectedArtistId,
+      (conversation) => (!selectedArtistId || conversation.artist_id === selectedArtistId)
+        && (view !== 'needs_reply' || conversationNeedsReply(conversation)),
     ),
-    [data, selectedArtistId],
+    [data, selectedArtistId, view],
   );
 
-  const filtered = channel !== '' || linkState !== '';
+  const filtered = channel !== '' || view !== '';
 
   return (
     <>
@@ -116,7 +134,6 @@ export function InboxPage() {
             ['', copy.all],
             ['instagram', copy.instagram],
             ['whatsapp', copy.whatsapp],
-            ['email', copy.email],
           ] as [ChannelFilter, string][]).map(([value, label]) => (
             <button
               key={value || 'all'}
@@ -131,50 +148,43 @@ export function InboxPage() {
           ))}
         </div>
 
-        {channel !== 'email' ? (
-          <div className="inbox-filters secondary">
-            {([
-              ['', copy.everyone],
-              ['unmatched', copy.unmatched],
-              ['linked', copy.linked],
-            ] as [LinkFilter, string][]).map(([value, label]) => (
-              <button
-                key={value || 'everyone'}
-                type="button"
-                aria-pressed={linkState === value}
-                className={linkState === value ? 'inbox-filter selected' : 'inbox-filter'}
-                onClick={() => setLinkState(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <div className="inbox-filters secondary">
+          {([
+            ['', copy.everyone],
+            ['needs_reply', copy.needsReply],
+            ['unmatched', copy.unmatched],
+            ['linked', copy.linked],
+          ] as [ViewFilter, string][]).map(([value, label]) => (
+            <button
+              key={value || 'everyone'}
+              type="button"
+              aria-pressed={view === value}
+              className={view === value ? 'inbox-filter selected' : 'inbox-filter'}
+              onClick={() => setView(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Gmail keeps its own thread model. Saying so is more honest than
-          showing an empty tab that looks broken. */}
-      {channel === 'email' ? (
-        <p className="notice" role="status">{copy.emailNotice}</p>
-      ) : null}
+      {loading ? <LoadingState label={copy.loading} /> : null}
+      {error ? <ErrorState message={error} onRetry={reload} /> : null}
 
-      {channel !== 'email' && loading ? <LoadingState label={copy.loading} /> : null}
-      {channel !== 'email' && error ? <ErrorState message={error} onRetry={reload} /> : null}
-
-      {channel !== 'email' && !loading && !error && conversations.length === 0 ? (
+      {!loading && !error && conversations.length === 0 ? (
         <EmptyState
-          title={filtered ? copy.emptyFiltered : copy.empty}
-          hint={filtered ? copy.emptyFilteredHint : copy.emptyHint}
+          title={view === 'needs_reply' ? copy.nobodyWaiting : filtered ? copy.emptyFiltered : copy.empty}
+          hint={view === 'needs_reply' ? copy.nobodyWaitingHint : filtered ? copy.emptyFilteredHint : copy.emptyHint}
         />
       ) : null}
 
-      {channel !== 'email' && !loading && !error && conversations.length > 0 ? (
+      {!loading && !error && conversations.length > 0 ? (
         <div className="list">
           {conversations.map((conversation) => (
             <Link
               key={conversation.id}
               to={`/inbox/${conversation.id}`}
-              className={conversation.has_unread ? 'row inbox-row unread' : 'row inbox-row'}
+              className={conversationNeedsReply(conversation) ? 'row inbox-row unread' : 'row inbox-row'}
             >
               <div className="inbox-row-head">
                 <span className="title">
@@ -199,8 +209,16 @@ export function InboxPage() {
                     : ''}
                 </span>
                 <span className="inbox-flags">
+                  {/* Who spoke last, then whether it has been looked at. The
+                      two are different questions and the operator needs the
+                      first one more often. */}
+                  {conversationNeedsReply(conversation) ? (
+                    <span className="badge warn">{copy.awaitingReply}</span>
+                  ) : conversation.latest_direction === 'outbound' ? (
+                    <span className="badge">{copy.youRepliedLast}</span>
+                  ) : null}
                   {conversation.has_unread ? (
-                    <span className="badge warn">{copy.needsAttention}</span>
+                    <span className="badge">{copy.needsAttention}</span>
                   ) : null}
                   {conversation.link_state === 'unmatched' ? (
                     <span className="badge">{copy.notLinked}</span>

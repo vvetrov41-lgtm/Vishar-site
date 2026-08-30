@@ -12,7 +12,7 @@
 // should I do next?" rule testable without a database.
 
 import type { Appointment } from './appointment-api';
-import type { ClientConversation } from './communications-api';
+import { clientConversationNeedsReply, type ClientConversation } from './communications-api';
 import type { Enquiry, FollowUp, Project } from './types';
 
 /** Appointment states that still describe a real, future commitment. */
@@ -101,16 +101,15 @@ function pickDepositProject(projects: Project[]): Project | null {
 }
 
 /**
- * A conversation needs a reply when the client's last message arrived after the
- * operator last read the thread. That is the same rule the inbox uses for its
- * unread badge, applied per client rather than per channel.
+ * A conversation needs a reply when the client spoke last.
+ *
+ * Deliberately not "unread": opening a thread marks it read, so a conversation
+ * the operator looked at and did not answer would stop being flagged while the
+ * client carried on waiting. The rule lives in `communications-api` so the
+ * inbox and the client workspace answer the question the same way.
  */
 export function conversationAwaitsReply(conversation: ClientConversation): boolean {
-  const inbound = time(conversation.last_inbound_at);
-  if (Number.isNaN(inbound)) return false;
-  const read = time(conversation.operator_read_at);
-  if (Number.isNaN(read)) return true;
-  return read < inbound;
+  return clientConversationNeedsReply(conversation);
 }
 
 export function summariseClientWorkspace(input: ClientWorkspaceInput): ClientWorkspaceSnapshot {

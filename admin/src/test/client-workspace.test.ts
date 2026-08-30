@@ -80,9 +80,10 @@ function conversation(overrides: Partial<ClientConversation> = {}): ClientConver
     enquiry_id: null,
     external_username: null,
     external_display_label: null,
-    last_message_at: '2026-08-29T10:00:00Z',
+    // Default: the artist answered last, so nothing is waiting.
+    last_message_at: '2026-08-29T10:05:00Z',
     last_inbound_at: '2026-08-29T10:00:00Z',
-    last_outbound_at: null,
+    last_outbound_at: '2026-08-29T10:05:00Z',
     operator_read_at: '2026-08-29T10:05:00Z',
     ...overrides,
   };
@@ -177,20 +178,38 @@ describe('client workspace facts', () => {
     expect(snapshot.depositProject?.id).toBe('current');
   });
 
-  it('treats a client message newer than the operator read mark as awaiting a reply', () => {
+  it('treats a conversation the client spoke in last as awaiting a reply', () => {
+    // Never answered at all.
     expect(conversationAwaitsReply(conversation({
       last_inbound_at: '2026-08-29T10:00:00Z',
-      operator_read_at: '2026-08-29T09:00:00Z',
+      last_outbound_at: null,
     }))).toBe(true);
 
+    // Answered, then they wrote again. Reading it does not answer it, so the
+    // read mark is deliberately newer than the inbound message here.
     expect(conversationAwaitsReply(conversation({
       last_inbound_at: '2026-08-29T10:00:00Z',
+      last_outbound_at: '2026-08-29T09:00:00Z',
       operator_read_at: '2026-08-29T10:05:00Z',
+    }))).toBe(true);
+
+    // The artist spoke last.
+    expect(conversationAwaitsReply(conversation({
+      last_inbound_at: '2026-08-29T10:00:00Z',
+      last_outbound_at: '2026-08-29T10:05:00Z',
     }))).toBe(false);
 
+    // Nothing inbound at all.
     expect(conversationAwaitsReply(conversation({
       last_inbound_at: null,
-      operator_read_at: null,
+      last_outbound_at: null,
+    }))).toBe(false);
+
+    // An archived thread is not a queue item, whoever spoke last.
+    expect(conversationAwaitsReply(conversation({
+      state: 'archived',
+      last_inbound_at: '2026-08-29T10:00:00Z',
+      last_outbound_at: null,
     }))).toBe(false);
   });
 
@@ -222,7 +241,7 @@ describe('client workspace facts', () => {
 describe('client workspace next action', () => {
   it('puts an unanswered client message above everything else', () => {
     const snapshot = summariseClientWorkspace(input({
-      conversations: [conversation({ id: 'waiting', operator_read_at: null })],
+      conversations: [conversation({ id: 'waiting', last_outbound_at: null })],
       followUps: [followUp()],
       appointments: [appointment({ status: 'proposed' })],
       projects: [project({ deposit_status: 'requested' })],
