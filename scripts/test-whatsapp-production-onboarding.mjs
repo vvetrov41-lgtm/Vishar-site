@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   __testing,
   onRequestPost,
@@ -9,6 +12,26 @@ const OWNER_ID = '11111111-1111-4111-8111-111111111111';
 const KRISTINA_MANAGER_ID = '22222222-2222-4222-8222-222222222222';
 const VLADIMIR_ID = 'a1111111-1111-4111-8111-111111111111';
 const KRISTINA_ID = 'a2222222-2222-4222-8222-222222222222';
+const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function sourceConstant(source, name) {
+  const match = new RegExp(`(?:export\\s+)?const\\s+${name}\\s*=\\s*'([0-9]+)'`).exec(source);
+  assert.ok(match, `${name} must be a numeric source constant`);
+  return match[1];
+}
+
+{
+  const browserSource = fs.readFileSync(
+    path.join(REPOSITORY_ROOT, 'admin/src/lib/meta-whatsapp-embedded-signup.ts'),
+    'utf8',
+  );
+  const serverSource = fs.readFileSync(
+    path.join(REPOSITORY_ROOT, 'admin/functions/api/whatsapp/embedded-signup/provision.js'),
+    'utf8',
+  );
+  assert.equal(sourceConstant(browserSource, 'META_WHATSAPP_APP_ID'), sourceConstant(serverSource, 'APP_ID'));
+  assert.equal(sourceConstant(browserSource, 'META_WHATSAPP_CONFIG_ID'), '4468652066715473');
+}
 
 function request(body, overrides = {}) {
   return new Request(overrides.url ?? ENDPOINT, {

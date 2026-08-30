@@ -16,6 +16,7 @@ on:
       - admin/src/pages/WhatsAppConnectionsPage.tsx
       - admin/src/test/meta-whatsapp-embedded-signup.test.ts
       - admin/src/test/whatsapp-connections.test.ts
+      - scripts/check-private-crm-artifact.mjs
       - scripts/test-whatsapp-production-onboarding.mjs
       - scripts/test-private-production-release-workflows.mjs
   pull_request:
@@ -29,6 +30,7 @@ on:
       - admin/src/pages/WhatsAppConnectionsPage.tsx
       - admin/src/test/meta-whatsapp-embedded-signup.test.ts
       - admin/src/test/whatsapp-connections.test.ts
+      - scripts/check-private-crm-artifact.mjs
       - scripts/test-whatsapp-production-onboarding.mjs
       - scripts/test-private-production-release-workflows.mjs
 
@@ -80,6 +82,7 @@ jobs:
           grep -Fq 'https://www.facebook.com' "$headers"
           grep -Fq 'https://web.facebook.com' "$headers"
           grep -Fq 'https://m.facebook.com' "$headers"
+          grep -Fq 'https://staticxx.facebook.com' "$headers"
           grep -Fq 'https://graph.facebook.com' "$headers"
           grep -Fq 'Cross-Origin-Opener-Policy: same-origin-allow-popups' "$headers"
           grep -Fq "frame-ancestors 'none'" "$headers"
