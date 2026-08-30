@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useAsync } from '../components/AsyncData';
+import { ClientPicker } from '../components/ClientPicker';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
 import { formatDateTime } from '../lib/format';
@@ -47,11 +48,19 @@ export function AppointmentsPage() {
   const mayManage = can(profile?.role, 'manageSessions');
 
   const { data, loading, error, reload } = useAsync<PageData>(async () => {
-    const [appointments, projects, enquiries, clients] = await Promise.all([
+    const [appointments, projects, enquiries] = await Promise.all([
       api.listAppointments({ artistId: selectedArtistId ?? undefined }),
       api.listProjects(undefined, selectedArtistId ?? undefined),
       api.listEnquiries({ artistId: selectedArtistId ?? undefined }),
-      api.listClients(),
+    ]);
+
+    // Names for exactly the people on this screen. Listing the 200 newest
+    // clients instead would silently fail to name an older one on their own
+    // appointment.
+    const clients = await api.listClientsByIds([
+      ...appointments.map((appointment) => appointment.client_id),
+      ...projects.map((project) => project.client_id),
+      ...enquiries.map((enquiry) => enquiry.client_id),
     ]);
     return { appointments, projects, enquiries, clients };
   }, [api, selectedArtistId]);
@@ -67,6 +76,8 @@ export function AppointmentsPage() {
   const [conflicts, setConflicts] = useState<AppointmentConflict[]>([]);
   const [conflictLoading, setConflictLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [bookedNotice, setBookedNotice] = useState<{ text: string; id: string } | null>(null);
+  const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [changingAppointmentId, setChangingAppointmentId] = useState<string | null>(null);
@@ -107,6 +118,7 @@ export function AppointmentsPage() {
       return undefined;
     }
 
+    setConflictAcknowledged(false);
     setConflictLoading(true);
     api.listAppointmentConflicts({
       artistId: resolvedArtistId,
@@ -160,8 +172,12 @@ export function AppointmentsPage() {
 
     setSaving(true);
     setActionError(null);
+    setBookedNotice(null);
     try {
-      await api.scheduleAppointment({
+      // The form used to clear itself and reload the list, leaving the only
+      // evidence of success as a new row somewhere below. Say what was booked,
+      // for whom, when, and where to find it.
+      const created: any = await api.scheduleAppointment({
         artistId: resolvedArtistId,
         clientId: resolvedClientId,
         appointmentType,
@@ -172,10 +188,26 @@ export function AppointmentsPage() {
         projectId: selectedProject?.id ?? null,
         notes: notes.trim() || null,
       });
+      const bookedFor = clientName(data?.clients ?? [], resolvedClientId)
+        ?? (await api.getClient(resolvedClientId))?.full_name
+        ?? copy.chooseClient;
+      const appointmentId = typeof created?.appointment_id === 'string'
+        ? created.appointment_id
+        : typeof created?.id === 'string' ? created.id : null;
+      if (appointmentId) {
+        setBookedNotice({
+          id: appointmentId,
+          text: copy.booked
+            .replace('{type}', typeLabel(appointmentType, language))
+            .replace('{client}', bookedFor)
+            .replace('{date}', formatDateTime(startIso, language)),
+        });
+      }
       setStartAt('');
       setEndAt('');
       setNotes('');
       setConflicts([]);
+      setConflictAcknowledged(false);
       reload();
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : copy.saveFailed);
@@ -258,7 +290,9 @@ export function AppointmentsPage() {
                 <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
                   <option value="">{copy.noProject}</option>
                   {data.projects.map((project) => (
-                    <option key={project.id} value={project.id}>{project.title}</option>
+                    <option key={project.id} value={project.id}>
+                      {optionLabel(clientName(data.clients, project.client_id), project.title)}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -272,24 +306,23 @@ export function AppointmentsPage() {
                 >
                   <option value="">{copy.noEnquiry}</option>
                   {data.enquiries.map((enquiry) => (
-                    <option key={enquiry.id} value={enquiry.id}>{enquiry.reference_number}</option>
+                    <option key={enquiry.id} value={enquiry.id}>
+                      {optionLabel(clientName(data.clients, enquiry.client_id), enquiry.reference_number)}
+                    </option>
                   ))}
                 </select>
               </label>
 
-              <label>
-                <span>{copy.client} · {copy.required}</span>
-                <select
+              <div className="client-picker-field">
+                <span className="client-picker-heading">{copy.client} · {copy.required}</span>
+                <ClientPicker
                   value={resolvedClientId}
                   disabled={Boolean(selectedProject || selectedEnquiry)}
-                  onChange={(event) => setClientId(event.target.value)}
-                >
-                  <option value="">{copy.chooseClient}</option>
-                  {data.clients.map((client) => (
-                    <option key={client.id} value={client.id}>{client.full_name}</option>
-                  ))}
-                </select>
-              </label>
+                  language={language}
+                  inputId="appointment-client-search"
+                  onChange={setClientId}
+                />
+              </div>
 
               <label>
                 <span>{copy.start}</span>
@@ -318,18 +351,43 @@ export function AppointmentsPage() {
             {!projectRequired && !resolvedArtistId ? <p className="notice warn">{copy.chooseArtist}</p> : null}
             {projectRequired && !selectedProject ? <p className="notice warn">{copy.projectRequired}</p> : null}
             {conflictLoading ? <p className="notice">{copy.checkingConflicts}</p> : null}
+            {/* One conflict policy across every booking form: say what the clash
+                is, assertively, and require the operator to say they meant it.
+                Consultations used to block outright and sessions used to warn
+                and let you scroll past, which is the safer rule on the lower
+                stakes action. */}
             {conflicts.length > 0 ? (
-              <p className="notice warn" role="status">
-                {copy.conflicts.replace('{count}', String(conflicts.length)).replace(
-                  '{date}',
-                  formatDateTime(conflicts[0].start_at, language)
-                )}
-              </p>
+              <div className="notice warn" role="alert">
+                <p style={{ margin: 0 }}>
+                  {copy.conflicts.replace('{count}', String(conflicts.length)).replace(
+                    '{date}',
+                    formatDateTime(conflicts[0].start_at, language)
+                  )}
+                </p>
+                <label className="conflict-acknowledgement">
+                  <input
+                    type="checkbox"
+                    checked={conflictAcknowledged}
+                    onChange={(event) => setConflictAcknowledged(event.target.checked)}
+                  />
+                  <span>{copy.bookAnyway}</span>
+                </label>
+              </div>
             ) : null}
             {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
+            {bookedNotice ? (
+              <p className="notice ok" role="status">
+                {bookedNotice.text}{' '}
+                <Link to={`/appointments/${bookedNotice.id}`}>{copy.openBooking}</Link>
+              </p>
+            ) : null}
 
             <div className="actions">
-              <button type="submit" disabled={saving || !timeValid || !linksValid}>
+              <button
+                type="submit"
+                className="primary"
+                disabled={saving || !timeValid || !linksValid || (conflicts.length > 0 && !conflictAcknowledged)}
+              >
                 {saving ? copy.saving : copy.propose}
               </button>
             </div>
@@ -542,6 +600,18 @@ export function AppointmentRow({
   );
 }
 
+/**
+ * A picker option names the person first. `Raven sleeve` and `ENQ-2026-0143`
+ * both identify a record; neither tells the operator who they are booking.
+ */
+function clientName(clients: Client[], clientId: string): string | null {
+  return clients.find((client) => client.id === clientId)?.full_name ?? null;
+}
+
+function optionLabel(name: string | null, record: string): string {
+  return name ? `${name} · ${record}` : record;
+}
+
 export function typeLabel(type: AppointmentType, language: Language): string {
   return TYPE_LABELS[language][type];
 }
@@ -633,7 +703,10 @@ const COPY: Record<Language, Record<string, string>> = {
     notes: 'Internal appointment note',
     durationShortcuts: 'Duration shortcuts',
     checkingConflicts: 'Checking the artist schedule…',
-    conflicts: 'Conflicting active appointments: {count}. The first starts {date}. You may still propose this time if the overlap is intentional.',
+    conflicts: 'Conflicting active appointments: {count}. The first starts {date}.',
+    bookAnyway: 'I mean to book over this clash',
+    booked: '{type} booked for {client}, {date}. It is proposed until you confirm it.',
+    openBooking: 'Open it',
     completeRequired: 'Choose valid links, a start time and a later end time.',
     saveFailed: 'Could not schedule that appointment.',
     statusFailed: 'Could not change that appointment.',
@@ -679,7 +752,10 @@ const COPY: Record<Language, Record<string, string>> = {
     notes: 'Внутренняя заметка к записи',
     durationShortcuts: 'Быстрый выбор длительности',
     checkingConflicts: 'Проверяем расписание мастера…',
-    conflicts: 'Пересекающихся активных записей: {count}. Первая начинается {date}. Время всё равно можно предложить, если пересечение намеренное.',
+    conflicts: 'Пересекающихся активных записей: {count}. Первая начинается {date}.',
+    bookAnyway: 'Я осознанно записываю поверх пересечения',
+    booked: '{type} для {client} записан на {date}. Запись предложена и ждёт подтверждения.',
+    openBooking: 'Открыть',
     completeRequired: 'Выберите корректные связи, начало и более позднее окончание.',
     saveFailed: 'Не удалось создать запись.',
     statusFailed: 'Не удалось изменить статус записи.',

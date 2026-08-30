@@ -24,6 +24,8 @@ export const ENQUIRY_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 export const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 export const FILE_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+/** The id `schedule_appointment` hands back, so a success message can link to it. */
+export const SCHEDULED_APPOINTMENT_ID = '66666666-6666-4666-8666-666666666666';
 
 export const ARTISTS = [
   { id: VLADIMIR_ARTIST_ID, slug: 'vladimir', display_name: 'Vladimir Vishar', timezone: 'Europe/London', default_currency: 'GBP', is_active: true },
@@ -394,6 +396,12 @@ export interface FakeClientOptions {
   capabilityPreviewByProfile?: Record<string, ControlPlaneCapability[]>;
   /** RPC names that must refuse, so a test can prove a section collapses. */
   denyRpc?: string[];
+  /**
+   * Rows `list_appointment_conflicts` returns. Booking forms only show the
+   * clash warning when the database reports one, so a test that wants to
+   * exercise the acknowledgement has to say so.
+   */
+  appointmentConflicts?: Record<string, unknown>[];
 }
 
 export interface ControlPlaneWorkspace {
@@ -586,6 +594,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   const artistContexts = options.artistContexts ?? {};
   const capabilityPreviewByProfile = options.capabilityPreviewByProfile ?? null;
   const denyRpc = options.denyRpc ?? [];
+  const appointmentConflicts = options.appointmentConflicts ?? [];
 
   /**
    * Mirrors the real `artist_memberships` RLS policy
@@ -696,6 +705,30 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
             (conversation) => (!channel || conversation.channel === channel)
               && (!linkState || conversation.link_state === linkState),
           ),
+          error: null,
+        };
+      }
+      // Booking RPCs, shaped as the database returns them. Falling through to
+      // the generic `{ ok: true }` made a conflict list look empty and hid the
+      // id every success message links to.
+      if (name === 'list_appointment_conflicts') {
+        return { data: appointmentConflicts, error: null };
+      }
+      if (name === 'schedule_appointment') {
+        if (effectiveRole !== 'owner' && effectiveRole !== 'booking_manager') {
+          return { data: null, error: DENIED };
+        }
+        return {
+          data: {
+            appointment_id: SCHEDULED_APPOINTMENT_ID,
+            session_id: SCHEDULED_APPOINTMENT_ID,
+            appointment_type: (args as any)?.p_appointment_type,
+            artist_id: (args as any)?.p_artist_id,
+            client_id: (args as any)?.p_client_id,
+            enquiry_id: (args as any)?.p_enquiry_id ?? null,
+            project_id: (args as any)?.p_project_id ?? null,
+            status: (args as any)?.p_status ?? 'proposed',
+          },
           error: null,
         };
       }
