@@ -38,7 +38,6 @@ export function whatsappCrmEnvironment(supabaseUrl: string): WhatsAppCrmEnvironm
   } catch {
     throw new ApiError('WhatsApp integration controls are unavailable in this CRM environment.');
   }
-
   if (origin === PRODUCTION_SUPABASE_ORIGIN) return 'production';
   if (origin === STAGING_SUPABASE_ORIGIN) return 'staging';
   throw new ApiError('WhatsApp integration controls are unavailable in this CRM environment.');
@@ -73,10 +72,7 @@ function assertSafeMetadata(value: unknown): WhatsAppIntegrationMetadata[] {
   });
 }
 
-function assertProvisioningResponse(
-  value: unknown,
-  expectedIntegrationKey: string,
-): WhatsAppProvisioningResult {
+function assertProvisioningResponse(value: unknown, expectedIntegrationKey: string): WhatsAppProvisioningResult {
   if (!value || typeof value !== 'object') {
     throw new ApiError('WhatsApp provisioning returned an invalid response.');
   }
@@ -94,11 +90,7 @@ function assertProvisioningResponse(
 }
 
 export function createWhatsAppConnectionsApi(client: CrmClient) {
-  async function configure(
-    artist: WhatsAppArtist,
-    supabaseUrl: string,
-    enabled: boolean,
-  ) {
+  async function configure(artist: WhatsAppArtist, supabaseUrl: string, enabled: boolean) {
     const integrationKey = whatsappIntegrationKey(supabaseUrl, artist.slug);
     const result = await client.rpc('configure_artist_integration', {
       p_artist_id: artist.id,
@@ -111,9 +103,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
     });
     if (result.error) {
       throw new ApiError(
-        enabled
-          ? 'Could not enable that WhatsApp connection.'
-          : 'Could not update that WhatsApp connection.',
+        enabled ? 'Could not enable that WhatsApp connection.' : 'Could not update that WhatsApp connection.',
         result.error,
       );
     }
@@ -135,11 +125,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       return configure(artist, supabaseUrl, false);
     },
 
-    async setWhatsAppIntegrationEnabled(
-      artist: WhatsAppArtist,
-      supabaseUrl: string,
-      enabled: boolean,
-    ) {
+    async setWhatsAppIntegrationEnabled(artist: WhatsAppArtist, supabaseUrl: string, enabled: boolean) {
       return configure(artist, supabaseUrl, enabled);
     },
 
@@ -155,7 +141,9 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       if (!approvedSlug || artist.slug !== approvedSlug) {
         throw new ApiError('Production WhatsApp onboarding is unavailable for this artist.');
       }
-      if (signup.event !== 'FINISH') throw new ApiError('Meta Embedded Signup did not finish.');
+      if (signup.event !== 'FINISH' && signup.event !== 'CODE_ONLY') {
+        throw new ApiError('Meta Embedded Signup did not finish authorization.');
+      }
 
       const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, approvedSlug);
       const session = await client.auth.getSession();
@@ -175,10 +163,10 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
         body: JSON.stringify({
           artist_id: artist.id,
           code: signup.authorizationCode,
-          session: {
+          session: signup.wabaId ? {
             waba_id: signup.wabaId,
             phone_number_id: signup.phoneNumberId,
-          },
+          } : null,
         }),
       });
 
