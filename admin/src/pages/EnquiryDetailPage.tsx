@@ -9,7 +9,8 @@ import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { SignedImage } from '../components/SignedImage';
 import { Link, useRouter } from '../lib/router';
-import { availableTransitions, can } from '../lib/permissions';
+import { can } from '../lib/permissions';
+import { enquiryWorkflowActions } from '../lib/enquiryWorkflow';
 import { formatDateTime, localiseKnownValue, localiseSystemSubject, relativeDue } from '../lib/format';
 import { formatPhoneForDisplay } from '../lib/phone';
 import { useLanguage } from '../lib/i18n';
@@ -94,10 +95,9 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   }
 
   const { enquiry, client, files, notes, followUps, activity, transitions, colleagues } = data;
-  const transitionOptions = availableTransitions(transitions, enquiry.status, role);
+  const { transitionOptions, canConvert } = enquiryWorkflowActions(transitions, enquiry.status, role);
   const contactDiffers = submittedContactDiffers(enquiry, client);
   const canAssign = can(role, 'assignEnquiry');
-  const canConvert = can(role, 'convertEnquiry') && ['accepted', 'deposit_paid'].includes(enquiry.status);
   const hasWorkflowActions = transitionOptions.length > 0 || canAssign || canConvert;
 
   return (
