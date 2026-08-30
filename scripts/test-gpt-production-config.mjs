@@ -199,7 +199,7 @@ assert.match(v2Spec, /Project Web References/);
 assert.match(v2Spec, /persistent generic Research/i);
 assert.match(v2Spec, /MUST maintain an explicit operator-parity matrix/i);
 assert.match(v2Spec, /MUST NOT disable or mutate the two legacy artist-bound clients in the same step/);
-assert.match(v2Plan, /Restore a dedicated Communications import schema/i);
+assert.match(v2Plan, /restore Communications as a separate schema/i);
 assert.match(v2Plan, /Target import size: <=25 operations/i);
 assert.match(v2Plan, /future Vishar MCP\/App/i);
 assert.match(v2Tasks, /Build canonical operator-parity inventory/i);
