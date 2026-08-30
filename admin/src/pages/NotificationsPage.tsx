@@ -47,12 +47,12 @@ export function NotificationsPage() {
         await run();
         state.reload();
       } catch (cause) {
-        setActionError(cause instanceof Error ? cause.message : 'That did not work.');
+        setActionError(cause instanceof Error ? cause.message : (language === 'ru' ? 'Не удалось выполнить действие.' : 'That did not work.'));
       } finally {
         setBusyId(null);
       }
     },
-    [state],
+    [state, language],
   );
 
   async function setTelegramNotifications(enabled: boolean) {
@@ -62,7 +62,7 @@ export function NotificationsPage() {
       await api.setTelegramNotificationsEnabled(enabled);
       telegramState.reload();
     } catch (cause) {
-      setTelegramActionError(cause instanceof Error ? cause.message : 'Could not update Telegram notifications.');
+      setTelegramActionError(cause instanceof Error ? cause.message : (language === 'ru' ? 'Не удалось изменить настройки уведомлений Telegram.' : 'Could not update Telegram notifications.'));
     } finally {
       setTelegramBusy(false);
     }

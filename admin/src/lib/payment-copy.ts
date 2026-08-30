@@ -3,6 +3,7 @@ import type { Language } from './i18n';
 export interface PaymentCopy {
   loadingPayments: string;
   chooseArtist: string;
+  groupedDepositTitle: string;
   removeDestinationTitle: string;
   ignoreTitle: string;
   confirmPaymentTitle: string;
@@ -121,6 +122,7 @@ export interface PaymentCopy {
 const EN: PaymentCopy = {
   loadingPayments: 'Loading payments…',
   chooseArtist: 'Choose one artist to manage payments.',
+  groupedDepositTitle: 'One deposit for several sessions',
   removeDestinationTitle: 'Remove this payment destination?',
   ignoreTitle: 'Ignore this payment?',
   confirmPaymentTitle: 'Confirm this payment?',
@@ -239,6 +241,7 @@ const EN: PaymentCopy = {
 const RU: PaymentCopy = {
   loadingPayments: 'Загружаем платежи…',
   chooseArtist: 'Выберите одного мастера для управления платежами.',
+  groupedDepositTitle: 'Один депозит за несколько сеансов',
   removeDestinationTitle: 'Удалить этот реквизит для оплаты?',
   ignoreTitle: 'Игнорировать этот платёж?',
   confirmPaymentTitle: 'Подтвердить платёж?',

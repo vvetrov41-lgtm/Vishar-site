@@ -859,7 +859,7 @@ export function PaymentsPage() {
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <h2>{language === 'ru' ? 'Multiple Sessions' : 'Multiple Sessions'}</h2>
+              <h2>{copy.groupedDepositTitle}</h2>
               <p>
                 {language === 'ru'
                   ? 'Выберите 2-12 сеансов одного клиента и проекта. Итоговый депозит CRM рассчитывает на сервере как сумму депозитов выбранных сеансов.'
