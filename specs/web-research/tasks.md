@@ -2,9 +2,10 @@
 
 ## Rules
 
-- Every implementation task traces to `spec.md` or `plan.md`.
+- Every implementation task traces to `spec.md`, `plan.md` or `project-web-references.md`.
 - Firecrawl is an implementation provider, not the authorization or product boundary.
 - Phase W does not start until Phase V production acceptance is proven.
+- Project Web References is the preferred first persistent CRM-facing Phase W slice; generic Competitors/Studios/Pricing/SEO/Market Research UI must not block it.
 - Recurring monitoring does not start until persistent Phase W1 save/repeat/compare acceptance is proven.
 - Deployment is never complete from code or CI evidence alone.
 - Before every write/merge/deploy, re-check the relevant exact head because parallel Vishar workstreams may move the base.
@@ -91,20 +92,39 @@
 - [ ] T091 Fresh-check canonical repo head and production Supabase migration head; choose the next forward-only migration number from live truth. [AC-015]
 - [ ] T092 Trace final effective workspace membership, capability registry, artist capability, RLS and grant functions at the Phase W exact target SHA. [AR-001, AR-003, AR-004]
 - [ ] T093 Resolve durable Research retention/deletion/export rules before schema creation. [FR-010, Data and retention expectations]
-- [ ] T094 Resolve exact Research permission mapping, including workspace-level semantics and artist-context checks, before migration. [AR-005]
+- [ ] T094 Resolve exact generic Research permission mapping, including workspace-level semantics and artist-context checks, before migration. [AR-005]
 - [ ] T095 Finalize stable normalized definitions for run/source/snapshot and comparison behavior. [FR-010, FR-011, FR-012]
+- [ ] T096 Trace the final effective tattoo-project authorization, project/reference UI, activity-log and existing async job/outbox patterns before Project Web References schema/API/UI design. [AR-008, AR-009, FR-017, FR-024]
+- [ ] T097 Decide the exact reuse boundary between generic public-source snapshots and project-scoped relations so URL dedupe/cache cannot widen project access or merge artist notes. [AR-010, SR-011]
 
 ## Phase 9: Phase W database and API
 
 - [ ] T100 Add forward-only Research persistence migration with workspace ownership and optional artist context. [FR-010, AR-002]
-- [ ] T101 Add Research capabilities through the existing registry/workspace model, never a Firecrawl ACL. [AR-001, AR-005]
+- [ ] T101 Add generic Research capabilities through the existing registry/workspace model, never a Firecrawl ACL. [AR-001, AR-005]
 - [ ] T102 Add authoritative RLS/RPC checks for list/read/create/repeat/manage operations. [AR-003, AR-004, AR-006]
 - [ ] T103 Add pgTAP positive and denial cases for unrelated workspace, revoked membership, missing capability and mismatched artist context. [AC-010, AC-012]
 - [ ] T104 Implement append-only successful snapshots so reruns cannot overwrite earlier evidence. [FR-012, AC-011]
 - [ ] T105 Implement failed-run recording that preserves the last successful snapshot and never becomes "no change". [FR-016, AC-013]
 - [ ] T106 Add service-only helper boundaries with narrow grants, fixed `search_path` and no browser-accessible privileged tables where applicable. [AR-001, SR-001]
 
-## Phase 10: CRM Research UI
+## Phase 9A: Project Web References, first persistent CRM value slice
+
+- [ ] PWR-001 Add the minimum project-scoped persistence relation linking an authorized tattoo project to a canonical public source/latest successful snapshot plus processing state and separate artist notes/decisions. Reuse generic source/snapshot primitives only when T097 proves the join is safe. [FR-017, FR-020, AR-008, AR-010]
+- [ ] PWR-002 Add authoritative server-side project access checks for list/read/add/reanalyse/edit-notes/remove operations; generic workspace Research capability alone must not grant access. [AR-008, AR-009, AC-019]
+- [ ] PWR-003 Define and version one tattoo-reference extraction schema covering summary, subjects, visual style, colour palette, composition, lighting, useful tattoo details and source metadata. [FR-019, AC-017]
+- [ ] PWR-004 Build the provider request from canonical public URL + extraction schema only; prove parent project/client IDs, names, private notes, private images, messages and finance cannot enter the Firecrawl request. [SR-006, SR-011, AC-020]
+- [ ] PWR-005 Implement non-blocking pending/ready/failed processing using the narrowest existing durable execution primitive proven by T096; provider failure must not make the parent project unavailable. [FR-018, FR-022]
+- [ ] PWR-006 Implement manual reanalysis so a new successful snapshot appends/replaces the latest pointer while a failed refresh preserves the last successful result and records failure. [FR-023, AC-019]
+- [ ] PWR-007 Add `Web References` to the private tattoo-project UI with add URL, source link/title, explicit state, structured source analysis, retry/reanalyse and remove association actions. [FR-017, FR-018, FR-022, AC-016]
+- [ ] PWR-008 Keep `Source Analysis` and `Artist Decision` visually and semantically separate; support freeform artist notes and, where practical in the first UI, structured use/ignore/change decisions. [FR-020, FR-021, AC-018]
+- [ ] PWR-009 Add bounded project activity events for reference added, analysis succeeded/failed, reanalysed and removed, without copying raw page bodies into general activity logs. [FR-024]
+- [ ] PWR-010 Add RLS/RPC/API/UI positive and denial tests for correct project access, other artist/project denial, revoked access, cache/source reuse and failed reanalysis preservation. [AR-008, AR-009, AR-010, AC-016, AC-019]
+- [ ] PWR-011 Run staging acceptance on a legitimate existing tattoo project using a real public reference URL and inspect the provider request to prove private CRM fields are absent. [AC-016, AC-017, AC-018, AC-020]
+- [ ] PWR-012 Release through exact-head CI -> guarded deploy -> Supabase/Worker/Pages readback -> production acceptance on a legitimate existing project without creating synthetic customer data. [AC-015, AC-016, AC-020]
+
+## Phase 10: Generic CRM Research UI
+
+This phase may share backend/persistence work with Project Web References, but it must not delay the first usable project-reference slice merely to complete every generic Research category.
 
 - [ ] T110 Add one private CRM Research area with Competitors, Studios, Pricing, SEO and Market research category/filter surfaces. [FR-015]
 - [ ] T111 Add create/run UI for a bounded research definition using the same backend Research gateway as GPT. [FR-001, FR-010]
@@ -115,11 +135,20 @@
 - [ ] T116 Add current-authorization tests so a revoked user immediately loses Research access without deletion. [AR-006, AC-012]
 - [ ] T117 Add RU/EN and narrow/mobile/accessibility coverage consistent with private CRM conventions.
 
+## Phase 10A: Multi-reference project synthesis
+
+Do not start this phase until PWR-011/PWR-012 prove individual Project Web References.
+
+- [ ] PWR-020 Define a project synthesis contract that consumes only ready normalized public-source analyses and reports repeated/divergent visual signals with source counts. [FR-025, AC-021]
+- [ ] PWR-021 Prove synthesis cannot send private client/project data to Firecrawl and cannot mutate client notes, artist notes, scope, quote, sessions or booking state. [SR-006, SR-011, FR-025]
+- [ ] PWR-022 Add project UI for advisory synthesis with clear source coverage and no implication that inferred repetition equals explicit client intent. [FR-020, FR-025, AC-021]
+- [ ] PWR-023 Validate with several legitimate public URLs attached to one authorized project and preserve individual source evidence underneath the synthesis. [AC-021]
+
 ## Phase 11: Phase W rollout
 
 - [ ] T120 Run migration replay, full pgTAP, CRM tests/build, focused Research security tests, secret scan and required exact-head CI. [AC-015]
 - [ ] T121 Deploy migration/backend/UI to staging, read back migration head and exact application versions, then run save/reopen/repeat/compare acceptance. [AC-010, AC-011]
-- [ ] T122 Inspect provider requests and stored Research payloads to prove private CRM/client content is absent. [AC-014]
+- [ ] T122 Inspect provider requests and stored Research payloads to prove private CRM/client content is absent. [AC-014, AC-020]
 - [ ] T123 Re-check base/PR/CI and deploy the exact Phase W release through guarded production automation. [AC-015]
 - [ ] T124 Production readback: exact migration head, Worker/Pages versions, Research routes and actual RLS/access behavior. [AC-010, AC-012, AC-015]
 - [ ] T125 Use legitimate public research only to save and repeat one production run; verify snapshot comparison and failure preservation without creating synthetic customer data. [AC-011, AC-013]
@@ -135,7 +164,7 @@
 ## Phase 13: Convergence
 
 - [ ] T140 Run Spec Kit consistency analysis after each material implementation phase.
-- [ ] T141 Reconcile any valid implementation-driven requirement changes back into `spec.md` and `plan.md` instead of silently diverging.
+- [ ] T141 Reconcile any valid implementation-driven requirement changes back into `spec.md`, `plan.md` and `project-web-references.md` instead of silently diverging.
 - [ ] T142 Converge every acceptance criterion against code, tests, exact-head CI, deployment readback and actual production evidence.
 - [ ] T143 Explicitly defer any remaining non-goal/open question with rationale and a safe boundary.
 
