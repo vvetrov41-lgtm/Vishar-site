@@ -491,6 +491,11 @@ function pageScopeFor(path: string): PageScope {
     || path === '/availability'
     || path === '/automations'
     || path === '/activity'
+    // Payments is artist-owned: deposit settings, the destination catalogue,
+    // the deposit policy and every reconciliation candidate belong to exactly
+    // one artist, and PaymentsPage cannot render without one. Classifying it
+    // as global hid the selector on the one screen that requires a selection.
+    || path === '/payments'
   ) return 'artist';
   return 'global';
 }

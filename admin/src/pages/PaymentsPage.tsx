@@ -118,11 +118,26 @@ export function PaymentsPage() {
   const { profile, memberships } = useSession();
   const { language, locale, label } = useLanguage();
   const copy = useMemo(() => paymentCopy(language), [language]);
-  const { artists, selectedArtistId, loading: artistScopeLoading } = useArtistScope();
+  const {
+    artists,
+    selectedArtistId: scopedArtistId,
+    loading: artistScopeLoading,
+    setSelectedArtistId,
+  } = useArtistScope();
+  // Every panel on this screen belongs to exactly one artist, so the page
+  // cannot render against the scope selector's "all assigned" default. When the
+  // operator can reach exactly one artist that default is unambiguous, so it is
+  // resolved here instead of asking them to pick from a list of one. The scope
+  // context is deliberately not mutated: this inference is local to Payments,
+  // and the database still decides what the chosen artist can see.
+  const selectedArtistId = scopedArtistId ?? (artists.length === 1 ? artists[0].id : null);
   const [settings, setSettings] = useState<MonzoDepositSettings>(EMPTY_SETTINGS);
   const [paymentUrl, setPaymentUrl] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  // client_id -> full name, so a payment row can name a person instead of a
+  // date. Sending money to the wrong client is not a recoverable mistake.
+  const [clientNames, setClientNames] = useState<Map<string, string>>(new Map());
   const [reconciliationCandidates, setReconciliationCandidates] = useState<MonzoReconciliationCandidate[]>([]);
   const [matchSelection, setMatchSelection] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -232,6 +247,12 @@ export function PaymentsPage() {
       setPaymentUrl(nextSettings.payment_url ?? '');
       setEnabled(nextSettings.enabled);
       setAppointments(nextAppointments);
+      // Depends on the appointments, so it cannot join the batch above. RLS
+      // still decides which names come back; an absent one degrades to a label.
+      const nextClients = await api.listClientsByIds(
+        nextAppointments.map((appointment) => appointment.client_id)
+      );
+      setClientNames(new Map(nextClients.map((entry) => [entry.id, entry.full_name])));
       setDestinations(nextCatalogue);
       setPolicy(nextPolicy);
       if (nextPolicy?.configured) {
@@ -265,6 +286,7 @@ export function PaymentsPage() {
       setPaymentUrl('');
       setEnabled(false);
       setAppointments([]);
+      setClientNames(new Map());
       setReconciliationCandidates([]);
       setMatchSelection({});
       setDestinations([]);
@@ -511,8 +533,31 @@ export function PaymentsPage() {
   }
 
   if (artistScopeLoading) return <LoadingState label={copy.loadingPayments} />;
+  // Asking for a choice is only fair if the choice is on the screen. The scope
+  // selector in the header is the primary control; this repeats it inline so a
+  // cold start never reaches an instruction it cannot act on.
   if (!selectedArtistId || !selectedArtist) {
-    return <section className="panel"><div className="notice">{copy.chooseArtist}</div></section>;
+    return (
+      <section className="panel">
+        <div className="notice">{copy.chooseArtist}</div>
+        {artists.length > 0 ? (
+          <div className="button-row" role="group" aria-label={copy.chooseArtist}>
+            {artists.map((artist) => (
+              <button
+                key={artist.id}
+                type="button"
+                className="secondary-button"
+                onClick={() => setSelectedArtistId(artist.id)}
+              >
+                {artist.display_name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="notice">{copy.noAssignedArtists}</div>
+        )}
+      </section>
+    );
   }
 
   return (
@@ -758,8 +803,10 @@ export function PaymentsPage() {
               return (
                 <div className="list-row" key={appointment.id}>
                   <div>
-                    <strong>{new Date(appointment.start_at).toLocaleString(locale)}</strong>
+                    <strong>{clientNames.get(appointment.client_id) ?? copy.clientUnknown}</strong>
                     <div className="muted">
+                      {new Date(appointment.start_at).toLocaleString(locale)}
+                      {' · '}
                       {label('sessionStatus', appointment.status)} · {label('paymentStatus', appointment.payment_status)}
                       {depositAmount == null ? '' : ` · £${depositAmount} ${copy.depositSuffix}`}
                     </div>
@@ -815,10 +862,10 @@ export function PaymentsPage() {
               return (
                 <label className="list-row" key={`group-${appointment.id}`}>
                   <div>
-                    <strong>{new Date(appointment.start_at).toLocaleString(locale)}</strong>
+                    <strong>{clientNames.get(appointment.client_id) ?? copy.clientUnknown}</strong>
                     <div className="muted">
-                      {depositAmount == null ? '' : money(depositAmount, 'GBP', locale)}
-                      {appointment.project_id ? ` · ${appointment.project_id.slice(0, 8)}` : ''}
+                      {new Date(appointment.start_at).toLocaleString(locale)}
+                      {depositAmount == null ? '' : ` · ${money(depositAmount, 'GBP', locale)}`}
                     </div>
                   </div>
                   <input
@@ -826,7 +873,7 @@ export function PaymentsPage() {
                     checked={selected}
                     disabled={!settings.enabled || depositAmount == null || (!selected && (!compatible || selectedGroupSessionIds.length >= 12))}
                     onChange={() => toggleGroupAppointment(appointment)}
-                    aria-label={`${language === 'ru' ? 'Выбрать сеанс' : 'Select session'} ${new Date(appointment.start_at).toLocaleString(locale)}`}
+                    aria-label={`${language === 'ru' ? 'Выбрать сеанс' : 'Select session'} ${clientNames.get(appointment.client_id) ?? copy.clientUnknown} ${new Date(appointment.start_at).toLocaleString(locale)}`}
                   />
                 </label>
               );

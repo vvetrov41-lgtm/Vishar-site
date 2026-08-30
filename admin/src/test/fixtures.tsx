@@ -229,7 +229,9 @@ export const PROJECT_FINANCE = {
 export const SESSION = {
   id: SESSION_ID,
   artist_id: VLADIMIR_ARTIST_ID,
+  client_id: CLIENT_ID,
   project_id: PROJECT_ID,
+  appointment_type: 'tattoo_session' as const,
   status: 'proposed' as const,
   start_at: '2026-09-01T10:00:00Z',
   end_at: '2026-09-01T16:00:00Z',
@@ -344,6 +346,11 @@ export interface FakeClientOptions {
   enquiryStatus?: EnquiryStatus;
   /** Artist identities returned by list_accessible_artists(). */
   accessibleArtistIds?: string[];
+  /**
+   * Extra `sessions` rows appended to the shared SESSION fixture. Grouped
+   * deposit selection only renders with two or more eligible appointments.
+   */
+  extraSessions?: Record<string, unknown>[];
   /**
    * Replaces the pool `artist_memberships` is filtered from, for tests that
    * need a specific capability combination (e.g. can_manage_finance without
@@ -498,7 +505,8 @@ function tableResult(
   table: string,
   role: CrmRole | null,
   failTable?: string,
-  enquiryStatus?: EnquiryStatus
+  enquiryStatus?: EnquiryStatus,
+  extraSessions: Record<string, unknown>[] = []
 ) {
   if (failTable === table) return { data: null, error: { code: 'PGRST000', message: 'boom' } };
 
@@ -525,7 +533,7 @@ function tableResult(
       // Owner-only view: a non-owner selects zero rows, not an error.
       return { data: role === 'owner' ? [PROJECT_FINANCE] : [], error: null };
     case 'sessions':
-      return { data: [SESSION], error: null };
+      return { data: [SESSION, ...extraSessions], error: null };
     case 'sessions_finance':
       return { data: role === 'owner' ? [{ session_id: SESSION_ID, artist_id: VLADIMIR_ARTIST_ID, project_id: PROJECT_ID, currency: 'GBP', price: 840, payment_status: 'unpaid' }] : [], error: null };
     case 'internal_notes':
@@ -595,7 +603,13 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   function builder(table: string): any {
     const result = table === 'artist_memberships'
       ? artistMembershipsResult()
-      : tableResult(table, effectiveRole, options.failTable, options.enquiryStatus);
+      : tableResult(
+        table,
+        effectiveRole,
+        options.failTable,
+        options.enquiryStatus,
+        options.extraSessions
+      );
     const chain: any = {
       select: () => chain,
       eq: (...args: unknown[]) => {
@@ -786,6 +800,49 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
             reusable_destination_configured: true,
             open_payment_request_id: null,
             open_payment_request_status: null,
+          },
+          error: null,
+        };
+      }
+      if (name === 'get_monzo_easy_bank_transfer_settings') {
+        return {
+          data: {
+            configured: true,
+            enabled: true,
+            payment_url: 'https://monzo.com/pay/r/fixture',
+            deposit_amount: 250,
+            deposit_policy: 'duration_tiered_v1',
+            deposit_tiers: [
+              { max_minutes: 60, amount: 50, currency: 'GBP' },
+              { max_minutes: 180, amount: 100, currency: 'GBP' },
+              { max_minutes: 300, amount: 150, currency: 'GBP' },
+              { max_minutes: null, amount: 250, currency: 'GBP' },
+            ],
+            currency: 'GBP',
+            default_delivery_channel: 'email',
+            email_status: 'ready',
+            sms_status: 'not_configured',
+            monzo_api_status: 'connected',
+          },
+          error: null,
+        };
+      }
+      if (name === 'list_monzo_payment_destinations') {
+        return { data: { destinations: [] }, error: null };
+      }
+      if (name === 'list_monzo_reconciliation_candidates') {
+        return { data: [], error: null };
+      }
+      if (name === 'get_project_deposit_policy') {
+        return {
+          data: {
+            configured: true,
+            mode: 'fixed',
+            fixed_amount: 150,
+            percentage: null,
+            minimum_amount: null,
+            rounding_step: 1,
+            currency: 'GBP',
           },
           error: null,
         };

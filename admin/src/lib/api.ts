@@ -308,6 +308,27 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       return unwrap<Client[]>(await query, 'load clients');
     },
 
+    /**
+     * Names for a known set of client ids.
+     *
+     * Screens that list appointments, payments or reconciliation rows hold a
+     * client_id but must show a person. Reusing listClients() would cap the
+     * lookup at the 200 most recent clients and silently fail to name an older
+     * one, so the ids are asked for directly. Row level security still decides
+     * which of them come back.
+     */
+    async listClientsByIds(ids: string[]): Promise<Client[]> {
+      const unique = [...new Set(ids.filter(Boolean))];
+      if (unique.length === 0) return [];
+      return unwrap<Client[]>(
+        await client
+          .from('clients')
+          .select('id, full_name, email, phone, instagram, preferred_contact, travelling_from, notes_summary, created_at, updated_at, archived_at')
+          .in('id', unique),
+        'load client names'
+      );
+    },
+
     async getClient(id: string): Promise<Client | null> {
       const result = await client
         .from('clients')
