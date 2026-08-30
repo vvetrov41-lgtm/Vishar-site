@@ -85,6 +85,8 @@ jobs:
           grep -Fq 'https://staticxx.facebook.com' "$headers"
           grep -Fq 'https://graph.facebook.com' "$headers"
           grep -Fq 'Cross-Origin-Opener-Policy: same-origin-allow-popups' "$headers"
+          grep -Fq '/integrations/whatsapp*' "$headers"
+          grep -Fq '! Cross-Origin-Opener-Policy' "$headers"
           grep -Fq "frame-ancestors 'none'" "$headers"
 
       - name: Bundle Pages Functions
