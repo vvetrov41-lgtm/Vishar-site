@@ -18,6 +18,18 @@ const APPROVED_ARTISTS = Object.freeze({
   }),
 });
 
+// The Cloudflare edge serves its own HTML error page in place of a 502/503/504
+// returned from here, so the JSON error contract never reaches the browser: the
+// frontend's response.json() fails and every upstream failure collapses into a
+// bare "provisioning_failed". Production proved it — a 79-byte JSON body left
+// this handler and the edge served 6857 bytes of HTML, while 500 responses
+// passed through intact. Classified failures therefore report 500 and carry
+// their meaning in the error name, which is what the frontend reads.
+function edgeSafeStatus(status) {
+  if (!Number.isInteger(status) || status < 400 || status > 599) return 500;
+  return status >= 500 ? 500 : status;
+}
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -65,10 +77,16 @@ async function noFollowFetch(url, init = {}) {
   return response;
 }
 
+// Secrets are pasted into the Pages dashboard by hand, so a trailing newline is
+// easy to introduce and impossible to see. Meta rejects an app secret with one
+// (OAuthException code 1, "Error validating client secret"), so every binding is
+// read through here rather than off `env` directly.
+function binding(env, name) {
+  return typeof env?.[name] === 'string' ? env[name].trim() : '';
+}
+
 function supabasePublishableKey(env) {
-  return typeof env.SUPABASE_PUBLISHABLE_KEY === 'string'
-    ? env.SUPABASE_PUBLISHABLE_KEY.trim()
-    : '';
+  return binding(env, 'SUPABASE_PUBLISHABLE_KEY');
 }
 
 async function requireCrmOperator(request, env) {
@@ -196,9 +214,13 @@ async function graph(url, init = {}) {
   const payload = await responseJson(response);
   if (!response.ok) {
     const graphCode = Number.isInteger(payload?.error?.code) ? payload.error.code : null;
+    const graphSubcode = Number.isInteger(payload?.error?.error_subcode)
+      ? payload.error.error_subcode
+      : null;
     throw Object.assign(new Error('meta_request_failed'), {
       status: 502,
       graphCode,
+      graphSubcode,
       upstreamStatus: response.status,
     });
   }
@@ -210,7 +232,19 @@ async function exchangeCode(code, appSecret) {
   url.searchParams.set('client_id', APP_ID);
   url.searchParams.set('client_secret', appSecret);
   url.searchParams.set('code', code);
-  const payload = await graph(url.toString(), { method: 'GET' });
+  let payload;
+  try {
+    payload = await graph(url.toString(), { method: 'GET' });
+  } catch (error) {
+    // Graph reports a rejected client secret as OAuthException code 1 on this
+    // endpoint; a malformed or spent authorization code is code 100 instead.
+    // Naming the first case keeps an operator from re-running Embedded Signup
+    // against a binding that cannot succeed however many codes it is given.
+    if (error?.message === 'meta_request_failed' && error?.graphCode === 1) {
+      throw Object.assign(new Error('meta_app_secret_invalid'), { status: 502 });
+    }
+    throw error;
+  }
   const token = typeof payload.access_token === 'string' ? payload.access_token : '';
   if (!token) throw Object.assign(new Error('meta_token_exchange_failed'), { status: 502 });
   return token;
@@ -284,11 +318,11 @@ async function verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId) 
 }
 
 async function putWorkerSecret(env, worker, bindingName, envelope) {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${worker}/secrets`;
+  const url = `https://api.cloudflare.com/client/v4/accounts/${binding(env, 'CLOUDFLARE_ACCOUNT_ID')}/workers/scripts/${worker}/secrets`;
   const response = await noFollowFetch(url, {
     method: 'PUT',
     headers: {
-      authorization: `Bearer ${env.CLOUDFLARE_WORKERS_EDIT_TOKEN}`,
+      authorization: `Bearer ${binding(env, 'CLOUDFLARE_WORKERS_EDIT_TOKEN')}`,
       'content-type': 'application/json',
       accept: 'application/json',
     },
@@ -363,16 +397,17 @@ export async function onRequestPost(context) {
     stage = 'route_check';
     await requireApprovedRoute(operator.token, env, artistId, approvedArtist);
     stage = 'token_exchange';
-    const accessToken = await exchangeCode(code, env.META_APP_SECRET);
+    const metaAppSecret = binding(env, 'META_APP_SECRET');
+    const accessToken = await exchangeCode(code, metaAppSecret);
     stage = 'waba_discovery';
-    const wabaId = browserWabaId || await discoverWabaFromToken(accessToken, env.META_APP_SECRET);
+    const wabaId = browserWabaId || await discoverWabaFromToken(accessToken, metaAppSecret);
     stage = 'meta_selection';
     const safeMeta = await verifyMetaSelection(accessToken, wabaId, browserPhoneNumberId || null);
     const envelope = JSON.stringify({
       phoneNumberId: safeMeta.phoneNumberId,
       accessToken,
       wabaId,
-      appSecret: env.META_APP_SECRET,
+      appSecret: metaAppSecret,
     });
 
     stage = 'drain_binding';
@@ -398,9 +433,10 @@ export async function onRequestPost(context) {
     const body = { ok: false, error: safeError };
     if (safeError === 'meta_request_failed') {
       body.graph_code = Number.isInteger(error?.graphCode) ? error.graphCode : null;
+      body.graph_subcode = Number.isInteger(error?.graphSubcode) ? error.graphSubcode : null;
       body.upstream_status = Number.isInteger(error?.upstreamStatus) ? error.upstreamStatus : null;
     }
-    return json(body, status >= 400 && status <= 599 ? status : 500);
+    return json(body, edgeSafeStatus(status));
   }
 }
 
@@ -412,6 +448,8 @@ export function onRequest(context) {
 export const __testing = {
   approvedArtists: APPROVED_ARTISTS,
   bearerToken,
+  binding,
+  edgeSafeStatus,
   noFollowFetch,
   requireServerConfiguration,
   extractUniqueWhatsappTargetIds,

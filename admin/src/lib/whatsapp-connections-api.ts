@@ -172,7 +172,14 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
 
       const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
       if (!response.ok) {
-        const error = payload && typeof payload.error === 'string' ? payload.error : 'provisioning_failed';
+        // A failure without a JSON body did not come from the provisioning
+        // endpoint, which always answers in JSON: something between it and the
+        // browser replaced the response. Reporting the status keeps that case
+        // distinguishable from a genuine backend error instead of collapsing
+        // every one of them into the same opaque string.
+        const error = payload && typeof payload.error === 'string'
+          ? payload.error
+          : `provisioning_failed_http_${response.status}`;
         throw new ApiError(`WhatsApp provisioning failed: ${error}.`);
       }
       return assertProvisioningResponse(payload, expectedIntegrationKey);

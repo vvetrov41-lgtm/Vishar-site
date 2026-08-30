@@ -175,7 +175,9 @@ assert.deepEqual(__testing.approvedArtists, {
     request: request(bodyFor(KRISTINA_ID)),
     env: env({ META_APP_SECRET: '' }),
   });
-  assert.equal(response.status, 503);
+  // 500, not 503: the Cloudflare edge replaces a 503 from a Pages Function with
+  // its own HTML page, which would strip this JSON body before the CRM read it.
+  assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { ok: false, error: 'server_not_configured' });
 }
 
@@ -307,6 +309,122 @@ assert.deepEqual(__testing.approvedArtists, {
     assert.equal(response.status, 409);
     assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_selection_ambiguous' });
     assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// The Cloudflare edge replaces a 502/503/504 returned from a Pages Function
+// with its own HTML error page, so the JSON error contract never reaches the
+// browser and every upstream failure reads as a bare "provisioning_failed" in
+// the CRM. Production proved it: a 79-byte JSON body left the handler and the
+// edge served 6857 bytes of HTML. No classified failure may answer with one of
+// those statuses.
+{
+  assert.equal(__testing.edgeSafeStatus(502), 500, 'a 502 is replaced by the edge');
+  assert.equal(__testing.edgeSafeStatus(503), 500, 'a 503 is replaced by the edge');
+  assert.equal(__testing.edgeSafeStatus(504), 500, 'a 504 is replaced by the edge');
+  assert.equal(__testing.edgeSafeStatus(500), 500);
+  assert.equal(__testing.edgeSafeStatus(409), 409, 'client errors keep their status');
+  assert.equal(__testing.edgeSafeStatus(401), 401);
+  assert.equal(__testing.edgeSafeStatus(undefined), 500);
+}
+
+// Every failure path, whatever it throws, must answer in JSON with a status the
+// edge passes through untouched.
+{
+  const originalFetch = globalThis.fetch;
+  const failures = [
+    ['crm auth transport', async () => { throw new TypeError('network boom'); }],
+    ['meta app secret', async (url) => (String(url).includes('/oauth/access_token')
+      ? Response.json({ error: { message: 'Error validating client secret.', type: 'OAuthException', code: 1 } }, { status: 400 })
+      : null)],
+    ['meta upstream', async (url) => (String(url).includes('/oauth/access_token')
+      ? Response.json({ error: { message: 'nope', type: 'OAuthException', code: 100, error_subcode: 36007 } }, { status: 400 })
+      : null)],
+    ['binding write', async (url) => (String(url).includes('/workers/scripts/')
+      ? Response.json({ success: false }, { status: 500 })
+      : null)],
+  ];
+  for (const [name, override] of failures) {
+    const calls = [];
+    const base = authorizedFetch(calls, { artistId: KRISTINA_ID });
+    globalThis.fetch = async (url, init = {}) => (await override(url, init)) ?? base(url, init);
+    try {
+      const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+      assert.ok(
+        response.status < 500 || response.status === 500,
+        `${name}: status ${response.status} must not be one the edge replaces`,
+      );
+      assert.ok(![502, 503, 504].includes(response.status), `${name}: returned an edge-replaced status`);
+      assert.match(response.headers.get('content-type') || '', /application\/json/, `${name}: not JSON`);
+      const payload = await response.json();
+      assert.equal(typeof payload.error, 'string', `${name}: missing string error`);
+      assert.equal(payload.ok, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+}
+
+// Graph reports a rejected client secret as OAuthException code 1 on the token
+// exchange; that is a binding problem no number of fresh authorization codes can
+// fix, so it gets its own name rather than a generic Meta failure.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const base = authorizedFetch(calls, { artistId: KRISTINA_ID });
+  globalThis.fetch = async (url, init = {}) => (String(url).includes('/oauth/access_token')
+    ? Response.json({ error: { message: 'Error validating client secret.', type: 'OAuthException', code: 1 } }, { status: 400 })
+    : base(url, init));
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_app_secret_invalid' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// A spent or malformed authorization code is code 100 and stays a Meta error,
+// carrying the subcode so the operator can tell the two apart.
+{
+  const originalFetch = globalThis.fetch;
+  const base = authorizedFetch([], { artistId: KRISTINA_ID });
+  globalThis.fetch = async (url, init = {}) => (String(url).includes('/oauth/access_token')
+    ? Response.json({ error: { type: 'OAuthException', code: 100, error_subcode: 36007 } }, { status: 400 })
+    : base(url, init));
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.deepEqual(await response.json(), {
+      ok: false, error: 'meta_request_failed', graph_code: 100, graph_subcode: 36007, upstream_status: 400,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// Secrets are pasted by hand into the Pages dashboard. A trailing newline is
+// invisible there and makes Meta reject the app secret outright, so every
+// binding is trimmed before it is sent anywhere.
+{
+  assert.equal(__testing.binding({ A: '  value\n' }, 'A'), 'value');
+  assert.equal(__testing.binding({ A: 42 }, 'A'), '');
+  assert.equal(__testing.binding({}, 'A'), '');
+
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { artistId: KRISTINA_ID });
+  try {
+    const response = await onRequestPost({
+      request: request(bodyFor(KRISTINA_ID)),
+      env: env({ META_APP_SECRET: '  meta-app-secret-for-unit-test-only\n' }),
+    });
+    assert.equal(response.status, 200);
+    const exchange = calls.find((call) => call.target.includes('/oauth/access_token'));
+    assert.equal(new URL(exchange.target).searchParams.get('client_secret'), 'meta-app-secret-for-unit-test-only');
+    const write = calls.find((call) => call.target.includes('/workers/scripts/'));
+    assert.equal(JSON.parse(String(write.init.body)).text.includes('\n'), false, 'envelope carried raw whitespace');
   } finally {
     globalThis.fetch = originalFetch;
   }
