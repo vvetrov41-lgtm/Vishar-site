@@ -228,13 +228,22 @@ async function graph(url, init = {}) {
 }
 
 async function exchangeCode(code, appSecret) {
-  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/oauth/access_token`);
-  url.searchParams.set('client_id', APP_ID);
-  url.searchParams.set('client_secret', appSecret);
-  url.searchParams.set('code', code);
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/oauth/access_token`;
+  const form = new URLSearchParams({
+    client_id: APP_ID,
+    client_secret: appSecret,
+    code,
+  });
   let payload;
   try {
-    payload = await graph(url.toString(), { method: 'GET' });
+    payload = await graph(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        accept: 'application/json',
+      },
+      body: form.toString(),
+    });
   } catch (error) {
     // Graph reports a rejected client secret as OAuthException code 1 on this
     // endpoint; a malformed or spent authorization code is code 100 instead.
