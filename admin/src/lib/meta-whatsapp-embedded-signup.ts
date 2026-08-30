@@ -72,6 +72,7 @@ export type WhatsAppEmbeddedSignupErrorCode =
   | 'WA_META_PROVIDER_ERROR'
   | 'WA_META_FINISH_MISSING_WABA'
   | 'WA_META_FINISH_MISSING_PHONE'
+  | 'WA_META_FINISH_WAITING_FOR_CODE'
   | 'WA_META_TIMEOUT_WAITING_FOR_LOGIN'
   | 'WA_META_TIMEOUT_WAITING_FOR_SESSION';
 
@@ -169,8 +170,9 @@ const ENGLISH_ERROR_COPY: Record<WhatsAppEmbeddedSignupErrorCode, string> = {
   WA_META_PROVIDER_ERROR: 'Meta reported an Embedded Signup error.',
   WA_META_FINISH_MISSING_WABA: 'Meta finished onboarding without a WhatsApp Business Account id.',
   WA_META_FINISH_MISSING_PHONE: 'Meta finished standard onboarding without a phone-number id.',
+  WA_META_FINISH_WAITING_FOR_CODE: 'Meta finished the WhatsApp selection but the Facebook login callback returned no authorization code.',
   WA_META_TIMEOUT_WAITING_FOR_LOGIN: 'Meta Embedded Signup timed out while waiting for the login callback.',
-  WA_META_TIMEOUT_WAITING_FOR_SESSION: 'Meta Embedded Signup timed out while waiting for the onboarding session.',
+  WA_META_TIMEOUT_WAITING_FOR_SESSION: 'Meta Embedded Signup returned an authorization code but did not return the WhatsApp onboarding session.',
 };
 
 const RUSSIAN_ERROR_COPY: Record<WhatsAppEmbeddedSignupErrorCode, string> = {
@@ -186,8 +188,9 @@ const RUSSIAN_ERROR_COPY: Record<WhatsAppEmbeddedSignupErrorCode, string> = {
   WA_META_PROVIDER_ERROR: 'Meta сообщила об ошибке Embedded Signup.',
   WA_META_FINISH_MISSING_WABA: 'Meta завершила подключение без идентификатора WhatsApp Business Account.',
   WA_META_FINISH_MISSING_PHONE: 'Meta завершила обычное подключение без идентификатора номера.',
-  WA_META_TIMEOUT_WAITING_FOR_LOGIN: 'Истекло время ожидания ответа окна входа Meta.',
-  WA_META_TIMEOUT_WAITING_FOR_SESSION: 'Истекло время ожидания данных сессии Embedded Signup.',
+  WA_META_FINISH_WAITING_FOR_CODE: 'Meta завершила выбор WhatsApp, но callback входа Facebook не вернул authorization code.',
+  WA_META_TIMEOUT_WAITING_FOR_LOGIN: 'Meta не вернула callback входа в CRM за отведённое время.',
+  WA_META_TIMEOUT_WAITING_FOR_SESSION: 'Meta вернула authorization code, но не вернула данные сессии WhatsApp.',
 };
 
 export function describeWhatsAppEmbeddedSignupError(
@@ -297,10 +300,18 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
     let authorizationCode: string | null = null;
     let finishedSession: EmbeddedSignupMessage | null = null;
     let settled = false;
+    let phaseTimeout: number | null = null;
+
+    const clearPhaseTimeout = () => {
+      if (phaseTimeout === null) return;
+      window.clearTimeout(phaseTimeout);
+      phaseTimeout = null;
+    };
 
     const cleanup = () => {
       window.removeEventListener('message', onMessage);
       window.clearTimeout(timeout);
+      clearPhaseTimeout();
     };
 
     const rejectOnce = (error: Error) => {
@@ -308,6 +319,13 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
       settled = true;
       cleanup();
       reject(error);
+    };
+
+    const armPhaseTimeout = (code: WhatsAppEmbeddedSignupErrorCode) => {
+      clearPhaseTimeout();
+      phaseTimeout = window.setTimeout(() => {
+        rejectOnce(new WhatsAppEmbeddedSignupError(code));
+      }, 20000);
     };
 
     const maybeResolve = () => {
@@ -344,23 +362,30 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
         return;
       }
       finishedSession = parsed;
+      if (!authorizationCode) armPhaseTimeout('WA_META_FINISH_WAITING_FOR_CODE');
       maybeResolve();
     };
 
     window.addEventListener('message', onMessage);
     const timeout = window.setTimeout(() => {
       rejectOnce(new WhatsAppEmbeddedSignupError(
-        authorizationCode
-          ? 'WA_META_TIMEOUT_WAITING_FOR_SESSION'
-          : 'WA_META_TIMEOUT_WAITING_FOR_LOGIN',
+        finishedSession
+          ? 'WA_META_FINISH_WAITING_FOR_CODE'
+          : authorizationCode
+            ? 'WA_META_TIMEOUT_WAITING_FOR_SESSION'
+            : 'WA_META_TIMEOUT_WAITING_FOR_LOGIN',
       ));
-    }, 10 * 60 * 1000);
+    }, 60000);
 
     // FB.login must run synchronously inside the click gesture. Awaiting SDK
     // loading here makes iOS/WebKit treat the Meta window as an unsolicited popup.
     fb.login((response) => {
       const code = response.authResponse?.code?.trim() || '';
       if (!code) {
+        if (finishedSession) {
+          rejectOnce(new WhatsAppEmbeddedSignupError('WA_META_FINISH_WAITING_FOR_CODE'));
+          return;
+        }
         const reason: WhatsAppEmbeddedSignupErrorCode = response.status === 'not_authorized'
           ? 'WA_META_LOGIN_NOT_AUTHORIZED'
           : response.status === 'unknown'
@@ -374,6 +399,8 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
         return;
       }
       authorizationCode = code;
+      clearPhaseTimeout();
+      if (!finishedSession) armPhaseTimeout('WA_META_TIMEOUT_WAITING_FOR_SESSION');
       maybeResolve();
     }, {
       config_id: META_WHATSAPP_CONFIG_ID,
