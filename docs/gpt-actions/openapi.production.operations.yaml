@@ -5,8 +5,8 @@ info:
   description: >-
     Operational private OAuth-authenticated CRM actions for the active server-owned
     Artist context. The Artist is derived from the signed-in CRM profile and current
-    context; no ordinary operation accepts artist_id. Legacy artist-bound GPT clients
-    remain fixed by their server binding.
+    context; ordinary operations never accept an Artist selector. Legacy artist-bound
+    GPT clients remain fixed by their server binding.
 servers:
   - url: https://gpt-operations.vishartattoo.com
     description: Vishar CRM production operations action edge.
