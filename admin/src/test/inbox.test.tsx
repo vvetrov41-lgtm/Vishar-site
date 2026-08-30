@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import {
+  CLIENT_ID,
   CONVERSATION_ID,
   LINKED_CONVERSATION_ID,
   renderWithSession,
@@ -81,12 +82,27 @@ describe('inbox list', () => {
     ).toBe('unmatched');
   });
 
-  it('says plainly that email keeps its own thread model', async () => {
+  it('offers no email channel, because there was never anything behind it', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/inbox' });
     await screen.findByText('Do you do cover ups?');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Email' }));
-    expect(await screen.findByText(/still live on the enquiry/i)).toBeInTheDocument();
+    // The tab returned a hard-coded empty list and an apology. A channel that
+    // cannot be used is worse than one that is not offered.
+    expect(screen.queryByRole('tab', { name: 'Email' })).not.toBeInTheDocument();
+  });
+
+  it('separates who is waiting on a reply from what has merely been read', async () => {
+    renderWithSession(<App />, { role: 'booking_manager', path: '/inbox' });
+    await screen.findByText('Do you do cover ups?');
+
+    // The Instagram sender wrote last; the WhatsApp thread was answered.
+    expect(screen.getAllByText('Needs reply')).toHaveLength(2); // the filter and the badge
+    expect(screen.getByText('You replied last')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Needs reply' }));
+
+    await waitFor(() => expect(screen.queryByText('Thanks, see you then')).not.toBeInTheDocument());
+    expect(screen.getByText('Do you do cover ups?')).toBeInTheDocument();
   });
 });
 
@@ -185,6 +201,20 @@ describe('conversation detail', () => {
   it('tells the operator that the provider messaging window applies', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: `/inbox/${LINKED_CONVERSATION_ID}` });
     expect(await screen.findByText(/provider messaging window/i)).toBeInTheDocument();
+  });
+
+  it('carries the client\'s booking and deposit state into the conversation', async () => {
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/inbox/${LINKED_CONVERSATION_ID}`,
+    });
+
+    // Replying used to mean leaving the thread to find out whether they were
+    // booked or had paid. Both answers are now on the screen being replied on.
+    const name = await screen.findByRole('link', { name: 'Fixture Client' });
+    expect(name).toHaveAttribute('href', `#/clients/${CLIENT_ID}`);
+    expect(await screen.findByText('Raven sleeve')).toBeInTheDocument();
+    expect(await screen.findByText(/Deposit: requested/)).toBeInTheDocument();
   });
 
   it('gives a read-only session history but no composer', async () => {

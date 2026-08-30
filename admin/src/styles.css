@@ -489,6 +489,25 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   padding-inline: 12px;
 }
 
+/* Client context carried onto another screen (the conversation, today). */
+.client-context-strip {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.client-context-name {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.client-context-facts { display: block; margin-top: 2px; }
+
 /* Client workspace ------------------------------------------------------- */
 
 .client-workspace-header .client-workspace-name {

@@ -243,7 +243,7 @@ describe('needs you now', () => {
     const snapshot = summariseToday(input({
       appointments: [appointment({ status: 'confirmed' })],
       projects: [project({ deposit_status: 'paid' })],
-      conversations: [conversation({ has_unread: false })],
+      conversations: [conversation({ has_unread: false, latest_direction: 'outbound' })],
       enquiries: [enquiry({ status: 'converted' })],
       followUps: [followUp({ due_at: '2026-09-30T09:00:00Z' })],
       reconciliationCandidates: [candidate({ confirmed: true })],

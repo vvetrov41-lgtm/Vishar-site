@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
+import { RouterProvider } from '../lib/router';
 import type { Api } from '../lib/api';
 
 const ENQUIRY_ID = 'e1111111-1111-4111-8111-111111111111';
@@ -29,15 +30,17 @@ function apiStub(overrides: Partial<Api> = {}): Api {
 
 function renderPanel(api: Api, options: { phone?: string | null; role?: 'owner' | 'booking_manager' | 'read_only' } = {}) {
   return render(
-    <EnquiryWhatsAppPanel
-      api={api}
-      enquiryId={ENQUIRY_ID}
-      clientId={CLIENT_ID}
-      artistId={ARTIST_ID}
-      phone={options.phone ?? '+44 7700 900123'}
-      role={options.role ?? 'booking_manager'}
-      language="en"
-    />
+    <RouterProvider initialPath={`/enquiries/${ENQUIRY_ID}`}>
+      <EnquiryWhatsAppPanel
+        api={api}
+        enquiryId={ENQUIRY_ID}
+        clientId={CLIENT_ID}
+        artistId={ARTIST_ID}
+        phone={options.phone ?? '+44 7700 900123'}
+        role={options.role ?? 'booking_manager'}
+        language="en"
+      />
+    </RouterProvider>
   );
 }
 
@@ -68,74 +71,48 @@ describe('WhatsApp enquiry panel', () => {
     expect(screen.queryByRole('link', { name: 'Open in WhatsApp' })).not.toBeInTheDocument();
   });
 
-  it('creates a CRM conversation using the enquiry id, then queues through the stored conversation id', async () => {
+  it('creates a CRM conversation using the enquiry id, then links into it', async () => {
     const getConversation = vi.fn()
       .mockResolvedValueOnce(null)
       .mockResolvedValue(conversation);
     const ensureConversation = vi.fn().mockResolvedValue({ conversation_id: CONVERSATION_ID });
-    const queueMessage = vi.fn().mockResolvedValue({
-      message_id: 'm1111111-1111-4111-8111-111111111111',
-      conversation_id: CONVERSATION_ID,
-      status: 'queued',
-    });
     const api = apiStub({
       getWhatsAppConversationForClient: getConversation as Api['getWhatsAppConversationForClient'],
       ensureWhatsAppConversationForEnquiry: ensureConversation as Api['ensureWhatsAppConversationForEnquiry'],
-      queueWhatsAppMessage: queueMessage as Api['queueWhatsAppMessage'],
     });
 
     renderPanel(api);
     fireEvent.click(await screen.findByRole('button', { name: 'Connect conversation to CRM' }));
 
     await waitFor(() => expect(ensureConversation).toHaveBeenCalledWith(ENQUIRY_ID));
-    const composer = await screen.findByLabelText('WhatsApp message');
-    expect(composer).toHaveAttribute('maxlength', '4096');
 
-    fireEvent.change(composer, { target: { value: 'Hello from the CRM' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send via CRM' }));
-
-    await waitFor(() => {
-      expect(queueMessage).toHaveBeenCalledWith(
-        CONVERSATION_ID,
-        'Hello from the CRM',
-        expect.any(String)
-      );
-    });
+    const openConversation = await screen.findByRole('link', { name: 'Open conversation' });
+    expect(openConversation).toHaveAttribute('href', `#/inbox/${CONVERSATION_ID}`);
   });
 
-  it('lets read-only staff view artist-scoped history but exposes no CRM send control', async () => {
+  it('carries no second WhatsApp thread or composer of its own', async () => {
     const api = apiStub({
       getWhatsAppConversationForClient: vi.fn().mockResolvedValue(conversation) as Api['getWhatsAppConversationForClient'],
-      listWhatsAppMessages: vi.fn().mockResolvedValue([
-        {
-          id: 'm2111111-1111-4111-8111-111111111111',
-          direction: 'inbound',
-          origin: 'contact',
-          status: 'received',
-          message_type: 'text',
-          body: 'Hello from the client',
-          created_at: '2026-08-15T08:00:00.000Z',
-        },
-        {
-          id: 'm3111111-1111-4111-8111-111111111111',
-          direction: 'outbound',
-          origin: 'crm',
-          status: 'read',
-          message_type: 'text',
-          body: 'Previous CRM reply',
-          created_at: '2026-08-15T08:01:00.000Z',
-        },
-      ]) as Api['listWhatsAppMessages'],
+    });
+
+    renderPanel(api);
+    await screen.findByRole('link', { name: 'Open conversation' });
+
+    // Two places to reply to one person meant two sets of behaviour to learn
+    // and no single answer to "has this client been answered?".
+    expect(screen.queryByLabelText('WhatsApp message')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send via CRM' })).not.toBeInTheDocument();
+    expect(api.listWhatsAppMessages).not.toHaveBeenCalled();
+  });
+
+  it('lets read-only staff reach the conversation but exposes no connect control', async () => {
+    const api = apiStub({
+      getWhatsAppConversationForClient: vi.fn().mockResolvedValue(conversation) as Api['getWhatsAppConversationForClient'],
     });
 
     renderPanel(api, { role: 'read_only' });
 
-    expect(await screen.findByText('Hello from the client')).toBeInTheDocument();
-    expect(screen.getByText('Previous CRM reply')).toBeInTheDocument();
-    expect(screen.getByText(/← received/)).toBeInTheDocument();
-    expect(screen.getByText(/→ read/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('WhatsApp message')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Send via CRM' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Open conversation' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect conversation to CRM' })).not.toBeInTheDocument();
   });
 });

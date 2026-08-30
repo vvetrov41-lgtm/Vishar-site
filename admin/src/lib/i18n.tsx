@@ -231,6 +231,7 @@ const EN = {
   'clientWorkspace.project': 'Project',
   'clientWorkspace.enquiry': 'Enquiry',
   'clientWorkspace.viewAllBookings': 'All bookings',
+  'clientContext.unavailable': 'Client context could not be loaded.',
 
   'projects.loading': 'Loading projects…',
   'projects.noProjects': 'No projects yet',
@@ -588,6 +589,7 @@ const RU: Record<TranslationKey, string> = {
   'clientWorkspace.project': 'Проект',
   'clientWorkspace.enquiry': 'Заявка',
   'clientWorkspace.viewAllBookings': 'Все записи',
+  'clientContext.unavailable': 'Не удалось загрузить контекст клиента.',
 
   'projects.loading': 'Загружаем проекты…',
   'projects.noProjects': 'Проектов пока нет',

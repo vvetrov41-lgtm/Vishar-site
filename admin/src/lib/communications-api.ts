@@ -112,6 +112,35 @@ function assertConversations(value: unknown): ConversationSummary[] {
 }
 
 /**
+ * "Who is waiting on me?"
+ *
+ * Unread and needing a reply are different questions, and the inbox only
+ * answered the first. Opening a conversation marks it read, so a thread the
+ * operator looked at and did not answer stopped being unread while the client
+ * carried on waiting. Needing a reply means the client spoke last, whatever
+ * anyone has read.
+ *
+ * The two overloads exist because the two reads carry different evidence for
+ * the same fact: the inbox projection knows the direction of the newest
+ * message, and a conversation row knows when each side last spoke.
+ */
+export function conversationNeedsReply(
+  conversation: Pick<ConversationSummary, 'state' | 'latest_direction'>,
+): boolean {
+  return conversation.state === 'open' && conversation.latest_direction === 'inbound';
+}
+
+export function clientConversationNeedsReply(
+  conversation: Pick<ClientConversation, 'state' | 'last_inbound_at' | 'last_outbound_at'>,
+): boolean {
+  if (conversation.state !== 'open') return false;
+  const inbound = conversation.last_inbound_at ? Date.parse(conversation.last_inbound_at) : Number.NaN;
+  if (Number.isNaN(inbound)) return false;
+  const outbound = conversation.last_outbound_at ? Date.parse(conversation.last_outbound_at) : Number.NaN;
+  return Number.isNaN(outbound) || outbound < inbound;
+}
+
+/**
  * A participant label the operator can recognise.
  *
  * A linked conversation shows the client. An unmatched one shows the provider

@@ -19,6 +19,7 @@ import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import { Link, useRouter } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
+import { ClientContextStrip } from '../components/ClientContextStrip';
 import { can } from '../lib/permissions';
 import { useDebouncedValue } from '../lib/use-debounced-value';
 import {
@@ -233,17 +234,23 @@ export function ConversationPage({ conversationId }: { conversationId: string })
           {archived ? <span className="badge">{copy.archived}</span> : null}
         </div>
 
+        {/* Replying without knowing whether they are booked or have paid meant
+            leaving the conversation to find out. The same facts the client
+            workspace leads with are carried here instead. */}
         {conversation.client_id ? (
-          <div className="actions">
-            <Link to={`/clients/${conversation.client_id}`} className="badge">
-              {copy.openClient}
-            </Link>
-            {conversation.enquiry_id ? (
-              <Link to={`/enquiries/${conversation.enquiry_id}`} className="badge">
-                {copy.openEnquiry}
+          <>
+            <ClientContextStrip clientId={conversation.client_id} />
+            <div className="actions">
+              <Link to={`/clients/${conversation.client_id}`} className="badge">
+                {copy.openClient}
               </Link>
-            ) : null}
-          </div>
+              {conversation.enquiry_id ? (
+                <Link to={`/enquiries/${conversation.enquiry_id}`} className="badge">
+                  {copy.openEnquiry}
+                </Link>
+              ) : null}
+            </div>
+          </>
         ) : null}
 
         {mayReply ? (
