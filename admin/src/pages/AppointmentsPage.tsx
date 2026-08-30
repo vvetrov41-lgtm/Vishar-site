@@ -4,6 +4,7 @@ import { ClientPicker } from '../components/ClientPicker';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
 import { beyondAgenda, buildAgenda, pastAppointments } from '../lib/calendar-agenda';
+import { calendarSyncLabel } from '../lib/calendar-sync';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { can } from '../lib/permissions';
@@ -714,17 +715,6 @@ export function clientResponseLabel(response: AppointmentClientResponse, languag
     },
   };
   return labels[language][response];
-}
-
-function calendarSyncLabel(appointment: Appointment, language: Language): string {
-  const labels: Record<Language, Record<Appointment['calendar_sync_status'], string>> = {
-    en: { not_connected: 'not connected', queued: 'queued', synced: 'synced', retrying: 'retrying', failed: 'failed' },
-    ru: { not_connected: 'не подключён', queued: 'в очереди', synced: 'синхронизирован', retrying: 'повторная попытка', failed: 'ошибка' },
-  };
-  const base = labels[language][appointment.calendar_sync_status];
-  return appointment.calendar_sync_status === 'failed' && appointment.calendar_last_error_code
-    ? `${base}: ${appointment.calendar_last_error_code}`
-    : base;
 }
 
 function durationShortcut(minutes: number, language: Language): string {

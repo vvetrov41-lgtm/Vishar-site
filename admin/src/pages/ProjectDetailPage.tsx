@@ -8,6 +8,7 @@ import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
 import { ProjectEstimatePanel } from '../components/ProjectEstimatePanel';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
+import { calendarSyncLabel } from '../lib/calendar-sync';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { Link } from '../lib/router';
 import { can, canAccess } from '../lib/permissions';
@@ -513,17 +514,6 @@ function durationValue(hours: number | null, language: Language): string {
   if (hours === null) return '—';
   if (hours < 1) return durationShortcut(Math.round(hours * 60), language);
   return language === 'ru' ? `${hours} ч` : `${hours} h`;
-}
-
-function calendarSyncLabel(appointment: Appointment, language: Language): string {
-  const labels = {
-    en: { not_connected: 'not connected', queued: 'queued', synced: 'synced', retrying: 'retrying', failed: 'failed' },
-    ru: { not_connected: 'не подключён', queued: 'в очереди', synced: 'синхронизирован', retrying: 'повторная попытка', failed: 'ошибка' },
-  } as const;
-  const base = labels[language][appointment.calendar_sync_status];
-  return appointment.calendar_sync_status === 'failed' && appointment.calendar_last_error_code
-    ? `${base}: ${appointment.calendar_last_error_code}`
-    : base;
 }
 
 function projectStatusLabel(status: ProjectStatus, language: Language): string {

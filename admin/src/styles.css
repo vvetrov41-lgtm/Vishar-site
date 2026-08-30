@@ -334,6 +334,18 @@ a { color: inherit; }
   border: 1px solid var(--border);
   color: var(--muted);
 }
+/* A badge that navigates is a tap target, not decoration. Span badges keep
+   their compact size; only the interactive ones grow, and only where the
+   pointer is a finger. */
+a.badge, button.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+}
+@media (pointer: coarse) {
+  a.badge, button.badge { min-height: var(--tap); }
+}
+
 .badge.ok { color: var(--ok); border-color: rgba(93, 219, 160, 0.4); }
 .badge.warn { color: var(--warn); border-color: rgba(255, 204, 102, 0.4); }
 .badge.danger { color: var(--danger); border-color: rgba(255, 107, 107, 0.4); }

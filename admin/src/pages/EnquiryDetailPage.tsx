@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
+import { EnquiryConsultationPanel } from '../components/EnquiryConsultationPanel';
 import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
 import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
@@ -98,7 +99,16 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   const { transitionOptions, canConvert } = enquiryWorkflowActions(transitions, enquiry.status, role);
   const contactDiffers = submittedContactDiffers(enquiry, client);
   const canAssign = can(role, 'assignEnquiry');
-  const hasWorkflowActions = transitionOptions.length > 0 || canAssign || canConvert;
+  // Booking a consultation is a workflow action, so it belongs with the other
+  // workflow actions. It used to live inside the "Edit enquiry" panel, which
+  // meant it was reached by pressing Edit on a record - and disappeared while
+  // the record was being edited - and inherited that panel's editEnquiry gate
+  // on top of its own manageSessions one.
+  const canBookConsultation = can(role, 'manageSessions');
+  const hasWorkflowActions = transitionOptions.length > 0
+    || canAssign
+    || canConvert
+    || canBookConsultation;
 
   return (
     <>
@@ -198,6 +208,10 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
                 {t('enquiry.convertButton')}
               </button>
             </div>
+          ) : null}
+
+          {canBookConsultation ? (
+            <EnquiryConsultationPanel enquiry={enquiry} onChanged={reload} />
           ) : null}
         </Section>
       ) : null}
