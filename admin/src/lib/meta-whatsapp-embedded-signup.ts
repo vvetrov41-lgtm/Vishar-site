@@ -1,6 +1,5 @@
 export const META_WHATSAPP_APP_ID = '1481226093843982';
 export const META_WHATSAPP_CONFIG_ID = '4468652066715473';
-export const META_WHATSAPP_REDIRECT_URI = 'https://crm.vishartattoo.com/';
 
 const FACEBOOK_SDK_URL = 'https://connect.facebook.net/en_US/sdk.js';
 export const FACEBOOK_ALLOWED_MESSAGE_ORIGINS = new Set([
@@ -22,7 +21,6 @@ interface FacebookSdk {
       config_id: string;
       response_type: 'code';
       override_default_response_type: true;
-      fallback_redirect_uri: string;
       extras: {
         setup: Record<string, never>;
         featureType: 'whatsapp_business_app_onboarding';
@@ -373,7 +371,6 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
       config_id: META_WHATSAPP_CONFIG_ID,
       response_type: 'code',
       override_default_response_type: true,
-      fallback_redirect_uri: META_WHATSAPP_REDIRECT_URI,
       extras: {
         setup: {},
         featureType: 'whatsapp_business_app_onboarding',
