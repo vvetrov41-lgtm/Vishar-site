@@ -474,6 +474,21 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .action-link.primary { background: var(--text); color: #000; border-color: transparent; }
 
+/* Today ------------------------------------------------------------------ */
+
+.today-context {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.today-link {
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  padding-inline: 12px;
+}
+
 /* Client workspace ------------------------------------------------------- */
 
 .client-workspace-header .client-workspace-name {

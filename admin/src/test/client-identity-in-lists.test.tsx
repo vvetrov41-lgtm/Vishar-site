@@ -6,13 +6,13 @@
 // so every triage decision cost a navigation. The record's own identifier is
 // kept as supporting detail rather than removed.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { App } from '../App';
 import { CLIENT_ID, PROJECT_ID, SESSION, renderWithSession } from './fixtures';
 
-// The shared fixture session is `proposed`; the dashboard deliberately lists
-// confirmed work only, so a confirmed one is needed to see the row at all.
+// The shared fixture session is `proposed`; a confirmed one shows what today's
+// schedule looks like when the booking is firm.
 const CONFIRMED_SESSION = {
   ...SESSION,
   id: '77777777-7777-4777-8777-777777777777',
@@ -53,25 +53,34 @@ describe('client identity in lists', () => {
     expect(screen.getByText('Raven sleeve')).toBeInTheDocument();
   });
 
-  it('names the client on a dashboard appointment and links to the appointment', async () => {
-    renderWithSession(<App />, {
-      role: 'owner',
-      path: '/',
-      extraSessions: [CONFIRMED_SESSION],
-    });
+  it("names the client on today's schedule and links to the appointment", async () => {
+    // Pinned to the morning of the fixture booking so "today" means the same
+    // thing on every run.
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date('2026-09-01T08:00:00Z') });
+    try {
+      renderWithSession(<App />, {
+        role: 'owner',
+        path: '/',
+        extraSessions: [CONFIRMED_SESSION],
+      });
 
-    const heading = await screen.findByRole('heading', {
-      level: 2,
-      name: 'Upcoming confirmed sessions',
-    });
-    const section = heading.closest('section') as HTMLElement;
+      const heading = await screen.findByRole('heading', { level: 2, name: 'Today' });
+      const section = heading.closest('section') as HTMLElement;
 
-    const row = await within(section).findByText('Fixture Client');
-    const link = row.closest('a') as HTMLElement;
-    // Previously the row title was the date and the link went to the project.
-    expect(link).toHaveAttribute('href', `#/appointments/${CONFIRMED_SESSION.id}`);
-    expect(link.querySelector('.title')?.textContent).toBe('Fixture Client');
-    // The date survives as supporting detail.
-    expect(link.textContent).toContain('2026');
+      // Both fixture bookings fall on this day, so the row is identified by the
+      // appointment it opens rather than by being the only one named.
+      const rows = await within(section).findAllByText('Fixture Client');
+      const link = rows
+        .map((row) => row.closest('a') as HTMLElement)
+        .find((candidate) => candidate?.getAttribute('href') === `#/appointments/${CONFIRMED_SESSION.id}`);
+
+      // Previously the row title was the date and the link went to the project.
+      expect(link).toBeDefined();
+      expect((link as HTMLElement).querySelector('.title')?.textContent).toBe('Fixture Client');
+      // The date survives as supporting detail.
+      expect((link as HTMLElement).textContent).toContain('2026');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

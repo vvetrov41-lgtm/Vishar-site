@@ -44,7 +44,7 @@ describe('navigation localisation', () => {
       }
     );
 
-    await screen.findByRole('heading', { level: 2, name: 'Заявки' });
+    await screen.findByRole('heading', { level: 2, name: 'Требует внимания' });
 
     const sidebar = container.querySelector('.sidebar-nav') as HTMLElement;
     const labels = within(sidebar)
@@ -76,7 +76,7 @@ describe('navigation localisation', () => {
       }
     );
 
-    await screen.findByRole('heading', { level: 2, name: 'Enquiries' });
+    await screen.findByRole('heading', { level: 2, name: 'Needs you now' });
 
     const sidebar = container.querySelector('.sidebar-nav') as HTMLElement;
     const labels = within(sidebar)

@@ -1,107 +1,159 @@
-import { useApi, useSession } from '../lib/session';
+// Today — the daily triage screen.
+//
+// This was a dashboard of enquiry counters. A counter tells the operator a
+// number and then makes them go somewhere else to act on it, which is the
+// opposite of what the first screen of the day is for. The question being
+// answered here is "what needs me today?", so the screen is a list of things
+// that need them, then what is actually happening today, then what is coming.
+//
+// Every row names a person and opens the place the work is done. Nothing above
+// the schedule is a counter, a form or an instruction.
+
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
+import { formatDate, formatDateTime, relativeDue } from '../lib/format';
+import { useLanguage, type Language } from '../lib/i18n';
+import { can, canAccess } from '../lib/permissions';
 import { Link } from '../lib/router';
-import { can } from '../lib/permissions';
-import { formatDateTime, relativeDue } from '../lib/format';
-import { useLanguage } from '../lib/i18n';
-import { groupFailedJobs, operationalLabel } from '../lib/operational-labels';
-import type { ActivityEntry, CrmSession, Enquiry, FollowUp, OutboxJob } from '../lib/types';
+import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
+import { summariseToday, type TodayItem } from '../lib/today-workspace';
+import { typeLabel } from './AppointmentsPage';
+import type { Appointment } from '../lib/appointment-api';
+import type { ConversationSummary } from '../lib/communications-api';
+import type { MonzoReconciliationCandidate } from '../lib/payment-api';
+import type { ActivityEntry, Enquiry, FollowUp, Project } from '../lib/types';
+import { operationalLabel } from '../lib/operational-labels';
 
-interface DashboardData {
+interface TodayData {
+  appointments: Appointment[];
   enquiries: Enquiry[];
+  projects: Project[];
   followUps: FollowUp[];
-  sessions: CrmSession[];
+  conversations: ConversationSummary[];
+  candidates: MonzoReconciliationCandidate[];
+  failedJobCount: number;
   activity: ActivityEntry[];
-  failedJobs: OutboxJob[];
   clientNames: Map<string, string>;
 }
 
 export function DashboardPage() {
   const api = useApi();
-  const { profile } = useSession();
+  const { profile, memberships } = useSession();
   const { t, label, language } = useLanguage();
   const role = profile?.role;
   const { selectedArtistId } = useArtistScope();
+  const mayManageFinance = canAccess(role, 'manageFinance', memberships);
 
-  const { data, loading, error, reload } = useAsync<DashboardData>(async () => {
-    // Each of these is fetched independently and any one may come back empty
-    // because of row level security rather than because there is nothing there.
-    // The role checks below decide what to *ask* for; the database decides what
-    // comes back.
-    const [enquiries, followUps, sessions, activity, failedJobs] = await Promise.all([
-      api.listEnquiries({ artistId: selectedArtistId ?? undefined }),
-      api.listFollowUps({ open: true, artistId: selectedArtistId ?? undefined }),
-      api.listSessions(undefined, selectedArtistId ?? undefined),
-      can(role, 'viewActivity')
-        ? api.listActivity({ artistId: selectedArtistId ?? undefined })
-        : Promise.resolve([]),
-      can(role, 'viewIntegrationJobs')
-        ? api.listFailedJobs(selectedArtistId ?? undefined)
-        : Promise.resolve([]),
+  const { data, loading, error, reload } = useAsync<TodayData>(async () => {
+    const artistId = selectedArtistId ?? undefined;
+
+    // Each read is asked for only where the role could hold the capability.
+    // The database still decides what comes back.
+    const [appointments, enquiries, projects, followUps, conversations, failedJobs, activity] = await Promise.all([
+      can(role, 'viewSessions') ? api.listAppointments({ artistId }) : Promise.resolve([]),
+      can(role, 'viewEnquiries') ? api.listEnquiries({ artistId }) : Promise.resolve([]),
+      can(role, 'viewProjects') ? api.listProjects(undefined, artistId) : Promise.resolve([]),
+      can(role, 'viewFollowUps') ? api.listFollowUps({ open: true, artistId }) : Promise.resolve([]),
+      can(role, 'viewEnquiries') ? api.listConversations({ limit: 50 }) : Promise.resolve([]),
+      can(role, 'viewIntegrationJobs') ? api.listFailedJobs(artistId) : Promise.resolve([]),
+      can(role, 'viewActivity') ? api.listActivity({ artistId }) : Promise.resolve([]),
     ]);
-    // "Who am I seeing?" is the question this screen exists to answer, and a
-    // date with a duration badge does not answer it.
-    const clients = await api.listClientsByIds(
-      sessions.map((session) => session.client_id)
-    );
+
+    // The finance RPC is per artist. When no artist is chosen, ask for every
+    // artist this operator can reach rather than showing nothing: the Payments
+    // screen used to demand a selection it gave no way to make, and a landing
+    // screen repeating that would be the same defect in a new place. The artist
+    // list is resolved here rather than taken from the scope context so this
+    // read does not restart every time that context finishes loading.
+    const candidates = mayManageFinance
+      ? (await Promise.all(
+        (selectedArtistId
+          ? [selectedArtistId]
+          : (await api.listAccessibleArtists()).filter((artist) => artist.is_active).map((artist) => artist.id)
+        ).map((id) => api.listMonzoReconciliationCandidates(id).catch(() => [])),
+      )).flat()
+      : [];
+
+    // "Who am I seeing?" is the question. A date and a duration badge is not an
+    // answer, so every id that reaches a row is resolved to a name first.
+    const clients = await api.listClientsByIds([
+      ...appointments.map((appointment) => appointment.client_id),
+      ...enquiries.map((enquiry) => enquiry.client_id),
+      ...projects.map((project) => project.client_id),
+    ]);
 
     return {
+      appointments,
       enquiries,
+      projects,
       followUps,
-      sessions,
+      conversations,
+      candidates,
+      failedJobCount: failedJobs.length,
       activity,
-      failedJobs,
       clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
     };
-  }, [api, role, selectedArtistId]);
+  }, [api, role, selectedArtistId, mayManageFinance]);
 
-  if (loading) return <LoadingState label={t('dashboard.loading')} />;
+  if (loading) return <LoadingState label={t('today.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
-  if (!data) return <EmptyState title={t('dashboard.nothing')} />;
+  if (!data) return <EmptyState title={t('today.allClear')} />;
 
   const now = new Date();
-  const newEnquiries = data.enquiries.filter((enquiry) => enquiry.status === 'new');
-  const unassigned = data.enquiries.filter((enquiry) => !enquiry.assigned_to);
-  const waiting = data.enquiries.filter((enquiry) => enquiry.status === 'waiting_for_client');
-  const overdue = data.followUps.filter((followUp) => new Date(followUp.due_at) < now);
-  const upcoming = data.sessions
-    .filter((session) => session.status === 'confirmed' && new Date(session.start_at) >= now)
-    .slice(0, 5);
-  const failedJobGroups = groupFailedJobs(data.failedJobs);
+  const conversations = data.conversations.filter(
+    (conversation) => !selectedArtistId || conversation.artist_id === selectedArtistId,
+  );
+
+  const snapshot = summariseToday({
+    now,
+    appointments: data.appointments,
+    enquiries: data.enquiries,
+    projects: data.projects,
+    followUps: data.followUps,
+    conversations,
+    reconciliationCandidates: data.candidates,
+    failedJobCount: data.failedJobCount,
+    clientName: (clientId) => data.clientNames.get(clientId) ?? null,
+  });
 
   return (
     <>
-      <Section title={t('dashboard.enquiries')}>
-        <div className="dashboard-metrics">
-          <Metric label={t('dashboard.new')} value={newEnquiries.length} />
-          <Metric label={t('dashboard.unassigned')} value={unassigned.length} />
-          <Metric label={t('dashboard.waiting')} value={waiting.length} />
-        </div>
-        <div className="actions">
-          <Link to="/enquiries" className="badge">{t('dashboard.openQueue')}</Link>
-        </div>
-      </Section>
+      <p className="today-context">
+        {formatDate(now.toISOString(), language)} · {sessionCountLabel(language, snapshot.today.length)}
+      </p>
 
-      <Section title={t('dashboard.upcomingSessions')}>
-        {upcoming.length === 0 ? (
-          <EmptyState
-            compact
-            title={t('dashboard.noConfirmedSessions')}
-            hint={t('dashboard.onlyConfirmedSessions')}
-          />
+      <Section title={t('today.needsYou')}>
+        {snapshot.needsYou.length === 0 ? (
+          <EmptyState compact title={t('today.allClear')} hint={t('today.allClearHint')} />
         ) : (
           <div className="list">
-            {upcoming.map((session) => (
-              <Link key={session.id} to={`/appointments/${session.id}`} className="row">
+            {snapshot.needsYou.map((item) => (
+              <NeedsYouRow key={item.key} item={item} now={now} />
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title={t('today.schedule')}
+        action={<Link to="/appointments" className="badge today-link">{t('today.openCalendar')}</Link>}
+      >
+        {snapshot.today.length === 0 ? (
+          <EmptyState compact title={t('today.noSchedule')} hint={t('today.noScheduleHint')} />
+        ) : (
+          <div className="list">
+            {snapshot.today.map((appointment) => (
+              <Link key={appointment.id} to={`/appointments/${appointment.id}`} className="row">
                 <div className="title">
-                  {data.clientNames.get(session.client_id) ?? formatDateTime(session.start_at, language)}
+                  {data.clientNames.get(appointment.client_id) ?? t('today.noSubject')}
                 </div>
                 <div className="meta">
-                  {formatDateTime(session.start_at, language)}{' · '}
-                  <span className="badge ok">{label('sessionStatus', 'confirmed')}</span>{' '}
-                  <span className="badge">{session.duration_hours ?? '—'} {t('common.hoursShort')}</span>
+                  {formatDateTime(appointment.start_at, language)}{' · '}
+                  <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
+                  <span className={appointment.status === 'confirmed' ? 'badge ok' : 'badge warn'}>
+                    {label('sessionStatus', appointment.status)}
+                  </span>
                 </div>
               </Link>
             ))}
@@ -109,76 +161,25 @@ export function DashboardPage() {
         )}
       </Section>
 
-      <Section title={t('dashboard.overdueFollowUps')}>
-        {overdue.length === 0 ? (
-          <EmptyState
-            compact
-            title={t('dashboard.nothingOverdue')}
-            hint={t('dashboard.followUpsAppear')}
-          />
+      <Section title={t('today.ahead')}>
+        {snapshot.ahead.length === 0 ? (
+          <EmptyState compact title={t('today.noAhead')} />
         ) : (
           <div className="list">
-            {overdue.slice(0, 6).map((followUp) => {
-              const due = relativeDue(followUp.due_at, now, language);
-              const target = followUpTarget(followUp);
-              const content = (
-                <>
-                  <div className="title">{followUp.subject}</div>
-                  <div className="meta">
-                    <span className={due.overdue ? 'badge danger' : 'badge'}>{due.label}</span>
-                  </div>
-                </>
-              );
-
-              return target ? (
-                <Link key={followUp.id} to={target} className="row">{content}</Link>
-              ) : (
-                <div key={followUp.id} className="row">{content}</div>
-              );
-            })}
+            {snapshot.ahead.map((appointment) => (
+              <Link key={appointment.id} to={`/appointments/${appointment.id}`} className="row">
+                <div className="title">
+                  {data.clientNames.get(appointment.client_id) ?? t('today.noSubject')}
+                </div>
+                <div className="meta">
+                  {formatDateTime(appointment.start_at, language)}{' · '}
+                  <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>
+                </div>
+              </Link>
+            ))}
           </div>
         )}
       </Section>
-
-      {can(role, 'viewIntegrationJobs') ? (
-        <Section title={t('dashboard.failedJobs')}>
-          {failedJobGroups.length === 0 ? (
-            <EmptyState
-              compact
-              title={t('dashboard.nothingFailed')}
-              hint={t('dashboard.queueFailureHint')}
-            />
-          ) : (
-            <div className="list">
-              {failedJobGroups.map((group) => (
-                <div key={group.key} className="row">
-                  <div className="title">
-                    {operationalLabel(language, 'integrationKind', group.kind)}
-                  </div>
-                  <div className="meta">
-                    <span
-                      className="badge danger"
-                      title={group.errorCode ?? group.status}
-                    >
-                      {operationalLabel(
-                        language,
-                        'integrationError',
-                        group.errorCode ?? group.status
-                      )}
-                    </span>{' '}
-                    {failedCountLabel(language, group.count)} ·{' '}
-                    {t('common.attemptOf', {
-                      attempt: group.latestJob.attempt_count,
-                      max: group.latestJob.max_attempts,
-                      date: formatDateTime(group.latestJob.updated_at, language),
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
-      ) : null}
 
       {can(role, 'viewActivity') ? (
         <Section title={t('dashboard.recentActivity')}>
@@ -204,33 +205,70 @@ export function DashboardPage() {
   );
 }
 
-function followUpTarget(followUp: FollowUp): string | null {
-  if (followUp.enquiry_id) return `/enquiries/${followUp.enquiry_id}`;
-  if (followUp.project_id) return `/projects/${followUp.project_id}`;
-  if (followUp.client_id) return `/clients/${followUp.client_id}`;
-  return null;
+/**
+ * One thing that needs the operator. The person is the row title; what is
+ * wanted and when is the line beneath it. Tapping the row opens where the work
+ * is done, never a list the operator then has to search.
+ */
+function NeedsYouRow({ item, now }: { item: TodayItem; now: Date }) {
+  const { t, label, language } = useLanguage();
+
+  const kindLabel = t(`today.item.${item.kind}`);
+  // A row about a person is titled with the person. A row about the system - a
+  // batch of failed integration jobs - has no person to name, so it is titled
+  // with what happened rather than with an apology for a missing name.
+  const title = item.subject ?? kindLabel;
+
+  const when = item.kind === 'overdue_follow_up' && item.at
+    ? relativeDue(item.at, now, language).label
+    : item.at
+      ? formatDateTime(item.at, language)
+      : null;
+
+  const detail = item.kind === 'deposit_outstanding' && item.detail
+    ? label('depositStatus', item.detail)
+    : item.kind === 'integration_failure' && item.detail
+      ? t('today.failedJobs', { count: item.detail })
+      : item.kind === 'reply' && item.detail
+        ? channelLabel(item.detail)
+        : item.detail;
+
+  const content = (
+    <>
+      <div className="title">{title}</div>
+      <div className="meta">
+        {item.subject ? (
+          <><span className={item.urgent ? 'badge warn' : 'badge'}>{kindLabel}</span>{' '}</>
+        ) : null}
+        {detail ? <><span className="badge">{detail}</span>{' '}</> : null}
+        {when}
+      </div>
+    </>
+  );
+
+  return item.href
+    ? <Link to={item.href} className="row">{content}</Link>
+    : <div className="row">{content}</div>;
 }
 
-function failedCountLabel(language: 'en' | 'ru', count: number): string {
-  if (language === 'en') return `${count} ${count === 1 ? 'failure' : 'failures'}`;
+/** Channel names are product names; they are the same in both languages. */
+function channelLabel(channel: string): string {
+  if (channel === 'whatsapp') return 'WhatsApp';
+  if (channel === 'instagram') return 'Instagram';
+  return channel;
+}
+
+function sessionCountLabel(language: Language, count: number): string {
+  if (language === 'en') return `${count} ${count === 1 ? 'session' : 'sessions'} today`;
 
   const lastTwo = count % 100;
   const last = count % 10;
   const noun = lastTwo >= 11 && lastTwo <= 14
-    ? 'ошибок'
+    ? 'сеансов'
     : last === 1
-      ? 'ошибка'
+      ? 'сеанс'
       : last >= 2 && last <= 4
-        ? 'ошибки'
-        : 'ошибок';
-  return `${count} ${noun}`;
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="stat dashboard-metric">
-      <span className="value">{value}</span>
-      <span className="label">{label}</span>
-    </div>
-  );
+        ? 'сеанса'
+        : 'сеансов';
+  return `сегодня ${count} ${noun}`;
 }
