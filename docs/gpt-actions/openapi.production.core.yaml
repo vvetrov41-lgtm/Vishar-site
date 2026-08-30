@@ -102,7 +102,7 @@ paths:
   /v1/enquiries/manual:
     post:
       operationId: createManualEnquiry
-      summary: Create a manual enquiry for this fixed artist
+      summary: Create a manual enquiry in the active GPT artist context
       description: Requires confirmed privacy acknowledgement. Generate one UUID request_id and reuse it only for an identical retry.
       x-openai-isConsequential: true
       requestBody:
@@ -415,7 +415,7 @@ components:
           authorizationUrl: https://gpt-actions.vishartattoo.com/oauth/authorize
           tokenUrl: https://gpt-actions.vishartattoo.com/oauth/token
           scopes:
-            email: Authenticate the CRM user. CRM membership, fixed OAuth artist binding and operation capabilities remain authoritative.
+            email: Authenticate the CRM user. CRM membership, server-owned active Artist context, GPT client capability ceiling and operation capabilities remain authoritative.
   schemas:
     ClientEditableFields:
       type: object
