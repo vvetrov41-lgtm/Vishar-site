@@ -48,6 +48,31 @@ export interface ConversationDetail {
   last_message_at: string | null;
 }
 
+/**
+ * A client's own conversations, whatever channel they arrived on.
+ *
+ * The inbox RPC is keyset-paginated across every conversation the operator can
+ * reach, which answers "who is waiting?" but not "what has this client said?".
+ * Reading the conversation rows for one client directly is the same row level
+ * security boundary the RPC enforces (`can_access_artist`), scoped by client
+ * instead of by page, so the client workspace needs no new database surface.
+ */
+export interface ClientConversation {
+  id: string;
+  artist_id: string;
+  channel: CommunicationChannel;
+  link_state: CommunicationLinkState;
+  state: CommunicationConversationState;
+  client_id: string | null;
+  enquiry_id: string | null;
+  external_username: string | null;
+  external_display_label: string | null;
+  last_message_at: string | null;
+  last_inbound_at: string | null;
+  last_outbound_at: string | null;
+  operator_read_at: string | null;
+}
+
 export interface ConversationMessage {
   id: string;
   direction: CommunicationDirection;
@@ -139,6 +164,28 @@ export function createCommunicationsApi(client: CrmClient) {
         .maybeSingle();
       if (result.error) throw new ApiError('Could not load that conversation.', result.error);
       return (result.data as ConversationDetail | null) ?? null;
+    },
+
+    /**
+     * Conversations belonging to one client, newest activity first.
+     *
+     * Bounded deliberately: a client workspace shows recent threads, not an
+     * archive. Rows carry no message body — the preview is fetched per thread
+     * only where one is actually rendered.
+     */
+    async listConversationsForClient(clientId: string, limit = 10): Promise<ClientConversation[]> {
+      const result = await client
+        .from('communication_conversations')
+        .select(
+          'id, artist_id, channel, link_state, state, client_id, enquiry_id, '
+          + 'external_username, external_display_label, last_message_at, '
+          + 'last_inbound_at, last_outbound_at, operator_read_at',
+        )
+        .eq('client_id', clientId)
+        .order('last_message_at', { ascending: false })
+        .limit(limit);
+      if (result.error) throw new ApiError('Could not load that client\'s conversations.', result.error);
+      return (result.data ?? []) as ClientConversation[];
     },
 
     // History is loaded per conversation and bounded. The inbox never pulls

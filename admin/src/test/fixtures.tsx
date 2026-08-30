@@ -610,10 +610,15 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         options.enquiryStatus,
         options.extraSessions
       );
+    // PostgREST applies `eq` server-side, so the fake does too. Without this a
+    // screen that scopes a read by client, project or status would "pass" while
+    // rendering rows the database would never have returned.
+    const filters: { column: string; value: unknown }[] = [];
     const chain: any = {
       select: () => chain,
       eq: (...args: unknown[]) => {
         queryCalls.push({ table, method: 'eq', args });
+        if (typeof args[0] === 'string') filters.push({ column: args[0], value: args[1] });
         return chain;
       },
       is: (...args: unknown[]) => {
@@ -634,13 +639,33 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       },
       order: () => chain,
       limit: () => chain,
-      maybeSingle: () =>
-        Promise.resolve({
-          data: Array.isArray(result.data) ? (result.data[0] ?? null) : result.data,
+      maybeSingle: () => {
+        const filtered = applyFilters(result.data);
+        return Promise.resolve({
+          data: Array.isArray(filtered) ? (filtered[0] ?? null) : filtered,
           error: result.error,
-        }),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+        });
+      },
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({ data: applyFilters(result.data), error: result.error }).then(resolve),
     };
+
+    /**
+     * Only columns the fixture row actually carries are filtered on. A filter
+     * naming a column the fixture does not model is left alone rather than
+     * silently emptying the result, so adding a column to the interface does not
+     * quietly blank an unrelated screen.
+     */
+    function applyFilters(data: unknown): unknown {
+      if (!Array.isArray(data) || filters.length === 0) return data;
+      return data.filter((row: any) => filters.every(({ column, value }) => (
+        row === null
+        || typeof row !== 'object'
+        || !(column in row)
+        || row[column] === value
+      )));
+    }
+
     return chain;
   }
 

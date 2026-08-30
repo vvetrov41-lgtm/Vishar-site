@@ -517,13 +517,14 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       );
     },
 
-    async listFollowUps(filter: { enquiryId?: string; open?: boolean; artistId?: string } = {}): Promise<FollowUp[]> {
+    async listFollowUps(filter: { enquiryId?: string; clientId?: string; open?: boolean; artistId?: string } = {}): Promise<FollowUp[]> {
       let query = client
         .from('follow_ups')
         .select('id, artist_id, status, due_at, subject, details, client_id, enquiry_id, project_id, assigned_to')
         .order('due_at', { ascending: true })
         .limit(100);
       if (filter.enquiryId) query = query.eq('enquiry_id', filter.enquiryId);
+      if (filter.clientId) query = query.eq('client_id', filter.clientId);
       if (filter.open) query = query.eq('status', 'open');
       if (filter.artistId) query = query.eq('artist_id', filter.artistId);
       return unwrap<FollowUp[]>(await query, 'load follow-ups');
