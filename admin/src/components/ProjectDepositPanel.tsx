@@ -40,6 +40,14 @@ export function ProjectDepositPanel({
     () => requests.filter((request) => request.purpose === 'deposit'),
     [requests]
   );
+  const openDepositRequest = useMemo(
+    () => depositRequests.find(
+      (request) =>
+        request.outstanding_amount > 0
+        && ['pending', 'partially_paid'].includes(request.status)
+    ) ?? null,
+    [depositRequests]
+  );
   const legacyPaid = project.deposit_status === 'paid' && (finance?.deposit_amount ?? 0) > 0;
   const currency = preview?.currency ?? project.currency;
   const calculatedAmount = preview?.calculable ? preview.amount ?? null : null;
@@ -53,6 +61,11 @@ export function ProjectDepositPanel({
     preview?.suggested_amount == null
       ? null
       : formatMoney(preview.suggested_amount, currency, language);
+  const manualProjectAmount = openDepositRequest?.outstanding_amount ?? calculatedAmount;
+  const manualProjectCurrency = openDepositRequest?.currency ?? currency;
+  const formattedManualProjectAmount = manualProjectAmount == null
+    ? null
+    : formatMoney(manualProjectAmount, manualProjectCurrency, language);
 
   async function reload() {
     setLoading(true);
@@ -115,6 +128,38 @@ export function ProjectDepositPanel({
       onChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : copy.requestFailed);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function confirmProjectDepositManually() {
+    if (!formattedManualProjectAmount) return;
+    const approved = await confirmDialog({
+      title: copy.manualProjectConfirmTitle,
+      message: copy.manualProjectConfirm(formattedManualProjectAmount),
+      confirmLabel: copy.manualProjectConfirmAction,
+      cancelLabel: cancelLabelFor(language),
+    });
+    if (!approved) return;
+
+    setBusy('manual-project');
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.confirmProjectDepositManually({ projectId: project.id });
+      setCreated(null);
+      setNotice(
+        result.already_paid && result.manually_recorded === 0
+          ? copy.manualProjectAlreadyPaid
+          : copy.manualProjectConfirmed(
+              formatMoney(result.manually_recorded, result.currency, language)
+            )
+      );
+      await reload();
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.manualProjectFailed);
     } finally {
       setBusy(null);
     }
@@ -250,6 +295,27 @@ export function ProjectDepositPanel({
           ) : null}
         </div>
       ) : null}
+
+      {!loading
+        && project.deposit_status !== 'paid'
+        && formattedManualProjectAmount ? (
+          <div className="card" style={{ marginTop: 18 }}>
+            <h3 style={{ fontSize: '1rem', marginBottom: 6 }}>{copy.manualProjectTitle}</h3>
+            <p className="notice">{copy.manualProjectHelp}</p>
+            <div className="actions" style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy !== null}
+                onClick={() => { void confirmProjectDepositManually(); }}
+              >
+                {busy === 'manual-project'
+                  ? copy.saving
+                  : copy.manualProjectAction(formattedManualProjectAmount)}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
       {created ? (
         <div className="notice ok" role="status" style={{ marginTop: 12 }}>
@@ -500,6 +566,15 @@ const COPY = {
     stepLink: '2. Payment link',
     linkHelp: (amount: string) => `The next button creates a payment request for exactly ${amount}. After that, the amount is locked for this request.`,
     createRequest: (amount: string) => `Create deposit link for ${amount}`,
+    manualProjectTitle: 'Alternative: confirm deposit manually',
+    manualProjectHelp: 'Use this only after you have independently verified that the deposit was received. CRM records a human manual settlement and does not create or match a bank transaction.',
+    manualProjectAction: (amount: string) => `Confirm ${amount} deposit manually`,
+    manualProjectConfirm: (amount: string) => `Confirm that ${amount} has already been received? No bank transaction will be created or matched.`,
+    manualProjectConfirmTitle: 'Confirm deposit manually?',
+    manualProjectConfirmAction: 'Confirm deposit',
+    manualProjectConfirmed: (amount: string) => `Deposit confirmed manually. ${amount} was recorded as received.`,
+    manualProjectAlreadyPaid: 'The deposit was already fully paid.',
+    manualProjectFailed: 'Could not confirm the project deposit manually.',
     projectEstimate: 'Project estimate',
     depositPolicy: 'Deposit policy',
     paymentDestination: 'Payment destination',
@@ -565,6 +640,15 @@ const COPY = {
     stepLink: '2. Ссылка на оплату',
     linkHelp: (amount: string) => `Следующая кнопка создаст запрос ровно на ${amount}. После создания сумма этого запроса уже не меняется.`,
     createRequest: (amount: string) => `Создать ссылку на депозит ${amount}`,
+    manualProjectTitle: 'Альтернатива: подтвердить депозит вручную',
+    manualProjectHelp: 'Используй только если ты сам проверил, что депозит получен. CRM запишет ручное подтверждение сотрудником и не будет создавать или сопоставлять банковский платёж.',
+    manualProjectAction: (amount: string) => `Подтвердить депозит ${amount} вручную`,
+    manualProjectConfirm: (amount: string) => `Подтвердить, что ${amount} уже получены? Банковский платёж не будет создан или сопоставлен.`,
+    manualProjectConfirmTitle: 'Подтвердить депозит вручную?',
+    manualProjectConfirmAction: 'Подтвердить депозит',
+    manualProjectConfirmed: (amount: string) => `Депозит подтверждён вручную. Зафиксировано получение ${amount}.`,
+    manualProjectAlreadyPaid: 'Депозит уже полностью оплачен.',
+    manualProjectFailed: 'Не удалось подтвердить депозит вручную.',
     projectEstimate: 'Смета проекта',
     depositPolicy: 'Правило депозита',
     paymentDestination: 'Платёжная ссылка',
