@@ -1,6 +1,7 @@
 const APP_ID = '1481226093843982';
 const GRAPH_VERSION = 'v25.0';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
+const META_OAUTH_REDIRECT_URI = `${PRODUCTION_CRM_ORIGIN}/`;
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const WEBHOOK_WORKER = 'vishar-whatsapp-webhook-production';
 const DRAIN_WORKER = 'vishar-whatsapp-drain-production';
@@ -18,13 +19,6 @@ const APPROVED_ARTISTS = Object.freeze({
   }),
 });
 
-// The Cloudflare edge serves its own HTML error page in place of a 502/503/504
-// returned from here, so the JSON error contract never reaches the browser: the
-// frontend's response.json() fails and every upstream failure collapses into a
-// bare "provisioning_failed". Production proved it — a 79-byte JSON body left
-// this handler and the edge served 6857 bytes of HTML, while 500 responses
-// passed through intact. Classified failures therefore report 500 and carry
-// their meaning in the error name, which is what the frontend reads.
 function edgeSafeStatus(status) {
   if (!Number.isInteger(status) || status < 400 || status > 599) return 500;
   return status >= 500 ? 500 : status;
@@ -61,14 +55,6 @@ async function responseJson(response) {
   return response.json().catch(() => ({}));
 }
 
-// The Workers runtime refuses the fetch `error` redirect mode outright ("won't
-// be implemented since it does not make sense at the edge; use 'manual' and
-// check the response status code"), and it throws that TypeError while the
-// request is being constructed, before any subrequest leaves the edge. Every
-// provisioning fetch asked for that mode, so this endpoint could never reach
-// Supabase or Meta at all. `manual` keeps the fail-closed intent: a redirect
-// comes back as a 3xx response and is rejected here, so the Authorization
-// header is never replayed to a host we did not choose.
 async function noFollowFetch(url, init = {}) {
   const response = await fetch(url, { ...init, redirect: 'manual' });
   if (response.status >= 300 && response.status < 400) {
@@ -77,10 +63,6 @@ async function noFollowFetch(url, init = {}) {
   return response;
 }
 
-// Secrets are pasted into the Pages dashboard by hand, so a trailing newline is
-// easy to introduce and impossible to see. Meta rejects an app secret with one
-// (OAuthException code 1, "Error validating client secret"), so every binding is
-// read through here rather than off `env` directly.
 function binding(env, name) {
   return typeof env?.[name] === 'string' ? env[name].trim() : '';
 }
@@ -233,6 +215,8 @@ async function exchangeCode(code, appSecret) {
     client_id: APP_ID,
     client_secret: appSecret,
     code,
+    grant_type: 'authorization_code',
+    redirect_uri: META_OAUTH_REDIRECT_URI,
   });
   let payload;
   try {
@@ -245,10 +229,6 @@ async function exchangeCode(code, appSecret) {
       body: form.toString(),
     });
   } catch (error) {
-    // Graph reports a rejected client secret as OAuthException code 1 on this
-    // endpoint; a malformed or spent authorization code is code 100 instead.
-    // Naming the first case keeps an operator from re-running Embedded Signup
-    // against a binding that cannot succeed however many codes it is given.
     if (error?.message === 'meta_request_failed' && error?.graphCode === 1) {
       throw Object.assign(new Error('meta_app_secret_invalid'), { status: 502 });
     }
