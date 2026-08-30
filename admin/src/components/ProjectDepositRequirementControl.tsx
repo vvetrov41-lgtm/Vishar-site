@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { useLanguage } from '../lib/i18n';
 import { useApi } from '../lib/session';
 import type { Project, ProjectFinance } from '../lib/types';
@@ -40,7 +41,15 @@ export function ProjectDepositRequirementControl({
   const explicitlyWaived = finance.deposit_amount === 0;
 
   async function setRequired(required: boolean) {
-    if (!required && !window.confirm(copy.waiveConfirm)) return;
+    if (!required) {
+      const approved = await confirmDialog({
+        title: copy.waiveConfirmTitle,
+        message: copy.waiveConfirm,
+        confirmLabel: copy.waiveConfirmAction,
+        cancelLabel: cancelLabelFor(language),
+      });
+      if (!approved) return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -93,6 +102,8 @@ const COPY = {
     loading: 'Loading deposit status…',
     saving: 'Saving…',
     waiveConfirm: 'Mark this project as not requiring a deposit?',
+    waiveConfirmTitle: 'Waive the deposit?',
+    waiveConfirmAction: 'Waive deposit',
     failed: 'Could not change the deposit requirement.',
   },
   ru: {
@@ -106,6 +117,8 @@ const COPY = {
     loading: 'Загружаю статус депозита…',
     saving: 'Сохраняю…',
     waiveConfirm: 'Отметить, что для этого проекта депозит не требуется?',
+    waiveConfirmTitle: 'Отменить требование депозита?',
+    waiveConfirmAction: 'Не требовать',
     failed: 'Не удалось изменить требование депозита.',
   },
 } as const;

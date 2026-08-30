@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatMoney } from '../lib/format';
+import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { useLanguage } from '../lib/i18n';
 import { useApi } from '../lib/session';
 import type { Appointment } from '../lib/appointment-api';
@@ -125,7 +126,13 @@ export function ProjectDepositPanel({
       setError(copy.invalidManual);
       return;
     }
-    if (!window.confirm(copy.manualConfirm(formatMoney(amount, request.currency, language)))) return;
+    const approved = await confirmDialog({
+      title: copy.manualConfirmTitle,
+      message: copy.manualConfirm(formatMoney(amount, request.currency, language)),
+      confirmLabel: copy.manualConfirmAction,
+      cancelLabel: cancelLabelFor(language),
+    });
+    if (!approved) return;
     await run(
       `manual:${request.id}`,
       () => api.recordManualPayment({ paymentRequestId: request.id, amount }),
@@ -273,8 +280,14 @@ export function ProjectDepositPanel({
                           type="button"
                           className="danger"
                           disabled={busy !== null}
-                          onClick={() => {
-                            if (!window.confirm(copy.cancelConfirm)) return;
+                          onClick={async () => {
+                            const approvedCancel = await confirmDialog({
+                              title: copy.cancelConfirmTitle,
+                              message: copy.cancelConfirm,
+                              confirmLabel: copy.cancelConfirmAction,
+                              cancelLabel: cancelLabelFor(language),
+                            });
+                            if (!approvedCancel) return;
                             setCreated(null);
                             void run(
                               `cancel:${request.id}`,
@@ -512,6 +525,8 @@ const COPY = {
     outstanding: 'Outstanding',
     cancelRequest: 'Cancel this request',
     cancelConfirm: 'Cancel this unpaid payment request? You can then set a different deposit amount and create a new link.',
+    cancelConfirmTitle: 'Cancel payment request?',
+    cancelConfirmAction: 'Cancel request',
     cancelFailed: 'Could not cancel the payment request.',
     manualTitle: 'Payment received outside automatic matching',
     manualHelp: 'Use this only when you have independently verified the money. Normal Monzo payments should be reconciled automatically.',
@@ -519,6 +534,8 @@ const COPY = {
     recordManual: 'Record manual payment',
     invalidManual: 'Enter a positive amount no greater than the outstanding balance.',
     manualConfirm: (amount: string) => `Record ${amount} as money already received outside automatic reconciliation?`,
+    manualConfirmTitle: 'Record money received?',
+    manualConfirmAction: 'Record payment',
     manualFailed: 'Could not record the manual payment.',
     destinationAdvanced: 'Payment link setup',
     destinationHelp: 'Normally this is configured once for an amount. A reusable link serves future requests for the same amount; a one-off link applies only to the current request.',
@@ -573,6 +590,8 @@ const COPY = {
     outstanding: 'Осталось',
     cancelRequest: 'Отменить этот запрос',
     cancelConfirm: 'Отменить этот неоплаченный запрос? После этого можно поставить другую сумму и создать новую ссылку.',
+    cancelConfirmTitle: 'Отменить запрос на оплату?',
+    cancelConfirmAction: 'Отменить запрос',
     cancelFailed: 'Не удалось отменить платёжный запрос.',
     manualTitle: 'Деньги получены вне автоматического сопоставления',
     manualHelp: 'Используй это только если ты сам проверил поступление денег. Обычные платежи Monzo CRM должна сопоставлять автоматически.',
@@ -580,6 +599,8 @@ const COPY = {
     recordManual: 'Зафиксировать ручную оплату',
     invalidManual: 'Введи положительную сумму не больше оставшегося баланса.',
     manualConfirm: (amount: string) => `Зафиксировать ${amount} как деньги, уже полученные вне автоматической сверки?`,
+    manualConfirmTitle: 'Зафиксировать поступление?',
+    manualConfirmAction: 'Зафиксировать',
     manualFailed: 'Не удалось зафиксировать ручную оплату.',
     destinationAdvanced: 'Настройка платёжной ссылки',
     destinationHelp: 'Обычно это настраивается один раз для конкретной суммы. Многоразовая ссылка работает для будущих запросов на ту же сумму, одноразовая только для текущего запроса.',

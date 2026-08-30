@@ -13,6 +13,7 @@
 // happens somewhere else. Calling that "required" would be asking somebody to
 // click a button that does not exist.
 
+import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { useCallback, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { CapabilityEditor, useCapabilityPreview } from '../components/CapabilityEditor';
@@ -633,7 +634,15 @@ function ArtistSettings({
                 const message = ru
                   ? 'Отключить мастера? Публичные формы перестанут принимать заявки, и доступ у всех закроется. Данные сохранятся.'
                   : 'Deactivate this artist? Public forms stop taking enquiries and everyone’s access closes. The data stays.';
-                if (window.confirm(message)) onSave({ isActive: false });
+                void (async () => {
+                  const approved = await confirmDialog({
+                    title: ru ? 'Отключить?' : 'Deactivate?',
+                    message,
+                    confirmLabel: ru ? 'Отключить' : 'Deactivate',
+                    cancelLabel: cancelLabelFor(ru ? 'ru' : 'en'),
+                  });
+                  if (approved) onSave({ isActive: false });
+                })();
               }}
             >
               {ru ? 'Отключить мастера' : 'Deactivate artist'}
