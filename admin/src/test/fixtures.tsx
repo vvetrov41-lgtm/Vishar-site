@@ -402,6 +402,11 @@ export interface FakeClientOptions {
    * exercise the acknowledgement has to say so.
    */
   appointmentConflicts?: Record<string, unknown>[];
+  /**
+   * Rows `list_artist_availability_blocks` returns. The diary shows time off
+   * beside bookings, so a test that wants a blocked day has to supply one.
+   */
+  availabilityBlocks?: Record<string, unknown>[];
 }
 
 export interface ControlPlaneWorkspace {
@@ -595,6 +600,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   const capabilityPreviewByProfile = options.capabilityPreviewByProfile ?? null;
   const denyRpc = options.denyRpc ?? [];
   const appointmentConflicts = options.appointmentConflicts ?? [];
+  const availabilityBlocks = options.availabilityBlocks ?? [];
 
   /**
    * Mirrors the real `artist_memberships` RLS policy
@@ -713,6 +719,14 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       // id every success message links to.
       if (name === 'list_appointment_conflicts') {
         return { data: appointmentConflicts, error: null };
+      }
+      if (name === 'list_artist_availability_blocks') {
+        return {
+          data: availabilityBlocks.filter(
+            (block: any) => block.artist_id === (args as any)?.p_artist_id,
+          ),
+          error: null,
+        };
       }
       if (name === 'schedule_appointment') {
         if (effectiveRole !== 'owner' && effectiveRole !== 'booking_manager') {
