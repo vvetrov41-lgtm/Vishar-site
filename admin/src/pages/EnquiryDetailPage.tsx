@@ -312,7 +312,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
                 );
               })}
             </div>
-          ) : null}
+          )}
 
           {can(role, 'manageFollowUps') ? (
             <div className="actions">
