@@ -56,7 +56,14 @@ for (const [name, schema] of [['core', core], ['operations', operations]]) {
     /schema:\s*\{type: object, additionalProperties: false\}\}/,
     `${name} ChatGPT-import schema must not contain an object request schema without properties`,
   );
+  assert.doesNotMatch(schema, /fixed OAuth artist binding|artist is fixed by the OAuth client binding/i,
+    `${name} import copy must not teach the unified GPT that OAuth client identity selects an Artist`);
+  assert.match(schema, /server-owned active Artist context/,
+    `${name} import copy must describe the unified GPT server-owned Artist context`);
 }
+
+assert.match(core, /operationId: createManualEnquiry[\s\S]{0,200}?summary: Create a manual enquiry in the active GPT artist context/);
+assert.match(operations, /operationId: scheduleAppointment[\s\S]{0,200}?summary: Create an appointment in the active GPT artist context/);
 
 const noPayloadOperations = [
   'completeFollowUp',
