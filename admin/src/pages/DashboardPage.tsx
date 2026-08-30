@@ -15,6 +15,7 @@ interface DashboardData {
   sessions: CrmSession[];
   activity: ActivityEntry[];
   failedJobs: OutboxJob[];
+  clientNames: Map<string, string>;
 }
 
 export function DashboardPage() {
@@ -40,7 +41,20 @@ export function DashboardPage() {
         ? api.listFailedJobs(selectedArtistId ?? undefined)
         : Promise.resolve([]),
     ]);
-    return { enquiries, followUps, sessions, activity, failedJobs };
+    // "Who am I seeing?" is the question this screen exists to answer, and a
+    // date with a duration badge does not answer it.
+    const clients = await api.listClientsByIds(
+      sessions.map((session) => session.client_id)
+    );
+
+    return {
+      enquiries,
+      followUps,
+      sessions,
+      activity,
+      failedJobs,
+      clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
+    };
   }, [api, role, selectedArtistId]);
 
   if (loading) return <LoadingState label={t('dashboard.loading')} />;
@@ -80,9 +94,12 @@ export function DashboardPage() {
         ) : (
           <div className="list">
             {upcoming.map((session) => (
-              <Link key={session.id} to={`/projects/${session.project_id}`} className="row">
-                <div className="title">{formatDateTime(session.start_at, language)}</div>
+              <Link key={session.id} to={`/appointments/${session.id}`} className="row">
+                <div className="title">
+                  {data.clientNames.get(session.client_id) ?? formatDateTime(session.start_at, language)}
+                </div>
                 <div className="meta">
+                  {formatDateTime(session.start_at, language)}{' · '}
                   <span className="badge ok">{label('sessionStatus', 'confirmed')}</span>{' '}
                   <span className="badge">{session.duration_hours ?? '—'} {t('common.hoursShort')}</span>
                 </div>

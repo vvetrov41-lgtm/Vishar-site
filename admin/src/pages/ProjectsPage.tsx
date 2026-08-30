@@ -11,10 +11,17 @@ export function ProjectsPage() {
   const api = useApi();
   const { t, label, language } = useLanguage();
   const { selectedArtistId } = useArtistScope();
-  const { data, loading, error, reload } = useAsync<Project[]>(
-    () => api.listProjects(undefined, selectedArtistId ?? undefined),
-    [api, selectedArtistId]
-  );
+  const { data, loading, error, reload } = useAsync<{
+    projects: Project[];
+    clientNames: Map<string, string>;
+  }>(async () => {
+    const projects = await api.listProjects(undefined, selectedArtistId ?? undefined);
+    const clients = await api.listClientsByIds(projects.map((project) => project.client_id));
+    return {
+      projects,
+      clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
+    };
+  }, [api, selectedArtistId]);
 
   if (loading) return <LoadingState label={t('projects.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -35,7 +42,7 @@ export function ProjectsPage() {
     </div>
   );
 
-  if (!data || data.length === 0) {
+  if (!data || data.projects.length === 0) {
     return (
       <>
         {creationGuide}
@@ -46,11 +53,12 @@ export function ProjectsPage() {
 
   return (
     <>
-      {creationGuide}
       <div className="list">
-        {data.map((project) => (
+        {data.projects.map((project) => (
           <Link key={project.id} to={`/projects/${project.id}`} className="row">
-            <div className="title">{project.title}</div>
+            <div className="title">
+              {data.clientNames.get(project.client_id) ?? project.title}
+            </div>
             <div className="meta">
               <span className="badge">{label('projectStatus', project.status)}</span>{' '}
               <span className="badge">
@@ -58,6 +66,7 @@ export function ProjectsPage() {
               </span>{' '}
               {t('common.updated', { date: formatDateTime(project.updated_at, language) })}
             </div>
+            <div className="meta">{project.title}</div>
           </Link>
         ))}
       </div>
