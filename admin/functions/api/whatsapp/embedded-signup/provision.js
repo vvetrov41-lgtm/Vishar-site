@@ -302,9 +302,12 @@ export async function onRequestPost(context) {
     return json({ ok: false, error: 'json_required' }, 415);
   }
 
+  let stage = 'server_configuration';
   try {
     requireServerConfiguration(env);
+    stage = 'crm_operator';
     const operator = await requireCrmOperator(request, env);
+    stage = 'request_parse';
     const body = await boundedJson(request);
     const code = typeof body?.code === 'string' ? body.code.trim() : '';
     const artistId = typeof body?.artist_id === 'string' ? body.artist_id : '';
@@ -325,10 +328,15 @@ export async function onRequestPost(context) {
       return json({ ok: false, error: 'invalid_signup_session' }, 400);
     }
 
+    stage = 'artist_membership';
     await requireArtistIntegrationCapability(operator, env, artistId);
+    stage = 'route_check';
     await requireApprovedRoute(operator.token, env, artistId, approvedArtist);
+    stage = 'token_exchange';
     const accessToken = await exchangeCode(code, env.META_APP_SECRET);
+    stage = 'waba_discovery';
     const wabaId = browserWabaId || await discoverWabaFromToken(accessToken, env.META_APP_SECRET);
+    stage = 'meta_selection';
     const safeMeta = await verifyMetaSelection(accessToken, wabaId, browserPhoneNumberId || null);
     const envelope = JSON.stringify({
       phoneNumberId: safeMeta.phoneNumberId,
@@ -337,8 +345,11 @@ export async function onRequestPost(context) {
       appSecret: env.META_APP_SECRET,
     });
 
+    stage = 'drain_binding';
     await putWorkerSecret(env, DRAIN_WORKER, approvedArtist.bindingName, envelope);
+    stage = 'webhook_binding';
     await putWorkerSecret(env, WEBHOOK_WORKER, approvedArtist.bindingName, envelope);
+    stage = 'waba_subscription';
     await subscribeWaba(accessToken, wabaId);
 
     return json({
@@ -350,9 +361,10 @@ export async function onRequestPost(context) {
     });
   } catch (error) {
     const status = Number.isInteger(error?.status) ? error.status : 500;
-    const safeError = typeof error?.message === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.message)
+    const classifiedError = typeof error?.message === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.message)
       ? error.message
-      : 'provisioning_failed';
+      : null;
+    const safeError = classifiedError || `provisioning_failed_${stage}`;
     const body = { ok: false, error: safeError };
     if (safeError === 'meta_request_failed') {
       body.graph_code = Number.isInteger(error?.graphCode) ? error.graphCode : null;
