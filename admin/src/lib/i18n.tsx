@@ -743,6 +743,19 @@ export function humanise(value: string): string {
   return value.replace(/[._]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * The language the interface is currently showing, readable from outside React.
+ *
+ * The API modules compose their own failure sentences and have no hook to call.
+ * The provider keeps this in step below; before it mounts, and in a unit test
+ * that renders no provider at all, the stored preference answers instead.
+ */
+let activeLanguage: Language | null = null;
+
+export function currentLanguage(): Language {
+  return activeLanguage ?? initialLanguage();
+}
+
 function initialLanguage(): Language {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -776,6 +789,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = language;
+    activeLanguage = language;
     try {
       window.localStorage.setItem(STORAGE_KEY, language);
     } catch {
