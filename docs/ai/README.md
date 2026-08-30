@@ -30,6 +30,15 @@ See [branch-workflow.md](branch-workflow.md).
 - [cross-repo-contracts.md](cross-repo-contracts.md): ownership boundaries between Vishar-site and related repositories such as `kisa`.
 - [investigation-playbook.md](investigation-playbook.md): repeatable procedures for RPC, Worker, migration, outbox, Calendar, and security tracing.
 - [benchmark.md](benchmark.md): how to measure whether this navigation layer actually improves agent work.
+- [spec-driven-development.md](spec-driven-development.md): durable Spec Kit-compatible workflow for substantial Vishar product/architecture changes.
+
+## Task-specific repository skills
+
+Use repository skills only after proving the current target ref.
+
+- `.agents/skills/vishar-feature-development/SKILL.md`: route substantial product work through the appropriate specification workflow.
+- `.agents/skills/vishar-code-navigation/SKILL.md`: exact-ref code and production-boundary navigation.
+- `.agents/skills/vishar-gpt-production-onboarding/SKILL.md`: Unified GPT v2 OAuth, profile-bound Artist context, production Action imports, capability activation, acceptance and rollback.
 
 ## Current reference snapshot
 
