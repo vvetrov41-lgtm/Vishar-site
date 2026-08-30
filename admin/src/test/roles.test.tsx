@@ -222,21 +222,23 @@ describe('enquiry detail by role', () => {
   });
 });
 
-describe('dashboard by role', () => {
-  it('shows failed integration jobs to the owner only', async () => {
+describe('today by role', () => {
+  // Failed integration jobs are no longer their own section: they are one row
+  // in the triage list, which is where an operator would act on them.
+  it('surfaces failed integration jobs to the owner only', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/' });
-    expect(await screen.findByText('Failed integration jobs')).toBeInTheDocument();
+    expect(await screen.findByText('Integration jobs failed')).toBeInTheDocument();
   });
 
   it('hides failed integration jobs from a booking manager', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/' });
-    expect(await screen.findByRole('heading', { level: 2, name: 'Enquiries' })).toBeInTheDocument();
-    expect(screen.queryByText('Failed integration jobs')).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Needs you now' })).toBeInTheDocument();
+    expect(screen.queryByText('Integration jobs failed')).not.toBeInTheDocument();
   });
 
   it('hides the activity feed from read_only', async () => {
     renderWithSession(<App />, { role: 'read_only', path: '/' });
-    expect(await screen.findByRole('heading', { level: 2, name: 'Enquiries' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Needs you now' })).toBeInTheDocument();
     expect(screen.queryByText('Recent activity')).not.toBeInTheDocument();
   });
 });

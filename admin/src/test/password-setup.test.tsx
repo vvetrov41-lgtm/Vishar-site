@@ -59,7 +59,7 @@ describe('invited staff first-login flow', () => {
     const { authCalls } = renderInviteSession('booking_manager', true);
 
     expect(await screen.findByRole('heading', { name: 'Set your CRM password' })).toBeInTheDocument();
-    expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByText('Today')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('New password'), { target: { value: PASSWORD } });
     fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: PASSWORD } });
@@ -102,6 +102,6 @@ describe('invited staff first-login flow', () => {
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'Set your CRM password' })).not.toBeInTheDocument();
     });
-    expect((await screen.findAllByText('Dashboard')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Today')).length).toBeGreaterThan(0);
   });
 });

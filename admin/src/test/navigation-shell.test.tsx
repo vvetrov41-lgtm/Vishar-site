@@ -22,14 +22,14 @@ afterEach(() => {
 describe('responsive navigation shell', () => {
   it('keeps the mobile task order explicit', async () => {
     const { container } = renderWithSession(<App />, { role: 'owner', path: '/' });
-    await screen.findByRole('heading', { level: 2, name: 'Enquiries' });
+    await screen.findByRole('heading', { level: 2, name: 'Needs you now' });
 
     const tabbar = container.querySelector('.tabbar');
     expect(tabbar).not.toBeNull();
     const links = within(tabbar as HTMLElement).getAllByRole('link');
 
     expect(links.map((link) => link.textContent)).toEqual([
-      'Dashboard',
+      'Today',
       'Enquiries',
       'Appointments',
       'Projects',
@@ -53,7 +53,7 @@ describe('responsive navigation shell', () => {
 
   it('groups owner overflow destinations by task area', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/' });
-    await screen.findByRole('heading', { level: 2, name: 'Enquiries' });
+    await screen.findByRole('heading', { level: 2, name: 'Needs you now' });
 
     const more = screen.getByRole('button', { name: 'More' });
     fireEvent.click(more);

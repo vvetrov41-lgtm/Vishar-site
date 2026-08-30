@@ -191,7 +191,7 @@ export interface NavItem {
 // cannot be expressed here without the browser inventing an answer. AppShell
 // appends that entry from public.control_plane_access() instead.
 export const NAV_ITEMS: NavItem[] = [
-  { path: '/', label: 'Dashboard', capability: 'viewEnquiries' },
+  { path: '/', label: 'Today', capability: 'viewEnquiries' },
   { path: '/inbox', label: 'Communications', capability: 'viewEnquiries' },
   { path: '/enquiries', label: 'Enquiries', capability: 'viewEnquiries' },
   { path: '/clients', label: 'Clients', capability: 'viewClients' },
