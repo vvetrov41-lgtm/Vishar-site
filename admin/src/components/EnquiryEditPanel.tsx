@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { EnquiryConsultationPanel } from './EnquiryConsultationPanel';
 import { can } from '../lib/permissions';
 import type { RecordEditApi } from '../lib/record-edit-api';
 import { useRouter } from '../lib/router';
@@ -79,9 +78,6 @@ export function EnquiryEditPanel({
   if (!editing) {
     return (
       <>
-        {can(role, 'manageSessions') ? (
-          <EnquiryConsultationPanel enquiry={enquiry} onChanged={onSaved} />
-        ) : null}
         {error ? <div className="notice warn" role="alert" style={{ marginTop: 12 }}>{error}</div> : null}
         <div className="actions" style={{ marginTop: 12 }}>
           <button type="button" disabled={busy} onClick={() => setEditing(true)}>{copy.edit}</button>
