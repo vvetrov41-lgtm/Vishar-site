@@ -9,19 +9,12 @@ export const FACEBOOK_ALLOWED_MESSAGE_ORIGINS = new Set([
 ]);
 
 interface FacebookLoginResponse {
-  authResponse?: {
-    code?: string;
-  };
+  authResponse?: { code?: string };
   status?: string;
 }
 
 interface FacebookSdk {
-  init(config: {
-    appId: string;
-    autoLogAppEvents: boolean;
-    xfbml: boolean;
-    version: string;
-  }): void;
+  init(config: { appId: string; autoLogAppEvents: boolean; xfbml: boolean; version: string }): void;
   login(
     callback: (response: FacebookLoginResponse) => void,
     options: {
@@ -46,9 +39,9 @@ declare global {
 
 export interface WhatsAppEmbeddedSignupResult {
   authorizationCode: string;
-  wabaId: string;
+  wabaId: string | null;
   phoneNumberId: string | null;
-  event: 'FINISH';
+  event: 'FINISH' | 'CODE_ONLY';
 }
 
 export interface EmbeddedSignupMessage {
@@ -86,10 +79,7 @@ export class WhatsAppEmbeddedSignupError extends Error {
   readonly currentStep: string | null;
   readonly providerError: string | null;
 
-  constructor(
-    code: WhatsAppEmbeddedSignupErrorCode,
-    details: WhatsAppEmbeddedSignupErrorDetails = {},
-  ) {
+  constructor(code: WhatsAppEmbeddedSignupErrorCode, details: WhatsAppEmbeddedSignupErrorDetails = {}) {
     super(code);
     this.name = 'WhatsAppEmbeddedSignupError';
     this.code = code;
@@ -124,7 +114,6 @@ function safeProviderError(value: unknown): string | null {
 
 export function parseEmbeddedSignupMessage(origin: string, data: unknown): EmbeddedSignupMessage | null {
   if (!FACEBOOK_ALLOWED_MESSAGE_ORIGINS.has(origin)) return null;
-
   let payload = data;
   if (typeof payload === 'string') {
     try {
@@ -134,7 +123,6 @@ export function parseEmbeddedSignupMessage(origin: string, data: unknown): Embed
     }
   }
   if (!payload || typeof payload !== 'object') return null;
-
   const record = payload as Record<string, unknown>;
   if (record.type !== 'WA_EMBEDDED_SIGNUP') return null;
   if (
@@ -143,11 +131,9 @@ export function parseEmbeddedSignupMessage(origin: string, data: unknown): Embed
     && record.event !== 'CANCEL'
     && record.event !== 'ERROR'
   ) return null;
-
   const session = record.data && typeof record.data === 'object'
     ? record.data as Record<string, unknown>
     : {};
-
   return {
     event: record.event,
     wabaId: numericProviderId(session.waba_id),
@@ -193,10 +179,7 @@ const RUSSIAN_ERROR_COPY: Record<WhatsAppEmbeddedSignupErrorCode, string> = {
   WA_META_TIMEOUT_WAITING_FOR_SESSION: 'Meta вернула authorization code, но не вернула данные сессии WhatsApp.',
 };
 
-export function describeWhatsAppEmbeddedSignupError(
-  cause: unknown,
-  language: 'en' | 'ru',
-): string {
+export function describeWhatsAppEmbeddedSignupError(cause: unknown, language: 'en' | 'ru'): string {
   if (!(cause instanceof WhatsAppEmbeddedSignupError)) {
     return cause instanceof Error
       ? cause.message
@@ -204,7 +187,6 @@ export function describeWhatsAppEmbeddedSignupError(
         ? 'Не удалось подключить WhatsApp через Meta.'
         : 'Could not connect WhatsApp through Meta.';
   }
-
   const copy = language === 'ru' ? RUSSIAN_ERROR_COPY : ENGLISH_ERROR_COPY;
   const context = [
     cause.currentStep ? `step=${cause.currentStep}` : null,
@@ -215,12 +197,7 @@ export function describeWhatsAppEmbeddedSignupError(
 
 function initializeFacebookSdk(fb: FacebookSdk): FacebookSdk {
   if (initializedSdk === fb) return fb;
-  fb.init({
-    appId: META_WHATSAPP_APP_ID,
-    autoLogAppEvents: false,
-    xfbml: false,
-    version: 'v25.0',
-  });
+  fb.init({ appId: META_WHATSAPP_APP_ID, autoLogAppEvents: false, xfbml: false, version: 'v25.0' });
   initializedSdk = fb;
   return fb;
 }
@@ -233,27 +210,23 @@ function loadFacebookSdk(): Promise<FacebookSdk> {
     let settled = false;
     const existing = document.querySelector<HTMLScriptElement>('script[data-vishar-meta-sdk="true"]');
     const script = existing ?? document.createElement('script');
-
     const cleanup = () => {
       window.clearTimeout(timeout);
       window.clearInterval(poll);
       script.removeEventListener('error', fail);
     };
-
     const finish = () => {
       if (settled || !window.FB) return;
       settled = true;
       cleanup();
       resolve(initializeFacebookSdk(window.FB));
     };
-
     const fail = () => {
       if (settled) return;
       settled = true;
       cleanup();
       reject(new WhatsAppEmbeddedSignupError('WA_META_SDK_LOAD_FAILED'));
     };
-
     const timeout = window.setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -261,10 +234,8 @@ function loadFacebookSdk(): Promise<FacebookSdk> {
       reject(new WhatsAppEmbeddedSignupError('WA_META_SDK_LOAD_TIMEOUT'));
     }, 15000);
     const poll = window.setInterval(finish, 100);
-
     window.fbAsyncInit = finish;
     script.addEventListener('error', fail, { once: true });
-
     if (!existing) {
       script.async = true;
       script.defer = true;
@@ -279,7 +250,6 @@ function loadFacebookSdk(): Promise<FacebookSdk> {
     sdkPromise = null;
     throw error;
   });
-
   return sdkPromise;
 }
 
@@ -288,13 +258,8 @@ export async function prepareWhatsAppEmbeddedSignup(): Promise<void> {
 }
 
 export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupResult> {
-  // iOS/WebKit can replace the global FB object after the page was prepared
-  // (for example after app switching). Re-initialize that current object
-  // synchronously so FB.login still remains inside the user's click gesture.
   const fb = window.FB ? initializeFacebookSdk(window.FB) : null;
-  if (!fb) {
-    return Promise.reject(new WhatsAppEmbeddedSignupError('WA_META_SDK_NOT_READY'));
-  }
+  if (!fb) return Promise.reject(new WhatsAppEmbeddedSignupError('WA_META_SDK_NOT_READY'));
 
   return new Promise((resolve, reject) => {
     let authorizationCode: string | null = null;
@@ -307,27 +272,23 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
       window.clearTimeout(phaseTimeout);
       phaseTimeout = null;
     };
-
     const cleanup = () => {
       window.removeEventListener('message', onMessage);
       window.clearTimeout(timeout);
       clearPhaseTimeout();
     };
-
     const rejectOnce = (error: Error) => {
       if (settled) return;
       settled = true;
       cleanup();
       reject(error);
     };
-
-    const armPhaseTimeout = (code: WhatsAppEmbeddedSignupErrorCode) => {
-      clearPhaseTimeout();
-      phaseTimeout = window.setTimeout(() => {
-        rejectOnce(new WhatsAppEmbeddedSignupError(code));
-      }, 20000);
+    const resolveCodeOnly = () => {
+      if (settled || !authorizationCode || finishedSession) return;
+      settled = true;
+      cleanup();
+      resolve({ authorizationCode, wabaId: null, phoneNumberId: null, event: 'CODE_ONLY' });
     };
-
     const maybeResolve = () => {
       const isFinished = finishedSession?.event === 'FINISH'
         || finishedSession?.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
@@ -349,7 +310,6 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
         event: 'FINISH',
       });
     };
-
     const onMessage = (messageEvent: MessageEvent) => {
       const parsed = parseEmbeddedSignupMessage(messageEvent.origin, messageEvent.data);
       if (!parsed) return;
@@ -362,23 +322,26 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
         return;
       }
       finishedSession = parsed;
-      if (!authorizationCode) armPhaseTimeout('WA_META_FINISH_WAITING_FOR_CODE');
+      clearPhaseTimeout();
+      if (!authorizationCode) {
+        phaseTimeout = window.setTimeout(() => {
+          rejectOnce(new WhatsAppEmbeddedSignupError('WA_META_FINISH_WAITING_FOR_CODE'));
+        }, 20000);
+      }
       maybeResolve();
     };
 
     window.addEventListener('message', onMessage);
     const timeout = window.setTimeout(() => {
+      if (authorizationCode && !finishedSession) {
+        resolveCodeOnly();
+        return;
+      }
       rejectOnce(new WhatsAppEmbeddedSignupError(
-        finishedSession
-          ? 'WA_META_FINISH_WAITING_FOR_CODE'
-          : authorizationCode
-            ? 'WA_META_TIMEOUT_WAITING_FOR_SESSION'
-            : 'WA_META_TIMEOUT_WAITING_FOR_LOGIN',
+        finishedSession ? 'WA_META_FINISH_WAITING_FOR_CODE' : 'WA_META_TIMEOUT_WAITING_FOR_LOGIN',
       ));
     }, 60000);
 
-    // FB.login must run synchronously inside the click gesture. Awaiting SDK
-    // loading here makes iOS/WebKit treat the Meta window as an unsolicited popup.
     fb.login((response) => {
       const code = response.authResponse?.code?.trim() || '';
       if (!code) {
@@ -400,7 +363,9 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
       }
       authorizationCode = code;
       clearPhaseTimeout();
-      if (!finishedSession) armPhaseTimeout('WA_META_TIMEOUT_WAITING_FOR_SESSION');
+      if (!finishedSession) {
+        phaseTimeout = window.setTimeout(resolveCodeOnly, 5000);
+      }
       maybeResolve();
     }, {
       config_id: META_WHATSAPP_CONFIG_ID,
