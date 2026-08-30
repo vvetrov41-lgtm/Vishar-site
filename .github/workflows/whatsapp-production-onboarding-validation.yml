@@ -18,6 +18,7 @@ on:
       - admin/src/test/whatsapp-connections.test.ts
       - scripts/check-private-crm-artifact.mjs
       - scripts/test-whatsapp-production-onboarding.mjs
+      - scripts/test-worker-fetch-redirect-mode.mjs
       - scripts/test-private-production-release-workflows.mjs
   pull_request:
     paths:
@@ -32,6 +33,7 @@ on:
       - admin/src/test/whatsapp-connections.test.ts
       - scripts/check-private-crm-artifact.mjs
       - scripts/test-whatsapp-production-onboarding.mjs
+      - scripts/test-worker-fetch-redirect-mode.mjs
       - scripts/test-private-production-release-workflows.mjs
 
 permissions:
@@ -72,6 +74,9 @@ jobs:
 
       - name: Test production onboarding server boundary
         run: node scripts/test-whatsapp-production-onboarding.mjs
+
+      - name: Verify no Worker source uses an unsupported fetch redirect mode
+        run: node scripts/test-worker-fetch-redirect-mode.mjs
 
       - name: Verify exact Meta browser CSP surface
         shell: bash

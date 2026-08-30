@@ -49,6 +49,22 @@ async function responseJson(response) {
   return response.json().catch(() => ({}));
 }
 
+// The Workers runtime refuses the fetch `error` redirect mode outright ("won't
+// be implemented since it does not make sense at the edge; use 'manual' and
+// check the response status code"), and it throws that TypeError while the
+// request is being constructed, before any subrequest leaves the edge. Every
+// provisioning fetch asked for that mode, so this endpoint could never reach
+// Supabase or Meta at all. `manual` keeps the fail-closed intent: a redirect
+// comes back as a 3xx response and is rejected here, so the Authorization
+// header is never replayed to a host we did not choose.
+async function noFollowFetch(url, init = {}) {
+  const response = await fetch(url, { ...init, redirect: 'manual' });
+  if (response.status >= 300 && response.status < 400) {
+    throw Object.assign(new Error('upstream_redirect_rejected'), { status: 502 });
+  }
+  return response;
+}
+
 function supabasePublishableKey(env) {
   return typeof env.SUPABASE_PUBLISHABLE_KEY === 'string'
     ? env.SUPABASE_PUBLISHABLE_KEY.trim()
@@ -63,14 +79,13 @@ async function requireCrmOperator(request, env) {
 
   let authResponse;
   try {
-    authResponse = await fetch(`${PRODUCTION_SUPABASE_ORIGIN}/auth/v1/user`, {
+    authResponse = await noFollowFetch(`${PRODUCTION_SUPABASE_ORIGIN}/auth/v1/user`, {
       method: 'GET',
       headers: {
         apikey: publishableKey,
         authorization: `Bearer ${token}`,
         accept: 'application/json',
       },
-      redirect: 'error',
     });
   } catch {
     throw Object.assign(new Error('crm_auth_transport_failed'), { status: 502 });
@@ -86,14 +101,13 @@ async function requireCrmOperator(request, env) {
   profileUrl.searchParams.set('limit', '1');
   let profileResponse;
   try {
-    profileResponse = await fetch(profileUrl.toString(), {
+    profileResponse = await noFollowFetch(profileUrl.toString(), {
       method: 'GET',
       headers: {
         apikey: publishableKey,
         authorization: `Bearer ${token}`,
         accept: 'application/json',
       },
-      redirect: 'error',
     });
   } catch {
     throw Object.assign(new Error('crm_profile_transport_failed'), { status: 502 });
@@ -119,14 +133,13 @@ async function requireArtistIntegrationCapability(operator, env, artistId) {
   membershipUrl.searchParams.set('artist_id', `eq.${artistId}`);
   membershipUrl.searchParams.set('select', 'profile_id,artist_id,access_level,can_manage_integrations,is_active');
   membershipUrl.searchParams.set('limit', '2');
-  const membershipResponse = await fetch(membershipUrl.toString(), {
+  const membershipResponse = await noFollowFetch(membershipUrl.toString(), {
     method: 'GET',
     headers: {
       apikey: publishableKey,
       authorization: `Bearer ${operator.token}`,
       accept: 'application/json',
     },
-    redirect: 'error',
   });
   if (!membershipResponse.ok) throw Object.assign(new Error('crm_membership_check_failed'), { status: 503 });
   const memberships = await responseJson(membershipResponse);
@@ -150,14 +163,13 @@ async function requireApprovedRoute(token, env, artistId, approvedArtist) {
   routeUrl.searchParams.set('integration_type', 'eq.whatsapp');
   routeUrl.searchParams.set('select', 'artist_id,provider,integration_key,is_enabled,configuration');
   routeUrl.searchParams.set('limit', '2');
-  const routeResponse = await fetch(routeUrl.toString(), {
+  const routeResponse = await noFollowFetch(routeUrl.toString(), {
     method: 'GET',
     headers: {
       apikey: publishableKey,
       authorization: `Bearer ${token}`,
       accept: 'application/json',
     },
-    redirect: 'error',
   });
   if (!routeResponse.ok) throw Object.assign(new Error('crm_route_check_failed'), { status: 502 });
   const routes = await responseJson(routeResponse);
@@ -180,7 +192,7 @@ async function requireApprovedRoute(token, env, artistId, approvedArtist) {
 }
 
 async function graph(url, init = {}) {
-  const response = await fetch(url, { ...init, redirect: 'error' });
+  const response = await noFollowFetch(url, init);
   const payload = await responseJson(response);
   if (!response.ok) {
     const graphCode = Number.isInteger(payload?.error?.code) ? payload.error.code : null;
@@ -273,7 +285,7 @@ async function verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId) 
 
 async function putWorkerSecret(env, worker, bindingName, envelope) {
   const url = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${worker}/secrets`;
-  const response = await fetch(url, {
+  const response = await noFollowFetch(url, {
     method: 'PUT',
     headers: {
       authorization: `Bearer ${env.CLOUDFLARE_WORKERS_EDIT_TOKEN}`,
@@ -281,7 +293,6 @@ async function putWorkerSecret(env, worker, bindingName, envelope) {
       accept: 'application/json',
     },
     body: JSON.stringify({ name: bindingName, text: envelope, type: 'secret_text' }),
-    redirect: 'error',
   });
   const payload = await responseJson(response);
   if (!response.ok || payload.success !== true || payload?.result?.name !== bindingName) {
@@ -401,6 +412,7 @@ export function onRequest(context) {
 export const __testing = {
   approvedArtists: APPROVED_ARTISTS,
   bearerToken,
+  noFollowFetch,
   requireServerConfiguration,
   extractUniqueWhatsappTargetIds,
 };

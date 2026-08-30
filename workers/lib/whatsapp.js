@@ -124,7 +124,10 @@ export async function sendWhatsappMessage(env, route, message, fetchImpl = fetch
           // preview would fetch third-party content on the client's device.
           text: { preview_url: false, body },
         }),
-        redirect: 'error',
+        // `manual`, never the `error` redirect mode: the Workers runtime rejects
+        // that mode and throws before the subrequest is dispatched. A redirect
+        // arrives here as a 3xx response and is refused as a non-ok status below.
+        redirect: 'manual',
       }
     );
   } catch {
