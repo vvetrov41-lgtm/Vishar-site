@@ -98,6 +98,12 @@ export interface PaymentCopy {
   noExactOutstandingAmount: string;
   working: string;
   changeMatch: string;
+  /** The one-tap agreement with a match the server already worked out. */
+  confirmSuggested: (amount: string, client: string) => string;
+  suggestedSentence: (amount: string, received: string, client: string, session: string) => string;
+  chooseDifferent: string;
+  setupTitle: string;
+  setupDescription: string;
   match: string;
   confirmPayment: string;
   ignore: string;
@@ -217,6 +223,12 @@ const EN: PaymentCopy = {
   noExactOutstandingAmount: 'No eligible deposit request has this exact outstanding amount.',
   working: 'Working…',
   changeMatch: 'Change match',
+  confirmSuggested: (amount, client) => `Confirm ${amount} from ${client}`,
+  suggestedSentence: (amount, received, client, session) =>
+    `${amount} received ${received} — this looks like ${client}'s deposit for ${session}.`,
+  chooseDifferent: 'Match something else',
+  setupTitle: 'Payment setup',
+  setupDescription: 'Connection, payment links and deposit policy. Set once, then left alone.',
   match: 'Match',
   confirmPayment: 'Confirm payment',
   ignore: 'Ignore',
@@ -336,6 +348,12 @@ const RU: PaymentCopy = {
   noExactOutstandingAmount: 'Нет подходящего запроса депозита с точно такой же неоплаченной суммой.',
   working: 'Выполняем…',
   changeMatch: 'Изменить сопоставление',
+  confirmSuggested: (amount, client) => `Подтвердить ${amount} от ${client}`,
+  suggestedSentence: (amount, received, client, session) =>
+    `${amount} получено ${received} — похоже на депозит ${client} за ${session}.`,
+  chooseDifferent: 'Сопоставить с другим',
+  setupTitle: 'Настройка платежей',
+  setupDescription: 'Подключение, ссылки на оплату и правила депозита. Настраивается один раз.',
   match: 'Сопоставить',
   confirmPayment: 'Подтвердить платёж',
   ignore: 'Игнорировать',

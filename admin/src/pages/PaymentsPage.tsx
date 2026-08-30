@@ -147,6 +147,7 @@ export function PaymentsPage() {
   const [busyGroup, setBusyGroup] = useState(false);
   const [selectedGroupSessionIds, setSelectedGroupSessionIds] = useState<string[]>([]);
   const [busyCandidate, setBusyCandidate] = useState<string | null>(null);
+  const [manualMatch, setManualMatch] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DepositRequestResult | null>(null);
   const [oneOffPaymentUrl, setOneOffPaymentUrl] = useState('');
@@ -480,6 +481,48 @@ export function PaymentsPage() {
     }
   }
 
+  /**
+   * Agreeing with a match the server already made.
+   *
+   * The server pre-selects the right payment request and the interface then
+   * charged four interactions to say yes: open a dropdown that is already
+   * filled, Match, Confirm, and a dialog. Recording money against a client is
+   * worth one confirmation, not three steps before it.
+   */
+  async function confirmSuggestedCandidate(candidate: MonzoReconciliationCandidate) {
+    const suggested = candidate.suggested_payment_request;
+    if (!selectedArtistId || !canManageReconciliation || candidate.confirmed || !suggested) return;
+
+    const confirmed = await confirmDialog({
+      title: copy.confirmPaymentTitle,
+      message: copy.confirmPrompt(money(candidate.amount, candidate.currency, locale), suggested.client_name),
+      confirmLabel: copy.confirmPayment,
+      cancelLabel: cancelLabelFor(language),
+      tone: 'primary',
+    });
+    if (!confirmed) return;
+
+    setBusyCandidate(candidate.id);
+    setError(null);
+    setReconciliationNotice(null);
+    try {
+      // Two RPCs, unchanged: the match still has to exist before the ledger
+      // entry can reference it. What collapses is the interaction, not the
+      // database contract.
+      await api.matchMonzoReconciliationCandidate({
+        candidateId: candidate.id,
+        paymentRequestId: suggested.payment_request_id,
+      });
+      const next = await api.confirmMonzoReconciliationCandidate(candidate.id);
+      setReconciliationNotice(copy.confirmSuccess(paymentRequestStatusLabel(next.payment_request_status, language)));
+      await reload(selectedArtistId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.confirmError);
+    } finally {
+      setBusyCandidate(null);
+    }
+  }
+
   async function matchCandidate(candidate: MonzoReconciliationCandidate) {
     if (!selectedArtistId || !canManageReconciliation) return;
     const paymentRequestId = matchSelection[candidate.id];
@@ -581,34 +624,151 @@ export function PaymentsPage() {
 
   return (
     <div className="page-stack">
-      {canManageConnection ? (
+      {/* Money that has already arrived comes first: it is the only item on
+          this screen with someone waiting on the other end of it. */}
+      {canViewReconciliation ? (
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <h2>{copy.connectionTitle}</h2>
-              <p>{copy.connectionDescription(selectedArtist.display_name)}</p>
+              <h2>{copy.reconciliationTitle}</h2>
+              <p>{copy.reconciliationDescription}</p>
             </div>
           </div>
-
-          {monzoNotice ? <div className="notice ok" role="status">{monzoNotice}</div> : null}
-          {!MONZO_CONNECTOR_ORIGIN ? (
-            <div className="notice">{copy.connectionDisabled}</div>
-          ) : selectedMonzoAlias ? (
-            <div className="button-row">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => window.location.assign(
-                  monzoSetupUrl(MONZO_CONNECTOR_ORIGIN, selectedMonzoAlias)
-                )}
-              >
-                {copy.manageConnection}
-              </button>
-            </div>
+          <div className="notice">{copy.reconciliationSecurity}</div>
+          {reconciliationNotice ? <div className="notice ok" role="status">{reconciliationNotice}</div> : null}
+          {loading ? <LoadingState label={copy.loadingReconciliation} /> : reconciliationCandidates.length === 0 ? (
+            <div className="notice">{copy.noCandidates}</div>
           ) : (
-            <div className="notice">{copy.noConnectorRoute}</div>
+            <div className="list-stack">
+              {reconciliationCandidates.map((candidate) => {
+                const matched = candidate.matched_payment_request;
+                const selectedRequestId = matchSelection[candidate.id] ?? '';
+                const canMutate = canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored';
+                return (
+                  <div className="list-row" key={candidate.id}>
+                    <div>
+                      <strong>
+                        {money(candidate.amount, candidate.currency, locale)} · {candidateStatusLabel(candidate, language, copy)}
+                      </strong>
+                      <div className="muted">{copy.received} {new Date(candidate.occurred_at).toLocaleString(locale)}</div>
+                      {matched ? (
+                        <div className="muted">{copy.matched}: {requestSummaryLabel(matched, locale, copy)}</div>
+                      ) : candidate.suggested_payment_request ? (
+                        <div className="muted">{copy.suggested}: {requestSummaryLabel(candidate.suggested_payment_request, locale, copy)}</div>
+                      ) : null}
+                      {candidate.confirmed ? (
+                        <div className="notice ok">{copy.confirmedLedger}</div>
+                      ) : candidate.status === 'ignored' ? (
+                        <div className="notice">{copy.ignoredNoChange}</div>
+                      ) : null}
+                    </div>
+
+                    {/* The server already worked out which request this is.
+                        Offer agreement first, and keep the manual matcher
+                        behind it for the cases it could not decide. */}
+                    {canMutate && !matched && candidate.suggested_payment_request && !manualMatch[candidate.id] ? (
+                      <div>
+                        <p className="muted">
+                          {copy.suggestedSentence(
+                            money(candidate.amount, candidate.currency, locale),
+                            new Date(candidate.occurred_at).toLocaleDateString(locale),
+                            candidate.suggested_payment_request.client_name,
+                            candidate.suggested_payment_request.session_start_at
+                              ? new Date(candidate.suggested_payment_request.session_start_at).toLocaleString(locale)
+                              : copy.noSessionDate,
+                          )}
+                        </p>
+                        <div className="button-row">
+                          <button
+                            type="button"
+                            className="primary-button"
+                            disabled={busyCandidate === candidate.id}
+                            onClick={() => void confirmSuggestedCandidate(candidate)}
+                          >
+                            {busyCandidate === candidate.id
+                              ? copy.working
+                              : copy.confirmSuggested(
+                                money(candidate.amount, candidate.currency, locale),
+                                candidate.suggested_payment_request.client_name,
+                              )}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={busyCandidate === candidate.id}
+                            onClick={() => setManualMatch((current) => ({ ...current, [candidate.id]: true }))}
+                          >
+                            {copy.chooseDifferent}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={busyCandidate === candidate.id}
+                            onClick={() => void ignoreCandidate(candidate)}
+                          >
+                            {copy.ignore}
+                          </button>
+                        </div>
+                      </div>
+                    ) : canMutate ? (
+                      <div className="form-grid">
+                        <label className="field field-wide">
+                          <span>{copy.depositRequest}</span>
+                          <select
+                            value={selectedRequestId}
+                            onChange={(event) => setMatchSelection((current) => ({
+                              ...current,
+                              [candidate.id]: event.target.value,
+                            }))}
+                          >
+                            <option value="">{copy.chooseEligibleRequest}</option>
+                            {candidate.match_options.map((option) => (
+                              <option key={option.payment_request_id} value={option.payment_request_id}>
+                                {requestSummaryLabel(option, locale, copy)}{option.is_suggested ? ` · ${copy.suggestedSuffix}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {candidate.match_options.length === 0 ? (
+                          <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
+                        ) : null}
+                        <div className="button-row field-wide">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={busyCandidate === candidate.id || !selectedRequestId}
+                            onClick={() => void matchCandidate(candidate)}
+                          >
+                            {busyCandidate === candidate.id ? copy.working : matched ? copy.changeMatch : copy.match}
+                          </button>
+                          {matched ? (
+                            <button
+                              type="button"
+                              className="primary-button"
+                              disabled={busyCandidate === candidate.id}
+                              onClick={() => void confirmCandidate(candidate)}
+                            >
+                              {copy.confirmPayment}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={busyCandidate === candidate.id}
+                            onClick={() => void ignoreCandidate(candidate)}
+                          >
+                            {copy.ignore}
+                          </button>
+                        </div>
+                      </div>
+                    ) : !canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored' ? (
+                      <div className="notice">{copy.viewOnly}</div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           )}
-          <div className="notice">{copy.connectionSecurity}</div>
         </section>
       ) : null}
 
@@ -646,167 +806,6 @@ export function PaymentsPage() {
           </form>
         )}
       </section>
-
-      {canManageReconciliation ? (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>{copy.catalogueTitle}</h2>
-              <p>{copy.catalogueDescription(selectedArtist.display_name)}</p>
-            </div>
-          </div>
-          <div className="notice">{copy.catalogueSecurity}</div>
-          {destinationNotice ? <div className="notice ok" role="status">{destinationNotice}</div> : null}
-
-          {loading ? <LoadingState label={copy.loadingCatalogue} /> : destinations.length === 0 ? (
-            <div className="notice">{copy.noDestinations}</div>
-          ) : (
-            <div className="list-stack">
-              {destinations.map((destination) => (
-                <div className="list-row" key={destination.destination_id}>
-                  <div>
-                    <strong>{money(destination.amount, destination.currency, locale)}</strong>
-                    <div className="muted">
-                      {copy.destinationConfigured} · {copy.destinationFingerprint} {destination.fingerprint}
-                      {destination.issued_request_count > 0
-                        ? ` · ${copy.destinationIssuedRequests(destination.issued_request_count)}`
-                        : ''}
-                    </div>
-                  </div>
-                  <div className="button-row">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={busyDestination !== null || savingDestination}
-                      onClick={() => {
-                        setDestinationAmount(String(destination.amount));
-                        setDestinationUrl('');
-                      }}
-                    >
-                      {copy.replaceDestination}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={busyDestination !== null || savingDestination}
-                      onClick={() => void archiveDestination(destination)}
-                    >
-                      {busyDestination === destination.destination_id ? copy.working : copy.removeDestination}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <form onSubmit={saveDestination} className="form-grid">
-            <label className="field">
-              <span>{copy.destinationAmount}</span>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                inputMode="decimal"
-                value={destinationAmount}
-                onChange={(event) => setDestinationAmount(event.target.value)}
-                required
-              />
-            </label>
-            <label className="field field-wide">
-              <span>{copy.destinationUrl}</span>
-              <input
-                type="url"
-                value={destinationUrl}
-                onChange={(event) => setDestinationUrl(event.target.value)}
-                placeholder="https://monzo.com/pay/r/…"
-                autoComplete="off"
-                required
-              />
-            </label>
-            <div className="field-wide">
-              <button type="submit" className="primary-button" disabled={savingDestination}>
-                {savingDestination ? copy.saving : copy.addDestination}
-              </button>
-            </div>
-          </form>
-        </section>
-      ) : null}
-
-      {canViewReconciliation ? (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>{copy.policyTitle}</h2>
-              <p>{copy.policyDescription(selectedArtist.display_name)}</p>
-            </div>
-          </div>
-          {policy?.configured ? (
-            <div className="notice">{copy.policyCurrent(policySummary(policy, locale, copy))}</div>
-          ) : (
-            <div className="notice warn">{copy.policyNotConfigured}</div>
-          )}
-          {policyNotice ? <div className="notice ok" role="status">{policyNotice}</div> : null}
-
-          {canManageReconciliation ? (
-            <form onSubmit={savePolicy} className="form-grid">
-              <label className="field field-wide">
-                <span>{copy.policyMode}</span>
-                <select
-                  value={policyMode}
-                  onChange={(event) => setPolicyMode(event.target.value as ProjectDepositMode)}
-                >
-                  <option value="percentage_of_estimate">{copy.policyModePercentage}</option>
-                  <option value="fixed">{copy.policyModeFixed}</option>
-                </select>
-              </label>
-              {policyMode === 'fixed' ? (
-                <label className="field">
-                  <span>{copy.policyFixedAmount}</span>
-                  <input
-                    type="number" min="0.01" step="0.01" inputMode="decimal"
-                    value={policyFixed}
-                    onChange={(event) => setPolicyFixed(event.target.value)}
-                    required
-                  />
-                </label>
-              ) : (
-                <label className="field">
-                  <span>{copy.policyPercentage}</span>
-                  <input
-                    type="number" min="0.01" max="100" step="0.01" inputMode="decimal"
-                    value={policyPercentage}
-                    onChange={(event) => setPolicyPercentage(event.target.value)}
-                    required
-                  />
-                </label>
-              )}
-              <label className="field">
-                <span>{copy.policyMinimum}</span>
-                <input
-                  type="number" min="0.01" step="0.01" inputMode="decimal"
-                  value={policyMinimum}
-                  onChange={(event) => setPolicyMinimum(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>{copy.policyRounding}</span>
-                <input
-                  type="number" min="0.01" step="0.01" inputMode="decimal"
-                  value={policyRounding}
-                  onChange={(event) => setPolicyRounding(event.target.value)}
-                />
-              </label>
-              <div className="field-wide">
-                <button type="submit" className="primary-button" disabled={savingPolicy}>
-                  {savingPolicy ? copy.saving : copy.savePolicy}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="notice">{copy.viewOnly}</div>
-          )}
-        </section>
-      ) : null}
 
       <section className="panel">
         <div className="panel-heading">
@@ -937,105 +936,6 @@ export function PaymentsPage() {
         </section>
       ) : null}
 
-      {canViewReconciliation ? (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>{copy.reconciliationTitle}</h2>
-              <p>{copy.reconciliationDescription}</p>
-            </div>
-          </div>
-          <div className="notice">{copy.reconciliationSecurity}</div>
-          {reconciliationNotice ? <div className="notice ok" role="status">{reconciliationNotice}</div> : null}
-          {loading ? <LoadingState label={copy.loadingReconciliation} /> : reconciliationCandidates.length === 0 ? (
-            <div className="notice">{copy.noCandidates}</div>
-          ) : (
-            <div className="list-stack">
-              {reconciliationCandidates.map((candidate) => {
-                const matched = candidate.matched_payment_request;
-                const selectedRequestId = matchSelection[candidate.id] ?? '';
-                const canMutate = canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored';
-                return (
-                  <div className="list-row" key={candidate.id}>
-                    <div>
-                      <strong>
-                        {money(candidate.amount, candidate.currency, locale)} · {candidateStatusLabel(candidate, language, copy)}
-                      </strong>
-                      <div className="muted">{copy.received} {new Date(candidate.occurred_at).toLocaleString(locale)}</div>
-                      {matched ? (
-                        <div className="muted">{copy.matched}: {requestSummaryLabel(matched, locale, copy)}</div>
-                      ) : candidate.suggested_payment_request ? (
-                        <div className="muted">{copy.suggested}: {requestSummaryLabel(candidate.suggested_payment_request, locale, copy)}</div>
-                      ) : null}
-                      {candidate.confirmed ? (
-                        <div className="notice ok">{copy.confirmedLedger}</div>
-                      ) : candidate.status === 'ignored' ? (
-                        <div className="notice">{copy.ignoredNoChange}</div>
-                      ) : null}
-                    </div>
-
-                    {canMutate ? (
-                      <div className="form-grid">
-                        <label className="field field-wide">
-                          <span>{copy.depositRequest}</span>
-                          <select
-                            value={selectedRequestId}
-                            onChange={(event) => setMatchSelection((current) => ({
-                              ...current,
-                              [candidate.id]: event.target.value,
-                            }))}
-                          >
-                            <option value="">{copy.chooseEligibleRequest}</option>
-                            {candidate.match_options.map((option) => (
-                              <option key={option.payment_request_id} value={option.payment_request_id}>
-                                {requestSummaryLabel(option, locale, copy)}{option.is_suggested ? ` · ${copy.suggestedSuffix}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {candidate.match_options.length === 0 ? (
-                          <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
-                        ) : null}
-                        <div className="button-row field-wide">
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={busyCandidate === candidate.id || !selectedRequestId}
-                            onClick={() => void matchCandidate(candidate)}
-                          >
-                            {busyCandidate === candidate.id ? copy.working : matched ? copy.changeMatch : copy.match}
-                          </button>
-                          {matched ? (
-                            <button
-                              type="button"
-                              className="primary-button"
-                              disabled={busyCandidate === candidate.id}
-                              onClick={() => void confirmCandidate(candidate)}
-                            >
-                              {copy.confirmPayment}
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={busyCandidate === candidate.id}
-                            onClick={() => void ignoreCandidate(candidate)}
-                          >
-                            {copy.ignore}
-                          </button>
-                        </div>
-                      </div>
-                    ) : !canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored' ? (
-                      <div className="notice">{copy.viewOnly}</div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      ) : null}
-
       {result ? (
         <section className="panel">
           <h2>{copy.requestCreated}</h2>
@@ -1072,6 +972,210 @@ export function PaymentsPage() {
               {oneOffNotice ? <div className="notice ok field-wide" role="status">{oneOffNotice}</div> : null}
             </form>
           ) : null}
+        </section>
+      ) : null}
+
+      {/* Configuration, not daily work. The connection, the payment link
+          catalogue and the deposit policy are set once and then left alone;
+          they used to sit above and between the panels an operator actually
+          works from. They stay on this screen, and stay closed. */}
+      {canManageConnection || canManageReconciliation ? (
+        <section className="panel">
+          <details className="payments-setup">
+            <summary>
+              <span>{copy.setupTitle}</span>
+            </summary>
+            <p className="muted">{copy.setupDescription}</p>
+          {canManageConnection ? (
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>{copy.connectionTitle}</h2>
+                  <p>{copy.connectionDescription(selectedArtist.display_name)}</p>
+                </div>
+              </div>
+
+              {monzoNotice ? <div className="notice ok" role="status">{monzoNotice}</div> : null}
+              {!MONZO_CONNECTOR_ORIGIN ? (
+                <div className="notice">{copy.connectionDisabled}</div>
+              ) : selectedMonzoAlias ? (
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => window.location.assign(
+                      monzoSetupUrl(MONZO_CONNECTOR_ORIGIN, selectedMonzoAlias)
+                    )}
+                  >
+                    {copy.manageConnection}
+                  </button>
+                </div>
+              ) : (
+                <div className="notice">{copy.noConnectorRoute}</div>
+              )}
+              <div className="notice">{copy.connectionSecurity}</div>
+            </section>
+          ) : null}
+          {canManageReconciliation ? (
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>{copy.catalogueTitle}</h2>
+                  <p>{copy.catalogueDescription(selectedArtist.display_name)}</p>
+                </div>
+              </div>
+              <div className="notice">{copy.catalogueSecurity}</div>
+              {destinationNotice ? <div className="notice ok" role="status">{destinationNotice}</div> : null}
+
+              {loading ? <LoadingState label={copy.loadingCatalogue} /> : destinations.length === 0 ? (
+                <div className="notice">{copy.noDestinations}</div>
+              ) : (
+                <div className="list-stack">
+                  {destinations.map((destination) => (
+                    <div className="list-row" key={destination.destination_id}>
+                      <div>
+                        <strong>{money(destination.amount, destination.currency, locale)}</strong>
+                        <div className="muted">
+                          {copy.destinationConfigured} · {copy.destinationFingerprint} {destination.fingerprint}
+                          {destination.issued_request_count > 0
+                            ? ` · ${copy.destinationIssuedRequests(destination.issued_request_count)}`
+                            : ''}
+                        </div>
+                      </div>
+                      <div className="button-row">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={busyDestination !== null || savingDestination}
+                          onClick={() => {
+                            setDestinationAmount(String(destination.amount));
+                            setDestinationUrl('');
+                          }}
+                        >
+                          {copy.replaceDestination}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={busyDestination !== null || savingDestination}
+                          onClick={() => void archiveDestination(destination)}
+                        >
+                          {busyDestination === destination.destination_id ? copy.working : copy.removeDestination}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <form onSubmit={saveDestination} className="form-grid">
+                <label className="field">
+                  <span>{copy.destinationAmount}</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={destinationAmount}
+                    onChange={(event) => setDestinationAmount(event.target.value)}
+                    required
+                  />
+                </label>
+                <label className="field field-wide">
+                  <span>{copy.destinationUrl}</span>
+                  <input
+                    type="url"
+                    value={destinationUrl}
+                    onChange={(event) => setDestinationUrl(event.target.value)}
+                    placeholder="https://monzo.com/pay/r/…"
+                    autoComplete="off"
+                    required
+                  />
+                </label>
+                <div className="field-wide">
+                  <button type="submit" className="primary-button" disabled={savingDestination}>
+                    {savingDestination ? copy.saving : copy.addDestination}
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
+          {canViewReconciliation ? (
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>{copy.policyTitle}</h2>
+                  <p>{copy.policyDescription(selectedArtist.display_name)}</p>
+                </div>
+              </div>
+              {policy?.configured ? (
+                <div className="notice">{copy.policyCurrent(policySummary(policy, locale, copy))}</div>
+              ) : (
+                <div className="notice warn">{copy.policyNotConfigured}</div>
+              )}
+              {policyNotice ? <div className="notice ok" role="status">{policyNotice}</div> : null}
+
+              {canManageReconciliation ? (
+                <form onSubmit={savePolicy} className="form-grid">
+                  <label className="field field-wide">
+                    <span>{copy.policyMode}</span>
+                    <select
+                      value={policyMode}
+                      onChange={(event) => setPolicyMode(event.target.value as ProjectDepositMode)}
+                    >
+                      <option value="percentage_of_estimate">{copy.policyModePercentage}</option>
+                      <option value="fixed">{copy.policyModeFixed}</option>
+                    </select>
+                  </label>
+                  {policyMode === 'fixed' ? (
+                    <label className="field">
+                      <span>{copy.policyFixedAmount}</span>
+                      <input
+                        type="number" min="0.01" step="0.01" inputMode="decimal"
+                        value={policyFixed}
+                        onChange={(event) => setPolicyFixed(event.target.value)}
+                        required
+                      />
+                    </label>
+                  ) : (
+                    <label className="field">
+                      <span>{copy.policyPercentage}</span>
+                      <input
+                        type="number" min="0.01" max="100" step="0.01" inputMode="decimal"
+                        value={policyPercentage}
+                        onChange={(event) => setPolicyPercentage(event.target.value)}
+                        required
+                      />
+                    </label>
+                  )}
+                  <label className="field">
+                    <span>{copy.policyMinimum}</span>
+                    <input
+                      type="number" min="0.01" step="0.01" inputMode="decimal"
+                      value={policyMinimum}
+                      onChange={(event) => setPolicyMinimum(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{copy.policyRounding}</span>
+                    <input
+                      type="number" min="0.01" step="0.01" inputMode="decimal"
+                      value={policyRounding}
+                      onChange={(event) => setPolicyRounding(event.target.value)}
+                    />
+                  </label>
+                  <div className="field-wide">
+                    <button type="submit" className="primary-button" disabled={savingPolicy}>
+                      {savingPolicy ? copy.saving : copy.savePolicy}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="notice">{copy.viewOnly}</div>
+              )}
+            </section>
+          ) : null}
+          </details>
         </section>
       ) : null}
 

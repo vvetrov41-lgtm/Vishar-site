@@ -407,6 +407,12 @@ export interface FakeClientOptions {
    * beside bookings, so a test that wants a blocked day has to supply one.
    */
   availabilityBlocks?: Record<string, unknown>[];
+  /**
+   * Rows `list_monzo_reconciliation_candidates` returns. Money that has already
+   * arrived is the first thing the Payments screen shows, so a test about
+   * confirming one has to supply it.
+   */
+  reconciliationCandidates?: Record<string, unknown>[];
 }
 
 export interface ControlPlaneWorkspace {
@@ -601,6 +607,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   const denyRpc = options.denyRpc ?? [];
   const appointmentConflicts = options.appointmentConflicts ?? [];
   const availabilityBlocks = options.availabilityBlocks ?? [];
+  const reconciliationCandidates = options.reconciliationCandidates ?? [];
 
   /**
    * Mirrors the real `artist_memberships` RLS policy
@@ -911,7 +918,33 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         return { data: { destinations: [] }, error: null };
       }
       if (name === 'list_monzo_reconciliation_candidates') {
-        return { data: [], error: null };
+        return { data: reconciliationCandidates, error: null };
+      }
+      // Shaped as the RPCs return them, so a confirmation flow can be followed
+      // end to end rather than stopping at the generic `{ ok: true }`.
+      if (name === 'match_monzo_reconciliation_candidate') {
+        return {
+          data: {
+            candidate_id: (args as any)?.p_candidate_id,
+            status: 'matched',
+            payment_request_id: (args as any)?.p_payment_request_id,
+            confirmed: false,
+            changed: true,
+          },
+          error: null,
+        };
+      }
+      if (name === 'confirm_monzo_reconciliation_candidate') {
+        return {
+          data: {
+            candidate_id: (args as any)?.p_candidate_id,
+            confirmed: true,
+            payment_request_status: 'settled',
+            payment_transaction_id: 'txn-1',
+            replayed: false,
+          },
+          error: null,
+        };
       }
       if (name === 'get_project_deposit_policy') {
         return {
