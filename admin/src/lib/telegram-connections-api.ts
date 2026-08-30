@@ -1,4 +1,4 @@
-import { ApiError, type CrmClient } from './api';
+import { apiMessage, ApiError, type CrmClient } from './api';
 
 export type TelegramDestinationKind = 'profile' | 'artist';
 
@@ -31,7 +31,7 @@ function singleRow(value: unknown): Record<string, unknown> | null {
 
 function assertDestination(value: unknown): TelegramDestinationStatus {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ApiError('Could not load Telegram connections.');
+    throw new ApiError(apiMessage('Could not load Telegram connections.'));
   }
   const row = value as Record<string, unknown>;
   const kind = row.destination_kind;
@@ -46,14 +46,14 @@ function assertDestination(value: unknown): TelegramDestinationStatus {
     || (row.connected_at !== null && typeof row.connected_at !== 'string')
     || 'chat_id' in row
   ) {
-    throw new ApiError('Could not load Telegram connections.');
+    throw new ApiError(apiMessage('Could not load Telegram connections.'));
   }
   return row as unknown as TelegramDestinationStatus;
 }
 
 function assertChallenge(value: unknown): TelegramLinkChallenge {
   const row = singleRow(value);
-  if (!row) throw new ApiError('Telegram linking returned an invalid response.');
+  if (!row) throw new ApiError(apiMessage('Telegram linking returned an invalid response.'));
   const kind = row.destination_kind;
   if (
     typeof row.link_token !== 'string'
@@ -66,7 +66,7 @@ function assertChallenge(value: unknown): TelegramLinkChallenge {
     || row.target_label.trim() === ''
     || 'chat_id' in row
   ) {
-    throw new ApiError('Telegram linking returned an invalid response.');
+    throw new ApiError(apiMessage('Telegram linking returned an invalid response.'));
   }
   return row as unknown as TelegramLinkChallenge;
 }
@@ -77,7 +77,7 @@ function telegramLinkParts(
 ): { username: string; token: string } {
   const username = botUsername.trim().replace(/^@/, '');
   if (!BOT_USERNAME.test(username) || !LINK_TOKEN.test(challenge.link_token)) {
-    throw new ApiError('Telegram linking is not configured correctly.');
+    throw new ApiError(apiMessage('Telegram linking is not configured correctly.'));
   }
   return { username, token: challenge.link_token };
 }
@@ -109,18 +109,18 @@ export function createTelegramConnectionsApi(client: CrmClient) {
   return {
     async getTelegramConnectorInfo(): Promise<{ bot_username: string | null }> {
       const result = await client.rpc('get_telegram_connector_info');
-      if (result.error) throw new ApiError('Could not load Telegram connector information.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not load Telegram connector information.'), result.error);
       const row = singleRow(result.data);
       if (!row || (row.bot_username !== null && (typeof row.bot_username !== 'string' || !BOT_USERNAME.test(row.bot_username)))) {
-        throw new ApiError('Could not load Telegram connector information.');
+        throw new ApiError(apiMessage('Could not load Telegram connector information.'));
       }
       return { bot_username: row.bot_username as string | null };
     },
 
     async listTelegramDestinations(): Promise<TelegramDestinationStatus[]> {
       const result = await client.rpc('list_telegram_destinations');
-      if (result.error) throw new ApiError('Could not load Telegram connections.', result.error);
-      if (!Array.isArray(result.data)) throw new ApiError('Could not load Telegram connections.');
+      if (result.error) throw new ApiError(apiMessage('Could not load Telegram connections.'), result.error);
+      if (!Array.isArray(result.data)) throw new ApiError(apiMessage('Could not load Telegram connections.'));
       return result.data.map(assertDestination);
     },
 
@@ -130,10 +130,10 @@ export function createTelegramConnectionsApi(client: CrmClient) {
         .select('is_enabled')
         .eq('channel', 'telegram')
         .maybeSingle();
-      if (result.error) throw new ApiError('Could not load Telegram notification preference.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not load Telegram notification preference.'), result.error);
       if (result.data == null) return false;
       if (typeof result.data?.is_enabled !== 'boolean') {
-        throw new ApiError('Could not load Telegram notification preference.');
+        throw new ApiError(apiMessage('Could not load Telegram notification preference.'));
       }
       return result.data.is_enabled;
     },
@@ -143,19 +143,19 @@ export function createTelegramConnectionsApi(client: CrmClient) {
       artistId: string | null = null,
     ): Promise<TelegramLinkChallenge> {
       if (destinationKind === 'profile' && artistId !== null) {
-        throw new ApiError('A personal Telegram connection cannot name an artist.');
+        throw new ApiError(apiMessage('A personal Telegram connection cannot name an artist.'));
       }
       if (destinationKind === 'artist' && !artistId) {
-        throw new ApiError('Choose an artist before connecting a shared Telegram group.');
+        throw new ApiError(apiMessage('Choose an artist before connecting a shared Telegram group.'));
       }
       const result = await client.rpc('begin_telegram_link', {
         p_destination_kind: destinationKind,
         p_artist_id: artistId,
       });
-      if (result.error) throw new ApiError('Could not create a Telegram connection link.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not create a Telegram connection link.'), result.error);
       const challenge = assertChallenge(result.data);
       if (challenge.destination_kind !== destinationKind || challenge.artist_id !== artistId) {
-        throw new ApiError('Telegram linking returned the wrong target.');
+        throw new ApiError(apiMessage('Telegram linking returned the wrong target.'));
       }
       return challenge;
     },
@@ -168,7 +168,7 @@ export function createTelegramConnectionsApi(client: CrmClient) {
         p_destination_kind: destinationKind,
         p_artist_id: artistId,
       });
-      if (result.error) throw new ApiError('Could not disconnect Telegram.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not disconnect Telegram.'), result.error);
       return result.data === true;
     },
 
@@ -177,20 +177,20 @@ export function createTelegramConnectionsApi(client: CrmClient) {
         p_channel: 'telegram',
         p_is_enabled: enabled,
       });
-      if (result.error) throw new ApiError('Could not update Telegram notifications.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not update Telegram notifications.'), result.error);
     },
 
     async configureTelegramBotUsername(botUsername: string): Promise<string | null> {
       const username = botUsername.trim().replace(/^@/, '');
       if (username && !BOT_USERNAME.test(username)) {
-        throw new ApiError('Enter a valid Telegram bot username.');
+        throw new ApiError(apiMessage('Enter a valid Telegram bot username.'));
       }
       const result = await client.rpc('configure_telegram_connector_identity', {
         p_bot_username: username || null,
       });
-      if (result.error) throw new ApiError('Could not update the Telegram bot username.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not update the Telegram bot username.'), result.error);
       if (result.data !== null && (typeof result.data !== 'string' || !BOT_USERNAME.test(result.data))) {
-        throw new ApiError('Telegram returned an invalid bot username.');
+        throw new ApiError(apiMessage('Telegram returned an invalid bot username.'));
       }
       return result.data as string | null;
     },

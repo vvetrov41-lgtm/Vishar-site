@@ -1,4 +1,4 @@
-import { ApiError, friendlyMessage, type CrmClient } from './api';
+import { apiMessage, ApiError, friendlyMessage, type CrmClient } from './api';
 
 export interface ManualEnquiryRequest {
   idempotencyKey: string;
@@ -45,7 +45,7 @@ function assertResult(value: unknown): ManualEnquiryResult {
     || typeof row.client_conflict !== 'boolean'
     || typeof row.client_match_method !== 'string'
   ) {
-    throw new ApiError('The manual enquiry service returned an invalid response.');
+    throw new ApiError(apiMessage('The manual enquiry service returned an invalid response.'));
   }
   return row as unknown as ManualEnquiryResult;
 }

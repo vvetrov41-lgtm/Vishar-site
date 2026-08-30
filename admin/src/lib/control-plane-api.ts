@@ -10,7 +10,7 @@
 // server call. Deriving it in the browser would recreate the permission model
 // this platform spent 0074 and 0087 collapsing into one place.
 
-import { ApiError, type CrmClient } from './api';
+import { apiMessage, ApiError, type CrmClient } from './api';
 import type { ArtistAccessLevel, CrmRole } from './types';
 
 /** What the signed-in profile may do in the control plane, answered by the
@@ -172,7 +172,7 @@ export function createControlPlaneApi(client: CrmClient) {
      *  function signals by returning no row at all. */
     async controlPlaneAccess(): Promise<ControlPlaneAccess | null> {
       const result = await client.rpc('control_plane_access');
-      if (result.error) throw new ApiError('Could not check your access.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not check your access.'), result.error);
       const rows = (result.data ?? []) as ControlPlaneAccess[];
       return rows.length > 0 ? rows[0] : null;
     },
@@ -186,7 +186,7 @@ export function createControlPlaneApi(client: CrmClient) {
 
     async artistControlPlaneContext(artistId: string): Promise<ArtistControlPlaneContext | null> {
       const result = await client.rpc('artist_control_plane_context', { p_artist_id: artistId });
-      if (result.error) throw new ApiError('Could not open that artist.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not open that artist.'), result.error);
       const rows = (result.data ?? []) as ArtistControlPlaneContext[];
       return rows.length > 0 ? rows[0] : null;
     },
@@ -196,7 +196,7 @@ export function createControlPlaneApi(client: CrmClient) {
         p_workspace_id: workspaceId,
         p_to_profile_id: toProfileId,
       });
-      if (result.error) throw new ApiError('Could not transfer ownership.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not transfer ownership.'), result.error);
       return result.data === true;
     },
 
@@ -216,8 +216,8 @@ export function createControlPlaneApi(client: CrmClient) {
         p_timezone: input.timezone ?? 'Europe/London',
         p_default_currency: input.defaultCurrency ?? 'GBP',
       });
-      if (result.error) throw new ApiError('Could not create that organization.', result.error);
-      if (typeof result.data !== 'string') throw new ApiError('The organization was not created.', null);
+      if (result.error) throw new ApiError(apiMessage('Could not create that organization.'), result.error);
+      if (typeof result.data !== 'string') throw new ApiError(apiMessage('The organization was not created.'), null);
       return result.data;
     },
 
@@ -235,7 +235,7 @@ export function createControlPlaneApi(client: CrmClient) {
         p_default_currency: input.defaultCurrency ?? null,
         p_is_active: input.isActive ?? null,
       });
-      if (result.error) throw new ApiError('Could not save that organization.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not save that organization.'), result.error);
       return result.data === true;
     },
 
@@ -253,8 +253,8 @@ export function createControlPlaneApi(client: CrmClient) {
         p_default_currency: input.defaultCurrency ?? null,
         p_booking_reference_prefix: null,
       });
-      if (result.error) throw new ApiError('Could not add that artist.', result.error);
-      if (typeof result.data !== 'string') throw new ApiError('The artist was not created.', null);
+      if (result.error) throw new ApiError(apiMessage('Could not add that artist.'), result.error);
+      if (typeof result.data !== 'string') throw new ApiError(apiMessage('The artist was not created.'), null);
       return result.data;
     },
 
@@ -272,7 +272,7 @@ export function createControlPlaneApi(client: CrmClient) {
         p_default_currency: input.defaultCurrency ?? null,
         p_is_active: input.isActive ?? null,
       });
-      if (result.error) throw new ApiError('Could not save that artist.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not save that artist.'), result.error);
       return result.data === true;
     },
 
@@ -284,8 +284,8 @@ export function createControlPlaneApi(client: CrmClient) {
         p_profile_id: profileId,
         p_artist_id: artistId,
       });
-      if (result.error) throw new ApiError('Could not seat that artist.', result.error);
-      if (typeof result.data !== 'string') throw new ApiError('The seat was not created.', null);
+      if (result.error) throw new ApiError(apiMessage('Could not seat that artist.'), result.error);
+      if (typeof result.data !== 'string') throw new ApiError(apiMessage('The seat was not created.'), null);
       return result.data;
     },
 
@@ -354,8 +354,8 @@ export function createControlPlaneApi(client: CrmClient) {
         p_can_manage_integrations: input.canManageIntegrations,
         p_is_active: input.isActive,
       });
-      if (result.error) throw new ApiError('Could not save that organization access.', result.error);
-      if (typeof result.data !== 'string') throw new ApiError('That access was not saved.', null);
+      if (result.error) throw new ApiError(apiMessage('Could not save that organization access.'), result.error);
+      if (typeof result.data !== 'string') throw new ApiError(apiMessage('That access was not saved.'), null);
       return result.data;
     },
 
@@ -374,8 +374,8 @@ export function createControlPlaneApi(client: CrmClient) {
         p_can_manage_integrations: input.grant.canManageIntegrations,
         p_is_active: input.grant.isActive,
       });
-      if (result.error) throw new ApiError('Could not save that artist access.', result.error);
-      if (typeof result.data !== 'string') throw new ApiError('That access was not saved.', null);
+      if (result.error) throw new ApiError(apiMessage('Could not save that artist access.'), result.error);
+      if (typeof result.data !== 'string') throw new ApiError(apiMessage('That access was not saved.'), null);
       return result.data;
     },
 
@@ -392,7 +392,7 @@ export function createControlPlaneApi(client: CrmClient) {
       const result = await client.rpc('apply_workspace_automation_defaults_to_artist', {
         p_artist_id: artistId,
       });
-      if (result.error) throw new ApiError('Could not apply those defaults.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not apply those defaults.'), result.error);
       return typeof result.data === 'number' ? result.data : 0;
     },
   };

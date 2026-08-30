@@ -10,7 +10,7 @@
 // by this module. The status response deliberately carries only non-secret
 // connection state.
 
-import { ApiError, type CrmClient } from './api';
+import { apiMessage, ApiError, type CrmClient } from './api';
 
 export interface InstagramConnectionStatus {
   artist_id: string;
@@ -54,7 +54,7 @@ export function readInstagramConnectorOrigin(
   try {
     parsed = new URL(value);
   } catch {
-    throw new ApiError('VITE_INSTAGRAM_CONNECTOR_ORIGIN must be a permitted connector root URL.');
+    throw new ApiError(apiMessage('VITE_INSTAGRAM_CONNECTOR_ORIGIN must be a permitted connector root URL.'));
   }
 
   const loopback = allowLocal
@@ -72,14 +72,14 @@ export function readInstagramConnectorOrigin(
     || parsed.search
     || parsed.hash
   ) {
-    throw new ApiError('VITE_INSTAGRAM_CONNECTOR_ORIGIN must be a permitted connector root URL.');
+    throw new ApiError(apiMessage('VITE_INSTAGRAM_CONNECTOR_ORIGIN must be a permitted connector root URL.'));
   }
 
   return parsed.origin;
 }
 
 function assertMetadata(value: unknown): InstagramIntegrationMetadata[] {
-  if (!Array.isArray(value)) throw new ApiError('Could not load Instagram connections.');
+  if (!Array.isArray(value)) throw new ApiError(apiMessage('Could not load Instagram connections.'));
   return value.map((row: any) => {
     if (
       !row
@@ -93,7 +93,7 @@ function assertMetadata(value: unknown): InstagramIntegrationMetadata[] {
       || typeof row.is_enabled !== 'boolean'
       || typeof row.updated_at !== 'string'
     ) {
-      throw new ApiError('Could not load Instagram connections.');
+      throw new ApiError(apiMessage('Could not load Instagram connections.'));
     }
     return row as InstagramIntegrationMetadata;
   });
@@ -143,13 +143,13 @@ export function createInstagramConnectionsApi(
     const { data } = await client.auth.getSession();
     const token = data?.session?.access_token;
     if (typeof token !== 'string' || !token) {
-      throw new ApiError('Your CRM session has expired. Sign in again.');
+      throw new ApiError(apiMessage('Your CRM session has expired. Sign in again.'));
     }
     return token;
   }
 
   async function call(path: string, init: RequestInit = {}): Promise<any> {
-    if (!origin) throw new ApiError('The Instagram connector is not configured in this build.');
+    if (!origin) throw new ApiError(apiMessage('The Instagram connector is not configured in this build.'));
     const token = await sessionToken();
     const response = await fetcher(`${origin}${path}`, {
       ...init,
@@ -175,7 +175,7 @@ export function createInstagramConnectionsApi(
         .select('id, artist_id, provider, integration_key, external_account_label, is_enabled, updated_at')
         .eq('integration_type', 'instagram')
         .order('updated_at', { ascending: false });
-      if (result.error) throw new ApiError('Could not load Instagram connections.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not load Instagram connections.'), result.error);
       return assertMetadata(result.data ?? []);
     },
 

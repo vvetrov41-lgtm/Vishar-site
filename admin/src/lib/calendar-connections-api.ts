@@ -1,4 +1,4 @@
-import { ApiError, friendlyMessage, type CrmClient } from './api';
+import { apiMessage, ApiError, friendlyMessage, type CrmClient } from './api';
 
 export type CalendarConnectorAlias = 'vladimir' | 'kristina';
 
@@ -27,7 +27,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const SAFE_ERROR_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
 
 function invalidResponse(): ApiError {
-  return new ApiError('Could not load calendar connections. Please try again.');
+  return new ApiError(apiMessage('Could not load calendar connections. Please try again.'));
 }
 
 function isAlias(value: unknown): value is CalendarConnectorAlias {

@@ -1,4 +1,4 @@
-import { ApiError, type CrmClient } from './api';
+import { apiMessage, ApiError, type CrmClient } from './api';
 
 export type LifecycleAppointmentType =
   | 'tattoo_session'
@@ -245,8 +245,8 @@ export function createLifecycleApi(client: CrmClient) {
         p_anchor_offset_minutes: input.anchorOffsetMinutes,
         p_locale: input.locale,
       });
-      if (result.error) throw new ApiError('Could not create lifecycle rule.', result.error);
-      if (typeof result.data !== 'string') throw new ApiError('The lifecycle rule was not created.', null);
+      if (result.error) throw new ApiError(apiMessage('Could not create lifecycle rule.'), result.error);
+      if (typeof result.data !== 'string') throw new ApiError(apiMessage('The lifecycle rule was not created.'), null);
       return result.data;
     },
 
@@ -255,7 +255,7 @@ export function createLifecycleApi(client: CrmClient) {
         p_rule_id: ruleId,
         p_is_enabled: enabled,
       });
-      if (result.error) throw new ApiError('Could not change lifecycle rule state.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not change lifecycle rule state.'), result.error);
       return result.data === true;
     },
 
@@ -274,7 +274,7 @@ export function createLifecycleApi(client: CrmClient) {
         }),
         'change lifecycle rule timing',
       );
-      if (!rows[0]) throw new ApiError('The lifecycle rule timing was not changed.', null);
+      if (!rows[0]) throw new ApiError(apiMessage('The lifecycle rule timing was not changed.'), null);
       return rows[0];
     },
 
@@ -346,7 +346,7 @@ export function createLifecycleApi(client: CrmClient) {
         await client.rpc('retry_client_lifecycle_job', { p_job_id: jobId }),
         'retry lifecycle execution',
       );
-      if (!rows[0]) throw new ApiError('The lifecycle execution was not retried.', null);
+      if (!rows[0]) throw new ApiError(apiMessage('The lifecycle execution was not retried.'), null);
       return rows[0];
     },
 
@@ -391,8 +391,8 @@ export function createLifecycleApi(client: CrmClient) {
         p_subject: input.subject,
         p_artist_id: input.artistId,
       });
-      if (result.error) throw new ApiError('Could not save lifecycle template draft.', result.error);
-      if (typeof result.data !== 'string') throw new ApiError('The lifecycle template draft was not saved.', null);
+      if (result.error) throw new ApiError(apiMessage('Could not save lifecycle template draft.'), result.error);
+      if (typeof result.data !== 'string') throw new ApiError(apiMessage('The lifecycle template draft was not saved.'), null);
       return result.data;
     },
 
@@ -401,7 +401,7 @@ export function createLifecycleApi(client: CrmClient) {
         p_template_id: templateId,
         p_is_active: active,
       });
-      if (result.error) throw new ApiError('Could not change lifecycle template state.', result.error);
+      if (result.error) throw new ApiError(apiMessage('Could not change lifecycle template state.'), result.error);
       return result.data === true;
     },
   };

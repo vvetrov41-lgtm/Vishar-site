@@ -196,3 +196,109 @@ function readString(error: unknown, key: 'code' | 'message'): string {
   const value = (error as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : '';
 }
+
+/**
+ * Failures each API module states in its own words, rather than through an
+ * operation phrase: a malformed provider response, a misconfigured build, an
+ * expired session, a file the CRM will not accept.
+ *
+ * The English sentence is the key, exactly as before, and `ApiMessage` is the
+ * union of them - so an English-only string cannot be added to any of these
+ * modules without a translation appearing here first.
+ */
+export const API_MESSAGES = {
+  'A personal Telegram connection cannot name an artist.': 'Личное подключение Telegram не может быть привязано к мастеру.',
+  'Choose an artist before connecting a shared Telegram group.': 'Выберите мастера, прежде чем подключать общую группу Telegram.',
+  'Could not add that artist.': 'Не удалось добавить мастера. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not apply those defaults.': 'Не удалось применить настройки по умолчанию. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not change lifecycle rule state.': 'Не удалось изменить состояние правила. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not change lifecycle template state.': 'Не удалось изменить состояние шаблона. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not check your access.': 'Не удалось проверить ваш доступ. Данные не загружены — обновите страницу.',
+  'Could not create a Telegram connection link.': 'Не удалось создать ссылку для подключения Telegram. Ничего не изменилось — попробуйте ещё раз.',
+  'Could not create lifecycle rule.': 'Не удалось создать правило. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not create that client.': 'Не удалось создать карточку клиента. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not create that enquiry.': 'Не удалось создать заявку. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not create that form or website source.': 'Не удалось создать эту форму или сайт. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not create that organization.': 'Не удалось создать организацию. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not disconnect Telegram.': 'Не удалось отключить Telegram. Подключение осталось прежним — попробуйте ещё раз.',
+  'Could not link that client.': 'Не удалось связать переписку с клиентом. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not load calendar connections. Please try again.': 'Не удалось загрузить подключения календаря. Данные не загружены — обновите страницу.',
+  'Could not load Instagram connections.': 'Не удалось загрузить подключения Instagram. Данные не загружены — обновите страницу.',
+  'Could not load Telegram connections.': 'Не удалось загрузить подключения Telegram. Данные не загружены — обновите страницу.',
+  'Could not load Telegram connector information.': 'Не удалось загрузить сведения о коннекторе Telegram. Данные не загружены — обновите страницу.',
+  'Could not load Telegram notification preference.': 'Не удалось загрузить настройку уведомлений Telegram. Данные не загружены — обновите страницу.',
+  'Could not load that client\'s conversations.': 'Не удалось загрузить переписку этого клиента. Данные не загружены — обновите страницу.',
+  'Could not load that conversation.': 'Не удалось загрузить переписку. Данные не загружены — обновите страницу.',
+  'Could not load the inbox.': 'Не удалось загрузить сообщения. Данные не загружены — проверьте соединение и обновите страницу.',
+  'Could not load those messages.': 'Не удалось загрузить сообщения переписки. Данные не загружены — обновите страницу.',
+  'Could not load WhatsApp connections.': 'Не удалось загрузить подключения WhatsApp. Данные не загружены — обновите страницу.',
+  'Could not open that artist.': 'Не удалось открыть карточку мастера. Данные не загружены — обновите страницу.',
+  'Could not queue that reply.': 'Не удалось поставить ответ в очередь. Сообщение не отправлено — попробуйте ещё раз.',
+  'Could not reach the staff invitation service.': 'Не удалось связаться со службой приглашений. Приглашение не отправлено — попробуйте ещё раз.',
+  'Could not save lifecycle template draft.': 'Не удалось сохранить черновик шаблона. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not save that artist access.': 'Не удалось сохранить доступ к мастеру. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not save that artist.': 'Не удалось сохранить карточку мастера. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not save that organization access.': 'Не удалось сохранить доступ в организации. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not save that organization.': 'Не удалось сохранить организацию. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not seat that artist.': 'Не удалось выделить место мастеру. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not set that password. Choose a stronger password and try again.': 'Не удалось установить пароль. Пароль не изменён — выберите более надёжный и попробуйте ещё раз.',
+  'Could not snooze that reminder.': 'Не удалось отложить напоминание. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not transfer ownership.': 'Не удалось передать владение. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not update Telegram notifications.': 'Не удалось изменить уведомления Telegram. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not update that conversation.': 'Не удалось обновить переписку. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not update that form or website source.': 'Не удалось сохранить эту форму или сайт. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not update that notification.': 'Не удалось обновить уведомление. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not update the Telegram bot username.': 'Не удалось изменить имя бота Telegram. Изменения не сохранены — попробуйте ещё раз.',
+  'Enter a valid Telegram bot username.': 'Введите корректное имя бота Telegram.',
+  'Meta Embedded Signup did not finish authorization.': 'Meta не завершила авторизацию. Подключение не создано — начните подключение заново.',
+  'OAuth consent is not available in this CRM build.': 'Выдача доступа недоступна в этой сборке CRM.',
+  'Only JPG, PNG or WebP reference images are allowed.': 'Допустимы только референсы в форматах JPG, PNG или WebP.',
+  'Production WhatsApp onboarding is unavailable for this artist.': 'Подключение WhatsApp недоступно для этого мастера.',
+  'Production WhatsApp provisioning is unavailable in this CRM environment.': 'Подключение WhatsApp недоступно в этой среде CRM.',
+  'Reference images must be no larger than 4 MB.': 'Референс должен быть не больше 4 МБ.',
+  'Staff invitations are not configured.': 'Приглашения сотрудников не настроены.',
+  'Telegram linking is not configured correctly.': 'Подключение Telegram настроено неверно. Ничего не изменилось — проверьте настройки интеграции.',
+  'Telegram linking returned an invalid response.': 'Telegram вернул некорректный ответ. Подключение не создано — попробуйте ещё раз.',
+  'Telegram linking returned the wrong target.': 'Telegram вернул не тот адресат. Подключение не создано — попробуйте ещё раз.',
+  'Telegram returned an invalid bot username.': 'Telegram вернул некорректное имя бота.',
+  'That access was not saved.': 'Этот доступ не сохранён.',
+  'That email address and password did not match.': 'Почта и пароль не совпали.',
+  'The artist routing key is not valid for WhatsApp.': 'Ключ маршрутизации мастера не подходит для WhatsApp.',
+  'The artist was not created.': 'Мастер не создан.',
+  'The authorization decision could not be completed.': 'Не удалось завершить выдачу доступа. Доступ не выдан — попробуйте ещё раз.',
+  'The authorization server did not identify the requesting GPT.': 'Сервер авторизации не опознал запрашивающий GPT. Доступ не выдан.',
+  'The authorization server did not return a safe redirect.': 'Сервер авторизации вернул небезопасный адрес возврата. Доступ не выдан.',
+  'The authorization server returned a mismatched request.': 'Сервер авторизации вернул несовпадающий запрос. Доступ не выдан.',
+  'The booking source was not created.': 'Источник записи не создан.',
+  'The CRM is not configured.': 'CRM не настроена.',
+  'The Instagram connector is not configured in this build.': 'Коннектор Instagram не настроен в этой сборке.',
+  'The lifecycle execution was not retried.': 'Запуск автоматизации не повторён.',
+  'The lifecycle rule timing was not changed.': 'Время срабатывания правила не изменено.',
+  'The lifecycle rule was not created.': 'Правило не создано.',
+  'The lifecycle template draft was not saved.': 'Черновик шаблона не сохранён.',
+  'The manual enquiry service returned an invalid response.': 'Служба ручных заявок вернула некорректный ответ. Заявка не создана — попробуйте ещё раз.',
+  'The organization was not created.': 'Организация не создана.',
+  'The seat was not created.': 'Место не создано.',
+  'The staff invitation service returned an invalid response.': 'Служба приглашений вернула некорректный ответ. Приглашение не отправлено — попробуйте ещё раз.',
+  'This authorization request is invalid or has expired.': 'Запрос на доступ недействителен или истёк. Начните заново.',
+  'This client has an active project. Archive or close that project before deleting the client.': 'У этого клиента есть активный проект. Клиент не удалён — сначала закройте или заархивируйте проект.',
+  'This enquiry has an active project. Archive or close that project before deleting the enquiry.': 'У этой заявки есть активный проект. Заявка не удалена — сначала закройте или заархивируйте проект.',
+  'This GPT is not enabled for your CRM access.': 'Этот GPT не разрешён для вашего доступа к CRM.',
+  'This GPT requested an unexpected OAuth scope.': 'Этот GPT запросил неожиданные права доступа. Доступ не выдан.',
+  'VITE_INSTAGRAM_CONNECTOR_ORIGIN must be a permitted connector root URL.': 'Адрес коннектора Instagram настроен неверно. Обратитесь к администратору.',
+  'WhatsApp integration controls are unavailable in this CRM environment.': 'Управление интеграцией WhatsApp недоступно в этой среде CRM.',
+  'WhatsApp provisioning returned an invalid response.': 'Подключение WhatsApp вернуло некорректный ответ. Подключение не создано — попробуйте ещё раз.',
+  'Your CRM session expired. Sign in again before connecting WhatsApp.': 'Сеанс CRM истёк. Войдите снова, прежде чем подключать WhatsApp.',
+  'Your CRM session has expired. Sign in again.': 'Сеанс CRM истёк. Войдите снова.',
+  'Your session has expired. Sign in again.': 'Сеанс истёк. Войдите снова.',
+} as const satisfies Record<string, string>;
+
+export type ApiMessage = keyof typeof API_MESSAGES;
+
+/**
+ * One of those sentences, in the language the interface is showing. The English
+ * key is returned unchanged for an English operator.
+ */
+export function translateApiMessage(message: ApiMessage, language: Language): string {
+  return language === 'ru' ? API_MESSAGES[message] : message;
+}
