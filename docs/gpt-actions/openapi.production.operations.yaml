@@ -3,8 +3,10 @@ info:
   title: Vishar CRM Operations Actions
   version: 2.1.2-production-operations
   description: >-
-    Operational private OAuth-authenticated CRM actions for one artist. The artist
-    is fixed by the OAuth client binding and cannot be selected in a request.
+    Operational private OAuth-authenticated CRM actions for the active server-owned
+    Artist context. The Artist is derived from the signed-in CRM profile and current
+    context; no ordinary operation accepts artist_id. Legacy artist-bound GPT clients
+    remain fixed by their server binding.
 servers:
   - url: https://gpt-operations.vishartattoo.com
     description: Vishar CRM production operations action edge.
@@ -23,7 +25,7 @@ paths:
       responses: {'200': {description: Appointments}}
     post:
       operationId: scheduleAppointment
-      summary: Create an appointment for this fixed artist
+      summary: Create an appointment in the active GPT artist context
       description: Check conflicts first. Generate one UUID request_id and reuse it only for an identical retry.
       x-openai-isConsequential: true
       requestBody:
@@ -415,7 +417,7 @@ components:
           authorizationUrl: https://gpt-actions.vishartattoo.com/oauth/authorize
           tokenUrl: https://gpt-actions.vishartattoo.com/oauth/token
           scopes:
-            email: Authenticate the CRM user. CRM membership, fixed OAuth artist binding and operation capabilities remain authoritative.
+            email: Authenticate the CRM user. CRM membership, server-owned active Artist context, GPT client capability ceiling and operation capabilities remain authoritative.
   schemas:
     AppointmentStatus:
       type: string
