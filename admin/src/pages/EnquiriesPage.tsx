@@ -74,14 +74,25 @@ export function EnquiriesPage() {
   const [manualError, setManualError] = useState<string | null>(null);
   const [manualSuccess, setManualSuccess] = useState<string | null>(null);
 
-  const { data, loading, error, reload } = useAsync<Enquiry[]>(
-    () => api.listEnquiries({
+  const { data, loading, error, reload } = useAsync<{
+    enquiries: Enquiry[];
+    clientNames: Map<string, string>;
+  }>(async () => {
+    const enquiries = await api.listEnquiries({
       status: status || undefined,
       search: debouncedSearch || undefined,
       artistId: selectedArtistId ?? undefined,
-    }),
-    [api, status, debouncedSearch, selectedArtistId]
-  );
+    });
+    // The queue used to identify an enquiry by its reference number alone, so
+    // triaging cost one navigation per enquiry just to learn who it was from.
+    const clients = await api.listClientsByIds(
+      enquiries.map((enquiry) => enquiry.client_id)
+    );
+    return {
+      enquiries,
+      clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
+    };
+  }, [api, status, debouncedSearch, selectedArtistId]);
 
   function updateManual<K extends keyof ManualForm>(field: K, value: ManualForm[K]) {
     setManual((current) => ({ ...current, [field]: value }));
@@ -289,7 +300,7 @@ export function EnquiriesPage() {
             <label htmlFor="enquiry-search">{t('enquiries.searchByReference')}</label>
             <input
               id="enquiry-search" type="search" inputMode="search"
-              placeholder="ENQ-2026-…"
+              placeholder={t('enquiries.searchPlaceholder')}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -313,23 +324,26 @@ export function EnquiriesPage() {
       {loading ? <LoadingState label={t('enquiries.loading')} /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
 
-      {!loading && !error && data && data.length === 0 ? (
+      {!loading && !error && data && data.enquiries.length === 0 ? (
         <EmptyState
           title={t('enquiries.noMatch')}
           hint={t('enquiries.noMatchHint')}
         />
       ) : null}
 
-      {!loading && !error && data && data.length > 0 ? (
+      {!loading && !error && data && data.enquiries.length > 0 ? (
         <div className="list">
-          {data.map((enquiry) => (
+          {data.enquiries.map((enquiry) => (
             <Link key={enquiry.id} to={`/enquiries/${enquiry.id}`} className="row">
-              <div className="title">{enquiry.reference_number}</div>
+              <div className="title">
+                {data.clientNames.get(enquiry.client_id) ?? enquiry.reference_number}
+              </div>
               <div className="meta">
                 <span className="badge">{label('enquiryStatus', enquiry.status)}</span>{' '}
                 {enquiry.assigned_to ? null : <span className="badge warn">{t('common.unassigned')}</span>}{' '}
                 {enquiry.project_type ?? t('enquiries.projectTypeMissing')} · {formatDateTime(enquiry.last_action_at, language)}
               </div>
+              <div className="meta">{enquiry.reference_number}</div>
             </Link>
           ))}
         </div>

@@ -176,6 +176,7 @@ export interface ProjectFinance {
 export interface CrmSession {
   id: string;
   artist_id: string;
+  client_id: string;
   project_id: string;
   status: SessionStatus;
   start_at: string;

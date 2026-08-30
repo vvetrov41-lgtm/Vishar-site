@@ -93,7 +93,8 @@ const EN = {
   'dashboard.recentActivity': 'Recent activity',
   'dashboard.noActivity': 'No activity yet',
 
-  'enquiries.searchByReference': 'Search by reference',
+  'enquiries.searchByReference': 'Search enquiries',
+  'enquiries.searchPlaceholder': 'Client or reference',
   'enquiries.status': 'Status',
   'enquiries.all': 'All',
   'enquiries.loading': 'Loading enquiries…',
@@ -154,8 +155,8 @@ const EN = {
   'image.openOriginal': 'Open full-size reference{filename}',
   'image.remove': 'Remove',
 
-  'clients.searchByName': 'Search by name',
-  'clients.namePlaceholder': 'Client name',
+  'clients.searchByName': 'Search clients',
+  'clients.namePlaceholder': 'Name, phone, email or Instagram',
   'clients.loading': 'Loading clients…',
   'clients.noMatch': 'No clients match',
   'clients.noMatchHint': 'Clients are created automatically when an enquiry arrives.',
@@ -393,7 +394,8 @@ const RU: Record<TranslationKey, string> = {
   'dashboard.recentActivity': 'Последние действия',
   'dashboard.noActivity': 'Действий пока нет',
 
-  'enquiries.searchByReference': 'Поиск по номеру',
+  'enquiries.searchByReference': 'Поиск заявок',
+  'enquiries.searchPlaceholder': 'Клиент или номер заявки',
   'enquiries.status': 'Статус',
   'enquiries.all': 'Все',
   'enquiries.loading': 'Загружаем заявки…',
@@ -454,8 +456,8 @@ const RU: Record<TranslationKey, string> = {
   'image.openOriginal': 'Открыть референс в полном размере{filename}',
   'image.remove': 'Удалить',
 
-  'clients.searchByName': 'Поиск по имени',
-  'clients.namePlaceholder': 'Имя клиента',
+  'clients.searchByName': 'Поиск клиентов',
+  'clients.namePlaceholder': 'Имя, телефон, email или Instagram',
   'clients.loading': 'Загружаем клиентов…',
   'clients.noMatch': 'Подходящих клиентов нет',
   'clients.noMatchHint': 'Карточка клиента создаётся автоматически при поступлении заявки.',

@@ -25,7 +25,7 @@ describe('list search debounce', () => {
       queryCalls,
     });
 
-    const input = await screen.findByRole('searchbox', { name: /search by reference/i });
+    const input = await screen.findByRole('searchbox', { name: /search enquiries/i });
     await screen.findByText('ENQ-2026-0001');
     queryCalls.length = 0;
     vi.useFakeTimers();
@@ -34,17 +34,17 @@ describe('list search debounce', () => {
     await advanceDebounce(200);
     fireEvent.change(input, { target: { value: 'ENQ-2026-0099' } });
 
+    // Enquiry search now matches the reference or the client, so it is an `or`
+    // filter on enquiries rather than a single reference ilike.
     await advanceDebounce(SEARCH_DEBOUNCE_MS - 1);
-    expect(queryCalls.filter((call) => call.method === 'ilike')).toEqual([]);
+    expect(queryCalls.filter((call) => call.table === 'enquiries' && call.method === 'or')).toEqual([]);
 
     await advanceDebounce(1);
-    expect(queryCalls.filter((call) => call.method === 'ilike')).toEqual([
-      {
-        table: 'enquiries',
-        method: 'ilike',
-        args: ['reference_number', '%ENQ-2026-0099%'],
-      },
-    ]);
+    const enquirySearches = queryCalls.filter(
+      (call) => call.table === 'enquiries' && call.method === 'or'
+    );
+    expect(enquirySearches).toHaveLength(1);
+    expect(enquirySearches[0].args[0]).toContain('reference_number.ilike.*ENQ-2026-0099*');
   });
 
   it('debounces client search and trims surrounding whitespace before querying', async () => {
@@ -62,16 +62,19 @@ describe('list search debounce', () => {
 
     fireEvent.change(input, { target: { value: '  Fixture Client  ' } });
 
+    // Client search moved from a single `full_name` ilike to an `or` filter
+    // across every identifier a message can arrive with, so the debounce is
+    // asserted against that call instead.
     await advanceDebounce(SEARCH_DEBOUNCE_MS - 1);
-    expect(queryCalls.filter((call) => call.method === 'ilike')).toEqual([]);
+    expect(queryCalls.filter((call) => call.table === 'clients' && call.method === 'or')).toEqual([]);
 
     await advanceDebounce(1);
-    expect(queryCalls.filter((call) => call.method === 'ilike')).toEqual([
-      {
-        table: 'clients',
-        method: 'ilike',
-        args: ['full_name', '%Fixture Client%'],
-      },
-    ]);
+    const clientSearches = queryCalls.filter(
+      (call) => call.table === 'clients' && call.method === 'or'
+    );
+    expect(clientSearches).toHaveLength(1);
+    // Trimmed, and no `%` padding leaks into PostgREST's own `*` wildcards.
+    expect(clientSearches[0].args[0]).toContain('full_name.ilike.*Fixture Client*');
+    expect(clientSearches[0].args[0]).not.toContain('%');
   });
 });

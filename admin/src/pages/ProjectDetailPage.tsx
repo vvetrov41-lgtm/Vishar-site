@@ -20,6 +20,7 @@ import type {
 
 interface ProjectData {
   project: Project | null;
+  clientName: string | null;
   finance: ProjectFinance | null;
   appointments: Appointment[];
   sessionFinance: SessionFinance[];
@@ -63,6 +64,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     if (!project) {
       return {
         project: null,
+        clientName: null,
         finance: null,
         appointments: [],
         sessionFinance: [],
@@ -81,7 +83,19 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       can(role, 'viewActivity') ? api.listActivity({ projectId }) : Promise.resolve([]),
     ]);
 
-    return { project, finance, appointments, sessionFinance, notes, activity };
+    // Booking a session without seeing whose session it is was the sharpest
+    // instance of the project page describing the record instead of the person.
+    const [clientRow] = await api.listClientsByIds([project.client_id]);
+
+    return {
+      project,
+      clientName: clientRow?.full_name ?? null,
+      finance,
+      appointments,
+      sessionFinance,
+      notes,
+      activity,
+    };
   }, [api, projectId, role, memberships]);
 
   useEffect(() => {
@@ -126,7 +140,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.project) return <EmptyState title={t('project.notFound')} />;
 
-  const { project, finance, appointments, sessionFinance, notes, activity } = data;
+  const { project, clientName, finance, appointments, sessionFinance, notes, activity } = data;
   const scopedMemberships = memberships.filter((membership) => membership.artist_id === project.artist_id);
   const mayViewFinance = canAccess(role, 'viewFinance', scopedMemberships);
   const mayManageFinance = canAccess(role, 'manageFinance', scopedMemberships);
@@ -153,7 +167,12 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       <RecordArtistContext artistId={project.artist_id} />
 
       <div className="card">
-        <h2 style={{ fontSize: '1.2rem' }}>{project.title}</h2>
+        <h2 style={{ fontSize: '1.2rem' }}>{clientName ?? project.title}</h2>
+        {clientName ? (
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0 0 8px' }}>
+            {project.title}
+          </p>
+        ) : null}
         <div>
           <span className="badge">{projectStatusLabel(project.status, language)}</span>{' '}
           <span className={project.deposit_status === 'paid' ? 'badge ok' : 'badge'}>

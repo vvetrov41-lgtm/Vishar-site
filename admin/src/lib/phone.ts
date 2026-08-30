@@ -35,3 +35,38 @@ export function formatPhoneForDisplay(phone: string | null | undefined): string 
 
   return `+${digits}`;
 }
+
+/**
+ * Digit forms a stored phone number might plausibly take, for a search term.
+ *
+ * Numbers reach the CRM from a booking form, a WhatsApp profile and manual
+ * entry, so the same person can be stored as `+447700900123`, `07700900123` or
+ * `447700900123`. A search matches on any of them rather than requiring the
+ * operator to guess which one was saved. This is a display-layer convenience:
+ * it does not normalise or rewrite anything that is stored.
+ */
+export function phoneSearchCandidates(term: string): string[] {
+  const raw = (term ?? '').trim();
+  if (!raw) return [];
+
+  const digits = raw.replace(/[^0-9]/g, '');
+  // Two digits match far too much to be a useful phone search.
+  if (digits.length < 3) return [];
+
+  const candidates = new Set<string>([digits]);
+
+  const international = normalisedDigits(raw);
+  if (international) {
+    candidates.add(international);
+    // The same subscriber number without its country code, for records saved
+    // in the local form.
+    if (international.startsWith('44') && international.length > 4) {
+      candidates.add(`0${international.slice(2)}`);
+      candidates.add(international.slice(2));
+    }
+  }
+
+  if (digits.startsWith('0') && digits.length > 1) candidates.add(digits.slice(1));
+
+  return [...candidates];
+}

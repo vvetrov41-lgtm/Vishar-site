@@ -8,6 +8,7 @@
 // table directly: they go through the SECURITY DEFINER RPCs, which re-check the
 // caller's role and write the audit trail in the same transaction.
 
+import { phoneSearchCandidates } from './phone';
 import type {
   ActivityEntry,
   Artist,
@@ -69,6 +70,16 @@ function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
   return (result.data ?? ([] as unknown)) as T;
 }
 
+/**
+ * PostgREST parses `or=(...)` as a comma-separated list, so a term containing
+ * the grammar's own punctuation would change the shape of the filter rather
+ * than be searched for. Those characters are dropped: none of them appear in a
+ * name, address, handle or phone number worth searching by.
+ */
+function postgrestPattern(term: string): string {
+  return term.replace(/[,()"\\]/g, '').trim();
+}
+
 export function friendlyMessage(error: any, what: string): string {
   const code = typeof error?.code === 'string' ? error.code : '';
   if (code === '42501' || code === 'PGRST301') {
@@ -88,6 +99,34 @@ export interface ApiOptions {
 export function createApi(client: CrmClient, options: ApiOptions = {}) {
   const teamInviteUrl = options.teamInviteUrl ?? '';
   const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
+
+  /**
+   * Clients matching a free-text term across every stored identifier.
+   * Shared by client search and enquiry search rather than reached through
+   * `this`, whose binding depends on how the caller obtained the method.
+   */
+  async function searchClients(term: string): Promise<Client[]> {
+    const pattern = `*${postgrestPattern(term)}*`;
+    const conditions = [
+      `full_name.ilike.${pattern}`,
+      `email.ilike.${pattern}`,
+      `instagram.ilike.${pattern}`,
+      `phone.ilike.${pattern}`,
+      ...phoneSearchCandidates(term).map(
+        (candidate) => `phone.ilike.*${postgrestPattern(candidate)}*`
+      ),
+    ];
+    return unwrap<Client[]>(
+      await client
+        .from('clients')
+        .select('id, full_name, email, phone, instagram, preferred_contact, travelling_from, notes_summary, created_at, updated_at, archived_at')
+        .is('archived_at', null)
+        .order('created_at', { ascending: false })
+        .limit(200)
+        .or(conditions.join(',')),
+      'load clients'
+    );
+  }
 
   return {
     teamInviteConfigured: Boolean(teamInviteUrl),
@@ -237,7 +276,21 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       if (filters.status) query = query.eq('status', filters.status);
       if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo);
       if (filters.clientId) query = query.eq('client_id', filters.clientId);
-      if (filters.search) query = query.ilike('reference_number', `%${filters.search}%`);
+      // A reference number is the one identifier the operator does not have to
+      // hand. Matching the client as well means "Anna's enquiry" is findable by
+      // typing Anna. Client ids are resolved first because PostgREST cannot
+      // express the join inside a single `or` filter.
+      if (filters.search) {
+        const pattern = postgrestPattern(filters.search);
+        const conditions = [`reference_number.ilike.*${pattern}*`];
+        const matchedClientIds = filters.clientId
+          ? []
+          : (await searchClients(filters.search)).map((entry) => entry.id);
+        if (matchedClientIds.length > 0) {
+          conditions.push(`client_id.in.(${matchedClientIds.join(',')})`);
+        }
+        query = query.or(conditions.join(','));
+      }
       if (filters.artistId) query = query.eq('artist_id', filters.artistId);
 
       return unwrap<Enquiry[]>(await query, 'load enquiries');
@@ -297,6 +350,16 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     },
 
     // ---- clients ----------------------------------------------------------
+    /**
+     * Client search across every identifier a message can arrive with.
+     *
+     * Matching only `full_name` meant a WhatsApp message from a number, an
+     * email address or an Instagram handle could not be traced back to the
+     * person, even though all four values are already stored on the row and
+     * already selected below. Phone numbers additionally reach the CRM in
+     * several forms, so a term is expanded into the digit forms it could have
+     * been saved as. Row level security still decides which rows come back.
+     */
     async listClients(search?: string): Promise<Client[]> {
       let query = client
         .from('clients')
@@ -304,7 +367,10 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
         .is('archived_at', null)
         .order('created_at', { ascending: false })
         .limit(200);
-      if (search) query = query.ilike('full_name', `%${search}%`);
+
+      const term = (search ?? '').trim();
+      if (term) return searchClients(term);
+
       return unwrap<Client[]>(await query, 'load clients');
     },
 
@@ -378,7 +444,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     async listSessions(projectId?: string, artistId?: string): Promise<CrmSession[]> {
       let query = client
         .from('sessions')
-        .select('id, artist_id, project_id, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, notes, cancelled_at')
+        .select('id, artist_id, client_id, project_id, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, notes, cancelled_at')
         .order('start_at', { ascending: true })
         .limit(200);
       if (projectId) query = query.eq('project_id', projectId);

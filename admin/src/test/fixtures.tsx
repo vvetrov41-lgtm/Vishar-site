@@ -628,6 +628,10 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         queryCalls.push({ table, method: 'ilike', args });
         return chain;
       },
+      or: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'or', args });
+        return chain;
+      },
       order: () => chain,
       limit: () => chain,
       maybeSingle: () =>
