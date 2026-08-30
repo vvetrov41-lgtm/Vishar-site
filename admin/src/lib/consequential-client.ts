@@ -1,6 +1,6 @@
 import type { CrmClient } from './api';
+import { cancelLabelFor, confirmDialog } from './confirm-dialog';
 import type { Language } from './i18n';
-import './consequential-dialog.css';
 
 export type ConsequentialAction =
   | 'convertEnquiry'
@@ -90,13 +90,6 @@ interface ConfirmationOptions {
   language?: () => Language;
 }
 
-let dialogSequence = 0;
-
-function nextDialogId(prefix: string): string {
-  dialogSequence += 1;
-  return `${prefix}-${dialogSequence}`;
-}
-
 function currentLanguage(): Language {
   try {
     const saved = window.localStorage.getItem('vishar-crm-language');
@@ -128,106 +121,22 @@ function consequentialAction(
   return null;
 }
 
-function appendTextElement<K extends keyof HTMLElementTagNameMap>(
-  parent: HTMLElement,
-  tagName: K,
-  text: string,
-  className?: string
-): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tagName);
-  element.textContent = text;
-  if (className) element.className = className;
-  parent.append(element);
-  return element;
-}
-
 /**
- * Shows a CRM-owned modal rather than the browser's hostname-labelled confirm
- * prompt. Native dialog modality supplies focus containment and Escape support;
- * the explicit handlers preserve a safe cancel path and restore page scrolling.
+ * The RPC-level confirmations, expressed through the shared dialog. The copy
+ * for these lives here because it is keyed to the operation the database is
+ * about to be asked to perform, not to the screen that asked.
  */
 export function showConsequentialDialog(
   message: string,
   action: ConsequentialAction,
   language: Language
 ): Promise<boolean> {
-  return new Promise((resolve) => {
-    const dialog = document.createElement('dialog');
-    const titleId = nextDialogId('consequential-title');
-    const descriptionId = nextDialogId('consequential-description');
-    const previousOverflow = document.body.style.overflow;
-    let settled = false;
-
-    dialog.className = 'consequential-dialog';
-    dialog.setAttribute('role', 'alertdialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-labelledby', titleId);
-    dialog.setAttribute('aria-describedby', descriptionId);
-
-    const content = document.createElement('div');
-    content.className = 'consequential-dialog-content';
-    const title = appendTextElement(content, 'h2', TITLES[language][action]);
-    title.id = titleId;
-    const description = appendTextElement(content, 'p', message);
-    description.id = descriptionId;
-
-    const actions = document.createElement('div');
-    actions.className = 'consequential-dialog-actions';
-
-    const cancelButton = appendTextElement(
-      actions,
-      'button',
-      language === 'ru' ? 'Назад' : 'Go back',
-      'consequential-dialog-cancel'
-    );
-    cancelButton.type = 'button';
-
-    const confirmButton = appendTextElement(
-      actions,
-      'button',
-      CONFIRM_LABELS[language][action],
-      action === 'convertEnquiry'
-        ? 'primary consequential-dialog-confirm'
-        : 'danger consequential-dialog-confirm'
-    );
-    confirmButton.type = 'button';
-
-    content.append(actions);
-    dialog.append(content);
-
-    const finish = (approved: boolean) => {
-      if (settled) return;
-      settled = true;
-      document.body.style.overflow = previousOverflow;
-      if (dialog.open && typeof dialog.close === 'function') dialog.close();
-      dialog.remove();
-      resolve(approved);
-    };
-
-    cancelButton.addEventListener('click', () => finish(false));
-    confirmButton.addEventListener('click', () => finish(true));
-    dialog.addEventListener('cancel', (event) => {
-      event.preventDefault();
-      finish(false);
-    });
-    dialog.addEventListener('click', (event) => {
-      if (event.target === dialog) finish(false);
-    });
-
-    document.body.append(dialog);
-    document.body.style.overflow = 'hidden';
-
-    try {
-      if (typeof dialog.showModal === 'function') {
-        dialog.showModal();
-      } else {
-        dialog.setAttribute('open', '');
-      }
-    } catch {
-      dialog.setAttribute('open', '');
-    }
-
-    queueMicrotask(() => cancelButton.focus());
+  return confirmDialog({
+    title: TITLES[language][action],
+    message,
+    confirmLabel: CONFIRM_LABELS[language][action],
+    cancelLabel: cancelLabelFor(language),
+    tone: action === 'convertEnquiry' ? 'primary' : 'danger',
   });
 }
 

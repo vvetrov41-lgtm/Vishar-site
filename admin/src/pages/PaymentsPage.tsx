@@ -9,6 +9,7 @@ import {
   readMonzoConnectorOrigin,
 } from '../lib/monzo-connector';
 import { paymentCopy, type PaymentCopy } from '../lib/payment-copy';
+import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import type {
   DepositRequestResult,
   DepositTier,
@@ -351,7 +352,13 @@ export function PaymentsPage() {
   async function archiveDestination(destination: MonzoPaymentDestination) {
     if (!selectedArtistId || !canManageReconciliation) return;
     const amountLabel = money(destination.amount, destination.currency, locale);
-    if (!window.confirm(copy.removeDestinationPrompt(amountLabel))) return;
+    const approvedRemoval = await confirmDialog({
+      title: copy.removeDestinationTitle,
+      message: copy.removeDestinationPrompt(amountLabel),
+      confirmLabel: copy.removeDestination,
+      cancelLabel: cancelLabelFor(language),
+    });
+    if (!approvedRemoval) return;
     setBusyDestination(destination.destination_id);
     setError(null);
     setDestinationNotice(null);
@@ -496,7 +503,13 @@ export function PaymentsPage() {
 
   async function ignoreCandidate(candidate: MonzoReconciliationCandidate) {
     if (!selectedArtistId || !canManageReconciliation || candidate.confirmed) return;
-    if (!window.confirm(copy.ignorePrompt(money(candidate.amount, candidate.currency, locale)))) return;
+    const approvedIgnore = await confirmDialog({
+      title: copy.ignoreTitle,
+      message: copy.ignorePrompt(money(candidate.amount, candidate.currency, locale)),
+      confirmLabel: copy.ignore,
+      cancelLabel: cancelLabelFor(language),
+    });
+    if (!approvedIgnore) return;
     setBusyCandidate(candidate.id);
     setError(null);
     setReconciliationNotice(null);
@@ -514,9 +527,15 @@ export function PaymentsPage() {
   async function confirmCandidate(candidate: MonzoReconciliationCandidate) {
     if (!selectedArtistId || !canManageReconciliation || candidate.confirmed || !candidate.matched_payment_request) return;
     const matched = candidate.matched_payment_request;
-    const confirmed = window.confirm(
-      copy.confirmPrompt(money(candidate.amount, candidate.currency, locale), matched.client_name)
-    );
+    const confirmed = await confirmDialog({
+      title: copy.confirmPaymentTitle,
+      message: copy.confirmPrompt(money(candidate.amount, candidate.currency, locale), matched.client_name),
+      confirmLabel: copy.confirmPayment,
+      cancelLabel: cancelLabelFor(language),
+      // Recording money against the right client is the desired outcome here,
+      // not a destructive one.
+      tone: 'primary',
+    });
     if (!confirmed) return;
     setBusyCandidate(candidate.id);
     setError(null);

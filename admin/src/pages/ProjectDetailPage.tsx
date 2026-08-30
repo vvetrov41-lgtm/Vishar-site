@@ -8,6 +8,7 @@ import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
 import { ProjectEstimatePanel } from '../components/ProjectEstimatePanel';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
+import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { Link } from '../lib/router';
 import { can, canAccess } from '../lib/permissions';
 import { formatDateTime, formatMoney } from '../lib/format';
@@ -210,8 +211,18 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                 type="button"
                 disabled={busy || projectStatus === project.status}
                 onClick={() => {
-                  if (projectStatus === 'cancelled' && !window.confirm(copy.cancelProjectConfirm)) return;
-                  void run(() => api.setProjectStatus(project.id, projectStatus));
+                  void (async () => {
+                    if (projectStatus === 'cancelled') {
+                      const approved = await confirmDialog({
+                        title: copy.cancelProjectTitle,
+                        message: copy.cancelProjectConfirm,
+                        confirmLabel: copy.cancelProjectAction,
+                        cancelLabel: cancelLabelFor(language),
+                      });
+                      if (!approved) return;
+                    }
+                    await run(() => api.setProjectStatus(project.id, projectStatus));
+                  })();
                 }}
               >
                 {copy.saveStatus}
@@ -509,6 +520,8 @@ const COPY = {
     projectStatus: 'Project status',
     saveStatus: 'Save status',
     cancelProjectConfirm: 'Mark this project cancelled?',
+    cancelProjectTitle: 'Cancel this project?',
+    cancelProjectAction: 'Cancel project',
     draftMismatch: 'This project is still a draft even though it already has a paid deposit or confirmed work. Set it to Active if work is proceeding.',
     appointments: 'Appointments',
     noAppointments: 'No appointments planned',
@@ -530,6 +543,8 @@ const COPY = {
     projectStatus: 'Статус проекта',
     saveStatus: 'Сохранить статус',
     cancelProjectConfirm: 'Отметить этот проект отменённым?',
+    cancelProjectTitle: 'Отменить проект?',
+    cancelProjectAction: 'Отменить проект',
     draftMismatch: 'Проект всё ещё в черновике, хотя депозит уже оплачен или есть подтверждённая запись. Если работа идёт, переведи проект в статус «активный».',
     appointments: 'Записи',
     noAppointments: 'Записей пока нет',

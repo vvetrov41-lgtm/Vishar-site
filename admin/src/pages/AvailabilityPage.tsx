@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { LoadingState } from '../components/StateViews';
+import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import type {
   AvailabilityBlock,
   AvailabilityBlockKind,
@@ -149,7 +150,13 @@ export function AvailabilityPage() {
 
   async function cancelBlock(block: AvailabilityBlock) {
     if (!mayManage) return;
-    if (!window.confirm(copy.cancelConfirm)) return;
+    const approved = await confirmDialog({
+      title: copy.cancelConfirmTitle,
+      message: copy.cancelConfirm,
+      confirmLabel: copy.cancelConfirmAction,
+      cancelLabel: cancelLabelFor(language),
+    });
+    if (!approved) return;
     setSaving(true);
     setError(null);
     try {
@@ -520,6 +527,8 @@ function pageCopy(language: 'en' | 'ru') {
         cancelError: 'Не удалось убрать блокировку.', invalidRange: 'Проверьте даты и время.',
         chooseOneArtist: 'Выберите одного мастера в верхнем фильтре. Блокировка времени всегда относится только к одному мастеру.',
         cancelConfirm: 'Убрать эту блокировку времени? После этого интервал снова можно будет использовать для записей.',
+        cancelConfirmTitle: 'Убрать блокировку?',
+        cancelConfirmAction: 'Убрать',
       }
     : {
         title: 'Availability and time off',
@@ -534,5 +543,7 @@ function pageCopy(language: 'en' | 'ru') {
         cancelError: 'Could not remove that block.', invalidRange: 'Check the dates and times.',
         chooseOneArtist: 'Choose one artist in the top filter. A time-off block always belongs to exactly one artist.',
         cancelConfirm: 'Remove this time-off block? The interval will become schedulable again.',
+        cancelConfirmTitle: 'Remove time off?',
+        cancelConfirmAction: 'Remove block',
       };
 }

@@ -3,6 +3,9 @@ import type { Language } from './i18n';
 export interface PaymentCopy {
   loadingPayments: string;
   chooseArtist: string;
+  removeDestinationTitle: string;
+  ignoreTitle: string;
+  confirmPaymentTitle: string;
   noAssignedArtists: string;
   clientUnknown: string;
   connectionTitle: string;
@@ -118,6 +121,9 @@ export interface PaymentCopy {
 const EN: PaymentCopy = {
   loadingPayments: 'Loading payments…',
   chooseArtist: 'Choose one artist to manage payments.',
+  removeDestinationTitle: 'Remove this payment destination?',
+  ignoreTitle: 'Ignore this payment?',
+  confirmPaymentTitle: 'Confirm this payment?',
   noAssignedArtists: 'This account is not assigned to any artist yet. Ask the owner for access.',
   clientUnknown: 'Client not available',
   connectionTitle: 'Monzo account connection',
@@ -233,6 +239,9 @@ const EN: PaymentCopy = {
 const RU: PaymentCopy = {
   loadingPayments: 'Загружаем платежи…',
   chooseArtist: 'Выберите одного мастера для управления платежами.',
+  removeDestinationTitle: 'Удалить этот реквизит для оплаты?',
+  ignoreTitle: 'Игнорировать этот платёж?',
+  confirmPaymentTitle: 'Подтвердить платёж?',
   noAssignedArtists: 'У этой учётной записи пока нет доступа ни к одному мастеру. Попросите владельца выдать доступ.',
   clientUnknown: 'Клиент недоступен',
   connectionTitle: 'Подключение Monzo',
