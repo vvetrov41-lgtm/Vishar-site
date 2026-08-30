@@ -116,6 +116,7 @@ jobs:
 
       - name: Test GPT production domain reconciliation boundary
         run: |
+          node scripts/test-gpt-operator-parity.mjs
           node scripts/test-gpt-operations-domain.mjs
           node scripts/test-gpt-production-domain-reconciliation.mjs
 
