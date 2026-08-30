@@ -150,7 +150,10 @@ async function handleFullRequest(request, env, fetchImpl) {
         accept: 'application/json',
       },
       body: JSON.stringify(route.payload),
-      redirect: 'error',
+      // `manual`, never the `error` redirect mode: the Workers runtime rejects
+      // that mode and throws before the subrequest is dispatched. A redirect
+      // arrives here as a 3xx response and is refused as a non-ok status below.
+      redirect: 'manual',
     });
 
     const text = await response.text();

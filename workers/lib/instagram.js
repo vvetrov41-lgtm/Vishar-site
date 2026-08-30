@@ -317,7 +317,10 @@ export async function refreshLongLivedToken({ accessToken, fetchImpl = fetch }) 
 
   let response;
   try {
-    response = await fetchImpl(url.toString(), { redirect: 'error' });
+    // `manual`, never the `error` redirect mode: the Workers runtime rejects
+    // that mode and throws before the subrequest is dispatched. A redirect
+    // arrives here as a 3xx response and is refused as a non-ok status below.
+    response = await fetchImpl(url.toString(), { redirect: 'manual' });
   } catch {
     throw new InstagramError('instagram_unreachable');
   }
@@ -486,7 +489,10 @@ export async function sendInstagramMessage({
           recipient: { id: recipientId },
           message: { text },
         }),
-        redirect: 'error',
+        // `manual`, never the `error` redirect mode: the Workers runtime rejects
+        // that mode and throws before the subrequest is dispatched. A redirect
+        // arrives here as a 3xx response and is refused as a non-ok status below.
+        redirect: 'manual',
       },
     );
   } catch {

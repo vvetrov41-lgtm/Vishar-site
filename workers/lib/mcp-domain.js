@@ -117,7 +117,10 @@ export function createSupabaseActorGateway({ supabaseUrl, publishableKey, actorA
         method: 'POST',
         headers: { ...headers, 'content-type': 'application/json' },
         body: JSON.stringify(payload),
-        redirect: 'error',
+        // `manual`, never the `error` redirect mode: the Workers runtime rejects
+        // that mode and throws before the subrequest is dispatched. A redirect
+        // arrives here as a 3xx response and is refused as a non-ok status below.
+        redirect: 'manual',
       });
       return readResponse(response);
     },
@@ -130,7 +133,10 @@ export function createSupabaseActorGateway({ supabaseUrl, publishableKey, actorA
       const response = await fetchImpl(url.toString(), {
         method: 'GET',
         headers,
-        redirect: 'error',
+        // `manual`, never the `error` redirect mode: the Workers runtime rejects
+        // that mode and throws before the subrequest is dispatched. A redirect
+        // arrives here as a 3xx response and is refused as a non-ok status below.
+        redirect: 'manual',
       });
       return readResponse(response);
     },
