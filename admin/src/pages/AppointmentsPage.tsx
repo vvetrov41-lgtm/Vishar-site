@@ -3,11 +3,13 @@ import { useAsync } from '../components/AsyncData';
 import { ClientPicker } from '../components/ClientPicker';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
+import { beyondAgenda, buildAgenda, pastAppointments } from '../lib/calendar-agenda';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { can } from '../lib/permissions';
 import { Link } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
+import type { AvailabilityBlock } from '../lib/availability-api';
 import type { Client, Enquiry, Project, SessionStatus } from '../lib/types';
 import type {
   Appointment,
@@ -21,7 +23,11 @@ type PageData = {
   projects: Project[];
   enquiries: Enquiry[];
   clients: Client[];
+  timeOff: AvailabilityBlock[];
 };
+
+/** How far ahead the diary lays out days, including today. */
+const AGENDA_DAYS = 14;
 
 type TypeFilter = AppointmentType | 'all';
 
@@ -62,7 +68,21 @@ export function AppointmentsPage() {
       ...projects.map((project) => project.client_id),
       ...enquiries.map((enquiry) => enquiry.client_id),
     ]);
-    return { appointments, projects, enquiries, clients };
+
+    // Time off is the other half of "when am I free?", and lived on a separate
+    // screen. The read is per artist, so with no artist chosen it asks about
+    // every artist the operator can reach rather than showing an empty diary.
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + AGENDA_DAYS).toISOString();
+    const agendaArtistIds = selectedArtistId
+      ? [selectedArtistId]
+      : (await api.listAccessibleArtists()).filter((artist) => artist.is_active).map((artist) => artist.id);
+    const timeOff = (await Promise.all(
+      agendaArtistIds.map((id) => api.listAvailabilityBlocks({ artistId: id, from, to }).catch(() => [])),
+    )).flat();
+
+    return { appointments, projects, enquiries, clients, timeOff };
   }, [api, selectedArtistId]);
 
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -143,15 +163,15 @@ export function AppointmentsPage() {
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return <EmptyState title={copy.none} />;
 
-  const now = Date.now();
-  const upcoming = visibleAppointments.filter(
-    (appointment) => appointment.status !== 'cancelled'
-      && new Date(appointment.start_at).getTime() >= now
-  );
-  const past = visibleAppointments.filter(
-    (appointment) => appointment.status === 'cancelled'
-      || new Date(appointment.start_at).getTime() < now
-  ).reverse();
+  const nowDate = new Date();
+  const agenda = buildAgenda({
+    now: nowDate,
+    appointments: visibleAppointments,
+    timeOff: data.timeOff,
+    days: AGENDA_DAYS,
+  });
+  const later = beyondAgenda(nowDate, AGENDA_DAYS, visibleAppointments);
+  const past = pastAppointments(nowDate, visibleAppointments);
 
   const projectRequired = appointmentType === 'tattoo_session' || appointmentType === 'touch_up';
   const startIso = inputToIso(startAt);
@@ -397,10 +417,59 @@ export function AppointmentsPage() {
 
       {statusError ? <p className="notice warn" role="alert">{statusError}</p> : null}
 
-      <Section title={copy.upcoming}>
-        {upcoming.length === 0 ? <EmptyState title={copy.nothingUpcoming} /> : (
+      {/* The diary, not a flat list. Every day in the window appears, including
+          the empty ones, because "nothing on Thursday" is the answer to "when
+          am I free?" - and time off, the other half of that answer, is shown
+          here rather than on a separate screen. */}
+      <Section title={copy.diary}>
+        <div className="agenda">
+          {agenda.map((day) => (
+            <div key={day.date} className={day.isToday ? 'agenda-day today' : 'agenda-day'}>
+              <h3 className="agenda-day-heading">
+                {dayHeading(day.date, language)}
+                {day.isToday ? <span className="badge ok">{copy.todayMarker}</span> : null}
+              </h3>
+              {day.entries.length === 0 ? (
+                <p className="meta agenda-free">{copy.dayFree}</p>
+              ) : (
+                <div className="list">
+                  {day.entries.map((entry) => (entry.kind === 'time_off' ? (
+                    <div key={entry.key} className="row agenda-time-off">
+                      <div className="title">{timeOffLabel(entry.block.block_kind, language)}</div>
+                      <div className="meta">
+                        {entry.block.is_all_day
+                          ? copy.allDay
+                          : `${formatDateTime(entry.block.start_at, language)} – ${formatDateTime(entry.block.end_at, language)}`}
+                        {entry.block.note ? ` · ${entry.block.note}` : ''}
+                      </div>
+                    </div>
+                  ) : (
+                    <AppointmentRow
+                      key={entry.key}
+                      appointment={entry.appointment}
+                      client={data.clients.find((client) => client.id === entry.appointment.client_id) ?? null}
+                      enquiry={data.enquiries.find((enquiry) => enquiry.id === entry.appointment.enquiry_id) ?? null}
+                      project={data.projects.find((project) => project.id === entry.appointment.project_id) ?? null}
+                      language={language}
+                      statusLabel={label('sessionStatus', entry.appointment.status)}
+                      paymentLabel={label('paymentStatus', entry.appointment.payment_status)}
+                      mayManage={mayManage}
+                      changing={changingAppointmentId === entry.appointment.id}
+                      onStatus={(status) => { void changeStatus(entry.appointment.id, status); }}
+                      onReschedule={(nextStartAt, nextEndAt) => rescheduleAppointment(entry.appointment.id, nextStartAt, nextEndAt)}
+                    />
+                  )))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title={copy.later}>
+        {later.length === 0 ? <EmptyState compact title={copy.nothingLater} /> : (
           <div className="list">
-            {upcoming.map((appointment) => (
+            {later.map((appointment) => (
               <AppointmentRow
                 key={appointment.id}
                 appointment={appointment}
@@ -600,6 +669,23 @@ export function AppointmentRow({
   );
 }
 
+const DAY_HEADING: Record<Language, Intl.DateTimeFormat> = {
+  en: new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+  ru: new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' }),
+};
+
+function dayHeading(date: number, language: Language): string {
+  return DAY_HEADING[language].format(new Date(date));
+}
+
+function timeOffLabel(kind: AvailabilityBlock['block_kind'], language: Language): string {
+  const labels: Record<Language, Record<AvailabilityBlock['block_kind'], string>> = {
+    en: { day_off: 'Day off', holiday: 'Holiday', personal: 'Personal', other: 'Unavailable' },
+    ru: { day_off: 'Выходной', holiday: 'Отпуск', personal: 'Личное', other: 'Недоступно' },
+  };
+  return labels[language][kind];
+}
+
 /**
  * A picker option names the person first. `Raven sleeve` and `ENQ-2026-0143`
  * both identify a record; neither tells the operator who they are booking.
@@ -722,8 +808,12 @@ const COPY: Record<Language, Record<string, string>> = {
     markCompleted: 'Mark completed',
     markNoShow: 'Mark no-show',
     cancel: 'Cancel',
-    upcoming: 'Upcoming',
-    nothingUpcoming: 'Nothing scheduled ahead',
+    diary: 'Next 14 days',
+    todayMarker: 'Today',
+    dayFree: 'Nothing booked',
+    allDay: 'All day',
+    later: 'Further ahead',
+    nothingLater: 'Nothing booked beyond the next 14 days',
     past: 'Past',
     noPast: 'No past appointments',
     calendarNotice: 'Supabase remains authoritative. Calendar delivery stays queued or disconnected until the artist Google Calendar route is connected.',
@@ -771,8 +861,12 @@ const COPY: Record<Language, Record<string, string>> = {
     markCompleted: 'Завершить',
     markNoShow: 'Не пришёл',
     cancel: 'Отменить',
-    upcoming: 'Предстоящие',
-    nothingUpcoming: 'Впереди ничего не запланировано',
+    diary: 'Ближайшие 14 дней',
+    todayMarker: 'Сегодня',
+    dayFree: 'Записей нет',
+    allDay: 'Весь день',
+    later: 'Дальше',
+    nothingLater: 'После ближайших 14 дней записей нет',
     past: 'Прошедшие',
     noPast: 'Прошедших записей нет',
     calendarNotice: 'Supabase остаётся источником данных. Отправка в календарь будет ждать подключения Google Calendar выбранного мастера.',

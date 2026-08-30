@@ -596,6 +596,29 @@ a.client-workspace-fact { min-height: var(--tap); }
 }
 .conflict-acknowledgement input { width: 20px; height: 20px; min-height: 0; flex: 0 0 auto; }
 
+/* Agenda ----------------------------------------------------------------- */
+
+.agenda { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.agenda-day { min-width: 0; }
+.agenda-day-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.agenda-day.today .agenda-day-heading {
+  color: var(--text);
+  border-bottom-color: var(--border-strong);
+}
+.agenda-free { margin: 0; }
+.agenda-time-off { border-style: dashed; }
+
 /* Client picker ---------------------------------------------------------- */
 
 .client-picker { min-width: 0; display: block; }
