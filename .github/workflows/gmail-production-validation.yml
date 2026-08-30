@@ -24,6 +24,9 @@ on:
       - 'scripts/materialize-gmail-openapi.mjs'
       - 'scripts/generate-gmail-production-deploy-config.mjs'
       - '.github/workflows/gmail-production-validation.yml'
+  push:
+    branches:
+      - agent/platform-telegram-self-service
   workflow_dispatch:
 
 permissions:

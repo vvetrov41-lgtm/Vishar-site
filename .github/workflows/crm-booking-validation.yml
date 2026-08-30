@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - agent/platform-telegram-self-service
   workflow_dispatch:
 
 permissions:
