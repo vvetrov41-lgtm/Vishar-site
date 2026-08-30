@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useAsync } from '../components/AsyncData';
 import { useLanguage } from '../lib/i18n';
+import { canShowArtistIntegration } from '../lib/integration-visibility';
 import {
   launchWhatsAppEmbeddedSignup,
   prepareWhatsAppEmbeddedSignup,
@@ -88,10 +89,10 @@ export function WhatsAppConnectionsPage() {
       environment,
       integrations,
       artists: artists.filter(
-        (artist) => artist.is_active && canManageArtist(profile?.role, artist.id, memberships),
+        (artist) => artist.is_active && canShowArtistIntegration(profile, artist, memberships),
       ),
     };
-  }, [api, memberships, profile?.role, supabaseUrl]);
+  }, [api, memberships, profile, supabaseUrl]);
 
   async function run(artistId: string, action: () => Promise<unknown>) {
     setBusyArtistId(artistId);
