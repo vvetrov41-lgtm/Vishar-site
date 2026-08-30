@@ -1,4 +1,4 @@
-import { ApiError, friendlyMessage, type CrmClient } from './api';
+import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
 import type { EnquiryFile } from './types';
 
 export interface ClientDetailsUpdate {
@@ -42,7 +42,7 @@ function trimOrNull(value: string | null | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function rpcResult<T>(result: { data: any; error: any }, action: string): T {
+function rpcResult<T>(result: { data: any; error: any }, action: ApiOperation): T {
   if (result.error) {
     throw new ApiError(friendlyMessage(result.error, action), result.error);
   }
@@ -60,7 +60,7 @@ function archiveResult<T>(
         : 'This enquiry has an active project. Archive or close that project before deleting the enquiry.';
       throw new ApiError(message, result.error);
     }
-    throw new ApiError(friendlyMessage(result.error, `delete that ${record}`), result.error);
+    throw new ApiError(friendlyMessage(result.error, record === 'client' ? 'delete that client' : 'delete that enquiry'), result.error);
   }
   return (result.data ?? null) as T | null;
 }

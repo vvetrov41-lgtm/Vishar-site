@@ -1,7 +1,7 @@
-import { ApiError, friendlyMessage, type CrmClient } from './api';
+import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
 import type { Project, ProjectStatus } from './types';
 
-function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
+function unwrap<T>(result: { data: T | null; error: any }, what: ApiOperation): T {
   if (result.error) throw new ApiError(friendlyMessage(result.error, what), result.error);
   return result.data as T;
 }

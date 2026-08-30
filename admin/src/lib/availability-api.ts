@@ -1,4 +1,4 @@
-import { ApiError, friendlyMessage, type CrmClient } from './api';
+import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
 
 export type AvailabilityBlockKind = 'day_off' | 'holiday' | 'personal' | 'other';
 
@@ -24,7 +24,7 @@ export interface AvailabilityBlockInput {
   note?: string | null;
 }
 
-function availabilityMessage(error: any, what: string): string {
+function availabilityMessage(error: any, what: ApiOperation): string {
   const message = typeof error?.message === 'string' ? error.message : '';
   if (message.includes('time off overlaps an active appointment')) {
     return 'Move or cancel the existing appointment before blocking that time.';
@@ -35,7 +35,7 @@ function availabilityMessage(error: any, what: string): string {
   return friendlyMessage(error, what);
 }
 
-function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
+function unwrap<T>(result: { data: T | null; error: any }, what: ApiOperation): T {
   if (result.error) {
     throw new ApiError(availabilityMessage(result.error, what), result.error);
   }

@@ -8,6 +8,10 @@
 // table directly: they go through the SECURITY DEFINER RPCs, which re-check the
 // caller's role and write the audit trail in the same transaction.
 
+import { describeApiFailure, type ApiOperation } from './api-errors';
+
+export type { ApiOperation };
+import { currentLanguage } from './i18n';
 import { phoneSearchCandidates } from './phone';
 import type {
   ActivityEntry,
@@ -60,7 +64,7 @@ export class ApiError extends Error {
   }
 }
 
-function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
+function unwrap<T>(result: { data: T | null; error: any }, what: ApiOperation): T {
   if (result.error) {
     // Supabase surfaces an RLS denial as an ordinary error. Showing its raw
     // text would leak schema detail to the screen, so it is replaced with
@@ -80,15 +84,15 @@ function postgrestPattern(term: string): string {
   return term.replace(/[,()"\\]/g, '').trim();
 }
 
-export function friendlyMessage(error: any, what: string): string {
-  const code = typeof error?.code === 'string' ? error.code : '';
-  if (code === '42501' || code === 'PGRST301') {
-    return `You do not have permission to ${what}.`;
-  }
-  if (typeof error?.message === 'string' && error.message.includes('is not allowed')) {
-    return error.message;
-  }
-  return `Could not ${what}. Please try again.`;
+/**
+ * The sentence shown when an operation fails, in the operator's own language.
+ *
+ * `what` is typed as `ApiOperation`, so a new call site cannot introduce an
+ * English-only message: the phrase has to be added to `API_OPERATIONS` with
+ * its Russian translation before this compiles.
+ */
+export function friendlyMessage(error: unknown, what: ApiOperation): string {
+  return describeApiFailure(error, what, currentLanguage());
 }
 
 export interface ApiOptions {

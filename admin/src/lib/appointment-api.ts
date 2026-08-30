@@ -1,4 +1,4 @@
-import { ApiError, friendlyMessage, type CrmClient } from './api';
+import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
 import type { CalendarProvider, PaymentStatus, SessionStatus } from './types';
 
 export type AppointmentType =
@@ -68,7 +68,7 @@ export interface ScheduleAppointmentInput {
   notes?: string | null;
 }
 
-function appointmentMessage(error: any, what: string): string {
+function appointmentMessage(error: any, what: ApiOperation): string {
   const message = typeof error?.message === 'string' ? error.message : '';
   if (message.includes('artist availability blocks this time')) {
     return 'That time is blocked in artist availability.';
@@ -76,7 +76,7 @@ function appointmentMessage(error: any, what: string): string {
   return friendlyMessage(error, what);
 }
 
-function unwrap<T>(result: { data: T | null; error: any }, what: string): T {
+function unwrap<T>(result: { data: T | null; error: any }, what: ApiOperation): T {
   if (result.error) {
     throw new ApiError(appointmentMessage(result.error, what), result.error);
   }
