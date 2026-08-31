@@ -1,0 +1,56 @@
+name: GPT communications live read-only probe v2
+
+on:
+  push:
+    branches:
+      - ops/gpt-communications-live-probe-v2
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: 7eba72c81dbd601bfbf955cb3d8f0ea664a4a118
+      CORE_HOST: gpt-actions.vishartattoo.com
+      OPERATIONS_HOST: gpt-operations.vishartattoo.com
+      COMMUNICATIONS_HOST: gpt-communications.vishartattoo.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify read-only operator lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ]
+
+      - name: Probe public production boundaries without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          fake='11111111-1111-4111-8111-111111111111'
+          probe() {
+            expected="$1"
+            url="$2"
+            actual="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)"
+            if [ "$actual" != "$expected" ]; then
+              echo "Boundary mismatch for $url: expected $expected, got $actual" >&2
+              exit 1
+            fi
+          }
+          probe 200 "https://$CORE_HOST/privacy"
+          probe 200 "https://$OPERATIONS_HOST/privacy"
+          probe 200 "https://$COMMUNICATIONS_HOST/privacy"
+          probe 401 "https://$OPERATIONS_HOST/v1/enquiries/$fake/gmail/history"
+          probe 401 "https://$COMMUNICATIONS_HOST/v1/enquiries/$fake/gmail/history"
+          probe 401 "https://$COMMUNICATIONS_HOST/v1/enquiries/$fake/whatsapp"
+          echo 'Live GPT Communications boundary read-only acceptance passed.'
