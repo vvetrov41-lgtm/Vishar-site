@@ -17,12 +17,6 @@ const APPROVED_ARTISTS = Object.freeze({
     wabaId: '341184815737145',
     phoneNumberId: '328102027058293',
   }),
-  'a2222222-2222-4222-8222-222222222222': Object.freeze({
-    integrationKey: 'kristina-production',
-    bindingName: 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
-    wabaId: '462106700328578',
-    phoneNumberId: null,
-  }),
 });
 
 function json(body, status = 200) {
@@ -121,9 +115,10 @@ async function requireApprovedRoute(operator, env, artistId, approved) {
   const url = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_integrations`);
   url.searchParams.set('artist_id', `eq.${artistId}`);
   url.searchParams.set('integration_type', 'eq.whatsapp');
-  url.searchParams.set('select', 'artist_id,provider,integration_key,is_enabled,configuration');
+  url.searchParams.set('select', 'artist_id,provider,integration_key,is_enabled,configuration,connected_at');
   url.searchParams.set('limit', '2');
   const response = await noFollowFetch(url.toString(), {
+    method: 'GET',
     headers: { apikey: publishableKey, authorization: `Bearer ${operator.token}`, accept: 'application/json' },
   });
   if (!response.ok) throw Object.assign(new Error('crm_route_check_failed'), { status: 502 });
@@ -160,34 +155,13 @@ async function verifyMetaAccessToken(accessToken, env) {
     },
   });
   const data = payload?.data;
-  if (!data || data.is_valid !== true || String(data.app_id || '') !== META_APP_ID) {
-    throw Object.assign(new Error('meta_token_app_mismatch'), { status: 409 });
-  }
+  if (!data || data.is_valid !== true) throw Object.assign(new Error('meta_token_invalid'), { status: 409 });
+  if (String(data.app_id || '') !== META_APP_ID) throw Object.assign(new Error('meta_token_app_mismatch'), { status: 409 });
   const scopes = Array.isArray(data.scopes) ? data.scopes.filter((scope) => typeof scope === 'string') : [];
   if (!REQUIRED_META_SCOPES.every((scope) => scopes.includes(scope))) {
     throw Object.assign(new Error('meta_token_missing_scope'), { status: 409 });
   }
-}
-
-async function fetchExactPhone(accessToken, phoneNumberId) {
-  const phoneUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}`);
-  phoneUrl.searchParams.set('fields', 'id,display_phone_number,verified_name');
-  const phone = await graph(phoneUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
-  if (String(phone.id || '') !== phoneNumberId) throw Object.assign(new Error('meta_phone_mismatch'), { status: 409 });
-  return phone;
-}
-
-async function discoverSinglePhone(accessToken, wabaId) {
-  const phonesUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/phone_numbers`);
-  phonesUrl.searchParams.set('fields', 'id,display_phone_number,verified_name');
-  phonesUrl.searchParams.set('limit', '2');
-  const payload = await graph(phonesUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
-  const rows = Array.isArray(payload?.data) ? payload.data : [];
-  const hasMore = Boolean(payload?.paging?.next);
-  if (rows.length !== 1 || hasMore) throw Object.assign(new Error('meta_phone_selection_ambiguous'), { status: 409 });
-  const phoneNumberId = typeof rows[0]?.id === 'string' && /^\d{6,32}$/.test(rows[0].id) ? rows[0].id : '';
-  if (!phoneNumberId) throw Object.assign(new Error('meta_phone_mismatch'), { status: 409 });
-  return fetchExactPhone(accessToken, phoneNumberId);
+  return data;
 }
 
 async function verifyExistingTarget(accessToken, approved) {
@@ -196,22 +170,28 @@ async function verifyExistingTarget(accessToken, approved) {
   const waba = await graph(wabaUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
   if (String(waba.id || '') !== approved.wabaId) throw Object.assign(new Error('meta_waba_mismatch'), { status: 409 });
 
-  const phone = approved.phoneNumberId
-    ? await fetchExactPhone(accessToken, approved.phoneNumberId)
-    : await discoverSinglePhone(accessToken, approved.wabaId);
-  const phoneNumberId = String(phone.id || '');
+  const phonesUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${approved.wabaId}/phone_numbers`);
+  phonesUrl.searchParams.set('fields', 'id,display_phone_number,verified_name');
+  phonesUrl.searchParams.set('limit', '100');
+  const phones = await graph(phonesUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
+  const rows = Array.isArray(phones?.data) ? phones.data : [];
+  const phone = rows.find((row) => String(row?.id || '') === approved.phoneNumberId) || null;
+  if (!phone) throw Object.assign(new Error('meta_phone_not_in_waba'), { status: 409 });
 
   return {
-    phoneNumberId,
+    phoneNumberId: approved.phoneNumberId,
     wabaName: typeof waba.name === 'string' ? waba.name : null,
     displayPhoneNumber: typeof phone.display_phone_number === 'string' ? phone.display_phone_number : null,
     verifiedName: typeof phone.verified_name === 'string' ? phone.verified_name : null,
   };
 }
 
+function cloudflareSecretsUrl(env, worker) {
+  return `https://api.cloudflare.com/client/v4/accounts/${binding(env, 'CLOUDFLARE_ACCOUNT_ID')}/workers/scripts/${worker}/secrets`;
+}
+
 async function putWorkerSecret(env, worker, bindingName, envelope) {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${binding(env, 'CLOUDFLARE_ACCOUNT_ID')}/workers/scripts/${worker}/secrets`;
-  const response = await noFollowFetch(url, {
+  const response = await noFollowFetch(cloudflareSecretsUrl(env, worker), {
     method: 'PUT',
     headers: {
       authorization: `Bearer ${binding(env, 'CLOUDFLARE_WORKERS_EDIT_TOKEN')}`,
@@ -224,12 +204,77 @@ async function putWorkerSecret(env, worker, bindingName, envelope) {
   if (!response.ok || payload.success !== true || payload?.result?.name !== bindingName) throw Object.assign(new Error('cloudflare_binding_write_failed'), { status: 502 });
 }
 
+function cloudflareSecretRows(payload) {
+  if (Array.isArray(payload?.result)) return payload.result;
+  if (Array.isArray(payload?.result?.secrets)) return payload.result.secrets;
+  return [];
+}
+
+async function requireWorkerSecretReadback(env, worker, bindingName) {
+  const response = await noFollowFetch(cloudflareSecretsUrl(env, worker), {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${binding(env, 'CLOUDFLARE_WORKERS_EDIT_TOKEN')}`,
+      accept: 'application/json',
+    },
+  });
+  const payload = await responseJson(response);
+  const present = response.ok
+    && payload.success === true
+    && cloudflareSecretRows(payload).some((secret) => secret?.name === bindingName);
+  if (!present) throw Object.assign(new Error('cloudflare_binding_readback_failed'), { status: 502 });
+}
+
 async function subscribeWaba(accessToken, wabaId) {
   const payload = await graph(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`, {
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
   });
   if (payload.success !== true) throw Object.assign(new Error('meta_waba_subscription_failed'), { status: 502 });
+}
+
+async function requireWabaSubscriptionReadback(accessToken, wabaId) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`);
+  url.searchParams.set('fields', 'id,name');
+  const payload = await graph(url.toString(), {
+    method: 'GET',
+    headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+  });
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  if (!rows.some((app) => String(app?.id || '') === META_APP_ID)) {
+    throw Object.assign(new Error('meta_waba_subscription_readback_failed'), { status: 502 });
+  }
+}
+
+async function markIntegrationConnected(operator, env, artistId, approved) {
+  const connectedAt = new Date().toISOString();
+  const publishableKey = binding(env, 'SUPABASE_PUBLISHABLE_KEY');
+  const url = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_integrations`);
+  url.searchParams.set('artist_id', `eq.${artistId}`);
+  url.searchParams.set('integration_type', 'eq.whatsapp');
+  url.searchParams.set('provider', 'eq.meta_cloud_api');
+  url.searchParams.set('integration_key', `eq.${approved.integrationKey}`);
+  url.searchParams.set('select', 'artist_id,integration_key,is_enabled,connected_at,configuration');
+  const response = await noFollowFetch(url.toString(), {
+    method: 'PATCH',
+    headers: {
+      apikey: publishableKey,
+      authorization: `Bearer ${operator.token}`,
+      'content-type': 'application/json',
+      prefer: 'return=representation',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({ connected_at: connectedAt }),
+  });
+  if (!response.ok) throw Object.assign(new Error('crm_connected_state_update_failed'), { status: 502 });
+  const rows = await responseJson(response);
+  const route = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+  const configuration = route?.configuration;
+  const safeConfiguration = configuration && typeof configuration === 'object' && !Array.isArray(configuration) && Object.keys(configuration).length === 0;
+  if (!route || route.artist_id !== artistId || route.integration_key !== approved.integrationKey || route.is_enabled !== true || route.connected_at !== connectedAt || !safeConfiguration) {
+    throw Object.assign(new Error('crm_connected_state_readback_failed'), { status: 502 });
+  }
+  return connectedAt;
 }
 
 function requireServerConfiguration(env) {
@@ -265,12 +310,14 @@ export async function onRequestPost(context) {
     await verifyMetaAccessToken(accessToken, env);
     stage = 'meta_selection';
     const safeMeta = await verifyExistingTarget(accessToken, approved);
+
     const envelope = JSON.stringify({
       phoneNumberId: safeMeta.phoneNumberId,
       accessToken,
       wabaId: approved.wabaId,
       appSecret: binding(env, 'META_APP_SECRET'),
     });
+
     stage = 'drain_binding';
     await putWorkerSecret(env, DRAIN_WORKER, approved.bindingName, envelope);
     stage = 'webhook_binding';
@@ -278,12 +325,25 @@ export async function onRequestPost(context) {
     stage = 'waba_subscription';
     await subscribeWaba(accessToken, approved.wabaId);
 
+    stage = 'meta_readback';
+    const safeMetaReadback = await verifyExistingTarget(accessToken, approved);
+    stage = 'subscription_readback';
+    await requireWabaSubscriptionReadback(accessToken, approved.wabaId);
+    stage = 'drain_binding_readback';
+    await requireWorkerSecretReadback(env, DRAIN_WORKER, approved.bindingName);
+    stage = 'webhook_binding_readback';
+    await requireWorkerSecretReadback(env, WEBHOOK_WORKER, approved.bindingName);
+    stage = 'crm_connected_state';
+    const connectedAt = await markIntegrationConnected(operator, env, artistId, approved);
+
     return json({
       ok: true,
+      connected: true,
+      connected_at: connectedAt,
       integration_key: approved.integrationKey,
-      waba_name: safeMeta.wabaName,
-      display_phone_number: safeMeta.displayPhoneNumber,
-      verified_name: safeMeta.verifiedName,
+      waba_name: safeMetaReadback.wabaName,
+      display_phone_number: safeMetaReadback.displayPhoneNumber,
+      verified_name: safeMetaReadback.verifiedName,
     });
   } catch (error) {
     const status = Number.isInteger(error?.status) ? error.status : 500;
@@ -307,7 +367,10 @@ export function onRequest(context) {
 
 export const __testing = {
   APPROVED_ARTISTS,
-  discoverSinglePhone,
+  cloudflareSecretRows,
+  markIntegrationConnected,
+  requireWabaSubscriptionReadback,
+  requireWorkerSecretReadback,
   verifyExistingTarget,
   verifyMetaAccessToken,
 };

@@ -137,7 +137,7 @@ export function WhatsAppConnectionsPage() {
         !api
         || !data
         || data.environment !== 'production'
-        || !['vladimir', 'kristina'].includes(artist.slug)
+        || artist.slug !== 'vladimir'
         || !canManageArtist(profile?.role, artist.id, memberships)
       ) {
         throw new Error(language === 'ru'
@@ -269,7 +269,7 @@ export function WhatsAppConnectionsPage() {
             && canManageArtist(profile?.role, artist.id, memberships)
             && integration?.is_enabled === true
             && (artist.slug === 'vladimir' || artist.slug === 'kristina');
-          const existingAccountAvailable = productionOnboardingAvailable;
+          const existingAccountAvailable = productionOnboardingAvailable && artist.slug === 'vladimir';
           const existingMetaToken = existingMetaTokens[artist.id] ?? '';
 
           return (

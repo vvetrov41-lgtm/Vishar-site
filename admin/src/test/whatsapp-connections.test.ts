@@ -76,6 +76,7 @@ describe('WhatsApp Connections safety', () => {
       integration_key: 'vladimir-production',
       external_account_label: 'Vladimir WhatsApp',
       is_enabled: false,
+      connected_at: null,
       updated_at: '2026-08-15T09:00:00.000Z',
     };
     const mocks = clientFor([safeRow]);
@@ -84,7 +85,7 @@ describe('WhatsApp Connections safety', () => {
     await expect(api.listWhatsAppIntegrations()).resolves.toEqual([safeRow]);
     expect(mocks.from).toHaveBeenCalledWith('artist_integrations');
     expect(mocks.select).toHaveBeenCalledWith(
-      'id, artist_id, provider, integration_key, external_account_label, is_enabled, updated_at',
+      'id, artist_id, provider, integration_key, external_account_label, is_enabled, connected_at, updated_at',
     );
     expect(mocks.eq).toHaveBeenCalledWith('integration_type', 'whatsapp');
     const projection = mocks.select.mock.calls[0][0];
@@ -122,7 +123,7 @@ describe('WhatsApp Connections safety', () => {
     });
   });
 
-  it('provisions Kristina through the same-origin backend without trusting a browser routing key', async () => {
+  it('provisions Kristina through the same-origin Embedded Signup backend without trusting a browser routing key', async () => {
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
@@ -171,51 +172,87 @@ describe('WhatsApp Connections safety', () => {
     }
   });
 
-  it('sends existing-account tokens only to the same-origin fixed-artist provisioning boundary', async () => {
+  it('sends Vladimir existing-account token only to the same-origin fixed-artist provisioning boundary', async () => {
     const productionUrl = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
     const syntheticMetaToken = `synthetic-system-user-token-${'x'.repeat(64)}`;
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      ok: true,
+      connected: true,
+      connected_at: '2026-08-31T12:30:00.000Z',
+      integration_key: 'vladimir-production',
+      waba_name: 'Vladimir WABA',
+      display_phone_number: '+44 7507 262323',
+      verified_name: 'Vladimir',
+    }));
 
-    for (const [artist, integrationKey, verifiedName] of [
-      [VLADIMIR, 'vladimir-production', 'Vladimir'],
-      [KRISTINA, 'kristina-production', 'Kristina'],
-    ] as const) {
-      const mocks = clientFor();
-      const api = createWhatsAppConnectionsApi(mocks.client);
-      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
-        ok: true,
-        integration_key: integrationKey,
-        waba_name: `${verifiedName} WABA`,
-        display_phone_number: '+44 7000 000001',
-        verified_name: verifiedName,
-      }));
+    try {
+      await expect(api.provisionExistingProductionWhatsApp(
+        VLADIMIR,
+        productionUrl,
+        syntheticMetaToken,
+      )).resolves.toMatchObject({
+        connected: true,
+        integration_key: 'vladimir-production',
+        verified_name: 'Vladimir',
+      });
 
-      try {
-        await expect(api.provisionExistingProductionWhatsApp(
-          artist,
-          productionUrl,
-          syntheticMetaToken,
-        )).resolves.toMatchObject({
-          integration_key: integrationKey,
-          verified_name: verifiedName,
-        });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('/api/whatsapp/existing-account/provision');
+      expect(init?.method).toBe('POST');
+      expect(init?.credentials).toBe('same-origin');
+      expect(init?.headers).toMatchObject({
+        authorization: 'Bearer crm-owner-session-token-for-test',
+        'content-type': 'application/json',
+      });
+      const body = JSON.parse(String(init?.body));
+      expect(body).toEqual({ artist_id: VLADIMIR.id, access_token: syntheticMetaToken });
+      expect(body).not.toHaveProperty('waba_id');
+      expect(body).not.toHaveProperty('phone_number_id');
+      expect(body).not.toHaveProperty('integration_key');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
 
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-        const [url, init] = fetchMock.mock.calls[0];
-        expect(url).toBe('/api/whatsapp/existing-account/provision');
-        expect(init?.method).toBe('POST');
-        expect(init?.credentials).toBe('same-origin');
-        expect(init?.headers).toMatchObject({
-          authorization: 'Bearer crm-owner-session-token-for-test',
-          'content-type': 'application/json',
-        });
-        const body = JSON.parse(String(init?.body));
-        expect(body).toEqual({ artist_id: artist.id, access_token: syntheticMetaToken });
-        expect(body).not.toHaveProperty('waba_id');
-        expect(body).not.toHaveProperty('phone_number_id');
-        expect(body).not.toHaveProperty('integration_key');
-      } finally {
-        fetchMock.mockRestore();
-      }
+  it('rejects Kristina from the Vladimir existing-account path before sending her token', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    try {
+      await expect(api.provisionExistingProductionWhatsApp(
+        KRISTINA,
+        'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+        `synthetic-system-user-token-${'x'.repeat(64)}`,
+      )).rejects.toThrow(/unavailable for this artist/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('requires connected readback proof before accepting an existing-account success response', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      ok: true,
+      integration_key: 'vladimir-production',
+      waba_name: 'Vladimir WABA',
+      display_phone_number: '+44 7507 262323',
+      verified_name: 'Vladimir',
+    }));
+
+    try {
+      await expect(api.provisionExistingProductionWhatsApp(
+        VLADIMIR,
+        'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+        `synthetic-system-user-token-${'x'.repeat(64)}`,
+      )).rejects.toThrow(/invalid response/i);
+    } finally {
+      fetchMock.mockRestore();
     }
   });
 
@@ -249,6 +286,7 @@ describe('WhatsApp Connections safety', () => {
       integration_key: 'vladimir-production',
       external_account_label: null,
       is_enabled: false,
+      connected_at: null,
       updated_at: '2026-08-15T09:00:00.000Z',
     }]);
     await expect(createWhatsAppConnectionsApi(badProvider.client).listWhatsAppIntegrations()).rejects.toThrow(

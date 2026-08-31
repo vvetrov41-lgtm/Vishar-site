@@ -9,6 +9,7 @@ export interface WhatsAppIntegrationMetadata {
   integration_key: string;
   external_account_label: string | null;
   is_enabled: boolean;
+  connected_at: string | null;
   updated_at: string;
 }
 
@@ -18,6 +19,11 @@ export interface WhatsAppProvisioningResult {
   waba_name: string | null;
   display_phone_number: string | null;
   verified_name: string | null;
+}
+
+export interface ExistingWhatsAppProvisioningResult extends WhatsAppProvisioningResult {
+  connected: true;
+  connected_at: string;
 }
 
 type WhatsAppArtist = Pick<Artist, 'id' | 'slug' | 'display_name'>;
@@ -30,7 +36,6 @@ const PRODUCTION_ONBOARDING_ARTISTS = new Map([
 ]);
 const EXISTING_ACCOUNT_ARTISTS = new Map([
   ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
-  ['a2222222-2222-4222-8222-222222222222', 'kristina'],
 ]);
 
 export type WhatsAppCrmEnvironment = 'production' | 'staging';
@@ -68,6 +73,7 @@ function assertSafeMetadata(value: unknown): WhatsAppIntegrationMetadata[] {
       || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test((row as any).integration_key)
       || ((row as any).external_account_label !== null && typeof (row as any).external_account_label !== 'string')
       || typeof (row as any).is_enabled !== 'boolean'
+      || ((row as any).connected_at !== null && typeof (row as any).connected_at !== 'string')
       || typeof (row as any).updated_at !== 'string'
     ) {
       throw new ApiError(apiMessage('Could not load WhatsApp connections.'));
@@ -91,6 +97,14 @@ function assertProvisioningResponse(value: unknown, expectedIntegrationKey: stri
     throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   return value as WhatsAppProvisioningResult;
+}
+
+function assertExistingProvisioningResponse(value: WhatsAppProvisioningResult): ExistingWhatsAppProvisioningResult {
+  const row = value as unknown as Record<string, unknown>;
+  if (row.connected !== true || typeof row.connected_at !== 'string') {
+    throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
+  }
+  return value as ExistingWhatsAppProvisioningResult;
 }
 
 function safeProvisioningDiagnostic(payload: Record<string, unknown> | null, responseStatus: number): string {
@@ -164,7 +178,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
     async listWhatsAppIntegrations(): Promise<WhatsAppIntegrationMetadata[]> {
       const result = await client
         .from('artist_integrations')
-        .select('id, artist_id, provider, integration_key, external_account_label, is_enabled, updated_at')
+        .select('id, artist_id, provider, integration_key, external_account_label, is_enabled, connected_at, updated_at')
         .eq('integration_type', 'whatsapp')
         .order('updated_at', { ascending: false });
       if (result.error) throw new ApiError(apiMessage('Could not load WhatsApp connections.'), result.error);
@@ -183,7 +197,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       artist: WhatsAppArtist,
       supabaseUrl: string,
       metaAccessToken: string,
-    ): Promise<WhatsAppProvisioningResult> {
+    ): Promise<ExistingWhatsAppProvisioningResult> {
       if (whatsappCrmEnvironment(supabaseUrl) !== 'production') {
         throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
       }
@@ -197,12 +211,13 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       }
       const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, approvedSlug);
       const accessToken = await crmAccessToken();
-      return provisioningRequest(
+      const result = await provisioningRequest(
         '/api/whatsapp/existing-account/provision',
         accessToken,
         { artist_id: artist.id, access_token: token },
         expectedIntegrationKey,
       );
+      return assertExistingProvisioningResponse(result);
     },
 
     async provisionProductionWhatsApp(
