@@ -14,7 +14,7 @@ on:
       - 'wrangler.gmail.production.toml'
       - 'wrangler.gpt-actions.production.toml'
       - 'supabase/migrations/0059_gmail_production_integration.sql'
-      - 'supabase/migrations/0121_gmail_client_scoped_read.sql'
+      - 'supabase/migrations/0122_gmail_client_scoped_read.sql'
       - 'supabase/tests/209_gmail_production_integration.sql'
       - 'supabase/tests/210_gmail_acl_inventory.sql'
       - 'docs/gpt-actions/openapi.production*.yaml'

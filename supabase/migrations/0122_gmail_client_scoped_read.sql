@@ -1,4 +1,4 @@
--- 0121_gmail_client_scoped_read.sql
+-- 0122_gmail_client_scoped_read.sql
 --
 -- A client-scoped Gmail target, so mailbox history can be read once per client
 -- instead of once per enquiry.

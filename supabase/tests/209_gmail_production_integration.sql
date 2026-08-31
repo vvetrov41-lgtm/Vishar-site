@@ -213,7 +213,7 @@ select throws_ok(
 );
 
 -- ---------------------------------------------------------------------------
--- Client-scoped discovery (0121)
+-- Client-scoped discovery (0122)
 --
 -- Reading a client's correspondence must not require naming an enquiry, because
 -- Gmail matches on the client's address and asking once per enquiry would bind
