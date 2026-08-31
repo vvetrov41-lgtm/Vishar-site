@@ -247,26 +247,51 @@ declare
   v_limit integer;
 begin
   v_conversation := crm_private.gpt_communication_conversation(p_conversation_id);
-  v_limit := least(greatest(coalesce(p_limit, 30), 1), 50);
+  v_limit := least(greatest(coalesce(p_limit, 30), 1), 30);
 
+  -- A row count alone does not bound the response. A stored body may be 4096
+  -- characters, so thirty of them can exceed the action gateway's 128 KiB
+  -- response ceiling and turn a valid read into an opaque 502. Messages are
+  -- returned newest first until a byte budget for bodies is spent, which keeps
+  -- every returned body whole rather than truncating one mid-sentence. The
+  -- budget leaves room for row metadata and for JSON escaping. The newest
+  -- message is always returned, however long it is.
   return query
+  with recent as (
+    select
+      m.id, m.direction, m.origin, m.status, m.message_type, m.body,
+      m.attachments, m.error_code, m.created_at
+    from public.communication_messages m
+    where m.conversation_id = v_conversation.id
+      and m.artist_id = v_conversation.artist_id
+    order by m.created_at desc, m.id desc
+    limit v_limit
+  ),
+  budgeted as (
+    select
+      r.*,
+      row_number() over (order by r.created_at desc, r.id desc) as row_position,
+      sum(octet_length(coalesce(r.body, ''))) over (
+        order by r.created_at desc, r.id desc
+        rows between unbounded preceding and current row
+      ) as running_body_bytes
+    from recent r
+  )
   select
-    m.id,
-    m.direction,
-    m.origin,
-    m.status,
-    m.message_type,
-    m.body,
+    b.id,
+    b.direction,
+    b.origin,
+    b.status,
+    b.message_type,
+    b.body,
     -- Attachment payloads carry provider and Storage internals. Only the count
     -- crosses this boundary.
-    (case when jsonb_typeof(m.attachments) = 'array' then jsonb_array_length(m.attachments) else 0 end)::integer,
-    m.error_code,
-    m.created_at
-  from public.communication_messages m
-  where m.conversation_id = v_conversation.id
-    and m.artist_id = v_conversation.artist_id
-  order by m.created_at desc, m.id desc
-  limit v_limit;
+    (case when jsonb_typeof(b.attachments) = 'array' then jsonb_array_length(b.attachments) else 0 end)::integer,
+    b.error_code,
+    b.created_at
+  from budgeted b
+  where b.row_position = 1 or b.running_body_bytes <= 50000
+  order by b.created_at desc, b.id desc;
 end;
 $$;
 
@@ -358,8 +383,18 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   v_conversation public.communication_conversations%rowtype;
+  v_crm_artist_id uuid;
 begin
   v_conversation := crm_private.gpt_communication_conversation(p_conversation_id);
+  -- Creating a client is a CRM action that happens to start in the inbox.
+  -- The communications ceiling alone must not hand a GPT client the CRM
+  -- intake its owner deliberately left off, so both apply here.
+  select c.artist_id into v_crm_artist_id
+  from crm_private.require_gpt_operational_context('crm') c;
+  if v_crm_artist_id is distinct from v_conversation.artist_id then
+    raise exception 'this conversation is outside the active GPT artist scope'
+      using errcode = '42501';
+  end if;
   return public.create_client_from_communication(
     v_conversation.id, p_full_name, p_email, p_phone, p_instagram
   );
@@ -380,8 +415,17 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   v_conversation public.communication_conversations%rowtype;
+  v_crm_artist_id uuid;
 begin
   v_conversation := crm_private.gpt_communication_conversation(p_conversation_id);
+  -- Promoting a conversation creates a client and an enquiry, so it needs the
+  -- CRM ceiling as well as the communications one.
+  select c.artist_id into v_crm_artist_id
+  from crm_private.require_gpt_operational_context('crm') c;
+  if v_crm_artist_id is distinct from v_conversation.artist_id then
+    raise exception 'this conversation is outside the active GPT artist scope'
+      using errcode = '42501';
+  end if;
   -- The artist comes from the stored conversation, never from the caller, and
   -- manual intake re-checks role, artist and the privacy acknowledgement.
   return public.create_enquiry_from_communication(

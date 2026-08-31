@@ -189,8 +189,8 @@ export const OPERATOR_PARITY = Object.freeze([
   available("communications.mark_read", "Communications", "Communications", "manage_communications", "write", "markCommunicationConversationRead", ["public.gpt_mark_communication_conversation_read"]),
   available("communications.state.set", "Communications", "Communications", "manage_communications", "write", "setCommunicationConversationState", ["public.gpt_set_communication_conversation_state"]),
   available("communications.client.link", "Communications", "Communications", "manage_communications", "write", "linkCommunicationConversationClient", ["public.gpt_link_communication_conversation_client"]),
-  available("communications.client.create", "Communications", "Clients", "manage_clients", "write", "createClientFromCommunication", ["public.gpt_create_client_from_communication"]),
-  available("communications.enquiry.create", "Communications", "Enquiries", "manage_enquiries", "write", "createEnquiryFromCommunication", ["public.gpt_create_enquiry_from_communication"]),
+  available("communications.client.create", "Communications", "Clients", "manage_clients", "write", "createClientFromCommunication", ["public.gpt_create_client_from_communication"], "Cross-domain: starts in the inbox but creates a CRM record, so it requires the CRM ceiling as well as the communications one."),
+  available("communications.enquiry.create", "Communications", "Enquiries", "manage_enquiries", "write", "createEnquiryFromCommunication", ["public.gpt_create_enquiry_from_communication"], "Cross-domain: creates a client and an enquiry through manual intake, so it requires the CRM ceiling as well as the communications one."),
 
   // Notifications
   available("followups.list", "Notifications", "Notifications", "view_notifications", "read", "listFollowUps", ["public.gpt_list_follow_ups"]),

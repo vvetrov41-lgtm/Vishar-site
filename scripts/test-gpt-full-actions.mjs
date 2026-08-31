@@ -253,6 +253,21 @@ async function capture(request, upstreamBody = {}) {
   assert.deepEqual(captured.payload, { p_conversation_id: A, p_limit: 5 });
 }
 
+// Message pages are capped at 30 rows because 30 maximum-length bodies already
+// approach the gateway's response ceiling. A larger page is refused here.
+{
+  let called = false;
+  const response = await handleGptActionsRequest(
+    new Request(`https://gpt.example/v1/communications/conversations/${A}/messages?limit=50`, { headers: auth }),
+    env,
+    async () => { called = true; throw new Error('unexpected'); },
+  );
+  const result = await parsed(response);
+  assert.equal(result.status, 400);
+  assert.equal(result.body.field, 'limit');
+  assert.equal(called, false);
+}
+
 {
   const { captured } = await capture(new Request(
     `https://gpt.example/v1/communications/conversations/${A}/reply`,

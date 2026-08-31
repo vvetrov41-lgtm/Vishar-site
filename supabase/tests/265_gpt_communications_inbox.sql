@@ -96,6 +96,22 @@ update public.communication_conversations
 set external_display_label = 'sleeve.enquiry'
 where external_contact_id = '5560000000001';
 
+-- Twenty maximum-length inbound messages, so the byte budget is the binding
+-- constraint on a page rather than the row count.
+insert into public.communication_messages
+  (conversation_id, artist_id, channel, direction, origin, status, message_type, body, created_at)
+select
+  c.id, c.artist_id, c.channel,
+  'inbound'::public.communication_direction,
+  'contact'::public.communication_origin,
+  'received'::public.communication_status,
+  'text',
+  repeat('x', 4096),
+  '2026-08-20 08:00:00+00'::timestamptz + (n * interval '1 minute')
+from public.communication_conversations c
+cross join generate_series(1, 20) as n
+where c.external_contact_id = '447700940001';
+
 insert into public.clients (id, full_name, email, phone) values
   ('f6911111-1111-4111-8111-111111111111', 'GPT Inbox Existing Client',
    'gpt.inbox.existing@example.test', '+44 7700 941111');
@@ -225,15 +241,37 @@ select is(
 
 select is(
   (select count(*)::int from public.gpt_list_communication_messages(
-     pg_temp.conversation_for('5560000000001'), 50)),
+     pg_temp.conversation_for('5560000000001'), 30)),
   1,
   'bounded message history is readable for an in-scope conversation'
 );
 select is(
   (select attachment_count from public.gpt_list_communication_messages(
-     pg_temp.conversation_for('5560000000001'), 50)),
+     pg_temp.conversation_for('5560000000001'), 30)),
   0,
   'attachments are reduced to a count rather than a provider payload'
+);
+
+-- A row count alone does not bound the response. Thirty maximum-length bodies
+-- would exceed the action gateway's 128 KiB ceiling, so the page stops on a
+-- byte budget instead and still returns whole bodies.
+select is(
+  (select count(*)::int from public.gpt_list_communication_messages(
+     pg_temp.conversation_for('447700940001'), 30)),
+  13,
+  'a conversation of long messages returns a byte-budgeted page, not the full 30'
+);
+select ok(
+  (select sum(octet_length(body)) from public.gpt_list_communication_messages(
+     pg_temp.conversation_for('447700940001'), 30)) <= 50000 + 4096,
+  'the returned bodies stay inside the byte budget the gateway can carry'
+);
+select ok(
+  (select bool_and(char_length(body) = 4096)
+   from public.gpt_list_communication_messages(
+     pg_temp.conversation_for('447700940001'), 30)
+   where char_length(body) > 100),
+  'bodies inside the budget are returned whole rather than truncated'
 );
 
 -- ---------------------------------------------------------------------------
@@ -300,7 +338,7 @@ select is(
 );
 select is(
   (select count(*)::int from public.gpt_list_communication_messages(
-     pg_temp.conversation_for('5560000000001'), 50)),
+     pg_temp.conversation_for('5560000000001'), 30)),
   2,
   'exactly one outbound message was created for the repeated request id'
 );
@@ -372,7 +410,65 @@ select isnt(
 );
 
 -- ---------------------------------------------------------------------------
--- 4. The owner-controlled capability is still a ceiling
+-- 4. Creating CRM records still needs the CRM ceiling
+--
+-- Creating a client or an enquiry is a CRM action that happens to start in the
+-- inbox. Turning messaging on must not hand a GPT client the intake its owner
+-- deliberately left off.
+-- ---------------------------------------------------------------------------
+
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update crm_private.gpt_action_clients
+set can_manage_crm = false
+where integration_key = 'vishar-unified-gpt';
+
+set local role authenticated;
+select pg_temp.inbox_claims(
+  '{"sub":"f6011111-1111-4111-8111-111111111111","role":"authenticated","client_id":"oauth-gpt-inbox-test"}'
+);
+
+select throws_ok(
+  format(
+    $$select public.gpt_create_client_from_communication(%L::uuid, 'Should Not Exist', null, null, null)$$,
+    pg_temp.conversation_for('447700940001')
+  ),
+  '42501',
+  null,
+  'creating a client from a conversation is refused when CRM management is off'
+);
+select throws_ok(
+  format(
+    $$select public.gpt_create_enquiry_from_communication(
+        %L::uuid,
+        'f6311111-1111-4111-8111-111111111111',
+        jsonb_build_object('full_name', 'Should Not Exist', 'email', 'nope@example.test'),
+        jsonb_build_object('idea', 'Should not be created'),
+        true
+      )$$,
+    pg_temp.conversation_for('447700940001')
+  ),
+  '42501',
+  null,
+  'promoting a conversation to an enquiry is refused when CRM management is off'
+);
+
+-- The messaging half of the surface is unaffected: the two ceilings are
+-- independent owner decisions, not one switch.
+select lives_ok(
+  $$select * from public.gpt_list_communication_conversations(null, null, null, 10, null)$$,
+  'reading the inbox still works with only the communications capability'
+);
+select lives_ok(
+  format(
+    $$select public.gpt_mark_communication_conversation_read(%L::uuid)$$,
+    pg_temp.conversation_for('5560000000001')
+  ),
+  'inbox-only operator actions still work with only the communications capability'
+);
+
+-- ---------------------------------------------------------------------------
+-- 5. The owner-controlled capability is still a ceiling
 -- ---------------------------------------------------------------------------
 
 reset role;

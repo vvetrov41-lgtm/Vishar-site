@@ -458,7 +458,7 @@ export function routeForFullGptAction(request, url, body) {
     exactSearch(url.searchParams, ['limit']);
     return { rpc: 'gpt_list_communication_messages', payload: {
       p_conversation_id: match[1],
-      p_limit: queryLimit(url.searchParams.get('limit'), 'limit', 30, 50),
+      p_limit: queryLimit(url.searchParams.get('limit'), 'limit', 30, 30),
     }, responseKind: 'list' };
   }
 
