@@ -55,7 +55,7 @@ describe('failed email dismissal', () => {
     renderWithSession(<App />, {
       role: 'owner',
       path: `/inbox/email/client-${CLIENT_ID}`,
-      emailMessages: [email()],
+      emailMessages: [email() as unknown as Record<string, unknown>],
       rpcCalls,
     });
 
