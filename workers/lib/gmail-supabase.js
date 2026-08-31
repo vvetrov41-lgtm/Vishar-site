@@ -78,9 +78,11 @@ async function readUserEnquiry(origin, enquiryId, headers, fetchImpl) {
     redirect: 'manual',
   });
   if (!response.ok) {
-    const error = new Error(response.status === 401 || response.status === 403
-      ? 'gmail_rpc_forbidden'
-      : 'gmail_rpc_failed');
+    const error = new Error(response.status === 401
+      ? 'gmail_operator_unauthorized'
+      : response.status === 403
+        ? 'gmail_rpc_forbidden'
+        : 'gmail_rpc_failed');
     error.status = response.status;
     throw error;
   }
