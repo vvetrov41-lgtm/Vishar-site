@@ -55,7 +55,7 @@ describe('navigation localisation', () => {
     expect(labels).toContain('Платежи');
     expect(labels).toContain('Календарь');
     expect(labels).toContain('Выходные');
-    expect(labels).toContain('Автоматизации');
+    expect(labels).toContain('Автоматические сообщения');
 
     // The exact strings that used to leak, plus anything still key-shaped.
     expect(labels).not.toContain('Communications');
@@ -87,6 +87,6 @@ describe('navigation localisation', () => {
     expect(labels).toContain('Payments');
     expect(labels).toContain('Calendar');
     expect(labels).toContain('Time off');
-    expect(labels).toContain('Automations');
+    expect(labels).toContain('Automatic messages');
   });
 });
