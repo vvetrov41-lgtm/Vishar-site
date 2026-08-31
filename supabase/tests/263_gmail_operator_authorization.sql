@@ -53,12 +53,13 @@ insert into public.profiles (id, email, display_name, role, is_active) values
   ('96300000-0000-4000-8000-000000000004', 'gmail-operator-disabled@example.test', 'Gmail Operator Disabled', 'booking_manager', false),
   ('96300000-0000-4000-8000-000000000005', 'gmail-operator-membership-disabled@example.test', 'Gmail Operator Membership Disabled', 'booking_manager', true);
 
+-- The owner profile bootstrap trigger already creates its artist membership.
+-- Only non-owner fixtures need explicit rows here.
 insert into public.artist_memberships (
   profile_id, artist_id, access_level,
   can_view_finance, can_manage_finance,
   can_manage_sessions, can_manage_integrations, is_active
 ) values
-  ('96300000-0000-4000-8000-000000000001', 'a1111111-1111-4111-8111-111111111111', 'manager', false, false, true, false, true),
   ('96300000-0000-4000-8000-000000000002', 'a1111111-1111-4111-8111-111111111111', 'manager', false, false, true, false, true),
   ('96300000-0000-4000-8000-000000000003', 'a1111111-1111-4111-8111-111111111111', 'read_only', false, false, false, false, true),
   ('96300000-0000-4000-8000-000000000004', 'a1111111-1111-4111-8111-111111111111', 'manager', false, false, true, false, true),
