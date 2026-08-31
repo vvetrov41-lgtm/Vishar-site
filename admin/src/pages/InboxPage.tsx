@@ -49,7 +49,6 @@ const COPY = {
     email: 'Email',
     everyone: 'Everyone',
     needsReply: 'Needs reply',
-    unmatched: 'Unknown senders',
     loading: 'Loading conversations…',
     empty: 'No conversations yet',
     emptyHint: 'Messages appear here as soon as a connected channel receives one.',
@@ -63,16 +62,11 @@ const COPY = {
     draftWaiting: 'Draft to approve',
     sendFailed: 'Send failed',
     youRepliedLast: 'You replied last',
-    notLinked: 'Not linked',
     archived: 'Archived',
     noPreview: 'No message yet',
     noSubject: 'No subject',
     attachment: 'Attachment',
     emailUnavailable: 'Email conversations could not be loaded.',
-    unmatchedNotice: 'Messages from numbers and addresses the CRM cannot name. '
-      + 'They are kept, but they are out of the working queue and out of Today until you say who they are.',
-    unmatchedEmpty: 'No unknown senders',
-    unmatchedEmptyHint: 'Every conversation the studio has received belongs to a client or an enquiry.',
   },
   ru: {
     title: 'Сообщения',
@@ -82,7 +76,6 @@ const COPY = {
     email: 'Почта',
     everyone: 'Все',
     needsReply: 'Ждут ответа',
-    unmatched: 'Неизвестные отправители',
     loading: 'Загружаем диалоги…',
     empty: 'Диалогов пока нет',
     emptyHint: 'Сообщения появятся здесь, как только подключённый канал что-то получит.',
@@ -96,16 +89,11 @@ const COPY = {
     draftWaiting: 'Письмо на утверждение',
     sendFailed: 'Письмо не отправлено',
     youRepliedLast: 'Вы ответили последним',
-    notLinked: 'Без клиента',
     archived: 'В архиве',
     noPreview: 'Сообщений пока нет',
     noSubject: 'Без темы',
     attachment: 'Вложение',
     emailUnavailable: 'Не удалось загрузить переписку по почте.',
-    unmatchedNotice: 'Сообщения с номеров и адресов, которых CRM не знает. '
-      + 'Они сохраняются, но не попадают в рабочий список и в «Сегодня», пока вы не укажете, кто это.',
-    unmatchedEmpty: 'Неизвестных отправителей нет',
-    unmatchedEmptyHint: 'Каждый диалог студии связан с клиентом или заявкой.',
   },
 } as const;
 
@@ -116,13 +104,13 @@ type ChannelFilter = '' | InboxChannel;
  * with, so it is a view of its own rather than something to work out from the
  * unread badges.
  *
- * "Unmatched" is the deliberate exception. The working queue holds only
- * conversations that have reached a CRM record; a stranger who messaged the
- * studio number is kept, but out of the way, and is looked at only when
- * somebody chooses to. Choosing it narrows the list to messaging channels,
- * because link state is a messaging idea.
+ * There is deliberately no view for unknown senders. This screen is the
+ * studio's work queue, and a message from somebody the CRM cannot name is not
+ * work - not as a row, not as a tab, not as a filter that hints there is a
+ * backlog behind it. The rows are still stored and still readable by the
+ * backend; they are simply not part of this surface.
  */
-type ViewFilter = '' | 'needs_reply' | 'unmatched';
+type ViewFilter = '' | 'needs_reply';
 
 interface InboxData {
   conversations: ConversationSummary[];
@@ -143,13 +131,12 @@ export function InboxPage() {
   // projection already carries, so it is applied here rather than asked of the
   // server.
   //
-  // The linked/unmatched split is asked of the SERVER, not filtered out of a
-  // full page afterwards. Two reasons. The database indexes unmatched rows
-  // (0069), so it is the cheaper read; and a page size of 50 spent on strangers
-  // would push real conversations off the end of the list before any
-  // browser-side filter could see them.
-  const unmatchedView = view === 'unmatched';
-  const linkState: CommunicationLinkState = unmatchedView ? 'unmatched' : 'linked';
+  // Linked is asked of the SERVER, always, and is not a filter the operator can
+  // turn off. Two reasons beyond the product rule: the database indexes link
+  // state (0069), so it is the cheaper read; and a page size of 50 partly spent
+  // on strangers would push real conversations off the end of the list before
+  // any browser-side filter could see them.
+  const linkState: CommunicationLinkState = 'linked';
 
   const { data, loading, error, reload } = useAsync<InboxData>(
     async () => {
@@ -164,15 +151,13 @@ export function InboxPage() {
       // this screen; email is additive, so its failure is a notice.
       let emails: EmailMessage[] = [];
       let emailFailed = false;
-      if (!unmatchedView) {
-        try {
-          emails = await api.listEmailMessages({
-            artistId: selectedArtistId ?? undefined,
-            limit: 200,
-          });
-        } catch {
-          emailFailed = true;
-        }
+      try {
+        emails = await api.listEmailMessages({
+          artistId: selectedArtistId ?? undefined,
+          limit: 200,
+        });
+      } catch {
+        emailFailed = true;
       }
 
       const threads = groupEmailThreads(emails);
@@ -204,7 +189,7 @@ export function InboxPage() {
         ]),
       };
     },
-    [api, channel, linkState, unmatchedView, selectedArtistId, copy.unknownSender],
+    [api, channel, linkState, selectedArtistId, copy.unknownSender],
   );
 
   // Artist scope is a usability filter here, exactly as it is on every other
@@ -218,10 +203,10 @@ export function InboxPage() {
     () => (data?.items ?? []).filter(
       (item) => (!selectedArtistId || item.artist_id === selectedArtistId)
         && (channel === '' || item.channel === channel)
-        && (unmatchedView ? !isActionableConversation(item) : isActionableConversation(item))
+        && isActionableConversation(item)
         && (view !== 'needs_reply' || isWaiting(item)),
     ),
-    [data, selectedArtistId, channel, view, unmatchedView],
+    [data, selectedArtistId, channel, view],
   );
 
   const conversationById = useMemo(
@@ -258,7 +243,6 @@ export function InboxPage() {
           {([
             ['', copy.everyone],
             ['needs_reply', copy.needsReply],
-            ['unmatched', copy.unmatched],
           ] as [ViewFilter, string][]).map(([value, label]) => (
             <button
               key={value || 'everyone'}
@@ -279,20 +263,10 @@ export function InboxPage() {
         <p className="notice warn" role="status">{copy.emailUnavailable}</p>
       ) : null}
 
-      {/* Said once, at the top of the view it applies to, so the operator knows
-          these are not jobs they are behind on. */}
-      {!loading && !error && unmatchedView ? (
-        <p className="notice" role="status">{copy.unmatchedNotice}</p>
-      ) : null}
-
       {!loading && !error && items.length === 0 ? (
         <EmptyState
-          title={unmatchedView
-            ? copy.unmatchedEmpty
-            : view === 'needs_reply' ? copy.nobodyWaiting : filtered ? copy.emptyFiltered : copy.empty}
-          hint={unmatchedView
-            ? copy.unmatchedEmptyHint
-            : view === 'needs_reply' ? copy.nobodyWaitingHint : filtered ? copy.emptyFilteredHint : copy.emptyHint}
+          title={view === 'needs_reply' ? copy.nobodyWaiting : filtered ? copy.emptyFiltered : copy.empty}
+          hint={view === 'needs_reply' ? copy.nobodyWaitingHint : filtered ? copy.emptyFilteredHint : copy.emptyHint}
         />
       ) : null}
 
@@ -344,9 +318,6 @@ export function InboxPage() {
                       <span className="badge">{copy.youRepliedLast}</span>
                     ) : null}
                     {item.unread ? <span className="badge">{copy.needsAttention}</span> : null}
-                    {conversation?.link_state === 'unmatched' ? (
-                      <span className="badge">{copy.notLinked}</span>
-                    ) : null}
                     {conversation?.state === 'archived' ? (
                       <span className="badge">{copy.archived}</span>
                     ) : null}

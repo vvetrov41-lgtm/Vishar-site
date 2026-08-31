@@ -468,6 +468,13 @@ export interface FakeClientOptions {
    */
   conversations?: Record<string, unknown>[];
   /**
+   * Extra `enquiries` rows for the shared client, merged onto the base
+   * ENQUIRY. Only an id is required; the rest is inherited. Exists so a test
+   * can put a client in the state that makes per-enquiry provider reads
+   * dangerous - several enquiries, one person, one email address.
+   */
+  extraEnquiries?: Record<string, unknown>[];
+  /**
    * Rows `get_artist_scheduling_preferences` returns. Defaults mirror the
    * database defaults seeded by 0120, so a test that does not care about
    * scheduling policy behaves exactly as production does.
@@ -593,7 +600,8 @@ function tableResult(
   enquiryStatus?: EnquiryStatus,
   extraSessions: Record<string, unknown>[] = [],
   emailMessages: Record<string, unknown>[] = [],
-  conversations: Record<string, unknown>[] = CONVERSATIONS as unknown as Record<string, unknown>[]
+  conversations: Record<string, unknown>[] = CONVERSATIONS as unknown as Record<string, unknown>[],
+  extraEnquiries: Record<string, unknown>[] = []
 ) {
   if (failTable === table) return { data: null, error: { code: 'PGRST000', message: 'boom' } };
 
@@ -608,7 +616,13 @@ function tableResult(
     case 'clients':
       return { data: [CLIENT], error: null };
     case 'enquiries':
-      return { data: [{ ...ENQUIRY, status: enquiryStatus ?? ENQUIRY.status }], error: null };
+      return {
+        data: [
+          { ...ENQUIRY, status: enquiryStatus ?? ENQUIRY.status },
+          ...extraEnquiries.map((row) => ({ ...ENQUIRY, status: enquiryStatus ?? ENQUIRY.status, ...row })),
+        ],
+        error: null,
+      };
     case 'enquiry_files':
       // read_only has no file policy, so the database returns nothing.
       return { data: canManage ? [ENQUIRY_FILE] : [], error: null };
@@ -702,7 +716,8 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         options.enquiryStatus,
         options.extraSessions,
         options.emailMessages,
-        options.conversations
+        options.conversations,
+        options.extraEnquiries
       );
     // PostgREST applies `eq` server-side, so the fake does too. Without this a
     // screen that scopes a read by client, project or status would "pass" while

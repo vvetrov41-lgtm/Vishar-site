@@ -193,7 +193,11 @@ describe('unknown senders are not studio work', () => {
     expect(screen.queryByText('is this the tattoo place')).not.toBeInTheDocument();
   });
 
-  it('still lets an operator go and look at unknown senders on purpose', async () => {
+  it('offers no way to pull unknown senders into the work queue', async () => {
+    // Not even as a tab. A filter that reveals a backlog is still a backlog the
+    // operator feels responsible for, which is the thing being removed. The
+    // rows remain in the database for webhook history and audit; this screen is
+    // simply not where they live.
     renderWithSession(<App />, {
       role: 'owner',
       path: '/inbox',
@@ -201,13 +205,29 @@ describe('unknown senders are not studio work', () => {
     });
     await screen.findByText('Can we move Friday?');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Unknown senders' }));
+    expect(screen.queryByRole('button', { name: 'Unknown senders' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unmatched' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Linked clients' })).not.toBeInTheDocument();
+    expect(screen.queryByText('is this the tattoo place')).not.toBeInTheDocument();
+    expect(screen.queryByText('Not linked')).not.toBeInTheDocument();
+  });
 
-    // The data was never hidden, only moved out of the working queue - and the
-    // view says so, so nobody reads an empty Inbox as lost messages.
-    expect(await screen.findByText('is this the tattoo place')).toBeInTheDocument();
-    expect(
-      screen.getByText(/out of the working queue and out of Today/),
-    ).toBeInTheDocument();
+  it('never asks the server for anything but linked conversations', async () => {
+    const { rpcCalls } = renderWithSession(<App />, {
+      role: 'owner',
+      path: '/inbox',
+      conversations: [stranger(), known()],
+    });
+    await screen.findByText('Can we move Friday?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Needs reply' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'WhatsApp' }));
+
+    const listed = rpcCalls.filter((call) => call.name === 'list_communication_conversations');
+    expect(listed.length).toBeGreaterThan(0);
+    // Whatever the operator clicks, unmatched rows are never requested at all.
+    for (const call of listed) {
+      expect(call.args?.p_link_state).toBe('linked');
+    }
   });
 });

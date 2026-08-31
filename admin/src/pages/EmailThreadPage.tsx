@@ -9,7 +9,7 @@ import { useAsync } from '../components/AsyncData';
 import { ClientContextStrip } from '../components/ClientContextStrip';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
-import type { LiveGmailHistory, LiveGmailMessage } from '../lib/email-api';
+import type { LiveGmailMessage } from '../lib/email-api';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { can } from '../lib/permissions';
@@ -19,18 +19,25 @@ import { groupEmailThreads, stateFor, type EmailThread } from '../lib/email-thre
 import type { EmailMessageDetail } from '../lib/types';
 
 /**
- * How many of a client's enquiries to read the mailbox for when the thread
- * itself names none. Bounded because each one is a separate gateway round trip;
- * newest first, because that is where a live conversation actually is.
+ * What this screen renders from either mailbox read.
+ *
+ * Only the enquiry route carries a `thread_context_id`; the client route
+ * deliberately does not. Nothing on this screen needs one - it reads - so the
+ * two are rendered through the shape they share rather than through the one
+ * that would force the client route to invent a binding.
  */
-const GMAIL_ENQUIRY_LOOKBACK = 3;
+type LiveGmailMessageGroup = {
+  subject: string;
+  message_count: number;
+  messages: LiveGmailMessage[];
+};
 
 interface ThreadView {
   thread: EmailThread | null;
   /** The body of whatever the operator has to act on, loaded only here. */
   actionable: EmailMessageDetail | null;
   /** Current provider history, never persisted in the browser-side CRM model. */
-  liveGmail: LiveGmailHistory | null;
+  liveGmail: LiveGmailMessageGroup[] | null;
   /** Stable gateway code only, never provider response detail. */
   liveGmailError: string | null;
 }
@@ -60,38 +67,35 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
         ? await api.getEmailMessage(thread.actionable_message_id)
         : null;
 
-      // The gateway maps an operator to exactly one enquiry before it touches
-      // Google, so an enquiry id is the only key live Gmail can be read by.
+      // Which mailbox read this thread gets, and why there are two.
       //
-      // Most stored CRM email has no enquiry: a deposit receipt is written
-      // against the client. Those threads used to show no mailbox history at
-      // all - which is why Gmail correspondence appeared to exist nowhere in
-      // the CRM. When the thread knows the client but not the enquiry, ask the
-      // client's own enquiries instead. That is the same deterministic link the
-      // CRM already holds, not a guess from the address.
-      const enquiryIds = thread?.enquiry_id
-        ? [thread.enquiry_id]
-        : thread?.client_id
-          ? (await api.listEnquiries({ clientId: thread.client_id }).catch(() => []))
-            .slice(0, GMAIL_ENQUIRY_LOOKBACK)
-            .map((enquiry) => enquiry.id)
-          : [];
-
-      const histories: LiveGmailHistory[] = [];
+      // Gmail finds a client's mail by searching the artist's mailbox for the
+      // CLIENT'S ADDRESS. It has no idea what an enquiry is. The enquiry only
+      // decides what a reply will later be bound to.
+      //
+      // So when the thread names an enquiry, the enquiry route is right: it
+      // records thread context, which is what a reply needs.
+      //
+      // When it names only a client - which is every stored email in
+      // production, because a deposit receipt is written against the client -
+      // the client route is right. Asking the enquiry route about two or three
+      // of that client's enquiries instead would return THE SAME Gmail threads
+      // each time and record each of them under a different enquiry, because
+      // thread context is unique per (artist, enquiry, provider thread). One
+      // conversation would become several bindings, and a later reply could
+      // leave through the wrong one. The client route reads once and records
+      // nothing.
+      let liveGmail: LiveGmailMessageGroup[] | null = null;
       let liveGmailError: string | null = null;
-      for (const enquiryId of enquiryIds) {
-        try {
-          histories.push(await api.listLiveGmailHistory(enquiryId));
-        } catch (cause) {
-          liveGmailError = cause instanceof Error ? cause.message : 'gmail_live_unavailable';
+      try {
+        if (thread?.enquiry_id) {
+          liveGmail = (await api.listLiveGmailHistory(thread.enquiry_id)).threads;
+        } else if (thread?.client_id) {
+          liveGmail = (await api.listLiveGmailForClient(thread.client_id)).threads;
         }
+      } catch (cause) {
+        liveGmailError = cause instanceof Error ? cause.message : 'gmail_live_unavailable';
       }
-      // One enquiry answering is enough to prove the mailbox is reachable, so a
-      // different one failing must not replace a real answer with an error.
-      const liveGmail: LiveGmailHistory | null = histories.length > 0
-        ? { ...histories[0], threads: histories.flatMap((history) => history.threads) }
-        : null;
-      if (liveGmail) liveGmailError = null;
 
       return { thread, actionable, liveGmail, liveGmailError };
     },
@@ -200,10 +204,13 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
               <p>{liveGmailError === 'gmail_reconnect_required' ? copy.gmailReconnect : copy.gmailUnavailable}</p>
               <button type="button" onClick={reload}>{copy.retry}</button>
             </div>
-          ) : liveGmail?.threads.length ? (
+          ) : liveGmail?.length ? (
             <div className="list">
-              {liveGmail.threads.map((liveThread) => (
-                <div key={liveThread.thread_context_id} className="row">
+              {liveGmail.map((liveThread, threadIndex) => (
+                // Keyed by position: the client route returns no provider or
+                // context id, by design, and inventing a stable one here would
+                // mean reintroducing exactly the identifier this read avoids.
+                <div key={`gmail-${threadIndex}`} className="row">
                   <div className="inbox-row-head">
                     <span className="title">{liveThread.subject || copy.noSubject}</span>
                     <span className="badge">{copy.live}</span>
@@ -211,7 +218,7 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
                   <div className="list">
                     {liveThread.messages.map((message, index) => (
                       <LiveMessage
-                        key={`${liveThread.thread_context_id}-${index}`}
+                        key={`gmail-${threadIndex}-${index}`}
                         message={message}
                         language={language}
                       />

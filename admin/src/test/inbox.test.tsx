@@ -82,23 +82,21 @@ describe('inbox list', () => {
     ).toBe('whatsapp');
   });
 
-  it('keeps unknown senders reachable behind their own view, and says they are not owed work', async () => {
+  it('has no view that brings unknown senders into the queue', async () => {
     const { rpcCalls } = renderWithSession(<App />, {
       role: 'booking_manager',
       path: '/inbox',
     });
     await screen.findByText('Can we move Friday?');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Unknown senders' }));
-
-    // Nothing was deleted to achieve the clean queue: the conversation is still
-    // there, one deliberate click away.
-    expect(await screen.findByText('Do you do cover ups?')).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText('Thanks, see you then')).not.toBeInTheDocument());
-    expect(screen.queryByText('Can we move Friday?')).not.toBeInTheDocument();
+    // The link-state filters are gone. This screen is the studio's work queue,
+    // and there is no click that turns it into something else.
+    expect(screen.queryByRole('button', { name: 'Unknown senders' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unmatched' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Do you do cover ups?')).not.toBeInTheDocument();
     expect(
       rpcCalls.filter((call) => call.name === 'list_communication_conversations').at(-1)?.args?.p_link_state,
-    ).toBe('unmatched');
+    ).toBe('linked');
   });
 
   it('offers email as a channel now that there is something behind it', async () => {

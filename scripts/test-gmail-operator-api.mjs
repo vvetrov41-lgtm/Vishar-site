@@ -137,6 +137,155 @@ await test('RLS-visible enquiry still cannot reach Gmail without manage_communic
   assert.equal(calls.some(({ url }) => url.pathname.includes('service_resolve_gmail_target')), false);
 });
 
+// ---------------------------------------------------------------------------
+// The client-scoped read.
+//
+// Gmail finds a client's mail by searching the artist's mailbox for the
+// CLIENT'S ADDRESS. It has no concept of an enquiry. So reading a client's
+// correspondence by asking the enquiry route once per enquiry returns the same
+// Gmail threads every time - and that route records thread context keyed by
+// (artist, enquiry, provider thread), so each pass would bind one real
+// conversation to a different enquiry, and a later reply could leave through
+// the wrong binding.
+//
+// The client route exists so that read happens once and records nothing.
+// ---------------------------------------------------------------------------
+
+const clientPath = `/v1/operator/clients/${clientId}/gmail/history`;
+
+await test('client-scoped read derives the artist from the caller\'s own enquiries, never the request', async () => {
+  const calls = [];
+  const token = 'synthetic.crm.session.token.1234567890';
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    if (url.pathname === '/rest/v1/enquiries') {
+      // The browser sent a client id and nothing else. The artist comes back
+      // out of the database, under the caller's own row level security.
+      assert.equal(url.searchParams.get('client_id'), `eq.${clientId}`);
+      assert.equal(url.searchParams.get('select'), 'artist_id');
+      assert.equal(new Headers(init.headers).get('authorization'), `Bearer ${token}`);
+      return Response.json([{ artist_id: artistId }, { artist_id: artistId }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/list_capabilities') {
+      return Response.json([]);
+    }
+    throw new Error(`unexpected downstream call: ${url.pathname}`);
+  };
+
+  const response = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${clientPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${token}` },
+  }), productionEnv, fetchImpl);
+
+  // Visible enquiries, but no manage_communications: refused before Gmail.
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: 'artist_scope_denied' });
+  assert.equal(calls.includes('/rest/v1/rpc/service_resolve_gmail_client_target'), false);
+});
+
+await test('a client shared by two manageable artists is refused rather than guessed', async () => {
+  const token = 'synthetic.crm.session.token.1234567890';
+  const otherArtist = 'a2222222-2222-4222-8222-222222222222';
+  const fetchImpl = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/rest/v1/enquiries') {
+      return Response.json([{ artist_id: artistId }, { artist_id: otherArtist }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/list_capabilities') {
+      return Response.json([
+        { artist_id: artistId, capability: 'manage_communications' },
+        { artist_id: otherArtist, capability: 'manage_communications' },
+      ]);
+    }
+    throw new Error(`unexpected downstream call: ${url.pathname}`);
+  };
+
+  const response = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${clientPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${token}` },
+  }), productionEnv, fetchImpl);
+
+  // Choosing one would silently decide whose mailbox to open.
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: 'artist_scope_denied' });
+});
+
+await test('client-scoped read never writes a Gmail thread context', async () => {
+  const calls = [];
+  const token = 'synthetic.crm.session.token.1234567890';
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    if (url.pathname === '/rest/v1/enquiries') {
+      // One client, THREE enquiries - the exact shape that made per-enquiry
+      // reads dangerous.
+      return Response.json([{ artist_id: artistId }, { artist_id: artistId }, { artist_id: artistId }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/list_capabilities') {
+      return Response.json([{ artist_id: artistId, capability: 'manage_communications' }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/service_resolve_gmail_client_target') {
+      assert.deepEqual(JSON.parse(String(init.body)), { p_artist_id: artistId, p_client_id: clientId });
+      return Response.json([{
+        artist_id: artistId,
+        client_id: clientId,
+        client_email: 'client@example.test',
+        integration_key: 'google_gmail_vladimir',
+        mailbox_email: 'studio@example.test',
+        configuration: {},
+      }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/service_upsert_gmail_thread_context') {
+      throw new Error('client-scoped read must not bind a thread context');
+    }
+    // Google is unreachable in this harness; the read fails after resolution,
+    // which is enough - the assertions above are about what was NOT called.
+    throw new Error('gmail_refresh_token_missing');
+  };
+
+  const response = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${clientPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${token}` },
+  }), productionEnv, fetchImpl);
+
+  assert.equal(calls.includes('/rest/v1/rpc/service_upsert_gmail_thread_context'), false);
+  // Exactly one target resolution for the whole client, not one per enquiry.
+  assert.equal(
+    calls.filter((p) => p === '/rest/v1/rpc/service_resolve_gmail_client_target').length,
+    1,
+  );
+  assert.equal(calls.includes('/rest/v1/rpc/service_resolve_gmail_target'), false);
+  assert.equal(response.status >= 400, true);
+});
+
+await test('the client target RPC is backend-only and on the Worker allow-list', () => {
+  assert.equal(supabaseContract.BACKEND_RPCS.has('service_resolve_gmail_client_target'), true);
+  assert.equal(supabaseContract.USER_RPCS.has('service_resolve_gmail_client_target'), false);
+});
+
+await test('client-scoped read rejects a malformed client id before any downstream call', async () => {
+  let calls = 0;
+  const response = await handleGmailOperatorRequest(new Request(
+    'https://gmail.vishartattoo.com/v1/operator/clients/not-a-uuid/gmail/history',
+    { headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${'a'.repeat(32)}` } },
+  ), productionEnv, async () => { calls += 1; throw new Error('must not fetch'); });
+  assert.equal(response.status, 404);
+  assert.equal(calls, 0);
+});
+
+await test('client-scoped read is GET only and needs a session', async () => {
+  let calls = 0;
+  const post = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${clientPath}`, {
+    method: 'POST',
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${'a'.repeat(32)}` },
+  }), productionEnv, async () => { calls += 1; throw new Error('must not fetch'); });
+  assert.equal(post.status, 405);
+
+  const anonymous = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${clientPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com' },
+  }), productionEnv, async () => { calls += 1; throw new Error('must not fetch'); });
+  assert.equal(anonymous.status, 401);
+  assert.equal(calls, 0);
+});
+
 await test('operator API exposes no direct Gmail send method', async () => {
   let calls = 0;
   const response = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${path}`, {

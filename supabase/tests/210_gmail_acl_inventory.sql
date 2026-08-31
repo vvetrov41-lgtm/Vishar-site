@@ -17,6 +17,10 @@ insert into gmail_acl_expectations values
   ('public.gpt_authorize_gmail_enquiry(uuid)', false, true, false),
   ('public.gpt_create_gmail_reply_draft(uuid,uuid,text)', false, true, false),
   ('public.service_resolve_gmail_target(uuid,uuid,uuid)', false, false, true),
+  -- Client-scoped discovery (0121). Backend-only exactly like the enquiry
+  -- target it sits beside: the browser reaches it only through the Gmail
+  -- Worker, which re-derives the artist from the caller's own enquiries.
+  ('public.service_resolve_gmail_client_target(uuid,uuid)', false, false, true),
   ('public.service_resolve_gmail_outbox_target(uuid,text)', false, false, true),
   ('public.service_set_gmail_integration(uuid,text,text,text[])', false, false, true),
   ('public.service_disable_gmail_integration(uuid,text,text)', false, false, true),
