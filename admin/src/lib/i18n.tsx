@@ -102,6 +102,8 @@ const EN = {
   'today.item.deposit_outstanding': 'Deposit outstanding on a booked session',
   'today.item.new_enquiry': 'New enquiry',
   'today.item.overdue_follow_up': 'Follow-up overdue',
+  'today.item.email_send_failed': 'Email did not send',
+  'today.item.email_draft_to_approve': 'Email waiting for your approval',
   'today.item.integration_failure': 'Integration jobs failed',
 
   'enquiries.searchByReference': 'Search enquiries',
@@ -462,6 +464,8 @@ const RU: Record<TranslationKey, string> = {
   'today.item.deposit_outstanding': 'Депозит по записанному сеансу не оплачен',
   'today.item.new_enquiry': 'Новая заявка',
   'today.item.overdue_follow_up': 'Напоминание просрочено',
+  'today.item.email_send_failed': 'Письмо не отправлено',
+  'today.item.email_draft_to_approve': 'Письмо ждёт вашего утверждения',
   'today.item.integration_failure': 'Ошибки в интеграциях',
 
   'enquiries.searchByReference': 'Поиск заявок',

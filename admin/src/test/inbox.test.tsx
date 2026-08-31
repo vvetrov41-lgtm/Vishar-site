@@ -82,13 +82,14 @@ describe('inbox list', () => {
     ).toBe('unmatched');
   });
 
-  it('offers no email channel, because there was never anything behind it', async () => {
+  it('offers email as a channel now that there is something behind it', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/inbox' });
     await screen.findByText('Do you do cover ups?');
 
-    // The tab returned a hard-coded empty list and an apology. A channel that
-    // cannot be used is worse than one that is not offered.
-    expect(screen.queryByRole('tab', { name: 'Email' })).not.toBeInTheDocument();
+    // The tab used to return a hard-coded empty list and an apology, which is
+    // why it was removed. It is back because email_messages is a real,
+    // RLS-granted read: drafts waiting for approval and sends that failed.
+    expect(screen.getByRole('tab', { name: 'Email' })).toBeInTheDocument();
   });
 
   it('separates who is waiting on a reply from what has merely been read', async () => {

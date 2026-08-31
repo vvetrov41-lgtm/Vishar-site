@@ -1,0 +1,277 @@
+// Email inside the unified Inbox.
+//
+// The point of this slice is that email joins the same work queue without
+// pretending to be a messaging channel. Two things follow, and both are
+// asserted here:
+//
+//   - the Inbox must never claim a client replied by email, because the CRM
+//     stores no inbound mail (email_messages has to_email and no direction);
+//   - what it may claim is what the pipeline is genuinely stuck on: a draft
+//     nobody approved, or a send the provider refused.
+
+import { describe, expect, it } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { App } from '../App';
+import {
+  CLIENT_ID,
+  ENQUIRY_ID,
+  KRISTINA_ARTIST_ID,
+  PROJECT_ID,
+  VLADIMIR_ARTIST_ID,
+  renderWithSession,
+} from './fixtures';
+
+const DRAFT_ID = 'd1111111-1111-4111-8111-111111111111';
+const FAILED_ID = 'd2222222-2222-4222-8222-222222222222';
+const SENT_ID = 'd3333333-3333-4333-8333-333333333333';
+
+function email(overrides: Record<string, unknown> = {}) {
+  return {
+    id: DRAFT_ID,
+    artist_id: VLADIMIR_ARTIST_ID,
+    status: 'draft',
+    to_email: 'diana@example.com',
+    subject: 'Your deposit for the raven sleeve',
+    body: 'Hi Diana, here is the deposit link for your first session.',
+    created_by_kind: 'ai',
+    created_at: '2026-07-01T09:00:00Z',
+    client_id: CLIENT_ID,
+    enquiry_id: ENQUIRY_ID,
+    project_id: PROJECT_ID,
+    approved_at: null,
+    sent_at: null,
+    failed_at: null,
+    error_code: null,
+    ...overrides,
+  };
+}
+
+describe('email in the inbox list', () => {
+  it('puts an unapproved draft in the same queue as an unanswered message', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/inbox',
+      emailMessages: [email()],
+    });
+
+    // The messaging conversation and the email thread are both present, each
+    // labelled with the channel it actually came from.
+    expect(await screen.findByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(screen.getByText('Your deposit for the raven sleeve')).toBeInTheDocument();
+    expect(screen.getAllByText('Email').length).toBeGreaterThan(0);
+    expect(screen.getByText('Draft to approve')).toBeInTheDocument();
+  });
+
+  it('names the client rather than the address when the CRM knows them', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/inbox', emailMessages: [email()] });
+    await screen.findByText('Your deposit for the raven sleeve');
+    expect(screen.getAllByText('Fixture Client').length).toBeGreaterThan(0);
+  });
+
+  it('still shows an address the CRM has never seen', async () => {
+    // An unlinked sender degrades to the address rather than vanishing from the
+    // queue: the work is real whether or not a client card exists.
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/inbox',
+      emailMessages: [email({ client_id: null, enquiry_id: null, to_email: 'stranger@example.com' })],
+    });
+    expect(await screen.findByText('stranger@example.com')).toBeInTheDocument();
+  });
+
+  it('never labels an email as a reply the client is waiting on', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/inbox',
+      emailMessages: [email()],
+    });
+    const row = (await screen.findByText('Your deposit for the raven sleeve')).closest('a');
+    expect(row).not.toBeNull();
+    // "Needs reply" is a claim about direction, and the CRM has no inbound
+    // email to base it on. The email row says what it actually knows.
+    expect(within(row as HTMLElement).queryByText('Needs reply')).not.toBeInTheDocument();
+    expect(within(row as HTMLElement).getByText('Draft to approve')).toBeInTheDocument();
+  });
+
+  it('shows both families together under Needs reply, and only those waiting', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/inbox',
+      emailMessages: [
+        email(),
+        email({
+          id: SENT_ID,
+          status: 'sent',
+          sent_at: '2026-07-01T10:00:00Z',
+          client_id: null,
+          enquiry_id: null,
+          project_id: null,
+          to_email: 'done@example.com',
+          subject: 'Your appointment is confirmed',
+        }),
+      ],
+    });
+    await screen.findByText('Your deposit for the raven sleeve');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Needs reply' }));
+
+    await waitFor(() => expect(screen.queryByText('Thanks, see you then')).not.toBeInTheDocument());
+    // The unanswered Instagram thread and the unapproved draft, together.
+    expect(screen.getByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(screen.getByText('Your deposit for the raven sleeve')).toBeInTheDocument();
+    // A sent email is finished work and drops out.
+    expect(screen.queryByText('Your appointment is confirmed')).not.toBeInTheDocument();
+  });
+
+  it('filters to email alone without losing the messaging channels from the tabs', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/inbox', emailMessages: [email()] });
+    await screen.findByText('Do you do cover ups?');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Email' }));
+    await waitFor(() => expect(screen.queryByText('Do you do cover ups?')).not.toBeInTheDocument());
+    expect(screen.getByText('Your deposit for the raven sleeve')).toBeInTheDocument();
+  });
+
+  it('keeps the inbox usable when email cannot be read at all', async () => {
+    // A revoked Gmail integration, a policy change or an outage must not take
+    // the messaging queue down with it.
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/inbox',
+      failTable: 'email_messages',
+    });
+
+    expect(await screen.findByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(screen.getByText('Email conversations could not be loaded.')).toBeInTheDocument();
+  });
+
+  it('scopes email to the selected artist like every other row', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/inbox',
+      accessibleArtistIds: [VLADIMIR_ARTIST_ID, KRISTINA_ARTIST_ID],
+      emailMessages: [email({ artist_id: KRISTINA_ARTIST_ID, to_email: 'kristina-client@example.com', client_id: null, enquiry_id: null })],
+    });
+    await screen.findByText('Do you do cover ups?');
+
+    const scope = await screen.findByRole('combobox', { name: 'Artist' });
+    fireEvent.change(scope, { target: { value: VLADIMIR_ARTIST_ID } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('kristina-client@example.com')).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe('an email conversation', () => {
+  it('keeps the client, enquiry and project context on screen', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
+      emailMessages: [email()],
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Your deposit for the raven sleeve' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open client' })).toHaveAttribute('href', `#/clients/${CLIENT_ID}`);
+    expect(screen.getAllByRole('link', { name: 'Open enquiry' })[0]).toHaveAttribute('href', `#/enquiries/${ENQUIRY_ID}`);
+    expect(screen.getByRole('link', { name: 'Open project' })).toHaveAttribute('href', `#/projects/${PROJECT_ID}`);
+  });
+
+  it('offers approval rather than a composer, and says the words go to the client', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
+      emailMessages: [email()],
+    });
+
+    expect(await screen.findByText('Waiting for your approval')).toBeInTheDocument();
+    expect(screen.getByText('Hi Diana, here is the deposit link for your first session.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve and send' })).toBeInTheDocument();
+    // The CRM has no direct-send path, so this screen must not grow one.
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('approves through the audited RPC, once the operator agrees', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
+      emailMessages: [email()],
+      rpcCalls,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve and send' }));
+    // Sending words to a client is consequential, so it goes through the same
+    // dialog every other consequential action uses.
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve and send' }));
+
+    await waitFor(() => {
+      expect(rpcCalls).toContainEqual({
+        name: 'approve_email_draft',
+        args: { p_email_message_id: DRAFT_ID },
+      });
+    });
+  });
+
+  it('explains a failed send instead of offering approval again', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
+      emailMessages: [email({
+        id: FAILED_ID,
+        status: 'failed',
+        failed_at: '2026-07-01T09:30:00Z',
+        error_code: 'gmail_oauth_expired',
+      })],
+    });
+
+    const failed = await screen.findByText('This did not send');
+    const page = failed.closest('.card, section') ?? document.body;
+    expect(within(page as HTMLElement).queryByRole('button', { name: 'Approve and send' }))
+      .not.toBeInTheDocument();
+    // The raw provider code stays out of the operator's way, as it does on the
+    // calendar row.
+    expect(screen.queryByText(/gmail_oauth_expired/)).not.toBeInTheDocument();
+  });
+
+  it('tells a booking manager the approval is not theirs, rather than failing on press', async () => {
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
+      emailMessages: [email()],
+    });
+
+    const notice = await screen.findByText('Only the studio owner can approve an email for sending.');
+    const page = notice.closest('.card, section') ?? document.body;
+    expect(within(page as HTMLElement).queryByRole('button', { name: 'Approve and send' }))
+      .not.toBeInTheDocument();
+  });
+
+  it('is reachable from the enquiry without duplicating the approval there', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/enquiries/${ENQUIRY_ID}`,
+      emailMessages: [email()],
+    });
+
+    const open = await screen.findByRole('link', { name: 'Open email conversation' });
+    expect(open).toHaveAttribute('href', `#/inbox/email/enquiry-${ENQUIRY_ID}`);
+    // The enquiry says email exists and points at it. Approving happens in one
+    // place, so there is never a second copy of the same draft to act on.
+    expect(screen.queryByRole('button', { name: 'Approve and send' })).not.toBeInTheDocument();
+    expect(screen.getByText('Draft to approve')).toBeInTheDocument();
+  });
+
+  it('says plainly that replies are not stored here', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
+      emailMessages: [email()],
+    });
+
+    // Without this the screen would read as a whole conversation while showing
+    // only one side of it.
+    expect(await screen.findByText(/Replies from the client live in the mailbox/)).toBeInTheDocument();
+  });
+});

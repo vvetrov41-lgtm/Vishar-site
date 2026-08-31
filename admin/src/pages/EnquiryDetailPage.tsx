@@ -6,6 +6,7 @@ import { EnquiryConsultationPanel } from '../components/EnquiryConsultationPanel
 import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
 import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
+import { groupEmailThreads, threadNeedsOperator, type EmailThread } from '../lib/email-threads';
 import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { SignedImage } from '../components/SignedImage';
@@ -28,6 +29,8 @@ interface DetailData {
   activity: ActivityEntry[];
   transitions: StatusTransition[];
   colleagues: Pick<Profile, 'id' | 'display_name' | 'role'>[];
+  /** Newest email thread on this enquiry, or null when there is none. */
+  emailThread: EmailThread | null;
 }
 
 function contactValue(value: string | null | undefined) {
@@ -60,7 +63,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   const { data, loading, error, reload } = useAsync<DetailData>(async () => {
     const enquiry = await api.getEnquiry(enquiryId);
     if (!enquiry) {
-      return { enquiry: null, client: null, files: [], notes: [], followUps: [], activity: [], transitions: [], colleagues: [] };
+      return { enquiry: null, client: null, files: [], notes: [], followUps: [], activity: [], transitions: [], colleagues: [], emailThread: null };
     }
 
     const [client, files, notes, followUps, activity, transitions, colleagues] = await Promise.all([
@@ -73,7 +76,13 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       can(role, 'assignEnquiry') ? api.listAssignableProfiles() : Promise.resolve([]),
     ]);
 
-    return { enquiry, client, files, notes, followUps, activity, transitions, colleagues };
+    // Additive, like everywhere else email appears: a Gmail problem must not
+    // stop the enquiry from rendering.
+    const emailThread = groupEmailThreads(
+      await api.listEmailMessages({ enquiryId, limit: 50 }).catch(() => []),
+    )[0] ?? null;
+
+    return { enquiry, client, files, notes, followUps, activity, transitions, colleagues, emailThread };
   }, [api, enquiryId, role]);
 
   async function run(action: () => Promise<unknown>) {
@@ -95,7 +104,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
     return <EmptyState title={t('enquiry.notFound')} hint={t('enquiry.notFoundHint')} />;
   }
 
-  const { enquiry, client, files, notes, followUps, activity, transitions, colleagues } = data;
+  const { enquiry, client, files, notes, followUps, activity, transitions, colleagues, emailThread } = data;
   const { transitionOptions, canConvert } = enquiryWorkflowActions(transitions, enquiry.status, role);
   const contactDiffers = submittedContactDiffers(enquiry, client);
   const canAssign = can(role, 'assignEnquiry');
@@ -247,6 +256,27 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           </dl>
         </details>
       </Section>
+
+      {/* Cross-link, not a second copy. The Inbox is where email is worked;
+          the enquiry only says that email exists and points at it, so an
+          operator never has two places to approve the same draft. */}
+      {emailThread ? (
+        <Section title={language === 'ru' ? 'Почта' : 'Email'}>
+          <p className="meta">{emailThread.subject}</p>
+          <div className="actions">
+            <Link to={`/inbox/email/${emailThread.key}`} className="badge">
+              {language === 'ru' ? 'Открыть переписку по почте' : 'Open email conversation'}
+            </Link>
+            {threadNeedsOperator(emailThread) ? (
+              <span className="badge warn">
+                {emailThread.state === 'send_failed'
+                  ? (language === 'ru' ? 'Письмо не отправлено' : 'Send failed')
+                  : (language === 'ru' ? 'Письмо на утверждение' : 'Draft to approve')}
+              </span>
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
 
       {client ? (
         <Section title="WhatsApp">

@@ -23,6 +23,7 @@ import { AvailabilityPage } from './pages/AvailabilityPage';
 import { BookingSourcesPage } from './pages/BookingSourcesPage';
 import { CalendarConnectionsPage } from './pages/CalendarConnectionsPage';
 import { ClientDetailPage } from './pages/ClientDetailPage';
+import { EmailThreadPage } from './pages/EmailThreadPage';
 import { ConversationPage } from './pages/ConversationPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -106,6 +107,17 @@ function Routes() {
     return (
       <RequireCapability capability="viewEnquiries">
         <EnquiryDetailPage enquiryId={enquiryDetail.id} />
+      </RequireCapability>
+    );
+  }
+
+  // Checked before /inbox/:id: an email thread key is a kind and an id, so it
+  // has one segment more than a conversation id.
+  const emailThread = matchRoute('/inbox/email/:key', path);
+  if (emailThread) {
+    return (
+      <RequireCapability capability="viewEnquiries">
+        <EmailThreadPage threadKey={emailThread.key} />
       </RequireCapability>
     );
   }

@@ -32,6 +32,7 @@ import { createProjectOperationsApi, type ProjectOperationsApi } from './project
 import { createRecordEditApi, type RecordEditApi } from './record-edit-api';
 import { createWhatsAppConnectionsApi, type WhatsAppConnectionsApi } from './whatsapp-connections-api';
 import { createCommunicationsApi, type CommunicationsApi } from './communications-api';
+import { createEmailApi, type EmailApi } from './email-api';
 import { createInstagramConnectionsApi, type InstagramConnectionsApi } from './instagram-connections-api';
 import { createControlPlaneApi, type ControlPlaneApi } from './control-plane-api';
 import { createLifecycleApi, type LifecycleApi } from './lifecycle-api';
@@ -55,7 +56,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi;
+export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -106,6 +107,7 @@ export function SessionProvider({
       createRecordEditApi(client),
       createWhatsAppConnectionsApi(client),
       createCommunicationsApi(client),
+      createEmailApi(client),
       createInstagramConnectionsApi(client),
       createPlatformApi(client),
       createControlPlaneApi(client),

@@ -34,7 +34,6 @@ import type {
   Client,
   CrmRole,
   CrmSession,
-  EmailMessage,
   Enquiry,
   EnquiryFile,
   EnquiryStatus,
@@ -606,18 +605,6 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
           p_request_id: requestId,
         }),
         'queue that WhatsApp message'
-      );
-    },
-
-    async listEmailMessages(enquiryId: string): Promise<EmailMessage[]> {
-      return unwrap<EmailMessage[]>(
-        await client
-          .from('email_messages')
-          .select('id, artist_id, status, to_email, subject, created_by_kind, created_at')
-          .eq('enquiry_id', enquiryId)
-          .order('created_at', { ascending: false })
-          .limit(50),
-        'load email drafts'
       );
     },
 

@@ -17,6 +17,7 @@ import { can, canAccess } from '../lib/permissions';
 import { Link } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
+import { groupEmailThreads, type EmailThread } from '../lib/email-threads';
 import { summariseToday, type TodayItem } from '../lib/today-workspace';
 import { typeLabel } from './AppointmentsPage';
 import type { Appointment } from '../lib/appointment-api';
@@ -31,6 +32,7 @@ interface TodayData {
   projects: Project[];
   followUps: FollowUp[];
   conversations: ConversationSummary[];
+  emailThreads: EmailThread[];
   candidates: MonzoReconciliationCandidate[];
   failedJobCount: number;
   activity: ActivityEntry[];
@@ -75,12 +77,23 @@ export function DashboardPage() {
       )).flat()
       : [];
 
+    // Email the CRM drafted or failed to send. Nothing showed these before, so
+    // a lifecycle draft could sit unapproved indefinitely. Email is additive
+    // here exactly as it is in the Inbox: if it cannot be read, Today still
+    // renders everything else.
+    const emailThreads = can(role, 'viewEnquiries')
+      ? groupEmailThreads(
+        await api.listEmailMessages({ artistId, limit: 200 }).catch(() => []),
+      )
+      : [];
+
     // "Who am I seeing?" is the question. A date and a duration badge is not an
     // answer, so every id that reaches a row is resolved to a name first.
     const clients = await api.listClientsByIds([
       ...appointments.map((appointment) => appointment.client_id),
       ...enquiries.map((enquiry) => enquiry.client_id),
       ...projects.map((project) => project.client_id),
+      ...emailThreads.map((thread) => thread.client_id ?? ''),
     ]);
 
     return {
@@ -89,6 +102,7 @@ export function DashboardPage() {
       projects,
       followUps,
       conversations,
+      emailThreads,
       candidates,
       failedJobCount: failedJobs.length,
       activity,
@@ -112,6 +126,9 @@ export function DashboardPage() {
     projects: data.projects,
     followUps: data.followUps,
     conversations,
+    emailThreads: data.emailThreads.filter(
+      (thread) => !selectedArtistId || thread.artist_id === selectedArtistId,
+    ),
     reconciliationCandidates: data.candidates,
     failedJobCount: data.failedJobCount,
     clientName: (clientId) => data.clientNames.get(clientId) ?? null,
