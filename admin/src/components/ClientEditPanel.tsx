@@ -40,7 +40,7 @@ export function ClientEditPanel({
     save: 'Сохранить',
     cancel: 'Отмена',
     name: 'Имя',
-    email: 'Email',
+    email: 'Электронная почта',
     phone: 'Телефон / WhatsApp',
     instagram: 'Instagram',
     preferred: 'Предпочитает',
@@ -138,7 +138,7 @@ export function ClientEditPanel({
           {copy.preferred}
           <select value={preferredContact} onChange={(event) => setPreferredContact(event.target.value)}>
             <option value="">{copy.none}</option>
-            <option value="Email">Email</option>
+            <option value="Email">{copy.email}</option>
             <option value="WhatsApp">WhatsApp</option>
             <option value="Instagram">Instagram</option>
           </select>

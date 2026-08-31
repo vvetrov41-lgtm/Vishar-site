@@ -213,7 +213,7 @@ export function EnquiriesPage() {
                   )}
                 >
                   <option value="">{copy.notSpecified}</option>
-                  <option value="Email">Email</option>
+                  <option value="Email">{copy.email}</option>
                   <option value="WhatsApp">WhatsApp</option>
                   <option value="Instagram">Instagram</option>
                 </select>
@@ -380,12 +380,12 @@ const MANUAL_COPY: Record<Language, Record<string, string>> = {
   },
   ru: {
     newManual: 'Новая ручная заявка',
-    intro: 'Создаёт заявку, которую сотрудник вводит напрямую в CRM. Telegram, email и Calendar не отправляются, публичный booking source не назначается.',
+    intro: 'Создаёт заявку, которую сотрудник вводит напрямую в CRM. Telegram, электронная почта и Календарь не задействуются, публичный источник бронирования не назначается.',
     chooseArtist: 'Перед созданием ручной заявки выберите одного мастера в переключателе мастеров CRM.',
-    required: 'Обязательны имя клиента и корректный email.',
+    required: 'Обязательны имя клиента и корректный адрес электронной почты.',
     privacyRequired: 'Перед созданием подтвердите, что клиент ознакомился с актуальным уведомлением о конфиденциальности.',
     fullName: 'Имя клиента',
-    email: 'Email',
+    email: 'Электронная почта',
     phone: 'Телефон',
     preferredContact: 'Предпочтительный контакт',
     travellingFrom: 'Откуда приезжает',
