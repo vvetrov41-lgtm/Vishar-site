@@ -1,0 +1,144 @@
+import type { Client } from '../lib/types';
+import type { Language } from '../lib/i18n';
+import type { MonthCalendar, MonthCalendarEntry } from '../lib/calendar-month';
+import { typeLabel } from './AppointmentRow';
+
+const MAX_EVENTS_PER_DAY = 3;
+
+export function MonthCalendarView({
+  month,
+  visibleMonth,
+  selectedDay,
+  language,
+  clients,
+  onSelectDay,
+  onPreviousMonth,
+  onNextMonth,
+  onToday,
+}: {
+  month: MonthCalendar;
+  visibleMonth: number;
+  selectedDay: number;
+  language: Language;
+  clients: Client[];
+  onSelectDay: (date: number) => void;
+  onPreviousMonth: () => void;
+  onNextMonth: () => void;
+  onToday: () => void;
+}) {
+  const copy = COPY[language];
+  const heading = monthHeading(visibleMonth, language);
+  return (
+    <>
+      <div className="calendar-toolbar">
+        <h3>{heading}</h3>
+        <div className="calendar-toolbar-actions">
+          <button type="button" aria-label={copy.previousMonth} onClick={onPreviousMonth}>‹</button>
+          <button type="button" onClick={onToday}>{copy.today}</button>
+          <button type="button" aria-label={copy.nextMonth} onClick={onNextMonth}>›</button>
+        </div>
+      </div>
+      <div className="calendar-grid" role="grid" aria-label={heading}>
+        {weekdayLabels(language).map((weekday) => (
+          <div key={weekday} className="calendar-weekday" role="columnheader">{weekday}</div>
+        ))}
+        {month.days.map((day) => {
+          const isSelected = day.date === selectedDay;
+          const shownEntries = day.entries.slice(0, MAX_EVENTS_PER_DAY);
+          const hiddenCount = day.entries.length - shownEntries.length;
+          const classes = [
+            'calendar-day',
+            day.isCurrentMonth ? '' : 'outside-month',
+            day.isToday ? 'today' : '',
+            isSelected ? 'selected' : '',
+          ].filter(Boolean).join(' ');
+          return (
+            <button
+              key={day.date}
+              type="button"
+              className={classes}
+              role="gridcell"
+              aria-selected={isSelected}
+              aria-label={dayHeading(day.date, language)}
+              onClick={() => onSelectDay(day.date)}
+            >
+              <span className="calendar-day-number">{new Date(day.date).getDate()}</span>
+              <span className="calendar-day-events">
+                {shownEntries.map((entry) => (
+                  <CalendarEntryPreview key={entry.key} entry={entry} language={language} clients={clients} />
+                ))}
+                {hiddenCount > 0 ? (
+                  <span className="calendar-more">{copy.more.replace('{count}', String(hiddenCount))}</span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function CalendarEntryPreview({ entry, language, clients }: {
+  entry: MonthCalendarEntry;
+  language: Language;
+  clients: Client[];
+}) {
+  if (entry.kind === 'time_off') {
+    return (
+      <span className="calendar-event time-off">
+        <span className="calendar-event-time">{entry.block.is_all_day ? '•' : timeHeading(entry.block.start_at, language)}</span>
+        <span className="calendar-event-client">{timeOffLabel(entry.block.block_kind, language)}</span>
+      </span>
+    );
+  }
+
+  const client = clients.find((row) => row.id === entry.appointment.client_id);
+  const clientLabel = client?.full_name ?? typeLabel(entry.appointment.appointment_type, language);
+  return (
+    <span className={`calendar-event status-${entry.appointment.status}`}>
+      <span className="calendar-event-time">{timeHeading(entry.appointment.start_at, language)}</span>
+      <span className="calendar-event-client">{clientLabel}</span>
+    </span>
+  );
+}
+
+const DAY_HEADING: Record<Language, Intl.DateTimeFormat> = {
+  en: new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+  ru: new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' }),
+};
+const MONTH_HEADING: Record<Language, Intl.DateTimeFormat> = {
+  en: new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }),
+  ru: new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }),
+};
+const TIME_HEADING: Record<Language, Intl.DateTimeFormat> = {
+  en: new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+  ru: new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false }),
+};
+
+export function dayHeading(date: number, language: Language): string {
+  return DAY_HEADING[language].format(new Date(date));
+}
+function monthHeading(date: number, language: Language): string {
+  return MONTH_HEADING[language].format(new Date(date));
+}
+function timeHeading(value: string, language: Language): string {
+  return TIME_HEADING[language].format(new Date(value));
+}
+function weekdayLabels(language: Language): string[] {
+  const formatter = new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-GB', { weekday: 'short' });
+  return Array.from({ length: 7 }, (_, index) => formatter.format(new Date(2026, 0, 5 + index)));
+}
+
+export function timeOffLabel(kind: 'day_off' | 'holiday' | 'personal' | 'other', language: Language): string {
+  const labels = {
+    en: { day_off: 'Day off', holiday: 'Holiday', personal: 'Personal', other: 'Unavailable' },
+    ru: { day_off: 'Выходной', holiday: 'Отпуск', personal: 'Личное', other: 'Недоступно' },
+  } as const;
+  return labels[language][kind];
+}
+
+const COPY: Record<Language, Record<string, string>> = {
+  en: { previousMonth: 'Previous month', nextMonth: 'Next month', today: 'Today', more: '+{count} more' },
+  ru: { previousMonth: 'Предыдущий месяц', nextMonth: 'Следующий месяц', today: 'Сегодня', more: '+{count} ещё' },
+};
