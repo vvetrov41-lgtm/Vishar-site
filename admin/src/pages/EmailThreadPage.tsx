@@ -1,21 +1,15 @@
-// One email conversation, with the action area email actually has.
+// One email conversation, with live mailbox history and the protected CRM
+// approval path in the same workspace.
 //
-// The shell matches the messaging conversation screen - back link, who this
-// is, the same client context strip - so the Inbox feels like one place. The
-// action area does not, and deliberately so.
-//
-// A messaging conversation ends in a composer: type, send. Email ends in an
-// approval. Drafts are written by a GPT or by a lifecycle automation, and
-// `public.approve_email_draft` is what releases one towards the send pipeline;
-// the CRM has no direct-send path and this screen does not add one. Replacing
-// that with a composer would route around the approval safeguard that exists
-// precisely because a machine wrote the words.
+// Live Gmail is read-only. Draft approval still releases mail through the
+// existing outbox; this screen deliberately has no direct-send composer.
 
 import { useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { ClientContextStrip } from '../components/ClientContextStrip';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
+import type { LiveGmailHistory, LiveGmailMessage } from '../lib/email-api';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { can } from '../lib/permissions';
@@ -28,6 +22,10 @@ interface ThreadView {
   thread: EmailThread | null;
   /** The body of whatever the operator has to act on, loaded only here. */
   actionable: EmailMessageDetail | null;
+  /** Current provider history, never persisted in the browser-side CRM model. */
+  liveGmail: LiveGmailHistory | null;
+  /** Stable gateway code only, never provider response detail. */
+  liveGmailError: string | null;
 }
 
 export function EmailThreadPage({ threadKey }: { threadKey: string }) {
@@ -43,8 +41,6 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
 
   const { data, loading, error, reload } = useAsync<ThreadView>(
     async () => {
-      // The key names the record the Gmail thread context is keyed by, so the
-      // read is filtered in the database rather than by scanning every email.
       const [kind, id] = splitKey(threadKey);
       const messages = kind === 'enquiry'
         ? await api.listEmailMessages({ enquiryId: id, limit: 100 })
@@ -56,7 +52,18 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
       const actionable = thread?.actionable_message_id
         ? await api.getEmailMessage(thread.actionable_message_id)
         : null;
-      return { thread, actionable };
+
+      let liveGmail: LiveGmailHistory | null = null;
+      let liveGmailError: string | null = null;
+      if (thread?.enquiry_id) {
+        try {
+          liveGmail = await api.listLiveGmailHistory(thread.enquiry_id);
+        } catch (cause) {
+          liveGmailError = cause instanceof Error ? cause.message : 'gmail_live_unavailable';
+        }
+      }
+
+      return { thread, actionable, liveGmail, liveGmailError };
     },
     [api, threadKey],
   );
@@ -89,7 +96,7 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
     return <EmptyState title={copy.notFound} hint={copy.notFoundHint} />;
   }
 
-  const { thread, actionable } = data;
+  const { thread, actionable, liveGmail, liveGmailError } = data;
 
   return (
     <>
@@ -116,8 +123,6 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
             </div>
           </>
         ) : (
-          // An address the CRM has never seen is still real work. It renders by
-          // address, with the context strip simply absent rather than broken.
           <p className="meta">{copy.noClient}</p>
         )}
       </div>
@@ -149,15 +154,48 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
                 </button>
               </div>
             ) : (
-              // The database would refuse anyway; saying so is kinder than a
-              // button that always fails.
               <p className="notice" role="status">{copy.approvalNotYours}</p>
             )
           ) : null}
         </Section>
       ) : null}
 
-      <Section title={copy.history}>
+      {thread.enquiry_id ? (
+        <Section title={copy.liveHistory}>
+          {liveGmailError ? (
+            <div className="notice warn" role="status">
+              <p>{liveGmailError === 'gmail_reconnect_required' ? copy.gmailReconnect : copy.gmailUnavailable}</p>
+              <button type="button" onClick={reload}>{copy.retry}</button>
+            </div>
+          ) : liveGmail?.threads.length ? (
+            <div className="list">
+              {liveGmail.threads.map((liveThread) => (
+                <div key={liveThread.thread_context_id} className="row">
+                  <div className="inbox-row-head">
+                    <span className="title">{liveThread.subject || copy.noSubject}</span>
+                    <span className="badge">{copy.live}</span>
+                  </div>
+                  <div className="list">
+                    {liveThread.messages.map((message, index) => (
+                      <LiveMessage
+                        key={`${liveThread.thread_context_id}-${index}`}
+                        message={message}
+                        language={language}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title={copy.noLiveHistory} hint={copy.noLiveHistoryHint} />
+          )}
+        </Section>
+      ) : (
+        <p className="meta email-scope-note">{copy.liveNeedsEnquiry}</p>
+      )}
+
+      <Section title={copy.crmHistory}>
         {thread.messages.length === 0 ? (
           <EmptyState title={copy.noHistory} hint={copy.noHistoryHint} />
         ) : (
@@ -180,16 +218,27 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
         )}
       </Section>
 
-      {/* Inbound mail is not stored in the CRM, so this screen must not imply
-          it is showing the whole conversation. The enquiry is where the live
-          Gmail thread is reachable. */}
-      <p className="meta email-scope-note">
-        {copy.outboundOnly}
-        {thread.enquiry_id ? (
-          <> <Link to={`/enquiries/${thread.enquiry_id}`}>{copy.openEnquiry}</Link>.</>
-        ) : null}
-      </p>
+      <p className="meta email-scope-note">{copy.sendBoundary}</p>
     </>
+  );
+}
+
+function LiveMessage({ message, language }: { message: LiveGmailMessage; language: Language }) {
+  const copy = COPY[language];
+  return (
+    <div className="row">
+      <div className="inbox-row-head">
+        <span className="title">{message.direction === 'inbound' ? copy.clientMessage : copy.studioMessage}</span>
+        <span className={`badge ${message.direction === 'inbound' ? 'warn' : 'ok'}`}>
+          {message.direction === 'inbound' ? copy.incoming : copy.outgoing}
+        </span>
+      </div>
+      <div className="meta">
+        {message.from} → {message.to}
+        {message.timestamp ? ` · ${formatDateTime(message.timestamp, language)}` : ''}
+      </div>
+      <pre className="email-body">{message.body}</pre>
+    </div>
   );
 }
 
@@ -245,11 +294,23 @@ const COPY = {
     approvalNotYours: 'Only the studio owner can approve an email for sending.',
     confirmTitle: 'Approve this email?',
     confirmBody: 'It will be sent to the client from the studio mailbox. This cannot be recalled.',
-    history: 'Email history',
+    liveHistory: 'Live Gmail conversation',
+    live: 'Live Gmail',
+    incoming: 'Incoming',
+    outgoing: 'Outgoing',
+    clientMessage: 'Client',
+    studioMessage: 'Studio',
+    noLiveHistory: 'No Gmail messages found',
+    noLiveHistoryHint: 'There is no mailbox thread between this client and the connected artist account yet.',
+    gmailReconnect: 'Gmail needs to be reconnected before live replies can be read here.',
+    gmailUnavailable: 'Live Gmail is temporarily unavailable. Stored CRM email history is still available below.',
+    retry: 'Retry Gmail',
+    liveNeedsEnquiry: 'Live Gmail history is available after this email is linked to an enquiry.',
+    crmHistory: 'CRM delivery history',
     noHistory: 'Nothing sent yet',
     noHistoryHint: 'Approved emails appear here once they leave.',
     deliveryProblem: 'delivery problem',
-    outboundOnly: 'This shows email the CRM sent or drafted. Replies from the client live in the mailbox, alongside the enquiry.',
+    sendBoundary: 'Live Gmail above is read-only. Sending still goes through CRM draft approval and the protected outbox.',
     state: {
       send_failed: 'Send failed',
       awaiting_approval: 'Draft to approve',
@@ -289,11 +350,23 @@ const COPY = {
     approvalNotYours: 'Утверждать письма может только владелец студии.',
     confirmTitle: 'Утвердить это письмо?',
     confirmBody: 'Оно будет отправлено клиенту из почты студии. Отозвать письмо будет нельзя.',
-    history: 'История писем',
+    liveHistory: 'Переписка Gmail',
+    live: 'Gmail сейчас',
+    incoming: 'Входящее',
+    outgoing: 'Исходящее',
+    clientMessage: 'Клиент',
+    studioMessage: 'Студия',
+    noLiveHistory: 'Писем в Gmail не найдено',
+    noLiveHistoryHint: 'Между этим клиентом и подключённой почтой мастера пока нет переписки.',
+    gmailReconnect: 'Нужно переподключить Gmail, чтобы читать ответы клиента прямо здесь.',
+    gmailUnavailable: 'Gmail сейчас недоступен. Сохранённая история CRM остаётся доступна ниже.',
+    retry: 'Повторить Gmail',
+    liveNeedsEnquiry: 'Живая история Gmail появится, когда письмо будет связано с заявкой.',
+    crmHistory: 'История отправки CRM',
     noHistory: 'Пока ничего не отправлено',
     noHistoryHint: 'Утверждённые письма появятся здесь после отправки.',
     deliveryProblem: 'проблема с доставкой',
-    outboundOnly: 'Здесь письма, которые CRM отправила или подготовила. Ответы клиента остаются в почтовом ящике, рядом с заявкой.',
+    sendBoundary: 'Gmail выше работает только на чтение. Отправка по-прежнему идёт через утверждение черновика и защищённую очередь CRM.',
     state: {
       send_failed: 'Не отправлено',
       awaiting_approval: 'На утверждение',

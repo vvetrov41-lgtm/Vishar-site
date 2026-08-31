@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import gmailWorker, { drainEmailOutbox } from './gmail-production.js';
+import { handleGmailOperatorRequest } from './gmail-operator-api.js';
 
 function safeCount(value) {
   return Number.isInteger(value) && value >= 0 && value <= 20 ? value : 0;
@@ -27,6 +28,8 @@ function summarizeDrain(result) {
 
 export default class GmailProductionEntrypoint extends WorkerEntrypoint {
   async fetch(request) {
+    const operatorResponse = await handleGmailOperatorRequest(request, this.env);
+    if (operatorResponse) return operatorResponse;
     return gmailWorker.fetch(request, this.env);
   }
 

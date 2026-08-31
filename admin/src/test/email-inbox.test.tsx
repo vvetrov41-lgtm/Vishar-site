@@ -1,15 +1,10 @@
 // Email inside the unified Inbox.
 //
-// The point of this slice is that email joins the same work queue without
-// pretending to be a messaging channel. Two things follow, and both are
-// asserted here:
-//
-//   - the Inbox must never claim a client replied by email, because the CRM
-//     stores no inbound mail (email_messages has to_email and no direction);
-//   - what it may claim is what the pipeline is genuinely stuck on: a draft
-//     nobody approved, or a send the provider refused.
+// Email joins the same work queue without pretending to be a messaging channel.
+// The Inbox itself is driven by stored CRM delivery state; live Gmail history is
+// fetched only when the operator opens one linked email conversation.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
 import {
@@ -87,8 +82,8 @@ describe('email in the inbox list', () => {
     });
     const row = (await screen.findByText('Your deposit for the raven sleeve')).closest('a');
     expect(row).not.toBeNull();
-    // "Needs reply" is a claim about direction, and the CRM has no inbound
-    // email to base it on. The email row says what it actually knows.
+    // Inbox prioritisation is based on CRM delivery state. Live Gmail is loaded
+    // only in the conversation detail, so the list never guesses direction.
     expect(within(row as HTMLElement).queryByText('Needs reply')).not.toBeInTheDocument();
     expect(within(row as HTMLElement).getByText('Draft to approve')).toBeInTheDocument();
   });
@@ -263,15 +258,42 @@ describe('an email conversation', () => {
     expect(screen.getByText('Draft to approve')).toBeInTheDocument();
   });
 
-  it('says plainly that replies are not stored here', async () => {
-    renderWithSession(<App />, {
-      role: 'owner',
-      path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
-      emailMessages: [email()],
-    });
+  it('shows live Gmail replies inside the CRM while keeping sending read-only', async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      enquiry_id: ENQUIRY_ID,
+      threads: [{
+        thread_context_id: '96340000-0000-4000-8000-000000000001',
+        subject: 'Your deposit for the raven sleeve',
+        message_count: 1,
+        messages: [{
+          from: 'diana@example.com',
+          to: 'studio@example.test',
+          subject: 'Your deposit for the raven sleeve',
+          timestamp: '2026-08-31T10:00:00.000Z',
+          body: 'Thanks, I have received the deposit link.',
+          direction: 'inbound',
+          untrusted_content: true,
+        }],
+        untrusted_content: true,
+      }],
+      untrusted_content: true,
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderWithSession(<App />, {
+        role: 'owner',
+        path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
+        emailMessages: [email()],
+      });
 
-    // Without this the screen would read as a whole conversation while showing
-    // only one side of it.
-    expect(await screen.findByText(/Replies from the client live in the mailbox/)).toBeInTheDocument();
+      expect(await screen.findByText('Live Gmail conversation')).toBeInTheDocument();
+      expect(await screen.findByText('Thanks, I have received the deposit link.')).toBeInTheDocument();
+      expect(screen.getByText('Incoming')).toBeInTheDocument();
+      expect(screen.getByText('CRM delivery history')).toBeInTheDocument();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
