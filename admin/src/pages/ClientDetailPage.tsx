@@ -15,7 +15,9 @@ import { ArtistRelationship } from '../components/ArtistRelationship';
 import { ClientEditPanel } from '../components/ClientEditPanel';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink } from '../components/DetailContext';
+import { BookingPanel } from '../components/BookingPanel';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
+import { useArtistScope } from '../lib/artist-scope';
 import { can } from '../lib/permissions';
 import {
   summariseClientWorkspace,
@@ -49,6 +51,7 @@ const CHANNEL_LABELS: Record<'en' | 'ru', Record<ClientConversation['channel'], 
 };
 
 export function ClientDetailPage({ clientId }: { clientId: string }) {
+  const { selectedArtistId } = useArtistScope();
   const api = useApi();
   const { profile } = useSession();
   const { t, language } = useLanguage();
@@ -109,6 +112,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
     ...enquiries.map((enquiry) => enquiry.artist_id),
     ...projects.map((project) => project.artist_id),
   ]));
+  // One artist in this client's work means no choice to make. More than one,
+  // or none, and the scope selector decides - the same control every other
+  // artist-scoped screen uses.
+  const bookingArtistId = artistIds.length === 1 ? artistIds[0] : selectedArtistId;
 
   return (
     <>
@@ -126,6 +133,21 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
       {can(role, 'viewSessions') ? (
         <BookingsSection appointments={appointments} />
+      ) : null}
+
+      {/* Booking starts where the operator realises they need it. The artist
+          comes from the client's own work when it is unambiguous, and from the
+          scope selector otherwise - never from a free-text field, because the
+          artist decides the whole schedule. */}
+      {can(role, 'manageSessions') ? (
+        <Section title={t('booking.title')}>
+          <BookingPanel
+            artistId={bookingArtistId}
+            clientId={clientId}
+            clientName={client.full_name}
+            onBooked={() => reload()}
+          />
+        </Section>
       ) : null}
 
       {can(role, 'viewEnquiries') ? (

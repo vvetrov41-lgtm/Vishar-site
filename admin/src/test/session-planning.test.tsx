@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
 import { RouterProvider } from '../lib/router';
 import { SessionProvider } from '../lib/session';
@@ -81,17 +81,24 @@ describe('project appointment planner', () => {
 
     const disclosure = await screen.findByText('Add another appointment');
     expect(disclosure.closest('details')).not.toHaveAttribute('open');
-    expect(screen.getByText('6 h')).toBeInTheDocument();
+    // The appointment's own duration badge. Scoped to the row: the shared
+    // BookingPanel on this page offers a "6 h" duration shortcut too, and the
+    // assertion is about the booked appointment, not about that button.
+    const row = disclosure.closest('.row') ?? disclosure.closest('section');
+    expect(within(row as HTMLElement).getByText('6 h')).toBeInTheDocument();
 
     fireEvent.click(disclosure);
 
-    const start = await screen.findByLabelText('Proposed start');
-    const end = screen.getByLabelText('Proposed end');
-    const threeHours = screen.getByRole('button', { name: '3 h' });
+    // Scoped to the planner: the shared BookingPanel above it offers the same
+    // duration shortcuts, and this test is about the planner's own behaviour.
+    const planner = within(disclosure.closest('details') as HTMLElement);
+    const start = await planner.findByLabelText('Proposed start');
+    const end = planner.getByLabelText('Proposed end');
+    const threeHours = planner.getByRole('button', { name: '3 h' });
 
     expect(threeHours).toBeDisabled();
-    expect(screen.getByRole('button', { name: '5 h' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '7 h' })).toBeInTheDocument();
+    expect(planner.getByRole('button', { name: '5 h' })).toBeInTheDocument();
+    expect(planner.getByRole('button', { name: '7 h' })).toBeInTheDocument();
 
     const existingStart = toLocalInput(SESSION.start_at);
     const overlappingStart = addHoursToLocalDateTime(existingStart, 1);

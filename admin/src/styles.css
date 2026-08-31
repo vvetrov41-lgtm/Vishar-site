@@ -812,3 +812,58 @@ a.client-workspace-fact { min-height: var(--tap); }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Booking panel. The slot list is the point of the screen, so it gets the
+   room; everything above it is one short form. */
+.booking-panel { display: flex; flex-direction: column; gap: 12px; }
+.booking-hours {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.booking-hours legend { padding: 0 6px; font-size: 0.82rem; color: var(--muted); }
+.booking-hours .meta { margin: 8px 0 0; }
+.booking-days { display: flex; flex-direction: column; gap: 14px; }
+.booking-day > h4 {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.booking-slots { gap: 6px; }
+/* A slot is a button, not a row that happens to be clickable: it is the
+   primary action on a phone, so it gets a full tap target and a left-aligned
+   label rather than centred button text. */
+button.booking-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--tap);
+  text-align: left;
+  cursor: pointer;
+}
+button.booking-slot .title { font-variant-numeric: tabular-nums; }
+.booking-summary {
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+}
+.booking-summary-line { margin: 0 0 10px; }
+.booking-manual {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.booking-disclosure > summary { min-height: var(--tap); display: flex; align-items: center; }
+
+/* Fields stack by default, which is what a phone needs - a date input with the
+   keyboard open wants the full row. Pairs only appear where there is room. */
+@media (min-width: 641px) {
+  .booking-panel .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+}

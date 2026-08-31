@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useAsync } from '../components/AsyncData';
+import { BookingPanel } from '../components/BookingPanel';
 import { ClientPicker } from '../components/ClientPicker';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
@@ -286,6 +287,38 @@ export function AppointmentsPage() {
           </label>
         </div>
       </Section>
+
+      {/* The primary way to book: say who and how long, and be offered times
+          that are actually free. The detailed form below stays as the advanced
+          path - it is the only place that links a booking to a project or an
+          enquiry, and the only one that can deliberately book over a clash. */}
+      {mayManage ? (
+        <Section title={copy.findTime}>
+          {!selectedArtistId ? (
+            // Hiding the panel until an artist is chosen would repeat the
+            // Payments defect: a screen that needs a selection and gives no
+            // sign it is waiting for one.
+            <p className="meta">{copy.chooseArtistFirst}</p>
+          ) : resolvedClientId ? (
+            <BookingPanel
+              artistId={selectedArtistId}
+              clientId={resolvedClientId}
+              clientName={clientName(data?.clients ?? [], resolvedClientId) ?? copy.thisClient}
+              onBooked={() => { setClientId(''); reload(); }}
+            />
+          ) : (
+            <div className="client-picker-field">
+              <span className="client-picker-heading">{copy.whoFor}</span>
+              <ClientPicker
+                value={resolvedClientId}
+                language={language}
+                inputId="smart-booking-client-search"
+                onChange={setClientId}
+              />
+            </div>
+          )}
+        </Section>
+      ) : null}
 
       {mayManage ? (
         <Section title={copy.newAppointment}>
@@ -763,6 +796,10 @@ const COPY: Record<Language, Record<string, string>> = {
     filterType: 'Filter by type',
     allTypes: 'All appointment types',
     newAppointment: 'New appointment',
+    findTime: 'Find a time',
+    chooseArtistFirst: 'Choose an artist above to search for free times.',
+    whoFor: 'Who is this for?',
+    thisClient: 'this client',
     type: 'Appointment type',
     project: 'Project',
     enquiry: 'Enquiry',
@@ -816,6 +853,10 @@ const COPY: Record<Language, Record<string, string>> = {
     filterType: 'Фильтр по типу',
     allTypes: 'Все типы записей',
     newAppointment: 'Новая запись',
+    findTime: 'Подобрать время',
+    chooseArtistFirst: 'Выберите мастера выше, чтобы искать свободное время.',
+    whoFor: 'Для кого?',
+    thisClient: 'этот клиент',
     type: 'Тип записи',
     project: 'Проект',
     enquiry: 'Заявка',
