@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import gmailWorker, { drainEmailOutbox } from './gmail-production.js';
+import { handleCompleteGmailDiscoveryRequest } from './gmail-complete-discovery-api.js';
 import { handleGmailOperatorRequest } from './gmail-operator-api.js';
 
 function safeCount(value) {
@@ -28,6 +29,8 @@ function summarizeDrain(result) {
 
 export default class GmailProductionEntrypoint extends WorkerEntrypoint {
   async fetch(request) {
+    const discoveryResponse = await handleCompleteGmailDiscoveryRequest(request, this.env);
+    if (discoveryResponse) return discoveryResponse;
     const operatorResponse = await handleGmailOperatorRequest(request, this.env);
     if (operatorResponse) return operatorResponse;
     return gmailWorker.fetch(request, this.env);
