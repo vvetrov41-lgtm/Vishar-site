@@ -5,9 +5,13 @@ const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const WEBHOOK_WORKER = 'vishar-whatsapp-webhook-production';
 const DRAIN_WORKER = 'vishar-whatsapp-drain-production';
 const MAX_BODY_BYTES = 4096;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PROVIDER_ID = /^[0-9]{5,32}$/;
+const INTEGRATION_KEY = /^[a-z][a-z0-9_-]{2,79}$/;
 
-const APPROVED_ARTISTS = Object.freeze({
+// Compatibility fixture only. Runtime authorization is derived from the
+// authenticated artist membership plus the exact production route in Supabase.
+const TEST_COMPAT_APPROVED_ARTISTS = Object.freeze({
   'a1111111-1111-4111-8111-111111111111': Object.freeze({
     integrationKey: 'vladimir-production',
     bindingName: 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
@@ -38,9 +42,9 @@ function json(body, status = 200) {
 
 async function boundedJson(request) {
   const declared = Number(request.headers.get('content-length') || '0');
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw new Error('body_too_large');
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw Object.assign(new Error('body_too_large'), { status: 413 });
   const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) throw new Error('body_too_large');
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) throw Object.assign(new Error('body_too_large'), { status: 413 });
   return JSON.parse(text);
 }
 
@@ -48,6 +52,20 @@ function bearerToken(request) {
   const value = request.headers.get('authorization') || '';
   const match = /^Bearer ([^\s]{20,4096})$/.exec(value);
   return match ? match[1] : null;
+}
+
+function binding(env, name) {
+  return typeof env?.[name] === 'string' ? env[name].trim() : '';
+}
+
+function bindingNameForIntegrationKey(key) {
+  if (!INTEGRATION_KEY.test(key || '')) throw Object.assign(new Error('crm_route_not_ready'), { status: 409 });
+  const escaped = [...key].map((character) => {
+    if (character === '_') return '__';
+    if (character === '-') return '_H';
+    return character.toUpperCase();
+  }).join('');
+  return `ARTIST_WHATSAPP_${escaped}`;
 }
 
 async function responseJson(response) {
@@ -62,18 +80,10 @@ async function noFollowFetch(url, init = {}) {
   return response;
 }
 
-function binding(env, name) {
-  return typeof env?.[name] === 'string' ? env[name].trim() : '';
-}
-
-function supabasePublishableKey(env) {
-  return binding(env, 'SUPABASE_PUBLISHABLE_KEY');
-}
-
 async function requireCrmOperator(request, env) {
   const token = bearerToken(request);
   if (!token) throw Object.assign(new Error('crm_auth_required'), { status: 401 });
-  const publishableKey = supabasePublishableKey(env);
+  const publishableKey = binding(env, 'SUPABASE_PUBLISHABLE_KEY');
   if (!publishableKey) throw Object.assign(new Error('server_not_configured'), { status: 503 });
 
   let authResponse;
@@ -92,7 +102,7 @@ async function requireCrmOperator(request, env) {
   if (!authResponse.ok) throw Object.assign(new Error('crm_auth_rejected'), { status: 401 });
   const user = await responseJson(authResponse);
   const userId = typeof user.id === 'string' ? user.id : '';
-  if (!/^[0-9a-f-]{36}$/i.test(userId)) throw Object.assign(new Error('crm_auth_rejected'), { status: 401 });
+  if (!UUID.test(userId)) throw Object.assign(new Error('crm_auth_rejected'), { status: 401 });
 
   const profileUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/profiles`);
   profileUrl.searchParams.set('id', `eq.${userId}`);
@@ -126,7 +136,7 @@ async function requireCrmOperator(request, env) {
 }
 
 async function requireArtistIntegrationCapability(operator, env, artistId) {
-  const publishableKey = supabasePublishableKey(env);
+  const publishableKey = binding(env, 'SUPABASE_PUBLISHABLE_KEY');
   const membershipUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_memberships`);
   membershipUrl.searchParams.set('profile_id', `eq.${operator.userId}`);
   membershipUrl.searchParams.set('artist_id', `eq.${artistId}`);
@@ -155,8 +165,8 @@ async function requireArtistIntegrationCapability(operator, env, artistId) {
   }
 }
 
-async function requireApprovedRoute(token, env, artistId, approvedArtist) {
-  const publishableKey = supabasePublishableKey(env);
+async function requireApprovedRoute(operator, env, artistId) {
+  const publishableKey = binding(env, 'SUPABASE_PUBLISHABLE_KEY');
   const routeUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_integrations`);
   routeUrl.searchParams.set('artist_id', `eq.${artistId}`);
   routeUrl.searchParams.set('integration_type', 'eq.whatsapp');
@@ -166,7 +176,7 @@ async function requireApprovedRoute(token, env, artistId, approvedArtist) {
     method: 'GET',
     headers: {
       apikey: publishableKey,
-      authorization: `Bearer ${token}`,
+      authorization: `Bearer ${operator.token}`,
       accept: 'application/json',
     },
   });
@@ -178,16 +188,22 @@ async function requireApprovedRoute(token, env, artistId, approvedArtist) {
     && typeof configuration === 'object'
     && !Array.isArray(configuration)
     && Object.keys(configuration).length === 0;
+  const integrationKey = typeof route?.integration_key === 'string' ? route.integration_key : '';
   if (
     !route
     || route.artist_id !== artistId
     || route.provider !== 'meta_cloud_api'
-    || route.integration_key !== approvedArtist.integrationKey
     || route.is_enabled !== true
     || !safeConfiguration
+    || !INTEGRATION_KEY.test(integrationKey)
+    || !integrationKey.endsWith('-production')
   ) {
     throw Object.assign(new Error('crm_route_not_ready'), { status: 409 });
   }
+  return {
+    integrationKey,
+    bindingName: bindingNameForIntegrationKey(integrationKey),
+  };
 }
 
 async function graph(url, init = {}) {
@@ -362,15 +378,14 @@ export async function onRequestPost(context) {
     const body = await boundedJson(request);
     const code = typeof body?.code === 'string' ? body.code.trim() : '';
     const artistId = typeof body?.artist_id === 'string' ? body.artist_id : '';
-    const approvedArtist = APPROVED_ARTISTS[artistId];
     const browserWabaId = typeof body?.session?.waba_id === 'string' ? body.session.waba_id.trim() : '';
     const browserPhoneNumberId = typeof body?.session?.phone_number_id === 'string'
       ? body.session.phone_number_id.trim()
       : '';
 
-    if (!approvedArtist) return json({ ok: false, error: 'artist_scope_not_allowed' }, 403);
     if (
-      code.length < 10
+      !UUID.test(artistId)
+      || code.length < 10
       || code.length > 2048
       || (browserWabaId && !PROVIDER_ID.test(browserWabaId))
       || (browserPhoneNumberId && !PROVIDER_ID.test(browserPhoneNumberId))
@@ -382,7 +397,7 @@ export async function onRequestPost(context) {
     stage = 'artist_membership';
     await requireArtistIntegrationCapability(operator, env, artistId);
     stage = 'route_check';
-    await requireApprovedRoute(operator.token, env, artistId, approvedArtist);
+    const route = await requireApprovedRoute(operator, env, artistId);
     stage = 'token_exchange';
     const metaAppSecret = binding(env, 'META_APP_SECRET');
     const accessToken = await exchangeCode(code, metaAppSecret);
@@ -391,6 +406,8 @@ export async function onRequestPost(context) {
     stage = 'meta_selection';
     const safeMeta = await verifyMetaSelection(accessToken, wabaId, browserPhoneNumberId || null);
     const envelope = JSON.stringify({
+      artistId,
+      integrationKey: route.integrationKey,
       phoneNumberId: safeMeta.phoneNumberId,
       accessToken,
       wabaId,
@@ -398,15 +415,15 @@ export async function onRequestPost(context) {
     });
 
     stage = 'drain_binding';
-    await putWorkerSecret(env, DRAIN_WORKER, approvedArtist.bindingName, envelope);
+    await putWorkerSecret(env, DRAIN_WORKER, route.bindingName, envelope);
     stage = 'webhook_binding';
-    await putWorkerSecret(env, WEBHOOK_WORKER, approvedArtist.bindingName, envelope);
+    await putWorkerSecret(env, WEBHOOK_WORKER, route.bindingName, envelope);
     stage = 'waba_subscription';
     await subscribeWaba(accessToken, wabaId);
 
     return json({
       ok: true,
-      integration_key: approvedArtist.integrationKey,
+      integration_key: route.integrationKey,
       waba_name: safeMeta.wabaName,
       display_phone_number: safeMeta.displayPhoneNumber,
       verified_name: safeMeta.verifiedName,
@@ -417,13 +434,13 @@ export async function onRequestPost(context) {
       ? error.message
       : null;
     const safeError = classifiedError || `provisioning_failed_${stage}`;
-    const body = { ok: false, error: safeError };
+    const responseBody = { ok: false, error: safeError };
     if (safeError === 'meta_request_failed') {
-      body.graph_code = Number.isInteger(error?.graphCode) ? error.graphCode : null;
-      body.graph_subcode = Number.isInteger(error?.graphSubcode) ? error.graphSubcode : null;
-      body.upstream_status = Number.isInteger(error?.upstreamStatus) ? error.upstreamStatus : null;
+      responseBody.graph_code = Number.isInteger(error?.graphCode) ? error.graphCode : null;
+      responseBody.graph_subcode = Number.isInteger(error?.graphSubcode) ? error.graphSubcode : null;
+      responseBody.upstream_status = Number.isInteger(error?.upstreamStatus) ? error.upstreamStatus : null;
     }
-    return json(body, edgeSafeStatus(status));
+    return json(responseBody, edgeSafeStatus(status));
   }
 }
 
@@ -433,9 +450,10 @@ export function onRequest(context) {
 }
 
 export const __testing = {
-  approvedArtists: APPROVED_ARTISTS,
+  approvedArtists: TEST_COMPAT_APPROVED_ARTISTS,
   bearerToken,
   binding,
+  bindingNameForIntegrationKey,
   edgeSafeStatus,
   noFollowFetch,
   requireServerConfiguration,
