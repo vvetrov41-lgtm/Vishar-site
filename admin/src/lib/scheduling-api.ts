@@ -50,6 +50,34 @@ export interface BookingConflict {
   blocks: boolean;
 }
 
+/**
+ * The same defaults `crm_private.effective_scheduling_preferences` returns for
+ * an artist with no stored row.
+ *
+ * Duplicated here for exactly one reason: the CRM and the database ship
+ * through separate release paths, so a build can reach production before
+ * migration 0120 does. Without this, every Smart Booking search would throw
+ * "function does not exist" in the window between the two. With it, booking
+ * behaves as it did before, and starts honouring the artist's stored policy
+ * the moment the migration lands.
+ */
+export const DEFAULT_SCHEDULING_PREFERENCES: Omit<SchedulingPreferences, 'artist_id'> = {
+  tattoo_earliest_start: '09:00',
+  tattoo_latest_finish: '18:00',
+  tattoo_preferred_starts: ['09:00', '10:00', '11:00'],
+  consultation_earliest_start: '09:00',
+  consultation_latest_finish: '20:00',
+  consultation_during_tattoo: true,
+  max_concurrent_consultations: 1,
+  is_stored: false,
+};
+
+/** PostgREST's code for "that function is not in the schema cache". */
+function isMissingFunction(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === 'PGRST202' || code === '42883';
+}
+
 export function createSchedulingApi(client: CrmClient) {
   return {
     async getSchedulingPreferences(artistId: string): Promise<SchedulingPreferences> {
@@ -57,6 +85,9 @@ export function createSchedulingApi(client: CrmClient) {
         p_artist_id: artistId,
       });
       if (result.error) {
+        if (isMissingFunction(result.error)) {
+          return { artist_id: artistId, ...DEFAULT_SCHEDULING_PREFERENCES };
+        }
         throw new ApiError(friendlyMessage(result.error, 'load scheduling preferences'), result.error);
       }
       return result.data as unknown as SchedulingPreferences;
@@ -99,6 +130,7 @@ export function createSchedulingApi(client: CrmClient) {
         p_to: input.to,
       });
       if (result.error) {
+        if (isMissingFunction(result.error)) return [];
         throw new ApiError(friendlyMessage(result.error, 'load schedule overrides'), result.error);
       }
       return (result.data ?? []) as unknown as ScheduleOverride[];
@@ -143,6 +175,9 @@ export function createSchedulingApi(client: CrmClient) {
         p_exclude_appointment_id: input.excludeAppointmentId ?? null,
       });
       if (result.error) {
+        // No advisory warning is better than a broken booking screen; the
+        // database still refuses a real clash either way.
+        if (isMissingFunction(result.error)) return [];
         throw new ApiError(friendlyMessage(result.error, 'check booking conflicts'), result.error);
       }
       return (result.data ?? []) as unknown as BookingConflict[];

@@ -290,3 +290,28 @@ describe('where booking is reachable from', () => {
     expect(container.querySelectorAll('button.booking-slot').length).toBeGreaterThan(0);
   });
 });
+
+describe('shipping ahead of the migration', () => {
+  it('still books when the scheduling RPCs are not in the database yet', async () => {
+    // The CRM and the database ship through separate release paths, so a build
+    // can reach production before migration 0120 does. In that window the
+    // scheduling RPCs do not exist. Booking has to keep working on the same
+    // defaults the migration will install, not fail with "function does not
+    // exist" on every search.
+    const rendered = renderWithSession(<App />, {
+      role: 'owner',
+      path: `/clients/${CLIENT_ID}`,
+      failRpc: 'get_artist_scheduling_preferences',
+      failRpcError: { code: 'PGRST202', message: 'Could not find the function' },
+    });
+    const from = await screen.findByLabelText('Search from');
+    fireEvent.change(from, { target: { value: dayValue(1) } });
+
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
+
+    const slots = await screen.findAllByRole('button', { name: /free here/ });
+    expect(slots.length).toBeGreaterThan(0);
+    expect(rendered).toBeTruthy();
+  });
+});

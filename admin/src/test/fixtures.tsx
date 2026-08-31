@@ -354,6 +354,8 @@ export interface FakeClientOptions {
    * for instance - rather than asserting it never happens.
    */
   failRpc?: string;
+  /** The error `failRpc` returns. Defaults to a generic refusal. */
+  failRpcError?: { code: string; message: string };
   /** Override the enquiry lifecycle state for workflow-specific screens. */
   enquiryStatus?: EnquiryStatus;
   /** Artist identities returned by list_accessible_artists(). */
@@ -725,7 +727,11 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       rpcCalls.push({ name, args });
 
       if (options.failRpc === name) {
-        return { data: null, error: { code: '22023', message: 'artist availability blocks this time' } };
+        return {
+          data: null,
+          error: options.failRpcError
+            ?? { code: '22023', message: 'artist availability blocks this time' },
+        };
       }
 
       // Role checks live in the database. The fake enforces the same ones, so a
