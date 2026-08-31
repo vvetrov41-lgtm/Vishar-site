@@ -5,6 +5,7 @@ on:
     paths:
       - 'workers/gmail-production.js'
       - 'workers/gmail-production-entrypoint.js'
+      - 'workers/gmail-complete-discovery-api.js'
       - 'workers/gmail-operator-api.js'
       - 'workers/telegram-drain-worker.js'
       - 'workers/lib/google-gmail.js'
@@ -22,6 +23,7 @@ on:
       - 'docs/crm/MCP_READY_ARCHITECTURE.md'
       - 'scripts/test-gmail-production.mjs'
       - 'scripts/test-gmail-operator-api.mjs'
+      - 'scripts/test-gmail-complete-discovery.mjs'
       - 'scripts/test-gmail-gpt-host-boundary.mjs'
       - 'scripts/test-gmail-rollout-phases.mjs'
       - 'scripts/test-gmail-mcp-ready.mjs'
@@ -60,6 +62,9 @@ jobs:
       - name: CRM Gmail operator boundary regression
         run: node scripts/test-gmail-operator-api.mjs
 
+      - name: Complete known-client discovery regression
+        run: node scripts/test-gmail-complete-discovery.mjs
+
       - name: Gmail GPT host boundary regression
         run: node scripts/test-gmail-gpt-host-boundary.mjs
 
@@ -85,12 +90,14 @@ jobs:
         run: |
           node --check workers/gmail-production.js
           node --check workers/gmail-production-entrypoint.js
+          node --check workers/gmail-complete-discovery-api.js
           node --check workers/gmail-operator-api.js
           node --check workers/lib/google-gmail.js
           node --check workers/lib/gmail-supabase.js
           node --check workers/lib/gmail-tool-contract.js
           node --check scripts/generate-gmail-production-deploy-config.mjs
           node --check scripts/test-gmail-operator-api.mjs
+          node --check scripts/test-gmail-complete-discovery.mjs
           node --check scripts/test-gmail-gpt-host-boundary.mjs
           node --check scripts/test-gmail-rollout-phases.mjs
 
