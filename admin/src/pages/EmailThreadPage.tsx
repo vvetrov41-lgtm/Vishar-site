@@ -18,14 +18,6 @@ import { useApi, useSession } from '../lib/session';
 import { groupEmailThreads, stateFor, type EmailThread } from '../lib/email-threads';
 import type { EmailMessageDetail } from '../lib/types';
 
-/**
- * What this screen renders from either mailbox read.
- *
- * Only the enquiry route carries a `thread_context_id`; the client route
- * deliberately does not. Nothing on this screen needs one - it reads - so the
- * two are rendered through the shape they share rather than through the one
- * that would force the client route to invent a binding.
- */
 type LiveGmailMessageGroup = {
   subject: string;
   message_count: number;
@@ -34,11 +26,8 @@ type LiveGmailMessageGroup = {
 
 interface ThreadView {
   thread: EmailThread | null;
-  /** The body of whatever the operator has to act on, loaded only here. */
   actionable: EmailMessageDetail | null;
-  /** Current provider history, never persisted in the browser-side CRM model. */
   liveGmail: LiveGmailMessageGroup[] | null;
-  /** Stable gateway code only, never provider response detail. */
   liveGmailError: string | null;
 }
 
@@ -49,6 +38,7 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
   const copy = COPY[language];
   const role = profile?.role;
   const mayApprove = can(role, 'approveEmail');
+  const mayDismissFailure = mayApprove;
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,24 +57,6 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
         ? await api.getEmailMessage(thread.actionable_message_id)
         : null;
 
-      // Which mailbox read this thread gets, and why there are two.
-      //
-      // Gmail finds a client's mail by searching the artist's mailbox for the
-      // CLIENT'S ADDRESS. It has no idea what an enquiry is. The enquiry only
-      // decides what a reply will later be bound to.
-      //
-      // So when the thread names an enquiry, the enquiry route is right: it
-      // records thread context, which is what a reply needs.
-      //
-      // When it names only a client - which is every stored email in
-      // production, because a deposit receipt is written against the client -
-      // the client route is right. Asking the enquiry route about two or three
-      // of that client's enquiries instead would return THE SAME Gmail threads
-      // each time and record each of them under a different enquiry, because
-      // thread context is unique per (artist, enquiry, provider thread). One
-      // conversation would become several bindings, and a later reply could
-      // leave through the wrong one. The client route reads once and records
-      // nothing.
       let liveGmail: LiveGmailMessageGroup[] | null = null;
       let liveGmailError: string | null = null;
       try {
@@ -119,6 +91,28 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
       reload();
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : copy.approveFailed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function dismissFailure(messageId: string) {
+    setActionError(null);
+    setNotice(null);
+    const confirmed = await confirmDialog({
+      title: copy.dismissConfirmTitle,
+      message: copy.dismissConfirmBody,
+      confirmLabel: copy.dismissFailure,
+      cancelLabel: cancelLabelFor(language),
+    });
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await api.dismissFailedEmailMessage(messageId);
+      setNotice(copy.dismissedFailure);
+      reload();
+    } catch {
+      setActionError(copy.dismissFailureFailed);
     } finally {
       setBusy(false);
     }
@@ -191,12 +185,20 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
               <p className="notice" role="status">{copy.approvalNotYours}</p>
             )
           ) : null}
+          {thread.state === 'send_failed' && mayDismissFailure ? (
+            <div className="actions">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { void dismissFailure(actionable.id); }}
+              >
+                {copy.dismissFailure}
+              </button>
+            </div>
+          ) : null}
         </Section>
       ) : null}
 
-      {/* Shown whenever the mailbox was actually reachable for this thread, not
-          only when the thread itself names an enquiry - the enquiry is how the
-          gateway is addressed, not the only kind of thread that has mail. */}
       {liveGmail || liveGmailError ? (
         <Section title={copy.liveHistory}>
           {liveGmailError ? (
@@ -207,9 +209,6 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
           ) : liveGmail?.length ? (
             <div className="list">
               {liveGmail.map((liveThread, threadIndex) => (
-                // Keyed by position: the client route returns no provider or
-                // context id, by design, and inventing a stable one here would
-                // mean reintroducing exactly the identifier this read avoids.
                 <div key={`gmail-${threadIndex}`} className="row">
                   <div className="inbox-row-head">
                     <span className="title">{liveThread.subject || copy.noSubject}</span>
@@ -327,7 +326,12 @@ const COPY = {
     draftByMachine: 'Written automatically. Nothing is sent until you approve it.',
     draftByPerson: 'Written by a person. Nothing is sent until it is approved.',
     failedTitle: 'This did not send',
-    failedHint: 'The provider refused this message. Check the Gmail connection, then have it drafted again.',
+    failedHint: 'This email did not send. If it no longer needs to be sent, dismiss the warning. If it still needs to go out, fix the address or Gmail and create a new email.',
+    dismissFailure: 'Dismiss warning',
+    dismissedFailure: 'Warning dismissed. The email remains in CRM history.',
+    dismissFailureFailed: 'Could not dismiss that failed email.',
+    dismissConfirmTitle: 'Dismiss this warning?',
+    dismissConfirmBody: 'The email will stay in CRM history as “Cancelled” and will no longer require attention.',
     approve: 'Approve and send',
     approved: 'Approved. It now goes out through the send queue.',
     approveFailed: 'Could not approve that email.',
@@ -383,7 +387,12 @@ const COPY = {
     draftByMachine: 'Составлено автоматически. Ничего не уйдёт, пока вы не утвердите.',
     draftByPerson: 'Составлено человеком. Ничего не уйдёт до утверждения.',
     failedTitle: 'Письмо не отправлено',
-    failedHint: 'Провайдер отклонил это письмо. Проверьте подключение Gmail и составьте письмо заново.',
+    failedHint: 'Письмо не отправилось. Если его больше не нужно отправлять, закройте уведомление. Если нужно отправить, исправьте адрес или Gmail и создайте письмо заново.',
+    dismissFailure: 'Закрыть уведомление',
+    dismissedFailure: 'Уведомление закрыто. Письмо осталось в истории.',
+    dismissFailureFailed: 'Не удалось закрыть уведомление.',
+    dismissConfirmTitle: 'Закрыть это уведомление?',
+    dismissConfirmBody: 'Письмо останется в истории со статусом «Отменено» и больше не будет требовать внимания.',
     approve: 'Утвердить и отправить',
     approved: 'Утверждено. Письмо уйдёт через очередь отправки.',
     approveFailed: 'Не удалось утвердить письмо.',
