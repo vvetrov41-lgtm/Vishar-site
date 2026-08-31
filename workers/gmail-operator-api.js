@@ -10,6 +10,7 @@ import { createGmailSupabase } from './lib/gmail-supabase.js';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const GMAIL_PUBLIC_HOST = 'gmail.vishartattoo.com';
 const CRM_ORIGIN = 'https://crm.vishartattoo.com';
+const REQUIRED_OPERATOR_CAPABILITY = 'manage_communications';
 const JSON_HEADERS = Object.freeze({
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store',
@@ -70,12 +71,17 @@ async function enforceRateLimit(request, env) {
 }
 
 async function authorizeOperator(db, token, enquiryId) {
-  const user = await db.verifyUser(token);
-  const auth = firstRow(await db.backendRpc('service_authorize_gmail_operator', {
-    p_profile_id: user.id,
-    p_enquiry_id: enquiryId,
-  }));
+  // First let the caller's own Supabase RLS decide whether this enquiry is even
+  // visible. Then ask the canonical capability registry whether the same session
+  // may manage communications for that exact artist. No profile id is accepted
+  // from the browser and no service-role-only authorization function is needed.
+  const auth = await db.userEnquiry(enquiryId, token);
   if (!auth || !uuid(auth.artist_id) || auth.enquiry_id !== enquiryId || !uuid(auth.client_id)) {
+    throw new Error('gmail_operator_scope_invalid');
+  }
+  const capabilities = await db.userRpc('list_capabilities', { p_artist_id: auth.artist_id }, token);
+  if (!Array.isArray(capabilities)
+    || !capabilities.some((row) => row?.artist_id === auth.artist_id && row?.capability === REQUIRED_OPERATOR_CAPABILITY)) {
     throw new Error('gmail_operator_scope_invalid');
   }
   return auth;
@@ -265,6 +271,7 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
 export const __testing = Object.freeze({
   CRM_ORIGIN,
   GMAIL_PUBLIC_HOST,
+  REQUIRED_OPERATOR_CAPABILITY,
   operatorPath,
   publicMessage,
   errorResponse,
