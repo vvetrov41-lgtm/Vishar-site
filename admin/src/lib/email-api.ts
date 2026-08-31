@@ -1,4 +1,4 @@
-// Operator-facing email reads and the one write an operator may perform.
+// Operator-facing email reads and protected operator writes.
 //
 // Stored CRM email stays behind Supabase RLS. Live Gmail is different: the
 // browser sends its existing Supabase session only to the fixed Gmail Worker
@@ -6,9 +6,9 @@
 // artist before Google is touched. Provider credentials and raw Gmail ids never
 // enter this module.
 //
-// The single write is `public.approve_email_draft`. Approval releases a draft
-// towards the existing send pipeline; there is deliberately no direct Gmail
-// send method here.
+// Writes stay behind named RPCs. Approval releases a draft towards the existing
+// send pipeline. Dismissal only closes a terminal failed warning; neither path
+// provides a direct Gmail send method.
 
 import { ApiError, friendlyMessage, type CrmClient } from './api';
 import type { EmailMessage, EmailMessageDetail } from './types';
@@ -367,6 +367,14 @@ export function createEmailApi(client: CrmClient, fetcher: typeof fetch = global
       const result = await client.rpc('approve_email_draft', { p_email_message_id: id });
       if (result.error) {
         throw new ApiError(friendlyMessage(result.error, 'approve that email draft'), result.error);
+      }
+    },
+
+    /** Close a terminal failed-delivery warning without retrying or deleting history. */
+    async dismissFailedEmailMessage(id: string): Promise<void> {
+      const result = await client.rpc('dismiss_failed_email_message', { p_email_message_id: id });
+      if (result.error) {
+        throw new ApiError(friendlyMessage(result.error, 'change that status'), result.error);
       }
     },
   };
