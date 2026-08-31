@@ -206,7 +206,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                     key={item.path}
                     item={item}
                     path={path}
-                    label={t(NAV_KEYS[item.path] ?? item.label)}
+                    label={item.path === '/automations'
+                      ? (language === 'ru' ? 'Автоматические сообщения' : 'Automatic messages')
+                      : t(NAV_KEYS[item.path] ?? item.label)}
                   />
                 ))}
               </div>
@@ -229,7 +231,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               <h1>
                 <span className="topbar-brand">Vishar CRM</span>
                 <span className="topbar-page-title">
-                  {activeItem ? t(NAV_KEYS[activeItem.path] ?? activeItem.label) : 'Vishar CRM'}
+                  {activeItem
+                    ? activeItem.path === '/automations'
+                      ? (language === 'ru' ? 'Автоматические сообщения' : 'Automatic messages')
+                      : t(NAV_KEYS[activeItem.path] ?? activeItem.label)
+                    : 'Vishar CRM'}
                 </span>
               </h1>
             </div>
@@ -263,7 +269,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             key={item.path}
             item={item}
             path={path}
-            label={t(NAV_KEYS[item.path] ?? item.label)}
+            label={item.path === '/automations'
+              ? (language === 'ru' ? 'Автоматические сообщения' : 'Automatic messages')
+              : t(NAV_KEYS[item.path] ?? item.label)}
             mobile
           />
         ))}
@@ -319,7 +327,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                           key={item.path}
                           item={item}
                           path={path}
-                          label={t(NAV_KEYS[item.path] ?? item.label)}
+                          label={item.path === '/automations'
+                            ? (language === 'ru' ? 'Автоматические сообщения' : 'Automatic messages')
+                            : t(NAV_KEYS[item.path] ?? item.label)}
                           sheet
                         />
                       ))}
@@ -518,6 +528,7 @@ function pageScopeFor(path: string): PageScope {
     || path === '/sessions'
     || path === '/availability'
     || path === '/automations'
+    || path.startsWith('/automations/')
     || path === '/activity'
     // The Inbox reads artist-owned rows - communication_conversations and
     // email_messages are both scoped by artist_id - and InboxPage has always

@@ -23,6 +23,7 @@ import { AvailabilityPage } from './pages/AvailabilityPage';
 import { BookingSourcesPage } from './pages/BookingSourcesPage';
 import { CalendarConnectionsPage } from './pages/CalendarConnectionsPage';
 import { ClientDetailPage } from './pages/ClientDetailPage';
+import { ClientMessagesPage } from './pages/ClientMessagesPage';
 import { EmailThreadPage } from './pages/EmailThreadPage';
 import { ConversationPage } from './pages/ConversationPage';
 import { ClientsPage } from './pages/ClientsPage';
@@ -197,6 +198,8 @@ function Routes() {
     case '/availability':
       return <RequireCapability capability="viewSessions"><AvailabilityPage /></RequireCapability>;
     case '/automations':
+      return <RequireCapability capability="viewAutomations"><ClientMessagesPage /></RequireCapability>;
+    case '/automations/advanced':
       return <RequireCapability capability="viewAutomations"><LifecycleAutomationStudioPage /></RequireCapability>;
     case '/payments':
       return <RequireCapability capability="manageFinance"><PaymentsPage /></RequireCapability>;

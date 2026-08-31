@@ -78,7 +78,7 @@ describe('responsive navigation shell', () => {
     ]);
     expect(within(setup).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Time off',
-      'Automations',
+      'Automatic messages',
       // Organizations is absent here on purpose: it is appended from
       // public.control_plane_access(), and this session belongs to none.
       'Integrations',
@@ -98,7 +98,7 @@ describe('responsive navigation shell', () => {
       'Enquiries',
       'Projects',
       'Time off',
-      'Automations',
+      'Automatic messages',
       'Notifications',
     ]);
     // A read-only account reaches no money and no administration destination,
