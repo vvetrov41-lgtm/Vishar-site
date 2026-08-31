@@ -425,6 +425,14 @@ export interface FakeClientOptions {
    * to supply one; there is no inbound row to invent.
    */
   emailMessages?: Record<string, unknown>[];
+  /**
+   * Rows `get_artist_scheduling_preferences` returns. Defaults mirror the
+   * database defaults seeded by 0120, so a test that does not care about
+   * scheduling policy behaves exactly as production does.
+   */
+  schedulingPreferences?: Record<string, unknown>;
+  /** Rows `list_artist_schedule_overrides` returns. */
+  scheduleOverrides?: Record<string, unknown>[];
 }
 
 export interface ControlPlaneWorkspace {
@@ -746,6 +754,73 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       // id every success message links to.
       if (name === 'list_appointment_conflicts') {
         return { data: appointmentConflicts, error: null };
+      }
+      // Scheduling policy, shaped as 0120 returns it. Modelled rather than
+      // stubbed with `{ ok: true }`: the booking panel derives its whole search
+      // window from this, so a fake that lied here would make every slot test
+      // meaningless.
+      if (name === 'get_artist_scheduling_preferences') {
+        return {
+          data: {
+            artist_id: (args as any)?.p_artist_id ?? VLADIMIR_ARTIST_ID,
+            tattoo_earliest_start: '09:00',
+            tattoo_latest_finish: '18:00',
+            tattoo_preferred_starts: ['09:00', '10:00', '11:00'],
+            consultation_earliest_start: '09:00',
+            consultation_latest_finish: '20:00',
+            consultation_during_tattoo: true,
+            max_concurrent_consultations: 1,
+            is_stored: false,
+            ...(options.schedulingPreferences ?? {}),
+          },
+          error: null,
+        };
+      }
+      if (name === 'set_artist_scheduling_preferences') {
+        return {
+          data: {
+            artist_id: (args as any)?.p_artist_id ?? VLADIMIR_ARTIST_ID,
+            tattoo_earliest_start: (args as any)?.p_tattoo_earliest_start,
+            tattoo_latest_finish: (args as any)?.p_tattoo_latest_finish,
+            tattoo_preferred_starts: (args as any)?.p_tattoo_preferred_starts ?? [],
+            consultation_earliest_start: (args as any)?.p_consultation_earliest_start,
+            consultation_latest_finish: (args as any)?.p_consultation_latest_finish,
+            consultation_during_tattoo: (args as any)?.p_consultation_during_tattoo,
+            max_concurrent_consultations: (args as any)?.p_max_concurrent_consultations,
+            is_stored: true,
+          },
+          error: null,
+        };
+      }
+      if (name === 'list_artist_schedule_overrides') {
+        return { data: options.scheduleOverrides ?? [], error: null };
+      }
+      if (name === 'list_booking_conflicts') {
+        // Applies the same family policy the database does, so a manual-entry
+        // warning in a test means what it means in production.
+        const family = (type: string) => (
+          type === 'tattoo_session' || type === 'touch_up' ? 'tattoo' : 'consultation'
+        );
+        const wanted = family(String((args as any)?.p_appointment_type ?? 'tattoo_session'));
+        const start = Date.parse(String((args as any)?.p_start_at));
+        const end = Date.parse(String((args as any)?.p_end_at));
+        const rows = [SESSION, ...(options.extraSessions ?? [])]
+          .filter((row: any) => ['proposed', 'confirmed'].includes(row.status))
+          .filter((row: any) => Date.parse(row.start_at) < end && Date.parse(row.end_at) > start)
+          .map((row: any) => ({
+            appointment_id: row.id,
+            appointment_type: row.appointment_type,
+            status: row.status,
+            start_at: row.start_at,
+            end_at: row.end_at,
+            client_id: row.client_id,
+            enquiry_id: row.enquiry_id,
+            project_id: row.project_id,
+            blocks: wanted === 'tattoo'
+              ? family(row.appointment_type) === 'tattoo'
+              : family(row.appointment_type) === 'consultation',
+          }));
+        return { data: rows, error: null };
       }
       if (name === 'list_artist_availability_blocks') {
         return {

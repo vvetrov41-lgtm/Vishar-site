@@ -8,12 +8,16 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  appointmentFamily,
   busyIntervals,
+  conflictPolicyFor,
+  dayWindowFor,
   findAvailableSlots,
   findConsecutiveDaySlots,
   freeRuns,
   type SlotSearch,
 } from '../lib/availability';
+import type { SchedulingPreferences } from '../lib/scheduling-api';
 import type { Appointment } from '../lib/appointment-api';
 import type { AvailabilityBlock } from '../lib/availability-api';
 
@@ -179,9 +183,12 @@ describe('finding a session', () => {
     expect(slots.some((slot) => slot.day === '2026-09-03')).toBe(true);
   });
 
-  it('treats a consultation as occupying the diary like any other appointment', () => {
-    // Consultations and tattoo sessions are the same table, so the conflict
-    // rule does not distinguish them and neither may this.
+  it('does not let a consultation carve up the tattoo day', () => {
+    // The product rule this studio actually works by: a consultation may run
+    // before, between or during a tattoo session, so it does not occupy the
+    // diary for tattoo purposes. Under the old generic overlap rule a single
+    // 30-minute midday consultation split a ten-hour day into two useless
+    // halves and no seven-hour session could be offered at all.
     const consultation = appointment({
       appointment_type: 'in_person_consultation',
       start_at: local('2026-09-03', 12),
@@ -193,13 +200,29 @@ describe('finding a session', () => {
       to: new Date(local('2026-09-04', 0)),
       appointments: [consultation],
     }));
-    // 10:00-20:00 minus a 30-minute midday consultation leaves 10:00-12:00 and
-    // 12:30-20:00. Only the second is long enough, so the session is pushed
-    // after the consultation rather than offered across it.
     expect(slots.length).toBeGreaterThan(0);
-    for (const slot of slots) {
-      expect(Date.parse(slot.start)).toBeGreaterThanOrEqual(Date.parse(consultation.end_at));
-    }
+    // And the session may legitimately span the consultation.
+    expect(slots.some((slot) => (
+      Date.parse(slot.start) <= Date.parse(consultation.start_at)
+      && Date.parse(slot.end) >= Date.parse(consultation.end_at)
+    ))).toBe(true);
+  });
+
+  it('still refuses to put a tattoo session over another tattoo session', () => {
+    const booked = appointment({
+      start_at: local('2026-09-03', 11),
+      end_at: local('2026-09-03', 15),
+    });
+    const slots = findAvailableSlots(search({
+      durationMinutes: 60,
+      from: new Date(local('2026-09-03', 0)),
+      to: new Date(local('2026-09-04', 0)),
+      appointments: [booked],
+    }));
+    expect(slots.every((slot) => (
+      Date.parse(slot.end) <= Date.parse(booked.start_at)
+      || Date.parse(slot.start) >= Date.parse(booked.end_at)
+    ))).toBe(true);
   });
 
   it('finds a short consultation slot where a long session does not fit', () => {
@@ -278,5 +301,197 @@ describe('consecutive days', () => {
     for (const run of runs) {
       expect(run.map((slot) => slot.day)).not.toEqual(['2026-09-01', '2026-09-03']);
     }
+  });
+});
+
+
+/** Mirrors the database defaults seeded by 0120. */
+function preferences(overrides: Partial<SchedulingPreferences> = {}): SchedulingPreferences {
+  return {
+    artist_id: ARTIST,
+    tattoo_earliest_start: '09:00',
+    tattoo_latest_finish: '18:00',
+    tattoo_preferred_starts: ['09:00', '10:00', '11:00'],
+    consultation_earliest_start: '09:00',
+    consultation_latest_finish: '20:00',
+    consultation_during_tattoo: true,
+    max_concurrent_consultations: 1,
+    is_stored: true,
+    ...overrides,
+  };
+}
+
+describe('booking families and policy', () => {
+  it('puts touch-ups with tattoo work and both consultation kinds together', () => {
+    // Mirrors crm_private.appointment_family. If these ever disagree, the
+    // search would offer times the database refuses.
+    expect(appointmentFamily('tattoo_session')).toBe('tattoo');
+    expect(appointmentFamily('touch_up')).toBe('tattoo');
+    expect(appointmentFamily('in_person_consultation')).toBe('consultation');
+    expect(appointmentFamily('video_consultation')).toBe('consultation');
+  });
+
+  it('blocks a tattoo session only with other tattoo work', () => {
+    const policy = conflictPolicyFor('tattoo_session', preferences());
+    expect(policy.blocksBooking('tattoo')).toBe(true);
+    expect(policy.blocksBooking('consultation')).toBe(false);
+  });
+
+  it('blocks a consultation with another consultation but not with a tattoo session', () => {
+    const policy = conflictPolicyFor('in_person_consultation', preferences());
+    expect(policy.blocksBooking('consultation')).toBe(true);
+    expect(policy.blocksBooking('tattoo')).toBe(false);
+  });
+
+  it('restores exclusivity when the artist turns the permissive rule off', () => {
+    const policy = conflictPolicyFor(
+      'in_person_consultation',
+      preferences({ consultation_during_tattoo: false }),
+    );
+    expect(policy.blocksBooking('tattoo')).toBe(true);
+  });
+});
+
+describe('windows from stored preferences', () => {
+  it('uses the tattoo boundary for tattoo work', () => {
+    expect(dayWindowFor('tattoo_session', preferences(), undefined))
+      .toEqual({ earliestHour: 9, latestHour: 18 });
+  });
+
+  it('lets consultations run outside the tattoo window', () => {
+    // An artist who tattoos until 18:00 may still see somebody at 19:00.
+    expect(dayWindowFor('in_person_consultation', preferences(), undefined))
+      .toEqual({ earliestHour: 9, latestHour: 20 });
+  });
+
+  it('lets a per-day override narrow just that day', () => {
+    expect(dayWindowFor('tattoo_session', preferences(), {
+      override_id: 'o1',
+      artist_id: ARTIST,
+      on_date: '2026-09-03',
+      tattoo_earliest_start: null,
+      tattoo_latest_finish: '15:00',
+      note: 'Early finish',
+    })).toEqual({ earliestHour: 9, latestHour: 15 });
+  });
+});
+
+describe('the studio\'s actual working patterns', () => {
+  it('offers 09:00-16:00 and 11:00-18:00 for a seven-hour piece on a free day', () => {
+    const slots = findAvailableSlots(search({
+      durationMinutes: 7 * 60,
+      dayWindow: dayWindowFor('tattoo_session', preferences(), undefined),
+      preferredStarts: preferences().tattoo_preferred_starts,
+      from: new Date(local('2026-09-03', 0)),
+      to: new Date(local('2026-09-04', 0)),
+    }));
+    const windows = slots.map((slot) => (
+      `${new Date(slot.start).getHours()}-${new Date(slot.end).getHours()}`
+    ));
+    expect(windows).toContain('9-16');
+    expect(windows).toContain('11-18');
+    // The habitual starts come first, so the operator sees them without
+    // scrolling past every half-hour the day technically allows.
+    expect(slots[0].preferred).toBe(true);
+  });
+
+  it('offers 10:00-15:00 for a five-hour piece', () => {
+    const slots = findAvailableSlots(search({
+      durationMinutes: 5 * 60,
+      dayWindow: dayWindowFor('tattoo_session', preferences(), undefined),
+      preferredStarts: preferences().tattoo_preferred_starts,
+      from: new Date(local('2026-09-03', 0)),
+      to: new Date(local('2026-09-04', 0)),
+    }));
+    expect(slots.map((slot) => (
+      `${new Date(slot.start).getHours()}-${new Date(slot.end).getHours()}`
+    ))).toContain('10-15');
+  });
+
+  it('never offers a tattoo start that would finish past the artist boundary', () => {
+    const slots = findAvailableSlots(search({
+      durationMinutes: 7 * 60,
+      dayWindow: dayWindowFor('tattoo_session', preferences(), undefined),
+      preferredStarts: preferences().tattoo_preferred_starts,
+    }));
+    for (const slot of slots) {
+      const end = new Date(slot.end);
+      expect(end.getHours() + end.getMinutes() / 60).toBeLessThanOrEqual(18);
+    }
+  });
+});
+
+describe('consultation search alongside a tattoo session', () => {
+  const tattoo = () => appointment({
+    start_at: local('2026-09-03', 11),
+    end_at: local('2026-09-03', 18),
+  });
+
+  function consultationSearch(overrides: Partial<SlotSearch> = {}) {
+    return search({
+      durationMinutes: 30,
+      granularityMinutes: 30,
+      dayWindow: dayWindowFor('in_person_consultation', preferences(), undefined),
+      policy: conflictPolicyFor('in_person_consultation', preferences()),
+      from: new Date(local('2026-09-03', 0)),
+      to: new Date(local('2026-09-04', 0)),
+      appointments: [tattoo()],
+      ...overrides,
+    });
+  }
+
+  it('offers a consultation before the session starts', () => {
+    const slots = findAvailableSlots(consultationSearch());
+    expect(slots.some((slot) => (
+      new Date(slot.start).getHours() === 10 && new Date(slot.end).getHours() === 10
+    ))).toBe(true);
+  });
+
+  it('offers a consultation DURING the session, which is the point', () => {
+    const slots = findAvailableSlots(consultationSearch());
+    expect(slots.some((slot) => (
+      Date.parse(slot.start) >= Date.parse(tattoo().start_at)
+      && Date.parse(slot.end) <= Date.parse(tattoo().end_at)
+    ))).toBe(true);
+  });
+
+  it('stops offering during the session when the artist turns that off', () => {
+    const strict = preferences({ consultation_during_tattoo: false });
+    const slots = findAvailableSlots(consultationSearch({
+      policy: conflictPolicyFor('in_person_consultation', strict),
+    }));
+    expect(slots.every((slot) => (
+      Date.parse(slot.end) <= Date.parse(tattoo().start_at)
+      || Date.parse(slot.start) >= Date.parse(tattoo().end_at)
+    ))).toBe(true);
+    // And there is still somewhere to put it, so the rule narrows rather than
+    // empties the day.
+    expect(slots.length).toBeGreaterThan(0);
+  });
+
+  it('does not offer a consultation over another consultation', () => {
+    const existing = appointment({
+      id: 'consult-1',
+      appointment_type: 'video_consultation',
+      start_at: local('2026-09-03', 10),
+      end_at: local('2026-09-03', 10, 30),
+    });
+    const slots = findAvailableSlots(consultationSearch({
+      appointments: [tattoo(), existing],
+    }));
+    expect(slots.every((slot) => (
+      Date.parse(slot.end) <= Date.parse(existing.start_at)
+      || Date.parse(slot.start) >= Date.parse(existing.end_at)
+    ))).toBe(true);
+  });
+
+  it('still refuses a consultation inside time off', () => {
+    const slots = findAvailableSlots(consultationSearch({
+      timeOff: [timeOff({
+        start_at: local('2026-09-03', 0),
+        end_at: local('2026-09-04', 0),
+      })],
+    }));
+    expect(slots).toHaveLength(0);
   });
 });

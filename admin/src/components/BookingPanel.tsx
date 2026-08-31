@@ -11,21 +11,31 @@
 //
 // Two things are deliberate:
 //
-//   - the hours window is a visible, editable field, because this schema has
-//     no working-hours table. Rather than hard-code a studio day, the panel
-//     shows the assumption it is making and lets the operator change it.
-//   - manual entry stays. Smart search answers "when could I fit this?", and
-//     that is most bookings but not all: rescheduling to a time the client
-//     already named, or booking outside the usual hours, is still typing two
-//     datetimes, and removing that would be a downgrade.
+//   - the working window is no longer asked on every search. It comes from
+//     the artist's stored scheduling preferences (0120) with per-day
+//     overrides applied, so a seven-hour piece is offered as 09:00-16:00 or
+//     11:00-18:00 - the starts this studio actually uses - without anybody
+//     retyping them. The preferences are edited in Settings, not here.
+//   - manual entry stays, and now carries a real pre-submit conflict check.
+//     Smart search answers "when could I fit this?", and that is most
+//     bookings but not all: rescheduling to a time the client already named,
+//     or booking outside the usual hours, is still typing two datetimes.
 
 import { useMemo, useState, type FormEvent } from 'react';
 import { EmptyState } from './StateViews';
-import { findAvailableSlots, findConsecutiveDaySlots, type Slot } from '../lib/availability';
+import {
+  appointmentFamily,
+  conflictPolicyFor,
+  dayWindowFor,
+  findAvailableSlots,
+  findConsecutiveDaySlots,
+  type Slot,
+} from '../lib/availability';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { useApi } from '../lib/session';
 import type { AppointmentType } from '../lib/appointment-api';
+import type { BookingConflict, ScheduleOverride, SchedulingPreferences } from '../lib/scheduling-api';
 
 /**
  * Reuses the per-type durations the Calendar already offers, plus the two the
@@ -67,8 +77,9 @@ export function BookingPanel({
 
   const [appointmentType, setAppointmentType] = useState<AppointmentType>('tattoo_session');
   const [durationMinutes, setDurationMinutes] = useState(420);
-  const [earliestHour, setEarliestHour] = useState(10);
-  const [latestHour, setLatestHour] = useState(20);
+  const [preferences, setPreferences] = useState<SchedulingPreferences | null>(null);
+  const [overrides, setOverrides] = useState<ScheduleOverride[]>([]);
+  const [conflicts, setConflicts] = useState<BookingConflict[] | null>(null);
   const [fromDate, setFromDate] = useState(() => todayValue());
   const [consecutiveDays, setConsecutiveDays] = useState(1);
 
@@ -80,12 +91,16 @@ export function BookingPanel({
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [manual, setManual] = useState(false);
   const [manualStart, setManualStart] = useState('');
   const [manualEnd, setManualEnd] = useState('');
+  const [checkingConflicts, setCheckingConflicts] = useState(false);
+
+  const blocking = (conflicts ?? []).filter((conflict) => conflict.blocks);
+  const alongside = (conflicts ?? []).filter((conflict) => !conflict.blocks);
 
   const durations = DURATION_MINUTES[appointmentType];
-  const hoursValid = latestHour > earliestHour;
 
   const grouped = useMemo(() => groupByDay(slots ?? []), [slots]);
 
@@ -93,6 +108,7 @@ export function BookingPanel({
     event.preventDefault();
     setError(null);
     setWarning(null);
+    setNotice(null);
     setChosen(null);
     setSeries(null);
     setStage('search');
@@ -100,36 +116,48 @@ export function BookingPanel({
       setError(copy.chooseArtist);
       return;
     }
-    if (!hoursValid) {
-      setError(copy.hoursInvalid);
-      return;
-    }
-
     setSearching(true);
     try {
       const from = new Date(`${fromDate}T00:00:00`);
       const to = new Date(from);
       to.setDate(to.getDate() + SEARCH_DAYS);
 
-      // Both reads are authoritative and server-side: listAppointments is
-      // RLS-filtered, and list_artist_availability_blocks is SECURITY DEFINER
-      // behind require_artist_access. Nothing about "free" is decided from
-      // anything the browser made up.
-      const [appointments, timeOff] = await Promise.all([
+      // Every input is an authoritative server read: listAppointments is
+      // RLS-filtered, and the preference, override and time-off RPCs are all
+      // SECURITY DEFINER behind require_artist_access. Nothing about "free" is
+      // decided from anything the browser made up.
+      const [appointments, timeOff, prefs, dayOverrides] = await Promise.all([
         api.listAppointments({ artistId }),
         api.listAvailabilityBlocks({
           artistId,
           from: from.toISOString(),
           to: to.toISOString(),
         }),
+        api.getSchedulingPreferences(artistId),
+        api.listScheduleOverrides({
+          artistId,
+          from: dayValue(from),
+          to: dayValue(to),
+        }).catch(() => [] as ScheduleOverride[]),
       ]);
+      setPreferences(prefs);
+      setOverrides(dayOverrides);
 
+      const overrideByDay = new Map(dayOverrides.map((entry) => [entry.on_date, entry]));
       const search = {
         now: new Date(),
         from,
         to,
         durationMinutes,
-        dayWindow: { earliestHour, latestHour },
+        // The artist's own boundary, not a number typed into this form.
+        dayWindow: dayWindowFor(appointmentType, prefs, undefined),
+        windowForDay: (day: string) => dayWindowFor(appointmentType, prefs, overrideByDay.get(day)),
+        // The policy the database will apply at write time, applied here so
+        // the panel cannot offer a time the booking would then refuse.
+        policy: conflictPolicyFor(appointmentType, prefs),
+        preferredStarts: appointmentFamily(appointmentType) === 'tattoo'
+          ? prefs.tattoo_preferred_starts
+          : [],
         appointments,
         timeOff,
         limit: 24,
@@ -149,6 +177,38 @@ export function BookingPanel({
     } finally {
       setSearching(false);
     }
+  }
+
+  /**
+   * What else is in the diary at a manually typed time, and whether it would
+   * refuse the booking. Asked of the database, using the same policy the write
+   * path enforces - so this cannot warn about something the booking would
+   * happily accept, or stay silent about something it would refuse.
+   */
+  async function checkManualConflicts(startAt: string, endAt: string) {
+    if (!artistId) return;
+    setCheckingConflicts(true);
+    try {
+      setConflicts(await api.listBookingConflicts({
+        artistId,
+        appointmentType,
+        startAt,
+        endAt,
+      }));
+    } catch {
+      // A failed advisory read must not block a booking the database will
+      // check anyway. It just means no warning is shown.
+      setConflicts(null);
+    } finally {
+      setCheckingConflicts(false);
+    }
+  }
+
+  function manualTimes(): { start: string; end: string } | null {
+    const start = new Date(manualStart);
+    const end = new Date(manualEnd);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null;
+    return { start: start.toISOString(), end: end.toISOString() };
   }
 
   async function book(startAt: string, endAt: string) {
@@ -174,6 +234,8 @@ export function BookingPanel({
       setChosen(null);
       setSlots(null);
       setSeries(null);
+      setConflicts(null);
+      setNotice(copy.booked);
     } catch (cause) {
       // The database holds the schedule lock and re-checks availability inside
       // the booking transaction, so a slot that went stale between being
@@ -256,34 +318,17 @@ export function BookingPanel({
           </label>
         </div>
 
-        {/* Stated, not assumed. This schema has no working hours, so the panel
-            shows the window it is searching and lets the operator widen it. */}
-        <fieldset className="booking-hours">
-          <legend>{copy.between}</legend>
-          <div className="form-grid">
-            <label>
-              <span>{copy.earliest}</span>
-              <input
-                type="number"
-                min={0}
-                max={23}
-                value={earliestHour}
-                onChange={(event) => setEarliestHour(clampHour(event.target.value, 0, 23))}
-              />
-            </label>
-            <label>
-              <span>{copy.latest}</span>
-              <input
-                type="number"
-                min={1}
-                max={24}
-                value={latestHour}
-                onChange={(event) => setLatestHour(clampHour(event.target.value, 1, 24))}
-              />
-            </label>
-          </div>
-          <p className="meta">{copy.hoursHint}</p>
-        </fieldset>
+        {/* The window comes from the artist, not from this form. Saying which
+            window is being searched keeps the result explainable; changing it
+            belongs in Settings, where it persists. */}
+        {preferences ? (
+          <p className="meta booking-window-note">
+            {copy.windowNote
+              .replace('{from}', windowLabel(preferences, appointmentType, 'start'))
+              .replace('{to}', windowLabel(preferences, appointmentType, 'finish'))}
+            {overrides.length > 0 ? ` ${copy.overridesApplied.replace('{count}', String(overrides.length))}` : ''}
+          </p>
+        ) : null}
 
         <div className="actions">
           <button type="submit" className="primary" disabled={searching || !artistId}>
@@ -297,6 +342,7 @@ export function BookingPanel({
 
       {error ? <p className="notice warn" role="alert">{error}</p> : null}
       {warning ? <p className="notice warn" role="status">{warning}</p> : null}
+      {notice ? <p className="notice ok" role="status">{notice}</p> : null}
 
       {stage === 'chosen' && chosen ? (
         <div className="booking-summary" role="group" aria-label={copy.summary}>
@@ -367,6 +413,7 @@ export function BookingPanel({
                       <span className="meta">
                         {copy.roomFree.replace('{room}', durationLabel(slot.availableMinutes, language))}
                         {slot.availableMinutes === durationMinutes ? ` · ${copy.exactFit}` : ''}
+                        {slot.preferred ? ` · ${copy.preferredStart}` : ''}
                       </span>
                     </button>
                   ))}
@@ -398,18 +445,51 @@ export function BookingPanel({
               />
             </label>
           </div>
+          {checkingConflicts ? <p className="meta">{copy.checking}</p> : null}
+
+          {/* What else is happening then, split by whether it would actually
+              refuse the booking. A consultation running alongside a tattoo
+              session is worth knowing about and is not an obstacle. */}
+          {blocking.length > 0 ? (
+            <p className="notice warn" role="alert">
+              {copy.wouldClash.replace('{count}', String(blocking.length))}
+            </p>
+          ) : null}
+          {alongside.length > 0 ? (
+            <p className="notice" role="status">
+              {copy.alsoThen.replace('{count}', String(alongside.length))}
+            </p>
+          ) : null}
+
           <div className="actions">
             <button
               type="button"
               disabled={booking || !manualStart || !manualEnd}
               onClick={() => {
-                const start = new Date(manualStart);
-                const end = new Date(manualEnd);
-                if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+                const times = manualTimes();
+                if (!times) {
                   setError(copy.manualInvalid);
                   return;
                 }
-                void book(start.toISOString(), end.toISOString());
+                void checkManualConflicts(times.start, times.end);
+              }}
+            >
+              {copy.checkTime}
+            </button>
+            <button
+              type="button"
+              className={blocking.length > 0 ? undefined : 'primary'}
+              // The database refuses a real clash regardless; disabling here
+              // would only hide why. It stays pressable and the warning says
+              // what will happen.
+              disabled={booking || !manualStart || !manualEnd}
+              onClick={() => {
+                const times = manualTimes();
+                if (!times) {
+                  setError(copy.manualInvalid);
+                  return;
+                }
+                void book(times.start, times.end);
               }}
             >
               {copy.bookManual}
@@ -421,10 +501,27 @@ export function BookingPanel({
   );
 }
 
-function clampHour(value: string, min: number, max: number): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return min;
-  return Math.min(max, Math.max(min, Math.round(parsed)));
+
+/** Local day key for a date, matching the override table's `on_date`. */
+function dayValue(date: Date): string {
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function windowLabel(
+  preferences: SchedulingPreferences,
+  type: AppointmentType,
+  edge: 'start' | 'finish',
+): string {
+  if (appointmentFamily(type) === 'consultation') {
+    return edge === 'start'
+      ? preferences.consultation_earliest_start
+      : preferences.consultation_latest_finish;
+  }
+  return edge === 'start'
+    ? preferences.tattoo_earliest_start
+    : preferences.tattoo_latest_finish;
 }
 
 function todayValue(): string {
@@ -477,11 +574,9 @@ const COPY = {
     oneSession: 'One session',
     twoDays: 'Two days in a row',
     threeDays: 'Three days in a row',
-    between: 'Between these hours',
-    earliest: 'Not before',
-    latest: 'Finished by',
-    hoursHint: 'The CRM holds no studio opening hours, so this is the window being searched. Widen it to see every free gap.',
-    hoursInvalid: 'The finish hour has to be later than the start hour.',
+    windowNote: 'Searching this artist\u2019s hours: {from} to {to}.',
+    overridesApplied: '{count} day(s) in range have their own hours.',
+    preferredStart: 'usual start',
     search: 'Find free times',
     searching: 'Looking…',
     searchFailed: 'Could not check the schedule.',
@@ -507,6 +602,11 @@ const COPY = {
     end: 'End',
     bookManual: 'Book this exact time',
     manualInvalid: 'Give a start and a later end.',
+    booked: 'Booked. It is proposed until the client confirms it.',
+    checkTime: 'Check this time',
+    checking: 'Checking the schedule\u2026',
+    wouldClash: 'This clashes with {count} booking(s) and will be refused.',
+    alsoThen: '{count} other appointment(s) happen then. They do not block this one.',
     types: {
       tattoo_session: 'Tattoo session',
       in_person_consultation: 'In-person consultation',
@@ -523,11 +623,9 @@ const COPY = {
     oneSession: 'Один сеанс',
     twoDays: 'Два дня подряд',
     threeDays: 'Три дня подряд',
-    between: 'В эти часы',
-    earliest: 'Не раньше',
-    latest: 'Закончить до',
-    hoursHint: 'В CRM нет часов работы студии, поэтому поиск идёт в этом окне. Расширьте его, чтобы увидеть все свободные промежутки.',
-    hoursInvalid: 'Час окончания должен быть позже часа начала.',
+    windowNote: 'Ищем в часах мастера: с {from} до {to}.',
+    overridesApplied: 'У {count} дн. в этом диапазоне свои часы.',
+    preferredStart: 'обычное начало',
     search: 'Найти свободное время',
     searching: 'Ищем…',
     searchFailed: 'Не удалось проверить расписание.',
@@ -553,6 +651,11 @@ const COPY = {
     end: 'Конец',
     bookManual: 'Записать на это время',
     manualInvalid: 'Укажите начало и более позднее окончание.',
+    booked: 'Записано. Запись предварительная, пока клиент не подтвердит.',
+    checkTime: 'Проверить это время',
+    checking: 'Проверяем расписание\u2026',
+    wouldClash: 'Пересекается с {count} записью(ями) — такая запись будет отклонена.',
+    alsoThen: 'В это же время есть ещё {count} запись(и). Они не мешают.',
     types: {
       tattoo_session: 'Тату-сеанс',
       in_person_consultation: 'Очная консультация',
