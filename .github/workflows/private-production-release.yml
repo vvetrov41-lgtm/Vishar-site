@@ -7,6 +7,7 @@ on:
       - '!release/private-crm-rc*-booking-host*'
       - '!release/private-crm-rc*-inventory-*'
       - '!release/private-crm-rc*-backend-auth-*'
+      - '!release/private-crm-rc*-gpt-worker'
   workflow_dispatch:
 
 permissions:
@@ -44,6 +45,10 @@ jobs:
               ;;
             release/private-crm-rc*-inventory-*)
               echo 'Read-only inventory refs must never enter the production release workflow.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-gpt-worker)
+              echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;
@@ -108,6 +113,10 @@ jobs:
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;
             release/private-crm-rc*-booking-host*) exit 1 ;;
+            release/private-crm-rc*-gpt-worker)
+              echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
@@ -162,6 +171,10 @@ jobs:
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;
             release/private-crm-rc*-booking-host*) exit 1 ;;
+            release/private-crm-rc*-gpt-worker)
+              echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
@@ -254,6 +267,10 @@ jobs:
             release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;
             release/private-crm-rc*-booking-host*)
               echo 'Booking-host release refs must never enter the full private production rollout.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-gpt-worker)
+              echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;

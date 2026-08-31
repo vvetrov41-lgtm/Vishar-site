@@ -75,6 +75,43 @@ assert.match(rollout, /\[ "\$\(grep -c 'custom_domain = true' wrangler\.gpt-acti
   'the deployed config must still declare exactly the three current custom domains');
 
 // ---------------------------------------------------------------------------
+// Cross-workflow trigger isolation
+//
+// private-production-release.yml fires on every release/private-crm-rc* push
+// and mutates the database, the CRM and Telegram. A Worker-only rollout branch
+// that also matched it would run the full release in parallel, which is how
+// migration 0125 came to be applied by a branch push on rc582. The claim that
+// this rollout ships Worker code and nothing else only holds if the broad
+// release workflow cannot be triggered by the same ref.
+//
+// The excluded pattern is derived from the rollout's own trigger rather than
+// written twice, so renaming one cannot silently unguard the other.
+// ---------------------------------------------------------------------------
+
+const release = readFileSync(new URL('../.github/workflows/private-production-release.yml', import.meta.url), 'utf8');
+
+const rolloutBranchPattern = rollout.match(/^ {6}- '(release\/private-crm-rc\*-gpt-worker)'$/m)?.[1];
+assert.ok(rolloutBranchPattern, 'the rollout must declare its release branch pattern as a quoted trigger');
+
+assert.ok(
+  release.includes(`- '!${rolloutBranchPattern}'`),
+  'private-production-release.yml must exclude the GPT Worker rollout branch from its push trigger',
+);
+
+// A trigger exclusion alone is one edit away from being lost, and workflow_dispatch
+// bypasses it entirely, so every runtime ref guard must refuse the ref too.
+const guards = [...release.matchAll(/case "\$GITHUB_REF_NAME" in\n([\s\S]*?)\n\s+esac/g)].map((m) => m[1]);
+assert.ok(guards.length >= 4, `expected the release workflow to keep its runtime ref guards, found ${guards.length}`);
+for (const [index, guard] of guards.entries()) {
+  const excluded = guard.indexOf('release/private-crm-rc*-gpt-worker)');
+  const catchAll = guard.indexOf('release/private-crm-rc*) ;;');
+  assert.notEqual(excluded, -1, `release guard ${index + 1} does not refuse the GPT Worker rollout ref`);
+  assert.notEqual(catchAll, -1, `release guard ${index + 1} lost its catch-all arm`);
+  assert.ok(excluded < catchAll,
+    `release guard ${index + 1} matches the catch-all before the GPT Worker exclusion, so the exclusion never fires`);
+}
+
+// ---------------------------------------------------------------------------
 // Everything the Cloudflare inventory needs must be in scope where it runs
 //
 // The inventory script fails closed on a missing variable, so a rollout that
