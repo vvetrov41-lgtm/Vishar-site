@@ -1,0 +1,34 @@
+name: TEMP admin lock refresh
+on:
+  push:
+    branches:
+      - agent/calendar-month-grid-current
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/calendar-month-grid-current
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - name: Refresh lockfile with runner npm
+        working-directory: admin
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Commit refreshed lockfile when needed
+        run: |
+          if git diff --quiet -- admin/package-lock.json; then
+            echo "Lockfile already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add admin/package-lock.json
+          git commit -m "chore(admin): refresh lockfile for Node 22 CI"
+          git push origin HEAD:agent/calendar-month-grid-current
