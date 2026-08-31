@@ -3,6 +3,7 @@ import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
+import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
 import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
@@ -254,6 +255,21 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           <p className="notice" style={{ marginTop: 12 }}>{t('project.ratesOwnerOnly')}</p>
         ) : null}
       </Section>
+
+      {/* The same panel as the client workspace and the calendar. A project
+          books through the project, so the session is linked without the
+          operator having to remember to pick it. */}
+      {mayManageAppointments ? (
+        <Section title={t('booking.title')}>
+          <BookingPanel
+            artistId={project.artist_id}
+            clientId={project.client_id}
+            clientName={clientName ?? project.title}
+            projectId={project.id}
+            onBooked={() => reload()}
+          />
+        </Section>
+      ) : null}
 
       <Section title={copy.appointments}>
         {appointments.length === 0 ? (

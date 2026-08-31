@@ -348,6 +348,12 @@ export interface FakeClientOptions {
   queryCalls?: { table: string; method: string; args: unknown[] }[];
   /** Force an error from one table, to exercise the error state. */
   failTable?: string;
+  /**
+   * An RPC the database refuses. Used to exercise a fail-closed path that the
+   * database owns - a booking whose slot went stale under the schedule lock,
+   * for instance - rather than asserting it never happens.
+   */
+  failRpc?: string;
   /** Override the enquiry lifecycle state for workflow-specific screens. */
   enquiryStatus?: EnquiryStatus;
   /** Artist identities returned by list_accessible_artists(). */
@@ -709,6 +715,10 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     from: builder,
     rpc: async (name, args) => {
       rpcCalls.push({ name, args });
+
+      if (options.failRpc === name) {
+        return { data: null, error: { code: '22023', message: 'artist availability blocks this time' } };
+      }
 
       // Role checks live in the database. The fake enforces the same ones, so a
       // component test cannot "pass" by calling something the real RPC refuses.

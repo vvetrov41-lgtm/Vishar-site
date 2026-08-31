@@ -188,6 +188,7 @@ const EN = {
 
   // Client workspace — the facts an operator asks about a client before they
   // do anything, and the single action those facts imply.
+  'booking.title': 'Book a session',
   'clientWorkspace.rightNow': 'Right now',
   'clientWorkspace.nextBooking': 'Next booking',
   'clientWorkspace.noBooking': 'Nothing booked',
@@ -548,6 +549,7 @@ const RU: Record<TranslationKey, string> = {
   'client.notes': 'Заметки',
   'client.noNotes': 'Заметок нет',
 
+  'booking.title': 'Записать на сеанс',
   'clientWorkspace.rightNow': 'Сейчас',
   'clientWorkspace.nextBooking': 'Ближайшая запись',
   'clientWorkspace.noBooking': 'Записей нет',

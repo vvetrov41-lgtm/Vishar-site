@@ -5,6 +5,7 @@ import { DetailBackLink, RecordArtistContext } from '../components/DetailContext
 import { EnquiryConsultationPanel } from '../components/EnquiryConsultationPanel';
 import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
 import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
+import { BookingPanel } from '../components/BookingPanel';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
 import { groupEmailThreads, threadNeedsOperator, type EmailThread } from '../lib/email-threads';
 import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
@@ -221,6 +222,23 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
 
           {canBookConsultation ? (
             <EnquiryConsultationPanel enquiry={enquiry} onChanged={reload} />
+          ) : null}
+
+          {/* An enquiry books the same way everything else does. The
+              consultation panel above stays because it is the one-tap path for
+              the common case; this is the same panel the client workspace and
+              the calendar use, for anything longer. */}
+          {canBookConsultation && client ? (
+            <details className="booking-disclosure">
+              <summary>{t('booking.title')}</summary>
+              <BookingPanel
+                artistId={enquiry.artist_id}
+                clientId={client.id}
+                clientName={client.full_name}
+                enquiryId={enquiry.id}
+                onBooked={() => reload()}
+              />
+            </details>
           ) : null}
         </Section>
       ) : null}
