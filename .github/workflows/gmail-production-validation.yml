@@ -17,6 +17,7 @@ on:
       - 'docs/gpt-actions/openapi.production*.yaml'
       - 'docs/crm/MCP_READY_ARCHITECTURE.md'
       - 'scripts/test-gmail-production.mjs'
+      - 'scripts/test-gmail-gpt-host-boundary.mjs'
       - 'scripts/test-gmail-rollout-phases.mjs'
       - 'scripts/test-gmail-mcp-ready.mjs'
       - 'scripts/test-gpt-gmail-openapi.mjs'
@@ -50,6 +51,9 @@ jobs:
       - name: Gmail OAuth/provider regression
         run: node scripts/test-gmail-production.mjs
 
+      - name: Gmail GPT host boundary regression
+        run: node scripts/test-gmail-gpt-host-boundary.mjs
+
       - name: Gmail rollout phase regression
         run: node scripts/test-gmail-rollout-phases.mjs
 
@@ -76,6 +80,7 @@ jobs:
           node --check workers/lib/gmail-supabase.js
           node --check workers/lib/gmail-tool-contract.js
           node --check scripts/generate-gmail-production-deploy-config.mjs
+          node --check scripts/test-gmail-gpt-host-boundary.mjs
           node --check scripts/test-gmail-rollout-phases.mjs
 
       - name: Gmail production bundle dry-run
