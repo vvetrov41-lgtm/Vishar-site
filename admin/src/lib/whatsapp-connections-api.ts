@@ -30,10 +30,6 @@ type WhatsAppArtist = Pick<Artist, 'id' | 'slug' | 'display_name'>;
 
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const STAGING_SUPABASE_ORIGIN = 'https://gwaliusblwrzisrwnsvs.supabase.co';
-const PRODUCTION_ONBOARDING_ARTISTS = new Map([
-  ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
-  ['a2222222-2222-4222-8222-222222222222', 'kristina'],
-]);
 const EXISTING_ACCOUNT_ARTISTS = new Map([
   ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
 ]);
@@ -228,15 +224,11 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       if (whatsappCrmEnvironment(supabaseUrl) !== 'production') {
         throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
       }
-      const approvedSlug = PRODUCTION_ONBOARDING_ARTISTS.get(artist.id);
-      if (!approvedSlug || artist.slug !== approvedSlug) {
-        throw new ApiError(apiMessage('Production WhatsApp onboarding is unavailable for this artist.'));
-      }
       if (signup.event !== 'FINISH' && signup.event !== 'CODE_ONLY') {
         throw new ApiError(apiMessage('Meta Embedded Signup did not finish authorization.'));
       }
 
-      const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, approvedSlug);
+      const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, artist.slug);
       const accessToken = await crmAccessToken();
       return provisioningRequest(
         '/api/whatsapp/embedded-signup/provision',
