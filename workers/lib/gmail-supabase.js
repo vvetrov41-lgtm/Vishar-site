@@ -1,6 +1,7 @@
 import { createBackendResponseObserver, readSafeSupabaseError } from './supabase-diagnostics.js';
 
 const BACKEND_RPCS = new Set([
+  'service_authorize_gmail_operator',
   'service_resolve_gmail_target',
   'service_resolve_gmail_outbox_target',
   'service_set_gmail_integration',
@@ -24,6 +25,10 @@ function projectOrigin(env) {
     throw new Error('gmail_supabase_url_invalid');
   }
   return url.origin;
+}
+
+function validBearer(bearer) {
+  return typeof bearer === 'string' && /^[A-Za-z0-9._~-]{16,8192}$/.test(bearer);
 }
 
 function safeJsonResponse(response) {
@@ -76,10 +81,30 @@ export function createGmailSupabase(env, fetchImpl = fetch) {
     },
     async userRpc(name, args, bearer) {
       if (!USER_RPCS.has(name)) throw new Error('gmail_user_rpc_not_allowed');
-      if (typeof bearer !== 'string' || !/^[A-Za-z0-9._~-]{16,8192}$/.test(bearer)) throw new Error('gmail_oauth_token_invalid');
+      if (!validBearer(bearer)) throw new Error('gmail_oauth_token_invalid');
       return callRpc(origin, name, args, { apikey: publishable, authorization: `Bearer ${bearer}` }, fetchImpl);
+    },
+    async verifyUser(bearer) {
+      if (!validBearer(bearer)) throw new Error('gmail_operator_token_invalid');
+      const response = await fetchImpl(`${origin}/auth/v1/user`, {
+        method: 'GET',
+        headers: { apikey: publishable, authorization: `Bearer ${bearer}`, accept: 'application/json' },
+        redirect: 'manual',
+      });
+      if (!response.ok) {
+        const error = new Error(response.status === 401 || response.status === 403
+          ? 'gmail_operator_unauthorized'
+          : 'gmail_operator_auth_failed');
+        error.status = response.status;
+        throw error;
+      }
+      const user = await safeJsonResponse(response);
+      if (!user || typeof user.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(user.id)) {
+        throw new Error('gmail_operator_auth_failed');
+      }
+      return { id: user.id };
     },
   };
 }
 
-export const __testing = Object.freeze({ BACKEND_RPCS, USER_RPCS, projectOrigin });
+export const __testing = Object.freeze({ BACKEND_RPCS, USER_RPCS, projectOrigin, validBearer });
