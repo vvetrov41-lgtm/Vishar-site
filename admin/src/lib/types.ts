@@ -254,6 +254,20 @@ export interface EmailMessage {
   subject: string;
   created_by_kind: string;
   created_at: string;
+  // Links, so an email row in the Inbox can carry the same client, enquiry and
+  // project context every other row carries.
+  client_id: string | null;
+  enquiry_id: string | null;
+  project_id: string | null;
+  approved_at: string | null;
+  sent_at: string | null;
+  failed_at: string | null;
+  error_code: string | null;
+}
+
+/** One stored email with its body. Read only when a thread is opened. */
+export interface EmailMessageDetail extends EmailMessage {
+  body: string;
 }
 
 export interface StatusTransition {

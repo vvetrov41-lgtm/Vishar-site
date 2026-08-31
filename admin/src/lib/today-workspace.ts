@@ -14,12 +14,15 @@
 
 import type { Appointment } from './appointment-api';
 import { conversationNeedsReply, type ConversationSummary } from './communications-api';
+import { threadNeedsOperator, type EmailThread } from './email-threads';
 import type { MonzoReconciliationCandidate } from './payment-api';
 import type { Enquiry, FollowUp, Project } from './types';
 
 export type TodayItemKind =
   | 'reschedule_requested'
   | 'reply'
+  | 'email_send_failed'
+  | 'email_draft_to_approve'
   | 'payment_to_confirm'
   | 'unconfirmed_appointment'
   | 'deposit_outstanding'
@@ -36,6 +39,11 @@ export type TodayItemKind =
 const KIND_ORDER: TodayItemKind[] = [
   'reschedule_requested',
   'reply',
+  // A send that failed is a message the client is still waiting for and does
+  // not know is stuck, so it ranks with the other client-visible delays. A
+  // draft nobody approved is the same delay one step earlier.
+  'email_send_failed',
+  'email_draft_to_approve',
   'payment_to_confirm',
   'unconfirmed_appointment',
   'deposit_outstanding',
@@ -73,6 +81,8 @@ export interface TodayInput {
   projects: Project[];
   followUps: FollowUp[];
   conversations: ConversationSummary[];
+  /** Grouped email threads, so drafts and failed sends stop being invisible. */
+  emailThreads: EmailThread[];
   reconciliationCandidates: MonzoReconciliationCandidate[];
   failedJobCount: number;
   /** Resolves a client id to a name, so no row is identified by a uuid. */
@@ -148,6 +158,22 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
         ?? conversation.external_username,
       at: conversation.last_inbound_at ?? conversation.last_message_at,
       detail: conversation.channel,
+      urgent: true,
+    });
+  }
+
+  // Email the CRM drafted or failed to deliver. The CRM stores no inbound
+  // mail, so email cannot contribute a "they replied" row; what it can
+  // contribute is work that is genuinely stuck on this side.
+  for (const thread of input.emailThreads) {
+    if (!threadNeedsOperator(thread)) continue;
+    items.push({
+      key: `email-${thread.key}`,
+      kind: thread.state === 'send_failed' ? 'email_send_failed' : 'email_draft_to_approve',
+      href: `/inbox/email/${thread.key}`,
+      subject: (thread.client_id ? input.clientName(thread.client_id) : null) ?? thread.to_email,
+      at: thread.last_activity_at,
+      detail: thread.subject,
       urgent: true,
     });
   }

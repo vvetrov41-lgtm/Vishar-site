@@ -67,6 +67,26 @@
 
 .badge.channel-instagram { border-color: rgba(214, 129, 255, 0.45); }
 .badge.channel-whatsapp { border-color: rgba(93, 219, 160, 0.45); }
+.badge.channel-email { border-color: rgba(120, 170, 255, 0.45); }
+
+/* A drafted email is read, not skimmed: the operator is deciding whether to
+   put these exact words in front of a client. It keeps its own line breaks and
+   scrolls inside its own box rather than stretching the page. */
+.email-subject { margin: 10px 0 6px; }
+.email-body {
+  margin: 0;
+  max-height: 340px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  color: var(--text);
+}
+.email-scope-note { margin-top: 14px; }
 
 .conversation-header { display: grid; gap: 10px; }
 .conversation-title { margin: 0; font-size: 1.15rem; overflow-wrap: anywhere; }

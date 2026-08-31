@@ -165,6 +165,7 @@ function input(overrides: Partial<TodayInput> = {}): TodayInput {
     projects: [],
     followUps: [],
     conversations: [],
+    emailThreads: [],
     reconciliationCandidates: [],
     failedJobCount: 0,
     clientName: () => 'Fixture Client',

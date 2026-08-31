@@ -28,6 +28,7 @@ interface Operation {
 
 export const API_OPERATIONS = {
   'activate that account': { kind: 'write', ru: 'включить эту учётную запись' },
+  'approve that email draft': { kind: 'write', ru: 'утвердить это письмо' },
   'assign that enquiry': { kind: 'write', ru: 'назначить исполнителя по заявке' },
   'attach that one-off Monzo payment link': { kind: 'write', ru: 'привязать эту одноразовую ссылку Monzo' },
   'block that time': { kind: 'write', ru: 'заблокировать это время' },
@@ -64,7 +65,7 @@ export const API_OPERATIONS = {
   'load calendar connections': { kind: 'read', ru: 'загрузить подключения календаря' },
   'load client names': { kind: 'read', ru: 'загрузить имена клиентов' },
   'load clients': { kind: 'read', ru: 'загрузить клиентов' },
-  'load email drafts': { kind: 'read', ru: 'загрузить черновики писем' },
+  'load email conversations': { kind: 'read', ru: 'загрузить переписку по почте' },
   'load enquiries': { kind: 'read', ru: 'загрузить заявки' },
   'load failed integration jobs': { kind: 'read', ru: 'загрузить неудачные задачи интеграций' },
   'load follow-ups': { kind: 'read', ru: 'загрузить напоминания' },
@@ -92,6 +93,7 @@ export const API_OPERATIONS = {
   'load session finance': { kind: 'read', ru: 'загрузить финансы сеанса' },
   'load sessions': { kind: 'read', ru: 'загрузить сеансы' },
   'load that client': { kind: 'read', ru: 'загрузить карточку клиента' },
+  'load that email': { kind: 'read', ru: 'загрузить это письмо' },
   'load that enquiry': { kind: 'read', ru: 'загрузить заявку' },
   'load that project': { kind: 'read', ru: 'загрузить проект' },
   'load the activity log': { kind: 'read', ru: 'загрузить журнал действий' },

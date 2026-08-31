@@ -519,6 +519,12 @@ function pageScopeFor(path: string): PageScope {
     || path === '/availability'
     || path === '/automations'
     || path === '/activity'
+    // The Inbox reads artist-owned rows - communication_conversations and
+    // email_messages are both scoped by artist_id - and InboxPage has always
+    // filtered by the selected artist. Classifying it as global put a "not
+    // filtered by artist" notice above a list that was being filtered by
+    // artist, and hid the control that decides it.
+    || path === '/inbox'
     // Payments is artist-owned: deposit settings, the destination catalogue,
     // the deposit policy and every reconciliation candidate belong to exactly
     // one artist, and PaymentsPage cannot render without one. Classifying it

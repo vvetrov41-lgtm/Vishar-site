@@ -413,6 +413,12 @@ export interface FakeClientOptions {
    * confirming one has to supply it.
    */
   reconciliationCandidates?: Record<string, unknown>[];
+  /**
+   * Rows the `email_messages` table returns. The CRM stores only outbound
+   * email, so a test about a draft waiting for approval or a failed send has
+   * to supply one; there is no inbound row to invent.
+   */
+  emailMessages?: Record<string, unknown>[];
 }
 
 export interface ControlPlaneWorkspace {
@@ -529,7 +535,8 @@ function tableResult(
   role: CrmRole | null,
   failTable?: string,
   enquiryStatus?: EnquiryStatus,
-  extraSessions: Record<string, unknown>[] = []
+  extraSessions: Record<string, unknown>[] = [],
+  emailMessages: Record<string, unknown>[] = []
 ) {
   if (failTable === table) return { data: null, error: { code: 'PGRST000', message: 'boom' } };
 
@@ -566,7 +573,9 @@ function tableResult(
     case 'communication_messages':
       return { data: CONVERSATION_MESSAGES, error: null };
     case 'email_messages':
-      return { data: canManage ? [] : [], error: null };
+      // The policy is can_manage_artist, so a read-only account genuinely sees
+      // nothing here rather than an empty list by accident.
+      return { data: canManage ? emailMessages : [], error: null };
     case 'follow_ups':
       return { data: [{ id: 'fu-1', artist_id: VLADIMIR_ARTIST_ID, status: 'open', due_at: '2026-07-05T09:00:00Z', subject: 'Chase references', details: null, client_id: CLIENT_ID, enquiry_id: ENQUIRY_ID, project_id: null, assigned_to: null }], error: null };
     case 'activity_log':
@@ -634,7 +643,8 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         effectiveRole,
         options.failTable,
         options.enquiryStatus,
-        options.extraSessions
+        options.extraSessions,
+        options.emailMessages
       );
     // PostgREST applies `eq` server-side, so the fake does too. Without this a
     // screen that scopes a read by client, project or status would "pass" while
