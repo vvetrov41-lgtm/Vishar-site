@@ -4,6 +4,7 @@ const GOOGLE_CALENDAR_BASE_URL = 'https://www.googleapis.com/calendar/v3';
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const TOKEN_ENVELOPE_VERSION = 1;
 const EVENT_ID_PREFIX = 'vishar';
+const GOOGLE_EVENT_VISIBILITIES = new Set(['default', 'public', 'private']);
 const TRANSIENT_PROVIDER_REASONS = new Set([
   'rateLimitExceeded',
   'userRateLimitExceeded',
@@ -111,18 +112,32 @@ function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+function normalizeEventVisibility(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new CalendarConnectorError('calendar_visibility_invalid');
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!GOOGLE_EVENT_VISIBILITIES.has(normalized)) {
+    throw new CalendarConnectorError('calendar_visibility_invalid');
+  }
+  return normalized;
+}
+
 export function artistCalendarConfig(env, artistId) {
   const candidates = [
     {
       alias: 'vladimir',
       artistId: env?.VLADIMIR_ARTIST_ID,
       expectedEmail: env?.VLADIMIR_GOOGLE_EMAIL,
+      eventVisibility: env?.VLADIMIR_GOOGLE_EVENT_VISIBILITY,
       integrationKey: 'google_calendar_vladimir',
     },
     {
       alias: 'kristina',
       artistId: env?.KRISTINA_ARTIST_ID,
       expectedEmail: env?.KRISTINA_GOOGLE_EMAIL,
+      eventVisibility: env?.KRISTINA_GOOGLE_EVENT_VISIBILITY,
       integrationKey: 'google_calendar_kristina',
     },
   ].filter((item) => item.artistId && item.expectedEmail);
@@ -134,6 +149,7 @@ export function artistCalendarConfig(env, artistId) {
   return {
     ...matches[0],
     expectedEmail: normalizeEmail(matches[0].expectedEmail),
+    eventVisibility: normalizeEventVisibility(matches[0].eventVisibility),
   };
 }
 
@@ -165,7 +181,7 @@ export function validateCalendarRoute(route, job, env) {
     throw new CalendarConnectorError('provider_route_invalid');
   }
 
-  return { artist, calendarId: 'primary' };
+  return { artist, calendarId: 'primary', eventVisibility: artist.eventVisibility };
 }
 
 export async function loadArtistRefreshToken(env, job, route) {
@@ -260,7 +276,12 @@ function safeDisplayName(value) {
   return cleaned ? cleaned.slice(0, 120) : 'Client';
 }
 
-export function buildGoogleEvent(job, { eventId = null, includeId = false, crmReturnUrl = '' } = {}) {
+export function buildGoogleEvent(job, {
+  eventId = null,
+  includeId = false,
+  crmReturnUrl = '',
+  visibility = null,
+} = {}) {
   if (
     !job?.session_id
     || !job?.artist_id
@@ -302,6 +323,8 @@ export function buildGoogleEvent(job, { eventId = null, includeId = false, crmRe
     },
   };
 
+  const normalizedVisibility = normalizeEventVisibility(visibility);
+  if (normalizedVisibility) event.visibility = normalizedVisibility;
   if (includeId) event.id = eventId;
   return event;
 }
@@ -342,11 +365,13 @@ export function createGoogleCalendarProvider({
   accessToken,
   calendarId = 'primary',
   crmReturnUrl = '',
+  eventVisibility = null,
   fetchImpl = fetch,
 }) {
   if (!accessToken || calendarId !== 'primary') {
     throw new CalendarConnectorError('calendar_not_configured');
   }
+  const visibility = normalizeEventVisibility(eventVisibility);
 
   const calendarPath = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events`;
   const headers = {
@@ -360,7 +385,7 @@ export function createGoogleCalendarProvider({
       {
         method: 'PATCH',
         headers,
-        body: JSON.stringify(buildGoogleEvent(job, { crmReturnUrl })),
+        body: JSON.stringify(buildGoogleEvent(job, { crmReturnUrl, visibility })),
       },
     );
     const body = await readProviderJson(response);
@@ -377,6 +402,7 @@ export function createGoogleCalendarProvider({
         eventId,
         includeId: true,
         crmReturnUrl,
+        visibility,
       })),
     });
     if (response.status === 409) {
@@ -428,8 +454,10 @@ export function createGoogleCalendarProvider({
 export const __testing = {
   GOOGLE_SCOPE,
   TOKEN_ENVELOPE_VERSION,
+  GOOGLE_EVENT_VISIBILITIES,
   TRANSIENT_PROVIDER_REASONS,
   normalizeEmail,
+  normalizeEventVisibility,
   appointmentLabel,
   providerReasons,
   providerEventResult,
