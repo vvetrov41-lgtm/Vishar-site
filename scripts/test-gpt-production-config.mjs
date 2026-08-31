@@ -56,7 +56,7 @@ assert.match(activate, /GPT_ACTIONS_ENABLED:true/);
 assert.doesNotMatch(activate, /configure_gpt_action_client|update\s+crm_private\.gpt_action_clients/i,
   'historical activation workflow must never create or mutate GPT bindings');
 
-// Current canonical monolith is still the exact 57-operation runtime contract.
+// Current canonical monolith is the exact 66-operation runtime contract.
 assert.match(openapi, /^openapi: 3\.1\.0$/m);
 assert.match(openapi, /^  version: 2\.1\.0-production$/m);
 assert.match(openapi, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
@@ -94,6 +94,11 @@ const expectedOperations = [
   'createEmailDraft', 'approveEmailDraft', 'searchEmailHistory', 'getEmailThread',
   'createGmailReplyDraft', 'listEnquiryFiles', 'listProjectFiles', 'listActivity',
   'getArtistContext', 'selectArtistContext',
+  'listCommunicationConversations', 'getCommunicationConversation',
+  'listCommunicationMessages', 'sendCommunicationReply',
+  'markCommunicationConversationRead', 'setCommunicationConversationState',
+  'linkCommunicationConversationClient', 'createClientFromCommunication',
+  'createEnquiryFromCommunication',
 ];
 const nonConsequential = new Set([
   'listClients', 'searchAppointmentClients', 'getClient', 'listEnquiries', 'getEnquiry',
@@ -103,10 +108,12 @@ const nonConsequential = new Set([
   'listAvailability', 'listPaymentRequests', 'getWhatsAppConversation',
   'listWhatsAppMessages', 'listEmailMessages', 'searchEmailHistory', 'getEmailThread',
   'listEnquiryFiles', 'listProjectFiles', 'listActivity', 'getArtistContext',
+  'listCommunicationConversations', 'getCommunicationConversation',
+  'listCommunicationMessages',
 ]);
 const operationIds = [...openapi.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 assert.deepEqual(operationIds.sort(), [...expectedOperations].sort());
-assert.equal(operationIds.length, 57, 'current canonical GPT runtime contract must expose exactly 57 named operations');
+assert.equal(operationIds.length, 66, 'current canonical GPT runtime contract must expose exactly 66 named operations');
 assert.equal(count(openapi, 'x-openai-isConsequential: false'), nonConsequential.size);
 assert.equal(count(openapi, 'x-openai-isConsequential: true'), expectedOperations.length - nonConsequential.size);
 for (const operationId of expectedOperations) {
@@ -119,6 +126,7 @@ assert.match(openapi, /operationId: recordManualPayment[\s\S]*?Confirm exact amo
 assert.match(openapi, /operationId: sendWhatsAppMessage[\s\S]*?explicitly requested the exact message/);
 assert.match(openapi, /operationId: approveEmailDraft[\s\S]*?explicitly approves the draft content/);
 assert.match(openapi, /operationId: createGmailReplyDraft[\s\S]*?draft/);
+assert.match(openapi, /operationId: sendCommunicationReply[\s\S]*?explicitly requested the exact message/);
 
 // Unified identity, rollback and OAuth invariants stay unchanged.
 assert.match(runbook, /one profile-bound Vishar GPT/i);
@@ -186,7 +194,7 @@ assert.match(onboardingSkill, /Integrations & Admin/);
 assert.match(onboardingSkill, /Research/);
 
 // Durable Spec Kit target is full operator parity, modular Actions and future
-// transport-neutral MCP/App, while current 57 operations remain current-state evidence.
+// transport-neutral MCP/App, while current 66 operations remain current-state evidence.
 assert.match(v2Spec, /Product principle: operator parity/i);
 assert.match(v2Spec, /full authorized CRM operator coverage/i);
 assert.match(v2Spec, /Gmail/);
@@ -207,4 +215,4 @@ assert.match(v2Tasks, /Restore a dedicated Communications import schema/i);
 assert.match(v2Tasks, /Web Research and Project Web References/i);
 assert.match(v2Tasks, /Transport-neutral MCP\/App surface/i);
 
-console.log('GPT production config tests passed: current 57-operation transport remains bounded while Unified GPT target is profile-bound, modular, parity-driven, provider-isolated and rollback-safe.');
+console.log('GPT production config tests passed: current 66-operation transport remains bounded while Unified GPT target is profile-bound, modular, parity-driven, provider-isolated and rollback-safe.');

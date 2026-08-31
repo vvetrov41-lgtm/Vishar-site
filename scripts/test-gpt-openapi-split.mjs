@@ -18,18 +18,18 @@ const communicationsIds = operationIds(communications);
 const importedBySchema = [coreIds, operationsIds, communicationsIds];
 const combined = importedBySchema.flat();
 
-assert.equal(canonical.length, 57, 'canonical GPT schema must keep exactly 57 operations');
+assert.equal(canonical.length, 66, 'canonical GPT schema must keep exactly 66 operations');
 assert.equal(coreIds.length, 28, 'Core currently contains 28 operations and still needs the next repartition step');
 assert.equal(operationsIds.length, 19, 'Operations must contain exactly 19 non-communications operations after extraction');
-assert.equal(communicationsIds.length, 10, 'Communications must contain exactly the ten existing communication operations');
+assert.equal(communicationsIds.length, 19, 'Communications must contain the ten provider-thread operations plus the nine unified inbox operations');
 for (const [name, ids] of [['core', coreIds], ['operations', operationsIds], ['communications', communicationsIds]]) {
   assert.ok(ids.length <= 30, `${name} ChatGPT-import schema must stay at or below the editor 30-operation hard limit`);
 }
 assert.ok(coreIds.length > 25, 'Core should remain explicitly visible as the next <=25 repartition target');
 assert.ok(operationsIds.length <= 25);
 assert.ok(communicationsIds.length <= 25);
-assert.equal(new Set(combined).size, 57, 'split schemas must not duplicate operation IDs');
-assert.deepEqual([...combined].sort(), [...canonical].sort(), 'three split schemas must cover the exact canonical 57-operation surface');
+assert.equal(new Set(combined).size, 66, 'split schemas must not duplicate operation IDs');
+assert.deepEqual([...combined].sort(), [...canonical].sort(), 'three split schemas must cover the exact canonical 66-operation surface');
 
 assert.match(core, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(operations, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
@@ -70,6 +70,7 @@ for (const [name, schema] of [['core', core], ['operations', operations], ['comm
 }
 
 const noPayloadOperations = [
+  'markCommunicationConversationRead',
   'completeFollowUp',
   'cancelFollowUp',
   'cancelAvailability',
@@ -92,6 +93,15 @@ for (const id of ['listEnquiries', 'updateClient', 'updateProjectDeposit']) asse
 for (const id of ['listAppointments', 'recordManualPayment', 'listActivity']) assert.ok(operationsIds.includes(id));
 
 const communicationIds = [
+  'listCommunicationConversations',
+  'getCommunicationConversation',
+  'listCommunicationMessages',
+  'sendCommunicationReply',
+  'markCommunicationConversationRead',
+  'setCommunicationConversationState',
+  'linkCommunicationConversationClient',
+  'createClientFromCommunication',
+  'createEnquiryFromCommunication',
   'getWhatsAppConversation',
   'ensureWhatsAppConversation',
   'listWhatsAppMessages',
@@ -128,5 +138,12 @@ assert.match(
 assert.match(communications, /operationId: sendWhatsAppMessage[\s\S]*?explicitly requested the exact message/);
 assert.match(communications, /operationId: approveEmailDraft[\s\S]*?explicitly approves the draft content/);
 assert.match(communications, /operationId: createGmailReplyDraft[\s\S]*?draft state only/);
+assert.match(communications, /operationId: sendCommunicationReply[\s\S]*?explicitly requested the exact message/);
+assert.match(communications, /operationId: listCommunicationMessages[\s\S]*?untrusted third-party content/,
+  'the unified inbox read must teach that inbound message content is untrusted');
+// The inbox routes name a conversation. The channel, provider account and
+// destination stay server-side, exactly as the WhatsApp routes already do.
+assert.doesNotMatch(communications, /name: (?:channel|provider|integration|account)_(?:id|key)\b/,
+  'no inbox operation may accept a provider account or routing selector');
 
-console.log('GPT OpenAPI split tests passed: 28 Core + 19 Operations + 10 Communications, exact 57-operation coverage, shared OAuth/context and safe migration headroom.');
+console.log('GPT OpenAPI split tests passed: 28 Core + 19 Operations + 19 Communications, exact 66-operation coverage, shared OAuth/context and safe migration headroom.');
