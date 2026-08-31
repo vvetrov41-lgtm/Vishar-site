@@ -1,9 +1,14 @@
 const GRAPH_VERSION = 'v25.0';
+const META_APP_ID = '1481226093843982';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const WEBHOOK_WORKER = 'vishar-whatsapp-webhook-production';
 const DRAIN_WORKER = 'vishar-whatsapp-drain-production';
 const MAX_BODY_BYTES = 8192;
+const REQUIRED_META_SCOPES = Object.freeze([
+  'whatsapp_business_management',
+  'whatsapp_business_messaging',
+]);
 
 const APPROVED_ARTISTS = Object.freeze({
   'a1111111-1111-4111-8111-111111111111': Object.freeze({
@@ -11,6 +16,12 @@ const APPROVED_ARTISTS = Object.freeze({
     bindingName: 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
     wabaId: '341184815737145',
     phoneNumberId: '328102027058293',
+  }),
+  'a2222222-2222-4222-8222-222222222222': Object.freeze({
+    integrationKey: 'kristina-production',
+    bindingName: 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
+    wabaId: '462106700328578',
+    phoneNumberId: null,
   }),
 });
 
@@ -139,17 +150,59 @@ async function graph(url, init = {}) {
   return payload;
 }
 
+async function verifyMetaAccessToken(accessToken, env) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/debug_token`);
+  url.searchParams.set('input_token', accessToken);
+  const payload = await graph(url.toString(), {
+    headers: {
+      authorization: `Bearer ${META_APP_ID}|${binding(env, 'META_APP_SECRET')}`,
+      accept: 'application/json',
+    },
+  });
+  const data = payload?.data;
+  if (!data || data.is_valid !== true || String(data.app_id || '') !== META_APP_ID) {
+    throw Object.assign(new Error('meta_token_app_mismatch'), { status: 409 });
+  }
+  const scopes = Array.isArray(data.scopes) ? data.scopes.filter((scope) => typeof scope === 'string') : [];
+  if (!REQUIRED_META_SCOPES.every((scope) => scopes.includes(scope))) {
+    throw Object.assign(new Error('meta_token_missing_scope'), { status: 409 });
+  }
+}
+
+async function fetchExactPhone(accessToken, phoneNumberId) {
+  const phoneUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}`);
+  phoneUrl.searchParams.set('fields', 'id,display_phone_number,verified_name');
+  const phone = await graph(phoneUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
+  if (String(phone.id || '') !== phoneNumberId) throw Object.assign(new Error('meta_phone_mismatch'), { status: 409 });
+  return phone;
+}
+
+async function discoverSinglePhone(accessToken, wabaId) {
+  const phonesUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/phone_numbers`);
+  phonesUrl.searchParams.set('fields', 'id,display_phone_number,verified_name');
+  phonesUrl.searchParams.set('limit', '2');
+  const payload = await graph(phonesUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const hasMore = Boolean(payload?.paging?.next);
+  if (rows.length !== 1 || hasMore) throw Object.assign(new Error('meta_phone_selection_ambiguous'), { status: 409 });
+  const phoneNumberId = typeof rows[0]?.id === 'string' && /^\d{6,32}$/.test(rows[0].id) ? rows[0].id : '';
+  if (!phoneNumberId) throw Object.assign(new Error('meta_phone_mismatch'), { status: 409 });
+  return fetchExactPhone(accessToken, phoneNumberId);
+}
+
 async function verifyExistingTarget(accessToken, approved) {
   const wabaUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${approved.wabaId}`);
   wabaUrl.searchParams.set('fields', 'id,name');
   const waba = await graph(wabaUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
   if (String(waba.id || '') !== approved.wabaId) throw Object.assign(new Error('meta_waba_mismatch'), { status: 409 });
 
-  const phoneUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${approved.phoneNumberId}`);
-  phoneUrl.searchParams.set('fields', 'id,display_phone_number,verified_name');
-  const phone = await graph(phoneUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
-  if (String(phone.id || '') !== approved.phoneNumberId) throw Object.assign(new Error('meta_phone_mismatch'), { status: 409 });
+  const phone = approved.phoneNumberId
+    ? await fetchExactPhone(accessToken, approved.phoneNumberId)
+    : await discoverSinglePhone(accessToken, approved.wabaId);
+  const phoneNumberId = String(phone.id || '');
+
   return {
+    phoneNumberId,
     wabaName: typeof waba.name === 'string' ? waba.name : null,
     displayPhoneNumber: typeof phone.display_phone_number === 'string' ? phone.display_phone_number : null,
     verifiedName: typeof phone.verified_name === 'string' ? phone.verified_name : null,
@@ -208,10 +261,12 @@ export async function onRequestPost(context) {
     await requireArtistIntegrationCapability(operator, env, artistId);
     stage = 'route_check';
     await requireApprovedRoute(operator, env, artistId, approved);
+    stage = 'meta_token';
+    await verifyMetaAccessToken(accessToken, env);
     stage = 'meta_selection';
     const safeMeta = await verifyExistingTarget(accessToken, approved);
     const envelope = JSON.stringify({
-      phoneNumberId: approved.phoneNumberId,
+      phoneNumberId: safeMeta.phoneNumberId,
       accessToken,
       wabaId: approved.wabaId,
       appSecret: binding(env, 'META_APP_SECRET'),
@@ -250,4 +305,9 @@ export function onRequest(context) {
   return json({ ok: false, error: 'method_not_allowed' }, 405);
 }
 
-export const __testing = { APPROVED_ARTISTS };
+export const __testing = {
+  APPROVED_ARTISTS,
+  discoverSinglePhone,
+  verifyExistingTarget,
+  verifyMetaAccessToken,
+};
