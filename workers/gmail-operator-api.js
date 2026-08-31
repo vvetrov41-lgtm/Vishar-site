@@ -2,6 +2,7 @@ import {
   deleteRefreshToken,
   getProfile,
   getThread,
+  listRecentCorrespondents,
   refreshAccessToken,
   searchThreads,
 } from './lib/google-gmail.js';
@@ -107,6 +108,33 @@ async function authorizeOperatorForClient(db, token, clientId) {
   if (permitted.length === 0) throw new Error('gmail_operator_scope_invalid');
   if (permitted.length > 1) throw new Error('gmail_client_scope_ambiguous');
   return { artist_id: permitted[0], client_id: clientId };
+}
+
+/**
+ * Discovery is the one read where the operator names the artist.
+ *
+ * That is not a weaker check than the client route's derivation - it is a
+ * stricter one. The artist is verified against the capability registry under
+ * the caller's own session before anything is read, so an id in the path buys
+ * access to nothing the operator did not already have. What it avoids is the
+ * alternative: sweeping every artist the operator can reach and quietly
+ * choosing which mailbox to open.
+ */
+async function authorizeOperatorForArtist(db, token, artistId) {
+  const capabilities = await db.userRpc('list_capabilities', { p_artist_id: artistId }, token);
+  if (!Array.isArray(capabilities)
+    || !capabilities.some((row) => row?.artist_id === artistId && row?.capability === REQUIRED_OPERATOR_CAPABILITY)) {
+    throw new Error('gmail_operator_scope_invalid');
+  }
+  return { artist_id: artistId };
+}
+
+async function resolveMailbox(db, artistId) {
+  const mailbox = firstRow(await db.backendRpc('service_resolve_gmail_mailbox', { p_artist_id: artistId }));
+  if (!mailbox || mailbox.artist_id !== artistId || typeof mailbox.mailbox_email !== 'string') {
+    throw new Error('gmail_target_scope_invalid');
+  }
+  return mailbox;
 }
 
 async function resolveClientTarget(db, auth) {
@@ -217,6 +245,86 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
   }
   if (!configured(env)) return json(request, 404, { error: 'not_found' });
   if (await enforceRateLimit(request, env)) return json(request, 429, { error: 'rate_limited' });
+
+  const discovery = /^\/v1\/operator\/artists\/([0-9a-f-]{36})\/gmail\/inbox\/?$/i.exec(url.pathname);
+  if (discovery) {
+    if (request.method !== 'GET') return methodNotAllowed(request, 'GET, OPTIONS');
+    const token = bearer(request);
+    if (!token) return json(request, 401, { error: 'authentication_required' });
+    const artistId = uuid(discovery[1]);
+    if (!artistId) return json(request, 400, { error: 'invalid_artist_id' });
+    for (const key of url.searchParams.keys()) {
+      if (key !== 'message_limit') return json(request, 400, { error: 'unexpected_field', field: key });
+    }
+    const messageLimit = Number(url.searchParams.get('message_limit') || 40);
+    if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 60) {
+      return json(request, 400, { error: 'invalid_limit' });
+    }
+
+    try {
+      const db = createGmailSupabase(env, fetchImpl);
+      const auth = await authorizeOperatorForArtist(db, token, artistId);
+      const mailbox = await resolveMailbox(db, auth.artist_id);
+      const accessToken = await accessForTarget(env, db, {
+        artist_id: auth.artist_id,
+        integration_key: mailbox.integration_key,
+        mailbox_email: mailbox.mailbox_email,
+      }, fetchImpl);
+
+      // Metadata only, and no message is opened: this answers "is this somebody
+      // we know?", not "what did they say".
+      const seen = await listRecentCorrespondents(accessToken, {
+        mailboxEmail: mailbox.mailbox_email,
+        messageLimit,
+        fetchImpl,
+      });
+
+      // The database decides who is known. An address it cannot name is not
+      // filtered out downstream - it never comes back at all, so there is no
+      // later step where forgetting a filter would leak an unknown sender.
+      const matched = seen.length
+        ? await db.backendRpc('service_match_gmail_clients', {
+          p_artist_id: auth.artist_id,
+          p_emails: [...new Set(seen.map((item) => item.email))],
+        })
+        : [];
+      const byEmail = new Map(
+        (Array.isArray(matched) ? matched : [])
+          .filter((row) => uuid(row?.client_id) && typeof row?.client_email === 'string')
+          .map((row) => [row.client_email, row]),
+      );
+
+      // One row per CLIENT, newest message wins. A client with several
+      // enquiries is one person with one mailbox, and several rows for them
+      // would be the duplication this whole design exists to avoid.
+      const latest = new Map();
+      for (const item of seen) {
+        const client = byEmail.get(item.email);
+        if (!client) continue;
+        const current = latest.get(client.client_id);
+        const at = item.timestamp ? Date.parse(item.timestamp) : Number.NaN;
+        const currentAt = current?.last_message_at ? Date.parse(current.last_message_at) : Number.NaN;
+        if (!current || (Number.isFinite(at) && (!Number.isFinite(currentAt) || at > currentAt))) {
+          latest.set(client.client_id, {
+            client_id: client.client_id,
+            client_name: typeof client.full_name === 'string' ? client.full_name : null,
+            subject: item.subject,
+            last_message_at: item.timestamp,
+            direction: item.direction,
+            untrusted_content: true,
+          });
+        }
+      }
+
+      return json(request, 200, {
+        artist_id: auth.artist_id,
+        clients: [...latest.values()],
+        untrusted_content: true,
+      });
+    } catch (error) {
+      return errorResponse(request, error);
+    }
+  }
 
   const clientHistory = /^\/v1\/operator\/clients\/([0-9a-f-]{36})\/gmail\/history\/?$/i.exec(url.pathname);
   if (clientHistory) {
@@ -357,6 +465,7 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
 }
 
 export const __testing = Object.freeze({
+  authorizeOperatorForArtist,
   authorizeOperatorForClient,
   CRM_ORIGIN,
   GMAIL_PUBLIC_HOST,

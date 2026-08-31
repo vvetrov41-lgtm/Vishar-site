@@ -72,6 +72,29 @@ export interface LiveGmailClientHistory {
   untrusted_content: true;
 }
 
+/**
+ * One known client with recent Gmail activity, as discovery returns it.
+ *
+ * No provider identifier of any kind, and no message body: discovery answers
+ * who has written, not what they wrote. Opening the row reads the client's
+ * history through the client-scoped route, which is the one place message
+ * content is fetched.
+ */
+export interface GmailInboxClient {
+  client_id: string;
+  client_name: string | null;
+  subject: string;
+  last_message_at: string | null;
+  direction: 'inbound' | 'outbound';
+  untrusted_content: true;
+}
+
+export interface GmailInboxDiscovery {
+  artist_id: string;
+  clients: GmailInboxClient[];
+  untrusted_content: true;
+}
+
 export interface LiveGmailOptions {
   threadLimit?: number;
   messageLimit?: number;
@@ -115,6 +138,27 @@ function parseClientHistory(value: unknown, clientId: string): LiveGmailClientHi
     throw new Error('gmail_live_invalid_response');
   }
   return row as unknown as LiveGmailClientHistory;
+}
+
+function validInboxClient(value: unknown): value is GmailInboxClient {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.client_id === 'string'
+    && (row.client_name === null || typeof row.client_name === 'string')
+    && typeof row.subject === 'string'
+    && (row.last_message_at === null || typeof row.last_message_at === 'string')
+    && (row.direction === 'inbound' || row.direction === 'outbound')
+    && row.untrusted_content === true;
+}
+
+function parseInboxDiscovery(value: unknown, artistId: string): GmailInboxDiscovery {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('gmail_live_invalid_response');
+  const row = value as Record<string, unknown>;
+  if (row.artist_id !== artistId || row.untrusted_content !== true
+    || !Array.isArray(row.clients) || !row.clients.every(validInboxClient)) {
+    throw new Error('gmail_live_invalid_response');
+  }
+  return row as unknown as GmailInboxDiscovery;
 }
 
 function validThread(value: unknown): value is LiveGmailThread {
@@ -271,6 +315,53 @@ export function createEmailApi(client: CrmClient, fetcher: typeof fetch = global
       return parseClientHistory(payload, clientId);
     },
 
+    /**
+     * Known clients with recent Gmail activity for one artist.
+     *
+     * This is what lets a client the studio already knows appear in the Inbox
+     * the first time they email, before the CRM has ever written to them - the
+     * case stored `email_messages` cannot answer, because there is no row.
+     *
+     * The gateway resolves every address to a CRM client server-side and
+     * returns only the ones it can name, so an unknown sender is not something
+     * this screen has to remember to filter: it never arrives.
+     */
+    async listGmailInboxClients(artistId: string): Promise<GmailInboxDiscovery> {
+      if (!/^[0-9a-f-]{36}$/i.test(artistId)) throw new Error('gmail_live_invalid_artist');
+      const sessionResult = await client.auth.getSession();
+      if (sessionResult.error) throw new Error('gmail_live_authentication_required');
+      const accessToken = sessionResult.data?.session?.access_token;
+      if (typeof accessToken !== 'string' || accessToken.length < 16) {
+        throw new Error('gmail_live_authentication_required');
+      }
+
+      const url = new URL(`/v1/operator/artists/${encodeURIComponent(artistId)}/gmail/inbox`, GMAIL_OPERATOR_ORIGIN);
+      const response = await fetcher(url, {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${accessToken}`,
+        },
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+      });
+
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        if (response.ok) throw new Error('gmail_live_invalid_response');
+      }
+      if (!response.ok) {
+        const code = payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>).error
+          : null;
+        throw new Error(typeof code === 'string' ? code : 'gmail_live_unavailable');
+      }
+      return parseInboxDiscovery(payload, artistId);
+    },
+
     /** Release a draft towards the existing send pipeline. */
     async approveEmailDraft(id: string): Promise<void> {
       const result = await client.rpc('approve_email_draft', { p_email_message_id: id });
@@ -283,4 +374,6 @@ export function createEmailApi(client: CrmClient, fetcher: typeof fetch = global
 
 export type EmailApi = ReturnType<typeof createEmailApi>;
 
-export const __testing = Object.freeze({ GMAIL_OPERATOR_ORIGIN, parseLiveHistory, parseClientHistory });
+export const __testing = Object.freeze({
+  GMAIL_OPERATOR_ORIGIN, parseLiveHistory, parseClientHistory, parseInboxDiscovery,
+});

@@ -553,6 +553,9 @@ insert into expected_function_acl values
   -- service_ function: the browser reaches it through the Gmail Worker, which
   -- re-derives the artist from the caller's own enquiries first.
   ('public.service_resolve_gmail_client_target(uuid,uuid)', false, false, true),
+  -- Known-client Gmail discovery (0123), backend-only like the rest.
+  ('public.service_resolve_gmail_mailbox(uuid)', false, false, true),
+  ('public.service_match_gmail_clients(uuid,text[])', false, false, true),
   ('public.service_resolve_gmail_outbox_target(uuid,text)', false, false, true),
   ('public.service_set_gmail_integration(uuid,text,text,text[])', false, false, true),
   ('public.service_disable_gmail_integration(uuid,text,text)', false, false, true),

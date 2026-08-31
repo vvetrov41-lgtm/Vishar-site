@@ -333,6 +333,87 @@ async function searchThreads(accessToken, { mailboxEmail, clientEmail, threadLim
   return threads;
 }
 
+/**
+ * Recent correspondents in the artist's mailbox, for known-client discovery.
+ *
+ * Deliberately narrower than `searchThreads` in every direction that matters.
+ * It asks Gmail for METADATA ONLY - From, To, Subject, Date - so no message
+ * body is fetched, let alone returned. And it returns no provider identifier
+ * of any kind: not a message id, not a thread id. Discovery's whole job is to
+ * answer "is this somebody we know?", and an id would be a way to reach the
+ * message rather than part of that answer.
+ *
+ * The counterpart is whichever address is not the mailbox. Anything the
+ * mailbox is not a party to is skipped rather than guessed at.
+ */
+async function listRecentCorrespondents(accessToken, {
+  mailboxEmail,
+  messageLimit = 40,
+  newerThanDays = 30,
+  fetchImpl = fetch,
+} = {}) {
+  const mailbox = safeEmail(mailboxEmail);
+  if (!mailbox) throw new Error('gmail_mailbox_email_invalid');
+  const limit = Math.max(1, Math.min(Number(messageLimit) || 40, 60));
+  const days = Math.max(1, Math.min(Number(newerThanDays) || 30, 90));
+  const q = `newer_than:${days}d -in:chats -in:spam -in:trash`;
+  const listing = await gmailFetch(
+    `/gmail/v1/users/me/messages?maxResults=${limit}&q=${encodeURIComponent(q)}`,
+    accessToken,
+    { fetchImpl },
+  );
+  const ids = (Array.isArray(listing.messages) ? listing.messages : [])
+    .map((message) => safeProviderId(message?.id))
+    .filter(Boolean)
+    .slice(0, limit);
+
+  const seen = [];
+  for (const id of ids) {
+    let message;
+    try {
+      message = await gmailFetch(
+        `/gmail/v1/users/me/messages/${encodeURIComponent(id)}`
+        + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date',
+        accessToken,
+        { fetchImpl },
+      );
+    } catch {
+      continue;
+    }
+    const headers = headerMap(message?.payload?.headers);
+    const fromEmails = extractEmails(headers.get('from'));
+    const toEmails = extractEmails(headers.get('to'));
+
+    let counterpart = null;
+    let direction = null;
+    if (!fromEmails.has(mailbox)) {
+      for (const email of fromEmails) { counterpart = email; break; }
+      direction = 'inbound';
+    } else {
+      for (const email of toEmails) {
+        if (email !== mailbox) { counterpart = email; break; }
+      }
+      direction = 'outbound';
+    }
+    if (!counterpart || counterpart === mailbox) continue;
+
+    const timestamp = Number.isFinite(Number(message.internalDate))
+      ? new Date(Number(message.internalDate)).toISOString()
+      : (() => {
+          const parsed = Date.parse(headers.get('date') || '');
+          return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+        })();
+
+    seen.push({
+      email: counterpart,
+      subject: safeHeader(headers.get('subject')) || '(no subject)',
+      timestamp,
+      direction,
+    });
+  }
+  return seen;
+}
+
 function deterministicRfc822MessageId(emailMessageId) {
   if (typeof emailMessageId !== 'string' || !/^[0-9a-f-]{36}$/i.test(emailMessageId)) throw new Error('email_message_id_invalid');
   return `<vishar-email-${emailMessageId.toLowerCase()}@vishartattoo.com>`;
@@ -405,6 +486,7 @@ export {
   refreshAccessToken,
   getProfile,
   searchThreads,
+  listRecentCorrespondents,
   getThread,
   sendMessage,
 };
