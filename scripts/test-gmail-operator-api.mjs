@@ -28,6 +28,30 @@ await test('operator routes are limited to the dedicated CRM prefix', () => {
   assert.equal(operator.CRM_ORIGIN, 'https://crm.vishartattoo.com');
 });
 
+await test('CRM-safe messages omit provider identifiers and raw Gmail metadata', () => {
+  const safe = operator.publicMessage({
+    provider_message_id: 'provider-secret-id',
+    _rfc822_message_id: '<provider@example.test>',
+    from: 'client@example.test',
+    to: 'studio@example.test',
+    subject: 'Tattoo enquiry',
+    timestamp: '2026-08-31T10:00:00.000Z',
+    body: 'Hello',
+    direction: 'inbound',
+  });
+  assert.deepEqual(safe, {
+    from: 'client@example.test',
+    to: 'studio@example.test',
+    subject: 'Tattoo enquiry',
+    timestamp: '2026-08-31T10:00:00.000Z',
+    body: 'Hello',
+    direction: 'inbound',
+    untrusted_content: true,
+  });
+  assert.equal('provider_message_id' in safe, false);
+  assert.equal('_rfc822_message_id' in safe, false);
+});
+
 await test('non-CRM browser origin is rejected before auth or provider access', async () => {
   let calls = 0;
   const response = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${path}`, {
