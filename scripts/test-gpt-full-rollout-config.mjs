@@ -45,4 +45,20 @@ assert.doesNotMatch(workflow, /update\s+crm_private\.gpt_action_clients/i,
   'deployment workflow must not directly mutate GPT bindings');
 assert.doesNotMatch(workflow, /service_role|SUPABASE_SECRET_KEY|sb_secret_/i);
 
-console.log('GPT full management rollout config tests passed: exact RC31 gate, 0053->0056 migration boundary, capabilities remain default-off.');
+const communicationsWorkflow = readFileSync(
+  new URL('../.github/workflows/gpt-production-communications-domain-rollout.yml', import.meta.url),
+  'utf8',
+);
+const rollbackPrepare = communicationsWorkflow.indexOf('Prepare and validate rollback config before mutation');
+const productionDeploy = communicationsWorkflow.indexOf('Deploy existing GPT Worker on the third custom domain');
+
+assert.ok(rollbackPrepare >= 0, 'communications rollout must prepare rollback before mutation');
+assert.ok(productionDeploy > rollbackPrepare, 'rollback config validation must run before the production deploy step');
+assert.match(communicationsWorkflow, /rollback_config="\$GITHUB_WORKSPACE\/\.wrangler\.gpt-rollback\.toml"/);
+assert.match(communicationsWorkflow, /path\.resolve\(path\.dirname\(configPath\), match\[1\]\)/);
+assert.match(communicationsWorkflow, /if \(!fs\.existsSync\(entrypoint\)\) throw new Error/);
+assert.match(communicationsWorkflow, /npx wrangler deploy --config "\$rollback_config"/);
+assert.doesNotMatch(communicationsWorkflow, /\$RUNNER_TEMP\/wrangler\.gpt-rollback\.toml/,
+  'rollback config must stay beside the production config so relative Wrangler paths remain resolvable');
+
+console.log('GPT rollout config tests passed: full-management gates remain closed and Communications rollback config is path-safe before mutation.');
