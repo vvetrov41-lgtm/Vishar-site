@@ -139,7 +139,7 @@ export const OPERATOR_PARITY = Object.freeze([
   available("availability.list", "Scheduling", "Sessions", "view_sessions", "read", "listAvailability", ["public.gpt_list_availability_blocks"]),
   available("availability.create", "Scheduling", "Sessions", "manage_sessions", "write", "createAvailability", ["public.gpt_create_availability_block"]),
   available("availability.update", "Scheduling", "Sessions", "manage_sessions", "write", "updateAvailability", ["public.gpt_update_availability_block"]),
-  available("availability.cancel", "Scheduling", "Sessions", "manage_sessions", "write", ["public.gpt_cancel_availability_block"]),
+  available("availability.cancel", "Scheduling", "Sessions", "manage_sessions", "write", "cancelAvailability", ["public.gpt_cancel_availability_block"]),
 
   // Project Finance
   available("finance.project.get", "Project Finance", "Finance", "view_finance", "read", "getProjectFinance", ["public.gpt_get_project_finance"]),
@@ -250,7 +250,7 @@ export const OPERATOR_PARITY = Object.freeze([
   uiOnly("whatsapp.existing_account.system_user_token", "Integrations", "Integrations", "manage_integrations", "permission", "provider_handoff", "Meta System User token generation and credential entry must remain human-operated: the token may be pasted only into the authenticated CRM HTTPS form and must never be copied through GPT/chat or persisted in Postgres/browser storage."),
   uiOnly("instagram.meta_consent", "Integrations", "Integrations", "manage_integrations", "permission", "provider_handoff", "Meta authorization and consent must be completed by the human in provider UI."),
   uiOnly("calendar.google_consent", "Integrations", "Integrations", "manage_integrations", "permission", "provider_handoff", "Google Calendar OAuth consent must be completed by the human in provider UI."),
-  uiOnly("monzo.oauth_consent", "Integrations", "Integrations", "manage_integrations", "money", "provider_handoff", "Monzo OAuth and any app approval must be completed by the human in provider UI."),
+  uiOnly("monzo.oauth_consent", "Integrations", "Integrations", "manage_integrations", "permission", "provider_handoff", "Monzo OAuth and any app approval must be completed by the human in provider UI."),
   uiOnly("telegram.account_confirm", "Integrations", "Integrations", "manage_integrations", "permission", "provider_handoff", "Telegram requires the human to open the bot/group and confirm the target account or group."),
   uiOnly("gpt.oauth.consent", "Integrations", "Integrations", "manage_integrations", "permission", "provider_handoff", "GPT OAuth consent is an explicit CRM authorization decision made by the signed-in human."),
 
