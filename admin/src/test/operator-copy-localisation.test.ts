@@ -39,6 +39,7 @@ function normalise(value: string): string {
 
 function isAllowedStaticLiteral(value: string): boolean {
   const text = normalise(value);
+  if (/^(?:·\s*)?v$/i.test(text)) return true;
   return text.length === 0 || !/[A-Za-z]/.test(text) || TECHNICAL_OR_BRAND_LITERALS.has(text);
 }
 
