@@ -28,6 +28,9 @@ const PRODUCTION_ONBOARDING_ARTISTS = new Map([
   ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
   ['a2222222-2222-4222-8222-222222222222', 'kristina'],
 ]);
+const EXISTING_ACCOUNT_ARTISTS = new Map([
+  ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
+]);
 
 export type WhatsAppCrmEnvironment = 'production' | 'staging';
 
@@ -123,6 +126,39 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
     return result.data;
   }
 
+  async function crmAccessToken(): Promise<string> {
+    const session = await client.auth.getSession();
+    const accessToken = session.data?.session?.access_token;
+    if (!accessToken) {
+      throw new ApiError(apiMessage('Your CRM session expired. Sign in again before connecting WhatsApp.'));
+    }
+    return accessToken;
+  }
+
+  async function provisioningRequest(
+    endpoint: string,
+    accessToken: string,
+    body: Record<string, unknown>,
+    expectedIntegrationKey: string,
+  ): Promise<WhatsAppProvisioningResult> {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!response.ok) {
+      const diagnostic = safeProvisioningDiagnostic(payload, response.status);
+      throw new ApiError(`WhatsApp provisioning failed: ${diagnostic}.`);
+    }
+    return assertProvisioningResponse(payload, expectedIntegrationKey);
+  }
+
   return {
     async listWhatsAppIntegrations(): Promise<WhatsAppIntegrationMetadata[]> {
       const result = await client
@@ -142,6 +178,32 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       return configure(artist, supabaseUrl, enabled);
     },
 
+    async provisionExistingProductionWhatsApp(
+      artist: WhatsAppArtist,
+      supabaseUrl: string,
+      metaAccessToken: string,
+    ): Promise<WhatsAppProvisioningResult> {
+      if (whatsappCrmEnvironment(supabaseUrl) !== 'production') {
+        throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
+      }
+      const approvedSlug = EXISTING_ACCOUNT_ARTISTS.get(artist.id);
+      if (!approvedSlug || artist.slug !== approvedSlug) {
+        throw new ApiError(apiMessage('Production WhatsApp onboarding is unavailable for this artist.'));
+      }
+      const token = metaAccessToken.trim();
+      if (token.length < 40 || token.length > 4096 || /\s/.test(token)) {
+        throw new ApiError('Meta access token is not valid.');
+      }
+      const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, approvedSlug);
+      const accessToken = await crmAccessToken();
+      return provisioningRequest(
+        '/api/whatsapp/existing-account/provision',
+        accessToken,
+        { artist_id: artist.id, access_token: token },
+        expectedIntegrationKey,
+      );
+    },
+
     async provisionProductionWhatsApp(
       artist: WhatsAppArtist,
       supabaseUrl: string,
@@ -159,40 +221,20 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       }
 
       const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, approvedSlug);
-      const session = await client.auth.getSession();
-      const accessToken = session.data?.session?.access_token;
-      if (!accessToken) {
-        throw new ApiError(apiMessage('Your CRM session expired. Sign in again before connecting WhatsApp.'));
-      }
-
-      const response = await fetch('/api/whatsapp/embedded-signup/provision', {
-        method: 'POST',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
+      const accessToken = await crmAccessToken();
+      return provisioningRequest(
+        '/api/whatsapp/embedded-signup/provision',
+        accessToken,
+        {
           artist_id: artist.id,
           code: signup.authorizationCode,
           session: signup.wabaId ? {
             waba_id: signup.wabaId,
             phone_number_id: signup.phoneNumberId,
           } : null,
-        }),
-      });
-
-      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
-      if (!response.ok) {
-        // Keep Meta's numeric Graph diagnostics visible to operators. They are
-        // safe identifiers (not tokens or credentials) and distinguish a spent
-        // authorization code from a permission/configuration failure without
-        // requiring production log access from the browser.
-        const diagnostic = safeProvisioningDiagnostic(payload, response.status);
-        throw new ApiError(`WhatsApp provisioning failed: ${diagnostic}.`);
-      }
-      return assertProvisioningResponse(payload, expectedIntegrationKey);
+        },
+        expectedIntegrationKey,
+      );
     },
   };
 }
