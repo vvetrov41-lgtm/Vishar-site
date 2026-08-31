@@ -32,6 +32,7 @@ import { groupEmailThreads } from '../lib/email-threads';
 import {
   conversationItem,
   emailItem,
+  isActionableConversation,
   isWaiting,
   mergeInbox,
   type InboxChannel,
@@ -48,8 +49,6 @@ const COPY = {
     email: 'Email',
     everyone: 'Everyone',
     needsReply: 'Needs reply',
-    unmatched: 'Unmatched',
-    linked: 'Linked clients',
     loading: 'Loading conversations…',
     empty: 'No conversations yet',
     emptyHint: 'Messages appear here as soon as a connected channel receives one.',
@@ -63,7 +62,6 @@ const COPY = {
     draftWaiting: 'Draft to approve',
     sendFailed: 'Send failed',
     youRepliedLast: 'You replied last',
-    notLinked: 'Not linked',
     archived: 'Archived',
     noPreview: 'No message yet',
     noSubject: 'No subject',
@@ -78,8 +76,6 @@ const COPY = {
     email: 'Почта',
     everyone: 'Все',
     needsReply: 'Ждут ответа',
-    unmatched: 'Без клиента',
-    linked: 'С клиентом',
     loading: 'Загружаем диалоги…',
     empty: 'Диалогов пока нет',
     emptyHint: 'Сообщения появятся здесь, как только подключённый канал что-то получит.',
@@ -93,7 +89,6 @@ const COPY = {
     draftWaiting: 'Письмо на утверждение',
     sendFailed: 'Письмо не отправлено',
     youRepliedLast: 'Вы ответили последним',
-    notLinked: 'Без клиента',
     archived: 'В архиве',
     noPreview: 'Сообщений пока нет',
     noSubject: 'Без темы',
@@ -107,13 +102,15 @@ type ChannelFilter = '' | InboxChannel;
 /**
  * "Who needs a reply?" is the question the operator actually opens this screen
  * with, so it is a view of its own rather than something to work out from the
- * unread badges. The other two views are about the record rather than the
- * person, and stay available behind it.
+ * unread badges.
  *
- * Link state is a messaging idea, so choosing it also narrows the list to
- * messaging channels rather than silently dropping every email row.
+ * There is deliberately no view for unknown senders. This screen is the
+ * studio's work queue, and a message from somebody the CRM cannot name is not
+ * work - not as a row, not as a tab, not as a filter that hints there is a
+ * backlog behind it. The rows are still stored and still readable by the
+ * backend; they are simply not part of this surface.
  */
-type ViewFilter = '' | 'needs_reply' | CommunicationLinkState;
+type ViewFilter = '' | 'needs_reply';
 
 interface InboxData {
   conversations: ConversationSummary[];
@@ -132,10 +129,14 @@ export function InboxPage() {
 
   // Needs-reply is decided from the newest message's direction, which the
   // projection already carries, so it is applied here rather than asked of the
-  // server. Link state is a server filter because the database indexes it.
-  const linkState: CommunicationLinkState | undefined = view === 'unmatched' || view === 'linked'
-    ? view
-    : undefined;
+  // server.
+  //
+  // Linked is asked of the SERVER, always, and is not a filter the operator can
+  // turn off. Two reasons beyond the product rule: the database indexes link
+  // state (0069), so it is the cheaper read; and a page size of 50 partly spent
+  // on strangers would push real conversations off the end of the list before
+  // any browser-side filter could see them.
+  const linkState: CommunicationLinkState = 'linked';
 
   const { data, loading, error, reload } = useAsync<InboxData>(
     async () => {
@@ -150,15 +151,13 @@ export function InboxPage() {
       // this screen; email is additive, so its failure is a notice.
       let emails: EmailMessage[] = [];
       let emailFailed = false;
-      if (!linkState) {
-        try {
-          emails = await api.listEmailMessages({
-            artistId: selectedArtistId ?? undefined,
-            limit: 200,
-          });
-        } catch {
-          emailFailed = true;
-        }
+      try {
+        emails = await api.listEmailMessages({
+          artistId: selectedArtistId ?? undefined,
+          limit: 200,
+        });
+      } catch {
+        emailFailed = true;
       }
 
       const threads = groupEmailThreads(emails);
@@ -196,10 +195,15 @@ export function InboxPage() {
   // Artist scope is a usability filter here, exactly as it is on every other
   // list. The database has already limited the rows to artists this operator
   // can reach.
+  // The same boundary the server was asked for, re-applied to whatever came
+  // back. Not belt-and-braces for its own sake: email rows are assembled here
+  // rather than by that RPC, so without this an unlinked email row would reach
+  // the working queue through a door the server filter does not cover.
   const items = useMemo(
     () => (data?.items ?? []).filter(
       (item) => (!selectedArtistId || item.artist_id === selectedArtistId)
         && (channel === '' || item.channel === channel)
+        && isActionableConversation(item)
         && (view !== 'needs_reply' || isWaiting(item)),
     ),
     [data, selectedArtistId, channel, view],
@@ -239,8 +243,6 @@ export function InboxPage() {
           {([
             ['', copy.everyone],
             ['needs_reply', copy.needsReply],
-            ['unmatched', copy.unmatched],
-            ['linked', copy.linked],
           ] as [ViewFilter, string][]).map(([value, label]) => (
             <button
               key={value || 'everyone'}
@@ -316,9 +318,6 @@ export function InboxPage() {
                       <span className="badge">{copy.youRepliedLast}</span>
                     ) : null}
                     {item.unread ? <span className="badge">{copy.needsAttention}</span> : null}
-                    {conversation?.link_state === 'unmatched' ? (
-                      <span className="badge">{copy.notLinked}</span>
-                    ) : null}
                     {conversation?.state === 'archived' ? (
                       <span className="badge">{copy.archived}</span>
                     ) : null}

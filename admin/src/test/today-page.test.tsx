@@ -8,7 +8,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { App } from '../App';
-import { CLIENT_ID, CONVERSATION_ID, PROJECT_ID, SESSION_ID, SESSION, renderWithSession } from './fixtures';
+import {
+  CLIENT_ID,
+  CONVERSATION_ID,
+  PROJECT_ID,
+  SESSION_ID,
+  SESSION,
+  UNANSWERED_CONVERSATION_ID,
+  renderWithSession,
+} from './fixtures';
 
 // The morning of the fixture booking, so "today" is the same day on every run.
 const NOW = new Date('2026-09-01T08:00:00Z');
@@ -40,7 +48,24 @@ describe('today workspace', () => {
       .closest('section') as HTMLElement;
 
     const reply = within(needsYou).getByText('Waiting for your reply').closest('a') as HTMLElement;
-    expect(reply).toHaveAttribute('href', `#/inbox/${CONVERSATION_ID}`);
+    expect(reply).toHaveAttribute('href', `#/inbox/${UNANSWERED_CONVERSATION_ID}`);
+  });
+
+  it('does not put an unknown sender on the triage list', async () => {
+    // The unmatched fixture conversation is inbound, unread and the newest
+    // thing in the studio, so before the conversation boundary it was the top
+    // row of Today - a job nobody actually owed.
+    renderWithSession(<App />, { role: 'owner', path: '/' });
+
+    const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
+      .closest('section') as HTMLElement;
+
+    expect(within(needsYou).queryByRole('link', { name: /Unknown sender/ })).not.toBeInTheDocument();
+    expect(within(needsYou).getAllByText('Waiting for your reply')).toHaveLength(1);
+    expect(
+      within(needsYou).queryByRole('link', { name: new RegExp(CONVERSATION_ID) }),
+    ).not.toBeInTheDocument();
+    expect(needsYou.querySelector(`a[href="#/inbox/${CONVERSATION_ID}"]`)).toBeNull();
   });
 
   it('surfaces an unconfirmed booking, an outstanding deposit and an overdue follow-up', async () => {

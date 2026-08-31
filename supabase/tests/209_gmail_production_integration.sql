@@ -16,6 +16,13 @@ select has_function('public', 'gpt_authorize_gmail_enquiry', array['uuid'],
   'GPT has a bounded enquiry authorization RPC');
 select has_function('public', 'gpt_create_gmail_reply_draft', array['uuid','uuid','text'],
   'GPT has a bounded Gmail reply-draft RPC');
+select has_function('public', 'service_resolve_gmail_client_target', array['uuid','uuid'],
+  'client-scoped Gmail target resolution exists');
+select ok(
+  not has_function_privilege('authenticated', 'public.service_resolve_gmail_client_target(uuid,uuid)', 'EXECUTE'),
+  'client-scoped Gmail target resolution is not reachable from a browser session'
+);
+
 select has_function('public', 'service_resolve_gmail_target', array['uuid','uuid','uuid'],
   'backend can resolve the authoritative Gmail CRM target');
 select has_function('public', 'service_set_gmail_integration', array['uuid','text','text','text[]'],
@@ -205,6 +212,44 @@ select throws_ok(
   'Kristina artist scope cannot resolve Vladimir CRM/Gmail thread context'
 );
 
+-- ---------------------------------------------------------------------------
+-- Client-scoped discovery (0122)
+--
+-- Reading a client's correspondence must not require naming an enquiry, because
+-- Gmail matches on the client's address and asking once per enquiry would bind
+-- one conversation to several. It must still prove the artist actually knows
+-- the client.
+-- ---------------------------------------------------------------------------
+
+select is(
+  (select client_email from public.service_resolve_gmail_client_target(
+    'a1111111-1111-4111-8111-111111111111',
+    'e0911111-1111-4111-8111-111111111111'
+  )),
+  'gmail-client@example.test',
+  'a client with an enquiry for this artist resolves without naming the enquiry'
+);
+
+select throws_ok(
+  $$select * from public.service_resolve_gmail_client_target(
+      'a2222222-2222-4222-8222-222222222222',
+      'e0911111-1111-4111-8111-111111111111'
+    )$$,
+  '22023',
+  'Gmail CRM target is unavailable',
+  'an artist with no enquiry for this client cannot read their mailbox'
+);
+
+select throws_ok(
+  $$select * from public.service_resolve_gmail_client_target(
+      'a1111111-1111-4111-8111-111111111111',
+      null
+    )$$,
+  '22023',
+  'Gmail CRM target is unavailable',
+  'a missing client is refused rather than resolving the whole mailbox'
+);
+
 select lives_ok(
   $$select public.service_disable_gmail_integration(
       'a1111111-1111-4111-8111-111111111111',
@@ -223,6 +268,16 @@ select throws_ok(
   '22023',
   'artist Gmail integration is unavailable',
   'disabled Gmail integration fails closed'
+);
+
+select throws_ok(
+  $$select * from public.service_resolve_gmail_client_target(
+      'a1111111-1111-4111-8111-111111111111',
+      'e0911111-1111-4111-8111-111111111111'
+    )$$,
+  '22023',
+  'artist Gmail integration is unavailable',
+  'the client-scoped read fails closed on a disabled integration too'
 );
 
 select * from finish();

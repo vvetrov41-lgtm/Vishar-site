@@ -187,7 +187,9 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
                 <option value="">{t('common.unassigned')}</option>
                 {colleagues.map((colleague) => (
                   <option key={colleague.id} value={colleague.id}>
-                    {colleague.display_name ?? colleague.id}
+                    {/* Never the id: a raw UUID in a person picker is
+                        unreadable and tells the operator nothing. */}
+                    {colleague.display_name ?? t('common.unnamedColleague')}
                   </option>
                 ))}
               </select>

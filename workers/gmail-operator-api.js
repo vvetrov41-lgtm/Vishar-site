@@ -87,6 +87,39 @@ async function authorizeOperator(db, token, enquiryId) {
   return auth;
 }
 
+/**
+ * The same proof as `authorizeOperator`, for a read that names a client and no
+ * enquiry.
+ *
+ * The artist is derived from the caller's own RLS view of that client's
+ * enquiries, then checked against the capability registry - so the browser
+ * supplies an opaque client id and nothing else. A client related to two
+ * artists the operator may manage is refused rather than guessed: picking one
+ * would silently choose whose mailbox to open.
+ */
+async function authorizeOperatorForClient(db, token, clientId) {
+  const artistIds = await db.userClientArtists(clientId, token);
+  const capabilities = await db.userRpc('list_capabilities', {}, token);
+  if (!Array.isArray(capabilities)) throw new Error('gmail_operator_scope_invalid');
+  const permitted = artistIds.filter((artistId) => capabilities.some(
+    (row) => row?.artist_id === artistId && row?.capability === REQUIRED_OPERATOR_CAPABILITY,
+  ));
+  if (permitted.length === 0) throw new Error('gmail_operator_scope_invalid');
+  if (permitted.length > 1) throw new Error('gmail_client_scope_ambiguous');
+  return { artist_id: permitted[0], client_id: clientId };
+}
+
+async function resolveClientTarget(db, auth) {
+  const target = firstRow(await db.backendRpc('service_resolve_gmail_client_target', {
+    p_artist_id: auth.artist_id,
+    p_client_id: auth.client_id,
+  }));
+  if (!target || target.artist_id !== auth.artist_id || target.client_id !== auth.client_id) {
+    throw new Error('gmail_target_scope_invalid');
+  }
+  return target;
+}
+
 async function resolveTarget(db, auth) {
   const target = firstRow(await db.backendRpc('service_resolve_gmail_target', {
     p_artist_id: auth.artist_id,
@@ -151,6 +184,7 @@ function errorResponse(request, error) {
     || reason === 'gmail_target_scope_invalid'
     || reason === 'gmail_token_binding_mismatch'
     || reason === 'gmail_thread_outside_client_scope'
+    || reason === 'gmail_client_scope_ambiguous'
     || reason.includes('scope')
   ) {
     return json(request, 403, { error: 'artist_scope_denied' });
@@ -183,6 +217,60 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
   }
   if (!configured(env)) return json(request, 404, { error: 'not_found' });
   if (await enforceRateLimit(request, env)) return json(request, 429, { error: 'rate_limited' });
+
+  const clientHistory = /^\/v1\/operator\/clients\/([0-9a-f-]{36})\/gmail\/history\/?$/i.exec(url.pathname);
+  if (clientHistory) {
+    if (request.method !== 'GET') return methodNotAllowed(request, 'GET, OPTIONS');
+    const token = bearer(request);
+    if (!token) return json(request, 401, { error: 'authentication_required' });
+    const clientId = uuid(clientHistory[1]);
+    if (!clientId) return json(request, 400, { error: 'invalid_client_id' });
+    for (const key of url.searchParams.keys()) {
+      if (!['thread_limit', 'message_limit'].includes(key)) return json(request, 400, { error: 'unexpected_field', field: key });
+    }
+    const threadLimit = Number(url.searchParams.get('thread_limit') || 4);
+    const messageLimit = Number(url.searchParams.get('message_limit') || 20);
+    if (!Number.isInteger(threadLimit) || threadLimit < 1 || threadLimit > 8
+      || !Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 30) {
+      return json(request, 400, { error: 'invalid_limit' });
+    }
+
+    try {
+      const db = createGmailSupabase(env, fetchImpl);
+      const auth = await authorizeOperatorForClient(db, token, clientId);
+      const target = await resolveClientTarget(db, auth);
+      const accessToken = await accessForTarget(env, db, target, fetchImpl);
+
+      // Gmail is searched by the client's address, which is the only thing it
+      // understands, and exactly once. No thread context is written.
+      //
+      // That omission is the point of this route. Contexts are unique on
+      // (artist, enquiry, provider thread), so creating them from a read that
+      // has no enquiry would mean either inventing one or writing the same
+      // Gmail conversation under several - which is how a later reply ends up
+      // bound to the wrong enquiry. Discovery stays read-only; replies keep
+      // using the enquiry route, which has a real enquiry to bind to.
+      const found = await searchThreads(accessToken, {
+        mailboxEmail: target.mailbox_email,
+        clientEmail: target.client_email,
+        threadLimit,
+        messageLimit,
+        fetchImpl,
+      });
+      return json(request, 200, {
+        client_id: clientId,
+        threads: found.map((item) => ({
+          subject: item.messages.at(-1)?.subject || '(no subject)',
+          message_count: item.messages.length,
+          messages: item.messages.map(publicMessage),
+          untrusted_content: true,
+        })),
+        untrusted_content: true,
+      });
+    } catch (error) {
+      return errorResponse(request, error);
+    }
+  }
 
   const history = /^\/v1\/operator\/enquiries\/([0-9a-f-]{36})\/gmail\/history\/?$/i.exec(url.pathname);
   const thread = /^\/v1\/operator\/enquiries\/([0-9a-f-]{36})\/gmail\/threads\/([0-9a-f-]{36})\/?$/i.exec(url.pathname);
@@ -269,6 +357,7 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
 }
 
 export const __testing = Object.freeze({
+  authorizeOperatorForClient,
   CRM_ORIGIN,
   GMAIL_PUBLIC_HOST,
   REQUIRED_OPERATOR_CAPABILITY,

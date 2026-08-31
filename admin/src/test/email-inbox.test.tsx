@@ -51,7 +51,7 @@ describe('email in the inbox list', () => {
 
     // The messaging conversation and the email thread are both present, each
     // labelled with the channel it actually came from.
-    expect(await screen.findByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(await screen.findByText('Can we move Friday?')).toBeInTheDocument();
     expect(screen.getByText('Your deposit for the raven sleeve')).toBeInTheDocument();
     expect(screen.getAllByText('Email').length).toBeGreaterThan(0);
     expect(screen.getByText('Draft to approve')).toBeInTheDocument();
@@ -63,15 +63,32 @@ describe('email in the inbox list', () => {
     expect(screen.getAllByText('Fixture Client').length).toBeGreaterThan(0);
   });
 
-  it('still shows an address the CRM has never seen', async () => {
-    // An unlinked sender degrades to the address rather than vanishing from the
-    // queue: the work is real whether or not a client card exists.
+  it('keeps an address the CRM has never seen out of the working queue', async () => {
+    // The same boundary as messaging, applied to the other family. An email
+    // with neither a client nor an enquiry has not reached a CRM record, so it
+    // is not a job the operator is behind on.
+    //
+    // The CRM writes its own drafts against a client or an enquiry, so this
+    // costs no real outbound work; what it excludes is mail that arrived
+    // without context.
     renderWithSession(<App />, {
       role: 'owner',
       path: '/inbox',
-      emailMessages: [email({ client_id: null, enquiry_id: null, to_email: 'stranger@example.com' })],
+      emailMessages: [
+        email(),
+        email({
+          id: FAILED_ID,
+          client_id: null,
+          enquiry_id: null,
+          project_id: null,
+          to_email: 'stranger@example.com',
+          subject: 'Unrecognised correspondence',
+        }),
+      ],
     });
-    expect(await screen.findByText('stranger@example.com')).toBeInTheDocument();
+    await screen.findByText('Your deposit for the raven sleeve');
+    expect(screen.queryByText('stranger@example.com')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unrecognised correspondence')).not.toBeInTheDocument();
   });
 
   it('never labels an email as a reply the client is waiting on', async () => {
@@ -112,7 +129,7 @@ describe('email in the inbox list', () => {
 
     await waitFor(() => expect(screen.queryByText('Thanks, see you then')).not.toBeInTheDocument());
     // The unanswered Instagram thread and the unapproved draft, together.
-    expect(screen.getByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(screen.getByText('Can we move Friday?')).toBeInTheDocument();
     expect(screen.getByText('Your deposit for the raven sleeve')).toBeInTheDocument();
     // A sent email is finished work and drops out.
     expect(screen.queryByText('Your appointment is confirmed')).not.toBeInTheDocument();
@@ -120,10 +137,10 @@ describe('email in the inbox list', () => {
 
   it('filters to email alone without losing the messaging channels from the tabs', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/inbox', emailMessages: [email()] });
-    await screen.findByText('Do you do cover ups?');
+    await screen.findByText('Can we move Friday?');
 
     fireEvent.click(screen.getByRole('tab', { name: 'Email' }));
-    await waitFor(() => expect(screen.queryByText('Do you do cover ups?')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Can we move Friday?')).not.toBeInTheDocument());
     expect(screen.getByText('Your deposit for the raven sleeve')).toBeInTheDocument();
   });
 
@@ -136,7 +153,7 @@ describe('email in the inbox list', () => {
       failTable: 'email_messages',
     });
 
-    expect(await screen.findByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(await screen.findByText('Can we move Friday?')).toBeInTheDocument();
     expect(screen.getByText('Email conversations could not be loaded.')).toBeInTheDocument();
   });
 
@@ -147,7 +164,7 @@ describe('email in the inbox list', () => {
       accessibleArtistIds: [VLADIMIR_ARTIST_ID, KRISTINA_ARTIST_ID],
       emailMessages: [email({ artist_id: KRISTINA_ARTIST_ID, to_email: 'kristina-client@example.com', client_id: null, enquiry_id: null })],
     });
-    await screen.findByText('Do you do cover ups?');
+    await screen.findByText('Can we move Friday?');
 
     const scope = await screen.findByRole('combobox', { name: 'Artist' });
     fireEvent.change(scope, { target: { value: VLADIMIR_ARTIST_ID } });
@@ -292,6 +309,105 @@ describe('an email conversation', () => {
       expect(screen.getByText('CRM delivery history')).toBeInTheDocument();
       expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
       expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reads the mailbox once, by client, for a thread that names no enquiry', async () => {
+    // This is the shape every stored email in production actually has: a
+    // deposit receipt written against the client, with no enquiry on it. Those
+    // threads used to show no mailbox history at all, which is why Gmail
+    // correspondence appeared to exist nowhere in the CRM.
+    //
+    // It is read by CLIENT, exactly once. Gmail matches on the client's
+    // address, so asking about each of a client's enquiries in turn would
+    // return the same conversation repeatedly - and the enquiry route records
+    // thread context keyed by (artist, enquiry, provider thread), so each pass
+    // would bind the same Gmail thread to a different enquiry.
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      calls.push(url.pathname);
+      return Response.json({
+        client_id: CLIENT_ID,
+        threads: [{
+          subject: 'Raven sleeve',
+          message_count: 1,
+          messages: [{
+            from: 'diana@example.com',
+            to: 'studio@example.test',
+            subject: 'Raven sleeve',
+            timestamp: '2026-08-31T10:00:00.000Z',
+            body: 'Is Friday still free?',
+            direction: 'inbound',
+            untrusted_content: true,
+          }],
+          untrusted_content: true,
+        }],
+        untrusted_content: true,
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderWithSession(<App />, {
+        role: 'owner',
+        path: `/inbox/email/client-${CLIENT_ID}`,
+        emailMessages: [email({ enquiry_id: null })],
+      });
+
+      expect(await screen.findByText('Is Friday still free?')).toBeInTheDocument();
+      expect(calls).toEqual([`/v1/operator/clients/${CLIENT_ID}/gmail/history`]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('does not ask the enquiry route once per enquiry when a client has several', async () => {
+    // The duplication hazard, stated as a test. Three enquiries for one client,
+    // and the CRM still makes exactly one mailbox request - which is not the
+    // enquiry route at all, so there is no enquiry for a thread context to be
+    // bound to and nothing that could bind the same conversation twice.
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      calls.push(url.pathname);
+      return Response.json({
+        client_id: CLIENT_ID,
+        threads: [{
+          subject: 'Raven sleeve',
+          message_count: 1,
+          messages: [{
+            from: 'diana@example.com',
+            to: 'studio@example.test',
+            subject: 'Raven sleeve',
+            timestamp: '2026-08-31T10:00:00.000Z',
+            body: 'Only once, please',
+            direction: 'inbound',
+            untrusted_content: true,
+          }],
+          untrusted_content: true,
+        }],
+        untrusted_content: true,
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderWithSession(<App />, {
+        role: 'owner',
+        path: `/inbox/email/client-${CLIENT_ID}`,
+        emailMessages: [email({ enquiry_id: null })],
+        extraEnquiries: [
+          { id: 'ee000000-0000-4000-8000-000000000001' },
+          { id: 'ee000000-0000-4000-8000-000000000002' },
+        ],
+      });
+
+      expect(await screen.findByText('Only once, please')).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(calls.some((path) => path.includes('/enquiries/'))).toBe(false);
+      // One conversation, rendered once.
+      expect(screen.getAllByText('Only once, please')).toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();
     }

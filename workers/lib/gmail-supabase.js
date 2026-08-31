@@ -2,6 +2,7 @@ import { createBackendResponseObserver, readSafeSupabaseError } from './supabase
 
 const BACKEND_RPCS = new Set([
   'service_resolve_gmail_target',
+  'service_resolve_gmail_client_target',
   'service_resolve_gmail_outbox_target',
   'service_set_gmail_integration',
   'service_disable_gmail_integration',
@@ -95,6 +96,51 @@ async function readUserEnquiry(origin, enquiryId, headers, fetchImpl) {
   return { enquiry_id: row.id, artist_id: row.artist_id, client_id: row.client_id };
 }
 
+/**
+ * The artists a client is genuinely related to, as the CALLER's row level
+ * security sees it.
+ *
+ * Clients are canonical people rather than artist-owned rows (0059), so the
+ * artist has to come from somewhere authoritative. It comes from here: the
+ * enquiries this operator can actually read for this client. The browser sends
+ * only a client id; every routing fact is read back out of the database.
+ *
+ * Returns artist ids, deduplicated. Deliberately not a single id - deciding
+ * what to do when a client belongs to two artists is the caller's business,
+ * and quietly picking one here would be exactly the kind of invisible routing
+ * choice this indirection exists to prevent.
+ */
+async function readUserClientArtists(origin, clientId, headers, fetchImpl) {
+  if (typeof clientId !== 'string' || !/^[0-9a-f-]{36}$/i.test(clientId)) throw new Error('gmail_client_id_invalid');
+  const url = new URL('/rest/v1/enquiries', origin);
+  url.searchParams.set('select', 'artist_id');
+  url.searchParams.set('client_id', `eq.${clientId}`);
+  url.searchParams.set('limit', '50');
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: { ...headers, accept: 'application/json' },
+    redirect: 'manual',
+  });
+  if (!response.ok) {
+    const error = new Error(response.status === 401
+      ? 'gmail_operator_unauthorized'
+      : response.status === 403
+        ? 'gmail_rpc_forbidden'
+        : 'gmail_rpc_failed');
+    error.status = response.status;
+    throw error;
+  }
+  const rows = await safeJsonResponse(response);
+  if (!Array.isArray(rows)) throw new Error('gmail_operator_scope_invalid');
+  const artistIds = [];
+  for (const row of rows) {
+    if (!row || typeof row.artist_id !== 'string') throw new Error('gmail_operator_scope_invalid');
+    if (!artistIds.includes(row.artist_id)) artistIds.push(row.artist_id);
+  }
+  if (artistIds.length === 0) throw new Error('gmail_operator_scope_invalid');
+  return artistIds;
+}
+
 export function createGmailSupabase(env, fetchImpl = fetch) {
   const origin = projectOrigin(env);
   const secret = String(env?.SUPABASE_SECRET_KEY || '').trim();
@@ -113,6 +159,15 @@ export function createGmailSupabase(env, fetchImpl = fetch) {
       if (!validBearer(bearer)) throw new Error('gmail_oauth_token_invalid');
       return callRpc(origin, name, args, { apikey: publishable, authorization: `Bearer ${bearer}` }, fetchImpl);
     },
+    async userClientArtists(clientId, bearer) {
+      if (!validBearer(bearer)) throw new Error('gmail_operator_token_invalid');
+      return readUserClientArtists(
+        origin,
+        clientId,
+        { apikey: publishable, authorization: `Bearer ${bearer}` },
+        fetchImpl,
+      );
+    },
     async userEnquiry(enquiryId, bearer) {
       if (!validBearer(bearer)) throw new Error('gmail_operator_token_invalid');
       return readUserEnquiry(
@@ -125,4 +180,6 @@ export function createGmailSupabase(env, fetchImpl = fetch) {
   };
 }
 
-export const __testing = Object.freeze({ BACKEND_RPCS, USER_RPCS, projectOrigin, validBearer, readUserEnquiry });
+export const __testing = Object.freeze({
+  BACKEND_RPCS, USER_RPCS, projectOrigin, validBearer, readUserEnquiry, readUserClientArtists,
+});

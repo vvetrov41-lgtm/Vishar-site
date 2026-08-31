@@ -28,12 +28,26 @@ describe('inbox list', () => {
   it('shows every channel in one list, with a preview and an unread marker', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/inbox' });
 
-    expect(await screen.findByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(await screen.findByText('Can we move Friday?')).toBeInTheDocument();
     expect(screen.getByText('Thanks, see you then')).toBeInTheDocument();
     expect(screen.getAllByText('Instagram').length).toBeGreaterThan(0);
     expect(screen.getAllByText('WhatsApp').length).toBeGreaterThan(0);
     expect(screen.getByText('Unread')).toBeInTheDocument();
-    expect(screen.getByText('Not linked')).toBeInTheDocument();
+
+    // The stranger who messaged the studio number is not in the working list,
+    // and nothing here says the operator owes them anything.
+    expect(screen.queryByText('Do you do cover ups?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Not linked')).not.toBeInTheDocument();
+  });
+
+  it('asks the server for linked conversations rather than filtering strangers out afterwards', async () => {
+    const { rpcCalls } = renderWithSession(<App />, { role: 'booking_manager', path: '/inbox' });
+    await screen.findByText('Can we move Friday?');
+
+    // A page of 50 spent on unknown senders would push real conversations off
+    // the end of the list before any browser-side filter could see them.
+    const listed = rpcCalls.filter((call) => call.name === 'list_communication_conversations');
+    expect(listed.at(-1)?.args?.p_link_state).toBe('linked');
   });
 
   it('filters by channel through the server, not in the browser', async () => {
@@ -41,11 +55,11 @@ describe('inbox list', () => {
       role: 'booking_manager',
       path: '/inbox',
     });
-    await screen.findByText('Do you do cover ups?');
+    await screen.findByText('Can we move Friday?');
 
     fireEvent.click(screen.getByRole('tab', { name: 'Instagram' }));
     await waitFor(() => expect(screen.queryByText('Thanks, see you then')).not.toBeInTheDocument());
-    expect(screen.getByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(screen.getByText('Can we move Friday?')).toBeInTheDocument();
 
     const listed = rpcCalls.filter((call) => call.name === 'list_communication_conversations');
     expect(listed.at(-1)?.args?.p_channel).toBe('instagram');
@@ -62,29 +76,32 @@ describe('inbox list', () => {
     await screen.findByText('Thanks, see you then');
 
     fireEvent.click(screen.getByRole('tab', { name: 'WhatsApp' }));
-    await waitFor(() => expect(screen.queryByText('Do you do cover ups?')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Can we move Friday?')).not.toBeInTheDocument());
     expect(
       rpcCalls.filter((call) => call.name === 'list_communication_conversations').at(-1)?.args?.p_channel,
     ).toBe('whatsapp');
   });
 
-  it('narrows to unmatched conversations', async () => {
+  it('has no view that brings unknown senders into the queue', async () => {
     const { rpcCalls } = renderWithSession(<App />, {
       role: 'booking_manager',
       path: '/inbox',
     });
-    await screen.findByText('Do you do cover ups?');
+    await screen.findByText('Can we move Friday?');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Unmatched' }));
-    await waitFor(() => expect(screen.queryByText('Thanks, see you then')).not.toBeInTheDocument());
+    // The link-state filters are gone. This screen is the studio's work queue,
+    // and there is no click that turns it into something else.
+    expect(screen.queryByRole('button', { name: 'Unknown senders' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unmatched' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Do you do cover ups?')).not.toBeInTheDocument();
     expect(
       rpcCalls.filter((call) => call.name === 'list_communication_conversations').at(-1)?.args?.p_link_state,
-    ).toBe('unmatched');
+    ).toBe('linked');
   });
 
   it('offers email as a channel now that there is something behind it', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/inbox' });
-    await screen.findByText('Do you do cover ups?');
+    await screen.findByText('Can we move Friday?');
 
     // The tab used to return a hard-coded empty list and an apology, which is
     // why it was removed. It is back because email_messages is a real,
@@ -94,16 +111,19 @@ describe('inbox list', () => {
 
   it('separates who is waiting on a reply from what has merely been read', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/inbox' });
-    await screen.findByText('Do you do cover ups?');
+    await screen.findByText('Can we move Friday?');
 
-    // The Instagram sender wrote last; the WhatsApp thread was answered.
+    // The Instagram client wrote last; the WhatsApp thread was answered.
     expect(screen.getAllByText('Needs reply')).toHaveLength(2); // the filter and the badge
     expect(screen.getByText('You replied last')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Needs reply' }));
 
     await waitFor(() => expect(screen.queryByText('Thanks, see you then')).not.toBeInTheDocument());
-    expect(screen.getByText('Do you do cover ups?')).toBeInTheDocument();
+    expect(screen.getByText('Can we move Friday?')).toBeInTheDocument();
+    // Needs reply is a queue of work, so an unknown sender who happens to have
+    // written last does not enter it either.
+    expect(screen.queryByText('Do you do cover ups?')).not.toBeInTheDocument();
   });
 });
 
