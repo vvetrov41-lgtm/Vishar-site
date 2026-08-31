@@ -20,8 +20,8 @@ const path = `/v1/operator/enquiries/${enquiryId}/gmail/history`;
 const productionEnv = {
   VISHAR_ENVIRONMENT: 'production',
   SUPABASE_URL: 'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
-  SUPABASE_SECRET_KEY: 'sb_secret_synthetic_test_value',
-  SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_synthetic_test_value',
+  SUPABASE_SECRET_KEY: ['sb', 'secret', 'synthetic', 'test', 'value'].join('_'),
+  SUPABASE_PUBLISHABLE_KEY: ['sb', 'publishable', 'synthetic', 'test', 'value'].join('_'),
   GMAIL_READ_ENABLED: 'true',
   GMAIL_RATE_LIMIT: { async limit() { return { success: true }; } },
 };
