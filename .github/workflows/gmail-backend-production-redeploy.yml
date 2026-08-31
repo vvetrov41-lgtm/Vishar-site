@@ -80,6 +80,7 @@ jobs:
           set -euo pipefail
           npm ci --ignore-scripts
           node scripts/test-gmail-production.mjs
+          node scripts/test-gmail-operator-api.mjs
           node scripts/test-gmail-rollout-phases.mjs
           node scripts/test-supabase-secret-401-retry.mjs
           npm run scan:secrets
@@ -253,12 +254,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          operator_path='/v1/operator/enquiries/96320000-0000-4000-8000-000000000001/gmail/history'
+          operator_headers="$RUNNER_TEMP/gmail-operator-headers.txt"
+          operator_body="$RUNNER_TEMP/gmail-operator-body.json"
+          preflight_headers="$RUNNER_TEMP/gmail-operator-preflight.txt"
           for attempt in $(seq 1 20); do
             privacy="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/privacy" || true)"
             protected="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$OPERATIONS_HOST/v1/enquiries/11111111-1111-4111-8111-111111111111/gmail/history" || true)"
             start_headers="$(curl -sS -D - -o /dev/null --max-time 10 "https://$GMAIL_HOST/oauth/google/start/kristina" || true)"
             start_status="$(printf '%s' "$start_headers" | awk 'toupper($1) ~ /^HTTP\// {status=$2} END {print status}')"
-            if [ "$privacy" = 200 ] && [ "$protected" = 401 ] && [ "$start_status" = 302 ] && grep -qi '^location: https://accounts.google.com/' <<<"$start_headers"; then
+
+            preflight_status="$(curl -sS -D "$preflight_headers" -o /dev/null -w '%{http_code}' --max-time 10 \
+              -X OPTIONS \
+              -H 'Origin: https://crm.vishartattoo.com' \
+              -H 'Access-Control-Request-Method: GET' \
+              -H 'Access-Control-Request-Headers: authorization' \
+              "https://$GMAIL_HOST$operator_path" || true)"
+            operator_status="$(curl -sS -D "$operator_headers" -o "$operator_body" -w '%{http_code}' --max-time 10 \
+              -H 'Origin: https://crm.vishartattoo.com' \
+              "https://$GMAIL_HOST$operator_path" || true)"
+
+            if [ "$privacy" = 200 ] \
+              && [ "$protected" = 401 ] \
+              && [ "$start_status" = 302 ] \
+              && grep -qi '^location: https://accounts.google.com/' <<<"$start_headers" \
+              && [ "$preflight_status" = 204 ] \
+              && grep -qi '^access-control-allow-origin: https://crm\.vishartattoo\.com' "$preflight_headers" \
+              && grep -qi '^access-control-allow-methods: GET, OPTIONS' "$preflight_headers" \
+              && [ "$operator_status" = 401 ] \
+              && grep -qi '^access-control-allow-origin: https://crm\.vishartattoo\.com' "$operator_headers" \
+              && jq -e '.error == "authentication_required"' "$operator_body" >/dev/null 2>&1; then
               exit 0
             fi
             sleep 6
