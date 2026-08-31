@@ -1,0 +1,39 @@
+name: Dispatch rc564 scheduling database release
+
+on:
+  push:
+    branches:
+      - agent/dispatch-rc564-scheduling-db
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch:
+    if: github.actor == github.repository_owner && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 7eba72c81dbd601bfbf955cb3d8f0ea664a4a118
+      TARGET_BRANCH: release/private-crm-rc564-scheduling-db
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+    steps:
+      - name: Recheck immutable source before dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$CANONICAL_BRANCH" --jq .object.sha)"
+          release_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)"
+          [ "$canonical_sha" = "$TARGET_SHA" ]
+          [ "$release_sha" = "$TARGET_SHA" ]
+      - name: Dispatch existing fail-closed database workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run deploy-private-production-database.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$TARGET_BRANCH" \
+            -f approved_sha="$TARGET_SHA" \
+            -f deploy=true \
+            -f approval_phrase=DEPLOY_PRIVATE_CRM_DATABASE
