@@ -91,6 +91,11 @@ select public.record_communication_inbound_message(
   '5560000000002', 'ig_mid_GPTINBOX000002', '2026-08-20 09:10:00+00',
   'text', 'Kristina side, out of scope'
 );
+select public.record_communication_inbound_message(
+  'a1111111-1111-4111-8111-111111111111', 'instagram', 'vladimir-gpt-inbox',
+  '5560000000003', 'ig_mid_GPTINBOX000003', '2026-08-20 06:55:00+00',
+  'text', 'Escaped-content sender'
+);
 
 update public.communication_conversations
 set external_display_label = 'sleeve.enquiry'
@@ -111,6 +116,23 @@ select
 from public.communication_conversations c
 cross join generate_series(1, 20) as n
 where c.external_contact_id = '447700940001';
+
+-- Six maximum-length control-character messages on the Instagram side. Stored
+-- bytes and JSON bytes agree for 'x' and diverge six-fold here, which is the
+-- shape a raw-byte budget cannot see.
+insert into public.communication_messages
+  (conversation_id, artist_id, channel, direction, origin, status, message_type, body, created_at)
+select
+  c.id, c.artist_id, c.channel,
+  'inbound'::public.communication_direction,
+  'contact'::public.communication_origin,
+  'received'::public.communication_status,
+  'text',
+  repeat(chr(1), 4096),
+  '2026-08-20 07:00:00+00'::timestamptz + (n * interval '1 minute')
+from public.communication_conversations c
+cross join generate_series(1, 6) as n
+where c.external_contact_id = '5560000000003';
 
 insert into public.clients (id, full_name, email, phone) values
   ('f6911111-1111-4111-8111-111111111111', 'GPT Inbox Existing Client',
@@ -191,18 +213,18 @@ select is(
 
 select is(
   (select count(*)::int from public.gpt_list_communication_conversations(null, null, null, 50, null)),
-  2,
+  3,
   'only the active Artist conversations are listed'
 );
 select is(
   (select count(*)::int from public.gpt_list_communication_conversations('instagram', null, null, 50, null)),
-  1,
+  2,
   'the channel filter narrows the active Artist inbox'
 );
 select is(
   (select count(*)::int from public.gpt_list_communication_conversations(null, 'unmatched', null, 50, null)),
-  2,
-  'both new senders are still unmatched'
+  3,
+  'every new sender is still unmatched'
 );
 select throws_ok(
   $$select * from public.gpt_list_communication_conversations('telegram', null, null, 50, null)$$,
@@ -272,6 +294,36 @@ select ok(
      pg_temp.conversation_for('447700940001'), 30)
    where char_length(body) > 100),
   'bodies inside the budget are returned whole rather than truncated'
+);
+
+-- The gateway ceiling applies after JSON serialisation, and escaping is not a
+-- small constant: a C0 control character is one stored byte and six serialised
+-- ones. A budget measured in stored bytes would admit twelve of these bodies
+-- and emit roughly 295 KB against a 128 KiB cap, so the page must shrink on
+-- the escaped size rather than the stored size.
+select is(
+  (select count(*)::int from public.gpt_list_communication_messages(
+     pg_temp.conversation_for('5560000000003'), 30)),
+  3,
+  'a page of heavily escaped bodies is bounded by serialised bytes, not stored bytes'
+);
+select ok(
+  (select sum(octet_length(to_jsonb(body)::text))
+   from public.gpt_list_communication_messages(
+     pg_temp.conversation_for('5560000000003'), 30)) <= 50000 + 24578,
+  'the serialised bodies stay inside the budget plus one over-budget newest message'
+);
+select ok(
+  (select sum(octet_length(to_jsonb(body)::text))
+   from public.gpt_list_communication_messages(
+     pg_temp.conversation_for('5560000000003'), 30)) < 131072,
+  'the escaped worst case stays under the action gateway response ceiling'
+);
+select ok(
+  (select count(*)::int from public.gpt_list_communication_messages(
+     pg_temp.conversation_for('5560000000003'), 30))
+  < (select floor(50000.0 / octet_length(repeat(chr(1), 4096)))::int),
+  'the escaped page is strictly smaller than a stored-byte budget would have allowed'
 );
 
 -- ---------------------------------------------------------------------------

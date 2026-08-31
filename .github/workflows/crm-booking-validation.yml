@@ -118,6 +118,7 @@ jobs:
         run: |
           node scripts/test-gpt-operator-parity.mjs
           node scripts/test-gpt-communications-domain-rollout.mjs
+          node scripts/test-gpt-worker-rollout.mjs
 
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
