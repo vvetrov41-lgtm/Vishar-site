@@ -34,6 +34,16 @@ insert into public.clients (id, full_name, email) values
   ('fb311111-1111-4111-8111-111111111111', 'Scheduling Client', null),
   ('fb322222-2222-4222-8222-222222222222', 'Second Scheduling Client', null);
 
+insert into public.projects (id, client_id, artist_id, title, description) values
+  ('fb411111-1111-4111-8111-111111111111',
+   'fb311111-1111-4111-8111-111111111111',
+   'a1111111-1111-4111-8111-111111111111',
+   'Scheduling project one', 'Synthetic project for tattoo conflict policy'),
+  ('fb422222-2222-4222-8222-222222222222',
+   'fb322222-2222-4222-8222-222222222222',
+   'a1111111-1111-4111-8111-111111111111',
+   'Scheduling project two', 'Synthetic project for tattoo conflict policy');
+
 set local role authenticated;
 select pg_temp.as_owner();
 
@@ -73,7 +83,7 @@ select lives_ok(
       'tattoo_session',
       '2026-09-14 10:00:00+00'::timestamptz,
       '2026-09-14 17:00:00+00'::timestamptz,
-      'confirmed')$$,
+      'confirmed', null, 'fb411111-1111-4111-8111-111111111111', null)$$,
   'a seven-hour tattoo session books into a free day'
 );
 
@@ -84,7 +94,7 @@ select throws_ok(
       'tattoo_session',
       '2026-09-14 14:00:00+00'::timestamptz,
       '2026-09-14 18:00:00+00'::timestamptz,
-      'confirmed')$$,
+      'confirmed', null, 'fb422222-2222-4222-8222-222222222222', null)$$,
   '22023',
   'another tattoo session already occupies this time',
   'a second tattoo session overlapping the first is refused by the database'
@@ -97,7 +107,7 @@ select lives_ok(
       'tattoo_session',
       '2026-09-14 17:00:00+00'::timestamptz,
       '2026-09-14 19:00:00+00'::timestamptz,
-      'confirmed')$$,
+      'confirmed', null, 'fb422222-2222-4222-8222-222222222222', null)$$,
   'a tattoo session starting exactly when the previous one ends is allowed, because the range is half-open'
 );
 
@@ -108,7 +118,7 @@ select throws_ok(
       'touch_up',
       '2026-09-14 11:00:00+00'::timestamptz,
       '2026-09-14 12:00:00+00'::timestamptz,
-      'confirmed')$$,
+      'confirmed', null, 'fb422222-2222-4222-8222-222222222222', null)$$,
   '22023',
   'another tattoo session already occupies this time',
   'a touch-up is tattoo work and cannot overlap a tattoo session'
@@ -178,7 +188,7 @@ select throws_ok(
       'tattoo_session',
       '2026-09-20 10:00:00+00'::timestamptz,
       '2026-09-20 16:00:00+00'::timestamptz,
-      'confirmed')$$,
+      'confirmed', null, 'fb411111-1111-4111-8111-111111111111', null)$$,
   '22023',
   'artist availability blocks this time',
   'time off still blocks a tattoo session'

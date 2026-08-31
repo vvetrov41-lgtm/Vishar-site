@@ -567,6 +567,14 @@ insert into expected_function_acl values
   ('public.schedule_session(uuid,timestamptz,timestamptz,public.session_status,text)', false, true, false),
   ('public.set_session_status(uuid,public.session_status)', false, true, false),
   ('public.list_appointment_conflicts(uuid,timestamptz,timestamptz,uuid)', false, true, false),
+  -- Artist scheduling policy and preference surface (migration 0120).
+  -- Browser-callable only; each RPC re-establishes exact artist scope
+  -- and the writes require manage_sessions. No backend role needs them.
+  ('public.list_booking_conflicts(uuid,public.appointment_type,timestamptz,timestamptz,uuid)', false, true, false),
+  ('public.get_artist_scheduling_preferences(uuid)', false, true, false),
+  ('public.set_artist_scheduling_preferences(uuid,text,text,text[],text,text,boolean,integer)', false, true, false),
+  ('public.list_artist_schedule_overrides(uuid,date,date)', false, true, false),
+  ('public.set_artist_schedule_override(uuid,date,text,text,text)', false, true, false),
   ('public.schedule_appointment(uuid,uuid,public.appointment_type,timestamptz,timestamptz,public.session_status,uuid,uuid,text)', false, true, false),
   ('public.set_appointment_status(uuid,public.session_status)', false, true, false),
   ('public.reschedule_appointment(uuid,timestamptz,timestamptz)', false, true, false),
@@ -863,6 +871,7 @@ select ok(
        'email_messages', 'follow_ups', 'integration_outbox',
        'enquiry_status_transitions', 'system_settings', 'retention_holds',
        'artist_availability_blocks',
+       'artist_scheduling_preferences', 'artist_schedule_overrides',
        -- Platform layer, migrations 0074-0077.
        'capability_registry', 'workspaces', 'workspace_memberships',
        'workspace_integrations', 'integration_assignments',
