@@ -189,11 +189,44 @@ describe('booking a session by asking for one', () => {
     expect(screen.queryByRole('group', { name: 'Booking summary' })).not.toBeInTheDocument();
   });
 
-  it('states the hours it is searching, because the database holds none', async () => {
+  it('takes the working window from the artist instead of asking for it', async () => {
+    // The panel used to make the operator type 10:00-20:00 on every search,
+    // because the schema had no working hours. It has them now (0120), so the
+    // form asks for nothing and says which window it used.
     await openPanel();
-    expect(screen.getByText(/The CRM holds no studio opening hours/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Not before')).toHaveValue(10);
-    expect(screen.getByLabelText('Finished by')).toHaveValue(20);
+    expect(screen.queryByLabelText('Not before')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Finished by')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
+    await screen.findAllByRole('button', { name: /free here/ });
+    expect(screen.getByText(/Searching this artist’s hours: 09:00 to 18:00/)).toBeInTheDocument();
+  });
+
+  it('offers the studio\'s habitual starts first, and marks them', async () => {
+    await openPanel();
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
+
+    const slots = await screen.findAllByRole('button', { name: /free here/ });
+    // 09:00-16:00 and 11:00-18:00 are what this studio actually books.
+    expect(slots[0]).toHaveTextContent('usual start');
+    const labels = slots.map((slot) => slot.textContent ?? '');
+    expect(labels.some((label) => label.startsWith('09:00'))).toBe(true);
+    expect(labels.some((label) => label.startsWith('11:00'))).toBe(true);
+  });
+
+  it('never offers a tattoo start that would run past the artist finish time', async () => {
+    await openPanel();
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
+
+    const slots = await screen.findAllByRole('button', { name: /free here/ });
+    for (const slot of slots) {
+      const hour = Number((slot.textContent ?? '').slice(0, 2));
+      // 18:00 finish minus seven hours means nothing may start after 11:00.
+      expect(hour).toBeLessThanOrEqual(11);
+    }
   });
 
   it('keeps manual entry for a time the client already named', async () => {
@@ -255,5 +288,30 @@ describe('where booking is reachable from', () => {
     await screen.findAllByRole('button', { name: /free here/ });
     expect(container.querySelector('table')).toBeNull();
     expect(container.querySelectorAll('button.booking-slot').length).toBeGreaterThan(0);
+  });
+});
+
+describe('shipping ahead of the migration', () => {
+  it('still books when the scheduling RPCs are not in the database yet', async () => {
+    // The CRM and the database ship through separate release paths, so a build
+    // can reach production before migration 0120 does. In that window the
+    // scheduling RPCs do not exist. Booking has to keep working on the same
+    // defaults the migration will install, not fail with "function does not
+    // exist" on every search.
+    const rendered = renderWithSession(<App />, {
+      role: 'owner',
+      path: `/clients/${CLIENT_ID}`,
+      failRpc: 'get_artist_scheduling_preferences',
+      failRpcError: { code: 'PGRST202', message: 'Could not find the function' },
+    });
+    const from = await screen.findByLabelText('Search from');
+    fireEvent.change(from, { target: { value: dayValue(1) } });
+
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
+
+    const slots = await screen.findAllByRole('button', { name: /free here/ });
+    expect(slots.length).toBeGreaterThan(0);
+    expect(rendered).toBeTruthy();
   });
 });

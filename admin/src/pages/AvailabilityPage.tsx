@@ -8,6 +8,7 @@ import type {
 } from '../lib/availability-api';
 import { useArtistScope } from '../lib/artist-scope';
 import { useLanguage } from '../lib/i18n';
+import { SchedulingPreferencesPanel } from '../components/SchedulingPreferencesPanel';
 import { can } from '../lib/permissions';
 import { useApi, useSession } from '../lib/session';
 
@@ -191,6 +192,21 @@ export function AvailabilityPage() {
 
   return (
     <div className="stack">
+      {/* Scheduling boundaries live beside time off because both answer the
+          same question - when this artist can be booked - and splitting them
+          across two screens is how they drift apart. */}
+      {selectedArtistId ? (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>{copy.preferencesTitle}</h2>
+              <p>{copy.preferencesSubtitle}</p>
+            </div>
+          </div>
+          <SchedulingPreferencesPanel artistId={selectedArtistId} canEdit={mayManage} />
+        </section>
+      ) : null}
+
       <section className="panel">
         <div className="panel-heading">
           <div>
@@ -515,6 +531,8 @@ function formatBlockRange(
 function pageCopy(language: 'en' | 'ru') {
   return language === 'ru'
     ? {
+        preferencesTitle: 'Часы работы мастера',
+        preferencesSubtitle: 'Границы, по которым подбирается время записи.',
         title: 'Доступность и выходные',
         subtitle: 'Заблокированное здесь время нельзя использовать для активных записей. База данных остаётся источником истины.',
         type: 'Причина', allDay: 'Весь день', firstDay: 'Первый день', lastDay: 'Последний день',
@@ -531,6 +549,8 @@ function pageCopy(language: 'en' | 'ru') {
         cancelConfirmAction: 'Убрать',
       }
     : {
+        preferencesTitle: 'When this artist works',
+        preferencesSubtitle: 'The boundaries Smart Booking searches within.',
         title: 'Availability and time off',
         subtitle: 'Time blocked here cannot be used for active appointments. The database remains authoritative.',
         type: 'Reason', allDay: 'All day', firstDay: 'First day', lastDay: 'Last day',

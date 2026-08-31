@@ -101,13 +101,15 @@ describe('appointment workflow', () => {
     const rpcCalls: { name: string; args: any }[] = [];
     renderWithSession(<App />, { role: 'booking_manager', path: `/projects/${PROJECT_ID}`, rpcCalls });
 
-    fireEvent.change(await screen.findByLabelText('Proposed start'), {
+    // Booked through the shared panel now, which is the only booking path.
+    fireEvent.click(await screen.findByRole('button', { name: 'Enter a time myself' }));
+    fireEvent.change(await screen.findByLabelText('Start'), {
       target: { value: '2026-09-10T11:00' },
     });
-    fireEvent.change(screen.getByLabelText('Proposed end'), {
+    fireEvent.change(screen.getByLabelText('End'), {
       target: { value: '2026-09-10T17:00' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /propose appointment/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Book this exact time' }));
 
     await waitFor(() => {
       const call = rpcCalls.find((entry) => entry.name === 'schedule_appointment');

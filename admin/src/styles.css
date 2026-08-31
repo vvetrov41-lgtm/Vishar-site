@@ -823,6 +823,10 @@ a.client-workspace-fact { min-height: var(--tap); }
   border-radius: 10px;
 }
 .booking-hours legend { padding: 0 6px; font-size: 0.82rem; color: var(--muted); }
+.booking-window-note { margin: 0; }
+.scheduling-settings .form-grid { gap: 12px; }
+.scheduling-starts { display: flex; flex-wrap: wrap; gap: 6px; }
+.scheduling-starts button { min-height: var(--tap); }
 .booking-hours .meta { margin: 8px 0 0; }
 .booking-days { display: flex; flex-direction: column; gap: 14px; }
 .booking-day > h4 {
