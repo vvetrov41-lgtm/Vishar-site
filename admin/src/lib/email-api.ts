@@ -374,7 +374,7 @@ export function createEmailApi(client: CrmClient, fetcher: typeof fetch = global
     async dismissFailedEmailMessage(id: string): Promise<void> {
       const result = await client.rpc('dismiss_failed_email_message', { p_email_message_id: id });
       if (result.error) {
-        throw new ApiError('Could not dismiss that failed email.', result.error);
+        throw new ApiError(friendlyMessage(result.error, 'change that status'), result.error);
       }
     },
   };
