@@ -184,6 +184,25 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${worker.active_deployment?.versions?.[0]?.version_id || 'unknown'}\n`);
           NODE
 
+      - name: Prepare and validate rollback config before mutation
+        if: steps.preflight.outputs.needs_deploy == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-rollback.toml"
+          cp wrangler.gpt-actions.production.toml "$rollback_config"
+          sed -i '/gpt-communications\.vishartattoo\.com/d' "$rollback_config"
+          ROLLBACK_CONFIG="$rollback_config" node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const configPath = process.env.ROLLBACK_CONFIG;
+          const config = fs.readFileSync(configPath, 'utf8');
+          const match = config.match(/^main\s*=\s*"([^"]+)"/m);
+          if (!match) throw new Error('Rollback config has no main entrypoint');
+          const entrypoint = path.resolve(path.dirname(configPath), match[1]);
+          if (!fs.existsSync(entrypoint)) throw new Error(`Rollback entrypoint does not resolve: ${entrypoint}`);
+          NODE
+
       - name: Deploy existing GPT Worker on the third custom domain
         if: steps.preflight.outputs.needs_deploy == 'true'
         shell: bash
@@ -263,9 +282,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp wrangler.gpt-actions.production.toml "$RUNNER_TEMP/wrangler.gpt-rollback.toml"
-          sed -i '/gpt-communications\.vishartattoo\.com/d' "$RUNNER_TEMP/wrangler.gpt-rollback.toml"
-          npx wrangler deploy --config "$RUNNER_TEMP/wrangler.gpt-rollback.toml" --name "$WORKER_NAME" --strict \
+          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-rollback.toml"
+          [ -f "$rollback_config" ]
+          npx wrangler deploy --config "$rollback_config" --name "$WORKER_NAME" --strict \
             --var SUPABASE_URL:"$SUPABASE_URL" \
             --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
             --var VISHAR_ENVIRONMENT:production \
@@ -291,6 +310,7 @@ jobs:
         if: always()
         shell: bash
         run: |
+          rm -f "$GITHUB_WORKSPACE/.wrangler.gpt-rollback.toml"
           {
             echo '### GPT production Communications-domain rollout'
             echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
