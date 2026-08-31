@@ -48,7 +48,7 @@ export function WhatsAppConnectionsPage() {
   const [metaMessage, setMetaMessage] = useState<string | null>(null);
   const [metaSdkReady, setMetaSdkReady] = useState(false);
   const [metaSdkError, setMetaSdkError] = useState<string | null>(null);
-  const [existingMetaToken, setExistingMetaToken] = useState('');
+  const [existingMetaTokens, setExistingMetaTokens] = useState<Record<string, string>>({});
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
   const canManageAnyArtist = profile?.role === 'owner'
     || (profile?.role === 'booking_manager' && memberships.some(
@@ -131,12 +131,13 @@ export function WhatsAppConnectionsPage() {
     setMetaBusyArtistId(artist.id);
     setActionError(null);
     setMetaMessage(null);
+    const existingMetaToken = existingMetaTokens[artist.id] ?? '';
     try {
       if (
         !api
         || !data
         || data.environment !== 'production'
-        || artist.slug !== 'vladimir'
+        || !['vladimir', 'kristina'].includes(artist.slug)
         || !canManageArtist(profile?.role, artist.id, memberships)
       ) {
         throw new Error(language === 'ru'
@@ -160,7 +161,7 @@ export function WhatsAppConnectionsPage() {
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : (language === 'ru' ? 'Не удалось подключить WhatsApp.' : 'Could not connect WhatsApp.'));
     } finally {
-      setExistingMetaToken('');
+      setExistingMetaTokens((current) => ({ ...current, [artist.id]: '' }));
       setMetaBusyArtistId(null);
     }
   }
@@ -268,7 +269,8 @@ export function WhatsAppConnectionsPage() {
             && canManageArtist(profile?.role, artist.id, memberships)
             && integration?.is_enabled === true
             && (artist.slug === 'vladimir' || artist.slug === 'kristina');
-          const existingAccountAvailable = productionOnboardingAvailable && artist.slug === 'vladimir';
+          const existingAccountAvailable = productionOnboardingAvailable;
+          const existingMetaToken = existingMetaTokens[artist.id] ?? '';
 
           return (
             <Section key={artist.id} title={artist.display_name}>
@@ -345,7 +347,10 @@ export function WhatsAppConnectionsPage() {
                     <input
                       type="password"
                       value={existingMetaToken}
-                      onChange={(event) => setExistingMetaToken(event.target.value)}
+                      onChange={(event) => setExistingMetaTokens((current) => ({
+                        ...current,
+                        [artist.id]: event.target.value,
+                      }))}
                       autoComplete="off"
                       spellCheck={false}
                       disabled={metaBusyArtistId !== null}

@@ -13,6 +13,7 @@ on:
       - .github/workflows/deploy-private-production-crm.yml
       - admin/public/_headers
       - admin/functions/api/whatsapp/embedded-signup/provision.js
+      - admin/functions/api/whatsapp/existing-account/provision.js
       - admin/src/lib/meta-whatsapp-embedded-signup.ts
       - admin/src/lib/whatsapp-connections-api.ts
       - admin/src/pages/WhatsAppConnectionsPage.tsx
@@ -20,6 +21,7 @@ on:
       - admin/src/test/whatsapp-connections.test.ts
       - scripts/check-private-crm-artifact.mjs
       - scripts/test-whatsapp-production-onboarding.mjs
+      - scripts/test-whatsapp-existing-account-provisioning.mjs
       - scripts/test-worker-fetch-redirect-mode.mjs
       - scripts/test-private-production-release-workflows.mjs
 
@@ -61,6 +63,9 @@ jobs:
 
       - name: Test production onboarding server boundary
         run: node scripts/test-whatsapp-production-onboarding.mjs
+
+      - name: Test existing-account provisioning boundary
+        run: node scripts/test-whatsapp-existing-account-provisioning.mjs
 
       - name: Verify no Worker source uses an unsupported fetch redirect mode
         run: node scripts/test-worker-fetch-redirect-mode.mjs

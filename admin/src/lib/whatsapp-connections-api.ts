@@ -30,6 +30,7 @@ const PRODUCTION_ONBOARDING_ARTISTS = new Map([
 ]);
 const EXISTING_ACCOUNT_ARTISTS = new Map([
   ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
+  ['a2222222-2222-4222-8222-222222222222', 'kristina'],
 ]);
 
 export type WhatsAppCrmEnvironment = 'production' | 'staging';
