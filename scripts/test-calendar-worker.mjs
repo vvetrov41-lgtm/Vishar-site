@@ -42,6 +42,7 @@ const env = {
   CALENDAR_TOKEN_ENCRYPTION_KEY: encryptionKey,
   VLADIMIR_ARTIST_ID: vladimirId,
   VLADIMIR_GOOGLE_EMAIL: 'vvetrov41@gmail.com',
+  VLADIMIR_GOOGLE_EVENT_VISIBILITY: 'public',
   KRISTINA_ARTIST_ID: kristinaId,
   KRISTINA_GOOGLE_EMAIL: 'tinaakaten@gmail.com',
   CRM_APPOINTMENTS_URL: 'https://vishar-crm-staging.pages.dev/#/appointments',
@@ -110,28 +111,51 @@ await test('stable Google event ids are deterministic and appointment-specific',
   assert.match(first, /^[0-9a-v]{5,1024}$/);
 });
 
-await test('event projection contains bounded client context and a hash-safe CRM link', async () => {
+await test('event projection contains bounded client context, public visibility and a hash-safe CRM link', async () => {
   const event = buildGoogleEvent(job(), {
     eventId: 'vishar0123456789abcdef',
     includeId: true,
     crmReturnUrl: env.CRM_APPOINTMENTS_URL,
+    visibility: 'public',
   });
   assert.equal(event.id, 'vishar0123456789abcdef');
   assert.match(event.summary, /Tattoo session · Synthetic Client/);
   assert.equal(event.start.timeZone, 'Europe/London');
   assert.equal(event.end.timeZone, 'Europe/London');
+  assert.equal(event.visibility, 'public');
   assert.match(event.description, /Appointment ID:/);
   assert.match(event.description, /\?appointment=.*#\/appointments/);
   assert.ok(!JSON.stringify(event).includes('notes'));
 });
 
-await test('artist route validation is exact and has no cross-artist fallback', async () => {
-  assert.equal(validateCalendarRoute(routeFor(), job(), env).calendarId, 'primary');
+await test('artist route validation is exact and keeps public visibility scoped to Vladimir', async () => {
+  const vladimir = validateCalendarRoute(routeFor(), job(), env);
+  assert.equal(vladimir.calendarId, 'primary');
+  assert.equal(vladimir.eventVisibility, 'public');
+
+  const kristina = validateCalendarRoute(
+    routeFor(kristinaId),
+    job({ artist_id: kristinaId }),
+    env,
+  );
+  assert.equal(kristina.calendarId, 'primary');
+  assert.equal(kristina.eventVisibility, null);
+
   const wrong = routeFor(kristinaId);
   wrong.outbox_id = 'outbox-1';
   await assert.rejects(
     async () => validateCalendarRoute(wrong, job(), env),
     (error) => error.code === 'provider_route_invalid',
+  );
+});
+
+await test('invalid artist visibility fails closed before a Google request', async () => {
+  await assert.rejects(
+    async () => validateCalendarRoute(routeFor(), job(), {
+      ...env,
+      VLADIMIR_GOOGLE_EVENT_VISIBILITY: 'world-readable',
+    }),
+    (error) => error.code === 'calendar_visibility_invalid',
   );
 });
 
@@ -219,10 +243,16 @@ await test('create retries reuse one deterministic event id instead of duplicati
     if (calls.length === 1) return Response.json({}, { status: 409 });
     return Response.json({ id: calls[0].body.id });
   };
-  const provider = createGoogleCalendarProvider({ accessToken: 'access', fetchImpl });
+  const provider = createGoogleCalendarProvider({
+    accessToken: 'access',
+    eventVisibility: 'public',
+    fetchImpl,
+  });
   const result = await provider.createEvent(job());
   assert.equal(calls[0].method, 'POST');
   assert.equal(calls[1].method, 'PATCH');
+  assert.equal(calls[0].body.visibility, 'public');
+  assert.equal(calls[1].body.visibility, 'public');
   assert.equal(result.providerEventId, calls[0].body.id);
   assert.match(calls[1].url, new RegExp(`${calls[0].body.id}\\?sendUpdates=none$`));
 });
@@ -314,6 +344,7 @@ await test('drain skips stale versions and creates only the current artist event
   assert.equal(result.obsolete, 1);
   assert.equal(result.succeeded, 1);
   assert.equal(googleCalls.length, 1);
+  assert.equal(JSON.parse(googleCalls[0].init.body).visibility, 'public');
   const acknowledgements = rpcCalls.filter((call) => call.name === 'record_calendar_outbox_result');
   assert.equal(acknowledgements.length, 2);
   assert.equal(acknowledgements[0].args.p_outbox_id, 'stale-job');
@@ -327,4 +358,4 @@ if (failures) {
   process.exit(1);
 }
 
-console.log(`Calendar Worker tests passed: ${passes} cases covering encrypted token custody, exact artist routing, deterministic idempotency, provider error classification, refresh, create/update/cancel and stale-job draining.`);
+console.log(`Calendar Worker tests passed: ${passes} cases covering encrypted token custody, exact artist routing, artist-scoped visibility, deterministic idempotency, provider error classification, refresh, create/update/cancel and stale-job draining.`);
