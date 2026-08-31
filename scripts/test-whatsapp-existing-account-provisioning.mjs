@@ -177,20 +177,21 @@ async function runProvisionScenario(overrides = {}) {
           connected_at: null,
         }]);
       }
-      if (url.pathname === '/rest/v1/artist_integrations' && method === 'PATCH') {
+      if (url.pathname === '/rest/v1/rpc/complete_vladimir_whatsapp_connection' && method === 'POST') {
         const body = JSON.parse(String(init.body || '{}'));
         const serialized = JSON.stringify(body);
         assert.equal(serialized.includes(syntheticToken), false);
         assert.equal(serialized.includes(appSecret), false);
-        assert.deepEqual(Object.keys(body), ['connected_at']);
+        assert.deepEqual(body, {});
+        const connectedAt = new Date().toISOString();
         state.supabaseMutations.push(body);
-        return Response.json([{
+        return Response.json({
           artist_id: VLADIMIR_ID,
           integration_key: 'vladimir-production',
           is_enabled: true,
-          connected_at: body.connected_at,
+          connected_at: connectedAt,
           configuration: {},
-        }]);
+        });
       }
     }
 

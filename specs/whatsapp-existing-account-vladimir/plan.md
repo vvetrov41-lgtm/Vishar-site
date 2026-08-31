@@ -8,7 +8,7 @@ A parallel Calendar-only workstream may exist and must not be mixed into this br
 
 ## Design
 
-Reuse the existing authenticated Pages Function at `admin/functions/api/whatsapp/existing-account/provision.js` and the existing same-origin CRM form. Do not add a second provisioning service or a new database migration.
+Reuse the existing authenticated Pages Function at `admin/functions/api/whatsapp/existing-account/provision.js` and the existing same-origin CRM form. Add one bounded migration because `artist_integrations` deliberately grants authenticated operators `SELECT` only, so direct `PATCH` cannot mark the verified route connected.
 
 ### Server boundary
 
@@ -21,7 +21,7 @@ Reuse the existing authenticated Pages Function at `admin/functions/api/whatsapp
 - Only then overwrite Vladimir's exact encrypted Worker secret in drain and webhook Workers.
 - Subscribe the fixed WABA to the fixed app.
 - Read back Meta target identity, subscription, and Cloudflare secret-name presence.
-- PATCH only `connected_at` in the existing CRM integration and verify the returned safe row.
+- Call the fixed `complete_vladimir_whatsapp_connection()` RPC only after every provider readback. The RPC accepts no artist, route, timestamp, token, or provider input; it checks `manage_integrations`, locks the exact enabled Vladimir route, updates only `connected_at`, and returns the safe row for readback.
 
 ### Client boundary
 
