@@ -171,6 +171,47 @@ describe('WhatsApp Connections safety', () => {
     }
   });
 
+  it('sends an existing-account token only to the same-origin Vladimir provisioning boundary', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const syntheticMetaToken = `synthetic-system-user-token-${'x'.repeat(64)}`;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      ok: true,
+      integration_key: 'vladimir-production',
+      waba_name: 'Existing Vladimir WABA',
+      display_phone_number: '+44 7000 000001',
+      verified_name: 'Vladimir',
+    }));
+
+    try {
+      await expect(api.provisionExistingProductionWhatsApp(
+        VLADIMIR,
+        'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+        syntheticMetaToken,
+      )).resolves.toMatchObject({
+        integration_key: 'vladimir-production',
+        verified_name: 'Vladimir',
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('/api/whatsapp/existing-account/provision');
+      expect(init?.method).toBe('POST');
+      expect(init?.credentials).toBe('same-origin');
+      expect(init?.headers).toMatchObject({
+        authorization: 'Bearer crm-owner-session-token-for-test',
+        'content-type': 'application/json',
+      });
+      const body = JSON.parse(String(init?.body));
+      expect(body).toEqual({ artist_id: VLADIMIR.id, access_token: syntheticMetaToken });
+      expect(body).not.toHaveProperty('waba_id');
+      expect(body).not.toHaveProperty('phone_number_id');
+      expect(body).not.toHaveProperty('integration_key');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('rejects an arbitrary production artist before opening a backend provisioning request', async () => {
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
@@ -208,12 +249,13 @@ describe('WhatsApp Connections safety', () => {
     );
   });
 
-  it('exposes only fixed metadata operations and no credential-bearing API surface', async () => {
+  it('exposes only fixed routing and bounded provisioning operations', async () => {
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
     expect(Object.keys(api).sort()).toEqual([
       'listWhatsAppIntegrations',
       'prepareWhatsAppIntegration',
+      'provisionExistingProductionWhatsApp',
       'provisionProductionWhatsApp',
       'setWhatsAppIntegrationEnabled',
     ].sort());

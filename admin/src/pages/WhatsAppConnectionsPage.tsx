@@ -48,6 +48,7 @@ export function WhatsAppConnectionsPage() {
   const [metaMessage, setMetaMessage] = useState<string | null>(null);
   const [metaSdkReady, setMetaSdkReady] = useState(false);
   const [metaSdkError, setMetaSdkError] = useState<string | null>(null);
+  const [existingMetaToken, setExistingMetaToken] = useState('');
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
   const canManageAnyArtist = profile?.role === 'owner'
     || (profile?.role === 'booking_manager' && memberships.some(
@@ -126,6 +127,44 @@ export function WhatsAppConnectionsPage() {
       });
   }
 
+  async function connectExistingMetaAccount(artist: Artist) {
+    setMetaBusyArtistId(artist.id);
+    setActionError(null);
+    setMetaMessage(null);
+    try {
+      if (
+        !api
+        || !data
+        || data.environment !== 'production'
+        || artist.slug !== 'vladimir'
+        || !canManageArtist(profile?.role, artist.id, memberships)
+      ) {
+        throw new Error(language === 'ru'
+          ? 'Прямое подключение существующего WhatsApp недоступно в этой CRM-сессии.'
+          : 'Existing WhatsApp connection is unavailable in this CRM session.');
+      }
+      const provisioned = await api.provisionExistingProductionWhatsApp(
+        artist,
+        supabaseUrl,
+        existingMetaToken,
+      );
+      const identity = [provisioned.verified_name, provisioned.display_phone_number]
+        .filter(Boolean)
+        .join(' · ');
+      setMetaMessage(
+        language === 'ru'
+          ? `WhatsApp ${artist.display_name} подключён${identity ? `: ${identity}` : ''}. Encrypted Worker bindings записаны.`
+          : `${artist.display_name} WhatsApp connected${identity ? `: ${identity}` : ''}. Encrypted Worker bindings were written.`,
+      );
+      reload();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : (language === 'ru' ? 'Не удалось подключить WhatsApp.' : 'Could not connect WhatsApp.'));
+    } finally {
+      setExistingMetaToken('');
+      setMetaBusyArtistId(null);
+    }
+  }
+
   async function startMetaOnboarding(artist: Artist) {
     setMetaBusyArtistId(artist.id);
     setActionError(null);
@@ -141,8 +180,6 @@ export function WhatsAppConnectionsPage() {
       }
       if (!metaSdkReady) throw new Error('Meta SDK is not ready yet.');
 
-      // This call must remain synchronous with the tap so iOS/WebKit permits
-      // the Meta window. The one-time code is exchanged only by the backend.
       const signup = await launchWhatsAppEmbeddedSignup();
       const provisioned = await api.provisionProductionWhatsApp(artist, supabaseUrl, signup);
       const identity = [provisioned.verified_name, provisioned.display_phone_number]
@@ -175,14 +212,12 @@ export function WhatsAppConnectionsPage() {
           <h2>WhatsApp</h2>
           <p className="page-subtitle">
             {language === 'ru'
-              ? 'Здесь хранится только безопасная маршрутизация CRM. Токены, app secret, WABA ID и phone-number ID здесь не вводятся и не показываются.'
-              : 'Only safe CRM routing metadata lives here. Access tokens, app secrets, WABA IDs and phone-number IDs are never entered or shown on this screen.'}
+              ? 'Здесь хранится только безопасная маршрутизация CRM. Постоянные токены после подключения уходят напрямую в encrypted Worker bindings и не сохраняются в Postgres.'
+              : 'Only safe CRM routing metadata lives here. Persistent tokens go directly to encrypted Worker bindings and are never stored in Postgres.'}
           </p>
         </div>
         <div className="actions">
-          <Link to="/integrations/calendar" className="badge">
-            {language === 'ru' ? 'Google Calendar' : 'Google Calendar'}
-          </Link>
+          <Link to="/integrations/calendar" className="badge">Google Calendar</Link>
         </div>
       </div>
 
@@ -211,7 +246,6 @@ export function WhatsAppConnectionsPage() {
       ) : null}
 
       {metaMessage ? <div className="notice" role="status">{metaMessage}</div> : null}
-
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 
       {data.artists.length === 0 ? (
@@ -234,6 +268,7 @@ export function WhatsAppConnectionsPage() {
             && canManageArtist(profile?.role, artist.id, memberships)
             && integration?.is_enabled === true
             && (artist.slug === 'vladimir' || artist.slug === 'kristina');
+          const existingAccountAvailable = productionOnboardingAvailable && artist.slug === 'vladimir';
 
           return (
             <Section key={artist.id} title={artist.display_name}>
@@ -287,10 +322,7 @@ export function WhatsAppConnectionsPage() {
                     disabled={busy || !api}
                     onClick={() => {
                       if (!api) return;
-                      void run(
-                        artist.id,
-                        () => api.setWhatsAppIntegrationEnabled(artist, supabaseUrl, !integration.is_enabled),
-                      );
+                      void run(artist.id, () => api.setWhatsAppIntegrationEnabled(artist, supabaseUrl, !integration.is_enabled));
                     }}
                   >
                     {integration.is_enabled
@@ -300,7 +332,44 @@ export function WhatsAppConnectionsPage() {
                 </div>
               )}
 
-              {productionOnboardingAvailable ? (
+              {existingAccountAvailable ? (
+                <form
+                  style={{ marginTop: 12 }}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (existingMetaToken.trim()) void connectExistingMetaAccount(artist);
+                  }}
+                >
+                  <label>
+                    <span>{language === 'ru' ? 'System-user access token Meta' : 'Meta system-user access token'}</span>
+                    <input
+                      type="password"
+                      value={existingMetaToken}
+                      onChange={(event) => setExistingMetaToken(event.target.value)}
+                      autoComplete="off"
+                      spellCheck={false}
+                      disabled={metaBusyArtistId !== null}
+                      placeholder={language === 'ru' ? 'Вставьте токен из Meta' : 'Paste the token from Meta'}
+                    />
+                  </label>
+                  <div className="actions" style={{ marginTop: 8 }}>
+                    <button
+                      type="submit"
+                      className="primary"
+                      disabled={metaBusyArtistId !== null || existingMetaToken.trim().length < 40}
+                    >
+                      {metaBusy
+                        ? (language === 'ru' ? 'Проверяю и подключаю…' : 'Verifying and connecting…')
+                        : (language === 'ru' ? 'Подключить существующий WhatsApp' : 'Connect existing WhatsApp')}
+                    </button>
+                  </div>
+                  <p className="notice" style={{ marginTop: 8 }}>
+                    {language === 'ru'
+                      ? 'Токен отправляется только на backend CRM по HTTPS, проверяется Meta и сразу записывается в encrypted Worker bindings. После попытки поле очищается.'
+                      : 'The token is sent only to the CRM backend over HTTPS, verified with Meta, and written directly to encrypted Worker bindings. The field is cleared after the attempt.'}
+                  </p>
+                </form>
+              ) : productionOnboardingAvailable ? (
                 <div className="actions" style={{ marginTop: 12 }}>
                   <button
                     type="button"
@@ -319,11 +388,13 @@ export function WhatsAppConnectionsPage() {
                 </div>
               ) : null}
 
-              <p className="notice" style={{ marginTop: 12 }}>
-                {language === 'ru'
-                  ? 'Подключение через Meta доступно пользователю с правом управления интеграциями этого мастера. Токены остаются в encrypted Worker bindings и не сохраняются в браузере или Postgres.'
-                  : 'Meta connection is available to a user who can manage this artist\'s integrations. Tokens remain in encrypted Worker bindings and are never stored in the browser or Postgres.'}
-              </p>
+              {!existingAccountAvailable ? (
+                <p className="notice" style={{ marginTop: 12 }}>
+                  {language === 'ru'
+                    ? 'Подключение через Meta доступно пользователю с правом управления интеграциями этого мастера. Токены остаются в encrypted Worker bindings и не сохраняются в браузере или Postgres.'
+                    : 'Meta connection is available to a user who can manage this artist\'s integrations. Tokens remain in encrypted Worker bindings and are never stored in the browser or Postgres.'}
+                </p>
+              ) : null}
             </Section>
           );
         })
