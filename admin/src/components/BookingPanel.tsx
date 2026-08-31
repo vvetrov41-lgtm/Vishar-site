@@ -51,13 +51,29 @@ const DURATION_MINUTES: Record<AppointmentType, number[]> = {
 
 const SEARCH_DAYS = 21;
 
+export interface BookingLinkOption {
+  id: string;
+  label: string;
+  /** Set when choosing this project also fixes the enquiry it came from. */
+  enquiryId?: string | null;
+}
+
 export interface BookingPanelProps {
   artistId: string | null;
   clientId: string;
   clientName: string;
+  /** Fixed by the calling screen. When absent, the panel offers a picker. */
   enquiryId?: string | null;
   projectId?: string | null;
-  /** Types the calling screen allows. Projects require a project-linked type. */
+  /**
+   * Projects this booking may be attached to. A tattoo session belongs to a
+   * project - that is where the estimate, the deposit and the other sessions
+   * live - so when the client has one, tattoo work must name it. A client with
+   * no project yet can still be booked, because refusing that would make a new
+   * client unbookable.
+   */
+  projectOptions?: BookingLinkOption[];
+  enquiryOptions?: BookingLinkOption[];
   onBooked: (appointmentId: string | null) => void;
 }
 
@@ -69,6 +85,8 @@ export function BookingPanel({
   clientName,
   enquiryId = null,
   projectId = null,
+  projectOptions,
+  enquiryOptions,
   onBooked,
 }: BookingPanelProps) {
   const api = useApi();
@@ -92,6 +110,8 @@ export function BookingPanel({
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [chosenProjectId, setChosenProjectId] = useState('');
+  const [chosenEnquiryId, setChosenEnquiryId] = useState('');
   const [manual, setManual] = useState(false);
   const [manualStart, setManualStart] = useState('');
   const [manualEnd, setManualEnd] = useState('');
@@ -101,6 +121,16 @@ export function BookingPanel({
   const alongside = (conflicts ?? []).filter((conflict) => !conflict.blocks);
 
   const durations = DURATION_MINUTES[appointmentType];
+  // A caller that fixed the link wins; otherwise whatever the operator chose.
+  const effectiveProjectId = projectId ?? (chosenProjectId || null);
+  const chosenProject = (projectOptions ?? []).find((option) => option.id === chosenProjectId);
+  const effectiveEnquiryId = enquiryId
+    ?? chosenProject?.enquiryId
+    ?? (chosenEnquiryId || null);
+  const wantsProject = appointmentFamily(appointmentType) === 'tattoo';
+  const projectMissing = wantsProject
+    && !effectiveProjectId
+    && (projectOptions?.length ?? 0) > 0;
 
   const grouped = useMemo(() => groupByDay(slots ?? []), [slots]);
 
@@ -216,6 +246,10 @@ export function BookingPanel({
       setError(copy.chooseArtist);
       return;
     }
+    if (projectMissing) {
+      setError(copy.projectRequired);
+      return;
+    }
     setBooking(true);
     setError(null);
     try {
@@ -225,8 +259,8 @@ export function BookingPanel({
         appointmentType,
         startAt,
         endAt,
-        enquiryId,
-        projectId,
+        enquiryId: effectiveEnquiryId,
+        projectId: effectiveProjectId,
       });
       const appointmentId = typeof result?.appointment_id === 'string' ? result.appointment_id : null;
       onBooked(appointmentId);
@@ -284,6 +318,42 @@ export function BookingPanel({
             />
           </label>
         </div>
+
+        {/* Only where the calling screen has not already fixed the link. A
+            booking opened from a project is already that project's. */}
+        {!projectId && (projectOptions?.length ?? 0) > 0 ? (
+          <label>
+            <span>{copy.project}{wantsProject ? '' : ` · ${copy.optional}`}</span>
+            <select
+              value={chosenProjectId}
+              onChange={(event) => { setChosenProjectId(event.target.value); setSlots(null); }}
+            >
+              <option value="">{copy.noProject}</option>
+              {(projectOptions ?? []).map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {!enquiryId && !chosenProject?.enquiryId && (enquiryOptions?.length ?? 0) > 0 ? (
+          <label>
+            <span>{copy.enquiry} · {copy.optional}</span>
+            <select
+              value={chosenEnquiryId}
+              onChange={(event) => setChosenEnquiryId(event.target.value)}
+            >
+              <option value="">{copy.noEnquiry}</option>
+              {(enquiryOptions ?? []).map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {projectMissing ? (
+          <p className="notice warn" role="status">{copy.projectRequired}</p>
+        ) : null}
 
         <div className="actions" aria-label={copy.durationShortcuts}>
           {durations.map((minutes) => (
@@ -577,6 +647,12 @@ const COPY = {
     windowNote: 'Searching this artist\u2019s hours: {from} to {to}.',
     overridesApplied: '{count} day(s) in range have their own hours.',
     preferredStart: 'usual start',
+    project: 'Project',
+    enquiry: 'Enquiry',
+    optional: 'optional',
+    noProject: 'No project',
+    noEnquiry: 'No enquiry',
+    projectRequired: 'A tattoo session belongs to a project. Choose which one.',
     search: 'Find free times',
     searching: 'Looking…',
     searchFailed: 'Could not check the schedule.',
@@ -626,6 +702,12 @@ const COPY = {
     windowNote: 'Ищем в часах мастера: с {from} до {to}.',
     overridesApplied: 'У {count} дн. в этом диапазоне свои часы.',
     preferredStart: 'обычное начало',
+    project: 'Проект',
+    enquiry: 'Заявка',
+    optional: 'необязательно',
+    noProject: 'Без проекта',
+    noEnquiry: 'Без заявки',
+    projectRequired: 'Тату-сеанс относится к проекту. Выберите, к какому.',
     search: 'Найти свободное время',
     searching: 'Ищем…',
     searchFailed: 'Не удалось проверить расписание.',

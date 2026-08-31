@@ -37,7 +37,13 @@ describe('appointments queue', () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Calendar' })).toBeInTheDocument();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Appointment type' }), {
+    // The duration shortcuts live in the shared booking panel now, which needs
+    // a client before it will offer anything.
+    const search = await screen.findByLabelText('Find the client');
+    fireEvent.change(search, { target: { value: 'Fixture' } });
+    fireEvent.click(await screen.findByRole('button', { name: /Fixture Client/ }, { timeout: 3000 }));
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Appointment type' }), {
       target: { value: 'video_consultation' },
     });
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { BookingPanel } from '../components/BookingPanel';
 import { ClientPicker } from '../components/ClientPicker';
@@ -16,7 +16,6 @@ import type { Client, Enquiry, Project, SessionStatus } from '../lib/types';
 import type {
   Appointment,
   AppointmentClientResponse,
-  AppointmentConflict,
   AppointmentType,
 } from '../lib/appointment-api';
 
@@ -40,17 +39,11 @@ const TYPES: AppointmentType[] = [
   'touch_up',
 ];
 
-const DURATION_MINUTES: Record<AppointmentType, number[]> = {
-  tattoo_session: [180, 300, 420],
-  in_person_consultation: [15, 20, 30],
-  video_consultation: [15, 20, 30],
-  touch_up: [60, 120, 180],
-};
 
 export function AppointmentsPage() {
   const api = useApi();
   const { profile } = useSession();
-  const { selectedArtistId } = useArtistScope();
+  const { artists, selectedArtistId } = useArtistScope();
   const { language, label } = useLanguage();
   const copy = COPY[language];
   const mayManage = can(profile?.role, 'manageSessions');
@@ -88,71 +81,19 @@ export function AppointmentsPage() {
   }, [api, selectedArtistId]);
 
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [appointmentType, setAppointmentType] = useState<AppointmentType>('tattoo_session');
-  const [projectId, setProjectId] = useState('');
-  const [enquiryId, setEnquiryId] = useState('');
   const [clientId, setClientId] = useState('');
-  const [startAt, setStartAt] = useState('');
-  const [endAt, setEndAt] = useState('');
-  const [notes, setNotes] = useState('');
-  const [conflicts, setConflicts] = useState<AppointmentConflict[]>([]);
-  const [conflictLoading, setConflictLoading] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [bookedNotice, setBookedNotice] = useState<{ text: string; id: string } | null>(null);
-  const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [changingAppointmentId, setChangingAppointmentId] = useState<string | null>(null);
 
-  const selectedProject = data?.projects.find((project) => project.id === projectId) ?? null;
-  const selectedEnquiry = data?.enquiries.find((enquiry) => enquiry.id === enquiryId) ?? null;
-
-  const resolvedArtistId = selectedProject?.artist_id
-    ?? selectedEnquiry?.artist_id
-    ?? selectedArtistId
-    ?? '';
-  const resolvedClientId = selectedProject?.client_id
-    ?? selectedEnquiry?.client_id
-    ?? clientId;
-  const resolvedEnquiryId = selectedProject?.enquiry_id
-    ?? selectedEnquiry?.id
-    ?? null;
-
-  useEffect(() => {
-    if (!selectedProject) return;
-    setClientId(selectedProject.client_id);
-    setEnquiryId(selectedProject.enquiry_id ?? '');
-  }, [selectedProject]);
-
-  useEffect(() => {
-    if (selectedProject || !selectedEnquiry) return;
-    setClientId(selectedEnquiry.client_id);
-  }, [selectedProject, selectedEnquiry]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const startIso = inputToIso(startAt);
-    const endIso = inputToIso(endAt);
-
-    if (!resolvedArtistId || !startIso || !endIso || endIso <= startIso) {
-      setConflicts([]);
-      setConflictLoading(false);
-      return undefined;
-    }
-
-    setConflictAcknowledged(false);
-    setConflictLoading(true);
-    api.listAppointmentConflicts({
-      artistId: resolvedArtistId,
-      startAt: startIso,
-      endAt: endIso,
-    })
-      .then((result) => { if (!cancelled) setConflicts(result); })
-      .catch(() => { if (!cancelled) setConflicts([]); })
-      .finally(() => { if (!cancelled) setConflictLoading(false); });
-
-    return () => { cancelled = true; };
-  }, [api, resolvedArtistId, startAt, endAt]);
+  // The Calendar now only needs to know who the shared panel is booking for.
+  // Project and enquiry linking, duration, manual entry and the clash warning
+  // all moved into that panel.
+  const resolvedClientId = clientId;
+  // One reachable artist means there is no choice to make, so the panel must
+  // not sit behind a selector the operator has no reason to touch. This is the
+  // same inference Payments makes, for the same reason.
+  const bookingArtistId = selectedArtistId
+    ?? (artists.length === 1 ? artists[0].id : null);
 
   const visibleAppointments = useMemo(() => {
     const rows = data?.appointments ?? [];
@@ -175,69 +116,6 @@ export function AppointmentsPage() {
   const later = beyondAgenda(nowDate, AGENDA_DAYS, visibleAppointments);
   const past = pastAppointments(nowDate, visibleAppointments);
 
-  const projectRequired = appointmentType === 'tattoo_session' || appointmentType === 'touch_up';
-  const startIso = inputToIso(startAt);
-  const endIso = inputToIso(endAt);
-  const timeValid = Boolean(startIso && endIso && endIso > startIso);
-  const linksValid = Boolean(
-    resolvedArtistId
-    && resolvedClientId
-    && (!projectRequired || selectedProject)
-  );
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!startIso || !endIso || !timeValid || !linksValid) {
-      setActionError(copy.completeRequired);
-      return;
-    }
-
-    setSaving(true);
-    setActionError(null);
-    setBookedNotice(null);
-    try {
-      // The form used to clear itself and reload the list, leaving the only
-      // evidence of success as a new row somewhere below. Say what was booked,
-      // for whom, when, and where to find it.
-      const created: any = await api.scheduleAppointment({
-        artistId: resolvedArtistId,
-        clientId: resolvedClientId,
-        appointmentType,
-        startAt: startIso,
-        endAt: endIso,
-        status: 'proposed',
-        enquiryId: resolvedEnquiryId,
-        projectId: selectedProject?.id ?? null,
-        notes: notes.trim() || null,
-      });
-      const bookedFor = clientName(data?.clients ?? [], resolvedClientId)
-        ?? (await api.getClient(resolvedClientId))?.full_name
-        ?? copy.chooseClient;
-      const appointmentId = typeof created?.appointment_id === 'string'
-        ? created.appointment_id
-        : typeof created?.id === 'string' ? created.id : null;
-      if (appointmentId) {
-        setBookedNotice({
-          id: appointmentId,
-          text: copy.booked
-            .replace('{type}', typeLabel(appointmentType, language))
-            .replace('{client}', bookedFor)
-            .replace('{date}', formatDateTime(startIso, language)),
-        });
-      }
-      setStartAt('');
-      setEndAt('');
-      setNotes('');
-      setConflicts([]);
-      setConflictAcknowledged(false);
-      reload();
-    } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : copy.saveFailed);
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function changeStatus(appointmentId: string, status: SessionStatus) {
     setChangingAppointmentId(appointmentId);
     setStatusError(null);
@@ -250,7 +128,6 @@ export function AppointmentsPage() {
       setChangingAppointmentId(null);
     }
   }
-
   async function rescheduleAppointment(appointmentId: string, nextStartAt: string, nextEndAt: string) {
     setChangingAppointmentId(appointmentId);
     setStatusError(null);
@@ -263,13 +140,6 @@ export function AppointmentsPage() {
     } finally {
       setChangingAppointmentId(null);
     }
-  }
-
-  function applyDuration(minutes: number) {
-    if (!startAt) return;
-    const start = new Date(startAt);
-    if (Number.isNaN(start.getTime())) return;
-    setEndAt(toDateTimeLocal(new Date(start.getTime() + minutes * 60_000)));
   }
 
   return (
@@ -294,17 +164,30 @@ export function AppointmentsPage() {
           enquiry, and the only one that can deliberately book over a clash. */}
       {mayManage ? (
         <Section title={copy.findTime}>
-          {!selectedArtistId ? (
+          {!bookingArtistId ? (
             // Hiding the panel until an artist is chosen would repeat the
             // Payments defect: a screen that needs a selection and gives no
             // sign it is waiting for one.
             <p className="meta">{copy.chooseArtistFirst}</p>
           ) : resolvedClientId ? (
             <BookingPanel
-              artistId={selectedArtistId}
+              artistId={bookingArtistId}
               clientId={resolvedClientId}
               clientName={clientName(data?.clients ?? [], resolvedClientId) ?? copy.thisClient}
-              onBooked={() => { setClientId(''); reload(); }}
+              projectOptions={(data?.projects ?? [])
+                .filter((project) => project.client_id === resolvedClientId)
+                .map((project) => ({
+                  id: project.id,
+                  label: project.title,
+                  enquiryId: project.enquiry_id,
+                }))}
+              enquiryOptions={(data?.enquiries ?? [])
+                .filter((enquiry) => enquiry.client_id === resolvedClientId)
+                .map((enquiry) => ({ id: enquiry.id, label: enquiry.reference_number }))}
+              // The client stays chosen: a large piece is booked as several
+              // sessions, and clearing the picker would also throw away the
+              // confirmation the panel just rendered.
+              onBooked={() => reload()}
             />
           ) : (
             <div className="client-picker-field">
@@ -320,134 +203,11 @@ export function AppointmentsPage() {
         </Section>
       ) : null}
 
-      {mayManage ? (
-        <Section title={copy.newAppointment}>
-          <form onSubmit={(event) => { void submit(event); }}>
-            <div className="form-grid">
-              <label>
-                <span>{copy.type}</span>
-                <select
-                  value={appointmentType}
-                  onChange={(event) => {
-                    const next = event.target.value as AppointmentType;
-                    setAppointmentType(next);
-                  }}
-                >
-                  {TYPES.map((type) => (
-                    <option key={type} value={type}>{typeLabel(type, language)}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span>{copy.project}{projectRequired ? ` · ${copy.required}` : ` · ${copy.optional}`}</span>
-                <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                  <option value="">{copy.noProject}</option>
-                  {data.projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {optionLabel(clientName(data.clients, project.client_id), project.title)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span>{copy.enquiry} · {copy.optional}</span>
-                <select
-                  value={enquiryId}
-                  disabled={Boolean(selectedProject?.enquiry_id)}
-                  onChange={(event) => setEnquiryId(event.target.value)}
-                >
-                  <option value="">{copy.noEnquiry}</option>
-                  {data.enquiries.map((enquiry) => (
-                    <option key={enquiry.id} value={enquiry.id}>
-                      {optionLabel(clientName(data.clients, enquiry.client_id), enquiry.reference_number)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="client-picker-field">
-                <span className="client-picker-heading">{copy.client} · {copy.required}</span>
-                <ClientPicker
-                  value={resolvedClientId}
-                  disabled={Boolean(selectedProject || selectedEnquiry)}
-                  language={language}
-                  inputId="appointment-client-search"
-                  onChange={setClientId}
-                />
-              </div>
-
-              <label>
-                <span>{copy.start}</span>
-                <input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} />
-              </label>
-
-              <label>
-                <span>{copy.end}</span>
-                <input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} />
-              </label>
-            </div>
-
-            <div className="actions" aria-label={copy.durationShortcuts}>
-              {DURATION_MINUTES[appointmentType].map((minutes) => (
-                <button key={minutes} type="button" onClick={() => applyDuration(minutes)} disabled={!startAt}>
-                  {durationShortcut(minutes, language)}
-                </button>
-              ))}
-            </div>
-
-            <label>
-              <span>{copy.notes} · {copy.optional}</span>
-              <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={8000} />
-            </label>
-
-            {!projectRequired && !resolvedArtistId ? <p className="notice warn">{copy.chooseArtist}</p> : null}
-            {projectRequired && !selectedProject ? <p className="notice warn">{copy.projectRequired}</p> : null}
-            {conflictLoading ? <p className="notice">{copy.checkingConflicts}</p> : null}
-            {/* One conflict policy across every booking form: say what the clash
-                is, assertively, and require the operator to say they meant it.
-                Consultations used to block outright and sessions used to warn
-                and let you scroll past, which is the safer rule on the lower
-                stakes action. */}
-            {conflicts.length > 0 ? (
-              <div className="notice warn" role="alert">
-                <p style={{ margin: 0 }}>
-                  {copy.conflicts.replace('{count}', String(conflicts.length)).replace(
-                    '{date}',
-                    formatDateTime(conflicts[0].start_at, language)
-                  )}
-                </p>
-                <label className="conflict-acknowledgement">
-                  <input
-                    type="checkbox"
-                    checked={conflictAcknowledged}
-                    onChange={(event) => setConflictAcknowledged(event.target.checked)}
-                  />
-                  <span>{copy.bookAnyway}</span>
-                </label>
-              </div>
-            ) : null}
-            {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
-            {bookedNotice ? (
-              <p className="notice ok" role="status">
-                {bookedNotice.text}{' '}
-                <Link to={`/appointments/${bookedNotice.id}`}>{copy.openBooking}</Link>
-              </p>
-            ) : null}
-
-            <div className="actions">
-              <button
-                type="submit"
-                className="primary"
-                disabled={saving || !timeValid || !linksValid || (conflicts.length > 0 && !conflictAcknowledged)}
-              >
-                {saving ? copy.saving : copy.propose}
-              </button>
-            </div>
-          </form>
-        </Section>
-      ) : null}
+      {/* The detailed form that used to live here is gone. Everything it did -
+          project and enquiry linking, duration shortcuts, manual date entry,
+          and the pre-submit clash warning - now lives in the shared panel
+          above, so there is one booking behaviour rather than two that had
+          already started to drift. */}
 
       {statusError ? <p className="notice warn" role="alert">{statusError}</p> : null}
 
@@ -728,9 +488,6 @@ function clientName(clients: Client[], clientId: string): string | null {
   return clients.find((client) => client.id === clientId)?.full_name ?? null;
 }
 
-function optionLabel(name: string | null, record: string): string {
-  return name ? `${name} · ${record}` : record;
-}
 
 export function typeLabel(type: AppointmentType, language: Language): string {
   return TYPE_LABELS[language][type];

@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { App } from '../App';
-import { RouterProvider } from '../lib/router';
-import { SessionProvider } from '../lib/session';
+import { renderWithSession } from './fixtures';
 import { addHoursToLocalDateTime, findSessionConflicts } from '../lib/session-planning';
 import {
   PROJECT_ID,
   SESSION,
-  SESSION_ID,
-  VLADIMIR_ARTIST_ID,
-  createFakeClient,
 } from './fixtures';
 
 function toLocalInput(value: string): string {
@@ -45,77 +41,19 @@ describe('session planning helpers', () => {
 });
 
 describe('project appointment planner', () => {
-  it('stays collapsed by default, then shows duration shortcuts and warns about a database-reported artist overlap', async () => {
-    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
-    const baseClient = createFakeClient({ role: 'booking_manager', rpcCalls });
-    const client = {
-      ...baseClient,
-      rpc: async (name: string, args?: Record<string, unknown>) => {
-        if (name === 'list_appointment_conflicts') {
-          rpcCalls.push({ name, args });
-          return {
-            data: [{
-              appointment_id: SESSION_ID,
-              appointment_type: 'tattoo_session',
-              status: 'proposed',
-              start_at: SESSION.start_at,
-              end_at: SESSION.end_at,
-              client_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-              enquiry_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-              project_id: PROJECT_ID,
-            }],
-            error: null,
-          };
-        }
-        return baseClient.rpc(name, args);
-      },
-    } as typeof baseClient;
+  it('books an extra session through the one shared panel', async () => {
+    // The project used to carry its own inline planner with its own duration
+    // shortcuts and its own clash warning. It is gone: this is the same panel
+    // the client workspace, the enquiry and the Calendar use, so there is one
+    // booking behaviour to reason about rather than four.
+    renderWithSession(<App />, { role: 'owner', path: `/projects/${PROJECT_ID}` });
 
-    render(
-      <SessionProvider client={client}>
-        <RouterProvider initialPath={`/projects/${PROJECT_ID}`}>
-          <App />
-        </RouterProvider>
-      </SessionProvider>
-    );
+    expect(await screen.findByRole('heading', { name: 'Book a session' })).toBeInTheDocument();
+    expect(screen.queryByText('Add another appointment')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Find free times' })).toBeInTheDocument();
 
-    const disclosure = await screen.findByText('Add another appointment');
-    expect(disclosure.closest('details')).not.toHaveAttribute('open');
-    // The appointment's own duration badge. Scoped to the row: the shared
-    // BookingPanel on this page offers a "6 h" duration shortcut too, and the
-    // assertion is about the booked appointment, not about that button.
-    const row = disclosure.closest('.row') ?? disclosure.closest('section');
-    expect(within(row as HTMLElement).getByText('6 h')).toBeInTheDocument();
-
-    fireEvent.click(disclosure);
-
-    // Scoped to the planner: the shared BookingPanel above it offers the same
-    // duration shortcuts, and this test is about the planner's own behaviour.
-    const planner = within(disclosure.closest('details') as HTMLElement);
-    const start = await planner.findByLabelText('Proposed start');
-    const end = planner.getByLabelText('Proposed end');
-    const threeHours = planner.getByRole('button', { name: '3 h' });
-
-    expect(threeHours).toBeDisabled();
-    expect(planner.getByRole('button', { name: '5 h' })).toBeInTheDocument();
-    expect(planner.getByRole('button', { name: '7 h' })).toBeInTheDocument();
-
-    const existingStart = toLocalInput(SESSION.start_at);
-    const overlappingStart = addHoursToLocalDateTime(existingStart, 1);
-    const expectedEnd = addHoursToLocalDateTime(overlappingStart, 3);
-
-    fireEvent.change(start, { target: { value: overlappingStart } });
-    fireEvent.click(threeHours);
-
-    expect(end).toHaveValue(expectedEnd);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Conflicting active appointments: 1');
-
-    await waitFor(() => {
-      const call = rpcCalls.find((entry) => entry.name === 'list_appointment_conflicts');
-      expect(call).toBeDefined();
-      expect(call!.args).toMatchObject({
-        p_artist_id: VLADIMIR_ARTIST_ID,
-      });
-    });
+    // The project is already known, so the panel does not ask again. (The
+    // page's own "Project status" control is a different question.)
+    expect(screen.queryByRole('combobox', { name: 'Project' })).not.toBeInTheDocument();
   });
 });

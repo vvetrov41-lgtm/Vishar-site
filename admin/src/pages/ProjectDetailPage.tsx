@@ -16,7 +16,7 @@ import { can, canAccess } from '../lib/permissions';
 import { formatDateTime, formatMoney } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { typeLabel } from './AppointmentsPage';
-import type { Appointment, AppointmentConflict, AppointmentType } from '../lib/appointment-api';
+import type { Appointment } from '../lib/appointment-api';
 import type {
   ActivityEntry, InternalNote, Project, ProjectFinance, ProjectStatus, SessionFinance,
 } from '../lib/types';
@@ -31,19 +31,7 @@ interface ProjectData {
   activity: ActivityEntry[];
 }
 
-const PROJECT_DURATION_MINUTES: Record<AppointmentType, number[]> = {
-  tattoo_session: [180, 300, 420],
-  in_person_consultation: [15, 20, 30],
-  video_consultation: [15, 20, 30],
-  touch_up: [60, 120, 180],
-};
 
-const APPOINTMENT_TYPES: AppointmentType[] = [
-  'tattoo_session',
-  'in_person_consultation',
-  'video_consultation',
-  'touch_up',
-];
 
 const PROJECT_STATUSES: ProjectStatus[] = ['draft', 'active', 'on_hold', 'completed', 'cancelled'];
 
@@ -55,13 +43,6 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const copy = COPY[language];
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [appointmentType, setAppointmentType] = useState<AppointmentType>('tattoo_session');
-  const [appointmentStart, setAppointmentStart] = useState('');
-  const [appointmentEnd, setAppointmentEnd] = useState('');
-  const [conflicts, setConflicts] = useState<AppointmentConflict[]>([]);
-  const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
-  const [bookedNotice, setBookedNotice] = useState<string | null>(null);
-  const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [projectStatus, setProjectStatus] = useState<ProjectStatus>('draft');
 
   const { data, loading, error, reload } = useAsync<ProjectData>(async () => {
@@ -107,28 +88,6 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     if (data?.project) setProjectStatus(data.project.status);
   }, [data?.project?.status]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const startIso = inputToIso(appointmentStart);
-    const endIso = inputToIso(appointmentEnd);
-    const artistId = data?.project?.artist_id;
-
-    if (!artistId || !startIso || !endIso || endIso <= startIso) {
-      setConflicts([]);
-      setConflictAcknowledged(false);
-      setCheckingConflicts(false);
-      return undefined;
-    }
-
-    setCheckingConflicts(true);
-    api.listAppointmentConflicts({ artistId, startAt: startIso, endAt: endIso })
-      .then((rows) => { if (!cancelled) setConflicts(rows); })
-      .catch(() => { if (!cancelled) setConflicts([]); })
-      .finally(() => { if (!cancelled) setCheckingConflicts(false); });
-
-    return () => { cancelled = true; };
-  }, [api, data?.project?.artist_id, appointmentStart, appointmentEnd]);
-
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
     setActionError(null);
@@ -163,9 +122,6 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     sessionFinance.find((entry) => entry.session_id === appointmentId)?.price ?? null;
   const hasConfirmedWork = appointments.some((appointment) => ['confirmed', 'completed'].includes(appointment.status));
   const lifecycleMismatch = project.status === 'draft' && (project.deposit_status === 'paid' || hasConfirmedWork);
-  const conflictMessage = conflicts.length > 0
-    ? copy.conflicts(conflicts.length, formatDateTime(conflicts[0].start_at, language))
-    : null;
 
   return (
     <>
@@ -345,127 +301,10 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {mayManageAppointments ? (
-          <details style={{ marginTop: 14 }}>
-            <summary>{copy.addAppointment}</summary>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                setBookedNotice(null);
-                void run(async () => {
-                  const start = inputToIso(appointmentStart);
-                  const end = inputToIso(appointmentEnd);
-                  if (!start || !end || end <= start) {
-                    throw new Error(t('project.invalidSessionTime'));
-                  }
-                  await api.scheduleAppointment({
-                    artistId: project.artist_id,
-                    clientId: project.client_id,
-                    appointmentType,
-                    startAt: start,
-                    endAt: end,
-                    status: 'proposed',
-                    enquiryId: project.enquiry_id,
-                    projectId,
-                  });
-                  // Say what was booked, for whom and when. The form used to
-                  // clear itself and leave a new row somewhere in the list as
-                  // the only evidence anything had happened.
-                  setBookedNotice(copy.booked(
-                    typeLabel(appointmentType, language),
-                    clientName ?? project.title,
-                    formatDateTime(start, language),
-                  ));
-                  setAppointmentStart('');
-                  setAppointmentEnd('');
-                  setConflicts([]);
-                  setConflictAcknowledged(false);
-                });
-              }}
-            >
-              <label htmlFor="appointment-type" style={{ marginTop: 12 }}>{copy.appointmentType}</label>
-              <select
-                id="appointment-type"
-                value={appointmentType}
-                onChange={(event) => setAppointmentType(event.target.value as AppointmentType)}
-              >
-                {APPOINTMENT_TYPES.map((type) => (
-                  <option key={type} value={type}>{typeLabel(type, language)}</option>
-                ))}
-              </select>
-
-              <div className="field-row" style={{ marginTop: 12 }}>
-                <div>
-                  <label htmlFor="appointment-start">{copy.proposedStart}</label>
-                  <input
-                    id="appointment-start"
-                    type="datetime-local"
-                    value={appointmentStart}
-                    onChange={(event) => setAppointmentStart(event.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="appointment-end">{copy.proposedEnd}</label>
-                  <input
-                    id="appointment-end"
-                    type="datetime-local"
-                    value={appointmentEnd}
-                    onChange={(event) => setAppointmentEnd(event.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="actions" role="group" aria-label={copy.duration}>
-                {PROJECT_DURATION_MINUTES[appointmentType].map((minutes) => (
-                  <button
-                    key={minutes}
-                    type="button"
-                    disabled={busy || !appointmentStart}
-                    onClick={() => {
-                      const end = addMinutesToLocalDateTime(appointmentStart, minutes);
-                      if (end) setAppointmentEnd(end);
-                    }}
-                  >
-                    {durationShortcut(minutes, language)}
-                  </button>
-                ))}
-              </div>
-              {checkingConflicts ? <div className="notice">{copy.checking}</div> : null}
-              {/* Same conflict policy as every other booking form: state the
-                  clash assertively, and require the operator to say they meant
-                  it rather than letting them scroll past a polite notice. */}
-              {conflictMessage ? (
-                <div className="notice warn" role="alert">
-                  <p style={{ margin: 0 }}>{conflictMessage}</p>
-                  <label className="conflict-acknowledgement">
-                    <input
-                      type="checkbox"
-                      checked={conflictAcknowledged}
-                      onChange={(event) => setConflictAcknowledged(event.target.checked)}
-                    />
-                    <span>{copy.bookAnyway}</span>
-                  </label>
-                </div>
-              ) : null}
-              {bookedNotice ? <div className="notice ok" role="status">{bookedNotice}</div> : null}
-              <div className="actions">
-                <button
-                  type="submit"
-                  className="primary"
-                  disabled={
-                    busy
-                    || !appointmentStart
-                    || !appointmentEnd
-                    || (conflicts.length > 0 && !conflictAcknowledged)
-                  }
-                >
-                  {copy.propose}
-                </button>
-              </div>
-            </form>
-          </details>
-        ) : null}
+        {/* The inline planner that used to live here is gone. The shared
+            booking panel above does everything it did - durations, manual
+            entry and the pre-submit clash warning - and is the same panel
+            every other screen uses. */}
 
         <p className="notice" style={{ marginTop: 12 }}>{copy.calendarNotice}</p>
       </Section>
@@ -506,19 +345,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   );
 }
 
-function inputToIso(value: string): string | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
 
-function addMinutesToLocalDateTime(value: string, minutes: number): string | null {
-  const start = new Date(value);
-  if (Number.isNaN(start.getTime())) return null;
-  const end = new Date(start.getTime() + minutes * 60_000);
-  const local = new Date(end.getTime() - end.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
 
 function durationShortcut(minutes: number, language: Language): string {
   if (minutes < 60) return language === 'ru' ? `${minutes} мин` : `${minutes} min`;
