@@ -53,7 +53,7 @@ type Category = typeof CATEGORY_ORDER[number];
 const CATEGORY_LABELS: Record<Category, { en: string; ru: string }> = {
   booking: { en: 'Before the appointment', ru: 'До записи' },
   deposit: { en: 'Payments and deposit', ru: 'Оплата и депозит' },
-  lead: { en: 'Enquiries and follow-up', ru: 'Заявки и follow-up' },
+  lead: { en: 'Enquiries and follow-up', ru: 'Заявки и напоминания' },
   aftercare: { en: 'After the session', ru: 'После сеанса' },
   other: { en: 'Other messages', ru: 'Другие сообщения' },
 };
@@ -194,7 +194,7 @@ export function ClientMessagesPage() {
         <div className="meta">
           {artistName ?? selectedArtistId}
           {' · '}
-          {ru ? 'Автоматические email клиентам' : 'Automated client email'}
+          {ru ? 'Автоматические письма клиентам' : 'Automated client email'}
         </div>
       </div>
 
@@ -242,7 +242,7 @@ export function ClientMessagesPage() {
                           <div>
                             <strong>{label}</strong>
                             <div className="meta">
-                              Email · {slot.locale.toUpperCase()} · v{shown.version}
+                              {ru ? 'Электронная почта' : 'Email'} · {slot.locale.toUpperCase()} · v{shown.version}
                               {' · '}
                               {shown.status === 'draft'
                                 ? (ru ? 'черновик' : 'draft')

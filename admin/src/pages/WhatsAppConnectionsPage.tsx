@@ -230,9 +230,9 @@ export function WhatsAppConnectionsPage() {
         </p>
         {data.environment === 'production' ? (
           <p>
-            Meta App ID: <code>{META_WHATSAPP_APP_ID}</code>
+            {language === 'ru' ? 'ID приложения Meta:' : 'Meta App ID:'} <code>{META_WHATSAPP_APP_ID}</code>
             {' · '}
-            Config ID: <code>{META_WHATSAPP_CONFIG_ID}</code>
+            {language === 'ru' ? 'ID конфигурации:' : 'Config ID:'} <code>{META_WHATSAPP_CONFIG_ID}</code>
           </p>
         ) : null}
       </div>
