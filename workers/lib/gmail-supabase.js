@@ -1,7 +1,6 @@
 import { createBackendResponseObserver, readSafeSupabaseError } from './supabase-diagnostics.js';
 
 const BACKEND_RPCS = new Set([
-  'service_authorize_gmail_operator',
   'service_resolve_gmail_target',
   'service_resolve_gmail_outbox_target',
   'service_set_gmail_integration',
@@ -15,6 +14,7 @@ const BACKEND_RPCS = new Set([
 const USER_RPCS = new Set([
   'gpt_authorize_gmail_enquiry',
   'gpt_create_gmail_reply_draft',
+  'list_capabilities',
 ]);
 
 function projectOrigin(env) {
@@ -66,6 +66,33 @@ async function callRpc(origin, name, args, headers, fetchImpl, observe, retrySec
   return safeJsonResponse(response);
 }
 
+async function readUserEnquiry(origin, enquiryId, headers, fetchImpl) {
+  if (typeof enquiryId !== 'string' || !/^[0-9a-f-]{36}$/i.test(enquiryId)) throw new Error('gmail_enquiry_id_invalid');
+  const url = new URL('/rest/v1/enquiries', origin);
+  url.searchParams.set('select', 'id,artist_id,client_id');
+  url.searchParams.set('id', `eq.${enquiryId}`);
+  url.searchParams.set('limit', '1');
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: { ...headers, accept: 'application/json' },
+    redirect: 'manual',
+  });
+  if (!response.ok) {
+    const error = new Error(response.status === 401 || response.status === 403
+      ? 'gmail_rpc_forbidden'
+      : 'gmail_rpc_failed');
+    error.status = response.status;
+    throw error;
+  }
+  const rows = await safeJsonResponse(response);
+  if (!Array.isArray(rows) || rows.length !== 1) throw new Error('gmail_operator_scope_invalid');
+  const row = rows[0];
+  if (!row || row.id !== enquiryId || typeof row.artist_id !== 'string' || typeof row.client_id !== 'string') {
+    throw new Error('gmail_operator_scope_invalid');
+  }
+  return { enquiry_id: row.id, artist_id: row.artist_id, client_id: row.client_id };
+}
+
 export function createGmailSupabase(env, fetchImpl = fetch) {
   const origin = projectOrigin(env);
   const secret = String(env?.SUPABASE_SECRET_KEY || '').trim();
@@ -84,27 +111,16 @@ export function createGmailSupabase(env, fetchImpl = fetch) {
       if (!validBearer(bearer)) throw new Error('gmail_oauth_token_invalid');
       return callRpc(origin, name, args, { apikey: publishable, authorization: `Bearer ${bearer}` }, fetchImpl);
     },
-    async verifyUser(bearer) {
+    async userEnquiry(enquiryId, bearer) {
       if (!validBearer(bearer)) throw new Error('gmail_operator_token_invalid');
-      const response = await fetchImpl(`${origin}/auth/v1/user`, {
-        method: 'GET',
-        headers: { apikey: publishable, authorization: `Bearer ${bearer}`, accept: 'application/json' },
-        redirect: 'manual',
-      });
-      if (!response.ok) {
-        const error = new Error(response.status === 401 || response.status === 403
-          ? 'gmail_operator_unauthorized'
-          : 'gmail_operator_auth_failed');
-        error.status = response.status;
-        throw error;
-      }
-      const user = await safeJsonResponse(response);
-      if (!user || typeof user.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(user.id)) {
-        throw new Error('gmail_operator_auth_failed');
-      }
-      return { id: user.id };
+      return readUserEnquiry(
+        origin,
+        enquiryId,
+        { apikey: publishable, authorization: `Bearer ${bearer}` },
+        fetchImpl,
+      );
     },
   };
 }
 
-export const __testing = Object.freeze({ BACKEND_RPCS, USER_RPCS, projectOrigin, validBearer });
+export const __testing = Object.freeze({ BACKEND_RPCS, USER_RPCS, projectOrigin, validBearer, readUserEnquiry });
