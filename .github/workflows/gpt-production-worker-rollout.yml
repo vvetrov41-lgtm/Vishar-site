@@ -42,7 +42,7 @@ jobs:
       APPROVED_SHA: ${{ github.event.before }}
       # The Cloudflare inventory refuses to read without a 40-hex source SHA.
       # It is set at job scope so the preflight, the readback and the rollback
-      # all carry it; a per-step copy is how it goes missing.
+      # all carry it; a per-step copy is how one goes missing.
       SOURCE_SHA: ${{ github.event.before }}
       WORKER_NAME: vishar-gpt-actions-production
       CORE_HOST: gpt-actions.vishartattoo.com
@@ -194,6 +194,14 @@ jobs:
           if (bindings.get('GPT_ACTIONS_ENABLED')?.value !== 'true') throw new Error('GPT_ACTIONS_ENABLED is not true');
           if (bindings.get('GPT_OAUTH_RELAY_ENABLED')?.value !== 'true') throw new Error('GPT_OAUTH_RELAY_ENABLED is not true');
           if (bindings.get('VISHAR_ENVIRONMENT')?.value !== 'production') throw new Error('GPT Worker is not production');
+          if (bindings.get('SUPABASE_URL')?.value !== process.env.SUPABASE_URL) throw new Error('GPT Worker Supabase URL is not the exact production target');
+          const rateLimit = bindings.get('GPT_RATE_LIMIT');
+          if (rateLimit?.type !== 'rate_limit'
+              || String(rateLimit.namespace_id) !== '1002'
+              || Number(rateLimit.simple?.limit) !== 30
+              || Number(rateLimit.simple?.period) !== 60) {
+            throw new Error('Unexpected GPT production rate-limit binding');
+          }
           const gmail = bindings.get('GMAIL_SERVICE');
           if (gmail?.type !== 'service' || gmail?.service !== 'vishar-gmail-production' || gmail?.environment !== 'production') throw new Error('Unexpected Gmail service binding');
 
@@ -223,11 +231,40 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${beforeVersion}\n`);
           NODE
 
+      - name: Re-check canonical and database immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Canonical Vishar CRM head moved after admission; refusing a stale GPT Worker deploy.' >&2
+            exit 1
+          }
+
+          trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ -n "$trigger_sha" ]
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || {
+            echo 'GPT Worker release branch moved after admission; refusing production mutation.' >&2
+            exit 1
+          }
+
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-final-dry-run.log"
+          if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-final-dry-run.log"; then
+            echo 'Production migration state changed after preflight; refusing GPT edge mutation.' >&2
+            exit 1
+          fi
+
       - name: Deploy the GPT Worker from the approved canonical source
+        id: deploy
         shell: bash
         run: |
           set -euo pipefail
           npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict \
+            --message "Vishar GPT Worker rollout $APPROVED_SHA" \
             --var SUPABASE_URL:"$SUPABASE_URL" \
             --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
             --var VISHAR_ENVIRONMENT:production \
@@ -262,8 +299,14 @@ jobs:
           if (bindings.get('GPT_ACTIONS_ENABLED')?.value !== 'true') process.exit(1);
           if (bindings.get('GPT_OAUTH_RELAY_ENABLED')?.value !== 'true') process.exit(1);
           if (bindings.get('VISHAR_ENVIRONMENT')?.value !== 'production') process.exit(1);
+          if (bindings.get('SUPABASE_URL')?.value !== process.env.SUPABASE_URL) process.exit(1);
+          const rateLimit = bindings.get('GPT_RATE_LIMIT');
+          if (rateLimit?.type !== 'rate_limit'
+              || String(rateLimit.namespace_id) !== '1002'
+              || Number(rateLimit.simple?.limit) !== 30
+              || Number(rateLimit.simple?.period) !== 60) process.exit(1);
           const gmail = bindings.get('GMAIL_SERVICE');
-          if (gmail?.service !== 'vishar-gmail-production' || gmail?.environment !== 'production') process.exit(1);
+          if (gmail?.type !== 'service' || gmail?.service !== 'vishar-gmail-production' || gmail?.environment !== 'production') process.exit(1);
           // A code rollout that left the same active version shipped nothing.
           const afterVersion = worker.active_deployment?.versions?.[0]?.version_id;
           if (!afterVersion || afterVersion === process.env.BEFORE_VERSION) process.exit(1);
@@ -335,12 +378,58 @@ jobs:
           if (JSON.stringify(hosts) !== JSON.stringify(expected)) {
             throw new Error(`Rollback topology is not the exact three-domain baseline: ${hosts.join(', ')}`);
           }
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          if (bindings.get('SUPABASE_URL')?.value !== process.env.SUPABASE_URL) throw new Error('Rollback did not preserve the production Supabase URL');
+          const rateLimit = bindings.get('GPT_RATE_LIMIT');
+          if (rateLimit?.type !== 'rate_limit'
+              || String(rateLimit.namespace_id) !== '1002'
+              || Number(rateLimit.simple?.limit) !== 30
+              || Number(rateLimit.simple?.period) !== 60) {
+            throw new Error('Rollback did not preserve the GPT production rate-limit binding');
+          }
           const active = worker.active_deployment?.versions?.[0]?.version_id;
           if (active !== process.env.BEFORE_VERSION) {
             throw new Error(`Rollback did not restore the previous version: ${active}`);
           }
           NODE
           cat "$RUNNER_TEMP/cloudflare-rollback.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore the previous Worker version if deploy itself fails
+        if: failure() && steps.deploy.outcome == 'failure'
+        shell: bash
+        env:
+          BEFORE_VERSION: ${{ steps.preflight.outputs.before_version }}
+        run: |
+          set -euo pipefail
+          [ -n "$BEFORE_VERSION" ]
+          # A transport error can happen after Cloudflare accepted the upload.
+          # Reassert the known-good version even when the CLI never returned a
+          # successful deploy result, then read it back instead of guessing.
+          npx wrangler rollback "$BEFORE_VERSION" --name "$WORKER_NAME" --yes \
+            --message "Automatic rollback: GPT Worker deploy command failed for $APPROVED_SHA"
+
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-deploy-failure-rollback.json" \
+            --summary "$RUNNER_TEMP/cloudflare-deploy-failure-rollback.md"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-deploy-failure-rollback.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) throw new Error('Production GPT Worker is missing after deploy-failure rollback');
+          const expected = [process.env.CORE_HOST, process.env.OPERATIONS_HOST, process.env.COMMUNICATIONS_HOST].sort();
+          const hosts = data.worker_custom_domains
+            .filter((row) => row.service === process.env.WORKER_NAME)
+            .map((row) => row.hostname)
+            .sort();
+          if (JSON.stringify(hosts) !== JSON.stringify(expected)) {
+            throw new Error(`Deploy-failure rollback topology is not the exact three-domain baseline: ${hosts.join(', ')}`);
+          }
+          const active = worker.active_deployment?.versions?.[0]?.version_id;
+          if (active !== process.env.BEFORE_VERSION) {
+            throw new Error(`Deploy-failure rollback did not restore the previous version: ${active}`);
+          }
+          NODE
+          cat "$RUNNER_TEMP/cloudflare-deploy-failure-rollback.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Boundary summary
         if: always()
@@ -353,7 +442,8 @@ jobs:
             echo "- Previous Worker version: \`${{ steps.preflight.outputs.before_version || 'unknown' }}\`"
             echo "- Deployed Worker version: \`${{ steps.readback.outputs.after_version || 'unknown' }}\`"
             echo '- Cloudflare domain topology: unchanged (Core, Operations, Communications)'
-            echo '- Worker bindings and secrets: unchanged'
+            echo '- Production Supabase URL, rate-limit and Gmail service binding: read back explicitly'
+            echo '- Secret values: never written or printed by this workflow'
             echo '- OAuth authorization/token origin: unchanged (`gpt-actions.vishartattoo.com`)'
             echo '- Production DB migrations applied: none'
             echo '- GPT OAuth client/binding/capability mutations: none'
