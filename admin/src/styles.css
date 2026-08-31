@@ -446,6 +446,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-size: 0.72rem;
   background: rgba(0, 0, 0, 0.76);
 }
+/* Deleting a client's reference image is destructive and sits on top of the
+   image itself, so on a finger it needs a real target rather than the compact
+   size that suits a mouse. */
+@media (pointer: coarse) {
+  .reference-thumb-remove { min-height: var(--tap); padding: 5px 12px; }
+}
 .submitted-snapshot {
   margin-top: 14px;
   padding-top: 10px;
