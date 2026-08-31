@@ -5,6 +5,9 @@ const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const TOKEN_ENVELOPE_VERSION = 1;
 const EVENT_ID_PREFIX = 'vishar';
 const GOOGLE_EVENT_VISIBILITIES = new Set(['default', 'public', 'private']);
+const GOOGLE_EVENT_COLOR_IDS = new Set(Array.from({ length: 11 }, (_, index) => String(index + 1)));
+const GOOGLE_EVENT_LABEL_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const GOOGLE_EVENT_LABEL_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const TRANSIENT_PROVIDER_REASONS = new Set([
   'rateLimitExceeded',
   'userRateLimitExceeded',
@@ -124,6 +127,59 @@ function normalizeEventVisibility(value) {
   return normalized;
 }
 
+function normalizeEventColorId(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !GOOGLE_EVENT_COLOR_IDS.has(value.trim())) {
+    throw new CalendarConnectorError('calendar_event_color_invalid');
+  }
+  return value.trim();
+}
+
+function normalizeEventLabelId(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !GOOGLE_EVENT_LABEL_ID_PATTERN.test(value.trim())) {
+    throw new CalendarConnectorError('calendar_event_label_invalid');
+  }
+  return value.trim().toLowerCase();
+}
+
+function normalizeStoredEventLabelId(value) {
+  if (typeof value !== 'string' || !GOOGLE_EVENT_LABEL_ID_PATTERN.test(value.trim())) return null;
+  return value.trim().toLowerCase();
+}
+
+function normalizeArtistDisplayName(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new CalendarConnectorError('calendar_artist_display_name_invalid');
+  }
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (!cleaned || cleaned.length > 80) {
+    throw new CalendarConnectorError('calendar_artist_display_name_invalid');
+  }
+  return cleaned;
+}
+
+function normalizeEventLabelName(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new CalendarConnectorError('calendar_event_label_target_invalid');
+  }
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (!cleaned || cleaned.length > 50) {
+    throw new CalendarConnectorError('calendar_event_label_target_invalid');
+  }
+  return cleaned;
+}
+
+function normalizeEventLabelColor(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !GOOGLE_EVENT_LABEL_COLOR_PATTERN.test(value.trim())) {
+    throw new CalendarConnectorError('calendar_event_label_target_invalid');
+  }
+  return value.trim().toLowerCase();
+}
+
 export function artistCalendarConfig(env, artistId) {
   const candidates = [
     {
@@ -131,6 +187,10 @@ export function artistCalendarConfig(env, artistId) {
       artistId: env?.VLADIMIR_ARTIST_ID,
       expectedEmail: env?.VLADIMIR_GOOGLE_EMAIL,
       eventVisibility: env?.VLADIMIR_GOOGLE_EVENT_VISIBILITY,
+      eventDisplayName: env?.VLADIMIR_GOOGLE_EVENT_DISPLAY_NAME,
+      eventColorId: env?.VLADIMIR_GOOGLE_EVENT_COLOR_ID,
+      eventLabelName: env?.VLADIMIR_GOOGLE_EVENT_LABEL_NAME,
+      eventLabelColor: env?.VLADIMIR_GOOGLE_EVENT_LABEL_COLOR,
       integrationKey: 'google_calendar_vladimir',
     },
     {
@@ -138,6 +198,10 @@ export function artistCalendarConfig(env, artistId) {
       artistId: env?.KRISTINA_ARTIST_ID,
       expectedEmail: env?.KRISTINA_GOOGLE_EMAIL,
       eventVisibility: env?.KRISTINA_GOOGLE_EVENT_VISIBILITY,
+      eventDisplayName: env?.KRISTINA_GOOGLE_EVENT_DISPLAY_NAME,
+      eventColorId: env?.KRISTINA_GOOGLE_EVENT_COLOR_ID,
+      eventLabelName: env?.KRISTINA_GOOGLE_EVENT_LABEL_NAME,
+      eventLabelColor: env?.KRISTINA_GOOGLE_EVENT_LABEL_COLOR,
       integrationKey: 'google_calendar_kristina',
     },
   ].filter((item) => item.artistId && item.expectedEmail);
@@ -146,10 +210,19 @@ export function artistCalendarConfig(env, artistId) {
   if (matches.length !== 1) {
     throw new CalendarConnectorError('artist_route_unconfigured');
   }
+  const eventLabelName = normalizeEventLabelName(matches[0].eventLabelName);
+  const eventLabelColor = normalizeEventLabelColor(matches[0].eventLabelColor);
+  if (Boolean(eventLabelName) !== Boolean(eventLabelColor)) {
+    throw new CalendarConnectorError('calendar_event_label_target_invalid');
+  }
   return {
     ...matches[0],
     expectedEmail: normalizeEmail(matches[0].expectedEmail),
     eventVisibility: normalizeEventVisibility(matches[0].eventVisibility),
+    eventDisplayName: normalizeArtistDisplayName(matches[0].eventDisplayName),
+    eventColorId: normalizeEventColorId(matches[0].eventColorId),
+    eventLabelName,
+    eventLabelColor,
   };
 }
 
@@ -181,10 +254,16 @@ export function validateCalendarRoute(route, job, env) {
     throw new CalendarConnectorError('provider_route_invalid');
   }
 
-  return { artist, calendarId: 'primary', eventVisibility: artist.eventVisibility };
+  return {
+    artist,
+    calendarId: 'primary',
+    eventVisibility: artist.eventVisibility,
+    eventDisplayName: artist.eventDisplayName,
+    eventColorId: artist.eventColorId,
+  };
 }
 
-export async function loadArtistRefreshToken(env, job, route) {
+export async function loadArtistTokenRecord(env, job, route) {
   if (!env?.CALENDAR_OAUTH_TOKENS || !env?.CALENDAR_TOKEN_ENCRYPTION_KEY) {
     throw new CalendarConnectorError('calendar_not_configured');
   }
@@ -203,7 +282,14 @@ export async function loadArtistRefreshToken(env, job, route) {
     throw new CalendarConnectorError('calendar_scope_missing');
   }
 
-  return record.refreshToken;
+  return {
+    ...record,
+    eventLabelId: normalizeStoredEventLabelId(record.eventLabelId),
+  };
+}
+
+export async function loadArtistRefreshToken(env, job, route) {
+  return (await loadArtistTokenRecord(env, job, route)).refreshToken;
 }
 
 export async function refreshGoogleAccessToken(env, refreshToken, fetchImpl = fetch) {
@@ -281,6 +367,9 @@ export function buildGoogleEvent(job, {
   includeId = false,
   crmReturnUrl = '',
   visibility = null,
+  artistDisplayName = null,
+  colorId = null,
+  eventLabelId = null,
 } = {}) {
   if (
     !job?.session_id
@@ -303,9 +392,16 @@ export function buildGoogleEvent(job, {
     crmUrl.searchParams.set('appointment', job.session_id);
   }
 
+  const normalizedArtistDisplayName = normalizeArtistDisplayName(artistDisplayName);
+  const eventSummary = [
+    normalizedArtistDisplayName,
+    appointmentLabel(job.appointment_type),
+    safeDisplayName(job.client_display_name),
+  ].filter(Boolean).join(' · ');
+
   const event = {
     status: 'confirmed',
-    summary: `${appointmentLabel(job.appointment_type)} · ${safeDisplayName(job.client_display_name)}`,
+    summary: eventSummary,
     description: [
       'Vishar CRM appointment',
       `Appointment ID: ${job.session_id}`,
@@ -324,7 +420,11 @@ export function buildGoogleEvent(job, {
   };
 
   const normalizedVisibility = normalizeEventVisibility(visibility);
+  const normalizedLabelId = normalizeEventLabelId(eventLabelId);
+  const normalizedColorId = normalizeEventColorId(colorId);
   if (normalizedVisibility) event.visibility = normalizedVisibility;
+  if (normalizedLabelId) event.eventLabelId = normalizedLabelId;
+  else if (normalizedColorId) event.colorId = normalizedColorId;
   if (includeId) event.id = eventId;
   return event;
 }
@@ -366,26 +466,44 @@ export function createGoogleCalendarProvider({
   calendarId = 'primary',
   crmReturnUrl = '',
   eventVisibility = null,
+  artistDisplayName = null,
+  eventColorId = null,
+  eventLabelId = null,
   fetchImpl = fetch,
 }) {
   if (!accessToken || calendarId !== 'primary') {
     throw new CalendarConnectorError('calendar_not_configured');
   }
   const visibility = normalizeEventVisibility(eventVisibility);
+  const displayName = normalizeArtistDisplayName(artistDisplayName);
+  const colorId = normalizeEventColorId(eventColorId);
+  const labelId = normalizeEventLabelId(eventLabelId);
 
   const calendarPath = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events`;
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
   };
+  const mutationQuery = new URLSearchParams({ sendUpdates: 'none' });
+  if (labelId) mutationQuery.set('eventLabelVersion', '1');
+  const mutationQueryString = mutationQuery.toString();
+
+  const projectionOptions = (extra = {}) => ({
+    crmReturnUrl,
+    visibility,
+    artistDisplayName: displayName,
+    colorId,
+    eventLabelId: labelId,
+    ...extra,
+  });
 
   async function patchEvent(eventId, job) {
     const response = await fetchImpl(
-      `${calendarPath}/${encodeURIComponent(eventId)}?sendUpdates=none`,
+      `${calendarPath}/${encodeURIComponent(eventId)}?${mutationQueryString}`,
       {
         method: 'PATCH',
         headers,
-        body: JSON.stringify(buildGoogleEvent(job, { crmReturnUrl, visibility })),
+        body: JSON.stringify(buildGoogleEvent(job, projectionOptions())),
       },
     );
     const body = await readProviderJson(response);
@@ -395,15 +513,13 @@ export function createGoogleCalendarProvider({
 
   async function insertEvent(job) {
     const eventId = await stableGoogleEventId(job.artist_id, job.session_id);
-    const response = await fetchImpl(`${calendarPath}?sendUpdates=none`, {
+    const response = await fetchImpl(`${calendarPath}?${mutationQueryString}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(buildGoogleEvent(job, {
+      body: JSON.stringify(buildGoogleEvent(job, projectionOptions({
         eventId,
         includeId: true,
-        crmReturnUrl,
-        visibility,
-      })),
+      }))),
     });
     if (response.status === 409) {
       return patchEvent(eventId, job);
@@ -455,9 +571,17 @@ export const __testing = {
   GOOGLE_SCOPE,
   TOKEN_ENVELOPE_VERSION,
   GOOGLE_EVENT_VISIBILITIES,
+  GOOGLE_EVENT_COLOR_IDS,
+  GOOGLE_EVENT_LABEL_ID_PATTERN,
   TRANSIENT_PROVIDER_REASONS,
   normalizeEmail,
   normalizeEventVisibility,
+  normalizeEventColorId,
+  normalizeEventLabelId,
+  normalizeStoredEventLabelId,
+  normalizeArtistDisplayName,
+  normalizeEventLabelName,
+  normalizeEventLabelColor,
   appointmentLabel,
   providerReasons,
   providerEventResult,

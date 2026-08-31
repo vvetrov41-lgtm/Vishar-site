@@ -27,7 +27,12 @@ import {
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
-const OAUTH_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events';
+const GOOGLE_PRIMARY_CALENDAR_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary';
+const GOOGLE_CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+const GOOGLE_CALENDAR_METADATA_SCOPE = 'https://www.googleapis.com/auth/calendar.calendars.readonly';
+const OAUTH_SCOPE = `openid email ${GOOGLE_CALENDAR_EVENTS_SCOPE} ${GOOGLE_CALENDAR_METADATA_SCOPE}`;
+const EVENT_LABEL_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EVENT_LABEL_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const STATE_TTL_SECONDS = 600;
 const DISCONNECT_TTL_SECONDS = 600;
 
@@ -65,12 +70,6 @@ async function sha256Base64Url(value) {
   return base64Url(new Uint8Array(digest));
 }
 
-/**
- * Rate-limit route classes are a closed enumeration on purpose. Deriving the
- * bucket from the raw pathname would let a caller mint an unlimited number of
- * buckets by rotating unmatched paths, so everything the router does not
- * recognise shares the single `other` bucket.
- */
 function rateLimitRouteClass(pathname) {
   if (pathname === '/health') return 'health';
   if (/^\/oauth\/google\/start\/(vladimir|kristina)$/.test(pathname)) return 'oauth_start';
@@ -79,30 +78,12 @@ function rateLimitRouteClass(pathname) {
   return 'other';
 }
 
-/**
- * The actor is the Access session, not the client address. Addresses can be
- * shared, while a signed Access assertion identifies the narrower CRM actor.
- * The Worker then applies owner-or-self artist routing and the authoritative
- * CRM membership capability before OAuth or disconnect actions are allowed.
- *
- * The raw assertion is hashed rather than parsed: an unverified JWT payload is
- * attacker-controlled, so keying on a claim inside it would let a caller rotate
- * the bucket. Hashing the whole token means a new bucket requires a genuinely
- * new Access session. Requests arriving without an assertion — which Access
- * should already have stopped — collapse onto one bucket per address.
- */
 async function rateLimitActor(request) {
   const assertion = request?.headers?.get('Cf-Access-Jwt-Assertion') || '';
   if (assertion) return `access:${await sha256Base64Url(assertion)}`;
   return `edge:${request?.headers?.get('CF-Connecting-IP') || 'unknown'}`;
 }
 
-/**
- * Enforced only where the binding exists. Retained staging keeps its existing
- * Access and zone-level controls and declares no binding, so this is inert
- * there and in unit tests. The production configuration validator asserts the
- * binding is declared, so production can never silently lose it.
- */
 async function enforceRateLimit(request, url, env) {
   const limiter = env?.CALENDAR_RATE_LIMIT;
   if (!limiter || typeof limiter.limit !== 'function') return null;
@@ -118,11 +99,15 @@ function artistConfig(alias, env) {
       artistId: env.VLADIMIR_ARTIST_ID,
       expectedEmail: env.VLADIMIR_GOOGLE_EMAIL,
       integrationKey: 'google_calendar_vladimir',
+      eventLabelName: env.VLADIMIR_GOOGLE_EVENT_LABEL_NAME || '',
+      eventLabelColor: env.VLADIMIR_GOOGLE_EVENT_LABEL_COLOR || '',
     },
     kristina: {
       artistId: env.KRISTINA_ARTIST_ID,
       expectedEmail: env.KRISTINA_GOOGLE_EMAIL,
       integrationKey: 'google_calendar_kristina',
+      eventLabelName: env.KRISTINA_GOOGLE_EVENT_LABEL_NAME || '',
+      eventLabelColor: env.KRISTINA_GOOGLE_EVENT_LABEL_COLOR || '',
     },
   };
   const config = configs[alias];
@@ -185,6 +170,50 @@ function assertCalendarActorRoute(actorEmail, alias, env) {
   if (!canManageCalendarAlias(actorEmail, alias, env)) {
     throw new OAuthSecurityError('calendar_artist_access_denied', 403);
   }
+}
+
+function normalizedLabelTarget(config) {
+  const name = typeof config?.eventLabelName === 'string' ? config.eventLabelName.trim() : '';
+  const color = typeof config?.eventLabelColor === 'string' ? config.eventLabelColor.trim().toLowerCase() : '';
+  if (!name && !color) return null;
+  if (!name || name.length > 50 || !EVENT_LABEL_COLOR_PATTERN.test(color)) {
+    throw new OAuthSecurityError('calendar_event_label_target_invalid', 503);
+  }
+  return { name, color };
+}
+
+async function resolveGoogleEventLabel(accessToken, config, fetchImpl = fetch) {
+  const target = normalizedLabelTarget(config);
+  if (!target) return null;
+  if (!accessToken) throw new OAuthSecurityError('calendar_label_lookup_failed', 502);
+
+  const response = await fetchImpl(GOOGLE_PRIMARY_CALENDAR_URL, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+  const calendar = await response.json().catch(() => ({}));
+  if (!response.ok) throw new OAuthSecurityError('calendar_label_lookup_failed', 502);
+
+  const labels = Array.isArray(calendar?.labelProperties?.eventLabels)
+    ? calendar.labelProperties.eventLabels
+    : [];
+  const targetName = target.name.toLowerCase();
+  const matches = labels.filter((label) => {
+    const id = typeof label?.id === 'string' ? label.id.trim() : '';
+    const color = typeof label?.backgroundColor === 'string'
+      ? label.backgroundColor.trim().toLowerCase()
+      : '';
+    const name = typeof label?.name === 'string' ? label.name.trim().toLowerCase() : '';
+    return EVENT_LABEL_ID_PATTERN.test(id)
+      && color === target.color
+      && (!name || name === targetName);
+  });
+  if (matches.length !== 1) {
+    throw new OAuthSecurityError('calendar_event_label_missing', 409);
+  }
+  return matches[0].id.trim().toLowerCase();
 }
 
 async function startOAuth(request, alias, env, fetchImpl = fetch) {
@@ -263,6 +292,14 @@ async function callback(request, env, fetchImpl = fetch) {
     throw error;
   }
 
+  let eventLabelId = null;
+  try {
+    eventLabelId = await resolveGoogleEventLabel(tokens.access_token, config, fetchImpl);
+  } catch (error) {
+    await revokeGoogleRefreshToken(tokens.refresh_token, fetchImpl).catch(() => false);
+    throw error;
+  }
+
   const tokenKey = `artist:${config.artistId}`;
   await env.CALENDAR_OAUTH_TOKENS.put(
     tokenKey,
@@ -271,6 +308,7 @@ async function callback(request, env, fetchImpl = fetch) {
       scope: tokens.scope || OAUTH_SCOPE,
       accountEmail,
       connectedAt: new Date().toISOString(),
+      eventLabelId,
     }, env.CALENDAR_TOKEN_ENCRYPTION_KEY),
   );
 
@@ -329,8 +367,6 @@ async function disconnect(request, alias, env, fetchImpl = fetch) {
       const record = await decryptTokenRecord(rawEnvelope, env.CALENDAR_TOKEN_ENCRYPTION_KEY);
       revoked = await revokeGoogleRefreshToken(record.refreshToken, fetchImpl);
     } catch {
-      // Local token deletion is authoritative for disconnect. A token that is
-      // already invalid or unreadable must not keep the integration enabled.
     }
   }
 
@@ -409,6 +445,9 @@ export default {
 };
 
 export const __testing = {
+  GOOGLE_CALENDAR_EVENTS_SCOPE,
+  GOOGLE_CALENDAR_METADATA_SCOPE,
+  OAUTH_SCOPE,
   artistConfig,
   assertCalendarActorRoute,
   authorizeCalendarActor,
@@ -417,6 +456,8 @@ export const __testing = {
   rateLimitRouteClass,
   supabaseBackend,
   updateIntegrationMetadata,
+  normalizedLabelTarget,
+  resolveGoogleEventLabel,
   startOAuth,
   callback,
   disconnect,

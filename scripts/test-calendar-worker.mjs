@@ -6,6 +6,7 @@ import {
   decryptTokenRecord,
   encryptTokenRecord,
   loadArtistRefreshToken,
+  loadArtistTokenRecord,
   refreshGoogleAccessToken,
   stableGoogleEventId,
   validateCalendarRoute,
@@ -35,6 +36,7 @@ const otherEncryptionKey = base64Url(Uint8Array.from({ length: 32 }, (_, index) 
 const vladimirId = 'a1111111-1111-4111-8111-111111111111';
 const kristinaId = 'a2222222-2222-4222-8222-222222222222';
 const sessionId = 'b1111111-1111-4111-8111-111111111111';
+const wisteriaLabelId = '0df5fe2d-13a3-42ae-8e07-8dc2c62c97a1';
 
 const env = {
   GOOGLE_OAUTH_CLIENT_ID: 'test-client-id',
@@ -43,8 +45,14 @@ const env = {
   VLADIMIR_ARTIST_ID: vladimirId,
   VLADIMIR_GOOGLE_EMAIL: 'vvetrov41@gmail.com',
   VLADIMIR_GOOGLE_EVENT_VISIBILITY: 'public',
+  VLADIMIR_GOOGLE_EVENT_DISPLAY_NAME: 'Vladimir',
+  VLADIMIR_GOOGLE_EVENT_COLOR_ID: '9',
   KRISTINA_ARTIST_ID: kristinaId,
   KRISTINA_GOOGLE_EMAIL: 'tinaakaten@gmail.com',
+  KRISTINA_GOOGLE_EVENT_VISIBILITY: 'public',
+  KRISTINA_GOOGLE_EVENT_DISPLAY_NAME: 'Kristina',
+  KRISTINA_GOOGLE_EVENT_LABEL_NAME: 'Wisteria',
+  KRISTINA_GOOGLE_EVENT_LABEL_COLOR: '#b39ddb',
   CRM_APPOINTMENTS_URL: 'https://vishar-crm-staging.pages.dev/#/appointments',
 };
 
@@ -111,27 +119,33 @@ await test('stable Google event ids are deterministic and appointment-specific',
   assert.match(first, /^[0-9a-v]{5,1024}$/);
 });
 
-await test('event projection contains bounded client context, public visibility and a hash-safe CRM link', async () => {
+await test('event projection contains trusted artist name, public visibility, Blueberry and a hash-safe CRM link', async () => {
   const event = buildGoogleEvent(job(), {
     eventId: 'vishar0123456789abcdef',
     includeId: true,
     crmReturnUrl: env.CRM_APPOINTMENTS_URL,
     visibility: 'public',
+    artistDisplayName: 'Vladimir',
+    colorId: '9',
   });
   assert.equal(event.id, 'vishar0123456789abcdef');
-  assert.match(event.summary, /Tattoo session · Synthetic Client/);
+  assert.equal(event.summary, 'Vladimir · Tattoo session · Synthetic Client');
   assert.equal(event.start.timeZone, 'Europe/London');
   assert.equal(event.end.timeZone, 'Europe/London');
   assert.equal(event.visibility, 'public');
+  assert.equal(event.colorId, '9');
+  assert.equal(event.eventLabelId, undefined);
   assert.match(event.description, /Appointment ID:/);
   assert.match(event.description, /\?appointment=.*#\/appointments/);
   assert.ok(!JSON.stringify(event).includes('notes'));
 });
 
-await test('artist route validation is exact and keeps public visibility scoped to Vladimir', async () => {
+await test('artist route validation is exact and gives both artists public trusted styling', async () => {
   const vladimir = validateCalendarRoute(routeFor(), job(), env);
   assert.equal(vladimir.calendarId, 'primary');
   assert.equal(vladimir.eventVisibility, 'public');
+  assert.equal(vladimir.eventDisplayName, 'Vladimir');
+  assert.equal(vladimir.eventColorId, '9');
 
   const kristina = validateCalendarRoute(
     routeFor(kristinaId),
@@ -139,7 +153,11 @@ await test('artist route validation is exact and keeps public visibility scoped 
     env,
   );
   assert.equal(kristina.calendarId, 'primary');
-  assert.equal(kristina.eventVisibility, null);
+  assert.equal(kristina.eventVisibility, 'public');
+  assert.equal(kristina.eventDisplayName, 'Kristina');
+  assert.equal(kristina.eventColorId, null);
+  assert.equal(kristina.artist.eventLabelName, 'Wisteria');
+  assert.equal(kristina.artist.eventLabelColor, '#b39ddb');
 
   const wrong = routeFor(kristinaId);
   wrong.outbox_id = 'outbox-1';
@@ -149,7 +167,7 @@ await test('artist route validation is exact and keeps public visibility scoped 
   );
 });
 
-await test('invalid artist visibility fails closed before a Google request', async () => {
+await test('invalid artist visibility, legacy color and label target fail closed before Google', async () => {
   await assert.rejects(
     async () => validateCalendarRoute(routeFor(), job(), {
       ...env,
@@ -157,9 +175,23 @@ await test('invalid artist visibility fails closed before a Google request', asy
     }),
     (error) => error.code === 'calendar_visibility_invalid',
   );
+  await assert.rejects(
+    async () => validateCalendarRoute(routeFor(), job(), {
+      ...env,
+      VLADIMIR_GOOGLE_EVENT_COLOR_ID: '18',
+    }),
+    (error) => error.code === 'calendar_event_color_invalid',
+  );
+  await assert.rejects(
+    async () => validateCalendarRoute(routeFor(kristinaId), job({ artist_id: kristinaId }), {
+      ...env,
+      KRISTINA_GOOGLE_EVENT_LABEL_COLOR: '',
+    }),
+    (error) => error.code === 'calendar_event_label_target_invalid',
+  );
 });
 
-await test('token custody selects a separate encrypted envelope per artist', async () => {
+await test('token custody selects a separate encrypted envelope per artist and preserves optional label ids', async () => {
   const envelopes = new Map();
   envelopes.set(`artist:${vladimirId}`, await encryptTokenRecord({
     refreshToken: 'refresh-vladimir',
@@ -168,8 +200,9 @@ await test('token custody selects a separate encrypted envelope per artist', asy
   }, encryptionKey));
   envelopes.set(`artist:${kristinaId}`, await encryptTokenRecord({
     refreshToken: 'refresh-kristina',
-    scope: 'https://www.googleapis.com/auth/calendar.events',
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendars.readonly',
     accountEmail: 'tinaakaten@gmail.com',
+    eventLabelId: wisteriaLabelId,
   }, encryptionKey));
   const tokenEnv = {
     ...env,
@@ -179,14 +212,26 @@ await test('token custody selects a separate encrypted envelope per artist', asy
     await loadArtistRefreshToken(tokenEnv, job(), routeFor()),
     'refresh-vladimir',
   );
-  assert.equal(
-    await loadArtistRefreshToken(
-      tokenEnv,
-      job({ artist_id: kristinaId }),
-      routeFor(kristinaId),
-    ),
-    'refresh-kristina',
+  const kristinaRecord = await loadArtistTokenRecord(
+    tokenEnv,
+    job({ artist_id: kristinaId }),
+    routeFor(kristinaId),
   );
+  assert.equal(kristinaRecord.refreshToken, 'refresh-kristina');
+  assert.equal(kristinaRecord.eventLabelId, wisteriaLabelId);
+
+  envelopes.set(`artist:${kristinaId}`, await encryptTokenRecord({
+    refreshToken: 'refresh-kristina-old',
+    scope: 'https://www.googleapis.com/auth/calendar.events',
+    accountEmail: 'tinaakaten@gmail.com',
+  }, encryptionKey));
+  const oldRecord = await loadArtistTokenRecord(
+    tokenEnv,
+    job({ artist_id: kristinaId }),
+    routeFor(kristinaId),
+  );
+  assert.equal(oldRecord.refreshToken, 'refresh-kristina-old');
+  assert.equal(oldRecord.eventLabelId, null);
 });
 
 await test('refresh-token exchange stays server-side and maps invalid_grant safely', async () => {
@@ -236,7 +281,7 @@ await test('Google 403 permission failures remain permanent', async () => {
   );
 });
 
-await test('create retries reuse one deterministic event id instead of duplicating', async () => {
+await test('create retries reuse one deterministic event id and preserve Blueberry styling', async () => {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null });
@@ -246,6 +291,8 @@ await test('create retries reuse one deterministic event id instead of duplicati
   const provider = createGoogleCalendarProvider({
     accessToken: 'access',
     eventVisibility: 'public',
+    artistDisplayName: 'Vladimir',
+    eventColorId: '9',
     fetchImpl,
   });
   const result = await provider.createEvent(job());
@@ -253,8 +300,33 @@ await test('create retries reuse one deterministic event id instead of duplicati
   assert.equal(calls[1].method, 'PATCH');
   assert.equal(calls[0].body.visibility, 'public');
   assert.equal(calls[1].body.visibility, 'public');
+  assert.equal(calls[0].body.colorId, '9');
+  assert.equal(calls[1].body.colorId, '9');
+  assert.equal(calls[0].body.summary, 'Vladimir · Tattoo session · Synthetic Client');
   assert.equal(result.providerEventId, calls[0].body.id);
   assert.match(calls[1].url, new RegExp(`${calls[0].body.id}\\?sendUpdates=none$`));
+});
+
+await test('Wisteria uses eventLabelId with eventLabelVersion=1 instead of legacy Grape', async () => {
+  const calls = [];
+  const provider = createGoogleCalendarProvider({
+    accessToken: 'access',
+    eventVisibility: 'public',
+    artistDisplayName: 'Kristina',
+    eventLabelId: wisteriaLabelId,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), body: JSON.parse(init.body) });
+      return Response.json({ id: 'wisteria-event' });
+    },
+  });
+  await provider.createEvent(job({ artist_id: kristinaId }));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.eventLabelId, wisteriaLabelId);
+  assert.equal(calls[0].body.colorId, undefined);
+  assert.equal(calls[0].body.summary, 'Kristina · Tattoo session · Synthetic Client');
+  const url = new URL(calls[0].url);
+  assert.equal(url.searchParams.get('eventLabelVersion'), '1');
+  assert.equal(url.searchParams.get('sendUpdates'), 'none');
 });
 
 await test('missing update target is recreated with the deterministic id', async () => {
@@ -288,7 +360,7 @@ await test('delete is idempotent when Google reports an already missing event', 
   );
 });
 
-await test('drain skips stale versions and creates only the current artist event', async () => {
+await test('drain skips stale versions and creates only the current styled artist event', async () => {
   const tokenEnvelope = await encryptTokenRecord({
     refreshToken: 'refresh-vladimir',
     scope: 'https://www.googleapis.com/auth/calendar.events',
@@ -344,7 +416,10 @@ await test('drain skips stale versions and creates only the current artist event
   assert.equal(result.obsolete, 1);
   assert.equal(result.succeeded, 1);
   assert.equal(googleCalls.length, 1);
-  assert.equal(JSON.parse(googleCalls[0].init.body).visibility, 'public');
+  const projected = JSON.parse(googleCalls[0].init.body);
+  assert.equal(projected.visibility, 'public');
+  assert.equal(projected.colorId, '9');
+  assert.equal(projected.summary, 'Vladimir · Tattoo session · Synthetic Client');
   const acknowledgements = rpcCalls.filter((call) => call.name === 'record_calendar_outbox_result');
   assert.equal(acknowledgements.length, 2);
   assert.equal(acknowledgements[0].args.p_outbox_id, 'stale-job');
@@ -358,4 +433,4 @@ if (failures) {
   process.exit(1);
 }
 
-console.log(`Calendar Worker tests passed: ${passes} cases covering encrypted token custody, exact artist routing, artist-scoped visibility, deterministic idempotency, provider error classification, refresh, create/update/cancel and stale-job draining.`);
+console.log(`Calendar Worker tests passed: ${passes} cases covering encrypted token custody, exact artist routing, public artist identity, Blueberry/Wisteria styling, deterministic idempotency, provider error classification, refresh, create/update/cancel and stale-job draining.`);
