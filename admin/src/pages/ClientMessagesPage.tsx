@@ -388,17 +388,25 @@ export function groupTemplates(templates: ClientLifecycleTemplate[]): TemplateSl
     grouped.set(key, versions);
   }
   return Array.from(grouped.entries()).map(([key, versions]) => {
-    const sorted = [...versions].sort((a, b) => b.version - a.version);
-    const active = sorted.find((template) => template.status === 'active') ?? null;
-    const draft = sorted.find((template) => template.status === 'draft') ?? null;
+    const byVersion = (items: ClientLifecycleTemplate[]) => [...items].sort((a, b) => b.version - a.version);
+    const artistVersions = byVersion(versions.filter((template) => template.template_scope === 'artist'));
+    const workspaceVersions = byVersion(versions.filter((template) => template.template_scope === 'workspace'));
+    const artistActive = artistVersions.find((template) => template.status === 'active') ?? null;
+    const artistDraft = artistVersions.find((template) => template.status === 'draft') ?? null;
+    const workspaceActive = workspaceVersions.find((template) => template.status === 'active') ?? null;
+    const workspaceDraft = workspaceVersions.find((template) => template.status === 'draft') ?? null;
+    const active = artistActive ?? workspaceActive;
+    const draft = artistDraft ?? (artistActive ? null : workspaceDraft);
+    const sorted = [...artistVersions, ...workspaceVersions];
+    const source = draft ?? active ?? artistVersions[0] ?? workspaceVersions[0];
     return {
       key,
-      purpose: sorted[0].purpose,
-      locale: sorted[0].locale,
+      purpose: source.purpose,
+      locale: source.locale,
       versions: sorted,
       active,
       draft,
-      source: draft ?? active ?? sorted[0],
+      source,
     };
   }).sort((a, b) => purposeRank(a.purpose) - purposeRank(b.purpose) || a.locale.localeCompare(b.locale));
 }
