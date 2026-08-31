@@ -19,8 +19,8 @@
 - [x] Mark CRM `connected_at` only after all provider readbacks succeed.
 - [x] Keep token out of response, logs, Supabase configuration, and connected-state mutation body.
 - [x] Restrict the CRM API client direct path to Vladimir and require connected readback proof.
-- [ ] Hide the direct System User token form for Kristina in the CRM page.
-- [ ] Update GPT operator-parity inventory with the explicit `ui_only` credential-custody decision.
+- [x] Hide the direct System User token form for Kristina in the CRM page.
+- [x] Update GPT operator-parity inventory with the explicit `ui_only` credential-custody decision.
 
 ## Regression validation
 
