@@ -32,6 +32,7 @@ import { groupEmailThreads } from '../lib/email-threads';
 import {
   conversationItem,
   emailItem,
+  isActionableConversation,
   isWaiting,
   mergeInbox,
   type InboxChannel,
@@ -48,8 +49,7 @@ const COPY = {
     email: 'Email',
     everyone: 'Everyone',
     needsReply: 'Needs reply',
-    unmatched: 'Unmatched',
-    linked: 'Linked clients',
+    unmatched: 'Unknown senders',
     loading: 'Loading conversations…',
     empty: 'No conversations yet',
     emptyHint: 'Messages appear here as soon as a connected channel receives one.',
@@ -69,6 +69,10 @@ const COPY = {
     noSubject: 'No subject',
     attachment: 'Attachment',
     emailUnavailable: 'Email conversations could not be loaded.',
+    unmatchedNotice: 'Messages from numbers and addresses the CRM cannot name. '
+      + 'They are kept, but they are out of the working queue and out of Today until you say who they are.',
+    unmatchedEmpty: 'No unknown senders',
+    unmatchedEmptyHint: 'Every conversation the studio has received belongs to a client or an enquiry.',
   },
   ru: {
     title: 'Сообщения',
@@ -78,8 +82,7 @@ const COPY = {
     email: 'Почта',
     everyone: 'Все',
     needsReply: 'Ждут ответа',
-    unmatched: 'Без клиента',
-    linked: 'С клиентом',
+    unmatched: 'Неизвестные отправители',
     loading: 'Загружаем диалоги…',
     empty: 'Диалогов пока нет',
     emptyHint: 'Сообщения появятся здесь, как только подключённый канал что-то получит.',
@@ -99,6 +102,10 @@ const COPY = {
     noSubject: 'Без темы',
     attachment: 'Вложение',
     emailUnavailable: 'Не удалось загрузить переписку по почте.',
+    unmatchedNotice: 'Сообщения с номеров и адресов, которых CRM не знает. '
+      + 'Они сохраняются, но не попадают в рабочий список и в «Сегодня», пока вы не укажете, кто это.',
+    unmatchedEmpty: 'Неизвестных отправителей нет',
+    unmatchedEmptyHint: 'Каждый диалог студии связан с клиентом или заявкой.',
   },
 } as const;
 
@@ -107,13 +114,15 @@ type ChannelFilter = '' | InboxChannel;
 /**
  * "Who needs a reply?" is the question the operator actually opens this screen
  * with, so it is a view of its own rather than something to work out from the
- * unread badges. The other two views are about the record rather than the
- * person, and stay available behind it.
+ * unread badges.
  *
- * Link state is a messaging idea, so choosing it also narrows the list to
- * messaging channels rather than silently dropping every email row.
+ * "Unmatched" is the deliberate exception. The working queue holds only
+ * conversations that have reached a CRM record; a stranger who messaged the
+ * studio number is kept, but out of the way, and is looked at only when
+ * somebody chooses to. Choosing it narrows the list to messaging channels,
+ * because link state is a messaging idea.
  */
-type ViewFilter = '' | 'needs_reply' | CommunicationLinkState;
+type ViewFilter = '' | 'needs_reply' | 'unmatched';
 
 interface InboxData {
   conversations: ConversationSummary[];
@@ -132,10 +141,15 @@ export function InboxPage() {
 
   // Needs-reply is decided from the newest message's direction, which the
   // projection already carries, so it is applied here rather than asked of the
-  // server. Link state is a server filter because the database indexes it.
-  const linkState: CommunicationLinkState | undefined = view === 'unmatched' || view === 'linked'
-    ? view
-    : undefined;
+  // server.
+  //
+  // The linked/unmatched split is asked of the SERVER, not filtered out of a
+  // full page afterwards. Two reasons. The database indexes unmatched rows
+  // (0069), so it is the cheaper read; and a page size of 50 spent on strangers
+  // would push real conversations off the end of the list before any
+  // browser-side filter could see them.
+  const unmatchedView = view === 'unmatched';
+  const linkState: CommunicationLinkState = unmatchedView ? 'unmatched' : 'linked';
 
   const { data, loading, error, reload } = useAsync<InboxData>(
     async () => {
@@ -150,7 +164,7 @@ export function InboxPage() {
       // this screen; email is additive, so its failure is a notice.
       let emails: EmailMessage[] = [];
       let emailFailed = false;
-      if (!linkState) {
+      if (!unmatchedView) {
         try {
           emails = await api.listEmailMessages({
             artistId: selectedArtistId ?? undefined,
@@ -190,19 +204,24 @@ export function InboxPage() {
         ]),
       };
     },
-    [api, channel, linkState, selectedArtistId, copy.unknownSender],
+    [api, channel, linkState, unmatchedView, selectedArtistId, copy.unknownSender],
   );
 
   // Artist scope is a usability filter here, exactly as it is on every other
   // list. The database has already limited the rows to artists this operator
   // can reach.
+  // The same boundary the server was asked for, re-applied to whatever came
+  // back. Not belt-and-braces for its own sake: email rows are assembled here
+  // rather than by that RPC, so without this an unlinked email row would reach
+  // the working queue through a door the server filter does not cover.
   const items = useMemo(
     () => (data?.items ?? []).filter(
       (item) => (!selectedArtistId || item.artist_id === selectedArtistId)
         && (channel === '' || item.channel === channel)
+        && (unmatchedView ? !isActionableConversation(item) : isActionableConversation(item))
         && (view !== 'needs_reply' || isWaiting(item)),
     ),
-    [data, selectedArtistId, channel, view],
+    [data, selectedArtistId, channel, view, unmatchedView],
   );
 
   const conversationById = useMemo(
@@ -240,7 +259,6 @@ export function InboxPage() {
             ['', copy.everyone],
             ['needs_reply', copy.needsReply],
             ['unmatched', copy.unmatched],
-            ['linked', copy.linked],
           ] as [ViewFilter, string][]).map(([value, label]) => (
             <button
               key={value || 'everyone'}
@@ -261,10 +279,20 @@ export function InboxPage() {
         <p className="notice warn" role="status">{copy.emailUnavailable}</p>
       ) : null}
 
+      {/* Said once, at the top of the view it applies to, so the operator knows
+          these are not jobs they are behind on. */}
+      {!loading && !error && unmatchedView ? (
+        <p className="notice" role="status">{copy.unmatchedNotice}</p>
+      ) : null}
+
       {!loading && !error && items.length === 0 ? (
         <EmptyState
-          title={view === 'needs_reply' ? copy.nobodyWaiting : filtered ? copy.emptyFiltered : copy.empty}
-          hint={view === 'needs_reply' ? copy.nobodyWaitingHint : filtered ? copy.emptyFilteredHint : copy.emptyHint}
+          title={unmatchedView
+            ? copy.unmatchedEmpty
+            : view === 'needs_reply' ? copy.nobodyWaiting : filtered ? copy.emptyFiltered : copy.empty}
+          hint={unmatchedView
+            ? copy.unmatchedEmptyHint
+            : view === 'needs_reply' ? copy.nobodyWaitingHint : filtered ? copy.emptyFilteredHint : copy.emptyHint}
         />
       ) : null}
 

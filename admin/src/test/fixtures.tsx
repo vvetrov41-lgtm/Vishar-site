@@ -20,6 +20,7 @@ export const MANAGER_ID = '22222222-2222-4222-8222-222222222222';
 export const READER_ID = '33333333-3333-4333-8333-333333333333';
 export const DISABLED_ID = '44444444-4444-4444-8444-444444444444';
 export const CLIENT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+export const SECOND_CLIENT_ID = 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd';
 export const ENQUIRY_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 export const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const SESSION_ID = '55555555-5555-4555-8555-555555555555';
@@ -275,11 +276,19 @@ export const ACTIVITY = [
 
 export const CONVERSATION_ID = '99999999-9999-4999-8999-999999999999';
 export const LINKED_CONVERSATION_ID = '88888888-8888-4888-8888-888888888888';
+export const UNANSWERED_CONVERSATION_ID = '77777777-7777-4777-8777-777777777777';
 
 /**
- * One unmatched Instagram conversation and one linked WhatsApp conversation.
- * Between them they exercise both inbox states without needing a second
- * fixture set.
+ * Three conversations, covering the three states the Inbox has to tell apart.
+ *
+ * - An unmatched Instagram conversation from somebody the CRM cannot name.
+ *   It is inbound and unread, so under the old rules it looked like the most
+ *   urgent thing in the studio. It must now appear only in the unknown-senders
+ *   view: not in the list, not in Needs reply, not in Today.
+ * - A linked Instagram conversation the client spoke on last. This is what
+ *   real waiting work looks like, and it must survive the boundary.
+ * - A linked WhatsApp conversation the artist answered last, which is present
+ *   but not waiting.
  */
 export const CONVERSATIONS = [
   {
@@ -299,6 +308,29 @@ export const CONVERSATIONS = [
     operator_read_at: null,
     has_unread: true,
     latest_preview: 'Do you do cover ups?',
+    latest_direction: 'inbound' as const,
+    latest_message_type: 'text',
+  },
+  {
+    id: UNANSWERED_CONVERSATION_ID,
+    artist_id: VLADIMIR_ARTIST_ID,
+    channel: 'instagram' as const,
+    link_state: 'linked' as const,
+    state: 'open' as const,
+    // A second client on purpose: the client workspace fixtures describe one
+    // client's own record, and borrowing them here would make every
+    // workspace assertion depend on the inbox fixture set.
+    client_id: SECOND_CLIENT_ID,
+    client_name: 'Second Client',
+    enquiry_id: null,
+    external_username: null,
+    external_display_label: null,
+    last_message_at: '2026-08-18T09:00:00Z',
+    last_inbound_at: '2026-08-18T09:00:00Z',
+    last_outbound_at: '2026-08-17T18:00:00Z',
+    operator_read_at: null,
+    has_unread: true,
+    latest_preview: 'Can we move Friday?',
     latest_direction: 'inbound' as const,
     latest_message_type: 'text',
   },
@@ -428,6 +460,14 @@ export interface FakeClientOptions {
    */
   emailMessages?: Record<string, unknown>[];
   /**
+   * Rows the conversation projection returns, replacing the shared
+   * `CONVERSATIONS` set. Tests about the boundary between studio work and an
+   * unknown sender need to state their own world - which channel, which links,
+   * which side spoke last - rather than bending the shared fixture until every
+   * other test reads differently.
+   */
+  conversations?: Record<string, unknown>[];
+  /**
    * Rows `get_artist_scheduling_preferences` returns. Defaults mirror the
    * database defaults seeded by 0120, so a test that does not care about
    * scheduling policy behaves exactly as production does.
@@ -552,7 +592,8 @@ function tableResult(
   failTable?: string,
   enquiryStatus?: EnquiryStatus,
   extraSessions: Record<string, unknown>[] = [],
-  emailMessages: Record<string, unknown>[] = []
+  emailMessages: Record<string, unknown>[] = [],
+  conversations: Record<string, unknown>[] = CONVERSATIONS as unknown as Record<string, unknown>[]
 ) {
   if (failTable === table) return { data: null, error: { code: 'PGRST000', message: 'boom' } };
 
@@ -585,7 +626,7 @@ function tableResult(
     case 'internal_notes':
       return { data: canManage ? [{ id: 'note-1', author_profile_id: OWNER_ID, body: 'Internal note', created_at: '2026-07-02T09:00:00Z' }] : [], error: null };
     case 'communication_conversations':
-      return { data: CONVERSATIONS, error: null };
+      return { data: conversations, error: null };
     case 'communication_messages':
       return { data: CONVERSATION_MESSAGES, error: null };
     case 'email_messages':
@@ -660,7 +701,8 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         options.failTable,
         options.enquiryStatus,
         options.extraSessions,
-        options.emailMessages
+        options.emailMessages,
+        options.conversations
       );
     // PostgREST applies `eq` server-side, so the fake does too. Without this a
     // screen that scopes a read by client, project or status would "pass" while
@@ -747,8 +789,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       if (name === 'list_communication_conversations') {
         const channel = (args as any)?.p_channel ?? null;
         const linkState = (args as any)?.p_link_state ?? null;
+        const pool = (options.conversations ?? CONVERSATIONS) as any[];
         return {
-          data: CONVERSATIONS.filter(
+          data: pool.filter(
             (conversation) => (!channel || conversation.channel === channel)
               && (!linkState || conversation.link_state === linkState),
           ),

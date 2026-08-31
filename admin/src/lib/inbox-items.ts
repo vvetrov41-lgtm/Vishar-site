@@ -48,6 +48,35 @@ export function isWaiting(item: Pick<InboxItem, 'reason'>): boolean {
   return item.reason !== 'none';
 }
 
+/** Anything carrying the two links that decide whether a row is studio work. */
+export interface CrmLinked {
+  client_id: string | null;
+  enquiry_id: string | null;
+}
+
+/**
+ * The one boundary between work and noise, asked in one place.
+ *
+ * A stranger messaging the studio number is a real inbound event and is kept -
+ * the webhook record, the message, the audit trail all survive. What it is not
+ * is a job: nobody owes an answer to somebody the CRM cannot name, and a queue
+ * that says otherwise teaches the operator to ignore it.
+ *
+ * So every operator surface - the Inbox list, Needs reply, Today, and anything
+ * that counts them - asks this single question instead of each inventing its
+ * own rule and drifting.
+ *
+ * Linked means the row has reached a CRM record: a client, or an enquiry -
+ * which carries a client of its own, since `enquiries.client_id` is NOT NULL.
+ * The database says the same thing from the other side: a CHECK on
+ * `communication_conversations` ties `link_state = 'linked'` to a non-null
+ * `client_id` (0069), so the server-side filter and this predicate cannot
+ * disagree.
+ */
+export function isActionableConversation(row: CrmLinked): boolean {
+  return row.client_id !== null || row.enquiry_id !== null;
+}
+
 export function conversationItem(
   conversation: ConversationSummary,
   title: string,

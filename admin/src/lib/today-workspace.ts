@@ -15,6 +15,7 @@
 import type { Appointment } from './appointment-api';
 import { conversationNeedsReply, type ConversationSummary } from './communications-api';
 import { threadNeedsOperator, type EmailThread } from './email-threads';
+import { isActionableConversation } from './inbox-items';
 import type { MonzoReconciliationCandidate } from './payment-api';
 import type { Enquiry, FollowUp, Project } from './types';
 
@@ -148,6 +149,9 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
   // unread-only rule dropped conversations the operator had looked at and not
   // answered while the client carried on waiting.
   for (const conversation of input.conversations) {
+    // A message from somebody the CRM cannot name is not triage: it belongs to
+    // the Inbox's own unmatched view, where deciding who they are is the work.
+    if (!isActionableConversation(conversation)) continue;
     if (!conversationNeedsReply(conversation)) continue;
     items.push({
       key: `reply-${conversation.id}`,
@@ -166,6 +170,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
   // mail, so email cannot contribute a "they replied" row; what it can
   // contribute is work that is genuinely stuck on this side.
   for (const thread of input.emailThreads) {
+    if (!isActionableConversation(thread)) continue;
     if (!threadNeedsOperator(thread)) continue;
     items.push({
       key: `email-${thread.key}`,

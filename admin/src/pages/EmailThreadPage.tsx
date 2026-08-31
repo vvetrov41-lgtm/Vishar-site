@@ -18,6 +18,13 @@ import { useApi, useSession } from '../lib/session';
 import { groupEmailThreads, stateFor, type EmailThread } from '../lib/email-threads';
 import type { EmailMessageDetail } from '../lib/types';
 
+/**
+ * How many of a client's enquiries to read the mailbox for when the thread
+ * itself names none. Bounded because each one is a separate gateway round trip;
+ * newest first, because that is where a live conversation actually is.
+ */
+const GMAIL_ENQUIRY_LOOKBACK = 3;
+
 interface ThreadView {
   thread: EmailThread | null;
   /** The body of whatever the operator has to act on, loaded only here. */
@@ -53,15 +60,38 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
         ? await api.getEmailMessage(thread.actionable_message_id)
         : null;
 
-      let liveGmail: LiveGmailHistory | null = null;
+      // The gateway maps an operator to exactly one enquiry before it touches
+      // Google, so an enquiry id is the only key live Gmail can be read by.
+      //
+      // Most stored CRM email has no enquiry: a deposit receipt is written
+      // against the client. Those threads used to show no mailbox history at
+      // all - which is why Gmail correspondence appeared to exist nowhere in
+      // the CRM. When the thread knows the client but not the enquiry, ask the
+      // client's own enquiries instead. That is the same deterministic link the
+      // CRM already holds, not a guess from the address.
+      const enquiryIds = thread?.enquiry_id
+        ? [thread.enquiry_id]
+        : thread?.client_id
+          ? (await api.listEnquiries({ clientId: thread.client_id }).catch(() => []))
+            .slice(0, GMAIL_ENQUIRY_LOOKBACK)
+            .map((enquiry) => enquiry.id)
+          : [];
+
+      const histories: LiveGmailHistory[] = [];
       let liveGmailError: string | null = null;
-      if (thread?.enquiry_id) {
+      for (const enquiryId of enquiryIds) {
         try {
-          liveGmail = await api.listLiveGmailHistory(thread.enquiry_id);
+          histories.push(await api.listLiveGmailHistory(enquiryId));
         } catch (cause) {
           liveGmailError = cause instanceof Error ? cause.message : 'gmail_live_unavailable';
         }
       }
+      // One enquiry answering is enough to prove the mailbox is reachable, so a
+      // different one failing must not replace a real answer with an error.
+      const liveGmail: LiveGmailHistory | null = histories.length > 0
+        ? { ...histories[0], threads: histories.flatMap((history) => history.threads) }
+        : null;
+      if (liveGmail) liveGmailError = null;
 
       return { thread, actionable, liveGmail, liveGmailError };
     },
@@ -160,7 +190,10 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
         </Section>
       ) : null}
 
-      {thread.enquiry_id ? (
+      {/* Shown whenever the mailbox was actually reachable for this thread, not
+          only when the thread itself names an enquiry - the enquiry is how the
+          gateway is addressed, not the only kind of thread that has mail. */}
+      {liveGmail || liveGmailError ? (
         <Section title={copy.liveHistory}>
           {liveGmailError ? (
             <div className="notice warn" role="status">
