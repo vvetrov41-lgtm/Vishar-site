@@ -247,31 +247,25 @@ async function requireWabaSubscriptionReadback(accessToken, wabaId) {
 }
 
 async function markIntegrationConnected(operator, env, artistId, approved) {
-  const connectedAt = new Date().toISOString();
   const publishableKey = binding(env, 'SUPABASE_PUBLISHABLE_KEY');
-  const url = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_integrations`);
-  url.searchParams.set('artist_id', `eq.${artistId}`);
-  url.searchParams.set('integration_type', 'eq.whatsapp');
-  url.searchParams.set('provider', 'eq.meta_cloud_api');
-  url.searchParams.set('integration_key', `eq.${approved.integrationKey}`);
-  url.searchParams.set('select', 'artist_id,integration_key,is_enabled,connected_at,configuration');
-  const response = await noFollowFetch(url.toString(), {
-    method: 'PATCH',
+  const response = await noFollowFetch(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/rpc/complete_vladimir_whatsapp_connection`, {
+    method: 'POST',
     headers: {
       apikey: publishableKey,
       authorization: `Bearer ${operator.token}`,
       'content-type': 'application/json',
-      prefer: 'return=representation',
       accept: 'application/json',
     },
-    body: JSON.stringify({ connected_at: connectedAt }),
+    body: '{}',
   });
   if (!response.ok) throw Object.assign(new Error('crm_connected_state_update_failed'), { status: 502 });
-  const rows = await responseJson(response);
-  const route = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+  const route = await responseJson(response);
   const configuration = route?.configuration;
   const safeConfiguration = configuration && typeof configuration === 'object' && !Array.isArray(configuration) && Object.keys(configuration).length === 0;
-  if (!route || route.artist_id !== artistId || route.integration_key !== approved.integrationKey || route.is_enabled !== true || route.connected_at !== connectedAt || !safeConfiguration) {
+  const connectedAt = typeof route?.connected_at === 'string' && Number.isFinite(Date.parse(route.connected_at))
+    ? route.connected_at
+    : '';
+  if (!route || route.artist_id !== artistId || route.integration_key !== approved.integrationKey || route.is_enabled !== true || !connectedAt || !safeConfiguration) {
     throw Object.assign(new Error('crm_connected_state_readback_failed'), { status: 502 });
   }
   return connectedAt;

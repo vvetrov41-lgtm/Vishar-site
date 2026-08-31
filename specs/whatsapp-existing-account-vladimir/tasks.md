@@ -17,6 +17,7 @@
 - [x] Subscribe Vladimir WABA to the fixed app.
 - [x] Read back Meta WABA/phone identity, app subscription, and both Cloudflare secret names.
 - [x] Mark CRM `connected_at` only after all provider readbacks succeed.
+- [x] Preserve the table ACL by using the bounded Vladimir-only connected-state RPC instead of direct authenticated `UPDATE`.
 - [x] Keep token out of response, logs, Supabase configuration, and connected-state mutation body.
 - [x] Restrict the CRM API client direct path to Vladimir and require connected readback proof.
 - [x] Hide the direct System User token form for Kristina in the CRM page.
