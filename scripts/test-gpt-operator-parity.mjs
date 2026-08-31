@@ -41,8 +41,8 @@ for (const schemaIds of importedBySchema) {
     `an imported schema exceeds the hard ${PARITY_METADATA.hardImportedSchemaOperationLimit}-operation limit`,
   );
 }
-assert.deepEqual(importedBySchema.map((ids) => ids.length), [28, 19, 10],
-  'current transport projection must be Core 28 + Operations 19 + Communications 10');
+assert.deepEqual(importedBySchema.map((ids) => ids.length), [28, 19, 19],
+  'current transport projection must be Core 28 + Operations 19 + Communications 19');
 assert.ok(importedBySchema[0].length > PARITY_METADATA.targetImportedSchemaOperationLimit,
   'Core remains explicit technical debt for the next repartition step');
 assert.ok(importedBySchema[1].length <= PARITY_METADATA.targetImportedSchemaOperationLimit);
@@ -103,8 +103,6 @@ const criticalGaps = [
   'monzo.reconciliation.match',
   'monzo.reconciliation.confirm',
   'monzo.reconciliation.ignore',
-  'communications.conversations.list',
-  'communications.reply.send',
   'booking_sources.create',
   'templates.upsert',
   'automation.rules.create',
@@ -116,6 +114,28 @@ for (const key of criticalGaps) {
   const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
   assert.ok(row, `${key} must remain explicit in the parity inventory`);
   assert.equal(row.gpt.status, 'gap', `${key} must remain a gap until implemented`);
+}
+
+// The unified Communications inbox is closed: every operator action the CRM
+// inbox exposes now has one bounded, artist-pinned GPT operation.
+for (const key of [
+  'communications.conversations.list',
+  'communications.conversation.get',
+  'communications.messages.list',
+  'communications.reply.send',
+  'communications.mark_read',
+  'communications.state.set',
+  'communications.client.link',
+  'communications.client.create',
+  'communications.enquiry.create',
+]) {
+  const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
+  assert.ok(row, `${key} must remain explicit in the parity inventory`);
+  assert.equal(row.gpt.status, 'available', `${key} is implemented and must be recorded as available`);
+  assert.ok(
+    row.serverContracts.some((contract) => contract.startsWith('public.gpt_')),
+    `${key} must map to a named GPT RPC rather than a raw CRM contract`,
+  );
 }
 
 for (const key of [

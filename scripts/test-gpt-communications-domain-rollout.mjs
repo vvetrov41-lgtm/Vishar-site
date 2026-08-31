@@ -15,8 +15,8 @@ const coreIds = operationIds(core);
 const operationsIds = operationIds(operations);
 const communicationsIds = operationIds(communications);
 
-assert.deepEqual([coreIds.length, operationsIds.length, communicationsIds.length], [28, 19, 10]);
-assert.equal(new Set([...coreIds, ...operationsIds, ...communicationsIds]).size, 57);
+assert.deepEqual([coreIds.length, operationsIds.length, communicationsIds.length], [28, 19, 19]);
+assert.equal(new Set([...coreIds, ...operationsIds, ...communicationsIds]).size, 66);
 
 for (const host of ['gpt-actions', 'gpt-operations', 'gpt-communications']) {
   assert.match(wrangler, new RegExp(`pattern = "${host}\\.vishartattoo\\.com", custom_domain = true`));

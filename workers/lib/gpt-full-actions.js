@@ -15,6 +15,9 @@ const FOLLOW_UP_STATUS = new Set(['open', 'done', 'cancelled']);
 const APPOINTMENT_STATUS = new Set(['draft', 'proposed', 'confirmed', 'completed', 'cancelled', 'no_show']);
 const AVAILABILITY_KIND = new Set(['day_off', 'holiday', 'personal', 'other']);
 const PAYMENT_REQUEST_STATUS = new Set(['pending', 'partially_paid', 'paid', 'cancelled', 'expired']);
+const COMMUNICATION_CHANNEL = new Set(['whatsapp', 'instagram']);
+const COMMUNICATION_LINK_STATE = new Set(['unmatched', 'linked']);
+const COMMUNICATION_STATE = new Set(['open', 'archived']);
 
 function exactObject(value, allowed) {
   if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error('invalid_json_object');
@@ -426,6 +429,103 @@ export function routeForFullGptAction(request, url, body) {
       p_to: string(url.searchParams.get('to'), 'to', { max: 64 }),
       p_limit: queryLimit(url.searchParams.get('limit'), 'limit', 30, 50),
     }, responseKind: 'list' };
+  }
+
+  // Unified Communications inbox.
+  //
+  // Every route names a conversation and nothing else: the artist, channel,
+  // provider account and destination are all read from the stored row on the
+  // server. Inbound message bodies returned here are third-party content and
+  // remain untrusted data.
+  if (method === 'GET' && path === '/v1/communications/conversations') {
+    exactSearch(url.searchParams, ['channel', 'link_state', 'state', 'limit', 'before']);
+    return { rpc: 'gpt_list_communication_conversations', payload: {
+      p_channel: enumValue(url.searchParams.get('channel'), 'channel', COMMUNICATION_CHANNEL),
+      p_link_state: enumValue(url.searchParams.get('link_state'), 'link_state', COMMUNICATION_LINK_STATE),
+      p_state: enumValue(url.searchParams.get('state'), 'state', COMMUNICATION_STATE),
+      p_limit: queryLimit(url.searchParams.get('limit'), 'limit', 20, 50),
+      p_before: string(url.searchParams.get('before'), 'before', { max: 64 }),
+    }, responseKind: 'list' };
+  }
+
+  match = new RegExp(`^/v1/communications/conversations/(${UUID})$`).exec(path);
+  if (match && method === 'GET') {
+    return { rpc: 'gpt_get_communication_conversation', payload: { p_conversation_id: match[1] }, responseKind: 'single-row', notFoundError: 'conversation_not_found' };
+  }
+
+  match = new RegExp(`^/v1/communications/conversations/(${UUID})/messages$`).exec(path);
+  if (match && method === 'GET') {
+    exactSearch(url.searchParams, ['limit']);
+    return { rpc: 'gpt_list_communication_messages', payload: {
+      p_conversation_id: match[1],
+      p_limit: queryLimit(url.searchParams.get('limit'), 'limit', 30, 50),
+    }, responseKind: 'list' };
+  }
+
+  match = new RegExp(`^/v1/communications/conversations/(${UUID})/reply$`).exec(path);
+  if (match && method === 'POST') {
+    exactObject(body, ['request_id', 'body']);
+    return { rpc: 'gpt_send_communication_reply', payload: {
+      p_conversation_id: match[1],
+      p_body: string(body.body, 'body', { required: true, max: 4000 }),
+      p_request_id: uuid(body.request_id, 'request_id', { required: true }),
+    }, responseKind: 'object' };
+  }
+
+  match = new RegExp(`^/v1/communications/conversations/(${UUID})/read$`).exec(path);
+  if (match && method === 'POST') {
+    exactObject(body, []);
+    return { rpc: 'gpt_mark_communication_conversation_read', payload: { p_conversation_id: match[1] }, responseKind: 'object' };
+  }
+
+  match = new RegExp(`^/v1/communications/conversations/(${UUID})/state$`).exec(path);
+  if (match && method === 'POST') {
+    exactObject(body, ['state']);
+    return { rpc: 'gpt_set_communication_conversation_state', payload: {
+      p_conversation_id: match[1],
+      p_state: enumValue(body.state, 'state', COMMUNICATION_STATE, { required: true }),
+    }, responseKind: 'object' };
+  }
+
+  match = new RegExp(`^/v1/communications/conversations/(${UUID})/link-client$`).exec(path);
+  if (match && method === 'POST') {
+    exactObject(body, ['client_id']);
+    return { rpc: 'gpt_link_communication_conversation_client', payload: {
+      p_conversation_id: match[1],
+      p_client_id: uuid(body.client_id, 'client_id', { required: true }),
+    }, responseKind: 'object' };
+  }
+
+  match = new RegExp(`^/v1/communications/conversations/(${UUID})/client$`).exec(path);
+  if (match && method === 'POST') {
+    // Narrower than the manual-intake client payload: the underlying CRM
+    // contract accepts exactly these four canonical identity fields.
+    exactObject(body, ['full_name', 'email', 'phone', 'instagram']);
+    return { rpc: 'gpt_create_client_from_communication', payload: {
+      p_conversation_id: match[1],
+      p_full_name: string(body.full_name, 'full_name', { required: true, max: 160 }),
+      p_email: string(body.email, 'email', { max: 320 }),
+      p_phone: string(body.phone, 'phone', { max: 80 }),
+      p_instagram: string(body.instagram, 'instagram', { max: 80 }),
+    }, responseKind: 'object' };
+  }
+
+  match = new RegExp(`^/v1/communications/conversations/(${UUID})/enquiry$`).exec(path);
+  if (match && method === 'POST') {
+    exactObject(body, ['request_id', 'client', 'enquiry', 'privacy_acknowledged']);
+    const client = clientPayload(body.client);
+    const enquiry = enquiryPayload(body.enquiry);
+    if (!client.full_name || !client.email) throw new Error('required_field:client');
+    if (booleanValue(body.privacy_acknowledged, 'privacy_acknowledged') !== true) {
+      throw new Error('invalid_field:privacy_acknowledged');
+    }
+    return { rpc: 'gpt_create_enquiry_from_communication', payload: {
+      p_conversation_id: match[1],
+      p_idempotency_key: uuid(body.request_id, 'request_id', { required: true }),
+      p_client: client,
+      p_enquiry: enquiry,
+      p_privacy_acknowledged: true,
+    }, responseKind: 'object' };
   }
 
   return null;

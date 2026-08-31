@@ -206,4 +206,172 @@ async function capture(request, upstreamBody = {}) {
   assert.equal(called, false);
 }
 
+// ---------------------------------------------------------------------------
+// Unified Communications inbox
+//
+// Every inbox route names a conversation and nothing else. The channel,
+// provider account and destination are resolved server-side from the stored
+// row, so there is no routing selector to reject in the first place.
+// ---------------------------------------------------------------------------
+
+{
+  const { result, captured } = await capture(new Request(
+    'https://gpt.example/v1/communications/conversations?channel=instagram&link_state=unmatched&state=open&limit=10',
+    { headers: auth },
+  ), []);
+  assert.equal(result.status, 200);
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_list_communication_conversations');
+  assert.deepEqual(captured.payload, {
+    p_channel: 'instagram',
+    p_link_state: 'unmatched',
+    p_state: 'open',
+    p_limit: 10,
+    p_before: null,
+  });
+}
+
+// An unsupported channel is refused by the mapper, before any upstream call.
+{
+  let called = false;
+  const response = await handleGptActionsRequest(new Request(
+    'https://gpt.example/v1/communications/conversations?channel=telegram',
+    { headers: auth },
+  ), env, async () => { called = true; throw new Error('unexpected'); });
+  const result = await parsed(response);
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'invalid_field');
+  assert.equal(result.body.field, 'channel');
+  assert.equal(called, false);
+}
+
+{
+  const { captured } = await capture(
+    new Request(`https://gpt.example/v1/communications/conversations/${A}/messages?limit=5`, { headers: auth }),
+    [],
+  );
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_list_communication_messages');
+  assert.deepEqual(captured.payload, { p_conversation_id: A, p_limit: 5 });
+}
+
+{
+  const { captured } = await capture(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/reply`,
+    { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ request_id: V, body: 'Bounded reply' }) },
+  ));
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_send_communication_reply');
+  assert.deepEqual(captured.payload, { p_conversation_id: A, p_body: 'Bounded reply', p_request_id: V });
+}
+
+// A reply may not smuggle its own destination or provider account.
+for (const forbidden of [
+  { integration_key: 'vladimir-inbox' },
+  { artist_id: V },
+]) {
+  let called = false;
+  const response = await handleGptActionsRequest(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/reply`,
+    {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ request_id: V, body: 'Bounded reply', ...forbidden }),
+    },
+  ), env, async () => { called = true; throw new Error('unexpected'); });
+  const result = await parsed(response);
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'forbidden_field');
+  assert.equal(called, false);
+}
+
+{
+  const { captured } = await capture(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/state`,
+    { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ state: 'archived' }) },
+  ));
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_set_communication_conversation_state');
+  assert.deepEqual(captured.payload, { p_conversation_id: A, p_state: 'archived' });
+}
+
+{
+  const { captured } = await capture(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/read`,
+    { method: 'POST', headers: jsonHeaders, body: '{}' },
+  ));
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_mark_communication_conversation_read');
+  assert.deepEqual(captured.payload, { p_conversation_id: A });
+}
+
+{
+  const { captured } = await capture(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/link-client`,
+    { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ client_id: C }) },
+  ));
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_link_communication_conversation_client');
+  assert.deepEqual(captured.payload, { p_conversation_id: A, p_client_id: C });
+}
+
+{
+  const { captured } = await capture(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/client`,
+    {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ full_name: 'Inbox Client', email: 'inbox@example.test' }),
+    },
+  ));
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_create_client_from_communication');
+  assert.deepEqual(captured.payload, {
+    p_conversation_id: A,
+    p_full_name: 'Inbox Client',
+    p_email: 'inbox@example.test',
+    p_phone: null,
+    p_instagram: null,
+  });
+}
+
+{
+  const { captured } = await capture(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/enquiry`,
+    {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        request_id: V,
+        privacy_acknowledged: true,
+        client: { full_name: 'Inbox Client', email: 'inbox@example.test' },
+        enquiry: { project_type: 'Black and grey', placement: 'Forearm' },
+      }),
+    },
+  ));
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_create_enquiry_from_communication');
+  assert.deepEqual(captured.payload, {
+    p_conversation_id: A,
+    p_idempotency_key: V,
+    p_client: { full_name: 'Inbox Client', email: 'inbox@example.test' },
+    p_enquiry: { project_type: 'Black and grey', placement: 'Forearm' },
+    p_privacy_acknowledged: true,
+  });
+}
+
+// Intake from a conversation keeps the manual-intake privacy gate.
+{
+  let called = false;
+  const response = await handleGptActionsRequest(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/enquiry`,
+    {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        request_id: V,
+        privacy_acknowledged: false,
+        client: { full_name: 'Inbox Client', email: 'inbox@example.test' },
+        enquiry: {},
+      }),
+    },
+  ), env, async () => { called = true; throw new Error('unexpected'); });
+  const result = await parsed(response);
+  assert.equal(result.status, 400);
+  assert.equal(result.body.field, 'privacy_acknowledged');
+  assert.equal(called, false);
+}
+
 console.log('GPT full CRM Actions tests passed: named RPCs, fixed artist routing, bounded PII/finance/communications.');
