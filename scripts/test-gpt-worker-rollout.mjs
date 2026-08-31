@@ -75,6 +75,33 @@ assert.match(rollout, /\[ "\$\(grep -c 'custom_domain = true' wrangler\.gpt-acti
   'the deployed config must still declare exactly the three current custom domains');
 
 // ---------------------------------------------------------------------------
+// Everything the Cloudflare inventory needs must be in scope where it runs
+//
+// The inventory script fails closed on a missing variable, so a rollout that
+// omits one is not partially broken, it never reaches Cloudflare at all. These
+// live at job scope deliberately: a per-step copy is how one goes missing from
+// the readback or the rollback while the preflight still looks fine.
+// ---------------------------------------------------------------------------
+
+const inventory = readFileSync(new URL('./cloudflare-production-inventory.mjs', import.meta.url), 'utf8');
+const requiredInventoryEnv = [...inventory.matchAll(/process\.env\.([A-Z_]+) \|\| ''/g)]
+  .map((match) => match[1])
+  .filter((name) => name !== 'CLOUDFLARE_ZONE');
+assert.ok(requiredInventoryEnv.includes('SOURCE_SHA'), 'inventory script should still require SOURCE_SHA');
+
+const jobEnv = rollout.slice(rollout.indexOf('    env:'), rollout.indexOf('    steps:'));
+for (const name of requiredInventoryEnv) {
+  assert.match(jobEnv, new RegExp(`^      ${name}:`, 'm'),
+    `${name} must be job-scoped so every inventory invocation inherits it`);
+}
+assert.match(jobEnv, /SOURCE_SHA: \$\{\{ github\.event\.before \}\}/,
+  'the inventory source SHA must be the approved canonical SHA, not the trigger commit');
+
+const inventoryInvocations = (rollout.match(/cloudflare-production-inventory\.mjs/g) || []).length;
+assert.equal(inventoryInvocations, 3,
+  'preflight, readback and rollback each read Cloudflare fresh');
+
+// ---------------------------------------------------------------------------
 // Proof that something actually shipped, and a way back
 // ---------------------------------------------------------------------------
 

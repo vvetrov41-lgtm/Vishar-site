@@ -40,6 +40,10 @@ jobs:
     env:
       CANONICAL_BRANCH: agent/platform-telegram-self-service
       APPROVED_SHA: ${{ github.event.before }}
+      # The Cloudflare inventory refuses to read without a 40-hex source SHA.
+      # It is set at job scope so the preflight, the readback and the rollback
+      # all carry it; a per-step copy is how it goes missing.
+      SOURCE_SHA: ${{ github.event.before }}
       WORKER_NAME: vishar-gpt-actions-production
       CORE_HOST: gpt-actions.vishartattoo.com
       OPERATIONS_HOST: gpt-operations.vishartattoo.com
