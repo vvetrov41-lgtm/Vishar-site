@@ -1,0 +1,121 @@
+name: PR562 pgTAP compatibility fix
+
+on:
+  push:
+    branches:
+      - agent/pr562-pgtap-compat-fix
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    if: github.event.head_commit.message != 'test: align scheduling policy fixtures and ACL inventory [pgtap-fix]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/pr562-pgtap-compat-fix
+          fetch-depth: 0
+      - name: Apply exact compatibility edits
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) ACL inventory: migration 0120 intentionally exposes five narrowly
+          # scoped authenticated RPCs. Keep the exhaustive inventory exact.
+          replace_once(
+              "supabase/tests/050_rls_roles.sql",
+              "  ('public.list_appointment_conflicts(uuid,timestamptz,timestamptz,uuid)', false, true, false),\n",
+              "  ('public.list_appointment_conflicts(uuid,timestamptz,timestamptz,uuid)', false, true, false),\n"
+              "  -- Artist scheduling policy and preference surface (migration 0120).\n"
+              "  -- Browser-callable only; each RPC re-establishes exact artist scope\n"
+              "  -- and the writes require manage_sessions. No backend role needs them.\n"
+              "  ('public.list_booking_conflicts(uuid,public.appointment_type,timestamptz,timestamptz,uuid)', false, true, false),\n"
+              "  ('public.get_artist_scheduling_preferences(uuid)', false, true, false),\n"
+              "  ('public.set_artist_scheduling_preferences(uuid,text,text,text[],text,text,boolean,integer)', false, true, false),\n"
+              "  ('public.list_artist_schedule_overrides(uuid,date,date)', false, true, false),\n"
+              "  ('public.set_artist_schedule_override(uuid,date,text,text,text)', false, true, false),\n",
+          )
+          replace_once(
+              "supabase/tests/050_rls_roles.sql",
+              "       'artist_availability_blocks',\n",
+              "       'artist_availability_blocks',\n"
+              "       'artist_scheduling_preferences', 'artist_schedule_overrides',\n",
+          )
+
+          # 2) Legacy appointment test: the old fixture deliberately placed a
+          # touch-up inside an existing 09:00-16:00 tattoo session. Under the new
+          # authoritative policy that is correctly refused. Move the touch-up to
+          # the exact half-open boundary instead of weakening the rule.
+          replace_once(
+              "supabase/tests/160_appointment_types.sql",
+              "      'touch_up',\n      '2026-09-10T12:00:00Z', '2026-09-10T14:00:00Z',\n      'proposed', 'b8311111-1111-4111-8111-111111111111',\n      'b8511111-1111-4111-8111-111111111111', null\n",
+              "      'touch_up',\n      '2026-09-10T16:00:00Z', '2026-09-10T18:00:00Z',\n      'proposed', 'b8311111-1111-4111-8111-111111111111',\n      'b8511111-1111-4111-8111-111111111111', null\n",
+          )
+
+          # 3) Lifecycle suppression fixture: its synthetic tattoo reused the
+          # exact 20h-26h slot that the earlier lifecycle appointment had just
+          # been rescheduled into. Use a different already-due slot.
+          replace_once(
+              "supabase/tests/242_lifecycle_v1_production_activation.sql",
+              "    (select base_at + interval '20 hours' from t_clock),\n    (select base_at + interval '26 hours' from t_clock),\n    'confirmed'::public.session_status,\n    null,\n    'e8044444-4444-4444-8444-444444444444',\n    'Suppressed activation appointment'\n",
+              "    (select base_at + interval '12 hours' from t_clock),\n    (select base_at + interval '18 hours' from t_clock),\n    'confirmed'::public.session_status,\n    null,\n    'e8044444-4444-4444-8444-444444444444',\n    'Suppressed activation appointment'\n",
+          )
+
+          # 4) New policy test: tattoo_session and touch_up already require a
+          # project. Create valid project fixtures and pass them through, so the
+          # test reaches the conflict policy it claims to exercise.
+          replace_once(
+              "supabase/tests/262_artist_scheduling_policy.sql",
+              "insert into public.clients (id, full_name, email) values\n  ('fb311111-1111-4111-8111-111111111111', 'Scheduling Client', null),\n  ('fb322222-2222-4222-8222-222222222222', 'Second Scheduling Client', null);\n\nset local role authenticated;\n",
+              "insert into public.clients (id, full_name, email) values\n  ('fb311111-1111-4111-8111-111111111111', 'Scheduling Client', null),\n  ('fb322222-2222-4222-8222-222222222222', 'Second Scheduling Client', null);\n\ninsert into public.projects (id, client_id, artist_id, title, description) values\n  ('fb411111-1111-4111-8111-111111111111',\n   'fb311111-1111-4111-8111-111111111111',\n   'a1111111-1111-4111-8111-111111111111',\n   'Scheduling project one', 'Synthetic project for tattoo conflict policy'),\n  ('fb422222-2222-4222-8222-222222222222',\n   'fb322222-2222-4222-8222-222222222222',\n   'a1111111-1111-4111-8111-111111111111',\n   'Scheduling project two', 'Synthetic project for tattoo conflict policy');\n\nset local role authenticated;\n",
+          )
+
+          replacements = [
+              (
+                  "      '2026-09-14 17:00:00+00'::timestamptz,\n      'confirmed')$$,\n",
+                  "      '2026-09-14 17:00:00+00'::timestamptz,\n      'confirmed', null, 'fb411111-1111-4111-8111-111111111111', null)$$,\n",
+              ),
+              (
+                  "      '2026-09-14 18:00:00+00'::timestamptz,\n      'confirmed')$$,\n",
+                  "      '2026-09-14 18:00:00+00'::timestamptz,\n      'confirmed', null, 'fb422222-2222-4222-8222-222222222222', null)$$,\n",
+              ),
+              (
+                  "      '2026-09-14 19:00:00+00'::timestamptz,\n      'confirmed')$$,\n",
+                  "      '2026-09-14 19:00:00+00'::timestamptz,\n      'confirmed', null, 'fb422222-2222-4222-8222-222222222222', null)$$,\n",
+              ),
+              (
+                  "      '2026-09-14 12:00:00+00'::timestamptz,\n      'confirmed')$$,\n",
+                  "      '2026-09-14 12:00:00+00'::timestamptz,\n      'confirmed', null, 'fb422222-2222-4222-8222-222222222222', null)$$,\n",
+              ),
+              (
+                  "      '2026-09-20 16:00:00+00'::timestamptz,\n      'confirmed')$$,\n",
+                  "      '2026-09-20 16:00:00+00'::timestamptz,\n      'confirmed', null, 'fb411111-1111-4111-8111-111111111111', null)$$,\n",
+              ),
+          ]
+          for old, new in replacements:
+              replace_once("supabase/tests/262_artist_scheduling_policy.sql", old, new)
+
+      - name: Commit bounded fix and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/pr562-pgtap-compat-fix.yml
+          git config user.name "Vishar CRM automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add supabase/tests/050_rls_roles.sql \
+                  supabase/tests/160_appointment_types.sql \
+                  supabase/tests/242_lifecycle_v1_production_activation.sql \
+                  supabase/tests/262_artist_scheduling_policy.sql
+          git diff --cached --check
+          git commit -m 'test: align scheduling policy fixtures and ACL inventory [pgtap-fix]'
+          git push origin HEAD:agent/pr562-pgtap-compat-fix
