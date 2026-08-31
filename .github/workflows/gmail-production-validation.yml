@@ -27,6 +27,7 @@ on:
       - 'scripts/test-telegram-drain-worker.mjs'
       - 'scripts/materialize-gmail-openapi.mjs'
       - 'scripts/generate-gmail-production-deploy-config.mjs'
+      - '.github/workflows/gmail-backend-production-redeploy.yml'
       - '.github/workflows/gmail-production-validation.yml'
   push:
     branches:
