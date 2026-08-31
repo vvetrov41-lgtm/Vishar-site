@@ -35,6 +35,10 @@ assert.match(rollout, /git rev-parse "\$GITHUB_SHA\^\{tree\}"/);
 assert.match(rollout, /git ls-remote origin "refs\/heads\/\$CANONICAL_BRANCH"/);
 assert.match(rollout, /Approved SHA is no longer the canonical Vishar CRM head/);
 assert.match(rollout, /CANONICAL_BRANCH: agent\/platform-telegram-self-service/);
+assert.match(rollout, /Canonical Vishar CRM head moved after admission; refusing a stale GPT Worker deploy\./,
+  'canonical must be re-read immediately before the production mutation');
+assert.match(rollout, /GPT Worker release branch moved after admission; refusing production mutation\./,
+  'the release trigger branch must also still point to the admitted trigger commit');
 
 for (const required of [
   'Static Validation',
@@ -55,6 +59,8 @@ assert.doesNotMatch(rollout, /supabase db push\s*(?:\n|$)/,
   'a Worker rollout must never apply production database migrations');
 assert.match(rollout, /Pending production database migration detected\. Refusing GPT edge mutation\./,
   'a pending migration must block the edge mutation rather than race it');
+assert.match(rollout, /Production migration state changed after preflight; refusing GPT edge mutation\./,
+  'migration drift must be checked again immediately before the edge mutation');
 
 assert.doesNotMatch(rollout, /wrangler secret|configure_gpt_action_client|gpt_action_clients|can_manage_(?:crm|finance|communications)/i,
   'a Worker rollout must not touch secrets, GPT OAuth clients or capability ceilings');
@@ -66,13 +72,24 @@ assert.match(rollout, /\[ "\$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' \]/,
 // Topology is a precondition here, never an outcome: the third custom domain
 // was established by the one-shot rollout and this path only ships code.
 const topologyAssertions = rollout.match(/JSON\.stringify\(hosts\) !== JSON\.stringify\(expected\)/g) || [];
-assert.ok(topologyAssertions.length >= 3,
-  'preflight, readback and rollback must each assert the exact three-domain topology');
+assert.ok(topologyAssertions.length >= 4,
+  'preflight, readback and both rollback paths must each assert the exact three-domain topology');
 assert.doesNotMatch(rollout, /needs_deploy/,
   'this path is not conditional on domain count; it always ships the approved code');
 assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 3);
 assert.match(rollout, /\[ "\$\(grep -c 'custom_domain = true' wrangler\.gpt-actions\.production\.toml\)" -eq 3 \]/,
   'the deployed config must still declare exactly the three current custom domains');
+
+// Runtime readback must prove the non-secret production bindings that matter to
+// safety rather than merely assuming wrangler applied the tracked config.
+assert.ok((rollout.match(/bindings\.get\('SUPABASE_URL'\)/g) || []).length >= 3,
+  'preflight, readback and rollback must verify the exact production Supabase URL binding');
+assert.ok((rollout.match(/bindings\.get\('GPT_RATE_LIMIT'\)/g) || []).length >= 3,
+  'preflight, readback and rollback must verify the GPT rate-limit binding');
+assert.match(rollout, /String\(rateLimit\.namespace_id\) !== '1002'/,
+  'the rate-limit namespace must be pinned to the tracked production resource');
+assert.match(rollout, /Number\(rateLimit\.simple\?\.limit\) !== 30/);
+assert.match(rollout, /Number\(rateLimit\.simple\?\.period\) !== 60/);
 
 // ---------------------------------------------------------------------------
 // Cross-workflow trigger isolation
@@ -135,8 +152,8 @@ assert.match(jobEnv, /SOURCE_SHA: \$\{\{ github\.event\.before \}\}/,
   'the inventory source SHA must be the approved canonical SHA, not the trigger commit');
 
 const inventoryInvocations = (rollout.match(/cloudflare-production-inventory\.mjs/g) || []).length;
-assert.equal(inventoryInvocations, 3,
-  'preflight, readback and rollback each read Cloudflare fresh');
+assert.equal(inventoryInvocations, 4,
+  'preflight, readback and both rollback paths each read Cloudflare fresh');
 
 // ---------------------------------------------------------------------------
 // Proof that something actually shipped, and a way back
@@ -149,9 +166,13 @@ assert.match(rollout, /afterVersion === process\.env\.BEFORE_VERSION/,
 assert.match(rollout, /npx wrangler rollback "\$BEFORE_VERSION" --name "\$WORKER_NAME" --yes/,
   'a failed readback must roll the Worker back to the recorded previous version');
 assert.match(rollout, /if: failure\(\) && steps\.readback\.outcome == 'failure'/,
-  'rollback must be scoped to a readback failure');
+  'readback failure must roll back to the recorded previous version');
+assert.match(rollout, /if: failure\(\) && steps\.deploy\.outcome == 'failure'/,
+  'a failed deploy command must also reassert the recorded previous version in case the transport failed after mutation');
 assert.match(rollout, /Rollback did not restore the previous version/,
-  'the rollback itself must be read back rather than assumed');
+  'the readback-failure rollback itself must be read back rather than assumed');
+assert.match(rollout, /Deploy-failure rollback did not restore the previous version/,
+  'the deploy-failure rollback itself must be read back rather than assumed');
 
 // The edge answers 401 before it routes, so these probes prove the boundary is
 // closed, not which routes exist. They must stay closed for the new inbox
@@ -167,4 +188,4 @@ for (const probe of [
 assert.match(rollout, /401 before it routes/,
   'the workflow must record why an unauthenticated probe is not route coverage');
 
-console.log('GPT Worker rollout tests passed: reusable canonical-only admission, no DB/binding/secret mutation, fixed three-domain topology, proven version change and version rollback.');
+console.log('GPT Worker rollout tests passed: reusable canonical-only admission, final mutation fresh-check, exact runtime bindings, no DB/secret mutation, fixed three-domain topology, proven version change and rollback on readback or deploy failure.');
