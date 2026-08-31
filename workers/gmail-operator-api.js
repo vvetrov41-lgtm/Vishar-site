@@ -120,7 +120,6 @@ async function accessForTarget(env, db, target, fetchImpl) {
 
 function publicMessage(message) {
   return {
-    provider_message_id: message.provider_message_id,
     from: message.from,
     to: message.to,
     subject: message.subject,
