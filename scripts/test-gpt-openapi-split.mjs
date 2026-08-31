@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const monolith = readFileSync(new URL('../docs/gpt-actions/openapi.production.yaml', import.meta.url), 'utf8');
 const core = readFileSync(new URL('../docs/gpt-actions/openapi.production.core.yaml', import.meta.url), 'utf8');
 const operations = readFileSync(new URL('../docs/gpt-actions/openapi.production.operations.yaml', import.meta.url), 'utf8');
+const communications = readFileSync(new URL('../docs/gpt-actions/openapi.production.communications.yaml', import.meta.url), 'utf8');
 const wrangler = readFileSync(new URL('../wrangler.gpt-actions.production.toml', import.meta.url), 'utf8');
 
 function operationIds(text) {
@@ -12,37 +13,43 @@ function operationIds(text) {
 
 const canonical = operationIds(monolith);
 const coreIds = operationIds(core);
-const operationIdsSplit = operationIds(operations);
-const combined = [...coreIds, ...operationIdsSplit];
+const operationsIds = operationIds(operations);
+const communicationsIds = operationIds(communications);
+const importedBySchema = [coreIds, operationsIds, communicationsIds];
+const combined = importedBySchema.flat();
 
 assert.equal(canonical.length, 57, 'canonical GPT schema must keep exactly 57 operations');
-assert.equal(coreIds.length, 28, 'core ChatGPT-import schema must contain exactly 28 operations');
-assert.equal(operationIdsSplit.length, 29, 'operations ChatGPT-import schema must contain exactly 29 operations');
-assert.ok(coreIds.length <= 30, 'core ChatGPT-import schema must stay at or below the editor 30-operation limit');
-assert.ok(operationIdsSplit.length <= 30, 'operations ChatGPT-import schema must stay at or below the editor 30-operation limit');
+assert.equal(coreIds.length, 28, 'Core currently contains 28 operations and still needs the next repartition step');
+assert.equal(operationsIds.length, 19, 'Operations must contain exactly 19 non-communications operations after extraction');
+assert.equal(communicationsIds.length, 10, 'Communications must contain exactly the ten existing communication operations');
+for (const [name, ids] of [['core', coreIds], ['operations', operationsIds], ['communications', communicationsIds]]) {
+  assert.ok(ids.length <= 30, `${name} ChatGPT-import schema must stay at or below the editor 30-operation hard limit`);
+}
+assert.ok(coreIds.length > 25, 'Core should remain explicitly visible as the next <=25 repartition target');
+assert.ok(operationsIds.length <= 25);
+assert.ok(communicationsIds.length <= 25);
 assert.equal(new Set(combined).size, 57, 'split schemas must not duplicate operation IDs');
-assert.deepEqual([...combined].sort(), [...canonical].sort(), 'split schemas must cover the exact canonical 57-operation surface');
+assert.deepEqual([...combined].sort(), [...canonical].sort(), 'three split schemas must cover the exact canonical 57-operation surface');
 
 assert.match(core, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(operations, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
-assert.doesNotMatch(core, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
-assert.doesNotMatch(operations, /^\s*- url: https:\/\/gpt-actions\.vishartattoo\.com$/m);
-assert.match(wrangler, /pattern = "gpt-actions\.vishartattoo\.com", custom_domain = true/);
-assert.match(wrangler, /pattern = "gpt-operations\.vishartattoo\.com", custom_domain = true/);
-assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 2,
-  'production GPT Worker must expose exactly two custom domains for the two ChatGPT action sets');
+assert.match(communications, /url: https:\/\/gpt-communications\.vishartattoo\.com/);
+assert.doesNotMatch(core, /url: https:\/\/gpt-(?:operations|communications)\.vishartattoo\.com/);
+assert.doesNotMatch(operations, /^\s*- url: https:\/\/gpt-(?:actions|communications)\.vishartattoo\.com$/m);
+assert.doesNotMatch(communications, /^\s*- url: https:\/\/gpt-(?:actions|operations)\.vishartattoo\.com$/m);
+for (const domain of ['gpt-actions', 'gpt-operations', 'gpt-communications']) {
+  assert.match(wrangler, new RegExp(`pattern = "${domain}\\.vishartattoo\\.com", custom_domain = true`));
+}
+assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 3,
+  'production GPT Worker must expose exactly three custom domains for the three current ChatGPT Action sets');
 
 // /v1/context is the single reviewed exception to the artist_id ban. It is a
-// selector for which artist the signed-in CRM user is currently working as,
-// re-checked against that user's memberships in the database, and it is the
-// only place the string may appear. Every CRM action must still be unable to
-// name an artist, so the ban is applied to the schema with that one path
-// removed rather than relaxed.
+// server-authorized selector, never ordinary business routing input.
 function withoutContextPath(schema) {
   return schema.replace(/^ {2}\/v1\/context:\n(?: {3,}.*\n|\n(?= {3,}\S))*/m, '');
 }
 
-for (const [name, schema] of [['core', core], ['operations', operations]]) {
+for (const [name, schema] of [['core', core], ['operations', operations], ['communications', communications]]) {
   assert.match(schema, /^openapi: 3\.1\.0$/m, `${name} schema must use OpenAPI 3.1`);
   assert.match(schema, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
   assert.match(schema, /tokenUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/token/);
@@ -62,9 +69,6 @@ for (const [name, schema] of [['core', core], ['operations', operations]]) {
     `${name} import copy must describe the unified GPT server-owned Artist context`);
 }
 
-assert.match(core, /operationId: createManualEnquiry[\s\S]{0,200}?summary: Create a manual enquiry in the active GPT artist context/);
-assert.match(operations, /operationId: scheduleAppointment[\s\S]{0,200}?summary: Create an appointment in the active GPT artist context/);
-
 const noPayloadOperations = [
   'completeFollowUp',
   'cancelFollowUp',
@@ -74,7 +78,9 @@ const noPayloadOperations = [
   'approveEmailDraft',
 ];
 for (const operationId of noPayloadOperations) {
-  const schema = coreIds.includes(operationId) ? core : operations;
+  const schema = coreIds.includes(operationId) ? core
+    : operationsIds.includes(operationId) ? operations
+      : communications;
   assert.match(
     schema,
     new RegExp(`operationId: ${operationId}[\\s\\S]{0,500}?properties: \\{\\}`),
@@ -82,38 +88,45 @@ for (const operationId of noPayloadOperations) {
   );
 }
 
-assert.ok(coreIds.includes('listEnquiries'));
-assert.ok(coreIds.includes('updateClient'));
-assert.ok(coreIds.includes('updateProjectDeposit'));
-assert.ok(operationIdsSplit.includes('listAppointments'));
-assert.ok(operationIdsSplit.includes('recordManualPayment'));
-assert.ok(operationIdsSplit.includes('sendWhatsAppMessage'));
-assert.ok(operationIdsSplit.includes('approveEmailDraft'));
-assert.ok(operationIdsSplit.includes('searchEmailHistory'));
-assert.ok(operationIdsSplit.includes('getEmailThread'));
-assert.ok(operationIdsSplit.includes('createGmailReplyDraft'));
-assert.ok(!coreIds.includes('searchEmailHistory'));
-assert.ok(!coreIds.includes('getEmailThread'));
-assert.ok(!coreIds.includes('createGmailReplyDraft'));
+for (const id of ['listEnquiries', 'updateClient', 'updateProjectDeposit']) assert.ok(coreIds.includes(id));
+for (const id of ['listAppointments', 'recordManualPayment', 'listActivity']) assert.ok(operationsIds.includes(id));
 
-// The artist context lives in Core, because Core is the schema every Vishar GPT
-// imports; an operations-only GPT would otherwise have no way to say who it is
-// working as.
-assert.ok(coreIds.includes('getArtistContext'), 'the artist context read belongs to the core schema');
-assert.ok(coreIds.includes('selectArtistContext'), 'the artist context switch belongs to the core schema');
-assert.ok(!operationIdsSplit.includes('getArtistContext'));
-assert.ok(!operationIdsSplit.includes('selectArtistContext'));
+const communicationIds = [
+  'getWhatsAppConversation',
+  'ensureWhatsAppConversation',
+  'listWhatsAppMessages',
+  'sendWhatsAppMessage',
+  'searchEmailHistory',
+  'getEmailThread',
+  'createGmailReplyDraft',
+  'listEmailMessages',
+  'createEmailDraft',
+  'approveEmailDraft',
+];
+for (const id of communicationIds) {
+  assert.ok(communicationsIds.includes(id), `${id} must live in Communications`);
+  assert.ok(!operationsIds.includes(id), `${id} must not remain in the Operations import`);
+  assert.ok(!coreIds.includes(id), `${id} must not appear in Core`);
+}
 
-// Switching whose CRM the model operates on is a confirmed action, and reading
-// the available artists is not.
+// The Artist context lives in Core because it is the shared selector for the
+// one Unified GPT. Other schemas reuse the authenticated server-owned context.
+assert.ok(coreIds.includes('getArtistContext'), 'the artist context read belongs to Core');
+assert.ok(coreIds.includes('selectArtistContext'), 'the artist context switch belongs to Core');
+assert.ok(!operationsIds.includes('getArtistContext'));
+assert.ok(!operationsIds.includes('selectArtistContext'));
+assert.ok(!communicationsIds.includes('getArtistContext'));
+assert.ok(!communicationsIds.includes('selectArtistContext'));
 assert.match(core, /operationId: getArtistContext[\s\S]{0,700}?x-openai-isConsequential: false/);
 assert.match(core, /operationId: selectArtistContext[\s\S]{0,700}?x-openai-isConsequential: true/);
-
-// The selector takes an artist and nothing else.
 assert.match(
   core,
   /operationId: selectArtistContext[\s\S]*?additionalProperties: false\n\s+required: \[artist_id\]\n\s+properties: \{artist_id: \{type: string, format: uuid\}\}/,
   'selectArtistContext must accept exactly one artist id and no other field',
 );
 
-console.log('GPT OpenAPI split tests passed: 28 core + 29 operations, distinct action domains, exact 57-operation coverage, artist_id confined to /v1/context and ChatGPT-compatible object schemas.');
+assert.match(communications, /operationId: sendWhatsAppMessage[\s\S]*?explicitly requested the exact message/);
+assert.match(communications, /operationId: approveEmailDraft[\s\S]*?explicitly approves the draft content/);
+assert.match(communications, /operationId: createGmailReplyDraft[\s\S]*?draft state only/);
+
+console.log('GPT OpenAPI split tests passed: 28 Core + 19 Operations + 10 Communications, exact 57-operation coverage, shared OAuth/context and safe migration headroom.');

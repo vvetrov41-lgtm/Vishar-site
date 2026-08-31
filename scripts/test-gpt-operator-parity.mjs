@@ -4,13 +4,14 @@ import { OPERATOR_PARITY, PARITY_METADATA } from '../docs/gpt-actions/operator-p
 
 const core = readFileSync(new URL('../docs/gpt-actions/openapi.production.core.yaml', import.meta.url), 'utf8');
 const operations = readFileSync(new URL('../docs/gpt-actions/openapi.production.operations.yaml', import.meta.url), 'utf8');
+const communications = readFileSync(new URL('../docs/gpt-actions/openapi.production.communications.yaml', import.meta.url), 'utf8');
 const inventorySource = readFileSync(new URL('../docs/gpt-actions/operator-parity.mjs', import.meta.url), 'utf8');
 
 function operationIds(text) {
   return [...text.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 }
 
-const importedBySchema = [operationIds(core), operationIds(operations)];
+const importedBySchema = [operationIds(core), operationIds(operations), operationIds(communications)];
 const imported = importedBySchema.flat();
 const available = OPERATOR_PARITY.filter((row) => row.gpt.status === 'available');
 const availableIds = available.map((row) => row.gpt.operationId);
@@ -40,6 +41,12 @@ for (const schemaIds of importedBySchema) {
     `an imported schema exceeds the hard ${PARITY_METADATA.hardImportedSchemaOperationLimit}-operation limit`,
   );
 }
+assert.deepEqual(importedBySchema.map((ids) => ids.length), [28, 19, 10],
+  'current transport projection must be Core 28 + Operations 19 + Communications 10');
+assert.ok(importedBySchema[0].length > PARITY_METADATA.targetImportedSchemaOperationLimit,
+  'Core remains explicit technical debt for the next repartition step');
+assert.ok(importedBySchema[1].length <= PARITY_METADATA.targetImportedSchemaOperationLimit);
+assert.ok(importedBySchema[2].length <= PARITY_METADATA.targetImportedSchemaOperationLimit);
 
 for (const actionDomain of PARITY_METADATA.actionDomains) {
   const rows = OPERATOR_PARITY.filter((row) => row.actionDomain === actionDomain);
@@ -179,8 +186,8 @@ const domainCounts = Object.fromEntries(
 
 console.log(
   `GPT operator parity passed: ${OPERATOR_PARITY.length} classified actions, `
-  + `${imported.length} exact current production operations, `
-  + `${PARITY_METADATA.actionDomains.length} sustainable semantic domains.`,
+  + `${imported.length} exact current production operations across three import schemas, `
+  + `${PARITY_METADATA.actionDomains.length} sustainable semantic target domains.`,
 );
 console.log('Status counts:', statusCounts);
 console.log('Domain counts:', domainCounts);

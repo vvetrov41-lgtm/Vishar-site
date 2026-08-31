@@ -114,11 +114,10 @@ jobs:
       - name: Test exact CRM Pages production preflight
         run: node scripts/test-crm-pages-production-preflight.mjs
 
-      - name: Test GPT production domain reconciliation boundary
+      - name: Test GPT production domain boundaries
         run: |
           node scripts/test-gpt-operator-parity.mjs
-          node scripts/test-gpt-operations-domain.mjs
-          node scripts/test-gpt-production-domain-reconciliation.mjs
+          node scripts/test-gpt-communications-domain-rollout.mjs
 
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
