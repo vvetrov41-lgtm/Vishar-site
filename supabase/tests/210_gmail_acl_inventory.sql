@@ -16,6 +16,7 @@ create temporary table gmail_acl_expectations (
 insert into gmail_acl_expectations values
   ('public.gpt_authorize_gmail_enquiry(uuid)', false, true, false),
   ('public.gpt_create_gmail_reply_draft(uuid,uuid,text)', false, true, false),
+  ('public.service_authorize_gmail_operator(uuid,uuid)', false, false, true),
   ('public.service_resolve_gmail_target(uuid,uuid,uuid)', false, false, true),
   ('public.service_resolve_gmail_outbox_target(uuid,text)', false, false, true),
   ('public.service_set_gmail_integration(uuid,text,text,text[])', false, false, true),
