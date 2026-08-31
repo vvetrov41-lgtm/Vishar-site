@@ -166,6 +166,7 @@ function input(overrides: Partial<TodayInput> = {}): TodayInput {
     followUps: [],
     conversations: [],
     emailThreads: [],
+    gmailAwaitingReply: [],
     reconciliationCandidates: [],
     failedJobCount: 0,
     clientName: () => 'Fixture Client',

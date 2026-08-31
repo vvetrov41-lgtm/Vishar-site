@@ -11,6 +11,7 @@
 // reason rather than a single invented "needs reply" flag.
 
 import { conversationNeedsReply, type ConversationSummary } from './communications-api';
+import type { GmailInboxClient } from './email-api';
 import { threadNeedsOperator, type EmailThread } from './email-threads';
 
 export type InboxChannel = 'whatsapp' | 'instagram' | 'email';
@@ -97,6 +98,37 @@ export function conversationItem(
   };
 }
 
+/**
+ * A known client's Gmail activity that the CRM has no stored message for.
+ *
+ * Keyed exactly like an email thread for the same client, so the two collapse
+ * into one row rather than showing the same person twice - see `mergeInbox`.
+ *
+ * Unlike stored email, this one CAN say the client spoke last, because
+ * discovery read the mailbox and knows the direction of the newest message.
+ * That is the honest answer here, and it is why a first-time email from a
+ * known client can reach Needs reply at all.
+ */
+export function gmailDiscoveryItem(
+  client: GmailInboxClient,
+  artistId: string,
+): InboxItem {
+  return {
+    href: `#/inbox/email/client-${client.client_id}`,
+    key: `email-client-${client.client_id}`,
+    channel: 'email',
+    artist_id: artistId,
+    client_id: client.client_id,
+    enquiry_id: null,
+    project_id: null,
+    title: client.client_name ?? '',
+    preview: client.subject,
+    timestamp: client.last_message_at,
+    reason: client.direction === 'inbound' ? 'client_replied' : 'none',
+    unread: false,
+  };
+}
+
 export function emailItem(thread: EmailThread, title: string): InboxItem {
   return {
     href: `#/inbox/email/${thread.key}`,
@@ -125,7 +157,18 @@ export function emailItem(thread: EmailThread, title: string): InboxItem {
  * missing information, not fresh news.
  */
 export function mergeInbox(items: InboxItem[]): InboxItem[] {
-  return [...items].sort((a, b) => {
+  const byIdentity = new Map<string, InboxItem>();
+  for (const item of items) {
+    const identity = inboxIdentity(item);
+    const existing = byIdentity.get(identity);
+    if (!existing) {
+      byIdentity.set(identity, item);
+      continue;
+    }
+    byIdentity.set(identity, mergeSameConversation(existing, item));
+  }
+
+  return [...byIdentity.values()].sort((a, b) => {
     const aWaiting = isWaiting(a) ? 0 : 1;
     const bWaiting = isWaiting(b) ? 0 : 1;
     if (aWaiting !== bWaiting) return aWaiting - bWaiting;
@@ -134,4 +177,60 @@ export function mergeInbox(items: InboxItem[]): InboxItem[] {
     if (Number.isNaN(aAt) || Number.isNaN(bAt)) return 0;
     return bAt - aAt;
   });
+}
+
+/**
+ * What makes two rows the same conversation.
+ *
+ * For email it is the CLIENT, not the row's own key. The same person reaches
+ * this list from two places - a stored CRM email, which may be keyed by
+ * enquiry, and mailbox discovery, which knows only the client - and showing
+ * them twice would be exactly the duplication the client-scoped design exists
+ * to prevent, just relocated from the database into the list.
+ *
+ * Messaging conversations keep their own identity: two WhatsApp threads with
+ * one client are genuinely two threads.
+ */
+function inboxIdentity(item: InboxItem): string {
+  return item.channel === 'email' && item.client_id
+    ? `email-client-${item.client_id}`
+    : item.key;
+}
+
+/**
+ * Fold a discovery row into the stored row for the same client.
+ *
+ * The stored row wins on identity and destination, because it carries the
+ * CRM's own context - enquiry, project, delivery state - and discovery has
+ * none of that. What discovery contributes is the one thing stored email
+ * cannot know: that the client has since written back.
+ */
+function mergeSameConversation(left: InboxItem, right: InboxItem): InboxItem {
+  const discovered = left.enquiry_id === null && left.project_id === null && right.enquiry_id !== null
+    ? left
+    : right.enquiry_id === null && right.project_id === null
+      ? right
+      : left;
+  const stored = discovered === left ? right : left;
+  return {
+    ...stored,
+    timestamp: newerOf(stored.timestamp, discovered.timestamp),
+    preview: stored.preview ?? discovered.preview,
+    // A waiting reason from either side still means somebody is waiting, and a
+    // client who replied outranks a draft nobody approved.
+    reason: discovered.reason === 'client_replied'
+      ? 'client_replied'
+      : stored.reason !== 'none' ? stored.reason : discovered.reason,
+    unread: stored.unread || discovered.unread,
+  };
+}
+
+function newerOf(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  const left = Date.parse(a);
+  const right = Date.parse(b);
+  if (!Number.isFinite(left)) return b;
+  if (!Number.isFinite(right)) return a;
+  return right > left ? b : a;
 }

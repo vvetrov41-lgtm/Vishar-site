@@ -75,6 +75,14 @@ export interface TodaySnapshot {
   ahead: Appointment[];
 }
 
+/** One known client waiting on an emailed reply. */
+export interface GmailAwaitingReply {
+  client_id: string;
+  client_name: string | null;
+  subject: string;
+  last_message_at: string | null;
+}
+
 export interface TodayInput {
   now: Date;
   appointments: Appointment[];
@@ -84,6 +92,16 @@ export interface TodayInput {
   conversations: ConversationSummary[];
   /** Grouped email threads, so drafts and failed sends stop being invisible. */
   emailThreads: EmailThread[];
+  /**
+   * Known clients whose newest Gmail message is inbound, discovered from the
+   * mailbox rather than from anything the CRM stored.
+   *
+   * Stored email cannot contribute a "they replied" row - the CRM keeps no
+   * inbound mail - so without this a client the studio knows could write in and
+   * Today would stay silent. Discovery has already resolved each of these to a
+   * CRM client server-side; an unknown sender never reaches this list.
+   */
+  gmailAwaitingReply: GmailAwaitingReply[];
   reconciliationCandidates: MonzoReconciliationCandidate[];
   failedJobCount: number;
   /** Resolves a client id to a name, so no row is identified by a uuid. */
@@ -162,6 +180,21 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
         ?? conversation.external_username,
       at: conversation.last_inbound_at ?? conversation.last_message_at,
       detail: conversation.channel,
+      urgent: true,
+    });
+  }
+
+  // A known client who emailed and has not been answered. This is the same
+  // "they spoke last" debt the messaging channels carry, arriving through the
+  // only route email has for it.
+  for (const waiting of input.gmailAwaitingReply) {
+    items.push({
+      key: `gmail-${waiting.client_id}`,
+      kind: 'reply',
+      href: `/inbox/email/client-${waiting.client_id}`,
+      subject: waiting.client_name ?? input.clientName(waiting.client_id),
+      at: waiting.last_message_at,
+      detail: waiting.subject,
       urgent: true,
     });
   }

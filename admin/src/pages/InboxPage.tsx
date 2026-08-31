@@ -32,6 +32,7 @@ import { groupEmailThreads } from '../lib/email-threads';
 import {
   conversationItem,
   emailItem,
+  gmailDiscoveryItem,
   isActionableConversation,
   isWaiting,
   mergeInbox,
@@ -160,9 +161,39 @@ export function InboxPage() {
         emailFailed = true;
       }
 
+      // Known clients who have Gmail activity the CRM has never stored.
+      //
+      // Without this, a client the studio knows could email for the first time
+      // and appear nowhere: no stored message means no thread, and no thread
+      // means no row. The gateway resolves addresses to clients server-side and
+      // returns only the ones it can name, so this adds people the CRM already
+      // knows and nobody else.
+      //
+      // Asked per artist, explicitly, because the mailbox belongs to an artist.
+      // Failure is isolated exactly like stored email: one artist's mailbox
+      // being unreachable must not empty the queue.
+      const discoveryArtists = selectedArtistId
+        ? [selectedArtistId]
+        : (await api.listAccessibleArtists().catch(() => []))
+          .filter((artist) => artist.is_active)
+          .map((artist) => artist.id);
+      const discovered = (await Promise.all(
+        discoveryArtists.map(async (artistId) => {
+          try {
+            const result = await api.listGmailInboxClients(artistId);
+            return result.clients.map((entry) => gmailDiscoveryItem(entry, artistId));
+          } catch {
+            return [];
+          }
+        }),
+      )).flat();
+
       const threads = groupEmailThreads(emails);
       const clientIds = [
-        ...new Set(threads.map((thread) => thread.client_id).filter((id): id is string => Boolean(id))),
+        ...new Set([
+          ...threads.map((thread) => thread.client_id),
+          ...discovered.map((item) => item.client_id),
+        ].filter((id): id is string => Boolean(id))),
       ];
       // One lookup for every email row, rather than one per row. An email
       // addressed to somebody with no client card still renders - by address -
@@ -186,6 +217,11 @@ export function InboxPage() {
               (thread.client_id ? nameById.get(thread.client_id) : null) ?? thread.to_email,
             ),
           ),
+          // The client's CRM name wins over whatever the mailbox called them.
+          ...discovered.map((item) => ({
+            ...item,
+            title: (item.client_id ? nameById.get(item.client_id) : null) ?? item.title,
+          })),
         ]),
       };
     },

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { handleGmailOperatorRequest, __testing as operator } from '../workers/gmail-operator-api.js';
 import { __testing as supabaseContract } from '../workers/lib/gmail-supabase.js';
+import { __testing as gmailCrypto } from '../workers/lib/google-gmail.js';
 
 let passes = 0;
 async function test(name, fn) {
@@ -285,6 +286,284 @@ await test('client-scoped read is GET only and needs a session', async () => {
   assert.equal(anonymous.status, 401);
   assert.equal(calls, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Known-client discovery.
+//
+// A client the studio already knows can email for the first time. Stored
+// `email_messages` cannot show that - there is no row - so the mailbox is read
+// directly, and the DATABASE decides which addresses belong to clients this
+// artist knows. An address it cannot name never comes back, so an unknown
+// sender is not something a later filter has to remember to remove.
+// ---------------------------------------------------------------------------
+
+const discoveryPath = `/v1/operator/artists/${artistId}/gmail/inbox`;
+const secondClientId = '96310000-0000-4000-8000-000000000002';
+
+// A real sealed refresh token in a fake KV, rather than stubbing past the token
+// path: discovery must go through the same credential custody as every other
+// Gmail read, and a test that skipped it would prove nothing about that.
+const encryptionKey = gmailCrypto.b64urlEncode(new Uint8Array(32).fill(7));
+const googleEnv = {
+  GOOGLE_OAUTH_CLIENT_ID: 'synthetic-client-id.apps.googleusercontent.com',
+  GOOGLE_OAUTH_CLIENT_SECRET: 'synthetic-client-secret',
+  GMAIL_TOKEN_ENCRYPTION_KEY: encryptionKey,
+};
+
+async function discoveryEnv() {
+  const sealed = await gmailCrypto.sealToken({
+    v: 1,
+    artist_id: artistId,
+    integration_key: 'google_gmail_vladimir',
+    mailbox_email: 'studio@example.test',
+    refresh_token: 'synthetic-refresh-token-value',
+    scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send',
+  }, encryptionKey);
+  const store = new Map([[gmailCrypto.tokenKey(artistId), sealed]]);
+  return {
+    ...productionEnv,
+    ...googleEnv,
+    GMAIL_OAUTH_TOKENS: {
+      async get(key) { return store.get(key) ?? null; },
+      async put(key, value) { store.set(key, value); },
+      async delete(key) { store.delete(key); },
+    },
+  };
+}
+
+await test('discovery refuses an artist the operator may not manage communications for', async () => {
+  const calls = [];
+  const token = 'synthetic.crm.session.token.1234567890';
+  const fetchImpl = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    if (url.pathname === '/rest/v1/rpc/list_capabilities') {
+      // Visible artist, but only a read capability.
+      return Response.json([{ artist_id: artistId, capability: 'view_communications' }]);
+    }
+    throw new Error(`unexpected downstream call: ${url.pathname}`);
+  };
+
+  const response = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${discoveryPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${token}` },
+  }), await discoveryEnv(), fetchImpl);
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: 'artist_scope_denied' });
+  // Nothing about the mailbox was touched.
+  assert.equal(calls.includes('/rest/v1/rpc/service_resolve_gmail_mailbox'), false);
+  assert.equal(calls.some((p) => p.startsWith('/gmail/')), false);
+});
+
+await test('discovery returns only addresses the database can name, and never a provider id', async () => {
+  const calls = [];
+  const token = 'synthetic.crm.session.token.1234567890';
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    if (url.pathname === '/rest/v1/rpc/list_capabilities') {
+      return Response.json([{ artist_id: artistId, capability: 'manage_communications' }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/service_resolve_gmail_mailbox') {
+      assert.deepEqual(JSON.parse(String(init.body)), { p_artist_id: artistId });
+      return Response.json([{
+        artist_id: artistId,
+        integration_key: 'google_gmail_vladimir',
+        mailbox_email: 'studio@example.test',
+        configuration: {},
+      }]);
+    }
+    if (url.pathname === '/oauth2/v4/token' || url.pathname === '/token') {
+      return Response.json({ access_token: 'synthetic-access-token', expires_in: 3600 });
+    }
+    if (url.pathname === '/gmail/v1/users/me/profile') {
+      return Response.json({ emailAddress: 'studio@example.test' });
+    }
+    if (url.pathname === '/gmail/v1/users/me/messages') {
+      return Response.json({ messages: [{ id: 'msg-known' }, { id: 'msg-stranger' }] });
+    }
+    if (url.pathname === '/gmail/v1/users/me/messages/msg-known') {
+      // Metadata only was requested: no body is ever fetched.
+      assert.equal(url.searchParams.get('format'), 'metadata');
+      return Response.json({
+        id: 'msg-known',
+        internalDate: '1788000000000',
+        payload: { headers: [
+          { name: 'From', value: 'Known Client <client@example.test>' },
+          { name: 'To', value: 'studio@example.test' },
+          { name: 'Subject', value: 'About my sleeve' },
+        ] },
+      });
+    }
+    if (url.pathname === '/gmail/v1/users/me/messages/msg-stranger') {
+      return Response.json({
+        id: 'msg-stranger',
+        internalDate: '1788000001000',
+        payload: { headers: [
+          { name: 'From', value: 'nobody@example.test' },
+          { name: 'To', value: 'studio@example.test' },
+          { name: 'Subject', value: 'Cheap backlinks' },
+        ] },
+      });
+    }
+    if (url.pathname === '/rest/v1/rpc/service_match_gmail_clients') {
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.p_artist_id, artistId);
+      // Both addresses are offered; only one is claimed.
+      assert.deepEqual([...body.p_emails].sort(), ['client@example.test', 'nobody@example.test']);
+      return Response.json([
+        { client_id: clientId, client_email: 'client@example.test', full_name: 'Known Client' },
+      ]);
+    }
+    throw new Error(`unexpected downstream call: ${url.pathname}`);
+  };
+
+  const response = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${discoveryPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${token}` },
+  }), await discoveryEnv(), fetchImpl);
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.artist_id, artistId);
+  assert.equal(payload.clients.length, 1);
+  assert.equal(payload.clients[0].client_id, clientId);
+  assert.equal(payload.clients[0].client_name, 'Known Client');
+  assert.equal(payload.clients[0].direction, 'inbound');
+
+  // The stranger is absent, not merely unflagged.
+  const serialised = JSON.stringify(payload);
+  assert.equal(serialised.includes('nobody@example.test'), false);
+  assert.equal(serialised.includes('Cheap backlinks'), false);
+  // No provider identifier of any kind reaches the browser.
+  assert.equal(serialised.includes('msg-known'), false);
+  assert.equal(serialised.includes('msg-stranger'), false);
+  assert.equal('provider_message_id' in payload.clients[0], false);
+  assert.equal('thread_context_id' in payload.clients[0], false);
+
+  // Discovery mutates nothing.
+  assert.equal(calls.includes('/rest/v1/rpc/service_upsert_gmail_thread_context'), false);
+  assert.equal(calls.includes('/rest/v1/rpc/service_resolve_gmail_target'), false);
+});
+
+await test('one client with several messages is one discovery row, newest first', async () => {
+  const token = 'synthetic.crm.session.token.1234567890';
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/rest/v1/rpc/list_capabilities') {
+      return Response.json([{ artist_id: artistId, capability: 'manage_communications' }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/service_resolve_gmail_mailbox') {
+      return Response.json([{
+        artist_id: artistId,
+        integration_key: 'google_gmail_vladimir',
+        mailbox_email: 'studio@example.test',
+        configuration: {},
+      }]);
+    }
+    if (url.pathname === '/oauth2/v4/token' || url.pathname === '/token') {
+      return Response.json({ access_token: 'synthetic-access-token', expires_in: 3600 });
+    }
+    if (url.pathname === '/gmail/v1/users/me/profile') {
+      return Response.json({ emailAddress: 'studio@example.test' });
+    }
+    if (url.pathname === '/gmail/v1/users/me/messages') {
+      return Response.json({ messages: [{ id: 'msg-old' }, { id: 'msg-new' }] });
+    }
+    if (url.pathname === '/gmail/v1/users/me/messages/msg-old') {
+      return Response.json({
+        id: 'msg-old',
+        internalDate: '1788000000000',
+        payload: { headers: [
+          { name: 'From', value: 'client@example.test' },
+          { name: 'To', value: 'studio@example.test' },
+          { name: 'Subject', value: 'First message' },
+        ] },
+      });
+    }
+    if (url.pathname === '/gmail/v1/users/me/messages/msg-new') {
+      return Response.json({
+        id: 'msg-new',
+        internalDate: '1788009999000',
+        payload: { headers: [
+          { name: 'From', value: 'client@example.test' },
+          { name: 'To', value: 'studio@example.test' },
+          { name: 'Subject', value: 'Second message' },
+        ] },
+      });
+    }
+    if (url.pathname === '/rest/v1/rpc/service_match_gmail_clients') {
+      // The database answers once per client, whatever the client's enquiry
+      // count: the SQL is `distinct on (c.id)`.
+      return Response.json([
+        { client_id: clientId, client_email: 'client@example.test', full_name: 'Known Client' },
+      ]);
+    }
+    throw new Error(`unexpected downstream call: ${url.pathname}`);
+  };
+
+  const response = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${discoveryPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${token}` },
+  }), await discoveryEnv(), fetchImpl);
+
+  const payload = await response.json();
+  assert.equal(payload.clients.length, 1);
+  assert.equal(payload.clients[0].subject, 'Second message');
+});
+
+await test('discovery cannot be pointed at another artist by editing the path', async () => {
+  const token = 'synthetic.crm.session.token.1234567890';
+  const otherArtist = 'a2222222-2222-4222-8222-222222222222';
+  const calls = [];
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    if (url.pathname === '/rest/v1/rpc/list_capabilities') {
+      assert.deepEqual(JSON.parse(String(init.body)), { p_artist_id: otherArtist });
+      // The operator manages the OTHER artist, not this one.
+      return Response.json([{ artist_id: artistId, capability: 'manage_communications' }]);
+    }
+    throw new Error(`unexpected downstream call: ${url.pathname}`);
+  };
+
+  const response = await handleGmailOperatorRequest(new Request(
+    `https://gmail.vishartattoo.com/v1/operator/artists/${otherArtist}/gmail/inbox`,
+    { headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${token}` } },
+  ), await discoveryEnv(), fetchImpl);
+
+  assert.equal(response.status, 403);
+  assert.equal(calls.includes('/rest/v1/rpc/service_resolve_gmail_mailbox'), false);
+});
+
+await test('discovery RPCs are backend-only and on the Worker allow-list', () => {
+  assert.equal(supabaseContract.BACKEND_RPCS.has('service_resolve_gmail_mailbox'), true);
+  assert.equal(supabaseContract.BACKEND_RPCS.has('service_match_gmail_clients'), true);
+  assert.equal(supabaseContract.USER_RPCS.has('service_match_gmail_clients'), false);
+  assert.equal(supabaseContract.USER_RPCS.has('service_resolve_gmail_mailbox'), false);
+});
+
+await test('discovery is GET only, session-bound and fail-closed on the read flag', async () => {
+  let calls = 0;
+  const guard = async () => { calls += 1; throw new Error('must not fetch'); };
+  const post = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${discoveryPath}`, {
+    method: 'POST',
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${'a'.repeat(32)}` },
+  }), await discoveryEnv(), guard);
+  assert.equal(post.status, 405);
+
+  const anonymous = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${discoveryPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com' },
+  }), await discoveryEnv(), guard);
+  assert.equal(anonymous.status, 401);
+
+  const disabled = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${discoveryPath}`, {
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${'a'.repeat(32)}` },
+  }), { ...(await discoveryEnv()), GMAIL_READ_ENABLED: 'false' }, guard);
+  assert.equal(disabled.status, 404);
+
+  assert.equal(calls, 0);
+});
+
+void secondClientId;
 
 await test('operator API exposes no direct Gmail send method', async () => {
   let calls = 0;

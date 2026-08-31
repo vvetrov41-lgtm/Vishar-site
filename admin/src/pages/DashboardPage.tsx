@@ -18,7 +18,7 @@ import { Link } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
 import { groupEmailThreads, type EmailThread } from '../lib/email-threads';
-import { summariseToday, type TodayItem } from '../lib/today-workspace';
+import { summariseToday, type GmailAwaitingReply, type TodayItem } from '../lib/today-workspace';
 import { typeLabel } from './AppointmentsPage';
 import type { Appointment } from '../lib/appointment-api';
 import type { ConversationSummary } from '../lib/communications-api';
@@ -33,6 +33,7 @@ interface TodayData {
   followUps: FollowUp[];
   conversations: ConversationSummary[];
   emailThreads: EmailThread[];
+  gmailAwaitingReply: GmailAwaitingReply[];
   candidates: MonzoReconciliationCandidate[];
   failedJobCount: number;
   activity: ActivityEntry[];
@@ -87,6 +88,36 @@ export function DashboardPage() {
       )
       : [];
 
+    // A known client who emailed and has not been answered. Stored email cannot
+    // say this - the CRM keeps no inbound mail - so it comes from the same
+    // server-side discovery the Inbox uses, which resolves every address to a
+    // CRM client before returning it. Failure is isolated: a mailbox that
+    // cannot be read must not take the rest of Today with it.
+    const discoveryArtists = can(role, 'viewEnquiries')
+      ? (selectedArtistId
+        ? [selectedArtistId]
+        : (await api.listAccessibleArtists().catch(() => []))
+          .filter((artist) => artist.is_active)
+          .map((artist) => artist.id))
+      : [];
+    const gmailAwaitingReply = (await Promise.all(
+      discoveryArtists.map(async (id) => {
+        try {
+          const result = await api.listGmailInboxClients(id);
+          return result.clients
+            .filter((entry) => entry.direction === 'inbound')
+            .map((entry) => ({
+              client_id: entry.client_id,
+              client_name: entry.client_name,
+              subject: entry.subject,
+              last_message_at: entry.last_message_at,
+            }));
+        } catch {
+          return [];
+        }
+      }),
+    )).flat();
+
     // "Who am I seeing?" is the question. A date and a duration badge is not an
     // answer, so every id that reaches a row is resolved to a name first.
     const clients = await api.listClientsByIds([
@@ -103,6 +134,7 @@ export function DashboardPage() {
       followUps,
       conversations,
       emailThreads,
+      gmailAwaitingReply,
       candidates,
       failedJobCount: failedJobs.length,
       activity,
@@ -129,6 +161,7 @@ export function DashboardPage() {
     emailThreads: data.emailThreads.filter(
       (thread) => !selectedArtistId || thread.artist_id === selectedArtistId,
     ),
+    gmailAwaitingReply: data.gmailAwaitingReply,
     reconciliationCandidates: data.candidates,
     failedJobCount: data.failedJobCount,
     clientName: (clientId) => data.clientNames.get(clientId) ?? null,

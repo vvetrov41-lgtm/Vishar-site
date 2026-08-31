@@ -16,6 +16,19 @@ select has_function('public', 'gpt_authorize_gmail_enquiry', array['uuid'],
   'GPT has a bounded enquiry authorization RPC');
 select has_function('public', 'gpt_create_gmail_reply_draft', array['uuid','uuid','text'],
   'GPT has a bounded Gmail reply-draft RPC');
+select has_function('public', 'service_resolve_gmail_mailbox', array['uuid'],
+  'artist mailbox resolution exists for discovery');
+select has_function('public', 'service_match_gmail_clients', array['uuid','text[]'],
+  'Gmail address-to-client matching exists');
+select ok(
+  not has_function_privilege('authenticated', 'public.service_match_gmail_clients(uuid,text[])', 'EXECUTE'),
+  'Gmail client matching is not reachable from a browser session'
+);
+select ok(
+  not has_function_privilege('authenticated', 'public.service_resolve_gmail_mailbox(uuid)', 'EXECUTE'),
+  'artist mailbox resolution is not reachable from a browser session'
+);
+
 select has_function('public', 'service_resolve_gmail_client_target', array['uuid','uuid'],
   'client-scoped Gmail target resolution exists');
 select ok(
@@ -248,6 +261,99 @@ select throws_ok(
   '22023',
   'Gmail CRM target is unavailable',
   'a missing client is refused rather than resolving the whole mailbox'
+);
+
+-- ---------------------------------------------------------------------------
+-- Known-client discovery (0123)
+--
+-- Discovery reads the mailbox before it knows who anyone is, so the database
+-- decides which addresses belong to clients this artist already knows. An
+-- address it cannot name must simply not come back.
+-- ---------------------------------------------------------------------------
+
+select is(
+  (select mailbox_email from public.service_resolve_gmail_mailbox(
+    'a1111111-1111-4111-8111-111111111111'
+  )),
+  'vvetrov41@gmail.com',
+  'the artist mailbox resolves without naming a client or an enquiry'
+);
+
+select is(
+  (select client_id from public.service_match_gmail_clients(
+    'a1111111-1111-4111-8111-111111111111',
+    array['gmail-client@example.test']
+  )),
+  'e0911111-1111-4111-8111-111111111111'::uuid,
+  'an address belonging to a client this artist knows resolves to that client'
+);
+
+select is(
+  (select count(*)::int from public.service_match_gmail_clients(
+    'a1111111-1111-4111-8111-111111111111',
+    array['  GMAIL-CLIENT@Example.Test  ']
+  )),
+  1,
+  'matching is case and whitespace insensitive, as stored client email is'
+);
+
+select is(
+  (select count(*)::int from public.service_match_gmail_clients(
+    'a1111111-1111-4111-8111-111111111111',
+    array['stranger@example.test', 'nobody@example.test']
+  )),
+  0,
+  'an unknown sender is not returned at all, so nothing downstream has to exclude it'
+);
+
+select is(
+  (select count(*)::int from public.service_match_gmail_clients(
+    'a2222222-2222-4222-8222-222222222222',
+    array['gmail-client@example.test']
+  )),
+  0,
+  'an artist who does not know this client cannot resolve their address'
+);
+
+-- One person with several enquiries is still one person. This is the shape that
+-- would otherwise put the same Gmail conversation in the queue three times.
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key,
+  intake_fingerprint, status, intake_state, submitted_full_name,
+  submitted_email, privacy_notice_version, privacy_acknowledged_at
+) values
+  ('e0941111-1111-4111-8111-111111111111',
+   'e0911111-1111-4111-8111-111111111111',
+   'a1111111-1111-4111-8111-111111111111',
+   'PENDING', 'e0951111-1111-4111-8111-111111111111', repeat('f', 64),
+   'accepted', 'complete', 'Synthetic Gmail Client',
+   'gmail-client@example.test', '2026-08-05', now()),
+  ('e0961111-1111-4111-8111-111111111111',
+   'e0911111-1111-4111-8111-111111111111',
+   'a1111111-1111-4111-8111-111111111111',
+   'PENDING', 'e0971111-1111-4111-8111-111111111111', repeat('a', 64),
+   'accepted', 'complete', 'Synthetic Gmail Client',
+   'gmail-client@example.test', '2026-08-05', now());
+
+select is(
+  (select count(*)::int from public.service_match_gmail_clients(
+    'a1111111-1111-4111-8111-111111111111',
+    array['gmail-client@example.test']
+  )),
+  1,
+  'a client with three enquiries resolves to exactly one row, not one per enquiry'
+);
+
+-- Discovery is a read. If it ever became anything else, this would catch it.
+select is(
+  (select count(*)::int from crm_private.gmail_thread_contexts
+   where client_id = 'e0911111-1111-4111-8111-111111111111'
+     and enquiry_id in (
+       'e0941111-1111-4111-8111-111111111111',
+       'e0961111-1111-4111-8111-111111111111'
+     )),
+  0,
+  'matching creates no thread context, so discovery cannot bind a conversation to an enquiry'
 );
 
 select lives_ok(
