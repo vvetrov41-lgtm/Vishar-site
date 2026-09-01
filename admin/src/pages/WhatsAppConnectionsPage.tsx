@@ -267,8 +267,7 @@ export function WhatsAppConnectionsPage() {
           const metaBusy = metaBusyArtistId === artist.id;
           const productionOnboardingAvailable = data.environment === 'production'
             && canManageArtist(profile?.role, artist.id, memberships)
-            && integration?.is_enabled === true
-            && (artist.slug === 'vladimir' || artist.slug === 'kristina');
+            && integration?.is_enabled === true;
           const existingAccountAvailable = productionOnboardingAvailable && artist.slug === 'vladimir';
           const existingMetaToken = existingMetaTokens[artist.id] ?? '';
 

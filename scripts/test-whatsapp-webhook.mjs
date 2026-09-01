@@ -7,6 +7,7 @@ import {
   WhatsappWebhookError,
   constantTimeEqual,
   handleWhatsappWebhook,
+  integrationKeyFromWhatsappBinding,
   readWebhookRoutes,
 } from '../workers/lib/whatsapp-webhook.js';
 
@@ -26,12 +27,14 @@ async function test(name, run) {
 
 const V_ID = 'a1111111-1111-4111-8111-111111111111';
 const K_ID = 'a2222222-2222-4222-8222-222222222222';
+const F_ID = 'a3333333-3333-4333-8333-333333333333';
 const V_PHONE = '100000000001';
 const K_PHONE = '100000000002';
 const V_WABA = '200000000001';
 const K_WABA = '200000000002';
 const V_SECRET = 'synthetic-vladimir-app-secret';
 const K_SECRET = 'synthetic-kristina-app-secret';
+const F_SECRET = 'synthetic-future-artist-app-secret';
 const VERIFY = 'synthetic-webhook-verify-token';
 const TS = '1786777200';
 
@@ -139,6 +142,15 @@ await test('verification token comparison is exact', () => {
   assert.equal(constantTimeEqual('abc', 'abc'), true);
   assert.equal(constantTimeEqual('abc', 'abd'), false);
   assert.equal(constantTimeEqual('abc', 'abcx'), false);
+});
+
+await test('encrypted binding names round-trip to integration keys without an artist allowlist', () => {
+  assert.equal(
+    integrationKeyFromWhatsappBinding('ARTIST_WHATSAPP_FUTURE_HARTIST_HPRODUCTION'),
+    'future-artist-production'
+  );
+  assert.equal(integrationKeyFromWhatsappBinding('ARTIST_WHATSAPP_bad'), null);
+  assert.equal(integrationKeyFromWhatsappBinding('ARTIST_WHATSAPP_BAD_XESCAPE'), null);
 });
 
 await test('unknown paths are closed', async () => {
@@ -258,6 +270,35 @@ await test('a signed Kristina inbound message is routed only to Kristina', async
   assert.equal(db.calls[0].args.p_integration_key, 'kristina-production');
 });
 
+await test('a new self-describing artist binding routes inbound messages without source changes', async () => {
+  const futureEnv = env({
+    ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION: undefined,
+    ARTIST_WHATSAPP_KRISTINA_HPRODUCTION: undefined,
+    ARTIST_WHATSAPP_FUTURE_HARTIST_HPRODUCTION: JSON.stringify({
+      artistId: F_ID,
+      integrationKey: 'future-artist-production',
+      phoneNumberId: '100000000003',
+      wabaId: '200000000003',
+      appSecret: F_SECRET,
+      accessToken: 'synthetic-future-access-token',
+    }),
+  });
+  const db = fakeSupabase();
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({
+      wabaId: '200000000003',
+      phoneNumberId: '100000000003',
+      messages: [inboundText({ id: 'wamid.SYNTHETICFUTURE0001' })],
+    }), F_SECRET),
+    futureEnv,
+    db
+  );
+  assert.equal(response.status, 200);
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.calls[0].args.p_artist_id, F_ID);
+  assert.equal(db.calls[0].args.p_integration_key, 'future-artist-production');
+});
+
 await test('a Vladimir signature cannot authorize Kristina routing', async () => {
   const db = fakeSupabase();
   const response = await handleWhatsappWebhook(
@@ -277,6 +318,17 @@ await test('an unknown signed phone-number identity is ignored without persisten
   const db = fakeSupabase();
   const response = await handleWhatsappWebhook(
     postRequest(payloadFor({ phoneNumberId: '999999999999', messages: [inboundText()] }), V_SECRET),
+    env(),
+    db
+  );
+  assert.equal(response.status, 200);
+  assert.equal(db.calls.length, 0);
+});
+
+await test('an unknown signed WABA identity is ignored without persistence', async () => {
+  const db = fakeSupabase();
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({ wabaId: '999999999998', messages: [inboundText()] }), V_SECRET),
     env(),
     db
   );
@@ -396,6 +448,69 @@ await test('duplicate provider phone identity in two bindings fails configuratio
   assert.throws(
     () => readWebhookRoutes(collision),
     (error) => error instanceof WhatsappWebhookError && error.code === 'whatsapp_webhook_route_collision'
+  );
+});
+
+await test('duplicate artist identity in two self-describing bindings fails configuration closed', () => {
+  const collision = env({
+    ARTIST_WHATSAPP_FUTURE_HARTIST_HPRODUCTION: JSON.stringify({
+      artistId: V_ID,
+      integrationKey: 'future-artist-production',
+      phoneNumberId: '100000000003',
+      wabaId: '200000000003',
+      appSecret: F_SECRET,
+    }),
+  });
+  assert.throws(
+    () => readWebhookRoutes(collision),
+    (error) => error instanceof WhatsappWebhookError && error.code === 'whatsapp_webhook_route_collision'
+  );
+});
+
+await test('a binding whose embedded route key disagrees with its secret name fails closed', () => {
+  const mismatch = env({
+    ARTIST_WHATSAPP_FUTURE_HARTIST_HPRODUCTION: JSON.stringify({
+      artistId: F_ID,
+      integrationKey: 'other-artist-production',
+      phoneNumberId: '100000000003',
+      wabaId: '200000000003',
+      appSecret: F_SECRET,
+    }),
+  });
+  assert.throws(
+    () => readWebhookRoutes(mismatch),
+    (error) => error instanceof WhatsappWebhookError && error.code === 'whatsapp_webhook_route_invalid'
+  );
+});
+
+await test('a partially self-describing envelope cannot fall back to legacy identity', () => {
+  const partial = env({
+    ARTIST_WHATSAPP_FUTURE_HARTIST_HPRODUCTION: JSON.stringify({
+      artistId: F_ID,
+      phoneNumberId: '100000000003',
+      wabaId: '200000000003',
+      appSecret: F_SECRET,
+    }),
+  });
+  assert.throws(
+    () => readWebhookRoutes(partial),
+    (error) => error instanceof WhatsappWebhookError && error.code === 'whatsapp_webhook_route_invalid'
+  );
+});
+
+await test('malformed Phone Number ID or WABA credentials fail the whole route set closed', () => {
+  const invalid = env({
+    ARTIST_WHATSAPP_FUTURE_HARTIST_HPRODUCTION: JSON.stringify({
+      artistId: F_ID,
+      integrationKey: 'future-artist-production',
+      phoneNumberId: 'not-a-provider-id',
+      wabaId: '200000000003',
+      appSecret: F_SECRET,
+    }),
+  });
+  assert.throws(
+    () => readWebhookRoutes(invalid),
+    (error) => error instanceof WhatsappWebhookError && error.code === 'whatsapp_webhook_binding_invalid'
   );
 });
 

@@ -15,25 +15,20 @@ export interface WhatsAppIntegrationMetadata {
 
 export interface WhatsAppProvisioningResult {
   ok: true;
+  connected: true;
+  connected_at: string;
   integration_key: string;
   waba_name: string | null;
   display_phone_number: string | null;
   verified_name: string | null;
 }
 
-export interface ExistingWhatsAppProvisioningResult extends WhatsAppProvisioningResult {
-  connected: true;
-  connected_at: string;
-}
+export type ExistingWhatsAppProvisioningResult = WhatsAppProvisioningResult;
 
 type WhatsAppArtist = Pick<Artist, 'id' | 'slug' | 'display_name'>;
 
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const STAGING_SUPABASE_ORIGIN = 'https://gwaliusblwrzisrwnsvs.supabase.co';
-const PRODUCTION_ONBOARDING_ARTISTS = new Map([
-  ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
-  ['a2222222-2222-4222-8222-222222222222', 'kristina'],
-]);
 const EXISTING_ACCOUNT_ARTISTS = new Map([
   ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
 ]);
@@ -89,6 +84,9 @@ function assertProvisioningResponse(value: unknown, expectedIntegrationKey: stri
   const row = value as Record<string, unknown>;
   if (
     row.ok !== true
+    || row.connected !== true
+    || typeof row.connected_at !== 'string'
+    || !Number.isFinite(Date.parse(row.connected_at))
     || row.integration_key !== expectedIntegrationKey
     || (row.waba_name !== null && typeof row.waba_name !== 'string')
     || (row.display_phone_number !== null && typeof row.display_phone_number !== 'string')
@@ -100,11 +98,7 @@ function assertProvisioningResponse(value: unknown, expectedIntegrationKey: stri
 }
 
 function assertExistingProvisioningResponse(value: WhatsAppProvisioningResult): ExistingWhatsAppProvisioningResult {
-  const row = value as unknown as Record<string, unknown>;
-  if (row.connected !== true || typeof row.connected_at !== 'string') {
-    throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
-  }
-  return value as ExistingWhatsAppProvisioningResult;
+  return value;
 }
 
 function safeProvisioningDiagnostic(payload: Record<string, unknown> | null, responseStatus: number): string {
@@ -228,15 +222,11 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       if (whatsappCrmEnvironment(supabaseUrl) !== 'production') {
         throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
       }
-      const approvedSlug = PRODUCTION_ONBOARDING_ARTISTS.get(artist.id);
-      if (!approvedSlug || artist.slug !== approvedSlug) {
-        throw new ApiError(apiMessage('Production WhatsApp onboarding is unavailable for this artist.'));
-      }
       if (signup.event !== 'FINISH' && signup.event !== 'CODE_ONLY') {
         throw new ApiError(apiMessage('Meta Embedded Signup did not finish authorization.'));
       }
 
-      const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, approvedSlug);
+      const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, artist.slug);
       const accessToken = await crmAccessToken();
       return provisioningRequest(
         '/api/whatsapp/embedded-signup/provision',
