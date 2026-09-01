@@ -54,10 +54,23 @@ assert.ok(!webhook.includes('Access-Control-Allow-Origin'), 'public Meta callbac
 assert.ok(!worker.includes('console.log'), 'entrypoint must not log webhook payloads');
 
 for (const required of [
+  'push:',
   'workflow_dispatch:',
   'environment: crm-production',
-  'release/private-crm-rc*',
+  "'release/private-crm-rc*-whatsapp-webhook-only'",
+  '^release/private-crm-rc[0-9]+-whatsapp-webhook-only$',
   'approved_sha',
+  'github.event_name == \'push\' && github.sha || inputs.approved_sha',
+  'github.event_name == \'push\' || inputs.deploy',
+  '[ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]',
+  'refs/heads/$PRODUCT_BRANCH',
+  'refs/heads/$GITHUB_REF_NAME',
+  'actions/runs?head_sha=$GITHUB_SHA',
+  'Static Validation',
+  'CRM and booking validation',
+  'Gmail production validation',
+  'Booking host validation',
+  'WhatsApp production onboarding validation',
   'CRM_PRODUCTION_WHATSAPP_WEBHOOK_DEPLOY_ENABLED',
   'EXPOSE_PRIVATE_CRM_WHATSAPP_WEBHOOK',
   'vishar-whatsapp-webhook-production',
@@ -75,8 +88,10 @@ for (const required of [
 }
 
 for (const forbidden of [
-  'push:',
   'pull_request:',
+  'pull_request_target:',
+  'repository_dispatch:',
+  'workflow_run:',
   'wrangler secret put',
   'wrangler secret bulk',
   'supabase db push',
@@ -89,4 +104,4 @@ for (const forbidden of [
   assert.ok(!workflow.includes(forbidden), `production webhook workflow must not contain ${JSON.stringify(forbidden)}`);
 }
 
-console.log('WhatsApp webhook production config tests passed: exact pre-provisioned Custom Domain, signed closed callback surface and guarded workflow-only deployment.');
+console.log('WhatsApp webhook production config tests passed: exact pre-provisioned Custom Domain, signed closed callback surface and guarded exact-head deployment.');

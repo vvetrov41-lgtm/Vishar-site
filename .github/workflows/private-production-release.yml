@@ -8,6 +8,7 @@ on:
       - '!release/private-crm-rc*-inventory-*'
       - '!release/private-crm-rc*-backend-auth-*'
       - '!release/private-crm-rc*-gpt-worker'
+      - '!release/private-crm-rc*-whatsapp-webhook-only'
   workflow_dispatch:
 
 permissions:
@@ -49,6 +50,10 @@ jobs:
               ;;
             release/private-crm-rc*-gpt-worker)
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-whatsapp-webhook-only)
+              echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;
@@ -117,6 +122,10 @@ jobs:
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
               exit 1
               ;;
+            release/private-crm-rc*-whatsapp-webhook-only)
+              echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
@@ -173,6 +182,10 @@ jobs:
             release/private-crm-rc*-booking-host*) exit 1 ;;
             release/private-crm-rc*-gpt-worker)
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-whatsapp-webhook-only)
+              echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;
@@ -271,6 +284,10 @@ jobs:
               ;;
             release/private-crm-rc*-gpt-worker)
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-whatsapp-webhook-only)
+              echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;
