@@ -4,8 +4,8 @@
 
 - Spec: `specs/whatsapp-universal-artist-routing/spec.md`
 - Target repository: `vvetrov41-lgtm/Vishar-site`
-- Target branch/PR: `agent/whatsapp-universal-artist-routing`, no PR yet
-- Exact target SHA: canonical base `797e86d8c68b886240fe1e953584db06c93e1f95`
+- Target branch/PR: `agent/whatsapp-self-service-completion`, no PR yet
+- Exact target SHA: canonical base `191bfdb30832b608e85029e0d4d64940e9deefc3`
 
 ## Constitution check
 
@@ -16,7 +16,7 @@
 - Durable external delivery: message tables/outbox remain authoritative and are not coupled to onboarding success.
 - Secret custody: provider credentials remain only in separately encrypted Worker bindings.
 - Deployment is separate evidence: DB, webhook Worker and CRM Pages are independently deployed and read back.
-- Bounded rollout: no Meta account mutation, secret rotation or drain schedule change occurs for Vladimir or Kristina.
+- Bounded rollout: Vladimir credentials, phone registration and drain schedule remain unchanged. Meta app publication and Kristina's explicit interactive consent are required external stages.
 
 ## Current-state evidence
 
@@ -98,6 +98,8 @@
 5. Deploy the webhook Worker first. It accepts both legacy and self-describing envelopes; read back version, route, secret-name set and unchanged cron state.
 6. Deploy private CRM Pages from the same merged SHA; read back commit and protected route.
 7. Verify Vladimir's safe metadata and aggregate message counts, then perform a non-mutating signed-route unit/service probe. No fake customer/message is created.
+8. Publish a provider-specific privacy notice, complete the WhatsApp-only Meta App Review and Access Verification, then verify the Meta app is available to a non-developer artist.
+9. Kristina completes the interactive Meta consent screen; read back her exact connected route and separate Worker binding names without reading credential values or creating customer data.
 
 ## Rollback/reference plan
 
