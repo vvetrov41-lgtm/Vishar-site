@@ -265,7 +265,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict \
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" \
             --message "Vishar GPT Worker rollout $APPROVED_SHA" \
             --var SUPABASE_URL:"$SUPABASE_URL" \
             --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
