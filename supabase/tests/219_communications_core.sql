@@ -177,9 +177,9 @@ insert into public.artist_integrations
   (id, artist_id, integration_type, provider, integration_key, configuration, is_enabled)
 values
   ('f9111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
-   'whatsapp', 'meta_cloud_api', 'vladimir-core', '{}'::jsonb, true),
+   'whatsapp', 'meta_cloud_api', 'vladimir-production', '{}'::jsonb, true),
   ('f9222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
-   'whatsapp', 'meta_cloud_api', 'kristina-core', '{}'::jsonb, true);
+   'whatsapp', 'meta_cloud_api', 'kristina-production', '{}'::jsonb, true);
 
 insert into public.clients (id, full_name, email, phone) values
   ('19111111-1111-4111-8111-111111111111', 'Core Vladimir Client', 'core.v@example.test', '+44 7700 901111'),
@@ -190,10 +190,10 @@ insert into public.communication_conversations
 values
   ('29111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
    'whatsapp', '19111111-1111-4111-8111-111111111111', 'linked',
-   'vladimir-core', '447700901111'),
+   'vladimir-production', '447700901111'),
   ('29222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
    'whatsapp', '19222222-2222-4222-8222-222222222222', 'linked',
-   'kristina-core', '447700902222');
+   'kristina-production', '447700902222');
 
 insert into auth.users (id, email) values
   ('39111111-1111-4111-8111-111111111111', 'core.owner@example.test'),
@@ -219,7 +219,7 @@ select throws_ok(
   $$insert into public.communication_conversations
     (artist_id, channel, link_state, integration_key, external_contact_id)
     values ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'linked',
-            'vladimir-core', '447700909999')$$,
+            'vladimir-production', '447700909999')$$,
   '23514', null,
   'a conversation cannot claim to be linked without naming a client'
 );
@@ -228,7 +228,7 @@ select throws_ok(
     (artist_id, channel, client_id, link_state, integration_key, external_contact_id)
     values ('a1111111-1111-4111-8111-111111111111', 'whatsapp',
             '19111111-1111-4111-8111-111111111111', 'unmatched',
-            'vladimir-core', '447700909998')$$,
+            'vladimir-production', '447700909998')$$,
   '23514', null,
   'a conversation that names a client cannot claim to be unmatched'
 );
@@ -238,7 +238,7 @@ select throws_ok(
   $$insert into public.communication_conversations
     (artist_id, channel, link_state, integration_key, external_contact_id)
     values ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'unmatched',
-            'vladimir-core', 'not-a-phone-number')$$,
+            'vladimir-production', 'not-a-phone-number')$$,
   '23514', null,
   'a WhatsApp participant id must still be digits'
 );
@@ -323,7 +323,7 @@ values
 
 select is(
   public.record_communication_message_status(
-    'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-core',
+    'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-production',
     'wamid.SYNTHETICCORE0001', 'delivered', '2026-08-16 09:01:00+00'
   ) ->> 'status',
   'delivered',
@@ -331,7 +331,7 @@ select is(
 );
 select is(
   (public.record_communication_message_status(
-    'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-core',
+    'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-production',
     'wamid.SYNTHETICCORE0001', 'sent', '2026-08-16 09:02:00+00'
   ) ->> 'changed')::boolean,
   false,
@@ -345,7 +345,7 @@ select is(
 );
 select is(
   (public.record_communication_message_status(
-    'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-core',
+    'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-production',
     'wamid.SYNTHETICCORE0001', 'failed', '2026-08-16 09:03:00+00'
   ) ->> 'changed')::boolean,
   false,
@@ -353,7 +353,7 @@ select is(
 );
 select is(
   (public.record_communication_message_status(
-    'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-core',
+    'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-production',
     'wamid.UNKNOWNMESSAGE001', 'delivered', '2026-08-16 09:04:00+00'
   ) ->> 'changed')::boolean,
   false,
@@ -361,7 +361,7 @@ select is(
 );
 select throws_ok(
   $$select public.record_communication_message_status(
-      'a2222222-2222-4222-8222-222222222222', 'whatsapp', 'vladimir-core',
+      'a2222222-2222-4222-8222-222222222222', 'whatsapp', 'vladimir-production',
       'wamid.SYNTHETICCORE0001', 'read', '2026-08-16 09:05:00+00')$$,
   '23503', null,
   'a status cannot be applied through another artist route'

@@ -21,8 +21,8 @@ select ok((select 'search_path=pg_catalog, public, crm_private'=any(proconfig)
 insert into public.artist_integrations
   (id, artist_id, integration_type, provider, integration_key, configuration, is_enabled)
 values
-  ('db111111-1111-4111-8111-111111111111','a1111111-1111-4111-8111-111111111111','whatsapp','meta_cloud_api','vladimir-crm','{}',true),
-  ('db222222-2222-4222-8222-222222222222','a2222222-2222-4222-8222-222222222222','whatsapp','meta_cloud_api','kristina-crm','{}',true);
+  ('db111111-1111-4111-8111-111111111111','a1111111-1111-4111-8111-111111111111','whatsapp','meta_cloud_api','vladimir-production','{}',true),
+  ('db222222-2222-4222-8222-222222222222','a2222222-2222-4222-8222-222222222222','whatsapp','meta_cloud_api','kristina-production','{}',true);
 
 insert into public.clients (id,full_name,email,phone) values
  ('cb111111-1111-4111-8111-111111111111','WA CRM Vladimir','wa.crm.v@example.test','+44 7700 900111'),
@@ -82,7 +82,7 @@ reset role;
 set local role authenticated;
 select pg_temp.wa_claims('{"sub":"6b111111-1111-4111-8111-111111111111","role":"authenticated"}');
 select is((public.ensure_whatsapp_conversation_for_enquiry('eb222222-2222-4222-8222-222222222222')->>'integration_key'),
-          'kristina-crm','owner opens Kristina conversation using Kristina integration only');
+          'kristina-production','owner opens Kristina conversation using Kristina integration only');
 reset role;
 
 select * from finish();

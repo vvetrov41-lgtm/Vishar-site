@@ -71,7 +71,7 @@ values
   ('a2222222-2222-4222-8222-222222222222', 'instagram', 'instagram_login',
    'kristina-inbox', '{"instagram_user_id":"17841400000000012"}'::jsonb, true),
   ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api',
-   'vladimir-inbox-wa', '{}'::jsonb, true);
+   'vladimir-production', '{}'::jsonb, true);
 
 -- Two unknown Instagram senders for Vladimir, one for Kristina, and one
 -- WhatsApp conversation so the channel filter has something to exclude.
@@ -91,7 +91,7 @@ select public.record_communication_inbound_message(
   'text', 'Kristina enquiry'
 );
 select public.record_communication_inbound_message(
-  'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-inbox-wa',
+  'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-production',
   '447700930001', 'wamid.INBOXSYNTHETIC01', '2026-08-18 09:15:00+00',
   'text', 'WhatsApp message'
 );
