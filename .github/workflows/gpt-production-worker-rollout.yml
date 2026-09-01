@@ -198,7 +198,7 @@ jobs:
           const secretNames = new Set(worker.secret_names || []);
           if (!secretNames.has('FIRECRAWL_API_KEY')) throw new Error('FIRECRAWL_API_KEY Worker secret is missing');
           const rateLimit = bindings.get('GPT_RATE_LIMIT');
-          if (rateLimit?.type !== 'rate_limit'
+          if (rateLimit?.type !== 'ratelimit'
               || String(rateLimit.namespace_id) !== '1002'
               || Number(rateLimit.simple?.limit) !== 30
               || Number(rateLimit.simple?.period) !== 60) {
@@ -310,7 +310,7 @@ jobs:
           if (bindings.get('WEB_RESEARCH_SCRAPE_ENABLED')?.value !== 'true') process.exit(1);
           if (!(worker.secret_names || []).includes('FIRECRAWL_API_KEY')) process.exit(1);
           const rateLimit = bindings.get('GPT_RATE_LIMIT');
-          if (rateLimit?.type !== 'rate_limit'
+          if (rateLimit?.type !== 'ratelimit'
               || String(rateLimit.namespace_id) !== '1002'
               || Number(rateLimit.simple?.limit) !== 30
               || Number(rateLimit.simple?.period) !== 60) process.exit(1);
@@ -392,7 +392,7 @@ jobs:
           const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
           if (bindings.get('SUPABASE_URL')?.value !== process.env.SUPABASE_URL) throw new Error('Rollback did not preserve the production Supabase URL');
           const rateLimit = bindings.get('GPT_RATE_LIMIT');
-          if (rateLimit?.type !== 'rate_limit'
+          if (rateLimit?.type !== 'ratelimit'
               || String(rateLimit.namespace_id) !== '1002'
               || Number(rateLimit.simple?.limit) !== 30
               || Number(rateLimit.simple?.period) !== 60) {
