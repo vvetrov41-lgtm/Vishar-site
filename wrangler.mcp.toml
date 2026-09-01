@@ -12,4 +12,5 @@ preview_urls = false
 VISHAR_ENVIRONMENT = "production"
 MCP_ENABLED = "false"
 MCP_GMAIL_TOOLS_ENABLED = "false"
+MCP_META_TOOLS_ENABLED = "false"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"

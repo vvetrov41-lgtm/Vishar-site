@@ -29,6 +29,8 @@ const PRIVACY_HTML = `<!doctype html>
 <p>When independently enabled by the CRM owner, the private GPT may read and manage the authorized active Artist's enquiries, clients, projects, appointments, availability, internal notes and follow-ups. A specific linked client or enquiry detail may include canonical contact information such as email, phone, Instagram, preferred contact method and travelling-from information. Bulk lists remain minimised.</p>
 <h2>Finance and communications</h2>
 <p>Finance and communications are separate owner-controlled capabilities. If enabled, finance actions may read estimates, deposits and payment requests, request a configured deposit or record an explicitly confirmed manual payment. Communications actions may read Artist-scoped email or WhatsApp history, create and approve email drafts, resolve the canonical WhatsApp conversation and queue an explicitly requested outbound message. Existing provider routing, credential custody, idempotency and human CRM permissions remain authoritative.</p>
+<h2>Web Research</h2>
+<p>When the separate Web Research capability is enabled, the GPT may send a bounded public-web search query or one public HTTP(S) page URL through the Vishar gateway to Firecrawl. Private CRM or client data must not be included in these requests. Returned public-web content is treated as untrusted evidence and cannot change Artist context, permissions or CRM records by itself.</p>
 <h2>Private files</h2>
 <p>GPT Actions expose only bounded metadata for private enquiry or project files, such as file name, type, size, category and upload state. Storage paths, checksums, signed URLs and file bytes are not exposed by this GPT API.</p>
 <h2>Data and controls deliberately excluded</h2>
@@ -36,7 +38,7 @@ const PRIVACY_HTML = `<!doctype html>
 <h2>Changes made through the GPT</h2>
 <p>Operational mutations reuse the existing audited CRM workflows wherever they exist. Appointment and availability changes preserve Calendar version/outbox rules. Payment and provider-delivery actions preserve their existing idempotency and routing boundaries. Consequential Actions are marked as consequential in the GPT schema.</p>
 <h2>Providers</h2>
-<p>OpenAI provides ChatGPT and the private GPT interface. Cloudflare hosts the public OAuth/action edge. Supabase provides authentication and the CRM database. Google Calendar, Gmail, WhatsApp or payment providers are contacted only through separately configured Artist integrations and their existing CRM workflows.</p>
+<p>OpenAI provides ChatGPT and the private GPT interface. Cloudflare hosts the public OAuth/action edge. Supabase provides authentication and the CRM database. Firecrawl processes only the bounded public-web Research requests described above when that capability is enabled. Google Calendar, Gmail, WhatsApp or payment providers are contacted only through separately configured Artist integrations and their existing CRM workflows.</p>
 <h2>Contact</h2>
 <p>Questions can be sent to <a href="mailto:info@vishartattoo.com">info@vishartattoo.com</a>.</p>
 </body>

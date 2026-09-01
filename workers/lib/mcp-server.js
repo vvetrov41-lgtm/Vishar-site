@@ -9,6 +9,11 @@ import {
   gmailToolByName,
   toMcpToolDefinitions as gmailMcpToolDefinitions,
 } from './gmail-tool-contract.js';
+import {
+  callMetaTool,
+  metaToolByName,
+  metaToolDefinitions,
+} from './mcp-meta-domain.js';
 
 export const MCP_PROTOCOL_VERSION = '2026-07-28';
 const MAX_BODY_BYTES = 32 * 1024;
@@ -124,9 +129,14 @@ function gmailEnabled(env) {
     && typeof env.GMAIL_SERVICE.fetch === 'function';
 }
 
+function metaEnabled(env) {
+  return env?.MCP_META_TOOLS_ENABLED === 'true';
+}
+
 function toolDefinitions(env) {
   const tools = mcpToolDefinitions();
   if (gmailEnabled(env)) tools.push(...gmailMcpToolDefinitions());
+  if (metaEnabled(env)) tools.push(...metaToolDefinitions());
   return tools;
 }
 
@@ -136,6 +146,10 @@ function toolByName(env, name) {
   if (gmailEnabled(env)) {
     const definition = gmailToolByName(name);
     if (definition) return { kind: 'gmail', definition };
+  }
+  if (metaEnabled(env)) {
+    const definition = metaToolByName(name);
+    if (definition) return { kind: 'meta', definition };
   }
   return null;
 }
@@ -294,6 +308,9 @@ async function dispatch(request, env, body, token, fetchImpl) {
         actorAccessToken: token,
         fetchImpl,
       });
+      if (tool.kind === 'meta') {
+        return rpcResult(body.id, toolResult(await callMetaTool(gateway, body.params.name, args)));
+      }
       const domain = createMcpCrmDomain(gateway);
       return rpcResult(body.id, toolResult(await domain.callTool(body.params.name, args)));
     } catch (error) {
@@ -350,6 +367,7 @@ export const __testing = Object.freeze({
   validateEnvelope,
   validateToolArguments,
   gmailEnabled,
+  metaEnabled,
   toolDefinitions,
   toolByName,
   callGmailTool,
