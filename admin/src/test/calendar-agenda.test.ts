@@ -154,6 +154,7 @@ describe('either side of the window', () => {
     const past = pastAppointments(NOW, [
       appointment({ id: 'older', start_at: at(1, 10), status: 'completed' }),
       appointment({ id: 'newer', start_at: at(20, 10), status: 'completed' }),
+      appointment({ id: 'earlier-today', start_at: at(30, 9) }),
       appointment({ id: 'ahead', start_at: at(31, 10) }),
       appointment({ id: 'cancelled', start_at: at(31, 12), status: 'cancelled', cancelled_at: at(20, 9) }),
     ]);
