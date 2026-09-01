@@ -6,17 +6,8 @@ const WEBHOOK_WORKER = 'vishar-whatsapp-webhook-production';
 const DRAIN_WORKER = 'vishar-whatsapp-drain-production';
 const MAX_BODY_BYTES = 4096;
 const PROVIDER_ID = /^[0-9]{5,32}$/;
-
-const APPROVED_ARTISTS = Object.freeze({
-  'a1111111-1111-4111-8111-111111111111': Object.freeze({
-    integrationKey: 'vladimir-production',
-    bindingName: 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
-  }),
-  'a2222222-2222-4222-8222-222222222222': Object.freeze({
-    integrationKey: 'kristina-production',
-    bindingName: 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
-  }),
-});
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ARTIST_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function edgeSafeStatus(status) {
   if (!Number.isInteger(status) || status < 400 || status > 599) return 500;
@@ -155,23 +146,39 @@ async function requireArtistIntegrationCapability(operator, env, artistId) {
   }
 }
 
-async function requireApprovedRoute(token, env, artistId, approvedArtist) {
+function whatsappBindingName(integrationKey) {
+  const escaped = [...integrationKey]
+    .map((value) => (value === '_' ? '__' : value === '-' ? '_H' : value.toUpperCase()))
+    .join('');
+  return `ARTIST_WHATSAPP_${escaped}`;
+}
+
+async function requireApprovedRoute(operator, env, artistId) {
   const publishableKey = supabasePublishableKey(env);
+  const headers = {
+    apikey: publishableKey,
+    authorization: `Bearer ${operator.token}`,
+    accept: 'application/json',
+  };
+  const artistUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artists`);
+  artistUrl.searchParams.set('id', `eq.${artistId}`);
+  artistUrl.searchParams.set('select', 'id,slug,is_active');
+  artistUrl.searchParams.set('limit', '2');
   const routeUrl = new URL(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/artist_integrations`);
   routeUrl.searchParams.set('artist_id', `eq.${artistId}`);
   routeUrl.searchParams.set('integration_type', 'eq.whatsapp');
   routeUrl.searchParams.set('select', 'artist_id,provider,integration_key,is_enabled,configuration');
   routeUrl.searchParams.set('limit', '2');
-  const routeResponse = await noFollowFetch(routeUrl.toString(), {
-    method: 'GET',
-    headers: {
-      apikey: publishableKey,
-      authorization: `Bearer ${token}`,
-      accept: 'application/json',
-    },
-  });
-  if (!routeResponse.ok) throw Object.assign(new Error('crm_route_check_failed'), { status: 502 });
+  const [artistResponse, routeResponse] = await Promise.all([
+    noFollowFetch(artistUrl.toString(), { method: 'GET', headers }),
+    noFollowFetch(routeUrl.toString(), { method: 'GET', headers }),
+  ]);
+  if (!artistResponse.ok || !routeResponse.ok) {
+    throw Object.assign(new Error('crm_route_check_failed'), { status: 502 });
+  }
+  const artists = await responseJson(artistResponse);
   const routes = await responseJson(routeResponse);
+  const artist = Array.isArray(artists) && artists.length === 1 ? artists[0] : null;
   const route = Array.isArray(routes) && routes.length === 1 ? routes[0] : null;
   const configuration = route?.configuration;
   const safeConfiguration = configuration
@@ -179,15 +186,23 @@ async function requireApprovedRoute(token, env, artistId, approvedArtist) {
     && !Array.isArray(configuration)
     && Object.keys(configuration).length === 0;
   if (
-    !route
+    !artist
+    || artist.id !== artistId
+    || !ARTIST_SLUG.test(artist.slug)
+    || artist.is_active !== true
+    || !route
     || route.artist_id !== artistId
     || route.provider !== 'meta_cloud_api'
-    || route.integration_key !== approvedArtist.integrationKey
+    || route.integration_key !== `${artist.slug}-production`
     || route.is_enabled !== true
     || !safeConfiguration
   ) {
     throw Object.assign(new Error('crm_route_not_ready'), { status: 409 });
   }
+  return {
+    integrationKey: route.integration_key,
+    bindingName: whatsappBindingName(route.integration_key),
+  };
 }
 
 async function graph(url, init = {}) {
@@ -304,9 +319,12 @@ async function verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId) 
   };
 }
 
+function cloudflareSecretsUrl(env, worker) {
+  return `https://api.cloudflare.com/client/v4/accounts/${binding(env, 'CLOUDFLARE_ACCOUNT_ID')}/workers/scripts/${worker}/secrets`;
+}
+
 async function putWorkerSecret(env, worker, bindingName, envelope) {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${binding(env, 'CLOUDFLARE_ACCOUNT_ID')}/workers/scripts/${worker}/secrets`;
-  const response = await noFollowFetch(url, {
+  const response = await noFollowFetch(cloudflareSecretsUrl(env, worker), {
     method: 'PUT',
     headers: {
       authorization: `Bearer ${binding(env, 'CLOUDFLARE_WORKERS_EDIT_TOKEN')}`,
@@ -321,6 +339,29 @@ async function putWorkerSecret(env, worker, bindingName, envelope) {
   }
 }
 
+function cloudflareSecretRows(payload) {
+  if (Array.isArray(payload?.result)) return payload.result;
+  if (Array.isArray(payload?.result?.secrets)) return payload.result.secrets;
+  return [];
+}
+
+async function requireWorkerSecretReadback(env, worker, bindingName) {
+  const response = await noFollowFetch(cloudflareSecretsUrl(env, worker), {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${binding(env, 'CLOUDFLARE_WORKERS_EDIT_TOKEN')}`,
+      accept: 'application/json',
+    },
+  });
+  const payload = await responseJson(response);
+  const present = response.ok
+    && payload.success === true
+    && cloudflareSecretRows(payload).some((secret) => secret?.name === bindingName);
+  if (!present) {
+    throw Object.assign(new Error('cloudflare_binding_readback_failed'), { status: 502 });
+  }
+}
+
 async function subscribeWaba(accessToken, wabaId) {
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`;
   const payload = await graph(url, {
@@ -328,6 +369,61 @@ async function subscribeWaba(accessToken, wabaId) {
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
   });
   if (payload.success !== true) throw Object.assign(new Error('meta_waba_subscription_failed'), { status: 502 });
+}
+
+async function requireWabaSubscriptionReadback(accessToken, wabaId) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`);
+  url.searchParams.set('fields', 'id,name');
+  const payload = await graph(url.toString(), {
+    method: 'GET',
+    headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+  });
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  if (!rows.some((app) => String(app?.id || '') === APP_ID)) {
+    throw Object.assign(new Error('meta_waba_subscription_readback_failed'), { status: 502 });
+  }
+}
+
+async function markIntegrationConnected(operator, env, artistId, route) {
+  const response = await noFollowFetch(
+    `${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/rpc/complete_artist_whatsapp_connection`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: supabasePublishableKey(env),
+        authorization: `Bearer ${operator.token}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        p_artist_id: artistId,
+        p_integration_key: route.integrationKey,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw Object.assign(new Error('crm_connected_state_update_failed'), { status: 502 });
+  }
+  const readback = await responseJson(response);
+  const configuration = readback?.configuration;
+  const safeConfiguration = configuration
+    && typeof configuration === 'object'
+    && !Array.isArray(configuration)
+    && Object.keys(configuration).length === 0;
+  const connectedAt = typeof readback?.connected_at === 'string'
+    && Number.isFinite(Date.parse(readback.connected_at))
+    ? readback.connected_at
+    : '';
+  if (
+    readback?.artist_id !== artistId
+    || readback?.integration_key !== route.integrationKey
+    || readback?.is_enabled !== true
+    || !connectedAt
+    || !safeConfiguration
+  ) {
+    throw Object.assign(new Error('crm_connected_state_readback_failed'), { status: 502 });
+  }
+  return connectedAt;
 }
 
 function requireServerConfiguration(env) {
@@ -362,15 +458,14 @@ export async function onRequestPost(context) {
     const body = await boundedJson(request);
     const code = typeof body?.code === 'string' ? body.code.trim() : '';
     const artistId = typeof body?.artist_id === 'string' ? body.artist_id : '';
-    const approvedArtist = APPROVED_ARTISTS[artistId];
     const browserWabaId = typeof body?.session?.waba_id === 'string' ? body.session.waba_id.trim() : '';
     const browserPhoneNumberId = typeof body?.session?.phone_number_id === 'string'
       ? body.session.phone_number_id.trim()
       : '';
 
-    if (!approvedArtist) return json({ ok: false, error: 'artist_scope_not_allowed' }, 403);
     if (
-      code.length < 10
+      !UUID.test(artistId)
+      || code.length < 10
       || code.length > 2048
       || (browserWabaId && !PROVIDER_ID.test(browserWabaId))
       || (browserPhoneNumberId && !PROVIDER_ID.test(browserPhoneNumberId))
@@ -382,7 +477,7 @@ export async function onRequestPost(context) {
     stage = 'artist_membership';
     await requireArtistIntegrationCapability(operator, env, artistId);
     stage = 'route_check';
-    await requireApprovedRoute(operator.token, env, artistId, approvedArtist);
+    const route = await requireApprovedRoute(operator, env, artistId);
     stage = 'token_exchange';
     const metaAppSecret = binding(env, 'META_APP_SECRET');
     const accessToken = await exchangeCode(code, metaAppSecret);
@@ -391,6 +486,8 @@ export async function onRequestPost(context) {
     stage = 'meta_selection';
     const safeMeta = await verifyMetaSelection(accessToken, wabaId, browserPhoneNumberId || null);
     const envelope = JSON.stringify({
+      artistId,
+      integrationKey: route.integrationKey,
       phoneNumberId: safeMeta.phoneNumberId,
       accessToken,
       wabaId,
@@ -398,18 +495,31 @@ export async function onRequestPost(context) {
     });
 
     stage = 'drain_binding';
-    await putWorkerSecret(env, DRAIN_WORKER, approvedArtist.bindingName, envelope);
+    await putWorkerSecret(env, DRAIN_WORKER, route.bindingName, envelope);
     stage = 'webhook_binding';
-    await putWorkerSecret(env, WEBHOOK_WORKER, approvedArtist.bindingName, envelope);
+    await putWorkerSecret(env, WEBHOOK_WORKER, route.bindingName, envelope);
     stage = 'waba_subscription';
     await subscribeWaba(accessToken, wabaId);
 
+    stage = 'meta_readback';
+    const safeMetaReadback = await verifyMetaSelection(accessToken, wabaId, safeMeta.phoneNumberId);
+    stage = 'subscription_readback';
+    await requireWabaSubscriptionReadback(accessToken, wabaId);
+    stage = 'drain_binding_readback';
+    await requireWorkerSecretReadback(env, DRAIN_WORKER, route.bindingName);
+    stage = 'webhook_binding_readback';
+    await requireWorkerSecretReadback(env, WEBHOOK_WORKER, route.bindingName);
+    stage = 'crm_connected_state';
+    const connectedAt = await markIntegrationConnected(operator, env, artistId, route);
+
     return json({
       ok: true,
-      integration_key: approvedArtist.integrationKey,
-      waba_name: safeMeta.wabaName,
-      display_phone_number: safeMeta.displayPhoneNumber,
-      verified_name: safeMeta.verifiedName,
+      connected: true,
+      connected_at: connectedAt,
+      integration_key: route.integrationKey,
+      waba_name: safeMetaReadback.wabaName,
+      display_phone_number: safeMetaReadback.displayPhoneNumber,
+      verified_name: safeMetaReadback.verifiedName,
     });
   } catch (error) {
     const status = Number.isInteger(error?.status) ? error.status : 500;
@@ -433,10 +543,10 @@ export function onRequest(context) {
 }
 
 export const __testing = {
-  approvedArtists: APPROVED_ARTISTS,
   bearerToken,
   binding,
   edgeSafeStatus,
+  whatsappBindingName,
   noFollowFetch,
   requireServerConfiguration,
   extractUniqueWhatsappTargetIds,

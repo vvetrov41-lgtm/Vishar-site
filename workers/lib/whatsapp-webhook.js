@@ -17,19 +17,8 @@ const MESSAGE_ID = /^[A-Za-z0-9_=./-]{8,255}$/;
 const MESSAGE_TYPE = /^[a-z][a-z0-9_]{1,31}$/;
 const SIGNATURE = /^sha256=([0-9a-f]{64})$/i;
 const INTEGRATION_KEY = /^[a-z][a-z0-9_-]{2,79}$/;
-
-const ROUTES = Object.freeze([
-  {
-    label: 'vladimir',
-    integrationKey: 'vladimir-production',
-    artistIdEnv: 'WHATSAPP_VLADIMIR_ARTIST_ID',
-  },
-  {
-    label: 'kristina',
-    integrationKey: 'kristina-production',
-    artistIdEnv: 'WHATSAPP_KRISTINA_ARTIST_ID',
-  },
-]);
+const ARTIST_BINDING_PREFIX = 'ARTIST_WHATSAPP_';
+const PRODUCTION_ROUTE = /^([a-z0-9]+(?:-[a-z0-9]+)*)-production$/;
 
 export class WhatsappWebhookError extends Error {
   constructor(code, status = 400) {
@@ -55,7 +44,41 @@ export function constantTimeEqual(left, right) {
   return diff === 0;
 }
 
-function parseBinding(raw, definition, artistId) {
+export function integrationKeyFromWhatsappBinding(bindingName) {
+  if (typeof bindingName !== 'string' || !bindingName.startsWith(ARTIST_BINDING_PREFIX)) return null;
+  const encoded = bindingName.slice(ARTIST_BINDING_PREFIX.length);
+  if (!encoded) return null;
+
+  let key = '';
+  for (let index = 0; index < encoded.length; index += 1) {
+    const value = encoded[index];
+    if (value === '_') {
+      const escaped = encoded[index + 1];
+      if (escaped === '_') key += '_';
+      else if (escaped === 'H') key += '-';
+      else return null;
+      index += 1;
+      continue;
+    }
+    if (!/[A-Z0-9]/.test(value)) return null;
+    key += value.toLowerCase();
+  }
+
+  if (!INTEGRATION_KEY.test(key)) return null;
+  try {
+    return bindingNameFor('whatsapp', key) === bindingName ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+function legacyArtistIdEnv(integrationKey) {
+  const match = PRODUCTION_ROUTE.exec(integrationKey);
+  if (!match) return null;
+  return `WHATSAPP_${match[1].toUpperCase().replace(/-/g, '_')}_ARTIST_ID`;
+}
+
+function parseBinding(raw, bindingName, env) {
   let credentials;
   try {
     credentials = JSON.parse(raw);
@@ -71,6 +94,12 @@ function parseBinding(raw, definition, artistId) {
     : '';
   const wabaId = typeof credentials.wabaId === 'string' ? credentials.wabaId.trim() : '';
   const appSecret = typeof credentials.appSecret === 'string' ? credentials.appSecret : '';
+  const envelopeArtistId = typeof credentials.artistId === 'string'
+    ? credentials.artistId.trim()
+    : '';
+  const envelopeIntegrationKey = typeof credentials.integrationKey === 'string'
+    ? credentials.integrationKey.trim()
+    : '';
 
   if (!PROVIDER_ID.test(phoneNumberId) || !PROVIDER_ID.test(wabaId)) {
     throw new WhatsappWebhookError('whatsapp_webhook_binding_invalid', 503);
@@ -79,11 +108,29 @@ function parseBinding(raw, definition, artistId) {
     throw new WhatsappWebhookError('whatsapp_webhook_binding_invalid', 503);
   }
 
+  let artistId = envelopeArtistId;
+  let integrationKey = envelopeIntegrationKey;
+  if (!artistId && !integrationKey) {
+    integrationKey = integrationKeyFromWhatsappBinding(bindingName) || '';
+    const artistIdEnv = legacyArtistIdEnv(integrationKey);
+    artistId = artistIdEnv && typeof env?.[artistIdEnv] === 'string'
+      ? env[artistIdEnv].trim()
+      : '';
+  }
+
+  if (
+    !UUID.test(artistId)
+    || !INTEGRATION_KEY.test(integrationKey)
+    || bindingNameFor('whatsapp', integrationKey) !== bindingName
+  ) {
+    throw new WhatsappWebhookError('whatsapp_webhook_route_invalid', 503);
+  }
+
   return {
-    label: definition.label,
+    label: integrationKey,
     artistId,
-    integrationKey: definition.integrationKey,
-    bindingName: bindingNameFor('whatsapp', definition.integrationKey),
+    integrationKey,
+    bindingName,
     phoneNumberId,
     wabaId,
     appSecret,
@@ -93,21 +140,14 @@ function parseBinding(raw, definition, artistId) {
 export function readWebhookRoutes(env) {
   const routes = [];
 
-  for (const definition of ROUTES) {
-    if (!INTEGRATION_KEY.test(definition.integrationKey)) {
+  const bindings = Object.entries(env || {})
+    .filter(([name, raw]) => name.startsWith(ARTIST_BINDING_PREFIX) && typeof raw === 'string' && raw)
+    .sort(([left], [right]) => left.localeCompare(right));
+  for (const [bindingName, raw] of bindings) {
+    if (!integrationKeyFromWhatsappBinding(bindingName)) {
       throw new WhatsappWebhookError('whatsapp_webhook_route_invalid', 503);
     }
-    const bindingName = bindingNameFor('whatsapp', definition.integrationKey);
-    const raw = env?.[bindingName];
-    if (typeof raw !== 'string' || !raw) continue;
-
-    const artistId = typeof env?.[definition.artistIdEnv] === 'string'
-      ? env[definition.artistIdEnv].trim()
-      : '';
-    if (!UUID.test(artistId)) {
-      throw new WhatsappWebhookError('whatsapp_webhook_artist_invalid', 503);
-    }
-    routes.push(parseBinding(raw, definition, artistId));
+    routes.push(parseBinding(raw, bindingName, env));
   }
 
   if (routes.length === 0) {
@@ -117,11 +157,10 @@ export function readWebhookRoutes(env) {
   for (let left = 0; left < routes.length; left += 1) {
     for (let right = left + 1; right < routes.length; right += 1) {
       if (
-        routes[left].phoneNumberId === routes[right].phoneNumberId
-        || (
-          routes[left].wabaId === routes[right].wabaId
-          && routes[left].phoneNumberId === routes[right].phoneNumberId
-        )
+        routes[left].bindingName === routes[right].bindingName
+        || routes[left].artistId === routes[right].artistId
+        || routes[left].integrationKey === routes[right].integrationKey
+        || routes[left].phoneNumberId === routes[right].phoneNumberId
       ) {
         throw new WhatsappWebhookError('whatsapp_webhook_route_collision', 503);
       }

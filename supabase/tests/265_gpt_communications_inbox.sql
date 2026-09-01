@@ -72,7 +72,7 @@ values
   ('a1111111-1111-4111-8111-111111111111', 'instagram', 'instagram_login',
    'vladimir-gpt-inbox', '{"instagram_user_id":"17841400000000021"}'::jsonb, true),
   ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api',
-   'vladimir-gpt-inbox-wa', '{}'::jsonb, true),
+   'vladimir-production', '{}'::jsonb, true),
   ('a2222222-2222-4222-8222-222222222222', 'instagram', 'instagram_login',
    'kristina-gpt-inbox', '{"instagram_user_id":"17841400000000022"}'::jsonb, true);
 
@@ -82,7 +82,7 @@ select public.record_communication_inbound_message(
   'text', 'Hi, can I book a half sleeve?'
 );
 select public.record_communication_inbound_message(
-  'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-gpt-inbox-wa',
+  'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-production',
   '447700940001', 'wamid.GPTINBOXSYNTH01', '2026-08-20 09:05:00+00',
   'text', 'WhatsApp side of the same inbox'
 );

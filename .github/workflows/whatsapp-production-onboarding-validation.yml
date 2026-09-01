@@ -11,6 +11,8 @@ on:
     paths:
       - .github/workflows/whatsapp-production-onboarding-validation.yml
       - .github/workflows/deploy-private-production-crm.yml
+      - .github/workflows/deploy-private-production-whatsapp.yml
+      - .github/workflows/deploy-private-production-whatsapp-webhook.yml
       - admin/public/_headers
       - admin/functions/api/whatsapp/embedded-signup/provision.js
       - admin/functions/api/whatsapp/existing-account/provision.js
@@ -22,8 +24,15 @@ on:
       - scripts/check-private-crm-artifact.mjs
       - scripts/test-whatsapp-production-onboarding.mjs
       - scripts/test-whatsapp-existing-account-provisioning.mjs
+      - scripts/generate-whatsapp-production-deploy-config.mjs
+      - scripts/test-whatsapp-production-config.mjs
+      - scripts/test-whatsapp-webhook-production-config.mjs
+      - scripts/test-whatsapp-production-secret-names.mjs
+      - scripts/validate-whatsapp-production-secret-names.mjs
       - scripts/test-worker-fetch-redirect-mode.mjs
       - scripts/test-private-production-release-workflows.mjs
+      - wrangler.whatsapp-drain.production.toml
+      - wrangler.whatsapp-webhook.production.toml
 
 permissions:
   contents: read
@@ -67,6 +76,14 @@ jobs:
       - name: Test existing-account provisioning boundary
         run: node scripts/test-whatsapp-existing-account-provisioning.mjs
 
+      - name: Test dynamic production deployment gates
+        run: |
+          node scripts/test-whatsapp-production-secret-names.mjs
+          node scripts/test-whatsapp-production-config.mjs
+          node scripts/test-whatsapp-webhook-production-config.mjs
+          npm run check:whatsapp-production-bundle
+          npm run check:whatsapp-webhook-production-bundle
+
       - name: Verify no Worker source uses an unsupported fetch redirect mode
         run: node scripts/test-worker-fetch-redirect-mode.mjs
 
@@ -94,8 +111,8 @@ jobs:
           test -s /tmp/whatsapp-production-onboarding-worker.js
           grep -Fq 'vishar-whatsapp-webhook-production' /tmp/whatsapp-production-onboarding-worker.js
           grep -Fq 'vishar-whatsapp-drain-production' /tmp/whatsapp-production-onboarding-worker.js
-          grep -Fq 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION' /tmp/whatsapp-production-onboarding-worker.js
-          grep -Fq 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION' /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'ARTIST_WHATSAPP_' /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'complete_artist_whatsapp_connection' /tmp/whatsapp-production-onboarding-worker.js
 
       - name: Test private CRM
         working-directory: admin

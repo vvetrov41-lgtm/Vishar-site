@@ -6,6 +6,9 @@ __pycache__/
 .env
 .env.*
 
+# Supabase CLI runtime state created by `supabase link` / remote commands
+supabase/.temp/
+
 # Search Console credentials and generated evidence
 *service-account*.json
 geo_agent/data/gsc/

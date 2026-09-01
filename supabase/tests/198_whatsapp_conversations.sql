@@ -56,7 +56,7 @@ select has_view('public', 'whatsapp_messages',
 select throws_ok(
   $$insert into public.whatsapp_conversations
     (artist_id, integration_key, contact_wa_id)
-    values ('a1111111-1111-4111-8111-111111111111', 'vladimir-whatsapp', '447700900009')$$,
+    values ('a1111111-1111-4111-8111-111111111111', 'vladimir-production', '447700900009')$$,
   '42501', null,
   'the WhatsApp conversation compatibility view is read-only'
 );
@@ -110,7 +110,7 @@ select throws_ok(
   $$insert into public.artist_integrations
     (artist_id, integration_type, provider, integration_key, configuration, is_enabled)
     values ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api',
-            'vladimir-whatsapp-token-leak',
+            'vladimir-production',
             '{"access_token":"unit-test-value"}'::jsonb, false)$$,
   '23514', null,
   'a Meta access token is refused in artist integration configuration'
@@ -119,7 +119,7 @@ select throws_ok(
   $$insert into public.artist_integrations
     (artist_id, integration_type, provider, integration_key, configuration, is_enabled)
     values ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api',
-            'vladimir-whatsapp-secret-leak',
+            'vladimir-production',
             '{"nested":{"app_secret":"unit-test-value"}}'::jsonb, false)$$,
   '23514', null,
   'a nested Meta app secret is refused in artist integration configuration'
@@ -134,17 +134,17 @@ insert into public.artist_integrations (
   external_account_label, configuration, is_enabled
 ) values
 ('d9111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
- 'whatsapp', 'meta_cloud_api', 'vladimir-whatsapp',
+ 'whatsapp', 'meta_cloud_api', 'vladimir-production',
  'Synthetic Vladimir WhatsApp', '{"coexistence":true}'::jsonb, true),
 ('d9222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
- 'whatsapp', 'meta_cloud_api', 'kristina-whatsapp',
+ 'whatsapp', 'meta_cloud_api', 'kristina-production',
  'Synthetic Kristina WhatsApp', '{"coexistence":true}'::jsonb, true);
 
 select throws_ok(
   $$insert into public.artist_integrations
     (artist_id, integration_type, provider, integration_key, configuration, is_enabled)
     values ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api',
-            'vladimir-whatsapp-second', '{}'::jsonb, true)$$,
+            'vladimir-production', '{}'::jsonb, true)$$,
   '23505', null,
   'one artist cannot hold two enabled WhatsApp routes at once'
 );
@@ -159,17 +159,17 @@ insert into public.communication_conversations (
 ) values
 ('9c111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
  'whatsapp', 'c9111111-1111-4111-8111-111111111111', 'linked',
- 'vladimir-whatsapp', '447700900001', 'Vladimir contact'),
+ 'vladimir-production', '447700900001', 'Vladimir contact'),
 ('9c222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
  'whatsapp', 'c9222222-2222-4222-8222-222222222222', 'linked',
- 'kristina-whatsapp', '447700900002', 'Kristina contact');
+ 'kristina-production', '447700900002', 'Kristina contact');
 
 select throws_ok(
   $$insert into public.communication_conversations
     (artist_id, channel, client_id, link_state, integration_key, external_contact_id)
     values ('a1111111-1111-4111-8111-111111111111', 'whatsapp',
             'c9111111-1111-4111-8111-111111111111', 'linked',
-            'vladimir-whatsapp', '447700900001')$$,
+            'vladimir-production', '447700900001')$$,
   '23505', null,
   'a second conversation for the same artist and contact is rejected'
 );
@@ -266,17 +266,17 @@ select is(
 select is(
   (select integration_key
    from public.resolve_outbox_route('9e111111-1111-4111-8111-111111111111')),
-  'vladimir-whatsapp', 'Vladimir resolves to his own WhatsApp binding'
+  'vladimir-production', 'Vladimir resolves to his own WhatsApp binding'
 );
 select is(
   (select integration_key
    from public.resolve_outbox_route('9e222222-2222-4222-8222-222222222222')),
-  'kristina-whatsapp', 'Kristina resolves to her own WhatsApp binding'
+  'kristina-production', 'Kristina resolves to her own WhatsApp binding'
 );
 select isnt(
   (select integration_key
    from public.resolve_outbox_route('9e222222-2222-4222-8222-222222222222')),
-  'vladimir-whatsapp', 'there is no cross-artist WhatsApp fallback'
+  'vladimir-production', 'there is no cross-artist WhatsApp fallback'
 );
 select is(
   (select artist_id
@@ -312,7 +312,7 @@ select throws_ok(
 select is(
   (select integration_key
    from public.resolve_outbox_route('9e222222-2222-4222-8222-222222222222')),
-  'kristina-whatsapp',
+  'kristina-production',
   'Kristina keeps delivering while Vladimir is unrouted'
 );
 reset role;

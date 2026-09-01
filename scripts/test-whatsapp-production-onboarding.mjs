@@ -12,7 +12,23 @@ const OWNER_ID = '11111111-1111-4111-8111-111111111111';
 const KRISTINA_MANAGER_ID = '22222222-2222-4222-8222-222222222222';
 const VLADIMIR_ID = 'a1111111-1111-4111-8111-111111111111';
 const KRISTINA_ID = 'a2222222-2222-4222-8222-222222222222';
+const FUTURE_ID = 'a3333333-3333-4333-8333-333333333333';
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function routeFor(artistId) {
+  const slug = artistId === VLADIMIR_ID
+    ? 'vladimir'
+    : artistId === KRISTINA_ID
+      ? 'kristina'
+      : 'future-artist';
+  const integrationKey = `${slug}-production`;
+  return {
+    artistId,
+    slug,
+    integrationKey,
+    bindingName: __testing.whatsappBindingName(integrationKey),
+  };
+}
 
 function sourceConstant(source, name) {
   const match = new RegExp(`(?:export\\s+)?const\\s+${name}\\s*=\\s*'([0-9]+)'`).exec(source);
@@ -57,12 +73,13 @@ function env(overrides = {}) {
 }
 
 function bodyFor(artistId) {
+  const suffix = artistId === KRISTINA_ID ? '2' : artistId === FUTURE_ID ? '3' : '1';
   return {
     artist_id: artistId,
     code: 'one-time-meta-code-for-test',
     session: {
-      waba_id: artistId === KRISTINA_ID ? '12345678902' : '12345678901',
-      phone_number_id: artistId === KRISTINA_ID ? '10987654322' : '10987654321',
+      waba_id: `1234567890${suffix}`,
+      phone_number_id: `1098765432${suffix}`,
     },
   };
 }
@@ -75,15 +92,18 @@ function authorizedFetch(calls, {
   canManageIntegrations = true,
   membershipActive = true,
   routeEnabled = true,
+  routeIntegrationKey = null,
+  missingSecretWorker = null,
   phoneRows = [{
     id: '10987654322',
     display_phone_number: '+44 7000 000002',
     verified_name: 'Kristina',
   }],
 } = {}) {
-  const approved = __testing.approvedArtists[artistId];
+  const route = routeFor(artistId);
   return async (url, init = {}) => {
     const target = String(url);
+    const method = String(init.method || 'GET').toUpperCase();
     calls.push({ target, init });
 
     if (target.includes('/auth/v1/user')) return Response.json({ id: actorId });
@@ -102,11 +122,18 @@ function authorizedFetch(calls, {
         is_active: membershipActive,
       }] : []);
     }
+    if (target.includes('/rest/v1/artists')) {
+      return Response.json([{
+        id: artistId,
+        slug: route.slug,
+        is_active: true,
+      }]);
+    }
     if (target.includes('/rest/v1/artist_integrations')) {
       return Response.json([{
         artist_id: artistId,
         provider: 'meta_cloud_api',
-        integration_key: approved.integrationKey,
+        integration_key: routeIntegrationKey ?? route.integrationKey,
         is_enabled: routeEnabled,
         configuration: {},
       }]);
@@ -128,12 +155,14 @@ function authorizedFetch(calls, {
     if (target.includes(`/${bodyFor(artistId).session.waba_id}/phone_numbers`)) {
       return Response.json({ data: phoneRows });
     }
-    if (target.includes('/workers/scripts/vishar-whatsapp-drain-production/secrets')) {
+    if (target.includes('/workers/scripts/vishar-whatsapp-drain-production/secrets') && method === 'PUT') {
       const payload = JSON.parse(String(init.body));
       assert.equal(init.method, 'PUT');
-      assert.equal(payload.name, approved.bindingName);
+      assert.equal(payload.name, route.bindingName);
       assert.equal(payload.type, 'secret_text');
       assert.deepEqual(JSON.parse(payload.text), {
+        artistId,
+        integrationKey: route.integrationKey,
         phoneNumberId: bodyFor(artistId).session.phone_number_id,
         accessToken: 'meta-access-token-for-test',
         wabaId: bodyFor(artistId).session.waba_id,
@@ -141,30 +170,63 @@ function authorizedFetch(calls, {
       });
       return Response.json({ success: true, result: { name: payload.name, type: payload.type } });
     }
-    if (target.includes('/workers/scripts/vishar-whatsapp-webhook-production/secrets')) {
+    if (target.includes('/workers/scripts/vishar-whatsapp-webhook-production/secrets') && method === 'PUT') {
       const payload = JSON.parse(String(init.body));
       assert.equal(init.method, 'PUT');
-      assert.equal(payload.name, approved.bindingName);
+      assert.equal(payload.name, route.bindingName);
       return Response.json({ success: true, result: { name: payload.name, type: payload.type } });
     }
-    if (target.endsWith(`/${bodyFor(artistId).session.waba_id}/subscribed_apps`)) {
+    if (target.includes('/workers/scripts/') && target.endsWith('/secrets') && method === 'GET') {
+      const worker = target.includes('/vishar-whatsapp-drain-production/') ? 'drain' : 'webhook';
+      return Response.json({
+        success: true,
+        result: worker === missingSecretWorker
+          ? []
+          : [{ name: route.bindingName, type: 'secret_text' }],
+      });
+    }
+    if (target.endsWith(`/${bodyFor(artistId).session.waba_id}/subscribed_apps`) && method === 'POST') {
       assert.equal(init.method, 'POST');
       return Response.json({ success: true });
+    }
+    if (target.includes(`/${bodyFor(artistId).session.waba_id}/subscribed_apps`) && method === 'GET') {
+      return Response.json({ data: [{ id: '1481226093843982', name: 'Vishar CRM' }] });
+    }
+    if (target.includes('/rest/v1/rpc/complete_artist_whatsapp_connection') && method === 'POST') {
+      const payload = JSON.parse(String(init.body));
+      assert.deepEqual(payload, {
+        p_artist_id: artistId,
+        p_integration_key: route.integrationKey,
+      });
+      return Response.json({
+        artist_id: artistId,
+        integration_key: route.integrationKey,
+        is_enabled: true,
+        connected_at: '2026-09-01T10:00:00.000Z',
+        configuration: {},
+      });
     }
     throw new Error(`Unexpected network call: ${target}`);
   };
 }
 
-assert.deepEqual(__testing.approvedArtists, {
-  [VLADIMIR_ID]: {
-    integrationKey: 'vladimir-production',
-    bindingName: 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
-  },
-  [KRISTINA_ID]: {
-    integrationKey: 'kristina-production',
-    bindingName: 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
-  },
-});
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { routeIntegrationKey: 'kristina-secondary-production' });
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'crm_route_not_ready' });
+    assert.equal(calls.some((call) => call.target.includes('/oauth/access_token')), false);
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+assert.equal(__testing.whatsappBindingName('vladimir-production'), 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION');
+assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_WHATSAPP_FUTURE_HARTIST_HPRODUCTION');
 
 {
   const response = await onRequestPost({
@@ -275,6 +337,8 @@ assert.deepEqual(__testing.approvedArtists, {
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       ok: true,
+      connected: true,
+      connected_at: '2026-09-01T10:00:00.000Z',
       integration_key: 'kristina-production',
       waba_name: 'Kristina WABA',
       display_phone_number: '+44 7000 000002',
@@ -287,12 +351,83 @@ assert.deepEqual(__testing.approvedArtists, {
     const drainIndex = calls.findIndex((call) => call.target.includes('vishar-whatsapp-drain-production/secrets'));
     const webhookIndex = calls.findIndex((call) => call.target.includes('vishar-whatsapp-webhook-production/secrets'));
     const subscribeIndex = calls.findIndex((call) => call.target.endsWith('/subscribed_apps'));
+    const subscriptionReadbackIndex = calls.findIndex((call) => call.target.includes('/subscribed_apps?fields='));
+    const drainReadbackIndex = calls.findIndex((call) => (
+      call.target.includes('vishar-whatsapp-drain-production/secrets')
+      && String(call.init.method || 'GET').toUpperCase() === 'GET'
+    ));
+    const webhookReadbackIndex = calls.findIndex((call) => (
+      call.target.includes('vishar-whatsapp-webhook-production/secrets')
+      && String(call.init.method || 'GET').toUpperCase() === 'GET'
+    ));
+    const connectedIndex = calls.findIndex((call) => call.target.includes('/complete_artist_whatsapp_connection'));
     assert.ok(membershipIndex > -1);
     assert.ok(routeIndex > membershipIndex);
     assert.ok(exchangeIndex > routeIndex);
     assert.ok(drainIndex > exchangeIndex);
     assert.ok(webhookIndex > drainIndex);
     assert.ok(subscribeIndex > webhookIndex);
+    assert.ok(subscriptionReadbackIndex > subscribeIndex);
+    assert.ok(drainReadbackIndex > subscriptionReadbackIndex);
+    assert.ok(webhookReadbackIndex > drainReadbackIndex);
+    assert.ok(connectedIndex > webhookReadbackIndex);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, {
+    artistId: FUTURE_ID,
+    actorId: KRISTINA_MANAGER_ID,
+    actorRole: 'booking_manager',
+    phoneRows: [{
+      id: '10987654323',
+      display_phone_number: '+44 7000 000003',
+      verified_name: 'Future Artist',
+    }],
+  });
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(FUTURE_ID)), env: env() });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      connected: true,
+      connected_at: '2026-09-01T10:00:00.000Z',
+      integration_key: 'future-artist-production',
+      waba_name: 'Kristina WABA',
+      display_phone_number: '+44 7000 000003',
+      verified_name: 'Future Artist',
+    });
+    const writes = calls
+      .filter((call) => call.target.includes('/workers/scripts/') && call.init.method === 'PUT')
+      .map((call) => JSON.parse(String(call.init.body)));
+    assert.equal(writes.length, 2);
+    for (const write of writes) {
+      assert.equal(write.name, 'ARTIST_WHATSAPP_FUTURE_HARTIST_HPRODUCTION');
+      const envelope = JSON.parse(write.text);
+      assert.equal(envelope.artistId, FUTURE_ID);
+      assert.equal(envelope.integrationKey, 'future-artist-production');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { missingSecretWorker: 'webhook' });
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: 'cloudflare_binding_readback_failed',
+    });
+    assert.equal(calls.some((call) => call.target.includes('/complete_artist_whatsapp_connection')), false);
   } finally {
     globalThis.fetch = originalFetch;
   }

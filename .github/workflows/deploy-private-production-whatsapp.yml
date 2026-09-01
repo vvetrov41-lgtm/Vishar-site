@@ -105,11 +105,12 @@ jobs:
           node scripts/test-whatsapp-routing.mjs
           node scripts/test-whatsapp-drain.mjs
           node scripts/test-whatsapp-drain-worker.mjs
+          node scripts/test-whatsapp-production-secret-names.mjs
           npm run test:whatsapp-production
           npm run check:whatsapp-production-bundle
           npm run scan:secrets
 
-      - name: Verify exact pre-provisioned production Worker secret names
+      - name: Verify bounded pre-provisioned production Worker secret names
         if: ${{ inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -118,18 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           secrets_json="$(npx wrangler secret list --config wrangler.whatsapp-drain.production.toml --name "$WORKER_NAME" --format json)"
-          SECRET_LIST="$secrets_json" node <<'NODE'
-          const values = JSON.parse(process.env.SECRET_LIST || '[]');
-          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
-          const expected = [
-            'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
-            'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
-            'SUPABASE_SECRET_KEY',
-          ].sort();
-          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-            throw new Error(`Production WhatsApp Worker secret-name set is not exact; expected ${expected.join(', ')}`);
-          }
-          NODE
+          SECRET_LIST="$secrets_json" node scripts/validate-whatsapp-production-secret-names.mjs drain
 
       - name: Generate and deploy only the scheduled WhatsApp drain Worker
         if: ${{ inputs.deploy }}
@@ -236,7 +226,7 @@ jobs:
             echo '- Tracked config: drain disabled and no cron'
             echo '- Generated deploy config: drain enabled with exact `*/5 * * * *` cron'
             echo '- Batch: default 10, DB hard maximum 20; lease-aware claim/ack and DB rollout cutoff remain authoritative'
-            echo '- Required secret names: one production Supabase backend key plus Vladimir/Kristina artist-scoped WhatsApp bindings'
+            echo '- Required secret names: one production Supabase backend key plus one or more strictly encoded artist-scoped WhatsApp bindings'
             echo '- Global WhatsApp token/phone-number bindings are forbidden and not provisioned by this workflow'
             echo '- Secret values are never read or printed; this workflow never runs secret put/bulk'
             echo '- Meta actions not performed: no Embedded Signup, no phone-number registration or migration, no billing change, no message sent'

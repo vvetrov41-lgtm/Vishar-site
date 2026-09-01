@@ -41,8 +41,7 @@ for (const forbidden of [
 for (const required of [
   'SUPABASE_SECRET_KEY',
   'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
-  'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
-  'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
+  'ARTIST_WHATSAPP_<ROUTE_ENCODED>_HPRODUCTION',
 ]) {
   assert.ok(config.includes(required), `tracked comments must document required secret name ${required}`);
 }
@@ -64,10 +63,8 @@ for (const required of [
   'vishar-whatsapp-webhook-production',
   'whatsapp.vishartattoo.com',
   'wrangler secret list',
-  'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
-  'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
-  'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
-  'SUPABASE_SECRET_KEY',
+  'validate-whatsapp-production-secret-names.mjs webhook',
+  'test-whatsapp-production-secret-names.mjs',
   '--dry-run',
   '--strict',
   'WRANGLER_OUTPUT_FILE_PATH',

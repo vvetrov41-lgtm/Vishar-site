@@ -17,8 +17,7 @@ WHATSAPP_DRAIN_ENABLED = "false"
 # Required encrypted production Worker secrets are deliberately absent here.
 # The deploy gate verifies the exact secret-name set before enabling the cron:
 #   SUPABASE_SECRET_KEY
-#   ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION
-#   ARTIST_WHATSAPP_KRISTINA_HPRODUCTION
+#   ARTIST_WHATSAPP_<ROUTE_ENCODED>_HPRODUCTION (one or more)
 #
 # The two ARTIST_* names are derived deterministically from integration keys
 # `vladimir-production` and `kristina-production`. Each envelope carries only

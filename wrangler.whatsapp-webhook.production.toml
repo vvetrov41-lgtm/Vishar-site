@@ -27,8 +27,7 @@ WHATSAPP_KRISTINA_ARTIST_ID = "a2222222-2222-4222-8222-222222222222"
 # Required encrypted secrets, intentionally absent from this tracked file:
 #   SUPABASE_SECRET_KEY
 #   WHATSAPP_WEBHOOK_VERIFY_TOKEN
-#   ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION
-#   ARTIST_WHATSAPP_KRISTINA_HPRODUCTION
+#   ARTIST_WHATSAPP_<ROUTE_ENCODED>_HPRODUCTION (one or more)
 #
 # Each ARTIST_* binding is the same artist-scoped envelope used by outbound
 # delivery and supplies that artist's phoneNumberId, wabaId and appSecret.
