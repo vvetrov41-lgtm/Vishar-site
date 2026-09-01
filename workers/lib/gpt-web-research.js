@@ -28,6 +28,16 @@ function configured(env) {
     && env.SUPABASE_PUBLISHABLE_KEY.length >= 20;
 }
 
+function webResearchEnabled(env) {
+  return env?.WEB_RESEARCH_ENABLED === 'true';
+}
+
+function operationEnabled(env, kind) {
+  if (kind === 'search') return env?.WEB_RESEARCH_SEARCH_ENABLED === 'true';
+  if (kind === 'scrape') return env?.WEB_RESEARCH_SCRAPE_ENABLED === 'true';
+  return false;
+}
+
 function providerConfigured(env) {
   return typeof env?.FIRECRAWL_API_KEY === 'string'
     && env.FIRECRAWL_API_KEY.trim().length >= 20;
@@ -272,7 +282,7 @@ export async function handleGptWebResearchRequest(request, env, fetchImpl = fetc
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, '');
   if (path !== '/v1/web/search' && path !== '/v1/web/scrape') return null;
-  if (!configured(env)) return json(404, { error: 'not_found' });
+  if (!configured(env) || !webResearchEnabled(env)) return json(404, { error: 'not_found' });
 
   const token = bearer(request);
   if (!token) return json(401, { error: 'oauth_token_required' });
@@ -283,6 +293,7 @@ export async function handleGptWebResearchRequest(request, env, fetchImpl = fetc
     const body = await readJson(request);
     const route = routeFor(request, url, body);
     if (!route || route.kind === 'method_not_allowed') return json(405, { error: 'method_not_allowed' });
+    if (!operationEnabled(env, route.kind)) return json(404, { error: 'not_found' });
 
     const authorization = await authorize(env, token, fetchImpl);
     if (authorization.error) return authorization.error;
@@ -307,6 +318,8 @@ export async function handleGptWebResearchRequest(request, env, fetchImpl = fetc
 
 export const __testing = Object.freeze({
   configured,
+  webResearchEnabled,
+  operationEnabled,
   providerConfigured,
   bearer,
   readJson,
