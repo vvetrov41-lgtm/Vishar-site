@@ -80,8 +80,14 @@
   </url>
   <url>
     <loc>https://vishartattoo.com/privacy/</loc>
-    <lastmod>2026-07-12</lastmod>
+    <lastmod>2026-09-01</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://vishartattoo.com/privacy/meta/</loc>
+    <lastmod>2026-09-01</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.2</priority>
   </url>
 </urlset>
