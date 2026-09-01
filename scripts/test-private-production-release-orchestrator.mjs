@@ -24,8 +24,10 @@ const expectOrder = (text, first, second, label) => {
 expectIncludes(workflow, "- 'release/private-crm-rc*'", 'release trigger');
 expectIncludes(workflow, "- '!release/private-crm-rc*-inventory-*'", 'read-only inventory trigger exclusion');
 expectIncludes(workflow, "- '!release/private-crm-rc*-backend-auth-*'", 'isolated backend-auth trigger exclusion');
+expectIncludes(workflow, "- '!release/private-crm-rc*-whatsapp-webhook-only'", 'isolated WhatsApp webhook trigger exclusion');
 expectIncludes(workflow, 'release/private-crm-rc*-inventory-*)', 'read-only inventory runtime exclusion');
 expectIncludes(workflow, 'release/private-crm-rc*-backend-auth*)', 'isolated backend-auth runtime exclusion');
+expectIncludes(workflow, 'release/private-crm-rc*-whatsapp-webhook-only)', 'isolated WhatsApp webhook runtime exclusion');
 expectIncludes(workflow, 'workflow_dispatch:', 'release trigger');
 expectExcludes(workflow, 'approved_sha:', 'zero-input release');
 expectExcludes(workflow, 'approval_phrase:', 'zero-input release');
@@ -97,8 +99,10 @@ expectIncludes(deploySection, 'Verify live Telegram HTTP boundary', 'Telegram li
 expectIncludes(observer, "- 'release/private-crm-rc*'", 'release observer trigger');
 expectIncludes(observer, "- '!release/private-crm-rc*-inventory-*'", 'release observer inventory exclusion');
 expectIncludes(observer, "- '!release/private-crm-rc*-backend-auth-*'", 'release observer backend-auth exclusion');
+expectIncludes(observer, "- '!release/private-crm-rc*-whatsapp-webhook-only'", 'release observer WhatsApp webhook exclusion');
 expectIncludes(observer, 'release/private-crm-rc*-inventory-*)', 'release observer runtime inventory exclusion');
 expectIncludes(observer, 'release/private-crm-rc*-backend-auth*)', 'release observer runtime backend-auth exclusion');
+expectIncludes(observer, 'release/private-crm-rc*-whatsapp-webhook-only*)', 'release observer runtime WhatsApp webhook exclusion');
 expectIncludes(observer, 'actions: read', 'release observer permissions');
 expectIncludes(observer, 'statuses: write', 'release observer permissions');
 expectIncludes(observer, 'if: github.actor == github.repository_owner', 'release observer authorization');

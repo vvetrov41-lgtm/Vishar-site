@@ -5,6 +5,9 @@ name: Deploy private production WhatsApp webhook
 # already exist before deploy=true is allowed to touch production.
 
 on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-whatsapp-webhook-only'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -23,6 +26,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -36,6 +40,7 @@ jobs:
     timeout-minutes: 20
     environment: crm-production
     env:
+      PRODUCT_BRANCH: agent/platform-telegram-self-service
       WORKER_NAME: vishar-whatsapp-webhook-production
       WEBHOOK_HOSTNAME: whatsapp.vishartattoo.com
 
@@ -43,16 +48,29 @@ jobs:
       - name: Verify exact release branch and explicit production gate
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
-          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
+          APPROVAL_PHRASE: ${{ github.event_name == 'push' && 'EXPOSE_PRIVATE_CRM_WHATSAPP_WEBHOOK' || inputs.approval_phrase }}
           DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_WHATSAPP_WEBHOOK_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
-          case "$GITHUB_REF_NAME" in
-            release/private-crm-rc*) ;;
-            *) echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
-          esac
+
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-whatsapp-webhook-only$ ]] || {
+              echo 'Automatic webhook rollout requires the exact isolated whatsapp-webhook-only release ref.' >&2
+              exit 1
+            }
+            [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ] || {
+              echo 'Only the repository owner may trigger the automatic webhook rollout.' >&2
+              exit 1
+            }
+          else
+            case "$GITHUB_REF_NAME" in
+              release/private-crm-rc*) ;;
+              *) echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
+            esac
+          fi
+
           [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
             echo 'approved_sha must exactly match the workflow source SHA.' >&2
             exit 1
@@ -71,13 +89,13 @@ jobs:
       - name: Checkout exact approved SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.approved_sha }}
+          ref: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
           fetch-depth: 0
 
       - name: Verify exact checkout and public surface
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
+          APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
         run: |
           set -euo pipefail
           [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
@@ -89,6 +107,41 @@ jobs:
           grep -Fq 'enabled = true' wrangler.whatsapp-webhook.production.toml
           grep -Fq 'previews_enabled = false' wrangler.whatsapp-webhook.production.toml
           ! grep -Fq 'pattern = "*' wrangler.whatsapp-webhook.production.toml
+
+      - name: Verify automatic webhook exact canonical source and CI
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+          operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ] || {
+            echo 'Canonical CRM branch moved or does not match this webhook release SHA.' >&2
+            exit 1
+          }
+          [ "$operator_sha" = "$GITHUB_SHA" ] || {
+            echo 'Webhook-only release ref moved after the workflow started.' >&2
+            exit 1
+          }
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/whatsapp-webhook-only-ci.json"
+          for workflow in \
+            'Static Validation' \
+            'CRM and booking validation' \
+            'Gmail production validation' \
+            'Booking host validation' \
+            'WhatsApp production onboarding validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/whatsapp-webhook-only-ci.json" >/dev/null || {
+                echo "Required exact-head workflow is not green: $workflow" >&2
+                exit 1
+              }
+          done
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -110,7 +163,7 @@ jobs:
           npm run scan:secrets
 
       - name: Verify bounded pre-provisioned production Worker secret names
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
@@ -132,13 +185,27 @@ jobs:
           --outdir .wrangler/whatsapp-webhook-production-generated
 
       - name: Deploy only the pre-provisioned public webhook Worker
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
           set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+            operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+            [ "$canonical_sha" = "$GITHUB_SHA" ] || {
+              echo 'Canonical CRM branch moved after validation; refusing webhook deployment.' >&2
+              exit 1
+            }
+            [ "$operator_sha" = "$GITHUB_SHA" ] || {
+              echo 'Webhook-only release ref moved after validation; refusing deployment.' >&2
+              exit 1
+            }
+          fi
+
           deploy_output="$RUNNER_TEMP/whatsapp-webhook-production-wrangler-output.ndjson"
           rm -f "$deploy_output"
           WRANGLER_OUTPUT_FILE_PATH="$deploy_output" \
@@ -148,7 +215,7 @@ jobs:
               --strict
 
       - name: Record active webhook Worker version and safe evidence
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
@@ -193,10 +260,10 @@ jobs:
           NODE
 
       - name: Upload safe WhatsApp webhook production evidence
-        if: ${{ always() && inputs.deploy }}
+        if: ${{ always() && (github.event_name == 'push' || inputs.deploy) }}
         uses: actions/upload-artifact@v4
         with:
-          name: whatsapp-webhook-production-${{ inputs.approved_sha }}
+          name: whatsapp-webhook-production-${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
           path: ${{ runner.temp }}/whatsapp-webhook-production-evidence/safe-summary.json
           if-no-files-found: warn
           retention-days: 30
@@ -205,7 +272,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
         run: |
           {
             echo '### Private CRM WhatsApp webhook production gate'
