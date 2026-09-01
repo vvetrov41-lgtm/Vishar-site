@@ -132,6 +132,10 @@ select is(
   'owner can disable the web research capability through the reviewed RPC'
 );
 
+-- Direct verification of the private server-owned ceiling must run as the test
+-- harness role, not as an API role. The API-path behavior was already exercised
+-- through the reviewed owner RPC above.
+reset role;
 select is(
   (select can_use_web_research from crm_private.gpt_action_clients
    where integration_key = 'vladimir-gpt-actions'),
