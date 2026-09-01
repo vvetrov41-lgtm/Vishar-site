@@ -40,7 +40,7 @@ describe('the schedule as a month calendar', () => {
 
     expect(within(grid).getAllByRole('columnheader')).toHaveLength(7);
     expect(within(grid).getAllByRole('gridcell')).toHaveLength(42);
-    expect(within(grid).getByRole('gridcell', { name: /1 Sept/ })).toHaveClass('today');
+    expect(within(grid).getByRole('gridcell', { name: 'Tue 1 Sept' })).toHaveClass('today');
     expect(within(monthSection).getByRole('button', { name: 'Today' })).toBeInTheDocument();
   });
 
@@ -63,7 +63,7 @@ describe('the schedule as a month calendar', () => {
     const grid = await screen.findByRole('grid', { name: 'September 2026' });
     expect(within(grid).getAllByText('Holiday')).toHaveLength(2);
 
-    fireEvent.click(within(grid).getByRole('gridcell', { name: /3 Sept/ }));
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'Thu 3 Sept' }));
 
     const detail = screen.getByRole('heading', { level: 2, name: /3 Sept/ }).closest('section') as HTMLElement;
     expect(within(detail).getByText('Holiday')).toBeInTheDocument();
