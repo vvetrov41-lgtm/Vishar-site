@@ -1,16 +1,12 @@
-// The schedule, as an operator reads it.
-//
-// `/appointments` showed one flat list of everything upcoming and one of
-// everything past. There were no day boundaries, no marker for today, and time
-// off - the other half of "when am I free?" - was on a different screen.
+// The schedule, as an operator reads it in the month calendar.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { App } from '../App';
 import { SESSION, VLADIMIR_ARTIST_ID, renderWithSession } from './fixtures';
 
-// The morning of the fixture booking, so the diary window is the same on every
-// run and the fixture session falls on "today".
+// The morning of the fixture booking, so the calendar is deterministic and the
+// fixture session falls on today.
 const NOW = new Date('2026-09-01T08:00:00Z');
 
 const DAY_OFF = {
@@ -34,57 +30,56 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('the schedule as a diary', () => {
-  it('groups the next two weeks into days and marks today', async () => {
+describe('the schedule as a month calendar', () => {
+  it('renders a conventional six-week month grid and marks today', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
 
-    const diary = (await screen.findByRole('heading', { level: 2, name: 'Next 14 days' }))
+    const monthSection = (await screen.findByRole('heading', { level: 2, name: 'Month' }))
       .closest('section') as HTMLElement;
+    const grid = within(monthSection).getByRole('grid', { name: 'September 2026' });
 
-    // Today is called out rather than left for the operator to work out from
-    // the dates on consecutive rows.
-    expect(within(diary).getByText('Today')).toBeInTheDocument();
-
-    // Every day in the window appears, including the empty ones: "nothing on
-    // Thursday" is the answer to "when am I free?".
-    expect(within(diary).getAllByRole('heading', { level: 3 })).toHaveLength(14);
-    expect(within(diary).getAllByText('Nothing booked').length).toBeGreaterThan(0);
+    expect(within(grid).getAllByRole('columnheader')).toHaveLength(7);
+    expect(within(grid).getAllByRole('gridcell')).toHaveLength(42);
+    expect(within(grid).getByRole('gridcell', { name: 'Tue 1 Sept' })).toHaveClass('today');
+    expect(within(monthSection).getByRole('button', { name: 'Today' })).toBeInTheDocument();
   });
 
-  it("puts today's booking under today", async () => {
+  it("selects today's booking by default and keeps its operator controls", async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
 
-    const diary = (await screen.findByRole('heading', { level: 2, name: 'Next 14 days' }))
-      .closest('section') as HTMLElement;
-
-    const todayHeading = within(diary).getByText('Today').closest('h3') as HTMLElement;
-    const todayGroup = todayHeading.parentElement as HTMLElement;
-
-    expect(within(todayGroup).getByRole('link', { name: /Fixture Client/ })).toBeInTheDocument();
+    expect(await screen.findByRole('grid', { name: 'September 2026' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Client: Fixture Client/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Confirm:/ })).toBeInTheDocument();
     expect(SESSION.start_at).toBe('2026-09-01T10:00:00Z');
   });
 
-  it('shows time off beside bookings, on every day it covers', async () => {
+  it('shows multi-day time off in the month and its detail when selected', async () => {
     renderWithSession(<App />, {
       role: 'booking_manager',
       path: '/appointments',
       availabilityBlocks: [DAY_OFF],
     });
 
-    const diary = (await screen.findByRole('heading', { level: 2, name: 'Next 14 days' }))
-      .closest('section') as HTMLElement;
+    const grid = await screen.findByRole('grid', { name: 'September 2026' });
+    expect(within(grid).getAllByText('Holiday')).toHaveLength(2);
 
-    // A block spanning two days marks both, so no free-looking day appears in
-    // the middle of a holiday.
-    const holidays = within(diary).getAllByText('Holiday');
-    expect(holidays).toHaveLength(2);
-    expect(within(holidays[0].closest('.row') as HTMLElement).getByText(/All day/)).toBeInTheDocument();
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'Thu 3 Sept' }));
+
+    const detail = screen.getByRole('heading', { level: 2, name: /3 Sept/ }).closest('section') as HTMLElement;
+    expect(within(detail).getByText('Holiday')).toBeInTheDocument();
+    expect(within(detail).getByText(/All day/)).toBeInTheDocument();
+    expect(within(detail).getByText(/Away/)).toBeInTheDocument();
   });
 
-  it('keeps what is booked beyond the window reachable rather than hidden', async () => {
+  it('keeps later dates reachable with month navigation and Today', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Further ahead' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: 'Past' })).toBeInTheDocument();
+    const september = (await screen.findByRole('grid', { name: 'September 2026' }))
+      .closest('section') as HTMLElement;
+    fireEvent.click(within(september).getByRole('button', { name: 'Next month' }));
+
+    expect(await screen.findByRole('grid', { name: 'October 2026' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(await screen.findByRole('grid', { name: 'September 2026' })).toBeInTheDocument();
   });
 });
