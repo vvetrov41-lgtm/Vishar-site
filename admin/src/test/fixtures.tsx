@@ -1151,7 +1151,15 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     auth: {
       getSession: async () => ({
         data: { session: roleKey === 'signed_out' ? null : {
-          user: { id: profile?.id ?? '99999999-9999-4999-8999-999999999999' },
+          // Confirmed, because every account that reaches these screens is:
+          // the invitation flow confirms the address before the profile
+          // exists, and public signup refuses to create a tenant without it.
+          // An unconfirmed session is its own state and has its own test.
+          user: {
+            id: profile?.id ?? '99999999-9999-4999-8999-999999999999',
+            email: 'fixture@example.test',
+            email_confirmed_at: '2026-01-01T00:00:00.000Z',
+          },
           access_token: 'synthetic.browser.access.token',
         } },
         error: null,

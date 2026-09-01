@@ -38,8 +38,10 @@ import { createInstagramConnectionsApi, type InstagramConnectionsApi } from './i
 import { createControlPlaneApi, type ControlPlaneApi } from './control-plane-api';
 import { createLifecycleApi, type LifecycleApi } from './lifecycle-api';
 import { createPlatformApi, type PlatformApi } from './platform-api';
+import { createSignupApi, type BootstrapResult, type SignupApi } from './signup-api';
 import { createTelegramConnectionsApi, type TelegramConnectionsApi } from './telegram-connections-api';
-import { clearStaffInviteUrl } from './supabase';
+import { passwordProblem } from './password';
+import { clearStaffInviteUrl, signupRedirectUrl } from './supabase';
 import type { ArtistMembership, Profile } from './types';
 
 export type AccessState =
@@ -54,10 +56,17 @@ export type AccessState =
   // widened; both outcomes deny identically.
   | 'deactivated'
   | 'password_setup'
+  // Signed in through public signup, email address not confirmed yet. Held
+  // here rather than shown the CRM: the bootstrap refuses an unconfirmed
+  // address anyway, so offering the setup form would be a dead end.
+  | 'verify_email'
+  // Signed in, confirmed, no CRM identity yet, and signup is open. The one
+  // state that leads somewhere new: the first-run setup form.
+  | 'setup'
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi;
+export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -69,9 +78,22 @@ export interface SessionValue {
   memberships: ArtistMembership[];
   api: CrmApi | null;
   error: string | null;
+  /** The address the current session belongs to, so the "check your email"
+   *  screen can name it. Null when signed out. */
+  email: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   completePasswordSetup: (password: string) => Promise<void>;
+  /** Creates the Auth account and sends the confirmation email. Returns true
+   *  when a session already exists (a project with confirmation switched off),
+   *  false when the person must go and confirm first. */
+  signUp: (email: string, password: string) => Promise<boolean>;
+  resendVerification: () => Promise<void>;
+  completeArtistSetup: (input: {
+    displayName: string;
+    businessName?: string | null;
+    timezone?: string | null;
+  }) => Promise<BootstrapResult>;
   refresh: () => Promise<void>;
 }
 
@@ -92,6 +114,7 @@ export function SessionProvider({
   const [profile, setProfile] = useState<Profile | null>(null);
   const [memberships, setMemberships] = useState<ArtistMembership[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [inviteMode, setInviteMode] = useState(staffInviteMode);
 
   const api = useMemo<CrmApi | null>(() => {
@@ -115,6 +138,7 @@ export function SessionProvider({
       createControlPlaneApi(client),
       createTelegramConnectionsApi(client),
       createLifecycleApi(client),
+      createSignupApi(client),
     );
   }, [client, teamInviteUrl]);
 
@@ -126,20 +150,38 @@ export function SessionProvider({
     }
 
     const { data } = await client.auth.getSession();
-    const userId = data?.session?.user?.id;
+    const user = data?.session?.user;
+    const userId = user?.id;
     if (!userId) {
       setProfile(null);
       setMemberships([]);
+      setEmail(null);
       setState('signed_out');
       return;
     }
+    setEmail(typeof user?.email === 'string' ? user.email : null);
 
     try {
       const found = await api.currentProfile(userId);
       if (!found) {
         setProfile(null);
         setMemberships([]);
-        setState('no_profile');
+
+        // No CRM identity. Three different situations look identical from
+        // here, and telling them apart is the whole of the signup gate.
+        //
+        // An unconfirmed address is held first, because the bootstrap refuses
+        // it server-side; offering the setup form would be a form that cannot
+        // succeed. Then, and only when the database says signup is open, this
+        // is somebody who has just arrived and needs to set themselves up.
+        // Otherwise it is what it has always been: an account with no access.
+        if (!user?.email_confirmed_at) {
+          setState('verify_email');
+          return;
+        }
+
+        const policy = await api.selfServiceSignupPolicy();
+        setState(policy.is_open ? 'setup' : 'no_profile');
         return;
       }
       setProfile(found);
@@ -210,6 +252,7 @@ export function SessionProvider({
     }
     setProfile(null);
     setMemberships([]);
+    setEmail(null);
     setState('signed_out');
   }, [client, inviteMode]);
 
@@ -217,7 +260,7 @@ export function SessionProvider({
     if (!client || !inviteMode || state !== 'password_setup' || !profile?.is_active) {
       throw new Error('Password setup is not available for this session.');
     }
-    if (password.length < 12 || password.length > 128) {
+    if (passwordProblem(password) === 'length') {
       throw new Error('Choose a password between 12 and 128 characters.');
     }
 
@@ -244,6 +287,78 @@ export function SessionProvider({
     setState('signed_out');
   }, [client, inviteMode, profile, state]);
 
+  // Public signup. Auth only: this creates an identity and nothing in the CRM.
+  // The tenant is created later, by public.bootstrap_artist_account, and only
+  // once the address has been confirmed.
+  const signUp = useCallback(async (address: string, password: string) => {
+    if (!client) throw new Error(apiMessage('The CRM is not configured.'));
+    if (typeof client.auth.signUp !== 'function') {
+      throw new Error(apiMessage('The CRM is not configured.'));
+    }
+    setError(null);
+
+    const problem = passwordProblem(password);
+    if (problem === 'length') {
+      throw new Error('Choose a password between 12 and 128 characters.');
+    }
+
+    const result = await client.auth.signUp({
+      email: address,
+      password,
+      options: {
+        emailRedirectTo: typeof window === 'undefined'
+          ? undefined
+          : signupRedirectUrl(window.location.origin),
+      },
+    });
+    if (result.error) {
+      // Deliberately generic, for the same reason sign-in is: a specific "that
+      // address already exists" turns this form into an account oracle.
+      throw new Error('That did not work. Check the address and try again, or sign in if you already have an account.');
+    }
+
+    setEmail(address);
+    // Supabase returns a session immediately only when the project does not
+    // require confirmation. Both outcomes are correct; the caller decides
+    // which screen follows.
+    const confirmed = Boolean(result.data?.session);
+    if (confirmed) await load();
+    return confirmed;
+  }, [client, load]);
+
+  const resendVerification = useCallback(async () => {
+    if (!client || !email) throw new Error('There is no address to send to.');
+    if (typeof client.auth.resend !== 'function') {
+      throw new Error('There is no address to send to.');
+    }
+    const result = await client.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        emailRedirectTo: typeof window === 'undefined'
+          ? undefined
+          : signupRedirectUrl(window.location.origin),
+      },
+    });
+    if (result.error) {
+      throw new Error('Could not send another email just now. Wait a minute and try again.');
+    }
+  }, [client, email]);
+
+  // First run. One call creates the whole tenant, and calling it twice returns
+  // the first answer - so a double submit, a refreshed tab or a retried
+  // request all land on the same CRM rather than a second one.
+  const completeArtistSetup = useCallback(async (input: {
+    displayName: string;
+    businessName?: string | null;
+    timezone?: string | null;
+  }) => {
+    if (!api) throw new Error(apiMessage('The CRM is not configured.'));
+    const result = await api.bootstrapArtistAccount(input);
+    await load();
+    return result;
+  }, [api, load]);
+
   const value = useMemo<SessionValue>(
     () => ({
       state,
@@ -251,12 +366,20 @@ export function SessionProvider({
       memberships,
       api,
       error,
+      email,
       signIn,
       signOut,
       completePasswordSetup,
+      signUp,
+      resendVerification,
+      completeArtistSetup,
       refresh: load,
     }),
-    [state, profile, memberships, api, error, signIn, signOut, completePasswordSetup, load]
+    [
+      state, profile, memberships, api, error, email,
+      signIn, signOut, completePasswordSetup,
+      signUp, resendVerification, completeArtistSetup, load,
+    ]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

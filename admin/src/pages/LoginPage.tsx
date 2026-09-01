@@ -1,14 +1,29 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { useLanguage } from '../lib/i18n';
+import { Link } from '../lib/router';
 import { useSession } from '../lib/session';
 
 export function LoginPage() {
-  const { signIn, error } = useSession();
+  const { signIn, error, api } = useSession();
   const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  // Whether to offer the signup link at all. Asked of the server, because the
+  // browser has no business deciding it and a stale build should not advertise
+  // a door the database has since closed. `selfServiceSignupPolicy` already
+  // fails closed, so an unreachable API leaves the link hidden.
+  const [signupOpen, setSignupOpen] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    if (!api) return undefined;
+    void api.selfServiceSignupPolicy().then((policy) => {
+      if (live) setSignupOpen(policy.is_open);
+    });
+    return () => { live = false; };
+  }, [api]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -53,6 +68,12 @@ export function LoginPage() {
           </button>
         </div>
       </form>
+
+      {signupOpen ? (
+        <p className="notice">
+          {t('login.noAccount')} <Link to="/signup">{t('login.createAccount')}</Link>
+        </p>
+      ) : null}
 
       <p className="notice">{t('login.notice')}</p>
     </div>

@@ -13,6 +13,8 @@ import type { CrmClient } from './api';
 
 const STAFF_INVITE_PARAMETER = 'staff_invite';
 const STAFF_INVITE_VALUE = '1';
+const SIGNUP_PARAMETER = 'signup';
+const SIGNUP_VALUE = '1';
 
 function jwtRole(value: string): string | null {
   const parts = value.split('.');
@@ -170,28 +172,59 @@ export function readCalendarConnectorOrigin(
 }
 
 /**
- * Staff invitation links are the only Supabase Auth flow the private CRM
- * accepts from the browser URL. The Team Worker configures this exact same-
- * origin marker as the Auth invite redirect. Supabase may append its implicit-
- * flow session fragment, which is intentionally not parsed here.
+ * The two Supabase Auth redirects the private CRM accepts from the browser
+ * URL, and nothing else. Each is an exact same-origin marker with one
+ * parameter: the Team Worker configures `staff_invite` as the Auth invite
+ * redirect, and public signup configures `signup` as the email-confirmation
+ * redirect. Supabase may append its implicit-flow session fragment, which is
+ * intentionally not parsed here.
+ *
+ * Matching exactly is the point. A widened URL - an extra parameter, a
+ * different path - returns null, and `detectSessionInUrl` stays off, so an
+ * arbitrary link cannot talk this application into parsing a session out of
+ * whatever it was handed.
  */
-export function isStaffInviteUrl(value: string): boolean {
+export type AuthCallbackKind = 'staff_invite' | 'signup';
+
+function exactMarker(value: string, parameter: string, expected: string): boolean {
   if (!value) return false;
   try {
     const parsed = new URL(value);
     return parsed.pathname === '/'
       && parsed.searchParams.size === 1
-      && parsed.searchParams.get(STAFF_INVITE_PARAMETER) === STAFF_INVITE_VALUE;
+      && parsed.searchParams.get(parameter) === expected;
   } catch {
     return false;
   }
 }
 
-/** Remove both the non-secret invite marker and any remaining Auth fragment. */
+export function authCallbackKind(value: string): AuthCallbackKind | null {
+  if (exactMarker(value, STAFF_INVITE_PARAMETER, STAFF_INVITE_VALUE)) return 'staff_invite';
+  if (exactMarker(value, SIGNUP_PARAMETER, SIGNUP_VALUE)) return 'signup';
+  return null;
+}
+
+export function isStaffInviteUrl(value: string): boolean {
+  return authCallbackKind(value) === 'staff_invite';
+}
+
+export function isSignupConfirmationUrl(value: string): boolean {
+  return authCallbackKind(value) === 'signup';
+}
+
+/** Where Supabase should send a freshly confirmed signup back to. Same origin,
+ *  exact marker, no path - the only shape `authCallbackKind` will accept. */
+export function signupRedirectUrl(origin: string): string {
+  return `${origin.replace(/\/$/, '')}/?${SIGNUP_PARAMETER}=${SIGNUP_VALUE}`;
+}
+
+/** Remove both the non-secret Auth marker and any remaining Auth fragment. */
 export function clearStaffInviteUrl() {
   if (typeof window === 'undefined') return;
   window.history.replaceState(window.history.state, '', window.location.pathname || '/');
 }
+
+export { clearStaffInviteUrl as clearAuthCallbackUrl };
 
 export function createCrmClient(
   env: Record<string, string | undefined>,
@@ -204,7 +237,7 @@ export function createCrmClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: isStaffInviteUrl(currentUrl),
+      detectSessionInUrl: authCallbackKind(currentUrl) !== null,
     },
   }) as unknown as CrmClient;
 }
