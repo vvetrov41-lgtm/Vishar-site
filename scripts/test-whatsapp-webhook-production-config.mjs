@@ -66,6 +66,8 @@ for (const required of [
   'refs/heads/$PRODUCT_BRANCH',
   'refs/heads/$GITHUB_REF_NAME',
   'actions/runs?head_sha=$GITHUB_SHA',
+  'Canonical CRM branch moved after validation; refusing webhook deployment.',
+  'Webhook-only release ref moved after validation; refusing deployment.',
   'Static Validation',
   'CRM and booking validation',
   'Gmail production validation',
@@ -103,5 +105,14 @@ for (const forbidden of [
 ]) {
   assert.ok(!workflow.includes(forbidden), `production webhook workflow must not contain ${JSON.stringify(forbidden)}`);
 }
+
+assert.ok(
+  workflow.split('refs/heads/$PRODUCT_BRANCH').length - 1 >= 2,
+  'production webhook workflow must re-read canonical immediately before deployment',
+);
+assert.ok(
+  workflow.split('refs/heads/$GITHUB_REF_NAME').length - 1 >= 2,
+  'production webhook workflow must re-read the webhook-only release ref immediately before deployment',
+);
 
 console.log('WhatsApp webhook production config tests passed: exact pre-provisioned Custom Domain, signed closed callback surface and guarded exact-head deployment.');

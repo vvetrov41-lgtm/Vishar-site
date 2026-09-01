@@ -192,6 +192,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+            operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+            [ "$canonical_sha" = "$GITHUB_SHA" ] || {
+              echo 'Canonical CRM branch moved after validation; refusing webhook deployment.' >&2
+              exit 1
+            }
+            [ "$operator_sha" = "$GITHUB_SHA" ] || {
+              echo 'Webhook-only release ref moved after validation; refusing deployment.' >&2
+              exit 1
+            }
+          fi
+
           deploy_output="$RUNNER_TEMP/whatsapp-webhook-production-wrangler-output.ndjson"
           rm -f "$deploy_output"
           WRANGLER_OUTPUT_FILE_PATH="$deploy_output" \
