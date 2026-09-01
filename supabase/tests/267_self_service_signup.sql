@@ -291,10 +291,12 @@ select is(
   'a repeated bootstrap reports that it created nothing'
 );
 
+-- Compared against what this session can actually see rather than against the
+-- ledger: exactly one artist is visible to them, so "the same artist" and "the
+-- only artist they hold" are the same statement.
 select is(
   (select public.bootstrap_artist_account('Someone Else Entirely') ->> 'artist_id'),
-  (select s.artist_id::text from crm_private.self_service_accounts s
-    where s.profile_id = '55033333-3333-4333-8333-333333333333'),
+  (select a.id::text from public.artists a),
   'a repeated bootstrap returns the tenant that already exists'
 );
 
