@@ -6,11 +6,14 @@
 // therefore indistinguishable at the moment money is requested, and a database
 // identifier stood in for the one fact the operator needs.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { ArtistScopeProvider } from '../lib/artist-scope';
 import { CLIENT_ID, PROJECT_ID, SESSION, VLADIMIR_ARTIST_ID, renderWithSession } from './fixtures';
+
+// Keep the fixture sessions eligible regardless of when CI happens to run.
+const NOW = new Date('2026-09-01T08:00:00Z');
 
 // A second eligible appointment for the same client and project: grouped
 // deposit selection only renders with two or more, and that list is where a
@@ -24,10 +27,12 @@ const SECOND_SESSION = {
 };
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true, now: NOW });
   window.localStorage.clear();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   window.localStorage.clear();
 });
 
