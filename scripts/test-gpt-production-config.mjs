@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const config = readFileSync(new URL('../wrangler.gpt-actions.production.toml', import.meta.url), 'utf8');
 const bootstrap = readFileSync(new URL('../.github/workflows/gpt-production-bootstrap.yml', import.meta.url), 'utf8');
 const activate = readFileSync(new URL('../.github/workflows/gpt-production-activate.yml', import.meta.url), 'utf8');
+const workerRollout = readFileSync(new URL('../.github/workflows/gpt-production-worker-rollout.yml', import.meta.url), 'utf8');
 const openapi = readFileSync(new URL('../docs/gpt-actions/openapi.production.yaml', import.meta.url), 'utf8');
 const runbook = readFileSync(new URL('../docs/crm/gpt-actions-production-runbook.md', import.meta.url), 'utf8');
 const instructions = readFileSync(new URL('../docs/gpt-actions/instructions.v2.md', import.meta.url), 'utf8');
@@ -30,6 +31,26 @@ assert.match(config, /GPT_ACTIONS_ENABLED = "false"/);
 assert.match(config, /GPT_OAUTH_RELAY_ENABLED = "false"/);
 assert.match(config, /SUPABASE_URL = "https:\/\/vfjexhfdbrjmuxfdvbdx\.supabase\.co"/);
 assert.doesNotMatch(config, /GPT_OAUTH_BRIDGE_SECRET|gwaliusblwrzisrwnsvs|service_role|SUPABASE_SECRET|sb_secret_/);
+
+// The reusable production Worker rollout authorizes the intentional live config
+// transition with its explicit preflight/readback boundary. Wrangler --strict
+// cannot express that reviewed transition and must not be reintroduced on the
+// real deploy command.
+const workerPreflight = workerRollout.indexOf('Fresh read-only Cloudflare preflight');
+const workerDeploy = workerRollout.indexOf('Deploy the GPT Worker from the approved canonical source');
+const workerReadback = workerRollout.indexOf('Production readback and acceptance');
+assert.ok(workerPreflight >= 0, 'GPT Worker rollout must have a fresh Cloudflare preflight');
+assert.ok(workerDeploy > workerPreflight, 'GPT Worker deploy must happen after the Cloudflare preflight');
+assert.ok(workerReadback > workerDeploy, 'GPT Worker readback must happen after deploy');
+assert.doesNotMatch(workerRollout, /wrangler deploy[^\n]*--strict/,
+  'real GPT Worker deploy must not use Wrangler --strict after the explicit fail-closed preflight');
+assert.match(workerRollout, /WEB_RESEARCH_ENABLED:true/);
+assert.match(workerRollout, /WEB_RESEARCH_SEARCH_ENABLED:true/);
+assert.match(workerRollout, /WEB_RESEARCH_SCRAPE_ENABLED:true/);
+assert.match(workerRollout, /FIRECRAWL_API_KEY/);
+assert.match(workerRollout, /Unexpected GPT production rate-limit binding/);
+assert.match(workerRollout, /Unexpected Gmail service binding/);
+assert.match(workerRollout, /Unexpected production GPT domain topology/);
 
 // Historical operator workflows remain pinned to their original rollout branches.
 for (const workflow of [bootstrap, activate]) {

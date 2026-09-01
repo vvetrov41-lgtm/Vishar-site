@@ -6,7 +6,7 @@ name: GPT production Worker rollout
 # topology migration: it only acted while the Worker still had two custom
 # domains, so it cannot ship a code change and is pinned to its own release
 # branch. This workflow is the general path. It changes no topology, no
-# binding, no OAuth client and no database row — it ships Worker code, which is
+# binding, no OAuth client and no database row - it ships Worker code, which is
 # what an added or changed GPT Action route needs in order to be served.
 #
 # Admission is the same two-key mechanism the domain rollout established: the
@@ -195,8 +195,10 @@ jobs:
           if (bindings.get('GPT_OAUTH_RELAY_ENABLED')?.value !== 'true') throw new Error('GPT_OAUTH_RELAY_ENABLED is not true');
           if (bindings.get('VISHAR_ENVIRONMENT')?.value !== 'production') throw new Error('GPT Worker is not production');
           if (bindings.get('SUPABASE_URL')?.value !== process.env.SUPABASE_URL) throw new Error('GPT Worker Supabase URL is not the exact production target');
+          const secretNames = new Set(worker.secret_names || []);
+          if (!secretNames.has('FIRECRAWL_API_KEY')) throw new Error('FIRECRAWL_API_KEY Worker secret is missing');
           const rateLimit = bindings.get('GPT_RATE_LIMIT');
-          if (rateLimit?.type !== 'rate_limit'
+          if (rateLimit?.type !== 'ratelimit'
               || String(rateLimit.namespace_id) !== '1002'
               || Number(rateLimit.simple?.limit) !== 30
               || Number(rateLimit.simple?.period) !== 60) {
@@ -263,13 +265,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict \
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" \
             --message "Vishar GPT Worker rollout $APPROVED_SHA" \
             --var SUPABASE_URL:"$SUPABASE_URL" \
             --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
             --var VISHAR_ENVIRONMENT:production \
             --var GPT_OAUTH_RELAY_ENABLED:true \
-            --var GPT_ACTIONS_ENABLED:true
+            --var GPT_ACTIONS_ENABLED:true \
+            --var WEB_RESEARCH_ENABLED:true \
+            --var WEB_RESEARCH_SEARCH_ENABLED:true \
+            --var WEB_RESEARCH_SCRAPE_ENABLED:true
 
       - name: Production readback and acceptance
         id: readback
@@ -300,8 +305,12 @@ jobs:
           if (bindings.get('GPT_OAUTH_RELAY_ENABLED')?.value !== 'true') process.exit(1);
           if (bindings.get('VISHAR_ENVIRONMENT')?.value !== 'production') process.exit(1);
           if (bindings.get('SUPABASE_URL')?.value !== process.env.SUPABASE_URL) process.exit(1);
+          if (bindings.get('WEB_RESEARCH_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('WEB_RESEARCH_SEARCH_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('WEB_RESEARCH_SCRAPE_ENABLED')?.value !== 'true') process.exit(1);
+          if (!(worker.secret_names || []).includes('FIRECRAWL_API_KEY')) process.exit(1);
           const rateLimit = bindings.get('GPT_RATE_LIMIT');
-          if (rateLimit?.type !== 'rate_limit'
+          if (rateLimit?.type !== 'ratelimit'
               || String(rateLimit.namespace_id) !== '1002'
               || Number(rateLimit.simple?.limit) !== 30
               || Number(rateLimit.simple?.period) !== 60) process.exit(1);
@@ -343,6 +352,8 @@ jobs:
           probe 401 "https://$CORE_HOST/v1/clients"
           probe 200 "https://$OPERATIONS_HOST/privacy"
           probe 401 "https://$OPERATIONS_HOST/v1/appointments?from=2026-08-31T00:00:00Z&to=2026-09-01T00:00:00Z"
+          probe 401 "https://$OPERATIONS_HOST/v1/web/search"
+          probe 401 "https://$OPERATIONS_HOST/v1/web/scrape"
           probe 200 "https://$COMMUNICATIONS_HOST/privacy"
           probe 401 "https://$COMMUNICATIONS_HOST/v1/enquiries/$fake/whatsapp"
           probe 401 "https://$COMMUNICATIONS_HOST/v1/enquiries/$fake/gmail/history"
@@ -381,7 +392,7 @@ jobs:
           const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
           if (bindings.get('SUPABASE_URL')?.value !== process.env.SUPABASE_URL) throw new Error('Rollback did not preserve the production Supabase URL');
           const rateLimit = bindings.get('GPT_RATE_LIMIT');
-          if (rateLimit?.type !== 'rate_limit'
+          if (rateLimit?.type !== 'ratelimit'
               || String(rateLimit.namespace_id) !== '1002'
               || Number(rateLimit.simple?.limit) !== 30
               || Number(rateLimit.simple?.period) !== 60) {
@@ -443,6 +454,8 @@ jobs:
             echo "- Deployed Worker version: \`${{ steps.readback.outputs.after_version || 'unknown' }}\`"
             echo '- Cloudflare domain topology: unchanged (Core, Operations, Communications)'
             echo '- Production Supabase URL, rate-limit and Gmail service binding: read back explicitly'
+            echo '- Web Research kill switches: search and scrape enabled only after exact readback'
+            echo '- Firecrawl credential: required as a pre-existing Worker secret and checked by name only'
             echo '- Secret values: never written or printed by this workflow'
             echo '- OAuth authorization/token origin: unchanged (`gpt-actions.vishartattoo.com`)'
             echo '- Production DB migrations applied: none'

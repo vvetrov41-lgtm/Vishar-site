@@ -86,6 +86,10 @@ assert.ok((rollout.match(/bindings\.get\('SUPABASE_URL'\)/g) || []).length >= 3,
   'preflight, readback and rollback must verify the exact production Supabase URL binding');
 assert.ok((rollout.match(/bindings\.get\('GPT_RATE_LIMIT'\)/g) || []).length >= 3,
   'preflight, readback and rollback must verify the GPT rate-limit binding');
+assert.match(rollout, /rateLimit\?\.type !== 'ratelimit'/,
+  'Cloudflare inventory normalizes rate-limit bindings as ratelimit');
+assert.doesNotMatch(rollout, /rateLimit\?\.type !== 'rate_limit'/,
+  'the rollout must not use the non-existent rate_limit inventory type');
 assert.match(rollout, /String\(rateLimit\.namespace_id\) !== '1002'/,
   'the rate-limit namespace must be pinned to the tracked production resource');
 assert.match(rollout, /Number\(rateLimit\.simple\?\.limit\) !== 30/);
@@ -138,6 +142,10 @@ for (const [index, guard] of guards.entries()) {
 // ---------------------------------------------------------------------------
 
 const inventory = readFileSync(new URL('./cloudflare-production-inventory.mjs', import.meta.url), 'utf8');
+assert.match(inventory, /case 'ratelimit':/,
+  'Cloudflare inventory must preserve ratelimit namespace and simple limit/period details');
+assert.doesNotMatch(inventory, /case 'rate_limit':/,
+  'Cloudflare inventory must not use the stale rate_limit binding type');
 const requiredInventoryEnv = [...inventory.matchAll(/process\.env\.([A-Z_]+) \|\| ''/g)]
   .map((match) => match[1])
   .filter((name) => name !== 'CLOUDFLARE_ZONE');

@@ -75,7 +75,7 @@ function safeBinding(binding) {
       row.script_name = binding?.script_name ?? null;
       row.environment = binding?.environment ?? null;
       break;
-    case 'rate_limit':
+    case 'ratelimit':
       row.namespace_id = binding?.namespace_id ?? null;
       row.simple = binding?.simple ?? null;
       break;

@@ -1,0 +1,42 @@
+name: Observability boundary validation
+
+on:
+  pull_request:
+    paths:
+      - 'workers/lib/observability.js'
+      - 'scripts/test-observability-boundary.mjs'
+      - 'specs/sentry-observability-foundation/**'
+      - '.github/workflows/observability-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Privacy-safe external observability
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Test external observability boundary
+        run: node scripts/test-observability-boundary.mjs
+
+      - name: Scan repository for committed secrets
+        run: npm run scan:secrets
