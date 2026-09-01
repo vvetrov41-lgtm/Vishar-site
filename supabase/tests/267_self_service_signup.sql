@@ -457,9 +457,13 @@ reset role;
 select pg_temp.incumbent();
 set local role authenticated;
 
+-- 23505 rather than 42501, and the distinction is the point: this is not a
+-- permission the caller lacks, it is an identity that already exists. The
+-- nested handler around the profile insert is what keeps this raise from being
+-- swallowed and reported as a duplicate email address.
 select throws_ok(
   $$select public.bootstrap_artist_account('Incumbent Second Tenant')$$,
-  '42501', null,
+  '23505', null,
   'an account that already has a CRM profile cannot found a second tenant here'
 );
 
