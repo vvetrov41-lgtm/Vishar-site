@@ -21,6 +21,7 @@ const SAFE_FIELDS = new Set([
 
 const TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LONG_DIGIT_RE = /\d{7,}/;
 const STATUS_CLASS_RE = /^(?:[1-5]xx|unknown)$/;
 const MAX_TOKEN_LENGTH = 120;
 const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -35,6 +36,7 @@ function plainObject(value) {
 function safeToken(value) {
   if (typeof value !== 'string') return null;
   if (!value || value.length > MAX_TOKEN_LENGTH || !TOKEN_RE.test(value)) return null;
+  if (UUID_RE.test(value) || LONG_DIGIT_RE.test(value)) return null;
   return value;
 }
 
