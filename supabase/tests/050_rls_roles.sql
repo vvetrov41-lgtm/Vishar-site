@@ -569,6 +569,9 @@ insert into expected_function_acl values
   -- Vladimir's WhatsApp completion call is fixed to the prepared production
   -- route and accepts no artist, provider, timestamp or credential input.
   ('public.complete_vladimir_whatsapp_connection()', false, true, false),
+  -- Universal Embedded Signup completion accepts only authoritative artist and
+  -- route identities, then re-establishes capability and exact-route scope.
+  ('public.complete_artist_whatsapp_connection(uuid,text)', false, true, false),
   ('public.record_activity(text,uuid,uuid,uuid,uuid,jsonb)', false, true, false),
   ('public.create_manual_enquiry(uuid,uuid,jsonb,jsonb,boolean)', false, true, false),
   ('public.transition_enquiry_status(uuid,public.enquiry_status)', false, true, false),

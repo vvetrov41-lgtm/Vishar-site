@@ -19,6 +19,12 @@ const KRISTINA = {
   display_name: 'Kristina',
 };
 
+const FUTURE_ARTIST = {
+  id: 'a3333333-3333-4333-8333-333333333333',
+  slug: 'future-artist',
+  display_name: 'Future Artist',
+};
+
 function clientFor(rows: unknown[] = []) {
   const order = vi.fn(async () => ({ data: rows, error: null }));
   const eq = vi.fn((_column: string, _value: string) => ({ order }));
@@ -128,6 +134,8 @@ describe('WhatsApp Connections safety', () => {
     const api = createWhatsAppConnectionsApi(mocks.client);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
       ok: true,
+      connected: true,
+      connected_at: '2026-09-01T10:00:00.000Z',
       integration_key: 'kristina-production',
       waba_name: 'Kristina WABA',
       display_phone_number: '+44 7000 000002',
@@ -256,14 +264,22 @@ describe('WhatsApp Connections safety', () => {
     }
   });
 
-  it('rejects an arbitrary production artist before opening a backend provisioning request', async () => {
+  it('provisions a future production artist without a frontend allowlist or browser route selector', async () => {
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
-    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      ok: true,
+      connected: true,
+      connected_at: '2026-09-01T10:00:00.000Z',
+      integration_key: 'future-artist-production',
+      waba_name: 'Future WABA',
+      display_phone_number: '+44 7000 000003',
+      verified_name: 'Future Artist',
+    }));
 
     try {
       await expect(api.provisionProductionWhatsApp(
-        { id: 'a3333333-3333-4333-8333-333333333333', slug: 'other', display_name: 'Other' },
+        FUTURE_ARTIST,
         'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
         {
           authorizationCode: 'one-time-meta-code-for-test',
@@ -271,8 +287,14 @@ describe('WhatsApp Connections safety', () => {
           phoneNumberId: '10987654323',
           event: 'FINISH',
         },
-      )).rejects.toThrow(/unavailable for this artist/i);
-      expect(fetchMock).not.toHaveBeenCalled();
+      )).resolves.toMatchObject({
+        connected: true,
+        integration_key: 'future-artist-production',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+      expect(body.artist_id).toBe(FUTURE_ARTIST.id);
+      expect(body).not.toHaveProperty('integration_key');
     } finally {
       fetchMock.mockRestore();
     }
