@@ -334,7 +334,7 @@ async function dispatch(request, env, fetchImpl) {
     const name = workerName(body.script_name);
     const account = await resolveAccount(env, fetchImpl);
     const parsed = await cloudflareJson(env, fetchImpl, `/accounts/${account.id}/workers/scripts/${encodeURIComponent(name)}/deployments`);
-    return { deployments: take(parsed.result, (item) => item && typeof item.id === 'string' ? {
+    return { deployments: take(parsed.result?.deployments, (item) => item && typeof item.id === 'string' ? {
       id: item.id, created_on: item.created_on || null, source: item.source || null,
       strategy: item.strategy || null,
       versions: take(item.versions, (version) => version && typeof version.version_id === 'string' ? {
