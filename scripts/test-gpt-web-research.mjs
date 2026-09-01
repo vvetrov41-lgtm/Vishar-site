@@ -5,6 +5,9 @@ const oauthToken = 'header.payload.signature';
 const firecrawlKey = 'fc-test-provider-key-not-a-real-secret';
 const env = {
   GPT_ACTIONS_ENABLED: 'true',
+  WEB_RESEARCH_ENABLED: 'true',
+  WEB_RESEARCH_SEARCH_ENABLED: 'true',
+  WEB_RESEARCH_SCRAPE_ENABLED: 'true',
   SUPABASE_URL: 'https://exampleproject.supabase.co',
   SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test_value_1234567890',
   FIRECRAWL_API_KEY: firecrawlKey,
@@ -36,6 +39,42 @@ function authOk() {
   );
   assert.equal(result, null, 'non-web routes must fall through to the existing GPT handler');
   assert.equal(called, false);
+}
+
+{
+  let called = false;
+  const response = await handleGptWebResearchRequest(
+    request('/v1/web/search', { query: 'disabled research' }),
+    { ...env, WEB_RESEARCH_ENABLED: 'false' },
+    async () => { called = true; },
+  );
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: 'not_found' });
+  assert.equal(called, false, 'global Web Research kill switch must fail before auth/provider subrequests');
+}
+
+{
+  let called = false;
+  const response = await handleGptWebResearchRequest(
+    request('/v1/web/search', { query: 'disabled search' }),
+    { ...env, WEB_RESEARCH_SEARCH_ENABLED: 'false' },
+    async () => { called = true; },
+  );
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: 'not_found' });
+  assert.equal(called, false, 'search kill switch must fail before auth/provider subrequests');
+}
+
+{
+  let called = false;
+  const response = await handleGptWebResearchRequest(
+    request('/v1/web/scrape', { url: 'https://example.com/' }),
+    { ...env, WEB_RESEARCH_SCRAPE_ENABLED: 'false' },
+    async () => { called = true; },
+  );
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: 'not_found' });
+  assert.equal(called, false, 'scrape kill switch must fail before auth/provider subrequests');
 }
 
 {
@@ -234,4 +273,4 @@ for (const unsafeUrl of [
   assert.deepEqual(await response.json(), { error: 'web_research_provider_error' });
 }
 
-console.log('GPT Web Research tests passed: OAuth/capability gated, provider-isolated, SSRF-filtered, bounded and fail-closed.');
+console.log('GPT Web Research tests passed: kill-switched, OAuth/capability gated, provider-isolated, SSRF-filtered, bounded and fail-closed.');
