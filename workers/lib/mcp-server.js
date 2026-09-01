@@ -176,7 +176,7 @@ function validateToolArguments(definition, raw) {
   const schema = definition.inputSchema || { type: 'object', properties: {}, required: [] };
   const properties = schema.properties || {};
   const required = new Set(schema.required || []);
-  for (const forbidden of ['sql', 'query', 'rpc', 'table', 'oauth_client_id', 'integration_key', 'access_token', 'refresh_token', 'client_secret', 'service_role', 'configuration', 'external_account_label', 'body', 'attachments', 'provider_message_id', 'created_by']) {
+  for (const forbidden of ['sql', 'query', 'rpc', 'table', 'oauth_client_id', 'integration_key', 'access_token', 'refresh_token', 'client_secret', 'service_role']) {
     if (Object.prototype.hasOwnProperty.call(args, forbidden)) {
       throw new McpDomainError('forbidden_argument', `Argument ${forbidden} is not accepted.`);
     }
