@@ -122,6 +122,24 @@ await test('safe string fields reject spaces, URLs and overlong values', async (
   assert.deepEqual(payload, { event: 'valid.event', environment: 'production' });
 });
 
+await test('identifier-shaped tokens are rejected outside requestId', async () => {
+  const requestId = '11111111-2222-4333-8444-555555555555';
+  const payload = sanitizeOperationalEvent({
+    event: 'worker.failed',
+    requestId,
+    stage: '447700900123',
+    component: 'client-447700900123',
+    operation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    errorCode: 'ref_1234567890',
+    outcome: 'failed',
+  });
+  assert.deepEqual(payload, {
+    event: 'worker.failed',
+    requestId,
+    outcome: 'failed',
+  });
+});
+
 await test('numeric and status fields are bounded', async () => {
   const payload = sanitizeOperationalEvent({
     event: 'worker.failed',
