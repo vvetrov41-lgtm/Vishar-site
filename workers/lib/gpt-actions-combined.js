@@ -1,5 +1,6 @@
 import { handleGptActionsRequest as handleCoreGptActionsRequest } from './gpt-actions.js';
 import { routeForFullGptAction } from './gpt-full-actions.js';
+import { handleGptWebResearchRequest } from './gpt-web-research.js';
 
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_RESPONSE_BYTES = 128 * 1024;
@@ -188,6 +189,11 @@ async function handleFullRequest(request, env, fetchImpl) {
 }
 
 export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
+  // Web Research is routed first so it shares the same production host guard,
+  // rate limit and no-follow fetch boundary as every other GPT Action.
+  const webResearch = await handleGptWebResearchRequest(request.clone(), env, fetchImpl);
+  if (webResearch) return webResearch;
+
   // Use a clone because the extension parser may inspect a request body before
   // deciding that a path belongs to the unchanged core handler.
   const extended = await handleFullRequest(request.clone(), env, fetchImpl);

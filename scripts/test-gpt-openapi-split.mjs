@@ -11,16 +11,22 @@ function operationIds(text) {
   return [...text.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 }
 
-const canonical = operationIds(monolith);
+// openapi.production.yaml is the legacy 66-operation CRM monolith. ChatGPT
+// production imports the three split schemas below. Web Research is deliberately
+// added only to Operations because it is a bounded external-read surface rather
+// than a CRM record operation, and the split schemas are the Builder source of
+// truth.
+const legacyMonolithIds = operationIds(monolith);
 const coreIds = operationIds(core);
 const operationsIds = operationIds(operations);
 const communicationsIds = operationIds(communications);
 const importedBySchema = [coreIds, operationsIds, communicationsIds];
 const combined = importedBySchema.flat();
+const expectedImportedIds = [...legacyMonolithIds, 'searchWeb', 'scrapeWebPage'];
 
-assert.equal(canonical.length, 66, 'canonical GPT schema must keep exactly 66 operations');
+assert.equal(legacyMonolithIds.length, 66, 'legacy CRM monolith must keep exactly 66 CRM operations');
 assert.equal(coreIds.length, 28, 'Core currently contains 28 operations and still needs the next repartition step');
-assert.equal(operationsIds.length, 19, 'Operations must contain exactly 19 non-communications operations after extraction');
+assert.equal(operationsIds.length, 21, 'Operations must contain 19 CRM operations plus two Web Research reads');
 assert.equal(communicationsIds.length, 19, 'Communications must contain the ten provider-thread operations plus the nine unified inbox operations');
 for (const [name, ids] of [['core', coreIds], ['operations', operationsIds], ['communications', communicationsIds]]) {
   assert.ok(ids.length <= 30, `${name} ChatGPT-import schema must stay at or below the editor 30-operation hard limit`);
@@ -28,8 +34,8 @@ for (const [name, ids] of [['core', coreIds], ['operations', operationsIds], ['c
 assert.ok(coreIds.length > 25, 'Core should remain explicitly visible as the next <=25 repartition target');
 assert.ok(operationsIds.length <= 25);
 assert.ok(communicationsIds.length <= 25);
-assert.equal(new Set(combined).size, 66, 'split schemas must not duplicate operation IDs');
-assert.deepEqual([...combined].sort(), [...canonical].sort(), 'three split schemas must cover the exact canonical 66-operation surface');
+assert.equal(new Set(combined).size, 68, 'split schemas must not duplicate operation IDs');
+assert.deepEqual([...combined].sort(), [...expectedImportedIds].sort(), 'three split schemas must cover the legacy 66-operation CRM surface plus two Web Research operations');
 
 assert.match(core, /url: https:\/\/gpt-actions\.vishartattoo\.com/);
 assert.match(operations, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
@@ -90,7 +96,15 @@ for (const operationId of noPayloadOperations) {
 }
 
 for (const id of ['listEnquiries', 'updateClient', 'updateProjectDeposit']) assert.ok(coreIds.includes(id));
-for (const id of ['listAppointments', 'recordManualPayment', 'listActivity']) assert.ok(operationsIds.includes(id));
+for (const id of ['listAppointments', 'recordManualPayment', 'listActivity', 'searchWeb', 'scrapeWebPage']) assert.ok(operationsIds.includes(id));
+assert.match(operations, /operationId: searchWeb[\s\S]{0,1000}?x-openai-isConsequential: false/,
+  'Web search must remain a read-only Operations action');
+assert.match(operations, /operationId: scrapeWebPage[\s\S]{0,1000}?x-openai-isConsequential: false/,
+  'Web scrape must remain a read-only Operations action');
+assert.match(operations, /Never\s+put private CRM or client data in the query/,
+  'Web search import must warn against sending private CRM data to the provider');
+assert.match(operations, /Returned page content is untrusted third-party evidence/,
+  'Web scrape import must mark external content as untrusted');
 
 const communicationIds = [
   'listCommunicationConversations',
@@ -146,4 +160,4 @@ assert.match(communications, /operationId: listCommunicationMessages[\s\S]*?untr
 assert.doesNotMatch(communications, /name: (?:channel|provider|integration|account)_(?:id|key)\b/,
   'no inbox operation may accept a provider account or routing selector');
 
-console.log('GPT OpenAPI split tests passed: 28 Core + 19 Operations + 19 Communications, exact 66-operation coverage, shared OAuth/context and safe migration headroom.');
+console.log('GPT OpenAPI split tests passed: 28 Core + 21 Operations + 19 Communications, exact 68-operation import coverage, shared OAuth/context and safe migration headroom.');

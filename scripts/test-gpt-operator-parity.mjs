@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { OPERATOR_PARITY, PARITY_METADATA } from '../docs/gpt-actions/operator-parity.mjs';
+import { OPERATOR_PARITY, PARITY_METADATA } from '../docs/gpt-actions/operator-parity.current.mjs';
 
 const core = readFileSync(new URL('../docs/gpt-actions/openapi.production.core.yaml', import.meta.url), 'utf8');
 const operations = readFileSync(new URL('../docs/gpt-actions/openapi.production.operations.yaml', import.meta.url), 'utf8');
 const communications = readFileSync(new URL('../docs/gpt-actions/openapi.production.communications.yaml', import.meta.url), 'utf8');
-const inventorySource = readFileSync(new URL('../docs/gpt-actions/operator-parity.mjs', import.meta.url), 'utf8');
+const inventorySource = [
+  readFileSync(new URL('../docs/gpt-actions/operator-parity.mjs', import.meta.url), 'utf8'),
+  readFileSync(new URL('../docs/gpt-actions/operator-parity.current.mjs', import.meta.url), 'utf8'),
+].join('\n');
 
 function operationIds(text) {
   return [...text.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
@@ -41,8 +44,8 @@ for (const schemaIds of importedBySchema) {
     `an imported schema exceeds the hard ${PARITY_METADATA.hardImportedSchemaOperationLimit}-operation limit`,
   );
 }
-assert.deepEqual(importedBySchema.map((ids) => ids.length), [28, 19, 19],
-  'current transport projection must be Core 28 + Operations 19 + Communications 19');
+assert.deepEqual(importedBySchema.map((ids) => ids.length), [28, 21, 19],
+  'current transport projection must be Core 28 + Operations 21 + Communications 19');
 assert.ok(importedBySchema[0].length > PARITY_METADATA.targetImportedSchemaOperationLimit,
   'Core remains explicit technical debt for the next repartition step');
 assert.ok(importedBySchema[1].length <= PARITY_METADATA.targetImportedSchemaOperationLimit);
@@ -159,8 +162,19 @@ for (const key of ['availability.list', 'availability.create', 'availability.upd
   );
 }
 
+for (const [key, operationId] of [
+  ['research.deep_web_search', 'searchWeb'],
+  ['research.read_web_page', 'scrapeWebPage'],
+]) {
+  const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
+  assert.ok(row, `${key} must remain explicit`);
+  assert.equal(row.gpt.status, 'available', `${key} is now a production-imported Web Research read`);
+  assert.equal(row.gpt.operationId, operationId);
+  assert.equal(row.capabilityDomain, 'Research');
+  assert.ok(row.serverContracts.includes('public.gpt_authorize_web_research'));
+}
+
 for (const key of [
-  'research.deep_web_search',
   'research.project_reference.add',
   'research.saved_run.compare',
   'research.monitor.create',
