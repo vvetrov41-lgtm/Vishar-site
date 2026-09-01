@@ -94,8 +94,8 @@ jobs:
           test -s /tmp/whatsapp-production-onboarding-worker.js
           grep -Fq 'vishar-whatsapp-webhook-production' /tmp/whatsapp-production-onboarding-worker.js
           grep -Fq 'vishar-whatsapp-drain-production' /tmp/whatsapp-production-onboarding-worker.js
-          grep -Fq 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION' /tmp/whatsapp-production-onboarding-worker.js
-          grep -Fq 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION' /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'ARTIST_WHATSAPP_' /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'complete_artist_whatsapp_connection' /tmp/whatsapp-production-onboarding-worker.js
 
       - name: Test private CRM
         working-directory: admin
