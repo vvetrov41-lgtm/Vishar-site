@@ -832,6 +832,23 @@ insert into expected_function_acl values
   ('public.artist_control_plane_context(uuid)', false, true, false),
   ('public.transfer_workspace_ownership(uuid,uuid)', false, true, false),
 
+  -- Public artist signup (migration 0130).
+  --
+  -- self_service_signup_policy is the one function in this whole inventory
+  -- that `anon` may call, and it is worth being explicit about why. A
+  -- signed-out login screen has to decide whether to offer a "Create an
+  -- account" link, and it must not decide that in the browser. The function
+  -- returns a single boolean - no count, no address, no identity - and hiding
+  -- the link is only a courtesy: bootstrap_artist_account re-reads the same
+  -- switch and refuses on its own authority.
+  --
+  -- The other two are browser-only. The service backend is offered neither:
+  -- creating a tenant acts for auth.uid(), which a Worker does not have, and
+  -- opening signup is an installation-owner decision made in the CRM.
+  ('public.self_service_signup_policy()', true, true, false),
+  ('public.set_self_service_signup(boolean,integer,integer)', false, true, false),
+  ('public.bootstrap_artist_account(text,text,text,text)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),

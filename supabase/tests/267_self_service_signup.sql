@@ -59,7 +59,7 @@ insert into public.enquiries (
 ) values
   ('55e11111-1111-4111-8111-111111111111',
    '55c11111-1111-4111-8111-111111111111', 'placeholder',
-   '55711111-1111-4111-8111-111111111111', repeat('s', 64),
+   '55711111-1111-4111-8111-111111111111', repeat('5', 64),
    'complete', 'Incumbent Client', 'ss-incumbent-client@example.test',
    'Synthetic incumbent enquiry', 'pgtap', '2026-07-29', now(),
    'a1111111-1111-4111-8111-111111111111');
@@ -431,12 +431,12 @@ select throws_ok(
   'owner bootstrap is not reachable from a self-service session'
 );
 
+-- No subquery: the table privilege is checked before RLS and before any
+-- constraint, so this refuses for the reason being tested rather than for a
+-- second permission failure inside the arguments.
 select throws_ok(
   $$insert into public.artists (workspace_id, slug, display_name, booking_reference_prefix)
-    values (
-      (select workspace_id from crm_private.self_service_accounts
-        where profile_id = '55033333-3333-4333-8333-333333333333'),
-      'direct-write', 'Direct Write', 'DWX')$$,
+    values (gen_random_uuid(), 'direct-write', 'Direct Write', 'DWX')$$,
   '42501', null,
   'the browser role still holds no direct write on public.artists'
 );
