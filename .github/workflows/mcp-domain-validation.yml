@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - 'workers/lib/mcp-domain.js'
+      - 'workers/lib/mcp-meta-domain.js'
       - 'workers/lib/mcp-server.js'
       - 'workers/lib/gmail-tool-contract.js'
       - 'workers/vishar-mcp.js'
       - 'scripts/test-mcp-domain-contracts.mjs'
+      - 'scripts/test-mcp-meta-domain.mjs'
       - 'wrangler.mcp.toml'
       - '.github/workflows/mcp-domain-validation.yml'
       - 'docs/crm/MCP_DOMAIN_CONTRACTS.md'
@@ -41,6 +43,9 @@ jobs:
 
       - name: Test MCP domain contracts
         run: node scripts/test-mcp-domain-contracts.mjs
+
+      - name: Test Meta MCP diagnostic contracts
+        run: node scripts/test-mcp-meta-domain.mjs
 
       - name: Compile dormant MCP Worker with Wrangler
         env:
