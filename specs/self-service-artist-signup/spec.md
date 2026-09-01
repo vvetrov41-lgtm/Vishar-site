@@ -3,7 +3,7 @@
 ## Status
 
 - Feature: `self-service-artist-signup`
-- State: Implemented (database and CRM), production reachability pending an owner decision
+- State: Deployed to production and accepted; reachability pending an owner decision
 - Owner/workstream: Vishar CRM platform
 - Related: `docs/crm/NEW_ARTIST_ONBOARDING.md`, `docs/crm/SELF_SERVICE_SIGNUP.md`
 - Migration: `supabase/migrations/0130_self_service_signup.sql`
@@ -109,6 +109,7 @@ and onto nothing else.
 - `supabase/tests/267_self_service_signup.sql`
 - `admin/src/test/self-service-signup.test.tsx`
 - `docs/crm/SELF_SERVICE_SIGNUP.md`
+- Production acceptance: `specs/self-service-artist-signup/tasks.md`
 
 ## Open dependency
 
