@@ -123,13 +123,16 @@ export function buildAgenda(input: AgendaInput): AgendaDay[] {
   return days;
 }
 
-/** Appointments that have already started or were cancelled, newest first. */
+/** Historical or terminal appointments, newest first. */
 export function pastAppointments(now: Date, appointments: Appointment[]): Appointment[] {
-  const nowMs = now.getTime();
+  const today = startOfDay(now);
   return appointments
     .filter((appointment) => appointment.cancelled_at !== null
       || !LIVE_STATUSES.has(appointment.status)
-      || time(appointment.start_at) < nowMs)
+      // A live appointment from earlier today remains in today's diary. Putting
+      // it in Past as well renders the same record twice once its start time
+      // passes. Only live appointments from an earlier local day are history.
+      || time(appointment.start_at) < today)
     .sort((left, right) => time(right.start_at) - time(left.start_at));
 }
 
