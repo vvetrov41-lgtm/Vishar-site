@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="index, follow">
+    <title>Vishar CRM Privacy Notice</title>
+    <meta name="description" content="How Vishar CRM handles Meta, WhatsApp and Instagram account data and service communications.">
+    <link rel="canonical" href="https://vishartattoo.com/privacy/meta/">
+    <link rel="icon" href="/favicon-v4.png" type="image/png" sizes="512x512">
+    <link rel="stylesheet" href="/assets/css/fonts.css">
+    <link rel="stylesheet" href="/assets/css/tailwind.css">
+    <style>
+        body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
+        ::selection{background:rgba(0,113,227,.35);color:#fff}
+        :focus-visible{outline:2px solid rgba(0,113,227,.8);outline-offset:3px;border-radius:4px}
+        .prose a{color:#fff;text-decoration:underline;text-underline-offset:4px;text-decoration-color:rgba(255,255,255,.3)}
+        .prose a:hover{text-decoration-color:rgba(255,255,255,.8)}
+        .prose strong{color:rgba(255,255,255,.85);font-weight:600}
+        @media print{body{background:#fff!important;color:#000!important}nav,footer{display:none!important}.prose,.prose strong{color:#000!important}}
+    </style>
+    <script>window.PAGE_ID = 'privacy';</script>
+</head>
+<body class="antialiased">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <div id="site-nav"></div>
+    <main id="main-content" tabindex="-1">
+        <div class="pt-20 px-6 max-w-[1000px] mx-auto">
+            <nav aria-label="Breadcrumb" class="text-xs text-white/50">
+                <a href="/" class="text-white/60 hover:text-white">Home</a>
+                <span class="mx-2">/</span>
+                <a href="/privacy/" class="text-white/60 hover:text-white">Privacy &amp; Cookies</a>
+                <span class="mx-2">/</span>
+                <span class="text-white/70">Vishar CRM</span>
+            </nav>
+        </div>
+
+        <header class="py-16 md:py-24 px-6">
+            <div class="max-w-[900px] mx-auto">
+                <p class="text-xs uppercase tracking-[.2em] text-white/40 mb-5">Vishar CRM</p>
+                <h1 class="text-4xl md:text-6xl font-semibold tracking-tight mb-6">Privacy notice.</h1>
+                <p class="text-lg md:text-xl text-white/50 font-light max-w-[760px]">How the private CRM handles Meta account connections, WhatsApp and Instagram service communications, and related client records.</p>
+            </div>
+        </header>
+
+        <section class="px-6 pb-24">
+            <div class="prose max-w-[900px] mx-auto space-y-12 text-lg text-white/55 leading-relaxed font-light">
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-4">Who operates the service</h2>
+                    <p>Vishar CRM is operated by <strong>Vishar Tattoo Limited</strong> for authorised tattoo artists and booking staff. It is a private workspace used to manage tattoo enquiries, client communication, appointments and related service records.</p>
+                    <p class="mt-4">Questions or data requests can be sent to <a href="mailto:info@vishartattoo.com">info@vishartattoo.com</a>.</p>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-4">Meta account connections</h2>
+                    <p>An authorised artist may choose to connect a WhatsApp Business account or Instagram professional account through Meta. Meta provides an authorisation result and the account identifiers required to verify that the selected account belongs to that artist.</p>
+                    <p class="mt-4">The browser does not choose the final artist route. Vishar CRM verifies the signed provider identity, the selected WhatsApp Business Account or Instagram professional account, and the artist's CRM permissions before a connection is accepted.</p>
+                    <p class="mt-4">Provider access tokens, app secrets and signing credentials are kept in encrypted Cloudflare Worker secrets or a separately encrypted server-side token store. They are not stored in the browser or in CRM-readable Postgres records, and they are never exposed to other artists.</p>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-4">Information processed</h2>
+                    <p>When a connected client sends a service message, the CRM may process the provider account identifier, message identifier, sender name or handle, phone number where supplied by WhatsApp, message text, timestamps, delivery status, referral context and attachment type. Provider media links are temporary and are not retained as permanent public URLs.</p>
+                    <p class="mt-4">The CRM also stores the artist-owned conversation, replies sent by authorised staff, internal status and a content-limited activity record. Activity records identify the channel, conversation and action without creating a second copy of message content or participant identifiers.</p>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-4">Why the information is used</h2>
+                    <p>The information is used to answer tattoo enquiries, discuss projects, arrange consultations and appointments, provide booking-related service communications, maintain reliable conversation history, prevent duplicate delivery and protect the service from unauthorised routing.</p>
+                    <p class="mt-4">It is not sold, used for unrelated advertising or shared between artists. Marketing messages require a separate positive marketing choice and are not inferred from an enquiry or provider connection.</p>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-4">Access and artist separation</h2>
+                    <p>Only active CRM users with permission for the relevant artist can see or act on that artist's conversations. Database authorisation and artist membership checks enforce this separation. Hiding a control in the interface is not treated as the security boundary.</p>
+                    <p class="mt-4">Unknown, disabled, mismatched or ambiguous provider accounts are rejected. The service does not fall back to a default artist when a WhatsApp or Instagram route cannot be resolved safely.</p>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-4">Service providers and international processing</h2>
+                    <p><strong>Meta</strong> provides WhatsApp, Instagram, authentication and provider messaging services. <strong>Cloudflare</strong> hosts the private edge services and encrypted credential bindings. <strong>Supabase</strong> provides the authoritative CRM database and private storage. These providers process only the information needed to deliver and secure the service under their applicable terms and data-protection arrangements.</p>
+                    <p class="mt-4">Cloud providers may process or support data outside the UK. Where UK personal data is transferred internationally, the service relies on the provider's applicable UK transfer mechanism, such as adequacy regulations or contractual safeguards.</p>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-4">Retention and security</h2>
+                    <p>Conversation and enquiry records are retained while needed to respond, arrange and complete the requested work, maintain necessary business records, resolve disputes or meet legal obligations. Credentials are removed or replaced when an integration is disconnected or reauthorised.</p>
+                    <p class="mt-4">The service uses encrypted server-side credential storage, short-lived authenticated sessions, artist-scoped database access and provider signature checks. No internet service can promise absolute security, but access and stored data are deliberately limited to what the workflow needs.</p>
+                </div>
+
+                <div id="data-deletion" class="scroll-mt-24">
+                    <h2 class="text-2xl font-semibold text-white mb-4">Access, correction and deletion</h2>
+                    <p>To request access, correction, restriction, disconnection or deletion of information associated with Vishar CRM, email <a href="mailto:info@vishartattoo.com?subject=Vishar%20CRM%20data%20request">info@vishartattoo.com</a>. Include the artist or business name and the WhatsApp number or Instagram account involved so the correct workspace can be identified without collecting unnecessary information.</p>
+                    <p class="mt-4">A connected artist can also ask for the Meta integration to be disconnected. The request will be verified before credentials and connection records are removed. Some limited records may be retained where required for a legal obligation or to establish, exercise or defend a legal claim.</p>
+                    <p class="mt-4">Depending on the circumstances, UK GDPR rights can include access, correction, erasure, restriction, portability and objection. You can also complain to the UK's Information Commissioner's Office at <a href="https://ico.org.uk/make-a-complaint/" target="_blank" rel="noopener noreferrer">ico.org.uk/make-a-complaint</a>.</p>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-semibold text-white mb-4">Changes to this notice</h2>
+                    <p>This page will be updated when the Meta connection or data-handling workflow changes materially. The date below identifies the current published version.</p>
+                    <p class="mt-4 text-sm text-white/35">Last updated: 1 September 2026.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+    <div id="site-footer"></div>
+    <script src="/components.js" defer></script>
+</body>
+</html>
