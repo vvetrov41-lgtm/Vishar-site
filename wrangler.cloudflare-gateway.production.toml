@@ -1,0 +1,10 @@
+name = "vishar-cloudflare-gateway"
+main = "workers/cloudflare-gateway.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+# Private service-bound control plane. Deliberately no public/custom route.
+# CLOUDFLARE_API_TOKEN must exist only as a Worker secret and is never tracked.
+[vars]
+VISHAR_ENVIRONMENT = "production"
