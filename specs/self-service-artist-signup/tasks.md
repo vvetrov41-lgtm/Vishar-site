@@ -38,9 +38,51 @@
 
 ## Rollout
 
-- [ ] T20 Exact-head CI green on the PR.
-- [ ] T21 Merge and confirm canonical head.
-- [ ] T22 Production database dry-run, then apply, then read the migration head back.
-- [ ] T23 Production CRM Pages deploy with its Access readback.
-- [ ] T24 Production acceptance with a temporary marked account, then clean it up.
+- [x] T20 Exact-head CI green on PR #602 at `e319e237`: Static Validation, Public site and Worker,
+      Private CRM, and Supabase migrations and pgTAP (53 subtests in 267).
+- [x] T21 Merged as `2193c309`, confirmed as the canonical CRM branch head.
+- [x] T22 `deploy-private-production-database` run 25 (dry-run) then run 26 (apply) from
+      `release/private-crm-rc602-self-service-signup` at `2193c309`. Production migration head read
+      back as `0130 self_service_signup`.
+- [x] T23 `deploy-private-production-crm` run 64 at the same SHA: exact Pages commit readback, the
+      Pages target and Access recheck, and the signed-out HTTP gate. Independently re-verified:
+      `crm.vishartattoo.com` and `vishar-crm-production.pages.dev` both still answer 302 to the
+      Cloudflare Access login.
+- [x] T24 Production acceptance, below.
 - [ ] T25 Owner decision on reachability (Access boundary or a separate public signup host).
+
+## Production acceptance evidence
+
+Run against the live production database inside a transaction that ended in a deliberate
+exception, so it committed nothing. Verified afterwards: no leftover auth user, profiles still 2,
+artists 2, workspaces 3, self-service tenants 0, signup still closed, 15 clients / 16 enquiries /
+5 projects unchanged, no `signup.%` audit rows.
+
+Alongside 15 real clients, 16 real enquiries and 5 real projects, a synthetic confirmed account:
+
+| Claim | Observed |
+| --- | --- |
+| One call creates the tenant | `created=true` |
+| A repeat creates nothing | `created=false`, same `artist_id` |
+| Never an installation owner | `profile_role=booking_manager`, `is_owner()=false` |
+| Its own solo organization | `workspace_type=solo`, `workspace_role=owner` |
+| Its own book, fully | `artist:truetruetruetrue` |
+| Sees no other tenant | clients 0, enquiries 0, projects 0 |
+| Cannot enumerate artists | artists 1 (its own), profiles 1 (its own) |
+| Cannot seat itself on an existing artist | refused 42501 |
+| Cannot grant itself an existing artist | refused 42501 |
+| Cannot close signup | refused 42501 |
+| Cannot open an existing artist's administration | refused 42501 |
+
+Existing access, read as each production profile:
+
+| Profile | can_found | workspaces | artists | enquiries | clients | projects | payments |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Vladimir (owner) | true | 3 | 2 | 16 | 15 | 5 | 4 |
+| Kristina (booking_manager) | true | 1 | 1 | 6 | 5 | 1 | 0 |
+
+Neither is in the self-service ledger, so the founder cap does not apply to either.
+
+Function ACLs read back from production: `anon` may execute `self_service_signup_policy()` and
+nothing else new; `authenticated` may execute the bootstrap and the switch; `service_role` may
+execute neither; `authenticated` cannot read `crm_private.self_service_settings`.
