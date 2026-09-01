@@ -59,14 +59,16 @@ try {
   ], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'generator failed');
 
-  const generated = directivesOf(fs.readFileSync(generatedPath, 'utf8'));
+  const generatedRaw = fs.readFileSync(generatedPath, 'utf8');
+  const generated = directivesOf(generatedRaw);
   expectIncludes(generated, 'WHATSAPP_DRAIN_ENABLED = "true"', 'generated config');
   expectIncludes(generated, '[triggers]', 'generated config');
   expectIncludes(generated, 'crons = ["*/5 * * * *"]', 'generated config');
   expectIncludes(generated, '[secrets]', 'generated config');
   expectIncludes(generated, '"SUPABASE_SECRET_KEY"', 'generated config');
-  expectIncludes(generated, '"ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION"', 'generated config');
-  expectIncludes(generated, '"ARTIST_WHATSAPP_KRISTINA_HPRODUCTION"', 'generated config');
+  expectIncludes(generatedRaw, 'ARTIST_WHATSAPP_<ROUTE>_HPRODUCTION', 'generated config');
+  expectExcludes(generated, '"ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION"', 'generated config');
+  expectExcludes(generated, '"ARTIST_WHATSAPP_KRISTINA_HPRODUCTION"', 'generated config');
   expectExcludes(generated, 'WHATSAPP_DRAIN_ENABLED = "false"', 'generated config');
 
   // Generating must never mutate the tracked template.
@@ -96,8 +98,8 @@ for (const needle of [
   'ENABLE_PRIVATE_CRM_WHATSAPP_DRAIN',
   'CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED',
   'wrangler secret list',
-  'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION',
-  'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
+  'validate-whatsapp-production-secret-names.mjs drain',
+  'test-whatsapp-production-secret-names.mjs',
   '--strict',
   'wrangler versions list',
   'wrangler deployments list',
