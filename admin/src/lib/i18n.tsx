@@ -79,6 +79,8 @@ const EN = {
   'login.signingIn': 'Signing in…',
   'login.signIn': 'Sign in',
   'login.notice': 'Accounts are created by the owner. Password resets are handled in Supabase, not here.',
+  'login.noAccount': 'New here and setting up your own book?',
+  'login.createAccount': 'Create an account',
 
   'dashboard.recentActivity': 'Recent activity',
   'dashboard.noActivity': 'No activity yet',
@@ -444,6 +446,8 @@ const RU: Record<TranslationKey, string> = {
   'login.signingIn': 'Входим…',
   'login.signIn': 'Войти',
   'login.notice': 'Учётные записи создаёт владелец. Сброс пароля выполняется в Supabase, а не здесь.',
+  'login.noAccount': 'Впервые здесь и ведёте свою запись?',
+  'login.createAccount': 'Создать аккаунт',
 
   'dashboard.recentActivity': 'Последние действия',
   'dashboard.noActivity': 'Действий пока нет',

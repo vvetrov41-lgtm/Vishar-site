@@ -67,6 +67,19 @@ export interface CrmClient {
     signInWithPassword: (credentials: { email: string; password: string }) => Promise<{ data: any; error: any }>;
     signOut: () => Promise<{ error: any }>;
     onAuthStateChange: (callback: (event: string, session: any) => void) => { data: { subscription: { unsubscribe: () => void } } };
+    // Public signup. Optional so the many test doubles in this repository stay
+    // valid CrmClients: a build without these simply cannot offer signup, which
+    // is the correct fail-closed behaviour rather than a compile error.
+    signUp?: (credentials: {
+      email: string;
+      password: string;
+      options?: { emailRedirectTo?: string; captchaToken?: string };
+    }) => Promise<{ data: any; error: any }>;
+    resend?: (payload: {
+      type: 'signup';
+      email: string;
+      options?: { emailRedirectTo?: string; captchaToken?: string };
+    }) => Promise<{ data: any; error: any }>;
   };
 }
 

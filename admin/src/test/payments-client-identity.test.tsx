@@ -6,7 +6,7 @@
 // therefore indistinguishable at the moment money is requested, and a database
 // identifier stood in for the one fact the operator needs.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { ArtistScopeProvider } from '../lib/artist-scope';
@@ -23,11 +23,20 @@ const SECOND_SESSION = {
   end_at: '2026-09-08T16:00:00Z',
 };
 
+// The shared appointment fixture is dated 2026-09-01, and the deposit screens
+// deliberately only offer appointments that have not finished yet. Without a
+// pinned clock these assertions quietly stopped holding once real time passed
+// that afternoon - a test that expires rather than one that fails for a
+// reason. Pinned the same way today-page and client-identity-in-lists pin it.
+const NOW = new Date('2026-09-01T08:00:00Z');
+
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true, now: NOW });
   window.localStorage.clear();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   window.localStorage.clear();
 });
 

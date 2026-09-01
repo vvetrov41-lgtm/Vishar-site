@@ -44,6 +44,7 @@ export const PARITY_METADATA = Object.freeze({
     "admin/src/lib/lifecycle-api.ts",
     "admin/src/lib/platform-api.ts",
     "admin/src/lib/control-plane-api.ts",
+    "admin/src/lib/signup-api.ts",
     "admin/src/lib/telegram-connections-api.ts",
     "admin/src/lib/instagram-connections-api.ts",
     "admin/src/lib/whatsapp-connections-api.ts",
@@ -283,6 +284,16 @@ export const OPERATOR_PARITY = Object.freeze([
   gap("artist.create", "Team & Workspace", "Workspace", "manage_crm", "permission", ["public.create_artist"]),
   gap("artist.update", "Team & Workspace", "Workspace", "manage_crm", "permission", ["public.update_artist"]),
   gap("artist.onboarding_state", "Team & Workspace", "Workspace", "view_crm", "read", ["public.artist_onboarding_state"]),
+
+  // Public artist signup (migration 0130). The journey itself is ui_only for a
+  // reason the classifier is meant to capture rather than a gap left by
+  // accident: the profile-bound GPT authenticates *as* a CRM identity, so the
+  // act of creating that identity in the first place cannot be one of its
+  // operations. There is no authorized caller for it to act on behalf of until
+  // the tenant it would create already exists. The owner's switch over it is an
+  // ordinary operator action, and therefore an ordinary gap.
+  uiOnly("signup.tenant.bootstrap", "Team & Workspace", "Workspace", "view_crm", "permission", "provider_handoff", "Account creation, the email-confirmation link and public.bootstrap_artist_account are one signed-out browser journey: the bootstrap acts for auth.uid() alone and requires a confirmed address, so the caller is by definition not yet a profile the GPT could be bound to. public.self_service_signup_policy is the same boundary read before sign-in."),
+  gap("signup.availability.set", "Team & Workspace", "Workspace", "manage_crm", "permission", ["public.set_self_service_signup"]),
 
   // Research
   planned("research.deep_web_search", "Research", "Research (planned)", "view_research", "read", "Firecrawl stays behind the Vishar Research gateway."),

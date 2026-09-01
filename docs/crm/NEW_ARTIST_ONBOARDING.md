@@ -4,6 +4,11 @@ This is the canonical answer to "a third tattoo artist starts on Monday, what
 has to happen". It describes the state after migrations `0087`, `0088` and
 `0089`.
 
+It is about somebody **joining this installation**. An independent artist who
+arrives without an invitation and founds their own tenant takes a different
+door, added in migration `0130`: see `docs/crm/SELF_SERVICE_SIGNUP.md`. The two
+flows are deliberately distinct, and neither is a way around the other.
+
 The short version: an owner or studio admin opens the CRM on their phone and
 does it. No commit, no branch, no pull request, no migration written for that
 artist, no hand-written SQL, no Worker deploy, no Cloudflare secret, no Telegram
@@ -27,7 +32,13 @@ profile together. Nothing about that step is artist-specific.
 **This is the boundary of the operatorless claim.** Everything below — the
 organization, the artist, the memberships, the capabilities, the booking form —
 is a CRM operation needing no engineer. Minting a *human identity* is a
-separate trusted operation, and the invite flow is where it happens. The golden
+separate trusted operation, and the invite flow is where it happens.
+
+Migration 0130 adds the one other way an identity may appear: public signup,
+where the person mints their own through Supabase Auth and proves the address
+by confirming it. That path produces a *new isolated tenant* and never a seat in
+an existing organization, so the sentence above still holds for everybody
+joining this installation. The golden
 path in `supabase/tests/236_new_artist_golden_path.sql` says the same thing in
 its header and provisions its cast with privileged inserts rather than
 pretending otherwise.
@@ -50,8 +61,14 @@ founder becomes its owner. A slug is derived from the name; nobody is asked to
 invent a URL-safe identifier.
 
 You may found an organization if you already administer one, or if you are the
-installation owner. There is no self-signup, so this never has to admit a
-stranger.
+installation owner. `public.create_workspace` still refuses everybody else, and
+`supabase/tests/235_control_plane.sql` pins that refusal.
+
+Public signup does not change that predicate. It has its own door —
+`public.bootstrap_artist_account`, which takes no identifier at all — and a
+self-service founder is additionally capped at
+`max_workspaces_per_founder` organizations. See
+`docs/crm/SELF_SERVICE_SIGNUP.md`.
 
 A solo workspace refuses a second artist. That is not tidiness: migration
 0075's `sync_solo_workspace_owner` turns an artist membership on a solo
@@ -359,3 +376,7 @@ Retiring the global role is a separate, later workstream.
   `artist_memberships` directly, and a final act that greps the routing path for
   artist-specific branches.
 - `admin/src/test/control-plane.test.tsx` — the screens.
+- `supabase/migrations/0130_self_service_signup.sql`,
+  `supabase/tests/267_self_service_signup.sql` and
+  `admin/src/test/self-service-signup.test.tsx` — the other door, for an artist
+  who arrives without an invitation.

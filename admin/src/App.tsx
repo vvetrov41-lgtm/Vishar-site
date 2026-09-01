@@ -18,6 +18,7 @@ import { matchRoute, useRouter } from './lib/router';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
 import { ArtistOnboardingPage } from './pages/ArtistOnboardingPage';
+import { ArtistSetupPage } from './pages/ArtistSetupPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
 import { AvailabilityPage } from './pages/AvailabilityPage';
 import { BookingSourcesPage } from './pages/BookingSourcesPage';
@@ -39,6 +40,8 @@ import { NotificationsPage } from './pages/NotificationsPage';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
 import { PasswordSetupPage } from './pages/PasswordSetupPage';
+import { SignUpPage } from './pages/SignUpPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -64,8 +67,10 @@ export function App() {
   }
 
   if (state === 'loading') return <LoadingState label={t('app.checkingAccess')} />;
-  if (state === 'signed_out') return <LoginPage />;
+  if (state === 'signed_out') return <SignedOutRoutes />;
   if (state === 'password_setup') return <PasswordSetupPage />;
+  if (state === 'verify_email') return <VerifyEmailPage />;
+  if (state === 'setup') return <ArtistSetupPage />;
 
   if (state === 'no_profile' || state === 'deactivated') {
     return (
@@ -90,6 +95,15 @@ export function App() {
       </ControlPlaneAccessProvider>
     </ArtistScopeProvider>
   );
+}
+
+/** The only two screens a signed-out browser may reach. Everything else falls
+ *  back to sign-in rather than 404ing, because a signed-out person following a
+ *  deep link wants the door, not a page-not-found. */
+function SignedOutRoutes() {
+  const { path } = useRouter();
+  if (path === '/signup') return <SignUpPage />;
+  return <LoginPage />;
 }
 
 function Routes() {
