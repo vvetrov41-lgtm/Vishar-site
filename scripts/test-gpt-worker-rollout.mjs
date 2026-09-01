@@ -142,6 +142,10 @@ for (const [index, guard] of guards.entries()) {
 // ---------------------------------------------------------------------------
 
 const inventory = readFileSync(new URL('./cloudflare-production-inventory.mjs', import.meta.url), 'utf8');
+assert.match(inventory, /case 'ratelimit':/,
+  'Cloudflare inventory must preserve ratelimit namespace and simple limit/period details');
+assert.doesNotMatch(inventory, /case 'rate_limit':/,
+  'Cloudflare inventory must not use the stale rate_limit binding type');
 const requiredInventoryEnv = [...inventory.matchAll(/process\.env\.([A-Z_]+) \|\| ''/g)]
   .map((match) => match[1])
   .filter((name) => name !== 'CLOUDFLARE_ZONE');
