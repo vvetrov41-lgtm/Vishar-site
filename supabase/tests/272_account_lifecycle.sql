@@ -245,6 +245,46 @@ select throws_ok(
 );
 
 -- ---------------------------------------------------------------------------
+-- 2b. set_my_display_name
+--
+-- `profiles` had no self-update path at all before this - profiles_update_owner
+-- is the installation owner's policy - so an artist who typed their name once
+-- at signup could never correct it.
+-- ---------------------------------------------------------------------------
+
+select pg_temp.claims('{"role":"service_role"}');
+select throws_ok(
+  $$select public.set_my_display_name('Anybody')$$,
+  '42501', null,
+  'a backend key has no name to change'
+);
+
+select pg_temp.act('77022222-2222-4222-8222-222222222222');
+set local role authenticated;
+select throws_ok(
+  $$select public.set_my_display_name('   ')$$,
+  '22023', null,
+  'and a blank name is refused rather than stored'
+);
+select lives_ok(
+  $$select public.set_my_display_name('  Founder Renamed  ')$$,
+  'but a founder may correct their own name'
+);
+reset role;
+
+select is(
+  (select display_name from public.profiles where id = '77022222-2222-4222-8222-222222222222'),
+  'Founder Renamed',
+  'which is trimmed and stored on their own row'
+);
+
+select is(
+  (select display_name from public.profiles where id = '77011111-1111-4111-8111-111111111111'),
+  'Installation Owner',
+  'and on nobody else''s'
+);
+
+-- ---------------------------------------------------------------------------
 -- 3. delete_my_account refuses
 -- ---------------------------------------------------------------------------
 
