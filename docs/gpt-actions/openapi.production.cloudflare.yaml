@@ -1,0 +1,373 @@
+openapi: 3.1.0
+info:
+  title: Vishar Cloudflare Control Actions
+  version: 1.0.0-production-cloudflare
+  description: >-
+    Owner-only Cloudflare infrastructure actions for Vishar. The public GPT Worker
+    authenticates the CRM owner and a reviewed GPT client before calling a private
+    service-bound Cloudflare gateway. Cloudflare account identifiers and provider
+    credentials remain server-owned and are never caller-selectable.
+servers:
+  - url: https://gpt-operations.vishartattoo.com
+    description: Vishar CRM production operations action edge.
+security:
+  - supabaseOAuth: [email]
+paths:
+  /v1/cloudflare/account:
+    get:
+      operationId: getCloudflareAccount
+      summary: Get the Cloudflare account summary
+      x-openai-isConsequential: false
+      responses:
+        '200': {description: Server-resolved Cloudflare account summary}
+        '401': {description: CRM OAuth authorization required}
+        '403': {description: Owner Cloudflare control not permitted}
+  /v1/cloudflare/zones:
+    get:
+      operationId: listCloudflareZones
+      summary: List Cloudflare zones
+      x-openai-isConsequential: false
+      responses:
+        '200': {description: Zones visible to the private Cloudflare gateway}
+        '401': {description: CRM OAuth authorization required}
+        '403': {description: Owner Cloudflare control not permitted}
+  /v1/cloudflare/workers:
+    get:
+      operationId: listCloudflareWorkers
+      summary: List Cloudflare Workers
+      x-openai-isConsequential: false
+      responses:
+        '200': {description: Bounded Worker metadata list}
+        '401': {description: CRM OAuth authorization required}
+        '403': {description: Owner Cloudflare control not permitted}
+  /v1/cloudflare/worker:
+    post:
+      operationId: getCloudflareWorker
+      summary: Get one Cloudflare Worker summary
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerName'
+      responses:
+        '200': {description: Worker metadata}
+        '404': {description: Worker not found}
+  /v1/cloudflare/worker/deployments:
+    post:
+      operationId: listCloudflareWorkerDeployments
+      summary: List deployments for one Worker
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerName'
+      responses:
+        '200': {description: Bounded Worker deployment history}
+  /v1/cloudflare/pages:
+    get:
+      operationId: listCloudflarePagesProjects
+      summary: List Cloudflare Pages projects
+      x-openai-isConsequential: false
+      responses:
+        '200': {description: Bounded Pages project metadata}
+  /v1/cloudflare/d1:
+    get:
+      operationId: listCloudflareD1Databases
+      summary: List D1 databases
+      x-openai-isConsequential: false
+      responses:
+        '200': {description: Bounded D1 database metadata}
+  /v1/cloudflare/kv:
+    get:
+      operationId: listCloudflareKvNamespaces
+      summary: List Workers KV namespaces
+      x-openai-isConsequential: false
+      responses:
+        '200': {description: Bounded KV namespace metadata}
+  /v1/cloudflare/r2:
+    get:
+      operationId: listCloudflareR2Buckets
+      summary: List R2 buckets
+      x-openai-isConsequential: false
+      responses:
+        '200': {description: Bounded R2 bucket metadata}
+  /v1/cloudflare/dns/list:
+    post:
+      operationId: listCloudflareDnsRecords
+      summary: List DNS records for an exact zone name
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZoneName'
+      responses:
+        '200': {description: Bounded DNS record metadata}
+        '404': {description: Exact zone not found}
+  /v1/cloudflare/routes/list:
+    post:
+      operationId: listCloudflareWorkerRoutes
+      summary: List Worker routes for an exact zone name
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZoneName'
+      responses:
+        '200': {description: Bounded Worker routes}
+        '404': {description: Exact zone not found}
+  /v1/cloudflare/worker/deploy:
+    post:
+      operationId: deployCloudflareWorkerCode
+      summary: Deploy JavaScript module code to an existing Worker
+      description: >-
+        Replaces only Worker script content through the private Cloudflare gateway.
+        Do not include credentials or secret values in source code. The gateway
+        refuses self-replacement and keeps Cloudflare configuration server-owned.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [script_name, code]
+              properties:
+                script_name:
+                  $ref: '#/components/schemas/ScriptNameValue'
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 524288
+                  description: JavaScript module source. Never include credentials or secret values.
+      responses:
+        '200': {description: Worker content deployed}
+        '400': {description: Invalid Worker name or source}
+        '409': {description: Protected Worker operation refused}
+  /v1/cloudflare/worker/delete:
+    post:
+      operationId: deleteCloudflareWorker
+      summary: Delete a Cloudflare Worker
+      description: Exact-name confirmation is required. Protected control-plane Workers cannot be deleted.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [script_name, confirm]
+              properties:
+                script_name:
+                  $ref: '#/components/schemas/ScriptNameValue'
+                confirm:
+                  type: string
+                  minLength: 1
+                  maxLength: 63
+                  description: Must exactly equal script_name.
+      responses:
+        '200': {description: Worker deleted}
+        '409': {description: Confirmation mismatch or protected Worker}
+  /v1/cloudflare/dns/upsert:
+    post:
+      operationId: upsertCloudflareDnsRecord
+      summary: Create or update a DNS record
+      description: >-
+        Resolves the exact zone server-side. Omit record_id to create. Supply record_id
+        only when updating a specific record returned by listCloudflareDnsRecords.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [zone, type, name, content]
+              properties:
+                zone:
+                  $ref: '#/components/schemas/ZoneValue'
+                record_id:
+                  $ref: '#/components/schemas/CloudflareResourceId'
+                type:
+                  type: string
+                  enum: [A, AAAA, CNAME, TXT, MX, CAA, NS]
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 4096
+                ttl:
+                  type: integer
+                  minimum: 1
+                  maximum: 86400
+                  description: Use 1 for automatic TTL, otherwise a supported explicit TTL.
+                proxied:
+                  type: boolean
+                priority:
+                  type: integer
+                  minimum: 0
+                  maximum: 65535
+                comment:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200': {description: DNS record created or updated}
+        '400': {description: Invalid record request}
+  /v1/cloudflare/dns/delete:
+    post:
+      operationId: deleteCloudflareDnsRecord
+      summary: Delete a DNS record
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [zone, record_id, confirm]
+              properties:
+                zone:
+                  $ref: '#/components/schemas/ZoneValue'
+                record_id:
+                  $ref: '#/components/schemas/CloudflareResourceId'
+                confirm:
+                  $ref: '#/components/schemas/CloudflareResourceId'
+      responses:
+        '200': {description: DNS record deleted}
+        '409': {description: Confirmation mismatch}
+  /v1/cloudflare/cache/purge:
+    post:
+      operationId: purgeCloudflareCache
+      summary: Purge Cloudflare cache for one zone
+      description: >-
+        Supply either purge_everything=true or one to thirty HTTP(S) URLs inside the exact zone.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [zone]
+              properties:
+                zone:
+                  $ref: '#/components/schemas/ZoneValue'
+                purge_everything:
+                  type: boolean
+                urls:
+                  type: array
+                  minItems: 1
+                  maxItems: 30
+                  uniqueItems: true
+                  items:
+                    type: string
+                    format: uri
+                    maxLength: 2048
+      responses:
+        '200': {description: Cache purge accepted}
+        '400': {description: Invalid purge scope}
+  /v1/cloudflare/routes/upsert:
+    post:
+      operationId: upsertCloudflareWorkerRoute
+      summary: Create or update a Worker route
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [zone, pattern, script_name]
+              properties:
+                zone:
+                  $ref: '#/components/schemas/ZoneValue'
+                route_id:
+                  $ref: '#/components/schemas/CloudflareResourceId'
+                pattern:
+                  type: string
+                  minLength: 1
+                  maxLength: 512
+                script_name:
+                  $ref: '#/components/schemas/ScriptNameValue'
+      responses:
+        '200': {description: Worker route created or updated}
+        '400': {description: Invalid route request}
+  /v1/cloudflare/routes/delete:
+    post:
+      operationId: deleteCloudflareWorkerRoute
+      summary: Delete a Worker route
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [zone, route_id, confirm]
+              properties:
+                zone:
+                  $ref: '#/components/schemas/ZoneValue'
+                route_id:
+                  $ref: '#/components/schemas/CloudflareResourceId'
+                confirm:
+                  $ref: '#/components/schemas/CloudflareResourceId'
+      responses:
+        '200': {description: Worker route deleted}
+        '409': {description: Confirmation mismatch}
+components:
+  schemas:
+    ScriptNameValue:
+      type: string
+      minLength: 1
+      maxLength: 63
+      pattern: '^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9])?$'
+    CloudflareResourceId:
+      type: string
+      minLength: 32
+      maxLength: 32
+      pattern: '^[0-9A-Fa-f]{32}$'
+    ZoneValue:
+      type: string
+      minLength: 1
+      maxLength: 253
+      description: Exact Cloudflare zone name, for example vishartattoo.com.
+    WorkerName:
+      type: object
+      additionalProperties: false
+      required: [script_name]
+      properties:
+        script_name:
+          $ref: '#/components/schemas/ScriptNameValue'
+    ZoneName:
+      type: object
+      additionalProperties: false
+      required: [zone]
+      properties:
+        zone:
+          $ref: '#/components/schemas/ZoneValue'
+  securitySchemes:
+    supabaseOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://gpt-actions.vishartattoo.com/oauth/authorize
+          tokenUrl: https://gpt-actions.vishartattoo.com/oauth/token
+          scopes:
+            email: Authenticate the CRM owner. Owner role and the server-owned reviewed GPT Cloudflare-control ceiling remain authoritative.

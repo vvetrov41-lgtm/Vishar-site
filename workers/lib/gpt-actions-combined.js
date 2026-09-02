@@ -1,5 +1,6 @@
 import { handleGptActionsRequest as handleCoreGptActionsRequest } from './gpt-actions.js';
 import { routeForFullGptAction } from './gpt-full-actions.js';
+import { handleGptCloudflareControlRequest } from './gpt-cloudflare-control.js';
 import { handleGptWebResearchRequest } from './gpt-web-research.js';
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -189,8 +190,14 @@ async function handleFullRequest(request, env, fetchImpl) {
 }
 
 export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
-  // Web Research is routed first so it shares the same production host guard,
-  // rate limit and no-follow fetch boundary as every other GPT Action.
+  // Cloudflare control is routed before ordinary CRM actions because Worker-code
+  // deployment has a deliberately larger bounded request body. The handler does
+  // not inspect non-Cloudflare bodies before falling through.
+  const cloudflareControl = await handleGptCloudflareControlRequest(request.clone(), env, fetchImpl);
+  if (cloudflareControl) return cloudflareControl;
+
+  // Web Research shares the same production host guard, rate limit and no-follow
+  // fetch boundary as every other GPT Action.
   const webResearch = await handleGptWebResearchRequest(request.clone(), env, fetchImpl);
   if (webResearch) return webResearch;
 
