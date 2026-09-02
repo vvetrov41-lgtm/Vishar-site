@@ -5,6 +5,7 @@ import { withConsequentialConfirmations } from './lib/consequential-client';
 import { LanguageProvider } from './lib/i18n';
 import { RouterProvider } from './lib/router';
 import { SessionProvider } from './lib/session';
+import { SurfaceProvider, readSurface } from './lib/surface';
 import { createCrmClient, isStaffInviteUrl, readTeamInviteUrl } from './lib/supabase';
 import './styles.css';
 
@@ -19,6 +20,8 @@ const client = withConsequentialConfirmations(
   createCrmClient(browserEnv, import.meta.env.DEV, window.location.href)
 );
 const teamInviteUrl = readTeamInviteUrl(browserEnv, import.meta.env.DEV);
+// Which host this bundle is built for. Unset means public: see lib/surface.
+const surface = readSurface(browserEnv);
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Missing #root');
@@ -26,6 +29,7 @@ if (!container) throw new Error('Missing #root');
 createRoot(container).render(
   <StrictMode>
     <LanguageProvider>
+      <SurfaceProvider surface={surface}>
       <SessionProvider
         client={client}
         teamInviteUrl={teamInviteUrl}
@@ -35,6 +39,7 @@ createRoot(container).render(
           <App />
         </RouterProvider>
       </SessionProvider>
+      </SurfaceProvider>
     </LanguageProvider>
   </StrictMode>
 );

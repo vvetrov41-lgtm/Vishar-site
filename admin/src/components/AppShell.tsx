@@ -14,6 +14,7 @@ import { useSession } from '../lib/session';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { useArtistScope } from '../lib/artist-scope';
 import { useControlPlaneAccess } from '../lib/control-plane-access';
+import { isPathAvailableOnSurface, useSurface } from '../lib/surface';
 
 // Every navigation destination, so a label can never fall through to its
 // English NavItem.label. Communications and Payments had no entry here and
@@ -73,7 +74,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   // derived from the legacy role, which cannot express workspace authority.
   // Placed before Users so Administration keeps its existing reading order.
   const { canOpenControlPlane } = useControlPlaneAccess();
-  const roleItems = navItemsFor(profile?.role, memberships);
+  // The public CRM never offers the installation's own administration. The
+  // database refuses it to a non-owner anyway; this stops the public build
+  // showing a door that only the operator environment has.
+  const surface = useSurface();
+  const roleItems = navItemsFor(profile?.role, memberships)
+    .filter((item) => isPathAvailableOnSurface(item.path, surface));
   const items = useMemo<NavItem[]>(() => {
     if (!canOpenControlPlane) return roleItems;
     const workspaces: NavItem = {

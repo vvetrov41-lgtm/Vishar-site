@@ -11,6 +11,7 @@ import type { ReactElement } from 'react';
 import type { CrmClient } from '../lib/api';
 import { RouterProvider } from '../lib/router';
 import { SessionProvider } from '../lib/session';
+import { SurfaceProvider, type CrmSurface } from '../lib/surface';
 import type { ArtistMembership, CrmRole, EnquiryStatus } from '../lib/types';
 
 export const VLADIMIR_ARTIST_ID = 'a1111111-1111-4111-8111-111111111111';
@@ -1173,15 +1174,22 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
 
 export function renderWithSession(
   ui: ReactElement,
-  options: FakeClientOptions & { path?: string }
+  // `surface` defaults to the operator environment because that is what these
+  // fixtures describe: the CRM as Vladimir and Kristina use it, with the
+  // installation's own administration present. The public surface is a
+  // deliberate choice a test makes, and lib/surface fails closed the other way
+  // for anything that renders without a provider at all.
+  options: FakeClientOptions & { path?: string; surface?: CrmSurface }
 ): RenderResult & { rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] } {
   const rpcCalls = options.rpcCalls ?? [];
   const client = createFakeClient({ ...options, rpcCalls });
 
   const result = render(
-    <SessionProvider client={client} teamInviteUrl={options.teamInviteUrl}>
-      <RouterProvider initialPath={options.path ?? '/'}>{ui}</RouterProvider>
-    </SessionProvider>
+    <SurfaceProvider surface={options.surface ?? 'internal'}>
+      <SessionProvider client={client} teamInviteUrl={options.teamInviteUrl}>
+        <RouterProvider initialPath={options.path ?? '/'}>{ui}</RouterProvider>
+      </SessionProvider>
+    </SurfaceProvider>
   );
 
   return Object.assign(result, { rpcCalls });

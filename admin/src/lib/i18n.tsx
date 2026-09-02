@@ -45,6 +45,8 @@ const EN = {
   'app.useNavigation': 'Use the navigation below.',
   'access.controlPlaneTitle': 'No organization yet',
   'access.controlPlaneHint': 'You are not a member of any organization. Whoever administers yours can add you.',
+  'surface.internalOnlyTitle': 'Not part of this CRM',
+  'surface.internalOnlyHint': 'This screen belongs to the internal operator app.',
   'access.notAvailableTitle': 'Not available for your role',
   'access.notAvailableHint': 'If you need this, ask the owner to change your access.',
 
@@ -412,6 +414,8 @@ const RU: Record<TranslationKey, string> = {
   'app.useNavigation': 'Используйте меню внизу.',
   'access.controlPlaneTitle': 'Организации пока нет',
   'access.controlPlaneHint': 'Вы не состоите ни в одной организации. Вас может добавить тот, кто ею управляет.',
+  'surface.internalOnlyTitle': 'Не входит в эту CRM',
+  'surface.internalOnlyHint': 'Этот раздел находится во внутреннем приложении оператора.',
   'access.notAvailableTitle': 'Недоступно для вашей роли',
   'access.notAvailableHint': 'Обратитесь к владельцу, если вам нужен этот раздел.',
 

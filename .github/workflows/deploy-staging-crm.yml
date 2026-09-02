@@ -29,6 +29,7 @@ jobs:
         id: config
         shell: bash
         env:
+          VITE_CRM_SURFACE: internal
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
         run: |
@@ -91,6 +92,7 @@ jobs:
         id: build
         working-directory: admin
         env:
+          VITE_CRM_SURFACE: internal
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
         run: |
@@ -101,6 +103,7 @@ jobs:
         id: artifact
         shell: bash
         env:
+          VITE_CRM_SURFACE: internal
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
         run: |
