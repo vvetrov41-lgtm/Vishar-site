@@ -1,55 +1,47 @@
 # Tasks: GPT Cloudflare Control Plane
 
-## A. Authorization and migration
+## Repository implementation
 
-- [ ] A1. Add `0130_gpt_cloudflare_control.sql` with owner-only per-client capability ceiling.
-- [ ] A2. Add `gpt_authorize_cloudflare_control()` and owner configuration RPC with narrow grants.
-- [ ] A3. Enable only the reviewed Vladimir GPT client in migration data, leaving other clients false.
-- [ ] A4. Add positive and denial pgTAP coverage.
+- [x] Rebuild the feature on fresh canonical `ef874daa9386642416688df54991f588c43460ac`.
+- [x] Reserve migration `0134_gpt_cloudflare_control.sql` after canonical migrations through `0133`.
+- [x] Add owner-only `can_use_cloudflare_control` GPT client ceiling.
+- [x] Keep migration activation fail-closed for every GPT client.
+- [x] Permit audited activation only for the reviewed owner-facing GPT v2 transition identities.
+- [x] Add private `vishar-cloudflare-gateway` Worker with Cloudflare token secret custody.
+- [x] Disable workers.dev, previews and public routes for the gateway.
+- [x] Add private Service Binding from the GPT production Worker.
+- [x] Add account/zone/Workers/Pages/D1/KV/R2 inventory operations.
+- [x] Add Worker deploy/delete, DNS mutation, cache purge and Worker route mutation operations.
+- [x] Reject caller-supplied provider token, raw account/zone ids, arbitrary path/method/upstream, SQL and RPC.
+- [x] Protect control-plane Worker deletion and gateway self-deployment.
+- [x] Add global/read/write tracked kill switches, all false by default.
+- [x] Add dedicated Cloudflare OpenAPI Action schema on `gpt-operations.vishartattoo.com`.
+- [x] Add focused Worker/router/config/OpenAPI tests and dry-run gateway bundle validation.
+- [x] Update legacy GPT fixture grant compatibility for the new configuration RPC.
+- [x] Align durable docs with Unified GPT v2 rather than a separate Operations GPT product.
 
-## B. Private provider gateway
+## Pre-merge verification
 
-- [ ] B1. Add route-less `wrangler.cloudflare-gateway.production.toml`.
-- [ ] B2. Add `workers/cloudflare-gateway.js` with fixed Cloudflare API origin and secret-only bearer injection.
-- [ ] B3. Resolve exactly one account server-side and exact zones server-side.
-- [ ] B4. Add bounded inventory operations for account, zones, Workers, deployments, Pages, D1, KV, R2, DNS and Worker routes.
-- [ ] B5. Add bounded Worker code deployment preserving provider configuration metadata.
-- [ ] B6. Add protected/confirmed Worker deletion.
-- [ ] B7. Add bounded DNS upsert/delete, cache purge and Worker route upsert/delete.
-- [ ] B8. Normalize provider failures and cap payload sizes without leaking credentials.
+- [ ] Fresh-check canonical exact SHA immediately before PR/merge.
+- [ ] Verify branch diff contains only Cloudflare control-plane work.
+- [ ] Open PR against `agent/platform-telegram-self-service`.
+- [ ] Require exact-head CI green.
+- [ ] Fix any exact-head failures before merge.
 
-## C. GPT action boundary
+## Production rollout, separate mutation stage
 
-- [ ] C1. Add `workers/lib/gpt-cloudflare-control.js`.
-- [ ] C2. Require global/operation switches, OAuth, owner/client authorization and explicit field allow-lists before Service Binding.
-- [ ] C3. Never forward caller OAuth to the Cloudflare gateway.
-- [ ] C4. Add `CLOUDFLARE_GATEWAY` Service Binding to GPT production config.
-- [ ] C5. Route Cloudflare actions from the combined GPT handler without disturbing Web Research or CRM actions.
+- [ ] Fresh-read production Supabase migration head and non-secret GPT client state.
+- [ ] Fresh-read current GPT v2 OAuth/client identity without printing secrets.
+- [ ] Fresh-read Cloudflare GPT Worker routes/bindings/flags and gateway presence.
+- [ ] Apply migration `0134`.
+- [ ] Deploy private `vishar-cloudflare-gateway`.
+- [ ] Set `CLOUDFLARE_API_TOKEN` directly as the gateway Worker secret without putting its value in chat or GitHub.
+- [ ] Deploy GPT Worker Service Binding with Cloudflare flags still off.
+- [ ] Enable Cloudflare database ceiling only for the live reviewed GPT v2 OAuth identity.
+- [ ] Enable global + read flags and verify account/zones/workers inventory.
+- [ ] Enable write after read acceptance.
+- [ ] Perform one legitimate consequential operation and verify authoritative Cloudflare readback.
+- [ ] Import/update the Cloudflare schema in the existing Unified GPT v2 Builder configuration.
+- [ ] Verify non-owner/unreviewed-client denial and rollback controls.
 
-## D. ChatGPT contract and parity
-
-- [ ] D1. Add `openapi.production.cloudflare.yaml` on `gpt-operations.vishartattoo.com`, <=25 operations.
-- [ ] D2. Mark every mutation consequential and every read non-consequential.
-- [ ] D3. Ensure schemas expose no account id, secret value, arbitrary provider path/method or provider credential field.
-- [ ] D4. Update operator parity with the owner-only Cloudflare infrastructure surface and intentional exclusions.
-
-## E. Validation
-
-- [ ] E1. Add focused gateway tests.
-- [ ] E2. Add focused GPT action-boundary tests.
-- [ ] E3. Add gateway config/dry-run validation.
-- [ ] E4. Update package scripts without removing existing checks.
-- [ ] E5. Run focused local validation where available.
-- [ ] E6. Open a draft stacked PR and require exact-head GitHub CI.
-- [ ] E7. Reconcile PR #588/#589 migration lineage before final merge.
-
-## F. Production rollout (separate authorization stage)
-
-- [ ] F1. Fresh-check canonical SHA, stacked dependencies, exact-head CI and production Cloudflare state.
-- [ ] F2. Verify `vishar-cloudflare-gateway` exists, remains private, and has the expected secret name without reading the value.
-- [ ] F3. Apply database migration with production readback.
-- [ ] F4. Deploy gateway code while preserving its existing secret.
-- [ ] F5. Deploy GPT Service Binding/router with feature switches off.
-- [ ] F6. Import/update ChatGPT Action schema.
-- [ ] F7. Enable owner capability and read operations first; perform readback.
-- [ ] F8. Enable mutations incrementally and verify each class.
+Production rollout must not be marked complete from repository CI alone.
