@@ -30,14 +30,14 @@ describe('responsive navigation shell', () => {
     expect(tabbar).not.toBeNull();
     const links = within(tabbar as HTMLElement).getAllByRole('link');
 
-    // What a day is actually spent on: what needs me, who is waiting, who this
-    // is, and when. Enquiries and Projects are reached from those, so neither
+    // What a day is actually spent on: what needs me, who is waiting, when,
+    // and who this is. Enquiries and Projects are reached from those, so neither
     // holds a thumb slot any more.
     expect(links.map((link) => link.textContent)).toEqual([
       'Today',
       'Inbox',
-      'Clients',
       'Calendar',
+      'Clients',
     ]);
     expect(within(tabbar as HTMLElement).getByRole('link', { name: 'Calendar' }))
       .toHaveAttribute('href', '#/appointments');
