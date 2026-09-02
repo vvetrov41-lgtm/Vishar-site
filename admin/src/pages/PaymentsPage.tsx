@@ -442,7 +442,7 @@ export function PaymentsPage() {
     }
   }
 
-  async function requestDeposit(sessionId: string, deliveryChannel: 'email' | 'copy_link') {
+  async function requestDeposit(sessionId: string, deliveryChannel: 'email' | 'copy_link'): Promise<boolean> {
     setBusySession(sessionId);
     setError(null);
     setResult(null);
@@ -451,8 +451,10 @@ export function PaymentsPage() {
     try {
       const next = await api.requestSessionDeposit({ sessionId, deliveryChannel });
       setResult(next);
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : copy.requestError);
+      return false;
     } finally {
       setBusySession(null);
     }
@@ -943,8 +945,9 @@ export function PaymentsPage() {
                   className="primary-button"
                   disabled={busySession === depositSheetAppointment.id || depositAmount == null}
                   onClick={() => {
-                    void requestDeposit(depositSheetAppointment.id, 'email')
-                      .then(() => setDepositSheetSessionId(null));
+                    void requestDeposit(depositSheetAppointment.id, 'email').then((created) => {
+                      if (created) setDepositSheetSessionId(null);
+                    });
                   }}
                 >
                   {busySession === depositSheetAppointment.id
@@ -958,8 +961,9 @@ export function PaymentsPage() {
                   className="secondary-button"
                   disabled={busySession === depositSheetAppointment.id || depositAmount == null}
                   onClick={() => {
-                    void requestDeposit(depositSheetAppointment.id, 'copy_link')
-                      .then(() => setDepositSheetSessionId(null));
+                    void requestDeposit(depositSheetAppointment.id, 'copy_link').then((created) => {
+                      if (created) setDepositSheetSessionId(null);
+                    });
                   }}
                 >
                   {depositAmount == null ? copy.createPersonalLink : copy.createAmountLink(depositAmount)}
