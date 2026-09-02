@@ -1,5 +1,6 @@
 import productionWorker from './gpt-actions-production.js';
 import { isGmailHttpActionPath } from './lib/gmail-tool-contract.js';
+import { runClientLinkResearch } from './lib/client-link-research.js';
 
 const OPERATIONS_HOST = 'gpt-operations.vishartattoo.com';
 const COMMUNICATIONS_HOST = 'gpt-communications.vishartattoo.com';
@@ -100,6 +101,10 @@ export default {
     return (await privacyResponse(request, env))
       || (await gmailActionResponse(request, env))
       || productionWorker.fetch(request, env, ctx);
+  },
+
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(runClientLinkResearch(env));
   },
 };
 
