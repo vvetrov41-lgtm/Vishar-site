@@ -145,6 +145,10 @@ update crm_private.gpt_action_clients
 set oauth_client_id = 'oauth-unified-cloudflare-test',
     is_active = true
 where integration_key = 'vishar-unified-gpt';
+update crm_private.gpt_action_clients
+set oauth_client_id = 'oauth-kristina-cloudflare-test',
+    is_active = true
+where integration_key = 'kristina-gpt-actions';
 set local role authenticated;
 select pg_temp.claims(
   '{"sub":"e5672222-2222-4222-8222-222222222222","role":"authenticated"}'
@@ -162,7 +166,7 @@ select is(
 select throws_ok(
   $$select public.configure_gpt_cloudflare_control_access('kristina-gpt-actions', true)$$,
   '42501', null,
-  'owner cannot enable account-wide Cloudflare control for an unreviewed GPT integration'
+  'owner cannot enable account-wide Cloudflare control for an active but unreviewed GPT integration'
 );
 
 reset role;
@@ -177,6 +181,12 @@ select is(
    where integration_key = 'vishar-unified-gpt'),
   false,
   'Unified GPT configuration persists the requested disabled rollback state'
+);
+select is(
+  (select can_use_cloudflare_control from crm_private.gpt_action_clients
+   where integration_key = 'kristina-gpt-actions'),
+  false,
+  'unreviewed GPT remains fail-closed after a denied enable attempt'
 );
 
 select ok(
