@@ -1,4 +1,4 @@
--- 0130_gpt_cloudflare_control.sql
+-- 0134_gpt_cloudflare_control.sql
 --
 -- Adds a dedicated owner-only GPT client ceiling for the private Cloudflare
 -- control plane. The Cloudflare credential remains outside Postgres in the
@@ -83,9 +83,12 @@ begin
         using errcode = '22023';
     end if;
 
-    -- Initial rollout is intentionally bound to the reviewed owner GPT. Future
-    -- clients require an explicit migration/review rather than caller input.
-    if v_client.integration_key <> 'vladimir-gpt-actions' then
+    -- The external product target is Unified GPT v2. During the migration
+    -- window its production OAuth application may still be the reviewed
+    -- Vladimir compatibility client, so either owner-facing identity may be
+    -- enabled after a fresh production readback. Kristina and future clients
+    -- require a separate reviewed change.
+    if v_client.integration_key not in ('vladimir-gpt-actions', 'vishar-unified-gpt') then
       raise exception 'Cloudflare control is not reviewed for GPT integration %', v_client.integration_key
         using errcode = '42501';
     end if;
@@ -120,12 +123,10 @@ revoke all on function public.configure_gpt_cloudflare_control_access(text,boole
 grant execute on function public.configure_gpt_cloudflare_control_access(text,boolean)
   to authenticated;
 
--- Only the reviewed Vladimir owner GPT receives the server-owned ceiling in
--- this release. Other private/unified GPT clients remain fail-closed.
+-- Do not guess which OAuth client GPT v2 currently uses and do not activate a
+-- dormant client in a schema migration. Every client remains fail-closed here.
+-- Production activation is a separate audited step after exact live readback.
 update crm_private.gpt_action_clients
-set can_use_cloudflare_control = true
-where integration_key = 'vladimir-gpt-actions'
-  and is_active
-  and oauth_client_id is not null;
+set can_use_cloudflare_control = false;
 
 commit;
