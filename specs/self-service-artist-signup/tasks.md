@@ -51,6 +51,22 @@
 - [x] T24 Production acceptance, below.
 - [ ] T25 Owner decision on reachability (Access boundary or a separate public signup host).
 
+## Review findings, after the first production rollout
+
+Two P1 findings from automated review on PR #602, both reproduced against the live production
+database before being fixed, and both introduced by this workstream changing a premise other code
+rested on. Migration `0131`, pgTAP `268`.
+
+- [x] T26 `public.list_directory_profiles()` returned every active profile - name, email address and
+      role - to anybody holding an artist-level membership, which a self-service account now is.
+      Reproduced: a synthetic stranger read three rows including Vladimir and Kristina. Scoped for
+      ledger accounts to the people they already share an artist or an organization with; every
+      invited account's view is unchanged.
+- [x] T27 The founder cap counted only active organizations, so a founder could deactivate their own
+      artist and organization - both of which they legitimately administer, and 0089 keeps their
+      owner membership row alive - and found another, indefinitely. Reproduced with the cap set to 1.
+      Now counted whether or not each organization is switched on.
+
 ## Production acceptance evidence
 
 Run against the live production database inside a transaction that ended in a deliberate

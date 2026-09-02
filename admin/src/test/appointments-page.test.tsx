@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import {
@@ -7,7 +7,21 @@ import {
   renderWithSession,
 } from './fixtures';
 
+// The shared appointment fixture is dated 2026-09-01 and the Calendar opens on
+// the current month. Without a pinned clock these assertions stopped holding
+// once real time passed that day - a test that expires rather than one that
+// fails for a reason. Pinned the same way calendar-page and today-page pin it.
+const NOW = new Date('2026-09-01T08:00:00Z');
+
 describe('appointments queue', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('links the related records and changes lifecycle through the appointment RPC', async () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     renderWithSession(<App />, {
