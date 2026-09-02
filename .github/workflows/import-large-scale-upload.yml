@@ -1,0 +1,91 @@
+name: Import Large Scale Gallery Upload
+
+on:
+  push:
+    branches:
+      - agent/site-large-scale-images
+    paths:
+      - large-scale-upload.zip
+
+concurrency:
+  group: import-large-scale-gallery
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  import-gallery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Validate and extract upload archive
+        shell: python
+        run: |
+          import pathlib
+          import re
+          import zipfile
+
+          archive = pathlib.Path('large-scale-upload.zip')
+          if not archive.is_file():
+              raise SystemExit('large-scale-upload.zip is missing')
+
+          allowed = re.compile(
+              r'^assets/large-scale/(?:metadata\.json|\d{2}\.jpg|thumbs/\d{2}-(?:320|480|720|960)\.webp)$'
+          )
+
+          with zipfile.ZipFile(archive) as zf:
+              files = []
+              for info in zf.infolist():
+                  name = info.filename.replace('\\', '/')
+                  path = pathlib.PurePosixPath(name)
+                  if info.is_dir():
+                      if name not in ('assets/', 'assets/large-scale/', 'assets/large-scale/thumbs/'):
+                          raise SystemExit(f'Unexpected directory in archive: {name}')
+                      continue
+                  if path.is_absolute() or '..' in path.parts or not allowed.fullmatch(name):
+                      raise SystemExit(f'Unexpected file in archive: {name}')
+                  files.append(name)
+
+              jpgs = sorted(name for name in files if re.fullmatch(r'assets/large-scale/\d{2}\.jpg', name))
+              thumbs = sorted(name for name in files if '/thumbs/' in name)
+              if len(jpgs) != 20:
+                  raise SystemExit(f'Expected 20 JPG files, found {len(jpgs)}')
+              if len(thumbs) != 80:
+                  raise SystemExit(f'Expected 80 WebP thumbnails, found {len(thumbs)}')
+              expected_jpgs = [f'assets/large-scale/{i:02d}.jpg' for i in range(1, 21)]
+              if jpgs != expected_jpgs:
+                  raise SystemExit('JPG sequence must be exactly 01.jpg through 20.jpg')
+              if 'assets/large-scale/metadata.json' not in files:
+                  raise SystemExit('metadata.json is missing')
+
+              for info in zf.infolist():
+                  if info.is_dir():
+                      continue
+                  target = pathlib.Path(info.filename)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  with zf.open(info) as source, target.open('wb') as destination:
+                      destination.write(source.read())
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate site
+        run: npm run validate:site
+
+      - name: Commit imported gallery
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm large-scale-upload.zip
+          git rm .github/workflows/import-large-scale-upload.yml
+          git add assets/large-scale
+          git commit -m "Add Large Scale gallery images"
+          git push
