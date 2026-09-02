@@ -17,6 +17,8 @@ const team = read('.github/workflows/deploy-private-production-team-admin.yml');
 const calendar = read('.github/workflows/deploy-private-production-calendar.yml');
 const whatsapp = read('.github/workflows/deploy-private-production-whatsapp.yml');
 const instagram = read('.github/workflows/deploy-private-production-instagram.yml');
+const hostSplit = read('.github/workflows/crm-host-split-operator.yml');
+const hostSplitScript = read('scripts/crm-host-split.mjs');
 const teamConfig = read('wrangler.team-admin.toml');
 
 // Assertions about a TOML file must describe its directives, not its prose.
@@ -36,6 +38,7 @@ for (const [label, text] of [
   ['Calendar connector', calendar],
   ['WhatsApp drain', whatsapp],
   ['Instagram connector', instagram],
+  ['CRM host split', hostSplit],
 ]) {
   expectIncludes(text, 'environment: crm-production', label);
   expectIncludes(text, 'release/private-crm-rc*', label);
@@ -360,3 +363,72 @@ expectExcludes(instagramConfig, '[[kv_namespaces]]', 'Instagram production confi
 expectExcludes(instagramConfig, 'INSTAGRAM_APP_SECRET', 'Instagram production config');
 expectExcludes(instagramConfig, 'SUPABASE_SECRET_KEY', 'Instagram production config');
 expectLineAbsent(instagramConfig, 'workers_dev = true', 'Instagram production config');
+
+// ---------------------------------------------------------------------------
+// The host split moves the CRM from one Access-gated host to two. Its ordering
+// constraint is the whole point: the operator environment is never served
+// without Access, and the public host keeps its protection until the operator
+// host is protected, deployed and answering. These assertions are about that
+// ordering being enforced in code rather than by whoever dispatches the run.
+// ---------------------------------------------------------------------------
+
+expectIncludes(hostSplit, 'SPLIT_CRM_HOSTS', 'CRM host split');
+expectIncludes(hostSplit, 'CRM_PRODUCTION_DEPLOY_ENABLED', 'CRM host split');
+expectIncludes(hostSplit, "VITE_CRM_SURFACE: ${{ inputs.stage == 'deploy-internal' && 'internal' || 'public' }}", 'CRM host split');
+expectIncludes(hostSplit, 'node scripts/check-private-crm-artifact.mjs admin/dist', 'CRM host split');
+
+// A public build carrying the operator surface would put the installation's
+// own administration on the open web, so the gate refuses it by inspecting the
+// artifact rather than trusting the input that produced it.
+expectIncludes(hostSplit, 'The public build carries the internal surface. Refusing.', 'CRM host split');
+
+// This gate deploys Pages only. It must never reach the database, a Worker or
+// the public marketing site.
+for (const forbidden of [
+  'supabase db push',
+  'wrangler deploy',
+  'wrangler secret',
+  'wrangler kv namespace create',
+  'wrangler.whatsapp',
+  'wrangler.gmail',
+  'wrangler.calendar',
+  'wrangler.monzo',
+  'wrangler.team-admin',
+]) {
+  expectExcludes(hostSplit, forbidden, 'CRM host split');
+}
+
+// Protection before reachability, in both places it matters.
+expectIncludes(
+  hostSplitScript,
+  'has no Access application yet; run protect-internal first',
+  'CRM host split script',
+);
+expectIncludes(
+  hostSplitScript,
+  'has no Access application; refusing to deploy the operator build',
+  'CRM host split script',
+);
+expectIncludes(hostSplitScript, 'is serving without Access. Stop.', 'CRM host split script');
+expectIncludes(
+  hostSplitScript,
+  'has no production deployment; refusing to open',
+  'CRM host split script',
+);
+expectIncludes(
+  hostSplitScript,
+  'lost its Access protection while opening',
+  'CRM host split script',
+);
+
+// Opening the public host runs the full internal verification first, so the
+// precondition cannot rot into a comment.
+expectIncludes(hostSplitScript, 'async function beforeOpenPublic', 'CRM host split script');
+expectIncludes(hostSplitScript, 'await verifyInternal(zone);', 'CRM host split script');
+
+// An Access aud is the value that would help somebody forge a session. It is
+// never printed, and neither is a raw policy body.
+expectExcludes(hostSplitScript, 'app.aud', 'CRM host split script');
+expectExcludes(hostSplitScript, 'JSON.stringify(policy)', 'CRM host split script');
+
+console.log('CRM host split gate boundaries: passed');
