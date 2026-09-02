@@ -37,12 +37,15 @@ jobs:
     environment: crm-production
     env:
       PRODUCT_BRANCH: agent/platform-telegram-self-service
-      # This workflow deploys the Access-gated operator environment. It is the
-      # internal surface, and saying so explicitly is what keeps the
-      # installation's own administration on it: lib/surface fails closed to
-      # `public` for an unset or unrecognised value, so an omitted variable
-      # would quietly remove the Users screen from the operator CRM.
-      VITE_CRM_SURFACE: internal
+      # This workflow deploys `crm.vishartattoo.com`, which is the PUBLIC CRM:
+      # where an artist signs up and works. The operator environment moved to
+      # `app.vishartattoo.com` and is deployed by the host split gate's
+      # `deploy-internal` stage, which is re-runnable for ordinary operator
+      # deploys too.
+      #
+      # Saying `public` explicitly rather than relying on the fail-closed
+      # default keeps the intent legible next to the assertion below.
+      VITE_CRM_SURFACE: public
       VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
       VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
@@ -241,11 +244,13 @@ jobs:
           grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
           grep -R -Fq "$VITE_MONZO_CONNECTOR_ORIGIN" admin/dist
           grep -R -Fq "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" admin/dist
-          # The built bundle must actually carry the surface this workflow
-          # intends. Vite inlines the value into the env object literal, so its
-          # absence means the build fell back to `public` and this deployment
-          # would take the operator's own administration away.
-          grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist
+          # The public bundle must not carry the operator surface. Vite inlines
+          # the value, so its presence would mean this deployment is about to
+          # put the installation's own administration on the open web.
+          if grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist; then
+            echo 'The public CRM build carries the internal surface. Refusing.' >&2
+            exit 1
+          fi
           node scripts/check-private-crm-artifact.mjs admin/dist
           test -f admin/functions/api/whatsapp/embedded-signup/provision.js
 
@@ -388,24 +393,36 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/verify-crm-pages-production.mjs
 
-      - name: Verify private CRM HTTP remains Access-gated
+      - name: Verify the public CRM serves and the operator host does not follow it
         if: ${{ github.event_name == 'push' || inputs.deploy }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # The public CRM must answer a signed-out request: that is the whole
+          # point of this host. Supabase Auth and row level security are the
+          # authorization boundary, and they are unchanged.
           for attempt in $(seq 1 20); do
             status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "$CRM_ORIGIN/" || true)"
-            case "$status" in
-              302|303|307|401|403) exit 0 ;;
-              200)
-                echo 'Private CRM production origin is no longer gated by Cloudflare Access.' >&2
-                exit 1
-                ;;
-            esac
+            [ "$status" = '200' ] && break
+            if [ "$attempt" -eq 20 ]; then
+              echo "Public CRM origin answered $status, expected 200." >&2
+              exit 1
+            fi
             sleep 6
           done
-          echo 'Private CRM Access boundary did not reach an accepted gated state.' >&2
-          exit 1
+
+          # And the operator environment must still be gated. A deploy of the
+          # public CRM has no business changing that, so if it has changed,
+          # something is wrong that this gate should not deploy past.
+          operator_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 https://app.vishartattoo.com/ || true)"
+          case "$operator_status" in
+            302|303|307|401|403) ;;
+            *)
+              echo "Operator host answered $operator_status; expected an Access redirect." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Production boundary summary
         if: always()
@@ -427,6 +444,6 @@ jobs:
             echo '- Calendar connector in this build: `https://calendar.vishartattoo.com`'
             echo '- Monzo connector in this build: `https://monzo.vishartattoo.com` (owner-only launcher; no token, account id or webhook key reaches the browser)'
             echo '- WhatsApp onboarding: owner-only Meta Embedded Signup for exact Vladimir/Kristina routes; credentials go only to encrypted Worker bindings'
-            echo '- Post-deploy acceptance: exact Pages commit readback + Pages/Access recheck + HTTP Access gate'
+            echo '- Post-deploy acceptance: exact Pages commit readback + Pages/Access recheck + public HTTP on crm and Access still gating app'
             echo '- Supabase migration / public site / booking Worker / shared scheduler deploy commands: none'
           } >> "$GITHUB_STEP_SUMMARY"
