@@ -179,4 +179,12 @@ assert.equal(privateReleaseObserver.includes(bookingReleaseExclusion), true);
 assert.match(privateReleaseWorkflow, /release\/private-crm-rc\*-booking-host\*\)\s*(?:\n|.)*?exit 1/);
 assert.match(privateReleaseObserver, /release\/private-crm-rc\*-booking-host\*\) exit 1/);
 
+// The hosted booking namespace is proxied, never re-implemented here: the
+// booking host stays credential-free, so it must not gain a Supabase client.
+assert.equal(productionTesting.FORMS_NAMESPACE_PREFIX, '/forms/');
+assert.equal(productionTesting.FORMS_UPSTREAM_ORIGIN, 'https://tattooai.vvetrov41.workers.dev');
+assert.match(productionWorker, /proxyHostedBookingForm/);
+assert.doesNotMatch(productionWorker, /createSupabaseClient|resolve_hosted_booking_source|SUPABASE_URL/);
+assert.match(releaseWorkflow, /test-booking-host-hosted-forms\.mjs/);
+
 console.log('booking host production config, release admission and appointment proxy tests passed');

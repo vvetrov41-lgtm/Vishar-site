@@ -8,6 +8,7 @@ on:
       - 'wrangler.booking-host.production.toml'
       - 'scripts/test-booking-host-worker.mjs'
       - 'scripts/test-booking-host-production-config.mjs'
+      - 'scripts/test-booking-host-hosted-forms.mjs'
       - '.github/workflows/booking-host-validation.yml'
   push:
     branches:
@@ -49,6 +50,7 @@ jobs:
           set -euo pipefail
           node scripts/test-booking-host-worker.mjs
           node scripts/test-booking-host-production-config.mjs
+          node scripts/test-booking-host-hosted-forms.mjs
 
       - name: Compile production Worker without deploy
         run: |

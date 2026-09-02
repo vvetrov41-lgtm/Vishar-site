@@ -172,6 +172,51 @@ export function readCalendarConnectorOrigin(
 }
 
 /**
+ * The public origin that serves Vishar-hosted booking forms.
+ *
+ * A generated form link is handed to a client, so it must be the branded
+ * production booking host and never an internal `workers.dev` address. Build
+ * environments set `VITE_BOOKING_FORMS_ORIGIN` so a staging CRM cannot mint a
+ * production link, and production keeps working if the variable is absent.
+ */
+export const DEFAULT_BOOKING_FORMS_ORIGIN = 'https://booking.vishartattoo.com';
+
+export function readBookingFormsOrigin(
+  env: Record<string, string | undefined>,
+  allowLocal = false
+): string {
+  const value = (env.VITE_BOOKING_FORMS_ORIGIN ?? '').trim();
+  if (!value) return DEFAULT_BOOKING_FORMS_ORIGIN;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('VITE_BOOKING_FORMS_ORIGIN must be a permitted booking host root URL.');
+  }
+
+  const loopback = allowLocal
+    && parsed.protocol === 'http:'
+    && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost');
+  const hosted = parsed.protocol === 'https:'
+    && parsed.hostname.endsWith('.vishartattoo.com')
+    && !parsed.port;
+
+  if (
+    (!hosted && !loopback)
+    || parsed.username
+    || parsed.password
+    || parsed.pathname !== '/'
+    || parsed.search
+    || parsed.hash
+  ) {
+    throw new Error('VITE_BOOKING_FORMS_ORIGIN must be a permitted booking host root URL.');
+  }
+
+  return parsed.origin;
+}
+
+/**
  * The two Supabase Auth redirects the private CRM accepts from the browser
  * URL, and nothing else. Each is an exact same-origin marker with one
  * parameter: the Team Worker configures `staff_invite` as the Auth invite

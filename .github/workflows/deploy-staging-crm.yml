@@ -32,6 +32,9 @@ jobs:
           VITE_CRM_SURFACE: internal
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          # Staging must not mint a production booking link. The staging intake
+          # Worker answers the same hosted-form namespace.
+          VITE_BOOKING_FORMS_ORIGIN: https://intake-staging.vishartattoo.com
         run: |
           set -u
 
@@ -95,6 +98,9 @@ jobs:
           VITE_CRM_SURFACE: internal
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          # Staging must not mint a production booking link. The staging intake
+          # Worker answers the same hosted-form namespace.
+          VITE_BOOKING_FORMS_ORIGIN: https://intake-staging.vishartattoo.com
         run: |
           npm test
           npm run build
@@ -106,6 +112,9 @@ jobs:
           VITE_CRM_SURFACE: internal
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          # Staging must not mint a production booking link. The staging intake
+          # Worker answers the same hosted-form namespace.
+          VITE_BOOKING_FORMS_ORIGIN: https://intake-staging.vishartattoo.com
         run: |
           set -euo pipefail
           test -f admin/dist/index.html

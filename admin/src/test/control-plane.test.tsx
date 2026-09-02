@@ -177,6 +177,37 @@ describe('organizations', () => {
     expect(await screen.findByText('No organizations')).toBeInTheDocument();
   });
 
+  // The list used to show "Управление" / "Admin" as a decorative chip. It reads
+  // as an instruction, sits where a control sits, and did nothing when tapped.
+  it('offers a real, keyboard-reachable route from the list to the management screen', async () => {
+    renderWithSession(<App />, { ...studioSession(), path: '/workspaces' });
+
+    const manage = await screen.findByRole('link', { name: 'Manage' });
+    expect(manage).toHaveAttribute('href', `#/workspaces/${STUDIO_WORKSPACE_ID}`);
+
+    // The organization name is the other way in, and both land in one place.
+    const title = screen.getByRole('link', { name: 'Ink Collective' });
+    expect(title).toHaveAttribute('href', `#/workspaces/${STUDIO_WORKSPACE_ID}`);
+
+    fireEvent.click(manage);
+    expect(await screen.findByText('Artist Z')).toBeInTheDocument();
+  });
+
+  it('shows no management action to somebody who may not administer the organization', async () => {
+    renderWithSession(<App />, {
+      ...studioSession({
+        workspaces: [{ ...STUDIO, can_manage_workspace: false }],
+      }),
+      path: '/workspaces',
+    });
+
+    await screen.findByText('Ink Collective');
+    expect(screen.queryByRole('link', { name: 'Manage' })).not.toBeInTheDocument();
+    // A right the reader does hold stays a plain label, not a second route in.
+    expect(screen.getByText('Team')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Team' })).not.toBeInTheDocument();
+  });
+
   it('offers founding an organization only when the server authorizes it', async () => {
     const { unmount } = renderWithSession(<App />, {
       ...studioSession({

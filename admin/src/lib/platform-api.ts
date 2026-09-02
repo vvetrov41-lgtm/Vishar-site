@@ -5,6 +5,7 @@
 // database capability checks remain authoritative.
 
 import { apiMessage, ApiError, type CrmClient } from './api';
+import { DEFAULT_BOOKING_FORMS_ORIGIN } from './supabase';
 
 export type IntegrationOwnerKind = 'artist' | 'workspace';
 
@@ -151,14 +152,15 @@ export interface UpdateBookingSourceInput {
   isActive: boolean;
 }
 
-// Public, non-secret production intake origin. Keeping construction here makes
-// the CRM surface consistent with the already-deployed public booking form and
-// leaves one place to replace when a custom Worker domain is introduced.
-export const BOOKING_FORMS_ORIGIN = 'https://tattooai.vvetrov41.workers.dev';
+// Public, non-secret booking origin. The default is the branded production
+// booking host; a build may narrow it through VITE_BOOKING_FORMS_ORIGIN so a
+// staging CRM never mints a production link. Construction stays here so the
+// CRM has exactly one place that knows how a public booking URL is shaped.
+export { DEFAULT_BOOKING_FORMS_ORIGIN };
 
 export function bookingSourcePublicUrl(
   source: Pick<BookingSource, 'source_kind' | 'public_source_id' | 'public_path'>,
-  origin = BOOKING_FORMS_ORIGIN,
+  origin: string = DEFAULT_BOOKING_FORMS_ORIGIN,
 ): string {
   if (source.source_kind === 'hosted') {
     if (!source.public_path) return '';

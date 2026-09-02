@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CrmClient } from '../lib/api';
 import {
-  BOOKING_FORMS_ORIGIN,
+  DEFAULT_BOOKING_FORMS_ORIGIN,
   bookingSourcePublicUrl,
   createPlatformApi,
 } from '../lib/platform-api';
+import { readBookingFormsOrigin } from '../lib/supabase';
 
 function clientWithRpc(response: { data: unknown; error: unknown } = { data: [], error: null }) {
   const rpc = vi.fn(async () => response);
@@ -103,9 +104,46 @@ describe('booking source API boundary', () => {
       public_path: null,
     });
 
-    expect(hosted).toBe(`${BOOKING_FORMS_ORIGIN}/forms/11111111-1111-4111-8111-111111111111`);
-    expect(external).toBe(`${BOOKING_FORMS_ORIGIN}/?source=22222222-2222-4222-8222-222222222222`);
+    expect(hosted).toBe(`${DEFAULT_BOOKING_FORMS_ORIGIN}/forms/11111111-1111-4111-8111-111111111111`);
+    expect(external).toBe(`${DEFAULT_BOOKING_FORMS_ORIGIN}/?source=22222222-2222-4222-8222-222222222222`);
     expect(`${hosted}${external}`).not.toContain('source_key');
     expect(`${hosted}${external}`).not.toContain('artist_id');
+  });
+
+  // A generated link is handed to a client, so the host it names is part of the
+  // product. It used to be the internal workers.dev intake address, which no
+  // browser could open as a form.
+  it('generates client-facing links on the branded booking host, never workers.dev', () => {
+    expect(DEFAULT_BOOKING_FORMS_ORIGIN).toBe('https://booking.vishartattoo.com');
+
+    const hosted = bookingSourcePublicUrl({
+      source_kind: 'hosted',
+      public_source_id: '11111111-1111-4111-8111-111111111111',
+      public_path: '/forms/11111111-1111-4111-8111-111111111111',
+    });
+    expect(hosted).not.toContain('workers.dev');
+  });
+
+  it('takes the booking origin from the build, and refuses anything but an owned host', () => {
+    expect(readBookingFormsOrigin({})).toBe('https://booking.vishartattoo.com');
+    expect(readBookingFormsOrigin({ VITE_BOOKING_FORMS_ORIGIN: '  ' })).toBe('https://booking.vishartattoo.com');
+    expect(readBookingFormsOrigin({ VITE_BOOKING_FORMS_ORIGIN: 'https://intake-staging.vishartattoo.com' }))
+      .toBe('https://intake-staging.vishartattoo.com');
+    expect(readBookingFormsOrigin({ VITE_BOOKING_FORMS_ORIGIN: 'http://localhost:5173' }, true))
+      .toBe('http://localhost:5173');
+
+    for (const rejected of [
+      'https://tattooai.vvetrov41.workers.dev',
+      'https://booking.vishartattoo.com.evil.example',
+      'http://booking.vishartattoo.com',
+      'https://booking.vishartattoo.com/forms',
+      'https://user:pass@booking.vishartattoo.com',
+      'not a url',
+    ]) {
+      expect(() => readBookingFormsOrigin({ VITE_BOOKING_FORMS_ORIGIN: rejected })).toThrow();
+    }
+
+    // A loopback origin is a development convenience only.
+    expect(() => readBookingFormsOrigin({ VITE_BOOKING_FORMS_ORIGIN: 'http://localhost:5173' })).toThrow();
   });
 });

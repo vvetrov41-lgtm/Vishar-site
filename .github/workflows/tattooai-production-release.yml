@@ -65,7 +65,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse "origin/${GITHUB_REF_NAME}")" = "$GITHUB_SHA"
           test "$(sed -n 's/^name = "\([^"]*\)"/\1/p' wrangler.toml | head -n1)" = "tattooai"
-          grep -Fxq 'main = "workers/tattooai.js"' wrangler.toml
+          grep -Fxq 'main = "workers/tattooai-entry.js"' wrangler.toml
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -100,5 +100,22 @@ jobs:
             --data '{"type":"tattoo-enquiry"}')"
           test "$post_status" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
+
+          # The hosted booking namespace must answer a browser GET with the
+          # public renderer, not the POST-only intake boundary. Both probes use
+          # ids that resolve to nothing, so neither reads or writes an enquiry.
+          malformed_status="$(curl -sS -o /tmp/tattooai-forms-malformed.html -w '%{http_code}' \
+            "${endpoint}forms/not-a-uuid")"
+          test "$malformed_status" = '404'
+          grep -Fq 'Booking form unavailable' /tmp/tattooai-forms-malformed.html
+          if grep -Fq 'Use POST request' /tmp/tattooai-forms-malformed.html; then
+            echo 'The hosted form namespace still reaches the POST-only intake boundary.' >&2
+            exit 1
+          fi
+
+          unknown_status="$(curl -sS -o /tmp/tattooai-forms-unknown.html -w '%{http_code}' \
+            "${endpoint}forms/00000000-0000-4000-8000-000000000000")"
+          test "$unknown_status" = '404'
+          grep -Fq 'Booking form unavailable' /tmp/tattooai-forms-unknown.html
 
           echo "Live tattooai boundary matches the durable multipart Worker at $GITHUB_SHA"

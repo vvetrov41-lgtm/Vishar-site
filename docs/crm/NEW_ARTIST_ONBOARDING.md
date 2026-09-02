@@ -214,9 +214,20 @@ A new artist takes enquiries through a hosted booking form created from
 **Integrations → Forms and websites**. It produces a public URL immediately.
 No Worker is deployed, no route is added, no secret is created.
 
+The URL is `https://booking.vishartattoo.com/forms/<public-source-id>` — the
+same branded host clients already meet, not an internal `workers.dev` address.
+`booking.vishartattoo.com` owns the `/forms/` namespace and proxies it to the
+intake Worker that holds the credentials, so a GET renders the form and the
+form's own POST submits it, both on one origin. The CRM composes that URL from
+`VITE_BOOKING_FORMS_ORIGIN` and the stored path, so nothing rewrites a form id
+when the host changes and links already sent to clients keep working.
+
 The public path resolves the artist **server-side from the form id alone**. A
 browser never sends an authoritative `artist_id`, and could not: the resolvers
 in migration 0079 take a `public_source_id` and derive everything else.
+
+An id with no active hosted source behind it — unknown, disabled, or an
+inactive artist — is a plain 404 that names nothing.
 
 An external website source is also available, keyed to that site's exact HTTPS
 `Origin`.
