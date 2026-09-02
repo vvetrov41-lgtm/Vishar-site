@@ -54,7 +54,17 @@
 - [ ] T060 Run `speckit-converge` against requirements, code, tests, exact-head CI and environment evidence.
 - [ ] T061 Append and resolve any newly discovered gap; report `CONVERGED` only with rollout evidence.
 
+## Phase 7: Meta publication and Kristina acceptance
+
+- [x] T070 Reproduce and identify Kristina's provider blocker. Evidence: Meta returned `App not active`; dashboard app `1481226093843982` is `Not published`, with business verification complete but app settings/review incomplete. [FR-011, AC-010]
+- [x] T071 Add a public Vishar CRM Meta privacy notice and deletion instructions without changing the existing booking privacy acknowledgement contract. Evidence: `privacy/meta/index.html` plus sitemap entry; static validation and secret scan green.
+- [ ] T072 Publish the privacy page from an exact reviewed SHA and verify `https://vishartattoo.com/privacy/meta/` returns the intended notice.
+- [ ] T073 Complete Meta app settings with the verified privacy/deletion URL, 1024px icon and business category.
+- [ ] T074 Submit a WhatsApp-only App Review and Access Verification with accurate reviewer instructions; keep unrelated Instagram permissions out of this request.
+- [ ] T075 While provider review is pending, optionally grant Kristina a bounded temporary app role and record its later removal requirement.
+- [ ] T076 Verify the app is published and Kristina can launch consent without `App not active`, then complete the real generic onboarding and read back only safe route/binding metadata. [AC-009]
+
 ## Deferred work
 
 - [ ] D001 Workspace-owned/shared WhatsApp accounts - deferred because this release covers individually owned artist accounts only.
-- [ ] D002 Real future-artist provider E2E - deferred until a legitimate artist/account exists; contract and fail-closed service acceptance remain in scope.
+- [ ] D002 A third artist's real provider E2E - deferred until another legitimate artist/account exists; Kristina is the required second-artist production acceptance.
