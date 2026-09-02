@@ -39,10 +39,10 @@ const NAV_KEYS: Record<string, string> = {
 };
 
 // The four thumb slots go to where a day is actually spent: what needs me, who
-// is waiting, who this is, and when. Enquiries and Projects are reached from
+// is waiting, when, and who this is. Enquiries and Projects are reached from
 // those - an enquiry is an inbound message, and a project is something a client
 // wants - so both moved into the overflow sheet rather than holding a slot.
-const MOBILE_PRIMARY_PATHS = ['/', '/inbox', '/clients', '/appointments'] as const;
+const MOBILE_PRIMARY_PATHS = ['/', '/inbox', '/appointments', '/clients'] as const;
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
