@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { ArtistScopeProvider } from '../lib/artist-scope';
 import { SESSION, VLADIMIR_ARTIST_ID, renderWithSession } from './fixtures';
@@ -56,7 +56,11 @@ describe('mobile deposits workspace', () => {
     const heading = await screen.findByRole('heading', { name: 'Create a new deposit for an individual session' });
     const panel = heading.closest('section') as HTMLElement;
 
-    expect(panel.querySelectorAll('.payments-session-row')).toHaveLength(4);
+    // The panel heading renders before the asynchronous appointment request
+    // settles, so wait for the row batch instead of sampling the empty shell.
+    await waitFor(() => {
+      expect(panel.querySelectorAll('.payments-session-row')).toHaveLength(4);
+    });
     const showAll = within(panel).getByRole('button', { name: 'Show all (6)' });
     fireEvent.click(showAll);
     expect(panel.querySelectorAll('.payments-session-row')).toHaveLength(6);
@@ -90,7 +94,7 @@ describe('mobile deposits workspace', () => {
     await screen.findByRole('heading', { name: 'Create a new deposit for an individual session' });
 
     const grouped = screen.getByText('One deposit for several sessions').closest('details');
-    const settings = screen.getByText('Deposits').closest('details');
+    const settings = document.querySelector('.payments-setup-inline');
     expect(grouped).not.toBeNull();
     expect(settings).not.toBeNull();
     expect(grouped?.hasAttribute('open')).toBe(false);
