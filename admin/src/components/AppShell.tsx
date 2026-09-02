@@ -15,6 +15,7 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 import { useArtistScope } from '../lib/artist-scope';
 import { useControlPlaneAccess } from '../lib/control-plane-access';
 import { isPathAvailableOnSurface, useSurface } from '../lib/surface';
+import { ACCOUNT_PATH } from '../lib/account-api';
 
 // Every navigation destination, so a label can never fall through to its
 // English NavItem.label. Communications and Payments had no entry here and
@@ -67,7 +68,7 @@ type NavGroupId = 'work' | 'money' | 'setup';
 const NAV_GROUP_ORDER: NavGroupId[] = ['work', 'money', 'setup'];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { profile, memberships, signOut } = useSession();
+  const { profile, memberships, account, signOut } = useSession();
   const { path } = useRouter();
   const { t, label, language } = useLanguage();
   // The control-plane entry is appended from the server's answer rather than
@@ -117,6 +118,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const overflowIsActive = overflowItems.some((item) => isActivePath(item.path, path));
   const activeItem = items.find((item) => isActivePath(item.path, path));
   const profileName = profile?.display_name || profile?.email || 'CRM';
+  // What the person is, not which authorization role carries it. The server
+  // works this out from the membership rows authorization itself reads
+  // (public.account_overview); if that read failed there is no answer to show
+  // and the interface says what it has always said - the global role.
+  const roleLabel = account
+    ? t(`userRole.${account.user_role}`)
+    : profile ? label('role', profile.role) : '';
   const moreLabel = language === 'ru' ? 'Ещё' : 'More';
   const pageScope = pageScopeFor(path);
 
@@ -225,7 +233,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="profile-avatar" aria-hidden="true">{initials(profileName)}</span>
           <span className="sidebar-user-copy">
             <strong>{profileName}</strong>
-            {profile ? <small>{label('role', profile.role)}</small> : null}
+            {roleLabel ? <small>{roleLabel}</small> : null}
           </span>
         </div>
       </aside>
@@ -247,8 +255,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <ProfileMenu
               profileName={profileName}
-              roleLabel={profile ? label('role', profile.role) : ''}
+              roleLabel={roleLabel}
+              accountPath={ACCOUNT_PATH}
+              accountLabel={t('account.openAccount')}
+              menuLabel={t('account.menuLabel')}
               signOutLabel={t('common.signOut')}
+              path={path}
               onSignOut={() => { void signOut(); }}
             />
           </div>
@@ -415,36 +427,111 @@ function ArtistScopeControl({
   );
 }
 
+/**
+ * The account popover.
+ *
+ * This was a native `<details>`, which behaves like a menu until you tap
+ * somewhere else: `<details>` has no notion of "outside", so the panel stayed
+ * open over whatever you tapped next. It is a controlled popover now, dismissed
+ * by a pointer outside it, by Escape, and by arriving somewhere new.
+ *
+ * `pointerdown` rather than `click` is what makes "tapping outside closes it"
+ * and "tapping a control inside runs the control" both true: the event starts
+ * inside the panel for anything the panel owns, so those never reach the
+ * dismiss path, and the control's own click still lands.
+ *
+ * The person's name is a real Link to their account rather than a decorated
+ * span - so it is reachable by keyboard, announced as a link, and openable in a
+ * new tab like every other destination in the CRM.
+ */
 function ProfileMenu({
   profileName,
   roleLabel,
+  accountPath,
+  accountLabel,
+  menuLabel,
   signOutLabel,
+  path,
   onSignOut,
 }: {
   profileName: string;
   roleLabel: string;
+  accountPath: string;
+  accountLabel: string;
+  menuLabel: string;
   signOutLabel: string;
+  path: string;
   onSignOut: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Somewhere new means the popover has done its job.
+  useEffect(() => { setOpen(false); }, [path]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const container = containerRef.current;
+      const target = event.target;
+      if (!container || !(target instanceof Node) || container.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setOpen(false);
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    // Both are removed on every close and on unmount, so nothing outlives the
+    // render that added it.
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
   return (
-    <details className="profile-menu">
-      <summary className="profile-trigger" aria-label={profileName}>
+    <div className="profile-menu" ref={containerRef}>
+      <button
+        type="button"
+        className="profile-trigger"
+        aria-label={menuLabel}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls="profile-panel"
+        onClick={() => setOpen((value) => !value)}
+      >
         <span className="profile-avatar" aria-hidden="true">{initials(profileName)}</span>
         <span className="profile-trigger-copy">
           <strong>{profileName}</strong>
           {roleLabel ? <small>{roleLabel}</small> : null}
         </span>
         <span className="profile-chevron" aria-hidden="true">⌄</span>
-      </summary>
-      <div className="profile-panel">
-        <div className="profile-panel-user">
-          <strong>{profileName}</strong>
-          {roleLabel ? <small>{roleLabel}</small> : null}
+      </button>
+      {open ? (
+        <div className="profile-panel" id="profile-panel">
+          {/* The name is the control. Its accessible name says where it goes,
+              because "Sam" on its own does not. */}
+          <Link
+            to={accountPath}
+            className="profile-panel-account"
+            ariaCurrent={path === accountPath ? 'page' : undefined}
+          >
+            <span className="profile-panel-user">
+              <strong>{profileName}</strong>
+              {roleLabel ? <small>{roleLabel}</small> : null}
+            </span>
+            <span className="profile-panel-account-hint">{accountLabel}</span>
+          </Link>
+          <LanguageSwitcher />
+          <button type="button" className="profile-signout" onClick={onSignOut}>{signOutLabel}</button>
         </div>
-        <LanguageSwitcher />
-        <button type="button" className="profile-signout" onClick={onSignOut}>{signOutLabel}</button>
-      </div>
-    </details>
+      ) : null}
+    </div>
   );
 }
 

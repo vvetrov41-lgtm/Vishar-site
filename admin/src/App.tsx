@@ -14,9 +14,11 @@ import { useLanguage } from './lib/i18n';
 import { ArtistScopeProvider } from './lib/artist-scope';
 import { ControlPlaneAccessProvider } from './lib/control-plane-access';
 import { applyAppointmentTimeStep } from './lib/appointment-time-step';
+import { ACCOUNT_PATH } from './lib/account-api';
 import { matchRoute, useRouter } from './lib/router';
 import { isPathAvailableOnSurface, useSurface } from './lib/surface';
 import { useSession } from './lib/session';
+import { AccountPage } from './pages/AccountPage';
 import { ActivityPage } from './pages/ActivityPage';
 import { ArtistOnboardingPage } from './pages/ArtistOnboardingPage';
 import { ArtistSetupPage } from './pages/ArtistSetupPage';
@@ -211,6 +213,11 @@ function Routes() {
   switch (path) {
     case '/':
       return <RequireCapability capability="viewEnquiries"><DashboardPage /></RequireCapability>;
+    // Deliberately behind no capability. This is the signed-in person's own
+    // account, and every operation it offers acts for auth.uid() alone; there
+    // is no role that should be shown the CRM and denied its own name.
+    case ACCOUNT_PATH:
+      return <AccountPage />;
     case '/oauth/consent':
       return <OAuthConsentPage />;
     case '/inbox':

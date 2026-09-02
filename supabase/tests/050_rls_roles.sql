@@ -861,6 +861,18 @@ insert into expected_function_acl values
   ('public.begin_artist_invite(uuid,text,text,uuid,jsonb)', false, true, false),
   ('public.finalize_artist_invite(uuid)', false, true, false),
 
+  -- The account itself (0135). Browser-only, all three, and none of them takes
+  -- an identifier: each acts for auth.uid() and for nothing else, so there is
+  -- no argument a caller could substitute to reach somebody else's account.
+  -- `anon` is offered none - a logged-out page has no account to ask about -
+  -- and neither is the service backend: a Worker has no auth.uid() to be, and
+  -- a backend key that could delete accounts is exactly the key nobody should
+  -- have. crm_private.user_facing_role is deliberately absent from this list
+  -- entirely: it is reached only through account_overview's definer chain.
+  ('public.account_overview()', false, true, false),
+  ('public.set_my_display_name(text)', false, true, false),
+  ('public.delete_my_account(text)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
