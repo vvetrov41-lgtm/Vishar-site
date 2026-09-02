@@ -20,6 +20,7 @@ on:
       - admin/src/lib/whatsapp-connections-api.ts
       - admin/src/pages/WhatsAppConnectionsPage.tsx
       - admin/src/test/meta-whatsapp-embedded-signup.test.ts
+      - admin/src/test/meta-whatsapp-embedded-signup-v4.test.ts
       - admin/src/test/whatsapp-connections.test.ts
       - scripts/check-private-crm-artifact.mjs
       - scripts/test-whatsapp-production-onboarding.mjs
