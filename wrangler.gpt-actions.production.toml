@@ -10,6 +10,9 @@ routes = [
   { pattern = "gpt-communications.vishartattoo.com", custom_domain = true }
 ]
 
+[triggers]
+crons = ["*/15 * * * *"]
+
 [[services]]
 binding = "GMAIL_SERVICE"
 service = "vishar-gmail-production"
