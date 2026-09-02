@@ -67,6 +67,16 @@ rested on. Migration `0131`, pgTAP `268`.
       owner membership row alive - and found another, indefinitely. Reproduced with the cap set to 1.
       Now counted whether or not each organization is switched on.
 
+## Known gap, accepted
+
+- [ ] T28 A self-service founder cannot add a first teammate. The scoped directory shows them only
+      people already on their artist, and `begin_staff_invite` requires the installation-owner role
+      because inviting mints a Supabase Auth identity. Raised in review on #606 and correct. It
+      blocks nothing that shipped - a solo artist needs no teammate - and it is not a regression:
+      before the scoping a founder could see every profile but still could not invite anybody.
+      Closing it means a tenant-scoped identity-minting boundary, which is a workstream of its own
+      and needs a product decision first. Documented in `docs/crm/SELF_SERVICE_SIGNUP.md` section 9.
+
 ## Production acceptance evidence
 
 Run against the live production database inside a transaction that ended in a deliberate
