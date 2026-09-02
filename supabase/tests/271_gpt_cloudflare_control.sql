@@ -59,13 +59,17 @@ insert into public.profiles (id, email, display_name, role, is_active) values
   ('e5671111-1111-4111-8111-111111111111', 'cloudflare-manager@example.test', 'Cloudflare Manager', 'booking_manager', true),
   ('e5672222-2222-4222-8222-222222222222', 'cloudflare-owner@example.test', 'Cloudflare Owner', 'owner', true);
 
+-- Creating an owner profile already provisions its active Artist membership.
+-- Only the non-owner fixture needs an explicit membership row here.
 insert into public.artist_memberships (
   profile_id, artist_id, access_level,
   can_view_finance, can_manage_finance,
   can_manage_sessions, can_manage_integrations, is_active
-) values
-  ('e5671111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'manager', false, false, true, true, true),
-  ('e5672222-2222-4222-8222-222222222222', 'a1111111-1111-4111-8111-111111111111', 'manager', true, true, true, true, true);
+) values (
+  'e5671111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111',
+  'manager', false, false, true, true, true
+);
 
 update crm_private.gpt_action_clients
 set oauth_client_id = 'oauth-cloudflare-test',
