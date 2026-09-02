@@ -2,9 +2,11 @@
 
 ## Revision target
 
-Feature branch created from PR #588 exact head `e2d41cc3c716f8d06df0efd6dd6ea8dac9f21f25`.
+Implementation branch: `agent/gpt-cloudflare-control-plane-v2`.
 
-Do not modify PR #588 or PR #589 branches. This branch is stacked on #588 so its diff contains only Cloudflare-control-plane work. Before final merge, reconcile #589's reserved migration `0129` and retarget/replay onto the then-canonical lineage.
+Fresh canonical base at branch creation: `ef874daa9386642416688df54991f588c43460ac` on `agent/platform-telegram-self-service`.
+
+The external product target is **Vishar CRM Unified GPT v2**. `gpt-operations.vishartattoo.com` is only an Action transport/domain, not a separate GPT product. During the v2 OAuth transition the reviewed Vladimir compatibility client may still be the live OAuth application, so production activation must use live readback rather than migration-time assumptions.
 
 ## Architecture
 
@@ -12,156 +14,100 @@ Do not modify PR #588 or PR #589 branches. This branch is stacked on #588 so its
 ChatGPT Action
   -> gpt-operations.vishartattoo.com
   -> vishar-gpt-actions-production
-       - host guard
-       - rate limit
+       - host guard and rate limit
        - OAuth bearer
-       - Supabase owner + client-capability authorization
+       - owner + GPT-client Cloudflare ceiling
        - semantic Cloudflare action validation
   -> CLOUDFLARE_GATEWAY Service Binding
   -> vishar-cloudflare-gateway
-       - no public route
+       - no public route / workers.dev / preview URL
        - CLOUDFLARE_API_TOKEN Worker secret
-       - account/zone resolution
-       - operation-specific Cloudflare REST requests
+       - server-owned account and zone resolution
+       - operation-specific Cloudflare REST calls
        - response/error normalization
-  -> api.cloudflare.com/client/v4
+  -> https://api.cloudflare.com/client/v4
 ```
 
-## Implementation layers
+The Cloudflare token may carry broad developer permissions. The security boundary is the private gateway: GPT never receives the provider token, cannot select an upstream host, cannot supply account/zone ids as authority, and cannot issue arbitrary provider paths or HTTP methods.
 
-### 1. Database authorization
+## Database authorization
 
-Add migration `0130_gpt_cloudflare_control.sql`:
+Migration `0134_gpt_cloudflare_control.sql` adds:
 
 - `crm_private.gpt_action_clients.can_use_cloudflare_control boolean not null default false`;
-- `public.gpt_authorize_cloudflare_control()`:
-  - call `crm_private.require_gpt_client_context()`;
-  - require `public.is_owner()`;
-  - require current GPT client ceiling;
-- `public.configure_gpt_cloudflare_control_access(integration_key, enabled)` owner-only configuration RPC;
-- grant execution only to `authenticated` where appropriate;
-- enable the reviewed Vladimir GPT client only in this release;
-- add activity log metadata without provider credentials.
+- `public.gpt_authorize_cloudflare_control()` requiring current GPT context, owner role and the client ceiling;
+- owner-only audited `public.configure_gpt_cloudflare_control_access(integration_key, enabled)`.
 
-Add pgTAP coverage for owner success, non-owner denial, inactive/unknown client denial, disabled ceiling denial, configuration authorization and expected defaults.
+The migration activates no GPT client. Both `vladimir-gpt-actions` and `vishar-unified-gpt` are reviewed owner-facing transition identities that may be enabled only after live production readback proves which OAuth client GPT v2 currently uses and that it is active. Kristina and future GPT clients remain excluded until separately reviewed.
 
-### 2. Private Cloudflare gateway Worker
+## Private gateway
 
-Add `workers/cloudflare-gateway.js` and `wrangler.cloudflare-gateway.production.toml`.
+`workers/cloudflare-gateway.js` is reachable only through a Worker Service Binding. It hard-codes the Cloudflare API origin and resolves the token-visible Vishar account server-side.
 
-Tracked config requirements:
+Initial semantic coverage:
 
-- `name = "vishar-cloudflare-gateway"`;
-- `workers_dev = false`;
-- `preview_urls = false`;
-- no routes;
-- no plaintext Cloudflare token variable;
-- production environment marker only.
+- account and zone inventory;
+- Workers inventory, deployment history, source deployment and deletion;
+- Pages projects;
+- D1 databases;
+- KV namespaces;
+- R2 buckets;
+- DNS list/upsert/delete;
+- cache purge;
+- Worker route list/upsert/delete.
 
-Gateway contract is internal and operation-specific. It does not accept a caller-selected upstream host, bearer token, account ID or arbitrary API path.
+The provider token can be broader than this initial surface so future reviewed semantic actions do not require token replacement. New capabilities are added as named contracts, not by introducing a generic Cloudflare proxy.
 
-Gateway resolves exactly one token-visible account using the Cloudflare Accounts API and caches only the non-secret account id/name in isolate memory. Zone operations resolve exact zone names within that account.
+Control-plane Workers are protected from destructive self-management. Destructive resource operations require explicit confirmation values where the operation has a stable resource id/name.
 
-Provider request helper:
+## GPT router and kill switches
 
-- hard-code `https://api.cloudflare.com/client/v4`;
-- add `Authorization: Bearer ${env.CLOUDFLARE_API_TOKEN}` only at outbound fetch;
-- use `redirect: "error"`;
-- cap provider response bytes;
-- return normalized error codes/messages, stripping provider request metadata that is not required by GPT.
+`workers/lib/gpt-cloudflare-control.js` owns `/v1/cloudflare/...` routes. Every route:
 
-### 3. GPT semantic action router
+1. checks tracked feature switches;
+2. requires OAuth bearer;
+3. calls `gpt_authorize_cloudflare_control`;
+4. validates an exact request-field allow-list;
+5. calls the private `CLOUDFLARE_GATEWAY` service binding;
+6. returns a bounded normalized response.
 
-Add `workers/lib/gpt-cloudflare-control.js` and route it from `workers/lib/gpt-actions-combined.js` before generic CRM action handling.
+Tracked production defaults remain fail-closed:
 
-Every route:
+- `CLOUDFLARE_CONTROL_ENABLED = "false"`;
+- `CLOUDFLARE_CONTROL_READ_ENABLED = "false"`;
+- `CLOUDFLARE_CONTROL_WRITE_ENABLED = "false"`.
 
-1. recognizes only `/v1/cloudflare/...` paths;
-2. checks feature/operation kill switches;
-3. requires OAuth bearer;
-4. calls `gpt_authorize_cloudflare_control` using the caller bearer and publishable Supabase key;
-5. validates an explicit JSON schema-like field allow-list;
-6. calls `env.CLOUDFLARE_GATEWAY.fetch(...)` with an internal semantic path/body;
-7. returns only the bounded normalized response.
+## OpenAPI
 
-The caller OAuth token is not forwarded to the gateway.
+`docs/gpt-actions/openapi.production.cloudflare.yaml` is a dedicated Action-domain schema on `gpt-operations.vishartattoo.com`. It uses the same Unified GPT OAuth application and does not expose provider credentials, account ids, arbitrary paths/methods, SQL or RPC execution.
 
-### 4. Service Binding and kill switches
+## Validation
 
-Update `wrangler.gpt-actions.production.toml` with:
+Focused tests cover:
 
-```toml
-[[services]]
-binding = "CLOUDFLARE_GATEWAY"
-service = "vishar-cloudflare-gateway"
-```
-
-Add tracked defaults:
-
-- `CLOUDFLARE_CONTROL_ENABLED = "false"`
-- read/write sub-switches as needed, all false by default in tracked production config.
-
-A guarded rollout workflow may enable reviewed switches only after exact-head validation and production readback.
-
-### 5. OpenAPI and operator parity
-
-Create a dedicated production schema `docs/gpt-actions/openapi.production.cloudflare.yaml` using the existing `gpt-operations.vishartattoo.com` host and shared OAuth URLs.
-
-Keep the schema at or below 25 actions. Mark reads non-consequential and mutations consequential. Do not expose `account_id`, provider tokens, arbitrary paths/methods, secret values or generic payload objects.
-
-Update `docs/gpt-actions/operator-parity.mjs` with an explicit Cloudflare infrastructure group. The group is owner-only and must classify unsupported generic provider actions as intentionally excluded rather than accidental gaps.
-
-### 6. Tests
-
-Add focused tests:
-
-- `scripts/test-cloudflare-gateway.mjs`
-  - no token/no provider call;
-  - account scope exactly-one invariant;
-  - zone exact resolution;
-  - no arbitrary upstream/path/method forwarding;
-  - token never appears in response;
-  - list Workers/Pages/D1/KV/R2/DNS/routes mappings;
-  - Worker content update uses the provider's content endpoint and bounded source;
-  - protected Worker delete denial;
-  - DNS/cache/route mutation validation;
-  - provider error/response-size handling.
-- `scripts/test-gpt-cloudflare-control.mjs`
-  - non-route fallthrough;
-  - kill switches before authorization/provider work;
-  - missing OAuth denial;
-  - authorization call before service binding;
-  - caller bearer not forwarded to service binding;
-  - missing binding denial;
-  - exact input allow-lists;
-  - normalized service responses.
-- config/OpenAPI tests to assert no public gateway route and exact Service Binding.
-
-Wire focused tests into `test:worker`, `test:gpt-production`, and a dry-run bundle check for the gateway.
-
-## Cloudflare API contracts used
-
-The implementation uses documented semantic endpoints rather than a generic proxy, including:
-
-- account-scoped Worker script list/content/deployment APIs;
-- account-scoped Pages projects, D1 database list, KV namespace list and R2 bucket list;
-- account-filtered zone list;
-- zone-scoped DNS record, Worker route and cache-purge APIs.
-
-Worker code deployment uses the script-content update endpoint because Cloudflare documents it as updating content without intentionally touching configuration or metadata.
+- fail-closed database authorization and owner-only configuration;
+- private gateway configuration and token non-disclosure;
+- exact-one token-visible account resolution;
+- zone resolution;
+- semantic input allow-lists;
+- Worker/Pages/D1/KV/R2/DNS/routes mappings;
+- destructive confirmation and protected control-plane Workers;
+- service-binding transport without forwarding the caller OAuth token;
+- tracked kill-switch defaults;
+- OpenAPI host/auth/action contract;
+- dry-run bundle validation.
 
 ## Rollout sequence
 
-1. Complete spec, code and focused tests on this branch.
-2. Open a draft PR stacked on #588.
-3. Wait for #588 and #589 lineage to settle; rebase/retarget and renumber migration if required.
-4. Require exact-head CI green.
-5. Fresh-read production Cloudflare Worker presence, `workers.dev` disabled state, Service Binding target, and secret-name presence without reading secret value.
-6. Apply database migration.
-7. Deploy `vishar-cloudflare-gateway` code without replacing its existing secret.
-8. Deploy GPT Worker Service Binding + action router with all Cloudflare feature switches off.
-9. Import/update the Cloudflare OpenAPI Action schema.
-10. Enable Cloudflare control capability for the reviewed owner GPT client.
-11. Enable read operations first and verify account/zones/workers inventory.
-12. Enable Worker-code write and other reviewed mutations incrementally with production readback after each class.
-13. Keep rollback as kill-switch disable + prior Worker deployment/version restoration.
+1. Merge only after exact-head CI is green.
+2. Fresh-read production Supabase migration/client state and Cloudflare Worker/binding state without exposing secrets.
+3. Apply migration `0134`.
+4. Deploy `vishar-cloudflare-gateway` and set `CLOUDFLARE_API_TOKEN` directly as a Worker secret. Never place the token in GitHub, SQL, chat or tracked Wrangler config.
+5. Deploy GPT Worker code with the private service binding and all Cloudflare flags still off.
+6. Confirm the actual production OAuth client used by GPT v2.
+7. Enable that reviewed client through `configure_gpt_cloudflare_control_access`.
+8. Enable global + read flags and verify account/zones/workers inventory from GPT v2.
+9. Enable write only after read acceptance, then exercise one legitimate bounded mutation with authoritative readback.
+10. Import/update the Cloudflare Action schema in the existing GPT v2 configuration.
+
+Rollback is feature-flag disable first, then GPT client ceiling disable, followed by prior Worker deployment/version restoration if code rollback is required. Provider token rotation is independent and does not require exposing its value.
