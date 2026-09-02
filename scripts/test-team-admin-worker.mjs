@@ -431,4 +431,101 @@ for (const [label, body] of [
   assert.equal(calls, 0, 'none of the boundary refusals reached the database');
 }
 
+// ---------------------------------------------------------------------------
+// The permitted path carries both doors
+//
+// A zone WAF rule blocks every path on the production hostname except
+// /v1/staff/invite, so a tenant invitation has to be accepted there too. The
+// assertions that matter are that the shape decides, and that an ambiguous
+// body reaches neither handler.
+// ---------------------------------------------------------------------------
+
+{
+  const seen = [];
+  const fetcher = async (url) => {
+    seen.push(url);
+    if (url.endsWith('/rest/v1/rpc/begin_artist_invite')) {
+      return jsonResponse({
+        invite_request_id: INVITE_ID,
+        email_normalized: 'new.teammate@example.test',
+        status: 'pending',
+        idempotent_replay: false,
+      });
+    }
+    if (url.startsWith(`${SUPABASE_ORIGIN}/auth/v1/invite`)) return jsonResponse({});
+    if (url.endsWith('/rest/v1/rpc/finalize_artist_invite')) {
+      return jsonResponse({ invite_request_id: INVITE_ID, status: 'provisioned', idempotent_replay: false });
+    }
+    throw new Error(`unexpected call ${url}`);
+  };
+
+  const response = await handleTeamAdminRequest(
+    new Request(`${CRM_ORIGIN}/v1/staff/invite`, {
+      method: 'POST',
+      headers: { origin: CRM_ORIGIN, authorization: TENANT_BEARER, 'content-type': 'application/json' },
+      body: JSON.stringify(artistPayload),
+    }),
+    env,
+    { fetcher },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { delivery: 'sent', idempotent_replay: false });
+  // The owner RPCs were never reached, even though this is the owner path.
+  assert.equal(seen.some((url) => url.includes('begin_staff_invite')), false);
+  assert.equal(seen.some((url) => url.includes('list_profiles')), false);
+}
+
+for (const [label, body] of [
+  ['an artist id alongside a membership list', { ...artistPayload, memberships: [] }],
+  ['an artist id alongside a role', { ...artistPayload, role: 'booking_manager' }],
+  ['neither an artist nor a role', { idempotency_key: IDEMPOTENCY_KEY, email: 'x@example.test' }],
+  ['an array', []],
+]) {
+  let calls = 0;
+  const response = await handleTeamAdminRequest(
+    new Request(`${CRM_ORIGIN}/v1/staff/invite`, {
+      method: 'POST',
+      headers: { origin: CRM_ORIGIN, authorization: OWNER_BEARER, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+    env,
+    { fetcher: async () => { calls += 1; } },
+  );
+  assert.equal(response.status, 400, `ambiguous body reaches neither handler: ${label}`);
+  assert.equal(calls, 0, `and nothing reached the database: ${label}`);
+}
+
+{
+  // An owner invitation on the owner path still behaves exactly as before.
+  const seen = [];
+  const fetcher = async (url) => {
+    seen.push(url);
+    if (url.endsWith('/rest/v1/rpc/begin_staff_invite')) {
+      return jsonResponse({
+        invite_request_id: INVITE_ID,
+        email_normalized: 'team.member@example.test',
+        status: 'pending',
+        role: 'booking_manager',
+        idempotent_replay: false,
+      });
+    }
+    if (url.startsWith(`${SUPABASE_ORIGIN}/auth/v1/invite`)) return jsonResponse({});
+    if (url.endsWith('/rest/v1/rpc/finalize_staff_invite')) {
+      return jsonResponse({
+        invite_request_id: INVITE_ID,
+        status: 'provisioned',
+        profile_id: PROFILE_ID,
+        role: 'booking_manager',
+        is_active: true,
+        idempotent_replay: false,
+      });
+    }
+    throw new Error(`unexpected call ${url}`);
+  };
+
+  const response = await handleTeamAdminRequest(request(), env, { fetcher });
+  assert.equal(response.status, 200);
+  assert.equal(seen.some((url) => url.includes('begin_artist_invite')), false);
+}
+
 console.log('Team admin Worker tests passed');

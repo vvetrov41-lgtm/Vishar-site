@@ -388,3 +388,33 @@ still performs no authorization of its own: it forwards the caller's JWT to the
 two RPCs and uses its secret key for exactly one thing, the Auth call that
 mints the identity. If a future reviewer finds this Worker deciding who may
 invite, the design has drifted.
+
+### The edge rule, and why the two doors share one address
+
+`team.vishartattoo.com` carries a Cloudflare WAF rule that answers `403` to
+every path except `/v1/staff/invite`. It is owned in the dashboard, not in this
+repository, and the deployment token has no Rulesets permission — the same
+limitation recorded in `CLICK-PATH-AUDIT-2026-08-03.md`. Probed after
+deploying the Worker:
+
+```
+POST /v1/staff/invite    → {"error":"owner_access_required"}   (reaches the Worker)
+POST /v1/artist/invite   → 403, Cloudflare "Attention Required"
+POST /v1/nope            → 403, Cloudflare "Attention Required"
+```
+
+So `/v1/artist/invite` exists in the Worker and is unreachable in production.
+Rather than ship a feature nobody can use, the Worker accepts a tenant
+invitation on the permitted path as well and routes on the shape of the body:
+an `artist_id` with no `role` and no `memberships` is a tenant invitation, a
+`role` or `memberships` with no `artist_id` is an owner invitation, and
+anything that is both or neither is refused before it reaches either handler.
+
+The two handlers stay separate, and neither performs any authorization — the
+database still decides, which is the property that matters. What is lost is the
+clean separation of addresses the spec preferred.
+
+**Worth fixing properly.** Widening the WAF rule to allow
+`/v1/artist/invite` makes the client change one line and lets the body
+discriminator go. That needs either a dashboard edit or a Rulesets permission
+on `CRM_PRODUCTION_CLOUDFLARE_API_TOKEN`.

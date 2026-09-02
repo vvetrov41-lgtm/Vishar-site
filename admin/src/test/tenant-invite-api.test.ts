@@ -10,7 +10,9 @@ import { createApi } from '../lib/api';
  */
 
 const TEAM_URL = 'https://team-api.vishartattoo.com/v1/staff/invite';
-const ARTIST_URL = 'https://team-api.vishartattoo.com/v1/artist/invite';
+// The Worker routes on the body shape because a zone WAF rule permits only
+// this one path. See the comment in api.ts.
+const ARTIST_URL = TEAM_URL;
 
 function client(rpcResult: unknown = { can_invite: true }) {
   return {
@@ -36,7 +38,7 @@ const invite = {
 };
 
 describe('tenant-scoped teammate invitation', () => {
-  it('posts to the artist endpoint derived from the permitted team endpoint', async () => {
+  it('posts to the one endpoint the edge permits', async () => {
     const fetcher = vi.fn(async (url: any) => {
       expect(String(url)).toBe(ARTIST_URL);
       return new Response(JSON.stringify({ delivery: 'sent', idempotent_replay: false }), {
