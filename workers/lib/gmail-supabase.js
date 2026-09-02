@@ -10,6 +10,11 @@ const BACKEND_RPCS = new Set([
   'service_disable_gmail_integration',
   'service_upsert_gmail_thread_context',
   'service_get_gmail_thread_context',
+  'service_list_gmail_link_research_mailboxes',
+  'service_enqueue_client_link_research',
+  'claim_client_link_research',
+  'record_client_link_research_result',
+  'service_list_client_link_research',
   'claim_email_outbox',
   'record_email_outbox_result',
 ]);
