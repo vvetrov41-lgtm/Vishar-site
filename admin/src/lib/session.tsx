@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from 'react';
 import { apiMessage, createApi, type Api, type CrmClient } from './api';
+import { createAccountApi, type AccountApi, type AccountOverview } from './account-api';
 import { createAppointmentApi, type AppointmentApi } from './appointment-api';
 import { createAvailabilityApi, type AvailabilityApi } from './availability-api';
 import {
@@ -66,7 +67,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi;
+export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -76,6 +77,11 @@ export interface SessionValue {
   state: AccessState;
   profile: Profile | null;
   memberships: ArtistMembership[];
+  /** The server's answer about this account: the user-facing role, whether it
+   *  founded its own tenant, and whether it may delete itself. Null while it
+   *  is loading, and after a read that failed - callers fall back to the
+   *  authorization role rather than guessing a nicer answer. */
+  account: AccountOverview | null;
   api: CrmApi | null;
   error: string | null;
   /** The address the current session belongs to, so the "check your email"
@@ -113,6 +119,7 @@ export function SessionProvider({
   const [state, setState] = useState<AccessState>(client ? 'loading' : 'unconfigured');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [memberships, setMemberships] = useState<ArtistMembership[]>([]);
+  const [account, setAccount] = useState<AccountOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [inviteMode, setInviteMode] = useState(staffInviteMode);
@@ -121,6 +128,7 @@ export function SessionProvider({
     if (!client) return null;
     return Object.assign(
       createApi(client, { teamInviteUrl }),
+      createAccountApi(client),
       createAppointmentApi(client),
       createAvailabilityApi(client),
       createCalendarConnectionsApi(client),
@@ -145,6 +153,7 @@ export function SessionProvider({
   const load = useCallback(async () => {
     if (!client || !api) {
       setMemberships([]);
+      setAccount(null);
       setState('unconfigured');
       return;
     }
@@ -155,6 +164,7 @@ export function SessionProvider({
     if (!userId) {
       setProfile(null);
       setMemberships([]);
+      setAccount(null);
       setEmail(null);
       setState('signed_out');
       return;
@@ -166,6 +176,7 @@ export function SessionProvider({
       if (!found) {
         setProfile(null);
         setMemberships([]);
+        setAccount(null);
 
         // No CRM identity. Three different situations look identical from
         // here, and telling them apart is the whole of the signup gate.
@@ -187,6 +198,7 @@ export function SessionProvider({
       setProfile(found);
       if (!found.is_active) {
         setMemberships([]);
+        setAccount(null);
         setState('deactivated');
         return;
       }
@@ -212,6 +224,15 @@ export function SessionProvider({
         setMemberships([]);
       }
 
+      try {
+        setAccount(await api.accountOverview());
+      } catch {
+        // Only a label and a Danger zone depend on this. A failure leaves the
+        // interface saying what it said before the server was asked - the
+        // authorization role - rather than guessing at a friendlier answer.
+        setAccount(null);
+      }
+
       setState(inviteMode ? 'password_setup' : 'active');
     } catch {
       // A profile that cannot be read is treated as no access rather than as a
@@ -219,6 +240,7 @@ export function SessionProvider({
       // who you are" is that you are not staff.
       setProfile(null);
       setMemberships([]);
+      setAccount(null);
       setState('no_profile');
     }
   }, [client, api, inviteMode]);
@@ -252,6 +274,7 @@ export function SessionProvider({
     }
     setProfile(null);
     setMemberships([]);
+    setAccount(null);
     setEmail(null);
     setState('signed_out');
   }, [client, inviteMode]);
@@ -284,6 +307,7 @@ export function SessionProvider({
     setError(null);
     setProfile(null);
     setMemberships([]);
+    setAccount(null);
     setState('signed_out');
   }, [client, inviteMode, profile, state]);
 
@@ -364,6 +388,7 @@ export function SessionProvider({
       state,
       profile,
       memberships,
+      account,
       api,
       error,
       email,
@@ -376,7 +401,7 @@ export function SessionProvider({
       refresh: load,
     }),
     [
-      state, profile, memberships, api, error, email,
+      state, profile, memberships, account, api, error, email,
       signIn, signOut, completePasswordSetup,
       signUp, resendVerification, completeArtistSetup, load,
     ]

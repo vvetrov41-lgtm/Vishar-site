@@ -405,6 +405,13 @@ export interface FakeClientOptions {
    */
   membershipOverrides?: ArtistMembership[];
   teamInviteUrl?: string;
+  /** Fails `account_overview`, so the interface has to fall back to the
+   *  authorization role rather than inventing a friendlier one. */
+  failAccountOverview?: boolean;
+  /** Marks this account as a self-service founder, which is what turns the
+   *  Danger zone into "delete the whole tenant" and what `0130` records in
+   *  `crm_private.self_service_accounts`. */
+  selfServiceFounder?: boolean;
   /**
    * Control-plane fixtures. Absent by default so every existing test keeps
    * seeing an installation with no organizations, which is what
@@ -689,6 +696,27 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   const appointmentConflicts = options.appointmentConflicts ?? [];
   const availabilityBlocks = options.availabilityBlocks ?? [];
   const reconciliationCandidates = options.reconciliationCandidates ?? [];
+
+  /**
+   * `crm_private.user_facing_role`, modelled rather than stubbed.
+   *
+   * The whole point of the classification is that it comes from membership
+   * rows, so a fake that returned a fixed string would let a component test
+   * pass while the derivation was wrong. This is the same ordering the
+   * migration applies: operator first, then the artist seat, then a manager
+   * seat, then read-only, then the global role.
+   */
+  function userFacingRole(): string {
+    if (!profile?.is_active) return 'none';
+    if (profile.role === 'owner') return 'operator';
+    const levels = (options.membershipOverrides ?? MEMBERSHIPS)
+      .filter((membership) => membership.profile_id === profile.id && membership.is_active)
+      .map((membership) => membership.access_level as string);
+    if (levels.includes('artist') || levels.includes('owner')) return 'artist';
+    if (levels.includes('manager')) return 'booking_manager';
+    if (levels.includes('read_only')) return 'read_only';
+    return profile.role === 'booking_manager' ? 'booking_manager' : 'read_only';
+  }
 
   /**
    * Mirrors the real `artist_memberships` RLS policy
@@ -1020,6 +1048,55 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       if (name === 'update_workspace' || name === 'update_artist') return { data: true, error: null };
       if (name === 'apply_workspace_automation_defaults_to_artist') return { data: 0, error: null };
       if (name === 'list_profiles') return { data: Object.values(PROFILES), error: null };
+      if (name === 'account_overview') {
+        if (options.failAccountOverview) {
+          return { data: null, error: { code: 'PGRST000', message: 'boom' } };
+        }
+        if (!profile?.is_active) return { data: null, error: DENIED };
+        const founder = options.selfServiceFounder === true;
+        const blocked = profile.role === 'owner'
+          ? 'installation_owner'
+          : null;
+        return {
+          data: {
+            profile_id: profile.id,
+            email: profile.email,
+            display_name: profile.display_name,
+            global_role: profile.role,
+            user_role: userFacingRole(),
+            is_self_service_founder: founder,
+            owned_artist_id: founder ? VLADIMIR_ARTIST_ID : null,
+            owned_workspace_id: founder ? 'w1111111-1111-4111-8111-111111111111' : null,
+            can_delete_account: blocked === null,
+            delete_blocked_reason: blocked,
+          },
+          error: null,
+        };
+      }
+      if (name === 'set_my_display_name') {
+        const next = String((args as any)?.p_display_name ?? '').trim();
+        if (!next) return { data: null, error: { code: '22023', message: 'a name is required' } };
+        return { data: { display_name: next }, error: null };
+      }
+      if (name === 'delete_my_account') {
+        // The server compares the confirmation with this account's own
+        // address, so the fake does too: a component test must not be able to
+        // delete an account by typing anything at all.
+        const confirmation = String((args as any)?.p_confirmation ?? '').trim().toLowerCase();
+        if (!profile || confirmation !== profile.email.toLowerCase()) {
+          return { data: null, error: { code: '22023', message: 'type your email address exactly to confirm' } };
+        }
+        if (profile.role === 'owner') return { data: null, error: DENIED };
+        return {
+          data: {
+            deleted: true,
+            scope: options.selfServiceFounder ? 'tenant' : 'membership',
+            artist_id: null,
+            workspace_id: null,
+          },
+          error: null,
+        };
+      }
       if (name === 'list_team_memberships') return { data: MEMBERSHIPS, error: null };
       if (name === 'list_assignable_profiles') {
         return { data: [PROFILES.owner, PROFILES.booking_manager].map((p) => ({ id: p.id, display_name: p.display_name, role: p.role })), error: null };
