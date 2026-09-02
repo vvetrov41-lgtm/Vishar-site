@@ -1,0 +1,217 @@
+name: CRM host split operator
+
+# Moves the CRM from one Access-gated host to two: a public
+# `crm.vishartattoo.com` and an operator `app.vishartattoo.com` that keeps the
+# protection `crm` has today.
+#
+# Staged on purpose. Each stage is dispatched separately, mutates one thing,
+# and reads it back. The ordering constraint the whole exercise exists to
+# protect - the operator environment is never reachable without Access, and
+# `crm` keeps its protection until the operator host is deployed and verified -
+# is enforced by the preconditions in each stage rather than by whoever is
+# running it remembering the order.
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact release/private-crm-rc branch HEAD SHA approved for this run
+        required: true
+        type: string
+      stage:
+        description: Which step of the split to perform
+        required: true
+        type: choice
+        options:
+          - inspect-access
+          - protect-internal
+          - create-internal-pages
+          - deploy-internal
+          - verify-internal
+          - open-public
+          - verify-public
+      approval_phrase:
+        description: Required for every mutating stage
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-host-split-operator
+  cancel-in-progress: false
+
+jobs:
+  host-split:
+    name: CRM host split
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ZONE: vishartattoo.com
+      PUBLIC_HOST: crm.vishartattoo.com
+      PUBLIC_PAGES_PROJECT: vishar-crm-production
+      PUBLIC_PAGES_SUBDOMAIN: vishar-crm-production.pages.dev
+      INTERNAL_HOST: app.vishartattoo.com
+      INTERNAL_PAGES_PROJECT: vishar-crm-internal
+      INTERNAL_PAGES_SUBDOMAIN: vishar-crm-internal.pages.dev
+      STAGE: ${{ inputs.stage }}
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      VITE_MONZO_CONNECTOR_ORIGIN: https://monzo.vishartattoo.com
+      VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
+
+    steps:
+      - name: Verify exact release branch, gate and target
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *)
+              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
+              exit 1
+              ;;
+          esac
+          [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
+            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+            exit 1
+          }
+
+          if [ "$STAGE" != 'inspect-access' ] && [ "$STAGE" != 'verify-internal' ] && [ "$STAGE" != 'verify-public' ]; then
+            [ "$DEPLOY_ENABLED" = 'true' ] || {
+              echo 'CRM_PRODUCTION_DEPLOY_ENABLED is not explicitly enabled.' >&2
+              exit 1
+            }
+            [ "$APPROVAL_PHRASE" = "SPLIT_CRM_HOSTS" ] || {
+              echo 'The exact approval phrase is required for a mutating stage.' >&2
+              exit 1
+            }
+          fi
+
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          case "$VITE_SUPABASE_URL" in https://*.supabase.co) ;; *) exit 1 ;; esac
+          case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+
+      - name: Checkout exact approved SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+
+      - name: Verify checkout and canonical lineage
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor "$APPROVED_SHA" \
+            "$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')" \
+            || git rev-parse --verify "$APPROVED_SHA" >/dev/null
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run the requested stage
+        shell: bash
+        env:
+          STAGE: ${{ inputs.stage }}
+        run: node scripts/crm-host-split.mjs "$STAGE"
+
+      - name: Install locked CRM dependencies
+        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        working-directory: admin
+        run: npm ci
+
+      - name: Build the CRM for this stage's surface
+        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        working-directory: admin
+        env:
+          VITE_CRM_SURFACE: ${{ inputs.stage == 'deploy-internal' && 'internal' || 'public' }}
+        run: |
+          set -euo pipefail
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify the built bundle carries the intended surface
+        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+          if [ "$STAGE" = 'deploy-internal' ]; then
+            grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist
+          else
+            # The public build must not carry the operator surface. Vite inlines
+            # the value, so its presence would mean this deployment is about to
+            # put the installation's own administration on the open web.
+            if grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist; then
+              echo 'The public build carries the internal surface. Refusing.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Install pinned deployment tooling
+        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        run: npm ci
+
+      - name: Deploy the operator build to the internal Pages project
+        if: ${{ inputs.stage == 'deploy-internal' }}
+        working-directory: admin
+        run: >-
+          ../node_modules/.bin/wrangler pages deploy dist
+          --project-name "$INTERNAL_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$GITHUB_SHA"
+          --commit-dirty=false
+
+      - name: Deploy the public build to the public Pages project
+        if: ${{ inputs.stage == 'open-public' }}
+        working-directory: admin
+        run: >-
+          ../node_modules/.bin/wrangler pages deploy dist
+          --project-name "$PUBLIC_PAGES_PROJECT"
+          --branch production
+          --commit-hash "$GITHUB_SHA"
+          --commit-dirty=false
+
+      - name: Complete the stage and read production back
+        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        shell: bash
+        run: node scripts/crm-host-split.mjs "${STAGE}-readback"
+
+      - name: Stage summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### CRM host split - \`$STAGE\`"
+            echo
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Public host: \`$PUBLIC_HOST\` (project \`$PUBLIC_PAGES_PROJECT\`)"
+            echo "- Operator host: \`$INTERNAL_HOST\` (project \`$INTERNAL_PAGES_PROJECT\`)"
+            echo '- Supabase migration / Worker / public site deploy commands: none'
+          } >> "$GITHUB_STEP_SUMMARY"
