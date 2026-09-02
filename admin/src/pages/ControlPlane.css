@@ -45,9 +45,16 @@
 }
 .ws-card-title:hover, .artist-row-title:hover { color: var(--accent); }
 
+/* `align-items: center`, not the flex default.
+   Stretch made every label badge in this row as tall as the tallest thing next
+   to it - and next to it is `Manage`, which carries a 44px tap target on a
+   phone. A two-word label inflated to 44px is a lozenge the size of a button
+   that does nothing when pressed. Centred, the row reads as what it is: one
+   control and the labels beside it. */
 .ws-card-badges, .artist-row-badges {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
 }
 
@@ -90,8 +97,12 @@
 
 .inline-form { display: grid; gap: 10px; align-items: end; }
 
+/* Its button is a button, the same shape and size as Save two rows above it.
+   The grid was stretching it edge to edge, so one card offered a compact pill
+   and a full-bleed slab and looked like two different screens. */
 .danger-zone {
   display: grid;
+  justify-items: start;
   gap: 8px;
   margin-top: 16px;
   padding-top: 16px;

@@ -379,11 +379,16 @@ a { color: inherit; }
 }
 /* A badge that navigates is a tap target, not decoration. Span badges keep
    their compact size; only the interactive ones grow, and only where the
-   pointer is a finger. */
+   pointer is a finger.
+
+   No underline: the pill's own border is the affordance here, and the
+   underline made a chip that navigates look like a different species from the
+   chip beside it rather than like its neighbour with somewhere to go. */
 a.badge, button.badge {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
+  text-decoration: none;
 }
 @media (pointer: coarse) {
   a.badge, button.badge { min-height: var(--tap); }
