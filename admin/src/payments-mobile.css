@@ -1,0 +1,288 @@
+/* Daily payment work is deliberately denser than the rest of the CRM.
+   The page is used from an iPhone while talking to clients, so exceptions and
+   next actions stay visible while history and setup use progressive disclosure. */
+
+.payments-page {
+  gap: 12px;
+}
+
+.payments-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.payments-stat {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.payments-stat-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.25;
+}
+
+.payments-stat strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 1.55rem;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.payments-stat.is-action strong {
+  color: var(--warn);
+}
+
+.payments-work-panel .panel-heading {
+  margin-bottom: 8px;
+}
+
+.payments-work-panel .panel-heading p {
+  margin-bottom: 0;
+}
+
+.payments-help {
+  margin: 2px 0 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.payments-help summary,
+.payments-special-action > summary,
+.payments-setup-inline > summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.payments-help summary::-webkit-details-marker,
+.payments-special-action > summary::-webkit-details-marker,
+.payments-setup-inline > summary::-webkit-details-marker {
+  display: none;
+}
+
+.payments-help summary::after,
+.payments-special-action > summary::after,
+.payments-setup-inline > summary::after {
+  content: '+';
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.payments-help[open] summary::after,
+.payments-special-action[open] > summary::after,
+.payments-setup-inline[open] > summary::after {
+  content: '−';
+}
+
+.payments-help .notice {
+  margin-top: 6px;
+}
+
+.payments-list {
+  gap: 8px;
+}
+
+.payment-row {
+  gap: 10px;
+}
+
+.payment-row-compact {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.payment-row-compact .muted {
+  font-size: 0.76rem;
+}
+
+.payment-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.payment-status-pill.ok {
+  border-color: color-mix(in srgb, var(--ok) 42%, transparent);
+  color: var(--ok);
+}
+
+.payments-more {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.payments-session-list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.payments-session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.payments-session-row:last-child {
+  border-bottom: 0;
+}
+
+.payments-session-copy {
+  min-width: 0;
+}
+
+.payments-session-copy strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payments-session-meta {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.payments-session-action {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 7px 11px;
+  white-space: nowrap;
+}
+
+.payments-special-panel,
+.payments-settings-panel {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.payments-special-action > summary,
+.payments-setup-inline > summary {
+  font-weight: 650;
+}
+
+.payments-summary-copy {
+  min-width: 0;
+}
+
+.payments-summary-copy strong,
+.payments-summary-copy small {
+  display: block;
+}
+
+.payments-summary-copy small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 400;
+}
+
+.payments-special-action > .payments-disclosure-body,
+.payments-setup-inline > .payments-disclosure-body {
+  padding-top: 10px;
+}
+
+.deposit-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.66);
+}
+
+.deposit-sheet {
+  width: min(520px, 100%);
+  max-height: min(82vh, 660px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  background: var(--surface-overlay);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.5);
+}
+
+.deposit-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.deposit-sheet h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.deposit-sheet-client {
+  margin: 14px 0 2px;
+  font-weight: 700;
+}
+
+.deposit-sheet-meta {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.deposit-sheet-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.deposit-sheet-actions button {
+  width: 100%;
+}
+
+.deposit-sheet-close {
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+@media (min-width: 700px) {
+  .payments-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .payments-session-row {
+    padding: 12px 14px;
+  }
+}
