@@ -2,14 +2,14 @@
 
 Only upload photographs that are explicitly confirmed as healed. Do not place same-day or fresh-session images in this folder.
 
-Use consecutive zero-padded JPG names:
+Use zero-padded JPG names:
 
 - `01.jpg`
 - `02.jpg`
 - `03.jpg`
 - ...
 
-Keep numbering consecutive with no gaps. The page gallery discovers files in order and stops at the first missing number.
+The gallery is manifest-driven. Every image that should appear on the page must have a matching two-digit key in `metadata.json`. Files without a metadata key are not rendered.
 
 ## Source requirements
 
@@ -20,12 +20,15 @@ Keep numbering consecutive with no gaps. The page gallery discovers files in ord
 - avoid aggressive editing that materially changes contrast or colour
 - where known, record how long the tattoo had been healed in `metadata.json`
 
-## Metadata
+## Metadata manifest
 
 Example:
 
 ```json
 {
+  "_gallery": {
+    "thumbnailWidths": [320, 480, 720, 960]
+  },
   "01": {
     "alt": "Healed colour realism tattoo by Vladimir Vishar",
     "caption": "Healed 8 months",
@@ -34,4 +37,4 @@ Example:
 }
 ```
 
-If a healing interval is unknown, leave it out rather than guessing.
+`_gallery.thumbnailWidths` declares which responsive WebP thumbnail sizes exist for every published image. If it is omitted, the page safely falls back to the JPG source. If a healing interval is unknown, leave it out rather than guessing.
