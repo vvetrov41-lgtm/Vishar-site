@@ -345,8 +345,8 @@ function publicArtistInviteResult(value) {
   return { delivery: 'sent', idempotent_replay: value.idempotent_replay === true };
 }
 
-async function handleArtistInvite(request, config, requestOrigin, bearer, fetcher) {
-  const invite = validateArtistInviteRequest(await boundedJson(request));
+async function handleArtistInvite(body, config, requestOrigin, bearer, fetcher) {
+  const invite = validateArtistInviteRequest(body);
 
   const prepared = validatedArtistState(await rpc(fetcher, config, bearer, 'begin_artist_invite', {
     p_idempotency_key: invite.idempotency_key,
@@ -560,16 +560,57 @@ export async function handleTeamAdminRequest(request, env, { fetcher = fetch } =
   const bearer = request.headers.get('authorization') || '';
   if (!BEARER_PATTERN.test(bearer)) return json({ error: 'owner_access_required' }, 401, requestOrigin);
 
-  if (isArtistPath) {
+  let body;
+  try {
+    body = await boundedJson(request);
+  } catch (error) {
+    return safeError(error, requestOrigin);
+  }
+
+  // Which door this is.
+  //
+  // Path would be enough on its own, and `/v1/artist/invite` is the intended
+  // address. It is not reachable in production: a zone WAF rule - owned in the
+  // Cloudflare dashboard, not in this repository, and not editable by the
+  // deployment token - answers 403 to every path on this hostname except
+  // `/v1/staff/invite`. Leaving the feature unreachable until somebody widens
+  // that rule would be worse than accepting it on the permitted path, so both
+  // work and the shape of the body decides.
+  //
+  // The discriminator is deliberately strict rather than clever. A tenant
+  // invitation names one artist and carries neither a role nor a membership
+  // list; an owner invitation carries both and names no artist. Anything that
+  // is both or neither is refused here, so nothing can be smuggled from one
+  // story into the other by leaving a field out. Each handler still validates
+  // its own key set, and neither performs any authorization: the database
+  // decides, as it always has.
+  const looksTenantScoped = Boolean(body)
+    && typeof body === 'object'
+    && !Array.isArray(body)
+    && 'artist_id' in body
+    && !('role' in body)
+    && !('memberships' in body);
+  const looksOwnerScoped = Boolean(body)
+    && typeof body === 'object'
+    && !Array.isArray(body)
+    && ('role' in body || 'memberships' in body)
+    && !('artist_id' in body);
+
+  if (isArtistPath && !looksTenantScoped) return json({ error: 'invalid_invite' }, 400, requestOrigin);
+  if (isOwnerPath && !looksTenantScoped && !looksOwnerScoped) {
+    return json({ error: 'invalid_invite' }, 400, requestOrigin);
+  }
+
+  if (looksTenantScoped) {
     try {
-      return await handleArtistInvite(request, config, requestOrigin, bearer, fetcher);
+      return await handleArtistInvite(body, config, requestOrigin, bearer, fetcher);
     } catch (error) {
       return safeError(error, requestOrigin);
     }
   }
 
   try {
-    const invite = validateRequest(await boundedJson(request));
+    const invite = validateRequest(body);
     let prepared;
     try {
       prepared = validatedState(await rpc(fetcher, config, bearer, 'begin_staff_invite', {

@@ -130,13 +130,15 @@ export interface ApiOptions {
 
 export function createApi(client: CrmClient, options: ApiOptions = {}) {
   const teamInviteUrl = options.teamInviteUrl ?? '';
-  // The tenant-scoped sibling of the owner endpoint. Derived rather than
-  // configured: `readTeamInviteUrl` already pinned the origin and the path, so
-  // swapping the last segment cannot reach a host that was not permitted, and
-  // there is no second environment variable to get wrong.
-  const artistInviteUrl = teamInviteUrl
-    ? teamInviteUrl.replace(/\/v1\/staff\/invite$/, '/v1/artist/invite')
-    : '';
+  // The tenant-scoped invitation goes to the same endpoint as the owner one.
+  //
+  // The Worker exposes `/v1/artist/invite` and would prefer to be called there,
+  // but a zone WAF rule answers 403 to every path on that hostname except
+  // `/v1/staff/invite`, and that rule lives in the Cloudflare dashboard rather
+  // than in this repository. The Worker therefore routes on the shape of the
+  // body, and the browser sends to the address it is allowed to reach. When the
+  // rule is widened, this becomes a one-line change.
+  const artistInviteUrl = teamInviteUrl;
   const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
 
   /**
