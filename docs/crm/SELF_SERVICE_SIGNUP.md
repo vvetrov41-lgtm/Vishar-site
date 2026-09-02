@@ -77,7 +77,7 @@ it could not use.
 | Confirmed address required | `bootstrap_artist_account`, from `auth.users.email_confirmed_at` |
 | One tenant per account | primary key on `crm_private.self_service_accounts` |
 | Rolling hourly cap | `max_signups_per_hour`, default 20 |
-| Founder cap | `max_workspaces_per_founder`, default 3 |
+| Founder cap | `max_workspaces_per_founder`, default 3, counted whether or not each organization is switched on |
 | Audit | `signup.tenant_created`, `signup.availability_changed` |
 
 Every one of these is server-side. The browser hides the signup link when the policy read says the
@@ -93,6 +93,12 @@ cap lives inside `can_found_workspace()` rather than inside `create_workspace`, 
 the button disappears at the same moment the database starts refusing. It applies only to accounts
 in the ledger, so no invited administrator and not the installation owner is affected.
 
+As first written it counted only *active* organizations, which made it no cap at all: a founder can
+deactivate their own artist and then their own organization through the ordinary lifecycle RPCs,
+and 0089 keeps their owner membership row alive under every path, so they could found another and
+repeat. Migration 0131 counts the organizations an account administers whether or not they are
+switched on.
+
 Supabase's own project-level protections - CAPTCHA on signup, leaked-password checking, Auth rate
 limits - are configured on the Supabase project, not in this repository. They are worth having and
 they are not what this design depends on.
@@ -105,12 +111,28 @@ Nothing here introduces a table that holds tenant data, so isolation is the plat
 isolation, not a new one. The new artist holds exactly one `artist_memberships` row, and every
 artist-scoped read and write in the CRM resolves through `crm_private.has_artist_capability`.
 
+One thing did not come for free, and it is worth stating rather than burying. Migration 0089's
+people directory - `public.list_directory_profiles()` - returned every active profile in the
+installation to anybody holding an artist-level membership. That was sound while everybody holding
+one had arrived by invitation; public signup broke the premise without anything downstream
+noticing, and a stranger who confirmed an email address could read the address book. Migration
+0131 scopes the directory for ledger accounts to the people they already share an artist or an
+organization with, and leaves every invited account's view exactly as it was. The installation
+owner is excluded from that test: migration 0015 gives an active owner a membership on every
+artist and 0075 turns that into ownership of every solo workspace, so the owner shares both with
+every tenant automatically, and a first attempt at this fix still disclosed exactly the person it
+was written to protect. Bringing a new person
+into a self-service tenant is the invitation flow's job: it mints an identity, while the directory
+picks an existing one.
+
 `supabase/tests/267_self_service_signup.sql` proves it from the newcomer's own session: the
 incumbent artist's enquiry, project and client are invisible; the incumbent artist cannot even be
 enumerated; `artist_control_plane_context` and `artist_onboarding_state` refuse; `seat_artist_owner`
 and `grant_workspace_artist_membership` refuse; `update_artist` refuses; `is_owner()` is false;
 `set_self_service_signup` refuses; `bootstrap_owner` is not reachable; direct writes to
 `public.artists` are refused by table privilege; `crm_private.self_service_settings` is unreadable.
+`supabase/tests/268_self_service_directory_and_cap.sql` adds the directory boundary and the
+allowance that deactivation cannot reclaim.
 
 ---
 
