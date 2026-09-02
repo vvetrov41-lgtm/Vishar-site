@@ -1,0 +1,289 @@
+name: Cloudflare gateway production rollout
+
+# Deploys the private service-bound Cloudflare control gateway from an approved
+# canonical Vishar CRM SHA. The gateway has no public route and keeps its
+# CLOUDFLARE_API_TOKEN exclusively as a pre-existing Cloudflare Worker secret.
+#
+# Admission uses the same two-key release pattern as other production Workers:
+# a reserved release branch first points at the canonical SHA, then a same-tree
+# no-op child commit triggers this workflow. The parent is the immutable source
+# that is validated, deployed and read back.
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-cloudflare-gateway'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: cloudflare-gateway-production-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      SOURCE_SHA: ${{ github.event.before }}
+      WORKER_NAME: vishar-cloudflare-gateway
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Verify exact release trigger and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-cloudflare-gateway) ;;
+            *)
+              echo 'This workflow may run only from a release/private-crm-rc*-cloudflare-gateway branch.' >&2
+              exit 1
+              ;;
+          esac
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$GITHUB_SHA" != "$APPROVED_SHA" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+      - name: Checkout exact approved canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical lineage and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Approved SHA is no longer the canonical Vishar CRM head.' >&2
+            exit 1
+          }
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+            'WhatsApp production onboarding validation'
+          )
+          for attempt in $(seq 1 60); do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+              --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+              | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+            all_green=true
+            for workflow in "${required_workflows[@]}"; do
+              if ! jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+                any(.[]; .name == $name and .head_sha == $sha
+                         and .status == "completed" and .conclusion == "success")
+              ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null; then
+                all_green=false
+              fi
+            done
+            if [ "$all_green" = true ]; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo 'Required exact-head CI did not become green within the bounded admission window.' >&2
+              jq . "$RUNNER_TEMP/exact-head-runs.json" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate private gateway source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          node scripts/test-cloudflare-gateway.mjs
+          node scripts/test-cloudflare-control-config.mjs
+          npm run check:cloudflare-gateway-bundle
+          npm run scan:secrets
+          grep -Fq 'name = "vishar-cloudflare-gateway"' wrangler.cloudflare-gateway.production.toml
+          grep -Fq 'workers_dev = false' wrangler.cloudflare-gateway.production.toml
+          grep -Fq 'preview_urls = false' wrangler.cloudflare-gateway.production.toml
+          grep -Fq 'required = ["CLOUDFLARE_API_TOKEN"]' wrangler.cloudflare-gateway.production.toml
+          ! grep -Eq '^routes\s*=' wrangler.cloudflare-gateway.production.toml
+          ! grep -Eq 'custom_domain\s*=\s*true' wrangler.cloudflare-gateway.production.toml
+
+      - name: Fresh read-only Cloudflare preflight
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-before.json" \
+            --summary "$RUNNER_TEMP/cloudflare-before.md"
+          cat "$RUNNER_TEMP/cloudflare-before.md" >> "$GITHUB_STEP_SUMMARY"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) throw new Error('Private Cloudflare gateway is missing; bootstrap it before this rollout path is used');
+          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) {
+            throw new Error('Cloudflare gateway has unexpected workers.dev or preview exposure');
+          }
+          if (!(worker.secret_names || []).includes('CLOUDFLARE_API_TOKEN')) {
+            throw new Error('CLOUDFLARE_API_TOKEN Worker secret is missing');
+          }
+          const domains = data.worker_custom_domains.filter((row) => row.service === process.env.WORKER_NAME);
+          if (domains.length !== 0) throw new Error('Private Cloudflare gateway unexpectedly has a Custom Domain');
+          const routes = data.worker_routes.filter((row) => row.script === process.env.WORKER_NAME);
+          if (routes.length !== 0) throw new Error('Private Cloudflare gateway unexpectedly has a public Worker route');
+          const beforeVersion = worker.active_deployment?.versions?.[0]?.version_id;
+          if (typeof beforeVersion !== 'string' || !beforeVersion) {
+            throw new Error('Could not resolve current gateway version; refusing mutation without a rollback target');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${beforeVersion}\n`);
+          NODE
+
+      - name: Re-check canonical immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Canonical Vishar CRM head moved after admission; refusing stale gateway deployment.' >&2
+            exit 1
+          }
+          trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || {
+            echo 'Gateway release branch moved after admission; refusing production mutation.' >&2
+            exit 1
+          }
+
+      - name: Deploy private Cloudflare gateway
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy \
+            --config wrangler.cloudflare-gateway.production.toml \
+            --name "$WORKER_NAME" \
+            --message "Vishar Cloudflare gateway rollout $APPROVED_SHA"
+
+      - name: Production readback and acceptance
+        id: readback
+        shell: bash
+        env:
+          BEFORE_VERSION: ${{ steps.preflight.outputs.before_version }}
+        run: |
+          set -euo pipefail
+          success=false
+          for attempt in $(seq 1 20); do
+            if node scripts/cloudflare-production-inventory.mjs \
+              --output "$RUNNER_TEMP/cloudflare-after.json" \
+              --summary "$RUNNER_TEMP/cloudflare-after.md"; then
+              if node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) process.exit(1);
+          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) process.exit(1);
+          if (!(worker.secret_names || []).includes('CLOUDFLARE_API_TOKEN')) process.exit(1);
+          if (data.worker_custom_domains.some((row) => row.service === process.env.WORKER_NAME)) process.exit(1);
+          if (data.worker_routes.some((row) => row.script === process.env.WORKER_NAME)) process.exit(1);
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          if (bindings.get('VISHAR_ENVIRONMENT')?.value !== 'production') process.exit(1);
+          const afterVersion = worker.active_deployment?.versions?.[0]?.version_id;
+          if (!afterVersion || afterVersion === process.env.BEFORE_VERSION) process.exit(1);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `after_version=${afterVersion}\n`);
+          NODE
+              then
+                success=true
+                break
+              fi
+            fi
+            sleep 6
+          done
+          [ "$success" = true ] || {
+            echo 'Cloudflare gateway readback did not converge on the expected private boundary.' >&2
+            exit 1
+          }
+          cat "$RUNNER_TEMP/cloudflare-after.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized rollout evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-gateway-rollout-${{ env.APPROVED_SHA }}
+          path: |
+            ${{ runner.temp }}/cloudflare-before.json
+            ${{ runner.temp }}/cloudflare-after.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Roll back gateway if deployment or readback fails
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.readback.outcome == 'failure')
+        shell: bash
+        env:
+          BEFORE_VERSION: ${{ steps.preflight.outputs.before_version }}
+        run: |
+          set -euo pipefail
+          [ -n "$BEFORE_VERSION" ]
+          npx wrangler rollback "$BEFORE_VERSION" --name "$WORKER_NAME" --yes \
+            --message "Automatic rollback: Cloudflare gateway rollout failed for $APPROVED_SHA"
+
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-rollback.json" \
+            --summary "$RUNNER_TEMP/cloudflare-rollback.md"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-rollback.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) throw new Error('Cloudflare gateway is missing after rollback');
+          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) throw new Error('Rollback exposed the gateway');
+          if (!(worker.secret_names || []).includes('CLOUDFLARE_API_TOKEN')) throw new Error('Rollback lost the gateway secret binding');
+          if (data.worker_custom_domains.some((row) => row.service === process.env.WORKER_NAME)) throw new Error('Rollback left a Custom Domain on the gateway');
+          if (data.worker_routes.some((row) => row.script === process.env.WORKER_NAME)) throw new Error('Rollback left a route on the gateway');
+          const active = worker.active_deployment?.versions?.[0]?.version_id;
+          if (active !== process.env.BEFORE_VERSION) throw new Error(`Rollback did not restore ${process.env.BEFORE_VERSION}; active=${active}`);
+          NODE
+          cat "$RUNNER_TEMP/cloudflare-rollback.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Private Cloudflare gateway production rollout'
+            echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
+            echo "- Trigger SHA: \`$GITHUB_SHA\` (same-tree no-op child)"
+            echo "- Previous gateway version: \`${{ steps.preflight.outputs.before_version || 'unknown' }}\`"
+            echo "- Deployed gateway version: \`${{ steps.readback.outputs.after_version || 'unknown' }}\`"
+            echo '- workers.dev: disabled'
+            echo '- preview URLs: disabled'
+            echo '- Custom Domains / Worker routes: none'
+            echo '- CLOUDFLARE_API_TOKEN: pre-existing Worker secret required and checked by name only'
+            echo '- Secret values: never written or printed by this workflow'
+            echo '- GPT Worker mutation: none'
+            echo '- Database mutation: none'
+          } >> "$GITHUB_STEP_SUMMARY"

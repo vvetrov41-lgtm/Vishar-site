@@ -10,7 +10,12 @@ assert.match(gateway, /^workers_dev = false$/m);
 assert.match(gateway, /^preview_urls = false$/m);
 assert.doesNotMatch(gateway, /^routes\s*=/m, 'private gateway must not have a public route');
 assert.doesNotMatch(gateway, /custom_domain\s*=\s*true/, 'private gateway must not have a custom domain');
-assert.doesNotMatch(gateway, /CLOUDFLARE_API_TOKEN\s*=/, 'Cloudflare API token must never be tracked in Wrangler config');
+assert.match(
+  gateway,
+  /\[secrets\]\s*\nrequired = \["CLOUDFLARE_API_TOKEN"\]/,
+  'gateway deploy must fail closed when the required Cloudflare API token secret is missing',
+);
+assert.doesNotMatch(gateway, /CLOUDFLARE_API_TOKEN\s*=/, 'Cloudflare API token value must never be tracked in Wrangler config');
 
 assert.match(
   gpt,
