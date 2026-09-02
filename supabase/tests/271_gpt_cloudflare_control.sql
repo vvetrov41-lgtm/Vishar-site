@@ -1,4 +1,4 @@
--- 267_gpt_cloudflare_control.sql
+-- 271_gpt_cloudflare_control.sql
 begin;
 select no_plan();
 
@@ -29,11 +29,18 @@ select ok(
    where n.nspname = 'public' and p.proname = 'gpt_authorize_cloudflare_control'),
   'Cloudflare control authorization is SECURITY DEFINER with a pinned search_path'
 );
+
+select is(
+  (select can_use_cloudflare_control from crm_private.gpt_action_clients
+   where integration_key = 'vladimir-gpt-actions'),
+  false,
+  'legacy Vladimir GPT remains fail-closed until production activation'
+);
 select is(
   (select can_use_cloudflare_control from crm_private.gpt_action_clients
    where integration_key = 'vishar-unified-gpt'),
   false,
-  'the dormant unified GPT remains fail-closed for Cloudflare control'
+  'dormant unified GPT remains fail-closed until production activation'
 );
 select is(
   (select can_use_cloudflare_control from crm_private.gpt_action_clients
@@ -126,7 +133,27 @@ select pg_temp.claims(
 select is(
   public.configure_gpt_cloudflare_control_access('vladimir-gpt-actions', false) ->> 'can_use_cloudflare_control',
   'false',
-  'owner can disable Cloudflare control capability through the reviewed RPC'
+  'owner can disable legacy owner GPT Cloudflare capability through the audited RPC'
+);
+
+reset role;
+update crm_private.gpt_action_clients
+set oauth_client_id = 'oauth-unified-cloudflare-test',
+    is_active = true
+where integration_key = 'vishar-unified-gpt';
+set local role authenticated;
+select pg_temp.claims(
+  '{"sub":"e5672222-2222-4222-8222-222222222222","role":"authenticated"}'
+);
+select is(
+  public.configure_gpt_cloudflare_control_access('vishar-unified-gpt', true) ->> 'can_use_cloudflare_control',
+  'true',
+  'owner may enable the reviewed Unified GPT v2 identity after it is active'
+);
+select is(
+  public.configure_gpt_cloudflare_control_access('vishar-unified-gpt', false) ->> 'can_use_cloudflare_control',
+  'false',
+  'owner may roll Unified GPT v2 Cloudflare capability back off'
 );
 select throws_ok(
   $$select public.configure_gpt_cloudflare_control_access('kristina-gpt-actions', true)$$,
@@ -139,7 +166,13 @@ select is(
   (select can_use_cloudflare_control from crm_private.gpt_action_clients
    where integration_key = 'vladimir-gpt-actions'),
   false,
-  'owner configuration persists the requested Cloudflare control ceiling'
+  'legacy owner GPT configuration persists the requested disabled ceiling'
+);
+select is(
+  (select can_use_cloudflare_control from crm_private.gpt_action_clients
+   where integration_key = 'vishar-unified-gpt'),
+  false,
+  'Unified GPT configuration persists the requested disabled rollback state'
 );
 
 select ok(
@@ -147,7 +180,7 @@ select ok(
     select 1 from public.activity_log
     where event_type = 'gpt.client_configured'
       and actor_profile_id = 'e5672222-2222-4222-8222-222222222222'
-      and metadata ->> 'integration' = 'vladimir-gpt-actions'
+      and metadata ->> 'integration' = 'vishar-unified-gpt'
       and metadata ->> 'cloudflare_control_access' = 'false'
   ),
   'owner Cloudflare configuration is audited without provider credentials'
