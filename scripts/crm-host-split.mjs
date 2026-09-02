@@ -25,6 +25,20 @@ const PUBLIC_SUBDOMAIN = process.env.PUBLIC_PAGES_SUBDOMAIN || 'vishar-crm-produ
 const INTERNAL_HOST = process.env.INTERNAL_HOST || 'app.vishartattoo.com';
 const INTERNAL_PROJECT = process.env.INTERNAL_PAGES_PROJECT || 'vishar-crm-internal';
 const INTERNAL_SUBDOMAIN = process.env.INTERNAL_PAGES_SUBDOMAIN || 'vishar-crm-internal.pages.dev';
+
+/**
+ * Every hostname the operator build answers on. A Pages project serves its
+ * `.pages.dev` subdomain whether or not anybody asked it to, and each preview
+ * deployment gets a name under it, so protecting only the custom domain leaves
+ * the installation's administration surface on the open web at an address that
+ * is trivial to guess. Found exactly that way: the first `deploy-internal` put
+ * the operator build on `vishar-crm-internal.pages.dev` with nothing in front
+ * of it.
+ *
+ * The public project is protected the same way - an application on its apex and
+ * another on its wildcard - which is the shape being matched here.
+ */
+const INTERNAL_HOSTNAMES = [INTERNAL_HOST, INTERNAL_SUBDOMAIN, `*.${INTERNAL_SUBDOMAIN}`];
 const COMMIT = process.env.GITHUB_SHA || '';
 
 if (!/^[0-9a-f]{32}$/.test(ACCOUNT_ID) || !TOKEN) {
@@ -162,70 +176,82 @@ async function inspectAccess(zone) {
 }
 
 async function protectInternal(zone) {
-  const existing = await findApp(zone, INTERNAL_HOST);
-  if (existing) {
-    const policies = await policiesFor(existing.scope, existing.app.id);
-    if (policies.length === 0) throw new Error(`${INTERNAL_HOST} has an Access application with no policy`);
-    console.log(`${INTERNAL_HOST} is already protected by ${existing.app.id} with ${policies.length} policy(ies).`);
-    return;
-  }
-
   const source = await findApp(zone, PUBLIC_HOST);
   if (!source) throw new Error(`no Access application on ${PUBLIC_HOST} to clone`);
   const sourcePolicies = await policiesFor(source.scope, source.app.id);
   if (sourcePolicies.length === 0) throw new Error(`the ${PUBLIC_HOST} application has no policy to clone`);
-
   const scope = source.scope;
-  const created = await api(`/${scope.kind}/${scope.id}/access/apps`, {
-    method: 'POST',
-    body: {
-      name: `Vishar CRM operator (${INTERNAL_HOST})`,
-      domain: INTERNAL_HOST,
-      type: source.app.type || 'self_hosted',
-      session_duration: source.app.session_duration || '24h',
-      app_launcher_visible: source.app.app_launcher_visible ?? true,
-      auto_redirect_to_identity: source.app.auto_redirect_to_identity ?? false,
-      ...(Array.isArray(source.app.allowed_idps) && source.app.allowed_idps.length
-        ? { allowed_idps: source.app.allowed_idps }
-        : {}),
-    },
-  });
-  const appId = created?.result?.id;
-  if (!appId) throw new Error('Access application creation returned no id');
 
-  for (const policy of sourcePolicies) {
-    await api(`/${scope.kind}/${scope.id}/access/apps/${appId}/policies`, {
+  for (const hostname of INTERNAL_HOSTNAMES) {
+    const existing = await findApp(zone, hostname);
+    if (existing) {
+      const policies = await policiesFor(existing.scope, existing.app.id);
+      if (policies.length === 0) throw new Error(`${hostname} has an Access application with no policy`);
+      console.log(`${hostname} is already protected with ${policies.length} policy(ies).`);
+      continue;
+    }
+
+    const created = await api(`/${scope.kind}/${scope.id}/access/apps`, {
       method: 'POST',
       body: {
-        name: policy.name || 'Vishar operators',
-        decision: policy.decision,
-        precedence: policy.precedence,
-        include: policy.include ?? [],
-        ...(policy.exclude?.length ? { exclude: policy.exclude } : {}),
-        ...(policy.require?.length ? { require: policy.require } : {}),
+        name: `Vishar CRM operator (${hostname})`,
+        domain: hostname,
+        type: source.app.type || 'self_hosted',
+        session_duration: source.app.session_duration || '24h',
+        app_launcher_visible: false,
+        auto_redirect_to_identity: source.app.auto_redirect_to_identity ?? false,
+        ...(Array.isArray(source.app.allowed_idps) && source.app.allowed_idps.length
+          ? { allowed_idps: source.app.allowed_idps }
+          : {}),
       },
     });
+    const appId = created?.result?.id;
+    if (!appId) throw new Error(`Access application creation for ${hostname} returned no id`);
+
+    for (const policy of sourcePolicies) {
+      await api(`/${scope.kind}/${scope.id}/access/apps/${appId}/policies`, {
+        method: 'POST',
+        body: {
+          name: policy.name || 'Vishar operators',
+          decision: policy.decision,
+          precedence: policy.precedence,
+          include: policy.include ?? [],
+          ...(policy.exclude?.length ? { exclude: policy.exclude } : {}),
+          ...(policy.require?.length ? { require: policy.require } : {}),
+        },
+      });
+    }
   }
 
-  const readback = await findApp(zone, INTERNAL_HOST);
-  const readbackPolicies = readback ? await policiesFor(readback.scope, readback.app.id) : [];
-  if (!readback || readbackPolicies.length !== sourcePolicies.length) {
-    throw new Error('Access readback did not match the cloned policy set');
+  for (const hostname of INTERNAL_HOSTNAMES) {
+    const readback = await findApp(zone, hostname);
+    const readbackPolicies = readback ? await policiesFor(readback.scope, readback.app.id) : [];
+    if (!readback || readbackPolicies.length === 0) {
+      throw new Error(`${hostname} has no Access application after protect-internal`);
+    }
+    if (!readbackPolicies.some((policy) => policy.decision === 'allow')) {
+      throw new Error(`${hostname} has no allow policy`);
+    }
+    console.log(`Protected ${hostname}: ${JSON.stringify(safeApp(readback.app))}`);
+    for (const policy of readbackPolicies) console.log(`   policy ${JSON.stringify(safePolicy(policy))}`);
   }
-  if (!readbackPolicies.some((policy) => policy.decision === 'allow')) {
-    throw new Error('the new Access application has no allow policy');
-  }
-  console.log(`Protected ${INTERNAL_HOST}: ${JSON.stringify(safeApp(readback.app))}`);
-  for (const policy of readbackPolicies) console.log(`   policy ${JSON.stringify(safePolicy(policy))}`);
+
+  // Only the custom domain resolves before the Pages project exists; the
+  // pages.dev names are checked once they serve, in verify-internal.
+  const probe = await httpStatus(`https://${INTERNAL_HOST}/`);
+  console.log(`${INTERNAL_HOST} answers ${probe.status}${isAccessGated(probe) ? ' (Access)' : ''}.`);
 }
 
 async function createInternalPages(zone) {
-  // Protection first, always. A Pages custom domain starts serving within
-  // seconds of being attached, so attaching one before Access exists would put
-  // the operator build on the open web for exactly as long as it took somebody
-  // to notice.
-  const guard = await findApp(zone, INTERNAL_HOST);
-  if (!guard) throw new Error(`${INTERNAL_HOST} has no Access application yet; run protect-internal first`);
+  // Protection first, always - and for every name the project will answer on,
+  // not just the custom domain. A Pages custom domain starts serving within
+  // seconds of being attached, and the project's own `.pages.dev` serves from
+  // the first deployment whether or not anybody asked it to.
+  for (const hostname of INTERNAL_HOSTNAMES) {
+    if (!(await findApp(zone, hostname))) {
+      throw new Error(`${hostname} has no Access application yet; run protect-internal first`);
+    }
+  }
 
   let project = await pagesProject(INTERNAL_PROJECT);
   if (!project) {
@@ -264,10 +290,13 @@ async function createInternalPages(zone) {
 }
 
 async function beforeDeployInternal(zone) {
-  const guard = await findApp(zone, INTERNAL_HOST);
-  if (!guard) throw new Error(`${INTERNAL_HOST} has no Access application; refusing to deploy the operator build`);
+  for (const hostname of INTERNAL_HOSTNAMES) {
+    if (!(await findApp(zone, hostname))) {
+      throw new Error(`${hostname} has no Access application; refusing to deploy the operator build`);
+    }
+  }
   if (!(await pagesProject(INTERNAL_PROJECT))) throw new Error(`Pages project ${INTERNAL_PROJECT} does not exist yet`);
-  console.log(`${INTERNAL_HOST} is protected and ${INTERNAL_PROJECT} exists.`);
+  console.log(`Every operator hostname is protected and ${INTERNAL_PROJECT} exists.`);
 }
 
 async function assertDeployed(project) {
@@ -282,30 +311,40 @@ async function assertDeployed(project) {
 
 async function afterDeployInternal(zone) {
   await assertDeployed(INTERNAL_PROJECT);
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const probe = await httpStatus(`https://${INTERNAL_HOST}/`);
-    if (isAccessGated(probe)) {
-      console.log(`${INTERNAL_HOST} answers ${probe.status} to the Access login.`);
-      return;
+  // Both names that now serve. The subdomain is the one that caught us out.
+  for (const hostname of [INTERNAL_HOST, INTERNAL_SUBDOMAIN]) {
+    let gated = false;
+    for (let attempt = 0; attempt < 20 && !gated; attempt += 1) {
+      const probe = await httpStatus(`https://${hostname}/`);
+      if (isAccessGated(probe)) {
+        gated = true;
+        console.log(`${hostname} answers ${probe.status} to the Access login.`);
+        break;
+      }
+      if (probe.status === 200) throw new Error(`${hostname} is serving without Access. Stop.`);
+      await new Promise((resolve) => { setTimeout(resolve, 6000); });
     }
-    if (probe.status === 200) throw new Error(`${INTERNAL_HOST} is serving without Access. Stop.`);
-    await new Promise((resolve) => { setTimeout(resolve, 6000); });
+    if (!gated) throw new Error(`${hostname} did not reach an Access-gated state`);
   }
-  throw new Error(`${INTERNAL_HOST} did not reach an Access-gated state`);
 }
 
 async function verifyInternal(zone) {
-  const guard = await findApp(zone, INTERNAL_HOST);
-  if (!guard) throw new Error(`${INTERNAL_HOST} has no Access application`);
-  const policies = await policiesFor(guard.scope, guard.app.id);
-  if (!policies.some((policy) => policy.decision === 'allow')) {
-    throw new Error(`${INTERNAL_HOST} has no allow policy`);
+  for (const hostname of INTERNAL_HOSTNAMES) {
+    const guard = await findApp(zone, hostname);
+    if (!guard) throw new Error(`${hostname} has no Access application`);
+    const policies = await policiesFor(guard.scope, guard.app.id);
+    if (!policies.some((policy) => policy.decision === 'allow')) {
+      throw new Error(`${hostname} has no allow policy`);
+    }
+    console.log(`${hostname}: ${policies.length} Access policy(ies).`);
   }
-  const probe = await httpStatus(`https://${INTERNAL_HOST}/`);
-  if (!isAccessGated(probe)) throw new Error(`${INTERNAL_HOST} is not Access-gated (${probe.status})`);
+  for (const hostname of [INTERNAL_HOST, INTERNAL_SUBDOMAIN]) {
+    const probe = await httpStatus(`https://${hostname}/`);
+    if (!isAccessGated(probe)) throw new Error(`${hostname} is not Access-gated (${probe.status})`);
+  }
   const deployments = list(await api(`/accounts/${ACCOUNT_ID}/pages/projects/${INTERNAL_PROJECT}/deployments`));
   if (deployments.length === 0) throw new Error(`${INTERNAL_PROJECT} has no deployment`);
-  console.log(`${INTERNAL_HOST}: Access-gated, ${policies.length} policy(ies), ${deployments.length} deployment(s).`);
+  console.log(`Operator environment: every hostname Access-gated, ${deployments.length} deployment(s).`);
   const publicProbe = await httpStatus(`https://${PUBLIC_HOST}/`);
   console.log(`${PUBLIC_HOST} still answers ${publicProbe.status}${isAccessGated(publicProbe) ? ' (Access)' : ''}.`);
 }
