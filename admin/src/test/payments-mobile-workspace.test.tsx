@@ -78,6 +78,17 @@ describe('mobile deposits workspace', () => {
     expect(within(dialog).getByRole('button', { name: 'Create new £250 session deposit' })).toBeInTheDocument();
   });
 
+  it('keeps the action sheet open when creating the deposit fails', async () => {
+    renderPayments({ failRpc: 'request_session_deposit' });
+
+    fireEvent.click(await screen.findByRole('button', { name: /\+ Create £250/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'New deposit' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create new £250 session deposit' }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByRole('dialog', { name: 'New deposit' })).toBeInTheDocument();
+  });
+
   it('keeps completed payment history to three rows until requested', async () => {
     renderPayments({ reconciliationCandidates: Array.from({ length: 5 }, (_, index) => confirmedCandidate(index)) });
 
