@@ -33,7 +33,10 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
           # Staging must not mint a production booking link. The staging intake
-          # Worker answers the same hosted-form namespace.
+          # Worker answers the same hosted-form namespace, though the zone's
+          # staging-intake-method-guard rule still narrows that host to the one
+          # approved probe path: exercising a staging hosted form needs that
+          # rule widened first, which is an owner decision, not a build flag.
           VITE_BOOKING_FORMS_ORIGIN: https://intake-staging.vishartattoo.com
         run: |
           set -u
@@ -99,7 +102,10 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
           # Staging must not mint a production booking link. The staging intake
-          # Worker answers the same hosted-form namespace.
+          # Worker answers the same hosted-form namespace, though the zone's
+          # staging-intake-method-guard rule still narrows that host to the one
+          # approved probe path: exercising a staging hosted form needs that
+          # rule widened first, which is an owner decision, not a build flag.
           VITE_BOOKING_FORMS_ORIGIN: https://intake-staging.vishartattoo.com
         run: |
           npm test
@@ -113,7 +119,10 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_PUBLISHABLE_KEY }}
           # Staging must not mint a production booking link. The staging intake
-          # Worker answers the same hosted-form namespace.
+          # Worker answers the same hosted-form namespace, though the zone's
+          # staging-intake-method-guard rule still narrows that host to the one
+          # approved probe path: exercising a staging hosted form needs that
+          # rule widened first, which is an owner decision, not a build flag.
           VITE_BOOKING_FORMS_ORIGIN: https://intake-staging.vishartattoo.com
         run: |
           set -euo pipefail
