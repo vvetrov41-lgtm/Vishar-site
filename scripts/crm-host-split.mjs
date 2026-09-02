@@ -325,17 +325,20 @@ async function beforeOpenPublic(zone) {
 async function afterOpenPublic(zone) {
   await assertDeployed(PUBLIC_PROJECT);
 
-  for (const host of [PUBLIC_HOST, PUBLIC_SUBDOMAIN]) {
-    const app = await findApp(zone, host);
-    if (!app) {
-      console.log(`${host} already has no Access application.`);
-      continue;
-    }
+  // Only the custom domain loses its protection. `vishar-crm-production.pages.dev`
+  // and its `*.` wildcard keep theirs deliberately: the pages.dev names are an
+  // implementation detail nobody is asked to visit, the wildcard is what guards
+  // preview deployments of the same build, and leaving them gated costs the
+  // public CRM nothing while keeping a protected route to it for diagnosis.
+  const app = await findApp(zone, PUBLIC_HOST);
+  if (!app) {
+    console.log(`${PUBLIC_HOST} already has no Access application.`);
+  } else {
     await api(`/${app.scope.kind}/${app.scope.id}/access/apps/${app.app.id}`, {
       method: 'DELETE',
       allow: [200, 202, 204],
     });
-    console.log(`Removed the Access application from ${host}.`);
+    console.log(`Removed the Access application from ${PUBLIC_HOST}.`);
   }
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -349,7 +352,11 @@ async function afterOpenPublic(zone) {
   if (!isAccessGated(internalProbe)) {
     throw new Error(`${INTERNAL_HOST} lost its Access protection while opening ${PUBLIC_HOST}`);
   }
-  console.log(`${PUBLIC_HOST} is public; ${INTERNAL_HOST} is still Access-gated.`);
+  const subdomainProbe = await httpStatus(`https://${PUBLIC_SUBDOMAIN}/`);
+  if (!isAccessGated(subdomainProbe)) {
+    throw new Error(`${PUBLIC_SUBDOMAIN} should have kept its Access application`);
+  }
+  console.log(`${PUBLIC_HOST} is public; ${INTERNAL_HOST} and ${PUBLIC_SUBDOMAIN} are still Access-gated.`);
 }
 
 async function verifyPublic(zone) {
@@ -359,6 +366,8 @@ async function verifyPublic(zone) {
 
   const internalProbe = await httpStatus(`https://${INTERNAL_HOST}/`);
   if (!isAccessGated(internalProbe)) throw new Error(`${INTERNAL_HOST} is not Access-gated`);
+  const subdomainProbe = await httpStatus(`https://${PUBLIC_SUBDOMAIN}/`);
+  if (!isAccessGated(subdomainProbe)) throw new Error(`${PUBLIC_SUBDOMAIN} is not Access-gated`);
 
   const body = await (await fetch(`https://${PUBLIC_HOST}/`)).text();
   if (!body.includes('noindex')) throw new Error(`${PUBLIC_HOST} did not serve the CRM document`);
@@ -366,7 +375,7 @@ async function verifyPublic(zone) {
     throw new Error(`${PUBLIC_HOST} is serving the operator surface`);
   }
   console.log(`${PUBLIC_HOST}: public, serving the CRM, not the operator surface.`);
-  console.log(`${INTERNAL_HOST}: still Access-gated.`);
+  console.log(`${INTERNAL_HOST} and ${PUBLIC_SUBDOMAIN}: still Access-gated.`);
 }
 
 const STAGES = {

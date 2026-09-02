@@ -59,6 +59,26 @@ export function assertAccessBoundary(url, response) {
   }
 }
 
+/**
+ * `crm.vishartattoo.com` is the public CRM: an artist signs up there, so it
+ * must answer a signed-out request rather than redirect to Access. The
+ * authorization boundary moved to Supabase Auth and row level security, which
+ * is where it always actually was; what changed is that Access is no longer in
+ * front of it.
+ *
+ * The `.pages.dev` name keeps its Access application, so this is not a licence
+ * for the whole project to become reachable - `verifyProductionPages` still
+ * asserts that one.
+ */
+export function assertPubliclyReachable(url, response) {
+  const expectedHost = new URL(url).hostname;
+  if (response?.status !== 200) {
+    throw new Error(
+      `Public CRM ${expectedHost} answered ${response?.status ?? 'nothing'}, expected 200`
+    );
+  }
+}
+
 export async function verifyProductionPages(fetchImpl = fetch, env = process.env) {
   const accountId = env.CLOUDFLARE_ACCOUNT_ID || '';
   const token = env.CLOUDFLARE_API_TOKEN || '';
@@ -73,14 +93,22 @@ export async function verifyProductionPages(fetchImpl = fetch, env = process.env
   if (!projectResponse.ok) throw new Error('Production Cloudflare Pages target read failed');
   assertProject(await projectResponse.json());
 
-  for (const url of ['https://crm.vishartattoo.com/', `https://${SUBDOMAIN}/`]) {
-    const response = await fetchImpl(url, {
-      method: 'GET',
-      headers: { Accept: 'text/html' },
-      redirect: 'manual',
-    });
-    assertAccessBoundary(url, response);
-  }
+  // The custom domain is public and the pages.dev name is not. Both halves are
+  // asserted: a regression in either direction matters, and the second one is
+  // what stops the whole project drifting open along with the host.
+  const publicUrl = 'https://crm.vishartattoo.com/';
+  assertPubliclyReachable(publicUrl, await fetchImpl(publicUrl, {
+    method: 'GET',
+    headers: { Accept: 'text/html' },
+    redirect: 'manual',
+  }));
+
+  const gatedUrl = `https://${SUBDOMAIN}/`;
+  assertAccessBoundary(gatedUrl, await fetchImpl(gatedUrl, {
+    method: 'GET',
+    headers: { Accept: 'text/html' },
+    redirect: 'manual',
+  }));
 }
 
 if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {

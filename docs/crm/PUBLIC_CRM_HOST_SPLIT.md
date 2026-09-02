@@ -53,18 +53,16 @@ mistake in one of them is not also a disclosure.
 
 ---
 
-## 3. What only the owner can do
+## 3. Permissions
 
-The Cloudflare API token this repository holds can read and write Pages,
-Workers, Worker routes and DNS. It **cannot touch Access**: the read-only
-inventory records `403` on `/zones/{zone}/access/apps`.
+`CRM_PRODUCTION_CLOUDFLARE_API_TOKEN` originally had no Access permission —
+the read-only inventory recorded `403` on `/zones/{zone}/access/apps` — which
+made the two Access changes below dashboard actions.
 
-So the two Access changes below are dashboard actions in Cloudflare Zero
-Trust, or they need a token with `Access: Apps and Policies — Edit` added to
-`CRM_PRODUCTION_CLOUDFLARE_API_TOKEN`.
-
-Everything else in this runbook is automatable from the repository once those
-exist.
+`Access: Apps and Policies — Edit` has since been added to it, so the whole
+sequence is automatable from `crm-host-split-operator.yml`. The `inspect-access`
+stage is the read-only way to confirm the token still has what it needs before
+any mutating stage runs.
 
 ---
 
@@ -75,18 +73,25 @@ protection until `app.vishartattoo.com` is deployed and verified.** At no point
 is the operator environment reachable without Access, and at no point is the
 CRM unreachable to its current users.
 
-### Step 1 — Access application for the new host (owner)
+### Step 1 — Access application for the new host
 
-In Zero Trust → Access → Applications, create a self-hosted application for
-`app.vishartattoo.com` with the same policy that guards `crm.vishartattoo.com`
-today.
+`crm-host-split-operator.yml`, stage `protect-internal`. It reads the Access
+application currently on `crm.vishartattoo.com`, creates a self-hosted
+application for `app.vishartattoo.com` in the same scope, and replicates every
+policy — decision, precedence, include, exclude, require — then reads the
+result back and refuses unless at least one allow policy landed. Idempotent: an
+application that already exists is reported and left alone.
 
-Do this **before** the host resolves. An Access application can be created for
-a hostname that does not exist yet, and creating it first means the operator
-CRM is never briefly public. This is the one place the owner's ordering and
-this runbook differ, and the difference is deliberate.
+This runs **before** the host resolves. An Access application can be created
+for a hostname that does not exist yet, and creating it first means the
+operator CRM is never briefly public. This is the one place the owner's
+ordering and this runbook differ, and the difference is deliberate — the
+`create-internal-pages` stage refuses to attach a custom domain until this
+application exists.
 
-### Step 2 — Pages project and DNS (repository)
+### Step 2 — Pages project and DNS
+
+`crm-host-split-operator.yml`, stage `create-internal-pages`.
 
 A second Pages project is required rather than a second custom domain on the
 existing one: the two hosts must serve *different builds*, and one Pages
@@ -97,14 +102,21 @@ project serves one build to all its domains.
   `vishar-crm-internal.pages.dev`.
 - Repository variables `CRM_INTERNAL_PAGES_PROJECT` and `CRM_INTERNAL_ORIGIN`.
 
-### Step 3 — Deploy the operator build there (repository)
+### Step 3 — Deploy the operator build there
+
+`crm-host-split-operator.yml`, stage `deploy-internal`. Re-runnable: this is
+also how ordinary operator-CRM deploys reach `app.vishartattoo.com` from now
+on.
 
 Same source, `VITE_CRM_SURFACE=internal`, same Supabase project and connector
 origins as the current CRM production build. The deploy asserts, before it
 finishes, that `app.vishartattoo.com` answers a signed-out request with a
 redirect to the Access login — the same readback the current CRM deploy makes.
 
-### Step 4 — Verify the operator environment (owner + repository)
+### Step 4 — Verify the operator environment
+
+`crm-host-split-operator.yml`, stage `verify-internal`, plus a human signing in
+through Access.
 
 Sign in at `app.vishartattoo.com` through Access and confirm the things only
 the operator has: Users, staff invitations, organizations, and each artist's
@@ -113,18 +125,30 @@ a different address.
 
 Do not continue until this is true.
 
-### Step 5 — Turn `crm.vishartattoo.com` public (repository, then owner)
+### Step 5 — Turn `crm.vishartattoo.com` public
+
+`crm-host-split-operator.yml`, stage `open-public`.
 
 1. Repository: switch the CRM production workflow to `VITE_CRM_SURFACE=public`,
    invert its artifact assertion, and replace its Access readback with a
    public-reachability check. Deploy.
-2. Owner: remove the Access application from `crm.vishartattoo.com` **and**
-   from `vishar-crm-production.pages.dev`. Both are gated today.
+2. The same stage then removes the Access application from
+   `crm.vishartattoo.com` — and from that host only.
+
+`vishar-crm-production.pages.dev` and its `*.` wildcard keep their Access
+applications deliberately. The pages.dev names are an implementation detail
+nobody is asked to visit, the wildcard is what guards preview deployments of
+the same build, and leaving them gated costs the public CRM nothing while
+keeping a protected route to it for diagnosis. `verify-public` asserts both
+halves, and so does the CRM production preflight.
 
 In that order: the public build is serving before the door opens, so the
 operator surface is never briefly exposed on a public host.
 
-### Step 6 — Prove the boundary from outside (repository)
+### Step 6 — Prove the boundary from outside
+
+`crm-host-split-operator.yml`, stage `verify-public`, then the acceptance
+below.
 
 With no Access session and no CRM account:
 
