@@ -4,14 +4,23 @@ name: CRM host split operator
 # `crm.vishartattoo.com` and an operator `app.vishartattoo.com` that keeps the
 # protection `crm` has today.
 #
-# Staged on purpose. Each stage is dispatched separately, mutates one thing,
-# and reads it back. The ordering constraint the whole exercise exists to
-# protect - the operator environment is never reachable without Access, and
-# `crm` keeps its protection until the operator host is deployed and verified -
-# is enforced by the preconditions in each stage rather than by whoever is
-# running it remembering the order.
+# Staged on purpose. Each stage mutates at most one production boundary and
+# reads it back. workflow_dispatch remains the emergency/manual path. The
+# reserved `ops/crm-host-split-<stage>-*` push path is the automation path:
+# it may carry exactly one marker file, operates on its tree-parent rather
+# than the marker commit, and requires that parent to still be the exact
+# canonical CRM HEAD before any stage runs.
 
 on:
+  push:
+    branches:
+      - 'ops/crm-host-split-inspect-access-*'
+      - 'ops/crm-host-split-protect-internal-*'
+      - 'ops/crm-host-split-create-internal-pages-*'
+      - 'ops/crm-host-split-deploy-internal-*'
+      - 'ops/crm-host-split-verify-internal-*'
+      - 'ops/crm-host-split-open-public-*'
+      - 'ops/crm-host-split-verify-public-*'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -31,7 +40,7 @@ on:
           - open-public
           - verify-public
       approval_phrase:
-        description: Required for every mutating stage
+        description: Required for every mutating manual stage
         required: false
         default: ''
 
@@ -68,60 +77,138 @@ jobs:
       VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
 
     steps:
-      - name: Verify exact release branch, gate and target
+      - name: Verify trigger metadata, gate and target
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
+          APPROVED_SHA_INPUT: ${{ inputs.approved_sha }}
           APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
           DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
 
-          case "$GITHUB_REF_NAME" in
-            release/private-crm-rc*) ;;
-            *)
-              echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2
-              exit 1
-              ;;
-          esac
-          [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
-            echo 'approved_sha must exactly match the workflow source SHA.' >&2
+          if [ "$GITHUB_ACTOR" != "$GITHUB_REPOSITORY_OWNER" ]; then
+            echo 'Only the repository owner may run the CRM host split.' >&2
             exit 1
-          }
+          fi
 
-          if [ "$STAGE" != 'inspect-access' ] && [ "$STAGE" != 'verify-internal' ] && [ "$STAGE" != 'verify-public' ]; then
-            [ "$DEPLOY_ENABLED" = 'true' ] || {
-              echo 'CRM_PRODUCTION_DEPLOY_ENABLED is not explicitly enabled.' >&2
-              exit 1
-            }
-            [ "$APPROVAL_PHRASE" = "SPLIT_CRM_HOSTS" ] || {
-              echo 'The exact approval phrase is required for a mutating stage.' >&2
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            case "$GITHUB_REF_NAME" in
+              ops/crm-host-split-inspect-access-*) STAGE='inspect-access' ;;
+              ops/crm-host-split-protect-internal-*) STAGE='protect-internal' ;;
+              ops/crm-host-split-create-internal-pages-*) STAGE='create-internal-pages' ;;
+              ops/crm-host-split-deploy-internal-*) STAGE='deploy-internal' ;;
+              ops/crm-host-split-verify-internal-*) STAGE='verify-internal' ;;
+              ops/crm-host-split-open-public-*) STAGE='open-public' ;;
+              ops/crm-host-split-verify-public-*) STAGE='verify-public' ;;
+              *)
+                echo 'Push trigger is outside the reserved CRM host-split namespace.' >&2
+                exit 1
+                ;;
+            esac
+          else
+            case "$GITHUB_REF_NAME" in
+              release/private-crm-rc*) ;;
+              *)
+                echo 'Manual host-split runs require an approved release/private-crm-rc* branch.' >&2
+                exit 1
+                ;;
+            esac
+            [ -n "$APPROVED_SHA_INPUT" ] || {
+              echo 'approved_sha is required for a manual host-split run.' >&2
               exit 1
             }
           fi
+
+          case "$STAGE" in
+            inspect-access|verify-internal|verify-public) ;;
+            protect-internal|create-internal-pages|deploy-internal|open-public)
+              [ "$DEPLOY_ENABLED" = 'true' ] || {
+                echo 'CRM_PRODUCTION_DEPLOY_ENABLED is not explicitly enabled.' >&2
+                exit 1
+              }
+              if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
+                [ "$APPROVAL_PHRASE" = 'SPLIT_CRM_HOSTS' ] || {
+                  echo 'The exact approval phrase is required for a mutating manual stage.' >&2
+                  exit 1
+                }
+              fi
+              ;;
+            *)
+              echo "Unknown CRM host-split stage: $STAGE" >&2
+              exit 1
+              ;;
+          esac
 
           [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
           [ -n "$CLOUDFLARE_API_TOKEN" ]
           case "$VITE_SUPABASE_URL" in https://*.supabase.co) ;; *) exit 1 ;; esac
           case "$VITE_SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
 
-      - name: Checkout exact approved SHA
+          echo "STAGE=$STAGE" >> "$GITHUB_ENV"
+          if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
+            echo "RELEASE_SHA=$APPROVED_SHA_INPUT" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout trigger source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.approved_sha }}
           fetch-depth: 0
 
-      - name: Verify checkout and canonical lineage
+      - name: Verify immutable source and checkout exact release SHA
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
+          APPROVED_SHA_INPUT: ${{ inputs.approved_sha }}
         run: |
           set -euo pipefail
-          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ] || {
+            echo 'Canonical CRM branch could not be resolved.' >&2
+            exit 1
+          }
+
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            parent_count="$(git rev-list --parents -n 1 "$GITHUB_SHA" | awk '{print NF-1}')"
+            [ "$parent_count" = '1' ] || {
+              echo 'The automation trigger must be a single-parent marker commit.' >&2
+              exit 1
+            }
+            release_sha="$(git rev-parse "$GITHUB_SHA^")"
+            [ "$release_sha" = "$canonical_sha" ] || {
+              echo 'The automation trigger parent is no longer the exact canonical CRM HEAD.' >&2
+              exit 1
+            }
+
+            mapfile -t changed_files < <(git diff --name-only "$release_sha" "$GITHUB_SHA")
+            [ "${#changed_files[@]}" = '1' ] || {
+              echo 'The automation trigger may change exactly one marker file.' >&2
+              exit 1
+            }
+            [ "${changed_files[0]}" = '.github/ops-triggers/crm-host-split.trigger' ] || {
+              echo 'The automation trigger changed something other than its marker file.' >&2
+              exit 1
+            }
+
+            marker="$(tr -d '\r\n' < .github/ops-triggers/crm-host-split.trigger)"
+            [ "$marker" = "$STAGE:$release_sha" ] || {
+              echo 'The automation trigger marker does not match the requested stage and exact release SHA.' >&2
+              exit 1
+            }
+            echo "RELEASE_SHA=$release_sha" >> "$GITHUB_ENV"
+          else
+            release_sha="$APPROVED_SHA_INPUT"
+            [ "$release_sha" = "$GITHUB_SHA" ] || {
+              echo 'approved_sha must exactly match the manual workflow source SHA.' >&2
+              exit 1
+            }
+            git merge-base --is-ancestor "$release_sha" "$canonical_sha" || {
+              echo 'The approved manual release is not in canonical CRM lineage.' >&2
+              exit 1
+            }
+          fi
+
+          git checkout --detach "$release_sha"
+          [ "$(git rev-parse HEAD)" = "$release_sha" ]
           [ -z "$(git status --short)" ]
-          git merge-base --is-ancestor "$APPROVED_SHA" \
-            "$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')" \
-            || git rev-parse --verify "$APPROVED_SHA" >/dev/null
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -130,28 +217,49 @@ jobs:
 
       - name: Run the requested stage
         shell: bash
-        env:
-          STAGE: ${{ inputs.stage }}
-        run: node scripts/crm-host-split.mjs "$STAGE"
+        run: GITHUB_SHA="$RELEASE_SHA" node scripts/crm-host-split.mjs "$STAGE"
 
       - name: Install locked CRM dependencies
-        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        if: >-
+          ${{
+            inputs.stage == 'deploy-internal'
+            || inputs.stage == 'open-public'
+            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+          }}
         working-directory: admin
         run: npm ci
 
       - name: Build the CRM for this stage's surface
-        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        if: >-
+          ${{
+            inputs.stage == 'deploy-internal'
+            || inputs.stage == 'open-public'
+            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+          }}
         working-directory: admin
         env:
           VITE_CRM_SURFACE: ${{ inputs.stage == 'deploy-internal' && 'internal' || 'public' }}
         run: |
           set -euo pipefail
+          if [ "$STAGE" = 'deploy-internal' ]; then
+            export VITE_CRM_SURFACE='internal'
+          else
+            export VITE_CRM_SURFACE='public'
+          fi
           npm test
           npm run typecheck
           npm run build
 
       - name: Verify the built bundle carries the intended surface
-        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        if: >-
+          ${{
+            inputs.stage == 'deploy-internal'
+            || inputs.stage == 'open-public'
+            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+          }}
         shell: bash
         run: |
           set -euo pipefail
@@ -164,9 +272,6 @@ jobs:
           if [ "$STAGE" = 'deploy-internal' ]; then
             grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist
           else
-            # The public build must not carry the operator surface. Vite inlines
-            # the value, so its presence would mean this deployment is about to
-            # put the installation's own administration on the open web.
             if grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist; then
               echo 'The public build carries the internal surface. Refusing.' >&2
               exit 1
@@ -174,33 +279,53 @@ jobs:
           fi
 
       - name: Install pinned deployment tooling
-        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        if: >-
+          ${{
+            inputs.stage == 'deploy-internal'
+            || inputs.stage == 'open-public'
+            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+          }}
         run: npm ci
 
       - name: Deploy the operator build to the internal Pages project
-        if: ${{ inputs.stage == 'deploy-internal' }}
+        if: >-
+          ${{
+            inputs.stage == 'deploy-internal'
+            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
+          }}
         working-directory: admin
         run: >-
           ../node_modules/.bin/wrangler pages deploy dist
           --project-name "$INTERNAL_PAGES_PROJECT"
           --branch production
-          --commit-hash "$GITHUB_SHA"
+          --commit-hash "$RELEASE_SHA"
           --commit-dirty=false
 
       - name: Deploy the public build to the public Pages project
-        if: ${{ inputs.stage == 'open-public' }}
+        if: >-
+          ${{
+            inputs.stage == 'open-public'
+            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+          }}
         working-directory: admin
         run: >-
           ../node_modules/.bin/wrangler pages deploy dist
           --project-name "$PUBLIC_PAGES_PROJECT"
           --branch production
-          --commit-hash "$GITHUB_SHA"
+          --commit-hash "$RELEASE_SHA"
           --commit-dirty=false
 
       - name: Complete the stage and read production back
-        if: ${{ inputs.stage == 'deploy-internal' || inputs.stage == 'open-public' }}
+        if: >-
+          ${{
+            inputs.stage == 'deploy-internal'
+            || inputs.stage == 'open-public'
+            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+          }}
         shell: bash
-        run: node scripts/crm-host-split.mjs "${STAGE}-readback"
+        run: GITHUB_SHA="$RELEASE_SHA" node scripts/crm-host-split.mjs "${STAGE}-readback"
 
       - name: Stage summary
         if: always()
@@ -209,8 +334,8 @@ jobs:
           {
             echo "### CRM host split - \`$STAGE\`"
             echo
-            echo "- Exact SHA: \`$GITHUB_SHA\`"
-            echo "- Release branch: \`$GITHUB_REF_NAME\`"
+            echo "- Exact release SHA: \`${RELEASE_SHA:-unresolved}\`"
+            echo "- Trigger ref: \`$GITHUB_REF_NAME\`"
             echo "- Public host: \`$PUBLIC_HOST\` (project \`$PUBLIC_PAGES_PROJECT\`)"
             echo "- Operator host: \`$INTERNAL_HOST\` (project \`$INTERNAL_PAGES_PROJECT\`)"
             echo '- Supabase migration / Worker / public site deploy commands: none'
