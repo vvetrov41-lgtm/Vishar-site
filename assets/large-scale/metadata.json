@@ -1,4 +1,7 @@
 {
+  "_gallery": {
+    "thumbnailWidths": [320, 480, 720, 960]
+  },
   "01": {
     "alt": "Large-scale colour realism sleeve tattoo by Vladimir Vishar",
     "caption": ""
