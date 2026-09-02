@@ -22,6 +22,7 @@ begin
           'configure_gpt_enquiry_read_access',
           'configure_gpt_full_management',
           'configure_gpt_web_research_access',
+          'configure_gpt_cloudflare_control_access',
           'get_gpt_action_consent_summary'
         )
       )
@@ -68,6 +69,7 @@ select ok(
           'configure_gpt_enquiry_read_access',
           'configure_gpt_full_management',
           'configure_gpt_web_research_access',
+          'configure_gpt_cloudflare_control_access',
           'get_gpt_action_consent_summary'
         )
       )
