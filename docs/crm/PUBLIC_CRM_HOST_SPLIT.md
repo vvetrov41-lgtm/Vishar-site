@@ -185,3 +185,49 @@ leaves existing ones working.
 - The invitation flow. It stays the way somebody joins an existing workspace.
 - The gap in `SELF_SERVICE_SIGNUP.md` section 9: a self-service founder still
   cannot invite their first teammate. That is a separate workstream.
+
+---
+
+## 7. Production acceptance, 2 September 2026
+
+Both hosts are live and were read back from the outside, not inferred from a
+green workflow.
+
+| Hostname | Answers | Why |
+| --- | --- | --- |
+| `crm.vishartattoo.com` | `200` | the public CRM, no Access in front of it |
+| `app.vishartattoo.com` | `302` to the Access login | the operator environment |
+| `vishar-crm-internal.pages.dev` | `302` to the Access login | the operator project's own name |
+| `*.vishar-crm-internal.pages.dev` | `302` to the Access login | its preview deployments |
+| `vishar-crm-production.pages.dev` | `302` to the Access login | unchanged |
+
+The bundle `crm.vishartattoo.com` serves carries no `VITE_CRM_SURFACE`, so
+`readSurface` returns `public` - the restricted surface is the default, which is
+the direction a mistake should fail in.
+
+### The `.pages.dev` hole
+
+The first `deploy-internal` put the operator build on
+`vishar-crm-internal.pages.dev` answering `200` with no Access. `protect-internal`
+had created an application for the custom domain only, and a Pages project serves
+its own subdomain from the first deployment whether or not anybody attached it.
+
+Nobody could have done anything with it - an anonymous visitor reached the
+Supabase login screen and every installation-level RPC is refused server-side -
+but the stated boundary was that the operator environment is not reachable
+without Access, and for about twenty minutes it was.
+
+Two things were wrong and both are fixed in `scripts/crm-host-split.mjs`:
+
+1. The stage protected one hostname. It now protects the custom domain, the
+   project subdomain and its wildcard, and `create-internal-pages` and
+   `deploy-internal` refuse unless all three are already protected.
+2. It cloned the source application's scope onto every name. A zone-scoped token
+   cannot create an application for a `.pages.dev` name - Cloudflare answers
+   `app and token domain mismatch` - so the scope is now chosen per hostname:
+   zone for the custom domain, account for the rest.
+
+`protect-internal` also stopped depending on `crm.vishartattoo.com` for its
+policy source, because `open-public` deletes that application by design. It is
+the repair tool for a name that lost its protection, so it has to work after the
+split, not only before it.
