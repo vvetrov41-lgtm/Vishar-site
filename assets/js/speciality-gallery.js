@@ -18,19 +18,6 @@
     },
   };
 
-  function pad(number) {
-    return String(number).padStart(2, '0');
-  }
-
-  async function exists(url) {
-    try {
-      const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-
   async function loadMetadata(base) {
     try {
       const response = await fetch(base + 'metadata.json', { cache: 'no-store' });
@@ -42,27 +29,36 @@
     }
   }
 
-  async function discoverImages(base) {
-    const images = [];
-    for (let number = 1; number <= MAX_IMAGES; number += 1) {
-      const stem = pad(number);
-      const source = base + stem + '.jpg';
-      const found = await exists(source);
-      if (!found) break;
-      images.push({ stem, source });
-    }
-    return images;
+  function galleryState(config, metadata) {
+    const stems = Object.keys(metadata)
+      .filter((key) => /^\d{2}$/.test(key))
+      .sort()
+      .slice(0, MAX_IMAGES);
+
+    const manifest = metadata._gallery && typeof metadata._gallery === 'object'
+      ? metadata._gallery
+      : {};
+    const thumbnailWidths = Array.isArray(manifest.thumbnailWidths)
+      ? manifest.thumbnailWidths
+        .filter((width) => WIDTHS.includes(width))
+        .sort((a, b) => a - b)
+      : [];
+
+    return {
+      images: stems.map((stem) => ({ stem, source: `${config.base}${stem}.jpg` })),
+      thumbnailWidths,
+    };
   }
 
-  function imageMarkup(config, image, metadata, index, hasThumbs) {
+  function imageMarkup(config, image, metadata, index, thumbnailWidths) {
     const info = metadata[image.stem] || {};
     const alt = info.alt || `${config.genericAlt} - image ${index + 1}`;
     const caption = info.caption || info.healed_for || '';
     const imageTag = `<img src="${image.source}" loading="lazy" decoding="async" width="900" height="1200" alt="${escapeHtml(alt)}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">`;
 
     let media = imageTag;
-    if (hasThumbs) {
-      const srcset = WIDTHS.map((width) => `${config.base}thumbs/${image.stem}-${width}.webp ${width}w`).join(', ');
+    if (thumbnailWidths.length) {
+      const srcset = thumbnailWidths.map((width) => `${config.base}thumbs/${image.stem}-${width}.webp ${width}w`).join(', ');
       media = `<picture><source type="image/webp" srcset="${srcset}" sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw">${imageTag}</picture>`;
     }
 
@@ -92,15 +88,14 @@
     const grid = section.querySelector('[data-speciality-gallery-grid]');
     if (!grid) return;
 
-    const [images, metadata, hasThumbs] = await Promise.all([
-      discoverImages(config.base),
-      loadMetadata(config.base),
-      exists(config.base + 'thumbs/01-480.webp'),
-    ]);
+    const metadata = await loadMetadata(config.base);
+    const { images, thumbnailWidths } = galleryState(config, metadata);
 
     if (!images.length) return;
 
-    grid.innerHTML = images.map((image, index) => imageMarkup(config, image, metadata, index, hasThumbs)).join('');
+    grid.innerHTML = images
+      .map((image, index) => imageMarkup(config, image, metadata, index, thumbnailWidths))
+      .join('');
     section.classList.remove('hidden');
     section.removeAttribute('aria-hidden');
   }
