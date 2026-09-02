@@ -254,4 +254,181 @@ for (const badRedirect of [
   assert.equal(calls, 0);
 }
 
+// ---------------------------------------------------------------------------
+// The tenant-scoped door: /v1/artist/invite
+//
+// Same Worker, same rule - it decides nothing. Every assertion below is about
+// what it forwards and what it refuses to reveal.
+// ---------------------------------------------------------------------------
+
+const ARTIST_INVITE_URL = `${CRM_ORIGIN}/v1/artist/invite`;
+const TENANT_BEARER = 'Bearer synthetic.artist.access.token';
+
+const artistPayload = {
+  idempotency_key: IDEMPOTENCY_KEY,
+  email: '  New.Teammate@EXAMPLE.TEST ',
+  display_name: 'Synthetic Teammate',
+  artist_id: ARTIST_ID,
+  grant: { access_level: 'manager', can_manage_sessions: true },
+};
+
+function artistRequest(body = artistPayload, overrides = {}) {
+  return new Request(ARTIST_INVITE_URL, {
+    method: overrides.method || 'POST',
+    headers: {
+      origin: overrides.origin || CRM_ORIGIN,
+      authorization: overrides.authorization || TENANT_BEARER,
+      'content-type': 'application/json',
+    },
+    body: ['OPTIONS', 'GET', 'HEAD'].includes(overrides.method || 'POST') ? undefined : JSON.stringify(body),
+  });
+}
+
+{
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/rest/v1/rpc/begin_artist_invite')) {
+      return jsonResponse({
+        invite_request_id: INVITE_ID,
+        email_normalized: 'new.teammate@example.test',
+        status: 'pending',
+        idempotent_replay: false,
+      });
+    }
+    if (url.startsWith(`${SUPABASE_ORIGIN}/auth/v1/invite`)) return jsonResponse({});
+    if (url.endsWith('/rest/v1/rpc/finalize_artist_invite')) {
+      return jsonResponse({ invite_request_id: INVITE_ID, status: 'provisioned', idempotent_replay: false });
+    }
+    throw new Error(`unexpected call ${url}`);
+  };
+
+  const response = await handleTeamAdminRequest(artistRequest(), env, { fetcher });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { delivery: 'sent', idempotent_replay: false });
+
+  const begin = calls.find((call) => call.url.endsWith('begin_artist_invite'));
+  // The caller's own JWT reaches the database. The Worker's secret key is used
+  // for the Auth call and nothing else, which is what keeps authorization in
+  // one place.
+  assert.equal(begin.init.headers.authorization, TENANT_BEARER);
+  const beginBody = JSON.parse(begin.init.body);
+  assert.equal(beginBody.p_artist_id, ARTIST_ID);
+  assert.equal(beginBody.p_email, 'new.teammate@example.test');
+  assert.deepEqual(beginBody.p_grant, {
+    access_level: 'manager',
+    can_view_finance: false,
+    can_manage_finance: false,
+    can_manage_sessions: true,
+    can_manage_integrations: false,
+  });
+  // No role and no membership list are forwarded, because neither exists on
+  // this path.
+  assert.equal('p_role' in beginBody, false);
+  assert.equal('p_memberships' in beginBody, false);
+}
+
+{
+  // A suppressed invitation must be indistinguishable from a delivered one, and
+  // must not cause any mail to be sent.
+  const seen = [];
+  const fetcher = async (url) => {
+    seen.push(url);
+    if (url.endsWith('/rest/v1/rpc/begin_artist_invite')) {
+      return jsonResponse({
+        invite_request_id: null,
+        email_normalized: 'already.here@example.test',
+        status: 'suppressed',
+        idempotent_replay: false,
+      });
+    }
+    throw new Error(`unexpected call ${url}`);
+  };
+
+  const response = await handleTeamAdminRequest(artistRequest(), env, { fetcher });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { delivery: 'sent', idempotent_replay: false });
+  assert.equal(seen.some((url) => url.includes('/auth/v1/invite')), false, 'no mail for a suppressed invitation');
+  assert.equal(seen.some((url) => url.includes('finalize_artist_invite')), false);
+}
+
+{
+  // The database refusing is a refusal, not something the Worker recovers from.
+  // The owner path has a deliberate existing-staff recovery; this one has none,
+  // because recovering would disclose that the address exists.
+  const seen = [];
+  const response = await handleTeamAdminRequest(artistRequest(), env, {
+    fetcher: async (url) => {
+      seen.push(url);
+      if (url.endsWith('/rest/v1/rpc/begin_artist_invite')) return jsonResponse({ message: 'refused' }, 400);
+      throw new Error(`unexpected call ${url}`);
+    },
+  });
+  assert.equal(response.status, 400);
+  assert.equal(seen.some((url) => url.includes('list_profiles')), false, 'the tenant door never lists profiles');
+  assert.equal(seen.some((url) => url.includes('/auth/v1/')), false);
+}
+
+for (const [label, body] of [
+  ['a role the caller chose', { ...artistPayload, role: 'booking_manager' }],
+  ['a membership array', { ...artistPayload, memberships: [] }],
+  ['an owner-level grant', { ...artistPayload, grant: { access_level: 'owner' } }],
+  ['managing finance without viewing it', { ...artistPayload, grant: { can_manage_finance: true } }],
+  ['a read-only teammate holding a capability', {
+    ...artistPayload,
+    grant: { access_level: 'read_only', can_manage_sessions: true },
+  }],
+  ['an artist id that is not one', { ...artistPayload, artist_id: 'not-a-uuid' }],
+  ['an unknown grant key', { ...artistPayload, grant: { escalate: true } }],
+]) {
+  let calls = 0;
+  const response = await handleTeamAdminRequest(artistRequest(body), env, {
+    fetcher: async () => { calls += 1; },
+  });
+  assert.equal(response.status, 400, `rejected before any call: ${label}`);
+  assert.equal(calls, 0, `nothing reached the database: ${label}`);
+}
+
+{
+  // The two doors stay separate: neither path answers for the other.
+  let calls = 0;
+  const wrongOrigin = await handleTeamAdminRequest(
+    artistRequest(artistPayload, { origin: 'https://elsewhere.example' }),
+    env,
+    { fetcher: async () => { calls += 1; } },
+  );
+  assert.equal(wrongOrigin.status, 403);
+
+  const noBearer = await handleTeamAdminRequest(
+    new Request(ARTIST_INVITE_URL, {
+      method: 'POST',
+      headers: { origin: CRM_ORIGIN, 'content-type': 'application/json' },
+      body: JSON.stringify(artistPayload),
+    }),
+    env,
+    { fetcher: async () => { calls += 1; } },
+  );
+  assert.equal(noBearer.status, 401);
+
+  const wrongMethod = await handleTeamAdminRequest(
+    artistRequest(artistPayload, { method: 'GET' }),
+    env,
+    { fetcher: async () => { calls += 1; } },
+  );
+  assert.equal(wrongMethod.status, 405);
+
+  const unknownPath = await handleTeamAdminRequest(
+    new Request(`${CRM_ORIGIN}/v1/artist/invites`, {
+      method: 'POST',
+      headers: { origin: CRM_ORIGIN, authorization: TENANT_BEARER, 'content-type': 'application/json' },
+      body: '{}',
+    }),
+    env,
+    { fetcher: async () => { calls += 1; } },
+  );
+  assert.equal(unknownPath.status, 404);
+
+  assert.equal(calls, 0, 'none of the boundary refusals reached the database');
+}
+
 console.log('Team admin Worker tests passed');

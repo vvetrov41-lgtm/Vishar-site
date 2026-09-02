@@ -6,6 +6,11 @@
 // JWT atomically finalises the inactive profile plus artist memberships.
 
 const INVITE_PATH = '/v1/staff/invite';
+// The tenant-scoped door. A separate path rather than a flag inside the owner
+// handler, so the two authorization stories stay visibly separate in the code
+// as well as in the database. This Worker still decides nothing: it forwards
+// the caller's own JWT and lets begin_artist_invite refuse.
+const ARTIST_INVITE_PATH = '/v1/artist/invite';
 const INVITE_REDIRECT_SEARCH = '?staff_invite=1';
 const MAX_BODY_BYTES = 16 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -265,6 +270,124 @@ function validateRequest(value) {
   };
 }
 
+function validateArtistInviteRequest(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TeamAdminError('invalid_invite', 400);
+  }
+
+  // No role and no membership array: a tenant invitation reaches one artist and
+  // mints one kind of account, and neither is the caller's to choose.
+  const allowed = new Set(['idempotency_key', 'email', 'display_name', 'artist_id', 'grant']);
+  if (Object.keys(value).some((key) => !allowed.has(key))) {
+    throw new TeamAdminError('invalid_invite', 400);
+  }
+
+  const idempotencyKey = String(value.idempotency_key || '').trim();
+  const email = String(value.email || '').trim().toLowerCase();
+  const displayName = typeof value.display_name === 'string' ? value.display_name.trim() : '';
+  const artistId = String(value.artist_id || '').trim();
+
+  if (!UUID_PATTERN.test(idempotencyKey)) throw new TeamAdminError('invalid_idempotency_key', 400);
+  if (email.length < 3 || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new TeamAdminError('invalid_email', 400);
+  }
+  if (displayName.length > 120) throw new TeamAdminError('invalid_display_name', 400);
+  if (!UUID_PATTERN.test(artistId)) throw new TeamAdminError('invalid_artist', 400);
+
+  const grantInput = value.grant ?? {};
+  if (!grantInput || typeof grantInput !== 'object' || Array.isArray(grantInput)) {
+    throw new TeamAdminError('invalid_grant', 400);
+  }
+  const grantAllowed = new Set(['access_level', ...CAPABILITY_KEYS]);
+  if (Object.keys(grantInput).some((key) => !grantAllowed.has(key))) {
+    throw new TeamAdminError('invalid_grant', 400);
+  }
+
+  const accessLevel = String(grantInput.access_level || 'artist');
+  if (!ACCESS_LEVEL_VALUES.has(accessLevel)) throw new TeamAdminError('invalid_grant', 400);
+
+  const grant = {
+    access_level: accessLevel,
+    can_view_finance: booleanField(grantInput, 'can_view_finance'),
+    can_manage_finance: booleanField(grantInput, 'can_manage_finance'),
+    can_manage_sessions: booleanField(grantInput, 'can_manage_sessions'),
+    can_manage_integrations: booleanField(grantInput, 'can_manage_integrations'),
+  };
+  if (grant.can_manage_finance && !grant.can_view_finance) {
+    throw new TeamAdminError('invalid_grant', 400);
+  }
+  if (accessLevel === 'read_only' && CAPABILITY_KEYS.some((key) => grant[key])) {
+    throw new TeamAdminError('invalid_grant', 400);
+  }
+
+  return { idempotency_key: idempotencyKey, email, display_name: displayName || null, artist_id: artistId, grant };
+}
+
+// The tenant-scoped states, which are deliberately narrower than the owner
+// ones: no role, no profile id. `suppressed` means the database accepted the
+// request and decided to create nothing, and the caller must not be able to
+// tell that apart from a delivered invitation.
+function validatedArtistState(value) {
+  if (
+    !value
+    || typeof value !== 'object'
+    || !['pending', 'provisioned', 'suppressed'].includes(String(value.status || ''))
+  ) throw new TeamAdminError('invalid_database_response', 502);
+  if (value.status === 'pending' && !UUID_PATTERN.test(String(value.invite_request_id || ''))) {
+    throw new TeamAdminError('invalid_database_response', 502);
+  }
+  return value;
+}
+
+// One shape for every outcome. A caller learns that their invitation was
+// accepted and nothing about who already has an account on this installation.
+function publicArtistInviteResult(value) {
+  return { delivery: 'sent', idempotent_replay: value.idempotent_replay === true };
+}
+
+async function handleArtistInvite(request, config, requestOrigin, bearer, fetcher) {
+  const invite = validateArtistInviteRequest(await boundedJson(request));
+
+  const prepared = validatedArtistState(await rpc(fetcher, config, bearer, 'begin_artist_invite', {
+    p_idempotency_key: invite.idempotency_key,
+    p_email: invite.email,
+    p_display_name: invite.display_name,
+    p_artist_id: invite.artist_id,
+    p_grant: invite.grant,
+  }));
+
+  // Suppressed and already-provisioned both stop here, and both look the same
+  // from outside. No Auth call is made for a suppressed invitation, which is
+  // the whole point: the address already belongs to somebody.
+  if (prepared.status !== 'pending') {
+    return json(publicArtistInviteResult(prepared), 200, requestOrigin);
+  }
+
+  const deliverySucceeded = await sendAuthInvite(
+    fetcher,
+    config,
+    String(prepared.email_normalized || invite.email)
+  );
+
+  let finalised;
+  try {
+    finalised = validatedArtistState(await rpc(
+      fetcher,
+      config,
+      bearer,
+      'finalize_artist_invite',
+      { p_invite_request_id: prepared.invite_request_id }
+    ));
+  } catch {
+    throw new TeamAdminError(
+      deliverySucceeded ? 'provisioning_pending' : 'invite_not_completed',
+      502
+    );
+  }
+
+  return json(publicArtistInviteResult(finalised), 200, requestOrigin);
+}
+
 async function rpc(fetcher, config, bearer, name, body) {
   let response;
   try {
@@ -425,13 +548,25 @@ export async function handleTeamAdminRequest(request, env, { fetcher = fetch } =
   const originAllowed = requestOrigin === config.crmOrigin;
   const url = new URL(request.url);
 
-  if (url.pathname !== INVITE_PATH) return json({ error: 'not_found' }, 404, originAllowed ? requestOrigin : null);
+  const isOwnerPath = url.pathname === INVITE_PATH;
+  const isArtistPath = url.pathname === ARTIST_INVITE_PATH;
+  if (!isOwnerPath && !isArtistPath) {
+    return json({ error: 'not_found' }, 404, originAllowed ? requestOrigin : null);
+  }
   if (!originAllowed) return json({ error: 'origin_not_allowed' }, 403);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: responseHeaders(requestOrigin) });
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, requestOrigin);
 
   const bearer = request.headers.get('authorization') || '';
   if (!BEARER_PATTERN.test(bearer)) return json({ error: 'owner_access_required' }, 401, requestOrigin);
+
+  if (isArtistPath) {
+    try {
+      return await handleArtistInvite(request, config, requestOrigin, bearer, fetcher);
+    } catch (error) {
+      return safeError(error, requestOrigin);
+    }
+  }
 
   try {
     const invite = validateRequest(await boundedJson(request));
@@ -496,9 +631,12 @@ export default {
 
 export const __testing = Object.freeze({
   INVITE_PATH,
+  ARTIST_INVITE_PATH,
   INVITE_REDIRECT_SEARCH,
   MAX_BODY_BYTES,
   readConfig,
   validateRequest,
+  validateArtistInviteRequest,
   publicResult,
+  publicArtistInviteResult,
 });

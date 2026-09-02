@@ -313,3 +313,78 @@ Active counts afterwards - 2 profiles, 2 artists, 3 workspaces - match the
 pre-acceptance baseline exactly.
 
 Signup is left **open**.
+
+---
+
+## 11. The teammate gap, closed: migration 0133
+
+Section 9 described a founder who cannot bring in an assistant. `0133` adds a
+second door rather than widening the first.
+
+`public.begin_artist_invite(p_idempotency_key, p_email, p_display_name,
+p_artist_id, p_grant)` and `public.finalize_artist_invite(p_invite_request_id)`
+are siblings of the owner pair. They write the same
+`crm_private.staff_invites` rows, use the same finalize shape, and differ in
+exactly what the trust boundary requires.
+
+| | Owner invitation | Tenant invitation |
+| --- | --- | --- |
+| Authorization | `require_role('owner')` | `has_artist_capability(artist, 'manage_team')` |
+| Reach | a membership array | one artist, named in the call |
+| Role | a parameter | always `booking_manager` |
+| Ceiling | the owner holds everything | cannot exceed the caller's own grant |
+| Address already in use | says so | indistinguishable from success |
+| Volume | none | two per-artist windows, one installation window, one switch |
+| Lifetime | none | expires after seven days |
+
+The argument list is the boundary. There is no role and no membership list, so
+there is no version of the call that reaches a second artist. Naming an artist
+the caller does not manage and naming one that does not exist produce the same
+`42501`, so the id space is not a probe.
+
+### Why the answer is deliberately unhelpful
+
+`finalize_staff_invite` tells an owner that an address already has a profile.
+For a stranger who has just completed signup, that same message is an account
+oracle over every tenant in the installation: type addresses, read which come
+back as existing.
+
+So the tenant door records a `suppressed` invitation, sends no mail, and
+returns the shape a live invitation returns. The Worker never calls
+`/auth/v1/invite` for it, and never falls back to `list_profiles` the way the
+owner path does — that recovery is exactly the disclosure being avoided.
+
+The cost is real: an inviter who mistypes a colleague's address gets no signal.
+The alternative is worse.
+
+### Bounds
+
+| Control | Default |
+| --- | --- |
+| `tenant_invites_open` | **false** — applying the migration changes nothing |
+| Pending per artist | 3 |
+| Per artist per 24 hours | 5 |
+| Installation-wide per hour | 10 |
+| Inviter's own address | must be confirmed |
+| Invitation lifetime | 7 days |
+
+All four numbers move through `public.set_tenant_invites`, owner-only and
+audited as `invite.tenant_availability_changed`. Every invitation writes
+`invite.tenant_requested`, `invite.tenant_provisioned` or
+`invite.tenant_suppressed`, artist-scoped.
+
+### Where the capability is checked
+
+Twice. `begin` checks it, and `finalize` checks it again — because the Worker's
+call to Supabase Auth sits between them and is not transactional, and in that
+window the caller may have lost `manage_team` or the finance capability their
+grant carries. The membership is written in `finalize`, so that is where the
+authorization has to hold.
+
+### The Worker
+
+`/v1/artist/invite`, a sibling of `/v1/staff/invite` in the same Worker. It
+still performs no authorization of its own: it forwards the caller's JWT to the
+two RPCs and uses its secret key for exactly one thing, the Auth call that
+mints the identity. If a future reviewer finds this Worker deciding who may
+invite, the design has drifted.

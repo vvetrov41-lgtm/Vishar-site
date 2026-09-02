@@ -849,6 +849,18 @@ insert into expected_function_acl values
   ('public.set_self_service_signup(boolean,integer,integer)', false, true, false),
   ('public.bootstrap_artist_account(text,text,text,text)', false, true, false),
 
+  -- Tenant-scoped invitation (0133). All three are browser-only, and none is
+  -- readable by anon: unlike the signup policy, nothing here is ever asked by a
+  -- logged-out page, so telling an anonymous caller whether invitations are open
+  -- would be disclosure with no purpose. The service backend is offered none of
+  -- them either - the Worker forwards the caller's own JWT and performs no
+  -- authorization of its own, which is the property that keeps one invitation
+  -- story in the database rather than two.
+  ('public.tenant_invite_policy(uuid)', false, true, false),
+  ('public.set_tenant_invites(boolean,integer,integer,integer)', false, true, false),
+  ('public.begin_artist_invite(uuid,text,text,uuid,jsonb)', false, true, false),
+  ('public.finalize_artist_invite(uuid)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),

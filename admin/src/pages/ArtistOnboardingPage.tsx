@@ -279,6 +279,15 @@ export function ArtistOnboardingPage({ artistId }: { artistId: string }) {
               ru ? 'Доступ выдан.' : 'Access granted.',
             )}
           />
+
+          <InviteTeammateForm
+            artistId={artistId}
+            ru={ru}
+            busy={busy}
+            api={api}
+            onDone={(message) => run(async () => message, message)}
+            onError={(error) => run(async () => { throw error; }, '')}
+          />
         </Section>
       ) : null}
 
@@ -568,6 +577,142 @@ function AddMembershipForm({
         </>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Bringing somebody new onto this artist.
+ *
+ * Sits next to the "give someone who already uses the CRM access" picker
+ * because from the artist's point of view it is the same job. The difference
+ * is that the person does not exist yet, which the words never mention: no
+ * profile, no identity, no tenant, no auth.
+ *
+ * The reply is the same whether an account was created or the address already
+ * belonged to somebody. That is not vagueness for its own sake - telling the
+ * two apart would turn this form into a way of asking the installation who
+ * banks here.
+ */
+function InviteTeammateForm({
+  artistId, ru, busy, api, onDone, onError,
+}: {
+  artistId: string;
+  ru: boolean;
+  busy: boolean;
+  api: ReturnType<typeof useApi>;
+  onDone: (message: string) => void;
+  onError: (error: unknown) => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [sending, setSending] = useState(false);
+  const [grant, setGrant] = useState<MembershipGrant>({
+    accessLevel: 'manager',
+    canViewFinance: false,
+    canManageFinance: false,
+    canManageSessions: true,
+    canManageIntegrations: false,
+    isActive: true,
+  });
+
+  const policy = useAsync(
+    useCallback(() => api.tenantInvitePolicy(artistId), [api, artistId]),
+    [api, artistId],
+  );
+  if (!policy.data?.can_invite) return null;
+
+  const trimmed = email.trim();
+  // The capability editor can offer `owner` to somebody who holds it, and this
+  // door never hands it out. Refusing to submit is better than quietly sending
+  // something else: the person filling the form finds out here rather than
+  // wondering later why the teammate has less access than they chose.
+  const level = grant.accessLevel === 'owner' ? null : grant.accessLevel;
+
+  return (
+    <form
+      className="stack"
+      style={{ marginTop: 12 }}
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (sending || !trimmed || !level) return;
+        setSending(true);
+        try {
+          await api.inviteTeammate({
+            // A fresh key per submission, so a retry after a network failure is
+            // the same request rather than a second invitation.
+            idempotency_key: crypto.randomUUID(),
+            email: trimmed,
+            display_name: name.trim() || null,
+            artist_id: artistId,
+            grant: {
+              access_level: level,
+              can_view_finance: grant.canViewFinance,
+              can_manage_finance: grant.canManageFinance,
+              can_manage_sessions: grant.canManageSessions,
+              can_manage_integrations: grant.canManageIntegrations,
+            },
+          });
+          setEmail('');
+          setName('');
+          onDone(ru
+            ? 'Приглашение отправлено. Человек получит письмо со ссылкой.'
+            : 'Invitation sent. They will get an email with a link.');
+        } catch (error) {
+          onError(error);
+        } finally {
+          setSending(false);
+        }
+      }}
+    >
+      <h3>{ru ? 'Пригласить нового человека' : 'Invite someone new'}</h3>
+      <p className="meta">
+        {ru
+          ? 'Он получит доступ только к этому мастеру.'
+          : 'They will get access to this artist and nothing else.'}
+      </p>
+      <label>
+        {ru ? 'Электронная почта' : 'Email'}
+        <input
+          type="email"
+          value={email}
+          required
+          autoComplete="off"
+          onChange={(event) => setEmail(event.target.value)}
+        />
+      </label>
+      <label>
+        {ru ? 'Имя (необязательно)' : 'Name (optional)'}
+        <input
+          type="text"
+          value={name}
+          maxLength={120}
+          autoComplete="off"
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <CapabilityEditor
+        value={grant}
+        onChange={setGrant}
+        preview={null}
+        previewLoading={false}
+        disabled={busy || sending}
+        showActive={false}
+      />
+      {level ? null : (
+        <p className="meta">
+          {ru
+            ? 'Владельца приглашением не назначить — выберите другой уровень доступа.'
+            : 'An invitation cannot make somebody an owner. Choose another access level.'}
+        </p>
+      )}
+      <div className="actions">
+        <button type="submit" disabled={busy || sending || !trimmed || !level}>
+          {sending
+            ? (ru ? 'Отправляем…' : 'Sending…')
+            : (ru ? 'Отправить приглашение' : 'Send invitation')}
+        </button>
+      </div>
+    </form>
   );
 }
 
