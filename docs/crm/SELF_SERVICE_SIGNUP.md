@@ -121,7 +121,12 @@ organization with, and leaves every invited account's view exactly as it was. Th
 owner is excluded from that test: migration 0015 gives an active owner a membership on every
 artist and 0075 turns that into ownership of every solo workspace, so the owner shares both with
 every tenant automatically, and a first attempt at this fix still disclosed exactly the person it
-was written to protect. Bringing a new person
+was written to protect.
+
+0131's header says that bringing a *new* person into a self-service tenant is the invitation flow's
+job. That sentence describes where the capability belongs, not where it is: `begin_staff_invite`
+calls `crm_private.require_role('owner')`, so today only the installation owner can invite anybody,
+and a self-service founder cannot add a first teammate at all. See section 9. Bringing a new person
 into a self-service tenant is the invitation flow's job: it mints an identity, while the directory
 picks an existing one.
 
@@ -192,3 +197,27 @@ installation owner's to make. Two shapes are available:
 
 Until one of those happens, the database boundary is live and proven and the screens exist, but the
 door is reachable only from inside Access.
+
+---
+
+## 9. A self-service founder cannot yet add a teammate
+
+Raised in review on the migration that scoped the directory, and correct.
+
+A solo artist working alone - the whole audience for public signup - needs nobody else, so this
+blocks no part of the flow that shipped. But the moment they want an assistant, there is no path:
+
+- The scoped directory shows them only people already on their artist or in their organization,
+  which on day one is themselves. That is the point of the scoping, not a side effect of it.
+- `public.begin_staff_invite` calls `crm_private.require_role('owner')`. Inviting a human mints a
+  Supabase Auth identity, and that has always been an installation-owner act.
+
+Note what 0131 did **not** take away. Before it, a founder could *see* every profile but still could
+not invite anybody; the only thing the wide directory added was the ability to staff an unrelated
+existing person onto their own artist, which is the cross-tenant reach the scoping exists to
+prevent. The gap predates the fix.
+
+Closing it means letting a non-owner account create an auth identity, bounded to its own tenant.
+That is a new trust boundary with its own rate limit, its own audit trail and its own abuse
+surface - a workstream, not a patch. It has not been designed, and this document does not pretend
+otherwise.
