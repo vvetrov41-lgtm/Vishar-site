@@ -221,3 +221,95 @@ Closing it means letting a non-owner account create an auth identity, bounded to
 That is a new trust boundary with its own rate limit, its own audit trail and its own abuse
 surface - a workstream, not a patch. It has not been designed, and this document does not pretend
 otherwise.
+
+---
+
+## 10. Production acceptance, 2 September 2026
+
+Run against `vfjexhfdbrjmuxfdvbdx` through the public API with the publishable
+key, the way an artist's browser reaches it. Migration head `0132`.
+
+**Before a session exists**
+
+- `self_service_signup_policy()` answers `anon`. It is the only function in the
+  ACL inventory that does.
+- `clients`, `enquiries`, `projects`, `profiles`, `artists`, `workspaces` all
+  answer `42501 permission denied` to `anon`. Not an empty list - denied.
+
+**Signing up**
+
+- `POST /auth/v1/signup` created the account and sent a confirmation mail.
+- `POST /auth/v1/token` before confirming answered `email_not_confirmed`. An
+  unverified account cannot obtain a session at all, so it can never reach the
+  bootstrap - the verified-email guard inside the function is the second line,
+  not the first.
+
+**With the door shut**
+
+- `bootstrap_artist_account` → `42501 signing up is not open at the moment`.
+- `set_self_service_signup(true)` from that same account → `42501 changing
+  signup availability is not permitted`.
+- A verified account with no tenant read every table and got `[]` from all of
+  them.
+
+**With the door open**
+
+- First call returned `created: true` with a profile, a solo workspace and an
+  artist. Second identical call returned `created: false` and the same three
+  ids. One tenant, not two.
+- The founder's platform role is `booking_manager`. Public signup never mints an
+  installation owner.
+- The founder is `owner` of their own workspace and of nothing else.
+
+**Isolation, measured on the deployed schema**
+
+| What the founder can see | Rows |
+| --- | --- |
+| clients | 0 |
+| enquiries | 0 |
+| projects | 0 |
+| sessions | 0 |
+| artists | 1 - their own |
+| workspaces | 1 - their own |
+| profiles | 1 - their own |
+| `list_directory_profiles()` | 1 - themselves, not Vladimir, not Kristina |
+
+Vladimir's and Kristina's books were re-counted afterwards: 15 clients, 16
+enquiries, 5 projects, 1 and 2 active artist memberships. Unchanged.
+
+### What acceptance found: 0132
+
+The tenant was isolated in the direction the brief asked about and open in the
+other. `grant_artist_to_active_owners` seated every active owner on the new
+artist the moment it existed, and `sync_solo_workspace_owner` turned that into
+ownership of the new solo workspace - so a stranger's clients and payments were
+readable by the installation operator, and the operator's profile id came back
+to the stranger in the membership row.
+
+`0132_self_service_tenant_privacy.sql` scopes both owner-grant paths to skip
+workspaces founded through signup, and repairs what the old rule had granted.
+Nothing changes for an artist created by an operator, an invitation or a
+migration. `269_self_service_tenant_privacy.sql` holds the line, including the
+case that made the first draft insufficient: `ensure_owner_artist_memberships`
+runs on every write to an owner profile and would otherwise grant the whole
+tenant back on the next rename.
+
+**This is a reversible product decision.** If the studio should retain oversight
+of tenants that sign up through it, remove the exclusion - but say so to the
+people signing up, because their client records are other businesses' data.
+
+### The acceptance probe
+
+`crm-signup-probe-20260902@vishartattoo.com` is a real production account and
+cannot be deleted. `public.activity_log` is append-only and holds a `restrict`
+foreign key to `public.artists`, so removing the tenant would mean destroying
+its own audit trail. It is deactivated instead: profile, artist and workspace
+`is_active = false`, every artist membership inactive, display names set to
+`ACCEPTANCE PROBE - do not use`, and the login banned until 2099. Its workspace
+membership stays active because `protect_last_workspace_owner` refuses to leave
+a workspace ownerless, and that guard is right.
+
+Active counts afterwards - 2 profiles, 2 artists, 3 workspaces - match the
+pre-acceptance baseline exactly.
+
+Signup is left **open**.
