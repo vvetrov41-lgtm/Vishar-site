@@ -22,6 +22,7 @@ import type {
 } from '../lib/payment-api';
 import { useApi, useSession } from '../lib/session';
 import { useLanguage, type Language } from '../lib/i18n';
+import '../payments-mobile.css';
 
 const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
 const MONZO_CONNECTOR_ORIGIN = readMonzoConnectorOrigin(browserEnv, import.meta.env.DEV);
@@ -168,6 +169,9 @@ export function PaymentsPage() {
   const [policyRounding, setPolicyRounding] = useState('1');
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [policyNotice, setPolicyNotice] = useState<string | null>(null);
+  const [showAllPayments, setShowAllPayments] = useState(false);
+  const [showAllAppointments, setShowAllAppointments] = useState(false);
+  const [depositSheetSessionId, setDepositSheetSessionId] = useState<string | null>(null);
 
   const selectedArtist = useMemo(
     () => artists.find((artist) => artist.id === selectedArtistId) ?? null,
@@ -201,6 +205,30 @@ export function PaymentsPage() {
       && new Date(appointment.end_at).getTime() >= now
     );
   }, [appointments]);
+
+  const actionableCandidates = useMemo(
+    () => reconciliationCandidates.filter((candidate) => !candidate.confirmed && candidate.status !== 'ignored'),
+    [reconciliationCandidates]
+  );
+  const completedCandidates = useMemo(
+    () => reconciliationCandidates.filter((candidate) => candidate.confirmed || candidate.status === 'ignored'),
+    [reconciliationCandidates]
+  );
+  const visibleReconciliationCandidates = useMemo(
+    () => [
+      ...actionableCandidates,
+      ...(showAllPayments ? completedCandidates : completedCandidates.slice(0, 3)),
+    ],
+    [actionableCandidates, completedCandidates, showAllPayments]
+  );
+  const visibleAppointments = useMemo(
+    () => showAllAppointments ? eligibleAppointments : eligibleAppointments.slice(0, 4),
+    [eligibleAppointments, showAllAppointments]
+  );
+  const depositSheetAppointment = useMemo(
+    () => eligibleAppointments.find((appointment) => appointment.id === depositSheetSessionId) ?? null,
+    [depositSheetSessionId, eligibleAppointments]
+  );
 
   const selectedGroupAppointments = useMemo(
     () => selectedGroupSessionIds
@@ -283,6 +311,9 @@ export function PaymentsPage() {
     setDestinationAmount('');
     setDestinationUrl('');
     setPolicyNotice(null);
+    setShowAllPayments(false);
+    setShowAllAppointments(false);
+    setDepositSheetSessionId(null);
     if (!selectedArtistId) {
       setSettings(EMPTY_SETTINGS);
       setPaymentUrl('');
@@ -623,318 +654,321 @@ export function PaymentsPage() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack payments-page">
+      <section className="payments-overview" aria-label={language === 'ru' ? 'Сводка по депозитам' : 'Deposit summary'}>
+        <div className={`payments-stat${actionableCandidates.length ? ' is-action' : ''}`}>
+          <span className="payments-stat-label">{language === 'ru' ? 'Требуют действия' : 'Need action'}</span>
+          <strong>{actionableCandidates.length}</strong>
+        </div>
+        <div className="payments-stat">
+          <span className="payments-stat-label">{language === 'ru' ? 'Будущие сеансы' : 'Upcoming sessions'}</span>
+          <strong>{eligibleAppointments.length}</strong>
+        </div>
+        <div className="payments-stat">
+          <span className="payments-stat-label">{language === 'ru' ? 'Депозиты' : 'Deposits'}</span>
+          <strong>{settings.enabled ? (language === 'ru' ? 'Вкл.' : 'On') : (language === 'ru' ? 'Выкл.' : 'Off')}</strong>
+        </div>
+      </section>
+
       {/* Money that has already arrived comes first: it is the only item on
           this screen with someone waiting on the other end of it. */}
       {canViewReconciliation ? (
-        <section className="panel">
+        <section className="panel payments-work-panel">
           <div className="panel-heading">
             <div>
               <h2>{copy.reconciliationTitle}</h2>
-              <p>{copy.reconciliationDescription}</p>
+              <p>{language === 'ru'
+                ? 'Крупно показываются только платежи, которые требуют решения.'
+                : 'Only payments that need a decision stay prominent.'}</p>
             </div>
           </div>
-          <div className="notice">{copy.reconciliationSecurity}</div>
+          <details className="payments-help">
+            <summary>{language === 'ru' ? 'Как работает сопоставление' : 'How matching works'}</summary>
+            <div className="notice">{copy.reconciliationSecurity}</div>
+          </details>
           {reconciliationNotice ? <div className="notice ok" role="status">{reconciliationNotice}</div> : null}
           {loading ? <LoadingState label={copy.loadingReconciliation} /> : reconciliationCandidates.length === 0 ? (
             <div className="notice">{copy.noCandidates}</div>
           ) : (
-            <div className="list-stack">
-              {reconciliationCandidates.map((candidate) => {
-                const matched = candidate.matched_payment_request;
-                const selectedRequestId = matchSelection[candidate.id] ?? '';
-                const canMutate = canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored';
-                return (
-                  <div className="list-row" key={candidate.id}>
-                    <div>
-                      <strong>
-                        {money(candidate.amount, candidate.currency, locale)} · {candidateStatusLabel(candidate, language, copy)}
-                      </strong>
-                      <div className="muted">{copy.received} {new Date(candidate.occurred_at).toLocaleString(locale)}</div>
-                      {matched ? (
-                        <div className="muted">{copy.matched}: {requestSummaryLabel(matched, locale, copy)}</div>
-                      ) : candidate.suggested_payment_request ? (
-                        <div className="muted">{copy.suggested}: {requestSummaryLabel(candidate.suggested_payment_request, locale, copy)}</div>
-                      ) : null}
-                      {candidate.confirmed ? (
-                        <div className="notice ok">{copy.confirmedLedger}</div>
-                      ) : candidate.status === 'ignored' ? (
-                        <div className="notice">{copy.ignoredNoChange}</div>
-                      ) : null}
-                    </div>
-
-                    {/* The server already worked out which request this is.
-                        Offer agreement first, and keep the manual matcher
-                        behind it for the cases it could not decide. */}
-                    {canMutate && !matched && candidate.suggested_payment_request && !manualMatch[candidate.id] ? (
+            <>
+              {actionableCandidates.length === 0 ? (
+                <div className="notice ok">{language === 'ru' ? 'Все входящие платежи обработаны.' : 'All incoming payments are processed.'}</div>
+              ) : null}
+              <div className="list-stack payments-list">
+                {visibleReconciliationCandidates.map((candidate) => {
+                  const matched = candidate.matched_payment_request;
+                  const selectedRequestId = matchSelection[candidate.id] ?? '';
+                  const canMutate = canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored';
+                  const isHistory = candidate.confirmed || candidate.status === 'ignored';
+                  return (
+                    <div className={`list-row payment-row${isHistory ? ' payment-row-compact' : ''}`} key={candidate.id}>
                       <div>
-                        <p className="muted">
-                          {copy.suggestedSentence(
-                            money(candidate.amount, candidate.currency, locale),
-                            new Date(candidate.occurred_at).toLocaleDateString(locale),
-                            candidate.suggested_payment_request.client_name,
-                            candidate.suggested_payment_request.session_start_at
-                              ? new Date(candidate.suggested_payment_request.session_start_at).toLocaleString(locale)
-                              : copy.noSessionDate,
-                          )}
-                        </p>
-                        <div className="button-row">
-                          <button
-                            type="button"
-                            className="primary-button"
-                            disabled={busyCandidate === candidate.id}
-                            onClick={() => void confirmSuggestedCandidate(candidate)}
-                          >
-                            {busyCandidate === candidate.id
-                              ? copy.working
-                              : copy.confirmSuggested(
-                                money(candidate.amount, candidate.currency, locale),
-                                candidate.suggested_payment_request.client_name,
-                              )}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={busyCandidate === candidate.id}
-                            onClick={() => setManualMatch((current) => ({ ...current, [candidate.id]: true }))}
-                          >
-                            {copy.chooseDifferent}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={busyCandidate === candidate.id}
-                            onClick={() => void ignoreCandidate(candidate)}
-                          >
-                            {copy.ignore}
-                          </button>
-                        </div>
-                      </div>
-                    ) : canMutate ? (
-                      <div className="form-grid">
-                        <label className="field field-wide">
-                          <span>{copy.depositRequest}</span>
-                          <select
-                            value={selectedRequestId}
-                            onChange={(event) => setMatchSelection((current) => ({
-                              ...current,
-                              [candidate.id]: event.target.value,
-                            }))}
-                          >
-                            <option value="">{copy.chooseEligibleRequest}</option>
-                            {candidate.match_options.map((option) => (
-                              <option key={option.payment_request_id} value={option.payment_request_id}>
-                                {requestSummaryLabel(option, locale, copy)}{option.is_suggested ? ` · ${copy.suggestedSuffix}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {candidate.match_options.length === 0 ? (
-                          <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
+                        <strong>
+                          {money(candidate.amount, candidate.currency, locale)} · {candidateStatusLabel(candidate, language, copy)}
+                        </strong>
+                        <div className="muted">{copy.received} {new Date(candidate.occurred_at).toLocaleString(locale)}</div>
+                        {matched ? (
+                          <div className="muted">{copy.matched}: {requestSummaryLabel(matched, locale, copy)}</div>
+                        ) : candidate.suggested_payment_request ? (
+                          <div className="muted">{copy.suggested}: {requestSummaryLabel(candidate.suggested_payment_request, locale, copy)}</div>
                         ) : null}
-                        <div className="button-row field-wide">
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={busyCandidate === candidate.id || !selectedRequestId}
-                            onClick={() => void matchCandidate(candidate)}
-                          >
-                            {busyCandidate === candidate.id ? copy.working : matched ? copy.changeMatch : copy.match}
-                          </button>
-                          {matched ? (
+                        {candidate.confirmed ? (
+                          <span className="payment-status-pill ok">{copy.confirmedLedger}</span>
+                        ) : candidate.status === 'ignored' ? (
+                          <span className="payment-status-pill">{copy.ignoredNoChange}</span>
+                        ) : null}
+                      </div>
+
+                      {/* The server already worked out which request this is.
+                          Offer agreement first, and keep the manual matcher
+                          behind it for the cases it could not decide. */}
+                      {canMutate && !matched && candidate.suggested_payment_request && !manualMatch[candidate.id] ? (
+                        <div>
+                          <p className="muted">
+                            {copy.suggestedSentence(
+                              money(candidate.amount, candidate.currency, locale),
+                              new Date(candidate.occurred_at).toLocaleDateString(locale),
+                              candidate.suggested_payment_request.client_name,
+                              candidate.suggested_payment_request.session_start_at
+                                ? new Date(candidate.suggested_payment_request.session_start_at).toLocaleString(locale)
+                                : copy.noSessionDate,
+                            )}
+                          </p>
+                          <div className="button-row">
                             <button
                               type="button"
                               className="primary-button"
                               disabled={busyCandidate === candidate.id}
-                              onClick={() => void confirmCandidate(candidate)}
+                              onClick={() => void confirmSuggestedCandidate(candidate)}
                             >
-                              {copy.confirmPayment}
+                              {busyCandidate === candidate.id
+                                ? copy.working
+                                : copy.confirmSuggested(
+                                  money(candidate.amount, candidate.currency, locale),
+                                  candidate.suggested_payment_request.client_name,
+                                )}
                             </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={busyCandidate === candidate.id}
-                            onClick={() => void ignoreCandidate(candidate)}
-                          >
-                            {copy.ignore}
-                          </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled={busyCandidate === candidate.id}
+                              onClick={() => setManualMatch((current) => ({ ...current, [candidate.id]: true }))}
+                            >
+                              {copy.chooseDifferent}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled={busyCandidate === candidate.id}
+                              onClick={() => void ignoreCandidate(candidate)}
+                            >
+                              {copy.ignore}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ) : !canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored' ? (
-                      <div className="notice">{copy.viewOnly}</div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
+                      ) : canMutate ? (
+                        <div className="form-grid">
+                          <label className="field field-wide">
+                            <span>{copy.depositRequest}</span>
+                            <select
+                              value={selectedRequestId}
+                              onChange={(event) => setMatchSelection((current) => ({
+                                ...current,
+                                [candidate.id]: event.target.value,
+                              }))}
+                            >
+                              <option value="">{copy.chooseEligibleRequest}</option>
+                              {candidate.match_options.map((option) => (
+                                <option key={option.payment_request_id} value={option.payment_request_id}>
+                                  {requestSummaryLabel(option, locale, copy)}{option.is_suggested ? ` · ${copy.suggestedSuffix}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {candidate.match_options.length === 0 ? (
+                            <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
+                          ) : null}
+                          <div className="button-row field-wide">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled={busyCandidate === candidate.id || !selectedRequestId}
+                              onClick={() => void matchCandidate(candidate)}
+                            >
+                              {busyCandidate === candidate.id ? copy.working : matched ? copy.changeMatch : copy.match}
+                            </button>
+                            {matched ? (
+                              <button
+                                type="button"
+                                className="primary-button"
+                                disabled={busyCandidate === candidate.id}
+                                onClick={() => void confirmCandidate(candidate)}
+                              >
+                                {copy.confirmPayment}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled={busyCandidate === candidate.id}
+                              onClick={() => void ignoreCandidate(candidate)}
+                            >
+                              {copy.ignore}
+                            </button>
+                          </div>
+                        </div>
+                      ) : !canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored' ? (
+                        <div className="notice">{copy.viewOnly}</div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              {completedCandidates.length > 3 ? (
+                <button
+                  type="button"
+                  className="secondary-button payments-more"
+                  onClick={() => setShowAllPayments((current) => !current)}
+                >
+                  {showAllPayments
+                    ? (language === 'ru' ? 'Показать только последние' : 'Show recent only')
+                    : (language === 'ru' ? `Все обработанные платежи (${completedCandidates.length})` : `All processed payments (${completedCandidates.length})`)}
+                </button>
+              ) : null}
+            </>
           )}
         </section>
       ) : null}
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <h2>{copy.depositsTitle}</h2>
-            <p>{copy.depositsDescription(selectedArtist.display_name)}</p>
-          </div>
-        </div>
-
-        {loading ? <LoadingState label={copy.loadingSettings} /> : (
-          <form onSubmit={saveSettings} className="form-grid">
-            <label className="field field-wide">
-              <span>{copy.reusablePaymentLink}</span>
-              <input
-                type="url"
-                value={paymentUrl}
-                onChange={(event) => setPaymentUrl(event.target.value)}
-                placeholder="https://monzo.com/pay/r/…"
-                autoComplete="off"
-                required
-              />
-            </label>
-            <label className="field checkbox-field">
-              <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
-              <span>{copy.enableArtist}</span>
-            </label>
-            <div className="notice field-wide">{copy.depositPolicyNotice}</div>
-            <div className="field-wide">
-              <button type="submit" className="primary-button" disabled={saving}>
-                {saving ? copy.saving : copy.saveSettings}
-              </button>
-            </div>
-          </form>
-        )}
-      </section>
-
-      <section className="panel">
+      <section className="panel payments-work-panel">
         <div className="panel-heading">
           <div>
             <h2>{copy.requestTitle}</h2>
-            <p>{copy.requestDescription}</p>
+            <p>{language === 'ru'
+              ? 'По умолчанию показаны ближайшие четыре. Сумма по-прежнему рассчитывается существующими правилами CRM.'
+              : 'The nearest four are shown by default. The amount still comes from the existing CRM rules.'}</p>
           </div>
         </div>
+        {!settings.enabled ? (
+          <div className="notice warn">{language === 'ru' ? 'Создание депозитов отключено в настройках ниже.' : 'Deposit requests are disabled in the settings below.'}</div>
+        ) : null}
         {eligibleAppointments.length === 0 ? <div className="notice">{copy.noEligibleAppointments}</div> : (
-          <div className="list-stack">
-            {eligibleAppointments.map((appointment) => {
-              const depositAmount = depositAmountForAppointment(appointment, settings.deposit_tiers);
-              return (
-                <div className="list-row" key={appointment.id}>
-                  <div>
-                    <strong>{clientNames.get(appointment.client_id) ?? copy.clientUnknown}</strong>
-                    <div className="muted">
-                      {new Date(appointment.start_at).toLocaleString(locale)}
-                      {' · '}
-                      {label('sessionStatus', appointment.status)} · {label('paymentStatus', appointment.payment_status)}
-                      {depositAmount == null ? '' : ` · £${depositAmount} ${copy.depositSuffix}`}
+          <>
+            <div className="payments-session-list">
+              {visibleAppointments.map((appointment) => {
+                const depositAmount = depositAmountForAppointment(appointment, settings.deposit_tiers);
+                return (
+                  <div className="payments-session-row" key={appointment.id}>
+                    <div className="payments-session-copy">
+                      <strong>{clientNames.get(appointment.client_id) ?? copy.clientUnknown}</strong>
+                      <div className="payments-session-meta">
+                        {new Date(appointment.start_at).toLocaleString(locale)}
+                        {' · '}
+                        {label('sessionStatus', appointment.status)} · {label('paymentStatus', appointment.payment_status)}
+                        {depositAmount == null ? '' : ` · ${money(depositAmount, settings.currency || 'GBP', locale)}`}
+                      </div>
                     </div>
-                  </div>
-                  <div className="button-row">
                     <button
                       type="button"
-                      className="secondary-button"
+                      className="primary-button payments-session-action"
                       disabled={busySession === appointment.id || !settings.enabled || depositAmount == null}
-                      onClick={() => void requestDeposit(appointment.id, 'copy_link')}
+                      onClick={() => setDepositSheetSessionId(appointment.id)}
                     >
-                      {depositAmount == null ? copy.createPersonalLink : copy.createAmountLink(depositAmount)}
-                    </button>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      disabled={busySession === appointment.id || !settings.enabled || depositAmount == null}
-                      onClick={() => void requestDeposit(appointment.id, 'email')}
-                    >
-                      {depositAmount == null ? copy.queueDepositEmail : copy.queueAmountEmail(depositAmount)}
+                      {busySession === appointment.id
+                        ? copy.working
+                        : depositAmount == null
+                          ? (language === 'ru' ? 'Недоступно' : 'Unavailable')
+                          : (language === 'ru' ? `+ Создать ${money(depositAmount, settings.currency || 'GBP', locale)}` : `+ Create ${money(depositAmount, settings.currency || 'GBP', locale)}`)}
                     </button>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+            {eligibleAppointments.length > 4 ? (
+              <button
+                type="button"
+                className="secondary-button payments-more"
+                onClick={() => setShowAllAppointments((current) => !current)}
+              >
+                {showAllAppointments
+                  ? (language === 'ru' ? 'Показать ближайшие 4' : 'Show nearest 4')
+                  : (language === 'ru' ? `Показать все (${eligibleAppointments.length})` : `Show all (${eligibleAppointments.length})`)}
+              </button>
+            ) : null}
+          </>
         )}
       </section>
 
-      {canManageReconciliation && eligibleAppointments.length >= 2 ? (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>{copy.groupedDepositTitle}</h2>
-              <p>
-                {language === 'ru'
-                  ? 'Выберите 2-12 сеансов одного клиента и проекта. Итоговый депозит CRM рассчитывает на сервере как сумму депозитов выбранных сеансов.'
-                  : 'Select 2-12 sessions from the same client and project. CRM calculates the final deposit on the server as the sum of the selected session deposits.'}
+      {depositSheetAppointment ? (() => {
+        const depositAmount = depositAmountForAppointment(depositSheetAppointment, settings.deposit_tiers);
+        const clientName = clientNames.get(depositSheetAppointment.client_id) ?? copy.clientUnknown;
+        return (
+          <div
+            className="deposit-sheet-backdrop"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target && busySession !== depositSheetAppointment.id) {
+                setDepositSheetSessionId(null);
+              }
+            }}
+          >
+            <div
+              className="deposit-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="deposit-sheet-title"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="deposit-sheet-head">
+                <div>
+                  <h2 id="deposit-sheet-title">{language === 'ru' ? 'Новый депозит' : 'New deposit'}</h2>
+                  <div className="deposit-sheet-client">{clientName}</div>
+                </div>
+                <button
+                  type="button"
+                  className="deposit-sheet-close"
+                  aria-label={language === 'ru' ? 'Закрыть' : 'Close'}
+                  disabled={busySession === depositSheetAppointment.id}
+                  onClick={() => setDepositSheetSessionId(null)}
+                >
+                  ×
+                </button>
+              </div>
+              <p className="deposit-sheet-meta">
+                {new Date(depositSheetAppointment.start_at).toLocaleString(locale)}
+                {depositAmount == null ? '' : ` · ${money(depositAmount, settings.currency || 'GBP', locale)}`}
               </p>
+              <div className="deposit-sheet-actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={busySession === depositSheetAppointment.id || depositAmount == null}
+                  onClick={() => {
+                    void requestDeposit(depositSheetAppointment.id, 'email')
+                      .then(() => setDepositSheetSessionId(null));
+                  }}
+                >
+                  {busySession === depositSheetAppointment.id
+                    ? copy.working
+                    : depositAmount == null
+                      ? copy.queueDepositEmail
+                      : copy.queueAmountEmail(depositAmount)}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={busySession === depositSheetAppointment.id || depositAmount == null}
+                  onClick={() => {
+                    void requestDeposit(depositSheetAppointment.id, 'copy_link')
+                      .then(() => setDepositSheetSessionId(null));
+                  }}
+                >
+                  {depositAmount == null ? copy.createPersonalLink : copy.createAmountLink(depositAmount)}
+                </button>
+              </div>
             </div>
           </div>
-          <div className="notice">
-            {language === 'ru'
-              ? 'Предварительная сумма ниже только для удобства. Браузер не отправляет сумму или artist ID в финансовый RPC.'
-              : 'The preview below is informational only. The browser does not send an amount or artist ID to the financial RPC.'}
-          </div>
-          <div className="list-stack">
-            {eligibleAppointments.map((appointment) => {
-              const selected = selectedGroupSessionIds.includes(appointment.id);
-              const compatible = !groupAnchor
-                || (groupAnchor.project_id === appointment.project_id && groupAnchor.client_id === appointment.client_id);
-              const depositAmount = depositAmountForAppointment(appointment, settings.deposit_tiers);
-              return (
-                <label className="list-row" key={`group-${appointment.id}`}>
-                  <div>
-                    <strong>{clientNames.get(appointment.client_id) ?? copy.clientUnknown}</strong>
-                    <div className="muted">
-                      {new Date(appointment.start_at).toLocaleString(locale)}
-                      {depositAmount == null ? '' : ` · ${money(depositAmount, 'GBP', locale)}`}
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    disabled={!settings.enabled || depositAmount == null || (!selected && (!compatible || selectedGroupSessionIds.length >= 12))}
-                    onChange={() => toggleGroupAppointment(appointment)}
-                    aria-label={`${language === 'ru' ? 'Выбрать сеанс' : 'Select session'} ${clientNames.get(appointment.client_id) ?? copy.clientUnknown} ${new Date(appointment.start_at).toLocaleString(locale)}`}
-                  />
-                </label>
-              );
-            })}
-          </div>
-          <div className="notice">
-            {language === 'ru' ? 'Выбрано' : 'Selected'}: {selectedGroupSessionIds.length}
-            {groupPreviewTotal == null ? '' : ` · ${language === 'ru' ? 'предварительно' : 'preview'} ${money(groupPreviewTotal, 'GBP', locale)}`}
-          </div>
-          <div className="button-row">
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={busyGroup || !settings.enabled || selectedGroupSessionIds.length < 2 || selectedGroupSessionIds.length > 12}
-              onClick={() => void requestGroupedDeposit('copy_link')}
-            >
-              {busyGroup
-                ? copy.working
-                : language === 'ru' ? 'Создать общую ссылку' : 'Create combined link'}
-            </button>
-            <button
-              type="button"
-              className="primary-button"
-              disabled={busyGroup || !settings.enabled || selectedGroupSessionIds.length < 2 || selectedGroupSessionIds.length > 12}
-              onClick={() => void requestGroupedDeposit('email')}
-            >
-              {busyGroup
-                ? copy.working
-                : language === 'ru' ? 'Отправить общий депозит' : 'Send combined deposit'}
-            </button>
-            {selectedGroupSessionIds.length ? (
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={busyGroup}
-                onClick={() => setSelectedGroupSessionIds([])}
-              >
-                {language === 'ru' ? 'Очистить выбор' : 'Clear selection'}
-              </button>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
+        );
+      })() : null}
 
       {result ? (
         <section className="panel">
@@ -975,10 +1009,136 @@ export function PaymentsPage() {
         </section>
       ) : null}
 
+      {canManageReconciliation && eligibleAppointments.length >= 2 ? (
+        <section className="panel payments-special-panel">
+          <details className="payments-special-action">
+            <summary>
+              <span className="payments-summary-copy">
+                <strong>{copy.groupedDepositTitle}</strong>
+                <small>{language === 'ru' ? 'Редкая операция: распределить один депозит на 2-12 сеансов' : 'Occasional action: combine 2-12 sessions into one deposit'}</small>
+              </span>
+            </summary>
+            <div className="payments-disclosure-body">
+              <p className="muted">
+                {language === 'ru'
+                  ? 'Выберите 2-12 сеансов одного клиента и проекта. Итоговый депозит CRM рассчитывает на сервере как сумму депозитов выбранных сеансов.'
+                  : 'Select 2-12 sessions from the same client and project. CRM calculates the final deposit on the server as the sum of the selected session deposits.'}
+              </p>
+              <div className="notice">
+                {language === 'ru'
+                  ? 'Предварительная сумма ниже только для удобства. Браузер не отправляет сумму или artist ID в финансовый RPC.'
+                  : 'The preview below is informational only. The browser does not send an amount or artist ID to the financial RPC.'}
+              </div>
+              <div className="list-stack">
+                {eligibleAppointments.map((appointment) => {
+                  const selected = selectedGroupSessionIds.includes(appointment.id);
+                  const compatible = !groupAnchor
+                    || (groupAnchor.project_id === appointment.project_id && groupAnchor.client_id === appointment.client_id);
+                  const depositAmount = depositAmountForAppointment(appointment, settings.deposit_tiers);
+                  return (
+                    <label className="list-row" key={`group-${appointment.id}`}>
+                      <div>
+                        <strong>{clientNames.get(appointment.client_id) ?? copy.clientUnknown}</strong>
+                        <div className="muted">
+                          {new Date(appointment.start_at).toLocaleString(locale)}
+                          {depositAmount == null ? '' : ` · ${money(depositAmount, settings.currency || 'GBP', locale)}`}
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={!settings.enabled || depositAmount == null || (!selected && (!compatible || selectedGroupSessionIds.length >= 12))}
+                        onChange={() => toggleGroupAppointment(appointment)}
+                        aria-label={`${language === 'ru' ? 'Выбрать сеанс' : 'Select session'} ${clientNames.get(appointment.client_id) ?? copy.clientUnknown} ${new Date(appointment.start_at).toLocaleString(locale)}`}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="notice">
+                {language === 'ru' ? 'Выбрано' : 'Selected'}: {selectedGroupSessionIds.length}
+                {groupPreviewTotal == null ? '' : ` · ${language === 'ru' ? 'предварительно' : 'preview'} ${money(groupPreviewTotal, settings.currency || 'GBP', locale)}`}
+              </div>
+              <div className="button-row">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={busyGroup || !settings.enabled || selectedGroupSessionIds.length < 2 || selectedGroupSessionIds.length > 12}
+                  onClick={() => void requestGroupedDeposit('copy_link')}
+                >
+                  {busyGroup
+                    ? copy.working
+                    : language === 'ru' ? 'Создать общую ссылку' : 'Create combined link'}
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={busyGroup || !settings.enabled || selectedGroupSessionIds.length < 2 || selectedGroupSessionIds.length > 12}
+                  onClick={() => void requestGroupedDeposit('email')}
+                >
+                  {busyGroup
+                    ? copy.working
+                    : language === 'ru' ? 'Отправить общий депозит' : 'Send combined deposit'}
+                </button>
+                {selectedGroupSessionIds.length ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={busyGroup}
+                    onClick={() => setSelectedGroupSessionIds([])}
+                  >
+                    {language === 'ru' ? 'Очистить выбор' : 'Clear selection'}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </details>
+        </section>
+      ) : null}
+
+      <section className="panel payments-settings-panel">
+        <details className="payments-setup-inline">
+          <summary>
+            <span className="payments-summary-copy">
+              <strong>{copy.depositsTitle}</strong>
+              <small>{settings.enabled
+                ? (language === 'ru' ? 'Ссылка настроена, создание депозитов включено' : 'Link configured, deposit requests enabled')
+                : (language === 'ru' ? 'Создание депозитов выключено' : 'Deposit requests disabled')}</small>
+            </span>
+          </summary>
+          <div className="payments-disclosure-body">
+            <p className="muted">{copy.depositsDescription(selectedArtist.display_name)}</p>
+            {loading ? <LoadingState label={copy.loadingSettings} /> : (
+              <form onSubmit={saveSettings} className="form-grid">
+                <label className="field field-wide">
+                  <span>{copy.reusablePaymentLink}</span>
+                  <input
+                    type="url"
+                    value={paymentUrl}
+                    onChange={(event) => setPaymentUrl(event.target.value)}
+                    placeholder="https://monzo.com/pay/r/…"
+                    autoComplete="off"
+                    required
+                  />
+                </label>
+                <label className="field checkbox-field">
+                  <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+                  <span>{copy.enableArtist}</span>
+                </label>
+                <div className="notice field-wide">{copy.depositPolicyNotice}</div>
+                <div className="field-wide">
+                  <button type="submit" className="primary-button" disabled={saving}>
+                    {saving ? copy.saving : copy.saveSettings}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </details>
+      </section>
+
       {/* Configuration, not daily work. The connection, the payment link
-          catalogue and the deposit policy are set once and then left alone;
-          they used to sit above and between the panels an operator actually
-          works from. They stay on this screen, and stay closed. */}
+          catalogue and the deposit policy are set once and then left alone. */}
       {canManageConnection || canManageReconciliation ? (
         <section className="panel">
           <details className="payments-setup">
