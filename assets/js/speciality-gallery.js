@@ -54,19 +54,22 @@
     return images;
   }
 
-  function pictureMarkup(config, image, metadata, index) {
+  function imageMarkup(config, image, metadata, index, hasThumbs) {
     const info = metadata[image.stem] || {};
     const alt = info.alt || `${config.genericAlt} - image ${index + 1}`;
     const caption = info.caption || info.healed_for || '';
-    const srcset = WIDTHS.map((width) => `${config.base}thumbs/${image.stem}-${width}.webp ${width}w`).join(', ');
+    const imageTag = `<img src="${image.source}" loading="lazy" decoding="async" width="900" height="1200" alt="${escapeHtml(alt)}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">`;
+
+    let media = imageTag;
+    if (hasThumbs) {
+      const srcset = WIDTHS.map((width) => `${config.base}thumbs/${image.stem}-${width}.webp ${width}w`).join(', ');
+      media = `<picture><source type="image/webp" srcset="${srcset}" sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw">${imageTag}</picture>`;
+    }
 
     return `
       <figure class="overflow-hidden bg-white/5 rounded-2xl">
         <a href="${image.source}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden" aria-label="Open image ${index + 1}">
-          <picture>
-            <source type="image/webp" srcset="${srcset}" sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw">
-            <img src="${image.source}" loading="lazy" decoding="async" width="900" height="1200" alt="${escapeHtml(alt)}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">
-          </picture>
+          ${media}
         </a>
         ${caption ? `<figcaption class="p-4 text-sm text-white/50">${escapeHtml(caption)}</figcaption>` : ''}
       </figure>`;
@@ -89,14 +92,15 @@
     const grid = section.querySelector('[data-speciality-gallery-grid]');
     if (!grid) return;
 
-    const [images, metadata] = await Promise.all([
+    const [images, metadata, hasThumbs] = await Promise.all([
       discoverImages(config.base),
       loadMetadata(config.base),
+      exists(config.base + 'thumbs/01-480.webp'),
     ]);
 
     if (!images.length) return;
 
-    grid.innerHTML = images.map((image, index) => pictureMarkup(config, image, metadata, index)).join('');
+    grid.innerHTML = images.map((image, index) => imageMarkup(config, image, metadata, index, hasThumbs)).join('');
     section.classList.remove('hidden');
     section.removeAttribute('aria-hidden');
   }
