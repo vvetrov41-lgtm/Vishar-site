@@ -300,10 +300,12 @@ export async function proxyHostedBookingForm(request, { fetchImpl = fetch } = {}
     return hostedFormUnavailable(503);
   }
 
-  // The fixed upstream never redirects a form render. Refusing one avoids
-  // reflecting an upstream Location header through the public branded host.
-  if (upstream.status >= 300 && upstream.status < 400) return hostedFormUnavailable(503);
-  if (upstream.status >= 500) return hostedFormUnavailable(503);
+  // The renderer answers a GET with exactly two things: the form, or the same
+  // unavailable page. Anything else is skew — a redirect whose Location must
+  // never be reflected through the branded host, an outage, or an upstream
+  // that is not serving this namespace at all and would otherwise hand a
+  // client the intake Worker's own boundary message.
+  if (upstream.status !== 200 && upstream.status !== 404) return hostedFormUnavailable(503);
 
   return new Response(request.method === 'HEAD' ? null : upstream.body, {
     status: upstream.status,

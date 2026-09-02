@@ -149,6 +149,21 @@ test('an upstream outage is retryable and reveals nothing', async () => {
   assert.equal(unreachable.status, 503);
 });
 
+test('an upstream that is not serving the namespace never speaks to a client', async () => {
+  // The exact regression: the intake Worker answering a GET with its POST-only
+  // boundary. That must not reach a browser through the branded host.
+  const response = await proxyHostedBookingForm(new Request(FORM_URL), {
+    fetchImpl: async () => new Response('Use POST request', {
+      status: 405,
+      headers: { 'content-type': 'text/plain;charset=UTF-8' },
+    }),
+  });
+  assert.equal(response.status, 503);
+  const html = await response.text();
+  assert.doesNotMatch(html, /Use POST request/);
+  assert.match(html, /Booking temporarily unavailable/);
+});
+
 test('an upstream redirect is refused rather than reflected', async () => {
   const response = await proxyHostedBookingForm(new Request(FORM_URL), {
     fetchImpl: async () => new Response(null, { status: 302, headers: { location: 'https://evil.example/' } }),
