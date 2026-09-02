@@ -23,11 +23,9 @@ name = "GPT_RATE_LIMIT"
 namespace_id = "1002"
 simple = { limit = 30, period = 60 }
 
-# Tracked production configuration is deliberately inert. The guarded production
-# workflow supplies the production publishable key and may enable the OAuth relay
-# first. Operational CRM capabilities are database-gated independently per artist.
-# Web Research and Cloudflare control have additional fail-closed switches; every
-# tracked feature default remains off until the separate reviewed rollout stage.
+# Production GPT actions and OAuth are enabled by the guarded rollout workflow.
+# Cloudflare control is now deliberately enabled for read-only production use;
+# writes remain fail-closed until read-path acceptance is complete.
 [vars]
 VISHAR_ENVIRONMENT = "production"
 GPT_ACTIONS_ENABLED = "false"
@@ -35,7 +33,7 @@ GPT_OAUTH_RELAY_ENABLED = "false"
 WEB_RESEARCH_ENABLED = "false"
 WEB_RESEARCH_SEARCH_ENABLED = "false"
 WEB_RESEARCH_SCRAPE_ENABLED = "false"
-CLOUDFLARE_CONTROL_ENABLED = "false"
-CLOUDFLARE_CONTROL_READ_ENABLED = "false"
+CLOUDFLARE_CONTROL_ENABLED = "true"
+CLOUDFLARE_CONTROL_READ_ENABLED = "true"
 CLOUDFLARE_CONTROL_WRITE_ENABLED = "false"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
