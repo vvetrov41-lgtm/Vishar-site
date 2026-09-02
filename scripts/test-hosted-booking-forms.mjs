@@ -54,7 +54,7 @@ function hostedMeta(overrides = {}) {
   };
 }
 
-function resolverFetch({ status = 200, meta = hostedMeta(), onIntake = null } = {}) {
+function resolverFetch({ status = 200, meta = hostedMeta(), onIntake = null, emptyResult = false } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const href = String(url);
@@ -63,6 +63,7 @@ function resolverFetch({ status = 200, meta = hostedMeta(), onIntake = null } = 
 
     if (href.endsWith('/rest/v1/rpc/resolve_hosted_booking_source')) {
       if (status !== 200) return new Response('{}', { status });
+      if (emptyResult) return Response.json(meta);
       return Response.json([meta]);
     }
     if (href.endsWith('/rest/v1/rpc/create_hosted_enquiry_intake')) {
@@ -156,6 +157,20 @@ await test('an unknown or deactivated hosted source renders the same unavailable
     assert.equal(response.status, 404, `resolver ${status} must present as unavailable`);
     const html = await response.text();
     assert.equal(html.includes(SOURCE_ID), false, 'the unavailable page must not echo the id back');
+  }
+});
+
+await test('an id with no active hosted source behind it is a 404, not a 503', async () => {
+  // PostgREST answers an empty result set for an id that is unknown, disabled
+  // or whose artist is deactivated. That is a bad link, not a server fault, so
+  // it must not present as retryable.
+  for (const empty of [[], null]) {
+    const { fetchImpl } = resolverFetch({ meta: empty, emptyResult: true });
+    const response = await handleHostedBookingRequest(new Request(HOSTED_URL), env, { fetchImpl });
+    assert.equal(response.status, 404);
+    const html = await response.text();
+    assert.equal(html.includes(SOURCE_ID), false, 'the unavailable page must not echo the id back');
+    assert.equal(html.includes('<form'), false);
   }
 });
 

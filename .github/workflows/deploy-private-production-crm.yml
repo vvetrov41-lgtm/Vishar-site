@@ -55,6 +55,9 @@ jobs:
       # repository-owned so a missing GitHub variable cannot silently disable
       # both artist connection controls in a successful Pages deployment.
       VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
+      # Public booking links are handed to clients, so the branded production
+      # booking host is pinned here rather than left to a build-time default.
+      VITE_BOOKING_FORMS_ORIGIN: https://booking.vishartattoo.com
       CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
       CRM_ORIGIN: ${{ vars.CRM_PRODUCTION_ORIGIN }}
 
@@ -147,6 +150,11 @@ jobs:
 
           if [ "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" != 'https://instagram.vishartattoo.com' ]; then
             echo 'The private production CRM may use only the exact production Instagram connector origin.' >&2
+            exit 1
+          fi
+
+          if [ "$VITE_BOOKING_FORMS_ORIGIN" != 'https://booking.vishartattoo.com' ]; then
+            echo 'The production CRM may generate booking links only on the production booking host.' >&2
             exit 1
           fi
 
@@ -244,6 +252,13 @@ jobs:
           grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
           grep -R -Fq "$VITE_MONZO_CONNECTOR_ORIGIN" admin/dist
           grep -R -Fq "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" admin/dist
+          grep -R -Fq "$VITE_BOOKING_FORMS_ORIGIN" admin/dist
+          # An internal workers.dev intake address must never reach a link the
+          # CRM shows an artist to send to a client.
+          if grep -R -Fq 'tattooai.vvetrov41.workers.dev' admin/dist; then
+            echo 'The production CRM bundle still carries the internal intake host.' >&2
+            exit 1
+          fi
           # The public bundle must not carry the operator surface. Vite inlines
           # the value, so its presence would mean this deployment is about to
           # put the installation's own administration on the open web.

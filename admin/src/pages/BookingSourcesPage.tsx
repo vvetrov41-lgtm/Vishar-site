@@ -9,6 +9,12 @@ import {
   type BookingSourceKind,
 } from '../lib/platform-api';
 import { useApi, useSession } from '../lib/session';
+import { readBookingFormsOrigin } from '../lib/supabase';
+
+// Resolved once at module load, like the other connector origins. A build that
+// names no origin falls back to the production booking host.
+const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
+const BOOKING_FORMS_ORIGIN = readBookingFormsOrigin(browserEnv, import.meta.env.DEV);
 
 export function BookingSourcesPage() {
   const api = useApi();
@@ -264,7 +270,7 @@ function BookingSourceCard({
   const [origin, setOrigin] = useState(source.allowed_origin ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const target = bookingSourcePublicUrl(source);
+  const target = bookingSourcePublicUrl(source, BOOKING_FORMS_ORIGIN);
 
   useEffect(() => {
     setLabel(source.display_label);

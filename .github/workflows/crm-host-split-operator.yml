@@ -78,6 +78,7 @@ jobs:
       VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
       VITE_MONZO_CONNECTOR_ORIGIN: https://monzo.vishartattoo.com
       VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
+      VITE_BOOKING_FORMS_ORIGIN: https://booking.vishartattoo.com
 
     steps:
       - name: Verify trigger metadata, gate and target
@@ -271,6 +272,7 @@ jobs:
           grep -Fq 'noindex' admin/dist/index.html
           grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
           grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq "$VITE_BOOKING_FORMS_ORIGIN" admin/dist
           node scripts/check-private-crm-artifact.mjs admin/dist
           if [ "$STAGE" = 'deploy-internal' ]; then
             grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist

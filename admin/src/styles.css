@@ -345,6 +345,12 @@ a.badge, button.badge {
 @media (pointer: coarse) {
   a.badge, button.badge { min-height: var(--tap); }
 }
+/* And it has to look like it navigates before it is touched. Focus already has
+   the global outline; this is the pointer half of the same promise. */
+a.badge:hover, button.badge:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
 
 .badge.ok { color: var(--ok); border-color: rgba(93, 219, 160, 0.4); }
 .badge.warn { color: var(--warn); border-color: rgba(255, 204, 102, 0.4); }

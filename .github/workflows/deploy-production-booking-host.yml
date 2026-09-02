@@ -69,6 +69,7 @@ jobs:
           npm audit --audit-level=moderate
           node scripts/test-booking-host-worker.mjs
           node scripts/test-booking-host-production-config.mjs
+          node scripts/test-booking-host-hosted-forms.mjs
           XDG_CONFIG_HOME=.wrangler/config \
           WRANGLER_LOG_PATH=.wrangler/booking-host-production-wrangler.log \
           WRANGLER_SEND_METRICS=false \

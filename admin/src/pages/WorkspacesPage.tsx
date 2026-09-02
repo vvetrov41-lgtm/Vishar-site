@@ -3,6 +3,12 @@
 // A solo artist has exactly one of these and will rarely open this screen. A
 // studio owner lives here. Both see the same thing, which is the point: there
 // is no "studio mode" to switch into.
+//
+// "Управление" / "Manage" reads as an instruction, so it navigates. It used to
+// be a decorative span that said you may administer this organization and then
+// did nothing when tapped. The organization name goes to the same screen; the
+// named action exists because a title is not an obvious control on a phone.
+// "Команда" / "Team" stays a plain label: it names a right, not an action.
 
 import { useState, type FormEvent } from 'react';
 import { useAsync } from '../components/AsyncData';
@@ -104,7 +110,11 @@ export function WorkspacesPage() {
                   ? null
                   : <span className="badge danger">{ru ? 'Отключена' : 'Deactivated'}</span>}
                 {workspace.can_manage_workspace
-                  ? <span className="badge">{ru ? 'Управление' : 'Admin'}</span>
+                  ? (
+                    <Link to={`/workspaces/${workspace.id}`} className="badge">
+                      {ru ? 'Управление' : 'Manage'}
+                    </Link>
+                  )
                   : null}
                 {workspace.can_manage_team
                   ? <span className="badge">{ru ? 'Команда' : 'Team'}</span>

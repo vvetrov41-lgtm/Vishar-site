@@ -212,11 +212,25 @@ export async function handleHostedBookingRequest(request, env, { logger, fetchIm
 
   try {
     const meta = await resolveHostedMeta(sourceId, env, fetchImpl);
+
+    // No row means there is no active hosted source behind this id: unknown
+    // link, disabled form, or an inactive artist/workspace. To a visitor those
+    // are one thing, and none of them is a server fault, so the answer is the
+    // same safe 404 rather than a retryable 503.
+    if (!meta) {
+      routeLogger.info('hosted_booking.unavailable', {
+        route: 'hosted_booking',
+        errorCode: 'booking_form_unavailable',
+      });
+      return unavailablePage(404);
+    }
+
+    // A row that exists but cannot be rendered is deploy skew, not a bad link.
     if (
-      !meta?.artist_display_name
-      || !meta?.display_label
-      || meta?.form_version !== SUPPORTED_BOOKING_FORM_VERSION
-      || meta?.form_template !== HOSTED_TEMPLATE
+      !meta.artist_display_name
+      || !meta.display_label
+      || meta.form_version !== SUPPORTED_BOOKING_FORM_VERSION
+      || meta.form_template !== HOSTED_TEMPLATE
     ) {
       throw new ConfigurationError(
         'booking_form_version_unsupported',

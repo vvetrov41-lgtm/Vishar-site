@@ -116,7 +116,8 @@ describe('Forms and websites management', () => {
     render(<BookingSourcesPage />);
 
     const url = await screen.findByLabelText('Hosted London form public URL');
-    expect(url).toHaveValue(`https://tattooai.vvetrov41.workers.dev/forms/${PUBLIC_SOURCE}`);
+    expect(url).toHaveValue(`https://booking.vishartattoo.com/forms/${PUBLIC_SOURCE}`);
+    expect(String(url.getAttribute('value') ?? (url as HTMLInputElement).value)).not.toContain('workers.dev');
     expect(document.body.textContent).not.toContain('source_key');
     expect(document.body.textContent).not.toContain('artist_id');
   });
