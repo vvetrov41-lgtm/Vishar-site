@@ -187,11 +187,29 @@ async function inspectAccess(zone) {
   console.log(`\nSource application for the clone: ${source.app.id} (${source.scope.kind})`);
 }
 
+/**
+ * Where the operator policy set is read from. `crm.vishartattoo.com` is the
+ * original holder, but `open-public` deletes that application by design, so
+ * after the split it is gone and this stage must still be runnable - it is the
+ * repair tool for exactly the case where one operator name lost its protection.
+ * The operator host itself is the better source once it exists, and the public
+ * project's `.pages.dev` application carries the same policy either way.
+ */
+async function operatorPolicySource(zone) {
+  for (const hostname of [INTERNAL_HOST, PUBLIC_HOST, PUBLIC_SUBDOMAIN, `*.${PUBLIC_SUBDOMAIN}`]) {
+    const candidate = await findApp(zone, hostname);
+    if (!candidate) continue;
+    const policies = await policiesFor(candidate.scope, candidate.app.id);
+    if (policies.length === 0) continue;
+    console.log(`Cloning the operator policy set from ${hostname} (${policies.length} policy(ies)).`);
+    return { app: candidate.app, policies };
+  }
+  throw new Error('no Access application with a policy to clone the operator policy set from');
+}
+
 async function protectInternal(zone) {
-  const source = await findApp(zone, PUBLIC_HOST);
-  if (!source) throw new Error(`no Access application on ${PUBLIC_HOST} to clone`);
-  const sourcePolicies = await policiesFor(source.scope, source.app.id);
-  if (sourcePolicies.length === 0) throw new Error(`the ${PUBLIC_HOST} application has no policy to clone`);
+  const { app: sourceApp, policies: sourcePolicies } = await operatorPolicySource(zone);
+  const source = { app: sourceApp };
 
   for (const hostname of INTERNAL_HOSTNAMES) {
     const scope = scopeFor(hostname, zone);
