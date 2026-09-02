@@ -15,6 +15,7 @@ import { ArtistScopeProvider } from './lib/artist-scope';
 import { ControlPlaneAccessProvider } from './lib/control-plane-access';
 import { applyAppointmentTimeStep } from './lib/appointment-time-step';
 import { matchRoute, useRouter } from './lib/router';
+import { isPathAvailableOnSurface, useSurface } from './lib/surface';
 import { useSession } from './lib/session';
 import { ActivityPage } from './pages/ActivityPage';
 import { ArtistOnboardingPage } from './pages/ArtistOnboardingPage';
@@ -109,6 +110,7 @@ function SignedOutRoutes() {
 function Routes() {
   const { path } = useRouter();
   const { t } = useLanguage();
+  const surface = useSurface();
 
   useEffect(() => {
     applyAppointmentTimeStep();
@@ -116,6 +118,19 @@ function Routes() {
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [path]);
+
+  // Checked before every route below, so a typed URL or a stale bookmark for an
+  // operator-only screen says where it lives rather than rendering it. Not a
+  // security boundary: the database refuses those operations to a non-owner on
+  // either host, which is what actually protects them.
+  if (!isPathAvailableOnSurface(path, surface)) {
+    return (
+      <EmptyState
+        title={t('surface.internalOnlyTitle')}
+        hint={t('surface.internalOnlyHint')}
+      />
+    );
+  }
 
   const enquiryDetail = matchRoute('/enquiries/:id', path);
   if (enquiryDetail) {

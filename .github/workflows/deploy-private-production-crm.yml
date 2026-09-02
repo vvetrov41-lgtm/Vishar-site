@@ -37,6 +37,12 @@ jobs:
     environment: crm-production
     env:
       PRODUCT_BRANCH: agent/platform-telegram-self-service
+      # This workflow deploys the Access-gated operator environment. It is the
+      # internal surface, and saying so explicitly is what keeps the
+      # installation's own administration on it: lib/surface fails closed to
+      # `public` for an unset or unrecognised value, so an omitted variable
+      # would quietly remove the Users screen from the operator CRM.
+      VITE_CRM_SURFACE: internal
       VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
       VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
@@ -235,6 +241,11 @@ jobs:
           grep -R -Fq "$VITE_CALENDAR_CONNECTOR_ORIGIN" admin/dist
           grep -R -Fq "$VITE_MONZO_CONNECTOR_ORIGIN" admin/dist
           grep -R -Fq "$VITE_INSTAGRAM_CONNECTOR_ORIGIN" admin/dist
+          # The built bundle must actually carry the surface this workflow
+          # intends. Vite inlines the value into the env object literal, so its
+          # absence means the build fell back to `public` and this deployment
+          # would take the operator's own administration away.
+          grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist
           node scripts/check-private-crm-artifact.mjs admin/dist
           test -f admin/functions/api/whatsapp/embedded-signup/provision.js
 
