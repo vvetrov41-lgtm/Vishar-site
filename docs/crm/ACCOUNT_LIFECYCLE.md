@@ -133,3 +133,83 @@ append-only when it is over.
 * Changing an email address is deliberately not offered. Supabase Auth owns
   that flow, it needs confirmation on both addresses, and inventing a
   half-version of it here would be worse than not having one.
+
+---
+
+## 4. What production acceptance actually proved
+
+Deployed 2026-09-02 from `release/private-crm-rc-account-lifecycle-20260902` at
+`8b6a87d`, database first and the CRM at the same SHA. Measured afterwards,
+not asserted beforehand.
+
+### The database
+
+Migration head moved `0134` → `0135 account_lifecycle`. The gated dry-run named
+exactly one pending migration and nothing else:
+
+```
+0135 | ` `  | 0135
+Would push these migrations:
+ • 0135_account_lifecycle.sql
+```
+
+The four functions exist, all `SECURITY DEFINER`, with the grants the migration
+intends and no others:
+
+| Function | anon | authenticated | service_role |
+| --- | --- | --- | --- |
+| `public.account_overview()` | no | **yes** | no |
+| `public.set_my_display_name(text)` | no | **yes** | no |
+| `public.delete_my_account(text)` | no | **yes** | no |
+| `crm_private.user_facing_role(uuid)` | no | no | no |
+
+`user_facing_role` is reachable by no API role at all; it is read only through
+`account_overview`'s definer chain, which is what keeps a label from ever
+becoming an authorization surface.
+
+### The three live accounts
+
+`crm_private.user_facing_role` evaluated against the deployed schema:
+
+| Person | `profiles.role` | user-facing role | self-service founder |
+| --- | --- | --- | --- |
+| Vladimir | `owner` | `operator` | no |
+| Kristina | `booking_manager` | `booking_manager` | no |
+| Sam | `booking_manager` | **`artist`** | yes |
+
+Sam is the account that started this: the authorization role underneath is
+unchanged, and the interface now says Artist / Мастер.
+
+Vladimir holds an `owner` artist membership on every active artist, from
+`0015`'s owner-sync. The operator branch is what stops that reading as "artist",
+and it is doing the work rather than being decorative.
+
+### The browser
+
+`crm.vishartattoo.com` serves a bundle containing `account_overview`,
+`set_my_display_name` and `delete_my_account`; `Delete my account` /
+`Удалить мой аккаунт`; `Danger zone` / `Опасная зона`; `Оператор` and `Мастер`;
+and the controlled popover with its `Link`:
+
+```js
+p ? jsxs("div", {className:"profile-panel", id:"profile-panel", children:[
+      jsxs(Link, {to:n, className:"profile-panel-account", ariaCurrent: …
+```
+
+`aria-haspopup` and two `pointerdown` references are present - the listener
+added on open and removed on close. Neither `user_facing_role` nor
+`deleted.invalid` appears in the bundle, which is correct: both are server-side
+only and the browser never needs to name them.
+
+### One thing acceptance found and did not change
+
+Kristina holds `access_level = 'manager'` on the artist named *Kristina*. She is
+that artist, but her seat says she manages it, so the classification calls her a
+Booking manager - the same wrong word as before, from a data cause rather than a
+code one. The platform has no way to know otherwise: the seat is the model.
+
+`crm_private.capability_from_grant` distinguishes only `read_only` from
+everything else, so `artist` and `manager` carry identical capability and
+correcting the seat grants nothing new. It is a one-call change through the
+existing Users screen, and it is a production membership change on somebody
+else's account, so this workstream did not make it.

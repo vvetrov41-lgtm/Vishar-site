@@ -13,8 +13,8 @@
 | T9 | EN/RU copy and API failure sentences | done |
 | T10 | Component tests: role display, popover behaviour, account page and Danger zone | done |
 | T11 | `docs/crm/ACCOUNT_LIFECYCLE.md` | done |
-| T12 | Branch CI green at exact head | pending |
-| T13 | Merge to canonical | pending |
-| T14 | Production database deploy through the gated release lane | pending |
-| T15 | Production CRM deploy at the same SHA | pending |
-| T16 | Production readback and acceptance | pending |
+| T12 | Branch CI green at exact head | done — 5/5 green on `51f7727` |
+| T13 | Merge to canonical | done — PR #631, canonical `8b6a87d` |
+| T14 | Production database deploy through the gated release lane | done — dry-run then apply, from `release/private-crm-rc-account-lifecycle-20260902` |
+| T15 | Production CRM deploy at the same SHA | done — run 70 at `8b6a87d` |
+| T16 | Production readback and acceptance | done — see `docs/crm/ACCOUNT_LIFECYCLE.md` |

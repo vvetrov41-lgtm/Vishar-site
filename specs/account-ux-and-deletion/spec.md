@@ -3,7 +3,7 @@
 ## Status
 
 - Feature: `account-ux-and-deletion`
-- State: Implemented; awaiting production database and CRM deployment
+- State: Deployed to production and accepted
 - Owner/workstream: Vishar CRM platform
 - Related: `docs/crm/ACCOUNT_LIFECYCLE.md`, `docs/crm/SELF_SERVICE_SIGNUP.md`
 - Migration: `supabase/migrations/0135_account_lifecycle.sql`
