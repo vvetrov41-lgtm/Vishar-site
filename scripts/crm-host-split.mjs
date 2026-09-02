@@ -39,6 +39,18 @@ const INTERNAL_SUBDOMAIN = process.env.INTERNAL_PAGES_SUBDOMAIN || 'vishar-crm-i
  * another on its wildcard - which is the shape being matched here.
  */
 const INTERNAL_HOSTNAMES = [INTERNAL_HOST, INTERNAL_SUBDOMAIN, `*.${INTERNAL_SUBDOMAIN}`];
+
+/**
+ * Which Access scope owns a hostname. A zone-scoped token may only create an
+ * application for a name inside its own zone - Cloudflare answers
+ * `app and token domain mismatch` otherwise - so a `.pages.dev` name has to be
+ * an account-scoped application. That is exactly how the account already holds
+ * the two `vishar-crm-production.pages.dev` applications.
+ */
+const scopeFor = (hostname, zone) =>
+  hostname === ZONE_NAME || hostname.endsWith(`.${ZONE_NAME}`)
+    ? { kind: 'zones', id: zone }
+    : { kind: 'accounts', id: ACCOUNT_ID };
 const COMMIT = process.env.GITHUB_SHA || '';
 
 if (!/^[0-9a-f]{32}$/.test(ACCOUNT_ID) || !TOKEN) {
@@ -180,9 +192,9 @@ async function protectInternal(zone) {
   if (!source) throw new Error(`no Access application on ${PUBLIC_HOST} to clone`);
   const sourcePolicies = await policiesFor(source.scope, source.app.id);
   if (sourcePolicies.length === 0) throw new Error(`the ${PUBLIC_HOST} application has no policy to clone`);
-  const scope = source.scope;
 
   for (const hostname of INTERNAL_HOSTNAMES) {
+    const scope = scopeFor(hostname, zone);
     const existing = await findApp(zone, hostname);
     if (existing) {
       const policies = await policiesFor(existing.scope, existing.app.id);
