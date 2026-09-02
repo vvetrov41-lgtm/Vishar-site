@@ -46,6 +46,8 @@ import type {
   SessionFinance,
   StatusTransition,
   StaffInviteRequest,
+  TeammateInviteRequest,
+  TeammateInviteResult,
   StaffInviteResult,
 } from './types';
 
@@ -128,6 +130,13 @@ export interface ApiOptions {
 
 export function createApi(client: CrmClient, options: ApiOptions = {}) {
   const teamInviteUrl = options.teamInviteUrl ?? '';
+  // The tenant-scoped sibling of the owner endpoint. Derived rather than
+  // configured: `readTeamInviteUrl` already pinned the origin and the path, so
+  // swapping the last segment cannot reach a host that was not permitted, and
+  // there is no second environment variable to get wrong.
+  const artistInviteUrl = teamInviteUrl
+    ? teamInviteUrl.replace(/\/v1\/staff\/invite$/, '/v1/artist/invite')
+    : '';
   const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
 
   /**
@@ -282,6 +291,62 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
         idempotent_replay: payload.idempotent_replay,
         delivery: payload.delivery,
       } as StaffInviteResult;
+    },
+
+    async tenantInvitePolicy(artistId: string): Promise<{ can_invite: boolean }> {
+      const result = await client.rpc('tenant_invite_policy', { p_artist_id: artistId });
+      if (result.error) return { can_invite: false };
+      return { can_invite: (result.data as any)?.can_invite === true };
+    },
+
+    async inviteTeammate(invite: TeammateInviteRequest): Promise<TeammateInviteResult> {
+      if (!artistInviteUrl) throw new ApiError(apiMessage('Staff invitations are not configured.'));
+      const session = await client.auth.getSession();
+      const accessToken = session.data?.session?.access_token;
+      if (session.error || typeof accessToken !== 'string' || !accessToken) {
+        throw new ApiError(apiMessage('Your session has expired. Sign in again.'));
+      }
+
+      let response: Response;
+      try {
+        response = await fetcher(artistInviteUrl, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(invite),
+        });
+      } catch (cause) {
+        throw new ApiError(apiMessage('Could not reach the staff invitation service.'), cause);
+      }
+
+      let payload: any = null;
+      try {
+        payload = await response.json();
+      } catch {
+        // A trusted boundary still has to return the documented safe shape.
+      }
+
+      if (!response.ok) {
+        const safeMessages: Record<string, string> = {
+          owner_access_required: 'You do not have permission to invite people to this artist.',
+          invalid_email: 'Enter a valid email address.',
+          invalid_grant: 'Review the access settings for this invitation.',
+          invalid_artist: 'Choose an artist you manage.',
+          provisioning_pending: 'The invitation was sent, but access is still pending. Retry with the same form.',
+          invite_not_completed: 'The invitation could not be completed. Retry with the same form.',
+          team_admin_not_configured: 'Staff invitations are not configured.',
+        };
+        const code = typeof payload?.error === 'string' ? payload.error : '';
+        throw new ApiError(safeMessages[code] ?? 'Could not send that invitation. Please try again.');
+      }
+
+      if (payload?.delivery !== 'sent' || typeof payload?.idempotent_replay !== 'boolean') {
+        throw new ApiError(apiMessage('The staff invitation service returned an invalid response.'));
+      }
+
+      return { delivery: 'sent', idempotent_replay: payload.idempotent_replay };
     },
 
     // ---- enquiries --------------------------------------------------------

@@ -87,6 +87,35 @@ export interface StaffInviteResult {
   delivery: 'sent' | 'existing_account' | 'not_repeated';
 }
 
+/**
+ * A tenant-scoped invitation. There is no role and no membership list: this
+ * door mints one kind of account and reaches one artist, and neither is the
+ * caller's to choose.
+ */
+export interface TeammateInviteRequest {
+  idempotency_key: string;
+  email: string;
+  display_name: string | null;
+  artist_id: string;
+  grant: {
+    access_level: 'artist' | 'manager' | 'read_only';
+    can_view_finance: boolean;
+    can_manage_finance: boolean;
+    can_manage_sessions: boolean;
+    can_manage_integrations: boolean;
+  };
+}
+
+/**
+ * Deliberately says nothing else. An address that already belongs to somebody
+ * produces exactly this, so the form cannot be used to find out who has an
+ * account on the installation.
+ */
+export interface TeammateInviteResult {
+  delivery: 'sent';
+  idempotent_replay: boolean;
+}
+
 export interface Client {
   id: string;
   full_name: string;
