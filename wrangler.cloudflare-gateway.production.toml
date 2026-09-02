@@ -8,3 +8,6 @@ preview_urls = false
 # CLOUDFLARE_API_TOKEN must exist only as a Worker secret and is never tracked.
 [vars]
 VISHAR_ENVIRONMENT = "production"
+
+[secrets]
+required = ["CLOUDFLARE_API_TOKEN"]
