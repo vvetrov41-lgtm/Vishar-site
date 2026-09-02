@@ -6,21 +6,24 @@ name: CRM host split operator
 #
 # Staged on purpose. Each stage mutates at most one production boundary and
 # reads it back. workflow_dispatch remains the emergency/manual path. The
-# reserved `ops/crm-host-split-<stage>-*` push path is the automation path:
-# it may carry exactly one marker file, operates on its tree-parent rather
+# reserved `release/private-crm-rc*-inventory-host-split-<stage>-*` push path is
+# the automation path. The existing private production release and its observer
+# both exclude the whole `release/private-crm-rc*-inventory-*` namespace, while
+# the crm-production Environment already admits `release/private-crm-rc*`.
+# A trigger may carry exactly one marker file, operates on its tree-parent rather
 # than the marker commit, and requires that parent to still be the exact
 # canonical CRM HEAD before any stage runs.
 
 on:
   push:
     branches:
-      - 'ops/crm-host-split-inspect-access-*'
-      - 'ops/crm-host-split-protect-internal-*'
-      - 'ops/crm-host-split-create-internal-pages-*'
-      - 'ops/crm-host-split-deploy-internal-*'
-      - 'ops/crm-host-split-verify-internal-*'
-      - 'ops/crm-host-split-open-public-*'
-      - 'ops/crm-host-split-verify-public-*'
+      - 'release/private-crm-rc*-inventory-host-split-inspect-access-*'
+      - 'release/private-crm-rc*-inventory-host-split-protect-internal-*'
+      - 'release/private-crm-rc*-inventory-host-split-create-internal-pages-*'
+      - 'release/private-crm-rc*-inventory-host-split-deploy-internal-*'
+      - 'release/private-crm-rc*-inventory-host-split-verify-internal-*'
+      - 'release/private-crm-rc*-inventory-host-split-open-public-*'
+      - 'release/private-crm-rc*-inventory-host-split-verify-public-*'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -93,13 +96,13 @@ jobs:
 
           if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
             case "$GITHUB_REF_NAME" in
-              ops/crm-host-split-inspect-access-*) STAGE='inspect-access' ;;
-              ops/crm-host-split-protect-internal-*) STAGE='protect-internal' ;;
-              ops/crm-host-split-create-internal-pages-*) STAGE='create-internal-pages' ;;
-              ops/crm-host-split-deploy-internal-*) STAGE='deploy-internal' ;;
-              ops/crm-host-split-verify-internal-*) STAGE='verify-internal' ;;
-              ops/crm-host-split-open-public-*) STAGE='open-public' ;;
-              ops/crm-host-split-verify-public-*) STAGE='verify-public' ;;
+              release/private-crm-rc*-inventory-host-split-inspect-access-*) STAGE='inspect-access' ;;
+              release/private-crm-rc*-inventory-host-split-protect-internal-*) STAGE='protect-internal' ;;
+              release/private-crm-rc*-inventory-host-split-create-internal-pages-*) STAGE='create-internal-pages' ;;
+              release/private-crm-rc*-inventory-host-split-deploy-internal-*) STAGE='deploy-internal' ;;
+              release/private-crm-rc*-inventory-host-split-verify-internal-*) STAGE='verify-internal' ;;
+              release/private-crm-rc*-inventory-host-split-open-public-*) STAGE='open-public' ;;
+              release/private-crm-rc*-inventory-host-split-verify-public-*) STAGE='verify-public' ;;
               *)
                 echo 'Push trigger is outside the reserved CRM host-split namespace.' >&2
                 exit 1
@@ -224,8 +227,8 @@ jobs:
           ${{
             inputs.stage == 'deploy-internal'
             || inputs.stage == 'open-public'
-            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
-            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-open-public-')
           }}
         working-directory: admin
         run: npm ci
@@ -235,8 +238,8 @@ jobs:
           ${{
             inputs.stage == 'deploy-internal'
             || inputs.stage == 'open-public'
-            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
-            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-open-public-')
           }}
         working-directory: admin
         env:
@@ -257,8 +260,8 @@ jobs:
           ${{
             inputs.stage == 'deploy-internal'
             || inputs.stage == 'open-public'
-            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
-            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-open-public-')
           }}
         shell: bash
         run: |
@@ -283,8 +286,8 @@ jobs:
           ${{
             inputs.stage == 'deploy-internal'
             || inputs.stage == 'open-public'
-            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
-            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-open-public-')
           }}
         run: npm ci
 
@@ -292,7 +295,7 @@ jobs:
         if: >-
           ${{
             inputs.stage == 'deploy-internal'
-            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-deploy-internal-')
           }}
         working-directory: admin
         run: >-
@@ -306,7 +309,7 @@ jobs:
         if: >-
           ${{
             inputs.stage == 'open-public'
-            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-open-public-')
           }}
         working-directory: admin
         run: >-
@@ -321,8 +324,8 @@ jobs:
           ${{
             inputs.stage == 'deploy-internal'
             || inputs.stage == 'open-public'
-            || startsWith(github.ref_name, 'ops/crm-host-split-deploy-internal-')
-            || startsWith(github.ref_name, 'ops/crm-host-split-open-public-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-deploy-internal-')
+            || startsWith(github.ref_name, 'release/private-crm-rc') && contains(github.ref_name, '-inventory-host-split-open-public-')
           }}
         shell: bash
         run: GITHUB_SHA="$RELEASE_SHA" node scripts/crm-host-split.mjs "${STAGE}-readback"
