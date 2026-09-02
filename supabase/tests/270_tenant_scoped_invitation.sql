@@ -556,13 +556,19 @@ update crm_private.staff_invites
    set expires_at = now() - interval '1 minute'
  where idempotency_key = '99000000-0000-4000-8000-000000000050';
 
+-- Resolved before the role switch: an artist cannot read the private invite
+-- table, which is the point, so the test must not either while acting as one.
+insert into ti_result (label, r)
+select 'expired_id', jsonb_build_object('id', i.id)
+from crm_private.staff_invites i
+where i.idempotency_key = '99000000-0000-4000-8000-000000000050';
+
 select pg_temp.founder();
 set local role authenticated;
 select throws_ok(
   format(
     $$select public.finalize_artist_invite(%L)$$,
-    (select id from crm_private.staff_invites
-      where idempotency_key = '99000000-0000-4000-8000-000000000050')
+    (select (r ->> 'id')::uuid from ti_result where label = 'expired_id')
   ),
   '22023', null,
   'an expired invitation cannot be finished'
