@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   assertAccessBoundary,
   assertProject,
+  assertPubliclyReachable,
   verifyProductionPages,
 } from './verify-crm-pages-production.mjs';
 
@@ -51,15 +52,32 @@ assert.throws(() => assertAccessBoundary(
   new Response('<html>public</html>', { status: 200 }),
 ));
 
+// The public custom domain must serve, and only a 200 counts: an Access
+// redirect there would mean the split had been undone.
+assert.doesNotThrow(() => assertPubliclyReachable(
+  'https://crm.vishartattoo.com/',
+  new Response('<html>the CRM</html>', { status: 200 }),
+));
+for (const status of [302, 401, 403, 404, 500]) {
+  assert.throws(() => assertPubliclyReachable(
+    'https://crm.vishartattoo.com/',
+    new Response(null, { status }),
+  ));
+}
+
+// The two halves together: crm public, pages.dev still gated.
+const gatedResponse = (hostname) => new Response(null, {
+  status: 302,
+  headers: { location: `https://vishar-site-pages.cloudflareaccess.com/cdn-cgi/access/login/${hostname}?nonce=redacted` },
+});
+
 const calls = [];
 await verifyProductionPages(async (url, init) => {
   calls.push({ url: String(url), init });
   if (String(url).includes('/pages/projects/')) return Response.json(project);
   const hostname = new URL(url).hostname;
-  return new Response(null, {
-    status: 302,
-    headers: { location: `https://vishar-site-pages.cloudflareaccess.com/cdn-cgi/access/login/${hostname}?nonce=redacted` },
-  });
+  if (hostname === 'crm.vishartattoo.com') return new Response('<html>the CRM</html>', { status: 200 });
+  return gatedResponse(hostname);
 }, {
   CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
   CLOUDFLARE_API_TOKEN: 'unit-test-token',
@@ -68,5 +86,24 @@ assert.equal(calls.length, 3);
 assert.equal(calls[0].init.method, 'GET');
 assert.equal(calls[1].init.redirect, 'manual');
 assert.equal(calls[2].init.redirect, 'manual');
+
+// A pages.dev name that stopped being gated is a regression the preflight has
+// to refuse, or the whole project drifts open behind the host.
+await assert.rejects(verifyProductionPages(async (url) => {
+  if (String(url).includes('/pages/projects/')) return Response.json(project);
+  return new Response('<html>the CRM</html>', { status: 200 });
+}, {
+  CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
+  CLOUDFLARE_API_TOKEN: 'unit-test-token',
+}));
+
+// And a custom domain that went back behind Access is refused too.
+await assert.rejects(verifyProductionPages(async (url) => {
+  if (String(url).includes('/pages/projects/')) return Response.json(project);
+  return gatedResponse(new URL(url).hostname);
+}, {
+  CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
+  CLOUDFLARE_API_TOKEN: 'unit-test-token',
+}));
 
 console.log('Production CRM Pages preflight tests passed.');

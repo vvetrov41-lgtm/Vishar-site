@@ -157,7 +157,20 @@ expectIncludes(crmOnly, 'Deploy CRM Pages project with its Functions', 'CRM-only
 expectIncludes(crmOnly, 'Read back exact CRM Pages deployment', 'CRM-only exact deployment readback');
 expectIncludes(crmOnly, 'deployment_trigger?.metadata?.commit_hash === process.env.GITHUB_SHA', 'CRM-only exact SHA readback');
 expectIncludes(crmOnly, 'Re-verify production Pages target and Access boundary', 'CRM-only post-deploy control-plane readback');
-expectIncludes(crmOnly, 'Verify private CRM HTTP remains Access-gated', 'CRM-only HTTP acceptance');
+// crm.vishartattoo.com is the public CRM now, so its HTTP acceptance changed
+// direction: the host must serve rather than redirect. The operator assertion
+// beside it is what keeps that from being a licence for everything to open -
+// a deploy of the public CRM has no business changing app.vishartattoo.com,
+// so this gate refuses to finish if it has.
+expectIncludes(crmOnly, 'Verify the public CRM serves and the operator host does not follow it', 'CRM-only HTTP acceptance');
+expectIncludes(crmOnly, 'Public CRM origin answered $status, expected 200.', 'CRM-only public reachability');
+expectIncludes(crmOnly, 'https://app.vishartattoo.com/', 'CRM-only operator host assertion');
+expectIncludes(crmOnly, 'expected an Access redirect.', 'CRM-only operator host assertion');
+
+// The public build must never carry the operator surface. This is the artifact
+// check, not the input that produced it.
+expectIncludes(crmOnly, 'VITE_CRM_SURFACE: public', 'CRM-only public surface');
+expectIncludes(crmOnly, 'The public CRM build carries the internal surface. Refusing.', 'CRM-only surface refusal');
 expectOrder(crmOnly, '- name: Preflight exact production Pages target and Access boundary', '- name: Configure production Supabase Auth URLs', 'CRM-only pre-mutation control-plane check');
 expectOrder(crmOnly, '- name: Recheck automatic CRM-only source immediately before mutation', '- name: Configure production Supabase Auth URLs', 'CRM-only immutable source recheck');
 expectOrder(crmOnly, '- name: Deploy CRM Pages project with its Functions', '- name: Read back exact CRM Pages deployment', 'CRM-only Pages readback');
