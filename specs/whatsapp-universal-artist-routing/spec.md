@@ -3,7 +3,7 @@
 ## Status
 
 - Feature: `whatsapp-universal-artist-routing`
-- State: In implementation
+- State: Production rollout, Meta publication incomplete
 - Owner/workstream: Vishar CRM WhatsApp production engineering
 - Related PRs/issues: supersedes the stale unmerged `agent/whatsapp-embedded-signup-all-artists` implementation
 
@@ -14,6 +14,7 @@ Vladimir's production WhatsApp is operational, but onboarding and inbound routin
 ## Goals
 
 - Let any authorized active artist connect a production WhatsApp Business account through the existing Meta Embedded Signup flow.
+- Complete the real Kristina onboarding path as the first non-Vladimir production acceptance of the universal flow.
 - Resolve inbound artist ownership from server-controlled encrypted bindings plus the signed WABA and Phone Number ID, without a source-code artist allowlist or a default artist.
 - Keep one separately encrypted credential envelope per artist in each WhatsApp Worker.
 - Reject duplicate integration selectors, mismatched provider identities, missing credentials and ambiguous routes fail-closed.
@@ -22,7 +23,6 @@ Vladimir's production WhatsApp is operational, but onboarding and inbound routin
 
 ## Non-goals
 
-- Reconnect or otherwise change Kristina's provider account in this workstream.
 - Store Meta tokens, app secrets, WABA IDs or Phone Number IDs in Supabase-readable configuration.
 - Enable a new drain schedule, create a WABA, transfer a phone number, or change Meta Business ownership.
 - Add workspace-owned WhatsApp accounts or automatic studio-wide sharing.
@@ -39,6 +39,10 @@ Vladimir's production WhatsApp is operational, but onboarding and inbound routin
 ### Scenario 1: A future artist connects WhatsApp
 
 Given an active artist with an enabled `<artist-slug>-production` WhatsApp route and an authorized operator, when Embedded Signup returns a valid authorization code and Meta confirms exactly one selected WABA/phone pair, then the CRM writes that artist's separate encrypted bindings, verifies the provider and binding readbacks, subscribes the WABA, and marks only that route connected.
+
+### Scenario 1A: Kristina completes production onboarding
+
+Given Kristina's active `kristina-production` route and integration-management permission, when she launches Embedded Signup from the CRM, then the published Meta app must allow her to authenticate and the same generic provisioning path must create only Kristina's encrypted bindings. The flow must not require a source-code change, a Vladimir credential, or an app-development role.
 
 ### Scenario 2: A signed inbound message is routed
 
@@ -64,6 +68,7 @@ Given Vladimir's existing legacy encrypted envelopes and real production message
 - FR-008: Provisioning MUST verify Meta identity, WABA/phone membership, WABA subscription and both Worker secret-name inventories before connected state is recorded.
 - FR-009: A generic authenticated completion operation MUST update only the exact authorized, enabled, empty-configuration production WhatsApp route and MUST generate the timestamp server-side.
 - FR-010: Existing provider-backed Vladimir state MUST remain intact; no synthetic production client, conversation or message may be created for acceptance.
+- FR-011: The Meta app used by production Embedded Signup MUST be published and approved for the WhatsApp permissions required by the generic onboarding flow; development-mode app roles are not production acceptance.
 
 ## Security and trust requirements
 
@@ -96,11 +101,13 @@ Supabase continues to store only safe artist integration metadata, conversations
 - AC-005: Provisioning contract tests prove an authorized future artist receives a derived binding, while unauthorized artists, mismatched route keys, invalid WABA/phone membership and missing Cloudflare readbacks perform no connected-state update.
 - AC-006: Exact-head required CI is green for the final PR SHA.
 - AC-007: Production migration, webhook Worker and CRM Pages deployments are tied to the merged exact SHA and independently read back.
-- AC-008: Production acceptance uses existing legitimate Vladimir data and safe service-level probes only; Kristina's route and customer data remain unchanged.
+- AC-008: Production acceptance uses existing legitimate data and safe service-level probes only; no synthetic customer, conversation or message is created for Vladimir or Kristina.
+- AC-009: Kristina can launch the production Meta consent flow without an `App not active` response, complete onboarding through the generic endpoint, and receive a server-generated `connected_at` only after Meta and both Worker binding readbacks succeed.
+- AC-010: Meta App Review and Access Verification evidence are recorded separately from repository CI; a green code build is not treated as provider activation.
 
 ## Dependencies and constraints
 
-- The existing Meta app, Embedded Signup configuration and Cloudflare credential-management bindings remain available.
+- The existing Meta app, Embedded Signup configuration and Cloudflare credential-management bindings remain available. The Meta app must also be published; unpublished development mode is an external production blocker for artists without an app role.
 - Cloudflare does not expose secret values for readback; verification is limited to exact secret names and runtime behavior.
 - Migration number `0128` is already used by open parallel PR #588, so this workstream reserves the next non-conflicting migration number and rechecks canonical before merge.
 - WhatsApp provider consent is interactive and remains `ui_only` in the GPT operator-parity inventory.
@@ -113,3 +120,4 @@ None. Workspace-owned WhatsApp routing is explicitly deferred.
 
 - 2026-09-01: Created from the verified production state. The earlier `connected_at=null` issue is already reconciled by migration `0127`, so no second Vladimir backfill is required.
 - 2026-09-01: Implementation analysis found no blocking or high-severity spec/code conflict. Production contains only exact `vladimir-production` and `kristina-production` routes, so migration `0129` passes its fail-before-write drift predicates without rewriting either row.
+- 2026-09-01: Real Kristina acceptance exposed an external activation gap: Meta app `1481226093843982` was still unpublished and returned `App not active`. Kristina production onboarding and provider publication are now explicit requirements rather than deferred work.

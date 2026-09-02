@@ -22,9 +22,7 @@ interface FacebookSdk {
       response_type: 'code';
       override_default_response_type: true;
       extras: {
-        setup: Record<string, never>;
         featureType: 'whatsapp_business_app_onboarding';
-        sessionInfoVersion: '3';
       };
     },
   ): void;
@@ -371,10 +369,10 @@ export function launchWhatsAppEmbeddedSignup(): Promise<WhatsAppEmbeddedSignupRe
       config_id: META_WHATSAPP_CONFIG_ID,
       response_type: 'code',
       override_default_response_type: true,
+      // Embedded Signup v4 owns products and permissions in the Facebook Login for Business configuration.
+      // Coexistence remains an explicit launch selector so existing WhatsApp Business App numbers can be onboarded.
       extras: {
-        setup: {},
         featureType: 'whatsapp_business_app_onboarding',
-        sessionInfoVersion: '3',
       },
     });
   });
