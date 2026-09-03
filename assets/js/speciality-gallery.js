@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const MAX_IMAGES = 24;
+  const MAX_IMAGES = 32;
   const WIDTHS = [320, 480, 720, 960];
   const CONFIG = {
     'large-scale': {
@@ -43,9 +43,13 @@
         .filter((width) => WIDTHS.includes(width))
         .sort((a, b) => a - b)
       : [];
+    const sourceExtension = typeof manifest.sourceExtension === 'string'
+      && /^\.(?:jpe?g|webp|png)$/i.test(manifest.sourceExtension)
+      ? manifest.sourceExtension.toLowerCase()
+      : '.jpg';
 
     return {
-      images: stems.map((stem) => ({ stem, source: `${config.base}${stem}.jpg` })),
+      images: stems.map((stem) => ({ stem, source: `${config.base}${stem}${sourceExtension}` })),
       thumbnailWidths,
     };
   }

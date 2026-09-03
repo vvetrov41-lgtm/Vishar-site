@@ -5,7 +5,7 @@ import sharp from 'sharp';
 const WIDTHS = [320, 480, 720, 960];
 const WEBP_QUALITY = 80;
 const WEBP_EFFORT = 6;
-const OPTIONAL_NUMBERED_STEMS = Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0'));
+const OPTIONAL_NUMBERED_STEMS = Array.from({ length: 32 }, (_, i) => String(i + 1).padStart(2, '0'));
 
 const GALLERIES = [
   {
@@ -54,7 +54,7 @@ const GALLERIES = [
     sourceDir: path.resolve('assets/portraits'),
     outputDir: path.resolve('assets/portraits', 'thumbs'),
     stems: OPTIONAL_NUMBERED_STEMS,
-    sourceExtension: '.jpg',
+    sourceExtension: '.webp',
     optional: true,
   },
   {
@@ -68,6 +68,8 @@ const GALLERIES = [
 ];
 
 const FORCE = process.argv.includes('--force');
+const galleryArg = process.argv.find((arg) => arg.startsWith('--gallery='));
+const GALLERY_FILTER = galleryArg ? galleryArg.slice('--gallery='.length) : '';
 
 function formatBytes(bytes) {
   const kb = bytes / 1024;
@@ -160,7 +162,15 @@ async function main() {
   let inputBytesGrand = 0;
   let outputBytesGrand = 0;
 
-  for (const gallery of GALLERIES) {
+  const selectedGalleries = GALLERY_FILTER
+    ? GALLERIES.filter((gallery) => gallery.name === GALLERY_FILTER)
+    : GALLERIES;
+
+  if (!selectedGalleries.length) {
+    throw new Error(`Unknown gallery: ${GALLERY_FILTER}`);
+  }
+
+  for (const gallery of selectedGalleries) {
     const result = await processGallery(gallery);
     generatedTotal += result.generatedCount;
     skippedTotal += result.skippedCount;
