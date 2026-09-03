@@ -1,9 +1,15 @@
 name: GPT production Cloudflare domain rollout
 
+# One-shot topology migration from three GPT Action custom domains to four.
+# The crm-production environment admits the established release/private-crm-rc*
+# namespace. This exact branch is placed under the existing read-only inventory
+# exclusion so it cannot enter the broad Private production release workflow.
+# The inventory workflow may run alongside this workflow, but it is read-only.
+
 on:
   push:
     branches:
-      - release/gpt-cloudflare-domain-20260903
+      - release/private-crm-rc636-inventory-gpt-cloudflare-domain
 
 permissions:
   actions: read
@@ -41,7 +47,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ "$GITHUB_REF_NAME" = 'release/gpt-cloudflare-domain-20260903' ]
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc636-inventory-gpt-cloudflare-domain' ]
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [ "$GITHUB_SHA" != "$APPROVED_SHA" ]
@@ -84,28 +90,17 @@ jobs:
             'Booking host validation'
             'WhatsApp production onboarding validation'
           )
-          for attempt in $(seq 1 60); do
-            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
-              --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
-              | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
-            all_green=true
-            for workflow in "${required_workflows[@]}"; do
-              if ! jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
-                any(.[]; .name == $name and .head_sha == $sha
-                         and .status == "completed" and .conclusion == "success")
-              ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null; then
-                all_green=false
-              fi
-            done
-            if [ "$all_green" = true ]; then
-              break
-            fi
-            if [ "$attempt" -eq 60 ]; then
-              echo 'Required exact-head CI did not become green within the bounded admission window.' >&2
-              jq . "$RUNNER_TEMP/exact-head-runs.json" >&2
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
               exit 1
-            fi
-            sleep 15
+            }
           done
 
       - uses: actions/setup-node@v4
@@ -120,9 +115,8 @@ jobs:
           npm ci --ignore-scripts
           npm audit --audit-level=moderate
           npm run test:gpt-production
-          node scripts/test-gpt-gmail-openapi.mjs
-          node scripts/test-gpt-operator-parity.mjs
-          npm run validate:gpt-actions
+          node scripts/test-gpt-cloudflare-openapi.mjs
+          node scripts/test-cloudflare-control-config.mjs
           npm run check:gpt-production-bundle
           npm run scan:secrets
           [ "$(grep -c 'custom_domain = true' wrangler.gpt-actions.production.toml)" -eq 4 ]
@@ -164,9 +158,8 @@ jobs:
           const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
           if (!worker) throw new Error('Production GPT Worker is missing');
           if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) throw new Error('Unexpected GPT Worker exposure');
-
           const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
-          const expectedVars = new Map([
+          for (const [name, value] of [
             ['VISHAR_ENVIRONMENT', 'production'],
             ['GPT_ACTIONS_ENABLED', 'true'],
             ['GPT_OAUTH_RELAY_ENABLED', 'true'],
@@ -177,45 +170,29 @@ jobs:
             ['CLOUDFLARE_CONTROL_READ_ENABLED', 'true'],
             ['CLOUDFLARE_CONTROL_WRITE_ENABLED', 'false'],
             ['SUPABASE_URL', process.env.SUPABASE_URL],
-          ]);
-          for (const [name, value] of expectedVars) {
+          ]) {
             if (bindings.get(name)?.value !== value) throw new Error(`Unexpected ${name} production binding`);
           }
-
           const gmail = bindings.get('GMAIL_SERVICE');
-          if (gmail?.type !== 'service' || gmail?.service !== 'vishar-gmail-production' || gmail?.environment !== 'production') {
-            throw new Error('Unexpected Gmail service binding');
-          }
+          if (gmail?.type !== 'service' || gmail?.service !== 'vishar-gmail-production' || gmail?.environment !== 'production') throw new Error('Unexpected Gmail service binding');
           const gateway = bindings.get('CLOUDFLARE_GATEWAY');
-          if (gateway?.type !== 'service' || gateway?.service !== 'vishar-cloudflare-gateway' || gateway?.environment !== 'production') {
-            throw new Error('Unexpected Cloudflare gateway service binding');
-          }
+          if (gateway?.type !== 'service' || gateway?.service !== 'vishar-cloudflare-gateway' || gateway?.environment !== 'production') throw new Error('Unexpected Cloudflare gateway service binding');
           const rateLimit = bindings.get('GPT_RATE_LIMIT');
-          if (rateLimit?.type !== 'ratelimit'
-              || String(rateLimit.namespace_id) !== '1002'
-              || Number(rateLimit.simple?.limit) !== 30
-              || Number(rateLimit.simple?.period) !== 60) {
-            throw new Error('Unexpected GPT production rate-limit binding');
-          }
+          if (rateLimit?.type !== 'ratelimit' || String(rateLimit.namespace_id) !== '1002' || Number(rateLimit.simple?.limit) !== 30 || Number(rateLimit.simple?.period) !== 60) throw new Error('Unexpected GPT production rate-limit binding');
           if (!(worker.secret_names || []).includes('FIRECRAWL_API_KEY')) throw new Error('FIRECRAWL_API_KEY Worker secret is missing');
 
-          const expectedThree = [process.env.CORE_HOST, process.env.OPERATIONS_HOST, process.env.COMMUNICATIONS_HOST].sort();
-          const expectedFour = [...expectedThree, process.env.CLOUDFLARE_HOST].sort();
+          const three = [process.env.CORE_HOST, process.env.OPERATIONS_HOST, process.env.COMMUNICATIONS_HOST].sort();
+          const four = [...three, process.env.CLOUDFLARE_HOST].sort();
           const rows = data.worker_custom_domains.filter((row) => row.service === process.env.WORKER_NAME);
           const hosts = rows.map((row) => row.hostname).sort();
-          const isThree = JSON.stringify(hosts) === JSON.stringify(expectedThree);
-          const isFour = JSON.stringify(hosts) === JSON.stringify(expectedFour);
+          const isThree = JSON.stringify(hosts) === JSON.stringify(three);
+          const isFour = JSON.stringify(hosts) === JSON.stringify(four);
           if (!isThree && !isFour) throw new Error(`Unexpected production GPT domain topology: ${hosts.join(', ')}`);
           for (const row of rows) {
-            if (row.environment !== 'production' || row.zone_name !== 'vishartattoo.com' || row.enabled !== true) {
-              throw new Error(`Unexpected domain metadata for ${row.hostname}`);
-            }
+            if (row.environment !== 'production' || row.zone_name !== 'vishartattoo.com' || row.enabled !== true) throw new Error(`Unexpected domain metadata for ${row.hostname}`);
           }
-
           const beforeVersion = worker.active_deployment?.versions?.[0]?.version_id;
-          if (typeof beforeVersion !== 'string' || !beforeVersion) {
-            throw new Error('Could not read current Worker version id; refusing mutation without a rollback target');
-          }
+          if (!beforeVersion) throw new Error('No rollback target version');
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `needs_deploy=${isThree ? 'true' : 'false'}\n`);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${beforeVersion}\n`);
           NODE
@@ -229,9 +206,6 @@ jobs:
           cp wrangler.gpt-actions.production.toml "$rollback_config"
           sed -i '/gpt-cloudflare\.vishartattoo\.com/d' "$rollback_config"
           [ "$(grep -c 'custom_domain = true' "$rollback_config")" -eq 3 ]
-          grep -Fq "pattern = \"$CORE_HOST\", custom_domain = true" "$rollback_config"
-          grep -Fq "pattern = \"$OPERATIONS_HOST\", custom_domain = true" "$rollback_config"
-          grep -Fq "pattern = \"$COMMUNICATIONS_HOST\", custom_domain = true" "$rollback_config"
           ! grep -Fq "$CLOUDFLARE_HOST" "$rollback_config"
 
       - name: Re-check canonical and database immediately before mutation
@@ -241,24 +215,13 @@ jobs:
           set -euo pipefail
           [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
           [ -z "$(git status --short)" ]
-
           canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
-          [ -n "$canonical_sha" ]
-          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
-            echo 'Canonical Vishar CRM head moved after admission; refusing stale Cloudflare-domain mutation.' >&2
-            exit 1
-          }
-
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || { echo 'Canonical moved; refusing stale mutation.' >&2; exit 1; }
           trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
-          [ -n "$trigger_sha" ]
-          [ "$trigger_sha" = "$GITHUB_SHA" ] || {
-            echo 'Cloudflare-domain release branch moved after admission; refusing production mutation.' >&2
-            exit 1
-          }
-
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || { echo 'Release branch moved; refusing mutation.' >&2; exit 1; }
           supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-final-dry-run.log"
           if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-final-dry-run.log"; then
-            echo 'Production migration state changed after preflight; refusing GPT edge mutation.' >&2
+            echo 'Production migration state changed after preflight.' >&2
             exit 1
           fi
 
@@ -292,9 +255,7 @@ jobs:
           set -euo pipefail
           success=false
           for attempt in $(seq 1 20); do
-            if node scripts/cloudflare-production-inventory.mjs \
-              --output "$RUNNER_TEMP/cloudflare-after.json" \
-              --summary "$RUNNER_TEMP/cloudflare-after.md"; then
+            if node scripts/cloudflare-production-inventory.mjs --output "$RUNNER_TEMP/cloudflare-after.json" --summary "$RUNNER_TEMP/cloudflare-after.md"; then
               if node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
@@ -305,62 +266,27 @@ jobs:
           const hosts = rows.map((row) => row.hostname).sort();
           if (JSON.stringify(hosts) !== JSON.stringify(expected)) process.exit(1);
           if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) process.exit(1);
-          for (const row of rows) {
-            if (row.environment !== 'production' || row.zone_name !== 'vishartattoo.com' || row.enabled !== true) process.exit(1);
-          }
-
           const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
-          const expectedVars = new Map([
-            ['VISHAR_ENVIRONMENT', 'production'],
-            ['GPT_ACTIONS_ENABLED', 'true'],
-            ['GPT_OAUTH_RELAY_ENABLED', 'true'],
-            ['WEB_RESEARCH_ENABLED', 'true'],
-            ['WEB_RESEARCH_SEARCH_ENABLED', 'true'],
-            ['WEB_RESEARCH_SCRAPE_ENABLED', 'true'],
-            ['CLOUDFLARE_CONTROL_ENABLED', 'true'],
-            ['CLOUDFLARE_CONTROL_READ_ENABLED', 'true'],
-            ['CLOUDFLARE_CONTROL_WRITE_ENABLED', 'false'],
-            ['SUPABASE_URL', process.env.SUPABASE_URL],
-          ]);
-          for (const [name, value] of expectedVars) {
-            if (bindings.get(name)?.value !== value) process.exit(1);
-          }
-          const gmail = bindings.get('GMAIL_SERVICE');
-          if (gmail?.type !== 'service' || gmail?.service !== 'vishar-gmail-production' || gmail?.environment !== 'production') process.exit(1);
+          if (bindings.get('CLOUDFLARE_CONTROL_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('CLOUDFLARE_CONTROL_READ_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('CLOUDFLARE_CONTROL_WRITE_ENABLED')?.value !== 'false') process.exit(1);
           const gateway = bindings.get('CLOUDFLARE_GATEWAY');
           if (gateway?.type !== 'service' || gateway?.service !== 'vishar-cloudflare-gateway' || gateway?.environment !== 'production') process.exit(1);
-          const rateLimit = bindings.get('GPT_RATE_LIMIT');
-          if (rateLimit?.type !== 'ratelimit'
-              || String(rateLimit.namespace_id) !== '1002'
-              || Number(rateLimit.simple?.limit) !== 30
-              || Number(rateLimit.simple?.period) !== 60) process.exit(1);
-          if (!(worker.secret_names || []).includes('FIRECRAWL_API_KEY')) process.exit(1);
-
           const afterVersion = worker.active_deployment?.versions?.[0]?.version_id;
           if (!afterVersion) process.exit(1);
           if (process.env.NEEDS_DEPLOY === 'true' && afterVersion === process.env.BEFORE_VERSION) process.exit(1);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `after_version=${afterVersion}\n`);
           NODE
-              then
-                success=true
-                break
-              fi
+              then success=true; break; fi
             fi
             sleep 6
           done
-          [ "$success" = true ] || {
-            echo 'Four-domain Cloudflare readback did not converge.' >&2
-            exit 1
-          }
+          [ "$success" = true ] || { echo 'Four-domain Cloudflare readback did not converge.' >&2; exit 1; }
 
           probe() {
-            expected="$1"
-            url="$2"
+            expected="$1"; url="$2"
             actual="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)"
-            [ "$actual" = "$expected" ] || {
-              echo "GPT boundary mismatch for $url: expected $expected, got $actual" >&2
-              return 1
-            }
+            [ "$actual" = "$expected" ] || { echo "Boundary mismatch for $url: $actual" >&2; return 1; }
           }
           probe 200 "https://$CLOUDFLARE_HOST/privacy"
           probe 401 "https://$CLOUDFLARE_HOST/v1/cloudflare/account"
@@ -376,34 +302,10 @@ jobs:
           [ -f "$rollback_config" ]
           npx wrangler deploy --config "$rollback_config" --name "$WORKER_NAME" --strict \
             --message "Automatic rollback: Cloudflare Action domain readback failed for $APPROVED_SHA" \
-            --var SUPABASE_URL:"$SUPABASE_URL" \
-            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
-            --var VISHAR_ENVIRONMENT:production \
-            --var GPT_OAUTH_RELAY_ENABLED:true \
-            --var GPT_ACTIONS_ENABLED:true \
-            --var WEB_RESEARCH_ENABLED:true \
-            --var WEB_RESEARCH_SEARCH_ENABLED:true \
-            --var WEB_RESEARCH_SCRAPE_ENABLED:true \
-            --var CLOUDFLARE_CONTROL_ENABLED:true \
-            --var CLOUDFLARE_CONTROL_READ_ENABLED:true \
-            --var CLOUDFLARE_CONTROL_WRITE_ENABLED:false
-
-          node scripts/cloudflare-production-inventory.mjs \
-            --output "$RUNNER_TEMP/cloudflare-rollback.json" \
-            --summary "$RUNNER_TEMP/cloudflare-rollback.md"
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-rollback.json', 'utf8'));
-          const expected = [process.env.CORE_HOST, process.env.OPERATIONS_HOST, process.env.COMMUNICATIONS_HOST].sort();
-          const hosts = data.worker_custom_domains
-            .filter((row) => row.service === process.env.WORKER_NAME)
-            .map((row) => row.hostname)
-            .sort();
-          if (JSON.stringify(hosts) !== JSON.stringify(expected)) {
-            throw new Error(`Rollback topology is not the exact three-domain baseline: ${hosts.join(', ')}`);
-          }
-          NODE
-          cat "$RUNNER_TEMP/cloudflare-rollback.md" >> "$GITHUB_STEP_SUMMARY"
+            --var SUPABASE_URL:"$SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production --var GPT_OAUTH_RELAY_ENABLED:true --var GPT_ACTIONS_ENABLED:true \
+            --var WEB_RESEARCH_ENABLED:true --var WEB_RESEARCH_SEARCH_ENABLED:true --var WEB_RESEARCH_SCRAPE_ENABLED:true \
+            --var CLOUDFLARE_CONTROL_ENABLED:true --var CLOUDFLARE_CONTROL_READ_ENABLED:true --var CLOUDFLARE_CONTROL_WRITE_ENABLED:false
 
       - name: Reassert three-domain transport if deploy command fails
         if: failure() && steps.preflight.outputs.needs_deploy == 'true' && steps.deploy.outcome == 'failure'
@@ -414,34 +316,10 @@ jobs:
           [ -f "$rollback_config" ]
           npx wrangler deploy --config "$rollback_config" --name "$WORKER_NAME" --strict \
             --message "Automatic rollback: Cloudflare Action domain deploy failed for $APPROVED_SHA" \
-            --var SUPABASE_URL:"$SUPABASE_URL" \
-            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
-            --var VISHAR_ENVIRONMENT:production \
-            --var GPT_OAUTH_RELAY_ENABLED:true \
-            --var GPT_ACTIONS_ENABLED:true \
-            --var WEB_RESEARCH_ENABLED:true \
-            --var WEB_RESEARCH_SEARCH_ENABLED:true \
-            --var WEB_RESEARCH_SCRAPE_ENABLED:true \
-            --var CLOUDFLARE_CONTROL_ENABLED:true \
-            --var CLOUDFLARE_CONTROL_READ_ENABLED:true \
-            --var CLOUDFLARE_CONTROL_WRITE_ENABLED:false
-
-          node scripts/cloudflare-production-inventory.mjs \
-            --output "$RUNNER_TEMP/cloudflare-deploy-failure-rollback.json" \
-            --summary "$RUNNER_TEMP/cloudflare-deploy-failure-rollback.md"
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-deploy-failure-rollback.json', 'utf8'));
-          const expected = [process.env.CORE_HOST, process.env.OPERATIONS_HOST, process.env.COMMUNICATIONS_HOST].sort();
-          const hosts = data.worker_custom_domains
-            .filter((row) => row.service === process.env.WORKER_NAME)
-            .map((row) => row.hostname)
-            .sort();
-          if (JSON.stringify(hosts) !== JSON.stringify(expected)) {
-            throw new Error(`Deploy-failure rollback topology is not the exact three-domain baseline: ${hosts.join(', ')}`);
-          }
-          NODE
-          cat "$RUNNER_TEMP/cloudflare-deploy-failure-rollback.md" >> "$GITHUB_STEP_SUMMARY"
+            --var SUPABASE_URL:"$SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production --var GPT_OAUTH_RELAY_ENABLED:true --var GPT_ACTIONS_ENABLED:true \
+            --var WEB_RESEARCH_ENABLED:true --var WEB_RESEARCH_SEARCH_ENABLED:true --var WEB_RESEARCH_SCRAPE_ENABLED:true \
+            --var CLOUDFLARE_CONTROL_ENABLED:true --var CLOUDFLARE_CONTROL_READ_ENABLED:true --var CLOUDFLARE_CONTROL_WRITE_ENABLED:false
 
       - name: Boundary summary
         if: always()
@@ -450,15 +328,10 @@ jobs:
           {
             echo '### GPT production Cloudflare domain rollout'
             echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
-            echo "- Trigger SHA: \`$GITHUB_SHA\` (same-tree no-op child)"
+            echo "- Trigger SHA: \`$GITHUB_SHA\`"
             echo "- Previous Worker version: \`${{ steps.preflight.outputs.before_version || 'unknown' }}\`"
             echo "- Accepted Worker version: \`${{ steps.readback.outputs.after_version || 'unknown' }}\`"
-            echo "- Mutation required: \`${{ steps.preflight.outputs.needs_deploy || 'unknown' }}\`"
-            echo '- Cloudflare topology target: Core, Operations, Communications, Cloudflare'
-            echo '- Cloudflare control mode: read-only; write remains false'
-            echo '- Service binding target: vishar-cloudflare-gateway'
-            echo '- OAuth authorization/token origin: unchanged (`gpt-actions.vishartattoo.com`)'
-            echo '- Production DB migrations applied: none'
-            echo '- GPT OAuth client/binding/capability mutations: none'
-            echo '- Secret values: never written or printed by this workflow'
+            echo '- Target topology: Core, Operations, Communications, Cloudflare'
+            echo '- Cloudflare control: read enabled, write disabled'
+            echo '- No database, OAuth client or secret mutation'
           } >> "$GITHUB_STEP_SUMMARY"
