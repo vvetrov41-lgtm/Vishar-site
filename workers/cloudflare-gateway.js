@@ -1,4 +1,7 @@
+import { createWorkerObservability, statusClass } from './lib/worker-observability.js';
+
 const CLOUDFLARE_API_ORIGIN = 'https://api.cloudflare.com/client/v4';
+const OBSERVABILITY_PROBE_PATH = '/internal/observability/probe';
 const MAX_INTERNAL_BODY_BYTES = 640 * 1024;
 const MAX_WORKER_SOURCE_BYTES = 512 * 1024;
 const MAX_PROVIDER_BYTES = 768 * 1024;
@@ -460,23 +463,70 @@ function mapError(error) {
   return json(502, { error: 'cloudflare_gateway_error' });
 }
 
-export async function handleCloudflareGatewayRequest(request, env, fetchImpl = fetch) {
-  if (!configured(env)) return json(503, { error: 'cloudflare_not_configured' });
-  try {
-    return json(200, await dispatch(request, env, fetchImpl));
-  } catch (error) {
-    return mapError(error);
+// Bounded production observability for this private, service-bound Worker.
+//
+// Only two things are ever reported, and both are assembled from fixed tokens:
+// a server-side failure class, and an explicit technical probe. No request URL,
+// query string, body, header, provider payload or raw error is passed in.
+async function reportOutcome(reporter, waitUntil, event, fields) {
+  const capture = reporter.capture(event, { component: 'cloudflare-gateway', environment: 'production', ...fields });
+  if (typeof waitUntil === 'function') waitUntil(capture.catch(() => {}));
+  else await capture.catch(() => {});
+}
+
+export async function handleCloudflareGatewayRequest(request, env, fetchImpl = fetch, ctx = null) {
+  const reporter = createWorkerObservability(env, { fetchImpl });
+  const waitUntil = typeof ctx?.waitUntil === 'function' ? ctx.waitUntil.bind(ctx) : null;
+  const startedAt = Date.now();
+
+  if (isObservabilityProbe(request)) {
+    // The probe exists so a rollout can prove the sanitized pipeline end to end
+    // without waiting for a real incident. This Worker has no public route, so
+    // the probe is reachable only through its internal service binding.
+    const result = await reporter.capture('probe.observability.sanitized', {
+      component: 'cloudflare-gateway',
+      environment: 'production',
+      stage: 'release_probe',
+      operation: 'observability_probe',
+      outcome: 'succeeded',
+      statusClass: '2xx',
+    });
+    return json(200, { probe: 'observability', sent: result.sent === true, reason: result.reason || null });
   }
+
+  if (!configured(env)) return json(503, { error: 'cloudflare_not_configured' });
+
+  let response;
+  try {
+    response = json(200, await dispatch(request, env, fetchImpl));
+  } catch (error) {
+    response = mapError(error);
+  }
+
+  if (response.status >= 500) {
+    await reportOutcome(reporter, waitUntil, 'worker.request.failed', {
+      stage: 'gateway_dispatch',
+      statusClass: statusClass(response.status),
+      outcome: 'failed',
+      durationMs: Date.now() - startedAt,
+    });
+  }
+  return response;
+}
+
+function isObservabilityProbe(request) {
+  if (request.method.toUpperCase() !== 'POST') return false;
+  return new URL(request.url).pathname.replace(/\/+$/, '') === OBSERVABILITY_PROBE_PATH;
 }
 
 export default {
-  async fetch(request, env) {
-    return handleCloudflareGatewayRequest(request, env);
+  async fetch(request, env, ctx) {
+    return handleCloudflareGatewayRequest(request, env, fetch, ctx);
   },
 };
 
 export const __testing = Object.freeze({
   configured, readJson, exactObject, workerName, zoneName, cloudflareId,
   dnsRecordPayload, publicUrlInZone, routePattern, cloudflareJson,
-  resolveAccount, resolveZone, dispatch, mapError,
+  resolveAccount, resolveZone, dispatch, mapError, isObservabilityProbe,
 });
