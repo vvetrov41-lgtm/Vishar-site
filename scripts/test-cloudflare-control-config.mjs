@@ -22,6 +22,11 @@ assert.match(
   /\[\[services\]\]\s*\nbinding = "CLOUDFLARE_GATEWAY"\s*\nservice = "vishar-cloudflare-gateway"/,
   'GPT production Worker must use a private Service Binding to the Cloudflare gateway',
 );
+assert.match(
+  gpt,
+  /\{ pattern = "gpt-cloudflare\.vishartattoo\.com", custom_domain = true \}/,
+  'Cloudflare ChatGPT actions must use a dedicated custom domain so Builder does not collide with Operations actions',
+);
 assert.match(gpt, /^CLOUDFLARE_CONTROL_ENABLED = "true"$/m, 'Cloudflare control must be enabled for the reviewed read-only rollout');
 assert.match(gpt, /^CLOUDFLARE_CONTROL_READ_ENABLED = "true"$/m, 'Cloudflare read control must be enabled for the reviewed read-only rollout');
 assert.match(gpt, /^CLOUDFLARE_CONTROL_WRITE_ENABLED = "false"$/m, 'Cloudflare writes must remain fail-closed until read acceptance is complete');

@@ -7,7 +7,8 @@ preview_urls = false
 routes = [
   { pattern = "gpt-actions.vishartattoo.com", custom_domain = true },
   { pattern = "gpt-operations.vishartattoo.com", custom_domain = true },
-  { pattern = "gpt-communications.vishartattoo.com", custom_domain = true }
+  { pattern = "gpt-communications.vishartattoo.com", custom_domain = true },
+  { pattern = "gpt-cloudflare.vishartattoo.com", custom_domain = true }
 ]
 
 [[services]]
