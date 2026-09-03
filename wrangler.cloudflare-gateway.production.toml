@@ -6,8 +6,13 @@ preview_urls = false
 
 # Private service-bound control plane. Deliberately no public/custom route.
 # CLOUDFLARE_API_TOKEN must exist only as a Worker secret and is never tracked.
+# Sentry stays off in tracked config. A guarded rollout enables it by setting
+# SENTRY_ENABLED at deploy time and installing SENTRY_DSN as a Worker secret.
+# The DSN is never tracked here and is never written to logs.
 [vars]
 VISHAR_ENVIRONMENT = "production"
+SENTRY_ENABLED = "false"
 
+# SENTRY_DSN is optional: it is required only while SENTRY_ENABLED is "true".
 [secrets]
 required = ["CLOUDFLARE_API_TOKEN"]

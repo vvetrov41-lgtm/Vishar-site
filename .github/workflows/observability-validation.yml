@@ -4,7 +4,12 @@ on:
   pull_request:
     paths:
       - 'workers/lib/observability.js'
+      - 'workers/lib/sentry-transport.js'
+      - 'workers/lib/worker-observability.js'
+      - 'workers/cloudflare-gateway.js'
+      - 'wrangler.cloudflare-gateway.production.toml'
       - 'scripts/test-observability-boundary.mjs'
+      - 'scripts/test-sentry-transport.mjs'
       - 'specs/sentry-observability-foundation/**'
       - '.github/workflows/observability-validation.yml'
   workflow_dispatch:
@@ -37,6 +42,16 @@ jobs:
 
       - name: Test external observability boundary
         run: node scripts/test-observability-boundary.mjs
+
+      - name: Test Sentry transport and bounded Worker coverage
+        run: node scripts/test-sentry-transport.mjs
+
+      - name: Prove the gateway Worker still compiles with observability wired
+        env:
+          XDG_CONFIG_HOME: .wrangler/config
+          WRANGLER_LOG_PATH: .wrangler/cloudflare-gateway-observability.log
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx wrangler deploy --config wrangler.cloudflare-gateway.production.toml --dry-run --outdir .wrangler/observability-dry-run
 
       - name: Scan repository for committed secrets
         run: npm run scan:secrets

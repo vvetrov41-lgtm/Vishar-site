@@ -1,0 +1,267 @@
+name: Sentry observability production rollout
+
+# Activates privacy-safe Sentry reporting on the private, service-bound
+# Cloudflare gateway Worker. The Worker has no public route, so this rollout
+# adds no new internet-reachable surface.
+#
+# Admission mirrors the established production release gates: the pushed commit
+# must sit directly on top of the current canonical head with an identical tree,
+# exact-head CI must be green, and production Supabase must have no drift.
+#
+# Requires the crm-production environment to hold CRM_PRODUCTION_SENTRY_DSN.
+# The DSN is installed as a Worker secret and is never written to a log or to
+# the repository.
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-sentry-observability'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: sentry-observability-production-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      WORKER_NAME: vishar-cloudflare-gateway
+      SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Verify exact release trigger and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-sentry-observability) ;;
+            *) echo 'Sentry rollout must use the reserved release namespace.' >&2; exit 1 ;;
+          esac
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$GITHUB_SHA" != "$APPROVED_SHA" ]
+          [ "$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          if [ -z '${{ secrets.CRM_PRODUCTION_SENTRY_DSN }}' ]; then
+            echo 'CRM_PRODUCTION_SENTRY_DSN is not configured in the crm-production environment.' >&2
+            exit 1
+          fi
+
+      - name: Checkout exact approved canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical lineage and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Approved SHA is no longer the canonical Vishar CRM head.' >&2
+            exit 1
+          }
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
+              exit 1
+            }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate the privacy boundary at the approved SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          node scripts/test-observability-boundary.mjs
+          node scripts/test-sentry-transport.mjs
+          node scripts/test-cloudflare-gateway.mjs
+          npm run check:cloudflare-gateway-bundle
+          npm run scan:secrets
+          # The gateway must remain private: no route, no workers.dev, no preview.
+          ! grep -Eq '^\s*routes\s*=' wrangler.cloudflare-gateway.production.toml
+          grep -Fq 'workers_dev = false' wrangler.cloudflare-gateway.production.toml
+          grep -Fq 'preview_urls = false' wrangler.cloudflare-gateway.production.toml
+          # A real DSN must never be tracked. The only permitted occurrence is
+          # the clearly fake fixture inside the transport test.
+          leaks="$(grep -rIl 'ingest\.[a-z0-9.]*sentry\.io' \
+            --exclude-dir=node_modules --exclude-dir=.git . \
+            | grep -v '^\./scripts/test-sentry-transport\.mjs$' || true)"
+          if [ -n "$leaks" ]; then
+            echo "A Sentry DSN host appears in tracked files:" >&2
+            echo "$leaks" >&2
+            exit 1
+          fi
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Verify production database has no pending migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-dry-run.log"
+          if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-dry-run.log"; then
+            echo 'Pending production database migration detected. Refusing edge mutation.' >&2
+            exit 1
+          fi
+
+      - name: Read live gateway topology before mutation
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-before.json" \
+            --summary "$RUNNER_TEMP/cloudflare-before.md"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) throw new Error('Private Cloudflare gateway Worker is missing');
+          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) throw new Error('Unexpected gateway exposure');
+          const domains = (data.worker_custom_domains || []).filter((row) => row.service === process.env.WORKER_NAME);
+          if (domains.length) throw new Error('The gateway must stay private with no custom domain');
+          const before = worker.active_deployment?.versions?.[0]?.version_id;
+          if (!before) throw new Error('No rollback target version');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${before}\n`);
+          NODE
+
+      - name: Re-check canonical immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || { echo 'Canonical moved; refusing stale mutation.' >&2; exit 1; }
+          trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || { echo 'Release branch moved; refusing mutation.' >&2; exit 1; }
+
+      - name: Install the Sentry DSN as a Worker secret
+        shell: bash
+        env:
+          SENTRY_DSN: ${{ secrets.CRM_PRODUCTION_SENTRY_DSN }}
+        run: |
+          set -euo pipefail
+          # Piped through stdin so the value never appears in a command line,
+          # a process listing or the workflow log.
+          printf '%s' "$SENTRY_DSN" | npx wrangler secret put SENTRY_DSN \
+            --config wrangler.cloudflare-gateway.production.toml --name "$WORKER_NAME" >/dev/null 2>&1
+          echo 'SENTRY_DSN installed as a Worker secret.'
+
+      - name: Deploy the gateway with Sentry enabled
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.cloudflare-gateway.production.toml --name "$WORKER_NAME" --strict \
+            --message "Enable privacy-safe Sentry observability for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var SENTRY_ENABLED:true \
+            --var SENTRY_RELEASE:"${APPROVED_SHA:0:12}"
+
+      - name: Production readback
+        id: readback
+        shell: bash
+        env:
+          BEFORE_VERSION: ${{ steps.preflight.outputs.before_version }}
+        run: |
+          set -euo pipefail
+          success=false
+          for attempt in $(seq 1 20); do
+            if node scripts/cloudflare-production-inventory.mjs --output "$RUNNER_TEMP/cloudflare-after.json" --summary "$RUNNER_TEMP/cloudflare-after.md"; then
+              if node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) process.exit(1);
+          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) process.exit(1);
+          if ((data.worker_custom_domains || []).some((row) => row.service === process.env.WORKER_NAME)) process.exit(1);
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          if (bindings.get('SENTRY_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('VISHAR_ENVIRONMENT')?.value !== 'production') process.exit(1);
+          const secrets = worker.secret_names || [];
+          if (!secrets.includes('SENTRY_DSN') || !secrets.includes('CLOUDFLARE_API_TOKEN')) process.exit(1);
+          // The DSN must be a secret, never a readable binding.
+          if (bindings.has('SENTRY_DSN')) process.exit(1);
+          const after = worker.active_deployment?.versions?.[0]?.version_id;
+          if (!after || after === process.env.BEFORE_VERSION) process.exit(1);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `after_version=${after}\n`);
+          NODE
+              then success=true; break; fi
+            fi
+            sleep 6
+          done
+          [ "$success" = true ] || { echo 'Sentry activation readback did not converge.' >&2; exit 1; }
+          cat "$RUNNER_TEMP/cloudflare-after.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Roll back to dormant observability if readback fails
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.readback.outcome == 'failure')
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.cloudflare-gateway.production.toml --name "$WORKER_NAME" --strict \
+            --message "Automatic rollback: Sentry activation failed for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var SENTRY_ENABLED:false
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Sentry observability production rollout'
+            echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
+            echo "- Worker: \`$WORKER_NAME\` (private, service-bound, no route)"
+            echo "- Previous version: \`${{ steps.preflight.outputs.before_version || 'unknown' }}\`"
+            echo "- Accepted version: \`${{ steps.readback.outputs.after_version || 'unknown' }}\`"
+            echo '- Coverage: 5xx gateway outcomes and one release probe, sanitized allow-list only'
+            echo '- DSN stored as a Worker secret; never tracked and never logged'
+            echo '- No database, OAuth client, route or public surface mutation'
+          } >> "$GITHUB_STEP_SUMMARY"
