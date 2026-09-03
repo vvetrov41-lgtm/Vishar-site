@@ -8,8 +8,8 @@ info:
     service-bound Cloudflare gateway. Cloudflare account identifiers and provider
     credentials remain server-owned and are never caller-selectable.
 servers:
-  - url: https://gpt-operations.vishartattoo.com
-    description: Vishar CRM production operations action edge.
+  - url: https://gpt-cloudflare.vishartattoo.com
+    description: Vishar CRM production Cloudflare action edge.
 security:
   - supabaseOAuth: [email]
 paths:
