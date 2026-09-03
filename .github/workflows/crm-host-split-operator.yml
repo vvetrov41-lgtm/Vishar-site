@@ -79,6 +79,10 @@ jobs:
       VITE_MONZO_CONNECTOR_ORIGIN: https://monzo.vishartattoo.com
       VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
       VITE_BOOKING_FORMS_ORIGIN: https://booking.vishartattoo.com
+      # Explicit product analytics. Publishable values only; the build stays
+      # analytics-free until both repository variables exist.
+      VITE_POSTHOG_KEY: ${{ vars.CRM_PRODUCTION_POSTHOG_KEY }}
+      VITE_POSTHOG_HOST: ${{ vars.CRM_PRODUCTION_POSTHOG_HOST }}
 
     steps:
       - name: Verify trigger metadata, gate and target

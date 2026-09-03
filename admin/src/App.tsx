@@ -16,6 +16,7 @@ import { ControlPlaneAccessProvider } from './lib/control-plane-access';
 import { applyAppointmentTimeStep } from './lib/appointment-time-step';
 import { ACCOUNT_PATH } from './lib/account-api';
 import { matchRoute, useRouter } from './lib/router';
+import { captureEvent, screenForPath } from './lib/product-analytics';
 import { isPathAvailableOnSurface, useSurface } from './lib/surface';
 import { useSession } from './lib/session';
 import { AccountPage } from './pages/AccountPage';
@@ -119,6 +120,12 @@ function Routes() {
     const observer = new MutationObserver(() => applyAppointmentTimeStep());
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
+  }, [path]);
+
+  // Normalized screen name only. `screenForPath` discards every dynamic
+  // segment, so no enquiry, client or conversation id leaves the CRM.
+  useEffect(() => {
+    captureEvent('crm_screen_viewed', { screen: screenForPath(path) });
   }, [path]);
 
   // Checked before every route below, so a typed URL or a stale bookmark for an
