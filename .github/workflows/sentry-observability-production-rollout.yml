@@ -166,7 +166,9 @@ jobs:
           const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
           const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
           if (!worker) throw new Error('Private Cloudflare gateway Worker is missing');
-          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) throw new Error('Unexpected gateway exposure');
+          // A Worker with no workers.dev subdomain record reports null, not
+          // false. Only an explicit true is exposure.
+          if (worker.workers_dev_enabled === true || worker.preview_urls_enabled === true) throw new Error('Unexpected gateway exposure');
           const domains = (data.worker_custom_domains || []).filter((row) => row.service === process.env.WORKER_NAME);
           if (domains.length) throw new Error('The gateway must stay private with no custom domain');
           const before = worker.active_deployment?.versions?.[0]?.version_id;
@@ -221,7 +223,7 @@ jobs:
           const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
           const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
           if (!worker) process.exit(1);
-          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) process.exit(1);
+          if (worker.workers_dev_enabled === true || worker.preview_urls_enabled === true) process.exit(1);
           if ((data.worker_custom_domains || []).some((row) => row.service === process.env.WORKER_NAME)) process.exit(1);
           const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
           if (bindings.get('SENTRY_ENABLED')?.value !== 'true') process.exit(1);

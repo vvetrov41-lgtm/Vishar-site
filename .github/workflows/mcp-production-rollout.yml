@@ -164,6 +164,11 @@ jobs:
             .find((row) => row.hostname === process.env.MCP_HOST && row.service !== process.env.WORKER_NAME);
           if (clash) throw new Error(`${process.env.MCP_HOST} is already bound to ${clash.service}`);
           const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          // A Worker that has never had a workers.dev subdomain record reports
+          // null rather than false. Only an explicit true is exposure.
+          if (worker && (worker.workers_dev_enabled === true || worker.preview_urls_enabled === true)) {
+            throw new Error('The MCP Worker is exposed on workers.dev or preview URLs');
+          }
           const before = worker?.active_deployment?.versions?.[0]?.version_id || '';
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${before}\n`);
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `worker_existed=${worker ? 'true' : 'false'}\n`);
@@ -239,26 +244,50 @@ jobs:
               if node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
+          // Collect every mismatch so a failed readback names the control that
+          // did not converge instead of exiting silently.
+          const problems = [];
+          const check = (ok, message) => { if (!ok) problems.push(message); };
+
           const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
-          if (!worker) process.exit(1);
-          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) process.exit(1);
+          if (!worker) {
+            console.error('readback: the MCP Worker is not present yet');
+            process.exit(1);
+          }
+          // null means no workers.dev subdomain record at all, which is the
+          // state a never-exposed Worker reports. Only true is exposure.
+          check(worker.workers_dev_enabled !== true, `workers_dev_enabled=${worker.workers_dev_enabled}`);
+          check(worker.preview_urls_enabled !== true, `preview_urls_enabled=${worker.preview_urls_enabled}`);
+
           const hosts = (data.worker_custom_domains || [])
             .filter((row) => row.service === process.env.WORKER_NAME)
             .map((row) => row.hostname);
-          if (JSON.stringify(hosts) !== JSON.stringify([process.env.MCP_HOST])) process.exit(1);
+          check(JSON.stringify(hosts) === JSON.stringify([process.env.MCP_HOST]), `custom domains=${hosts.join(',') || 'none'}`);
+
           const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
-          if (bindings.get('MCP_ENABLED')?.value !== 'true') process.exit(1);
-          if (bindings.get('MCP_META_TOOLS_ENABLED')?.value !== 'true') process.exit(1);
-          if (bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value !== 'false') process.exit(1);
-          if (!String(bindings.get('SUPABASE_PUBLISHABLE_KEY')?.value || '').startsWith('sb_publishable_')) process.exit(1);
+          check(bindings.get('MCP_ENABLED')?.value === 'true', `MCP_ENABLED=${bindings.get('MCP_ENABLED')?.value}`);
+          check(bindings.get('MCP_META_TOOLS_ENABLED')?.value === 'true', `MCP_META_TOOLS_ENABLED=${bindings.get('MCP_META_TOOLS_ENABLED')?.value}`);
+          check(bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value === 'false', `MCP_GMAIL_TOOLS_ENABLED=${bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value}`);
+          check(String(bindings.get('SUPABASE_PUBLISHABLE_KEY')?.value || '').startsWith('sb_publishable_'), 'SUPABASE_PUBLISHABLE_KEY is not a publishable key');
+
           // No privileged credential may be bound to the MCP Worker.
           for (const name of ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ACCESS_TOKEN', 'CLOUDFLARE_API_TOKEN']) {
-            if (bindings.has(name) || (worker.secret_names || []).includes(name)) process.exit(1);
+            check(!bindings.has(name) && !(worker.secret_names || []).includes(name), `privileged credential bound: ${name}`);
           }
+
           const limiter = bindings.get('MCP_RATE_LIMIT');
-          if (limiter?.type !== 'ratelimit' || Number(limiter.simple?.limit) !== 60 || Number(limiter.simple?.period) !== 60) process.exit(1);
+          check(limiter?.type === 'ratelimit', `MCP_RATE_LIMIT type=${limiter?.type}`);
+          check(Number(limiter?.simple?.limit) === 60 && Number(limiter?.simple?.period) === 60,
+            `MCP_RATE_LIMIT=${limiter?.simple?.limit}/${limiter?.simple?.period}`);
+
           const after = worker.active_deployment?.versions?.[0]?.version_id;
-          if (!after || after === process.env.BEFORE_VERSION) process.exit(1);
+          check(Boolean(after), 'no active deployment version');
+          check(!after || after !== process.env.BEFORE_VERSION, 'the active version did not change');
+
+          if (problems.length) {
+            console.error(`readback mismatches: ${problems.join('; ')}`);
+            process.exit(1);
+          }
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `after_version=${after}\n`);
           NODE
               then success=true; break; fi
