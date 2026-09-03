@@ -29,6 +29,9 @@ jobs:
     env:
       CANONICAL_BRANCH: agent/platform-telegram-self-service
       APPROVED_SHA: ${{ github.event.before }}
+      # cloudflare-production-inventory.mjs stamps its sanitized output with the
+      # exact source revision and refuses to run without it.
+      SOURCE_SHA: ${{ github.event.before }}
       WORKER_NAME: vishar-mcp-production
       MCP_HOST: mcp.vishartattoo.com
       SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
