@@ -5,7 +5,7 @@ import sharp from 'sharp';
 const WIDTHS = [320, 480, 720, 960];
 const WEBP_QUALITY = 80;
 const WEBP_EFFORT = 6;
-const OPTIONAL_NUMBERED_STEMS = Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0'));
+const OPTIONAL_NUMBERED_STEMS = Array.from({ length: 32 }, (_, i) => String(i + 1).padStart(2, '0'));
 
 const GALLERIES = [
   {
@@ -54,7 +54,7 @@ const GALLERIES = [
     sourceDir: path.resolve('assets/portraits'),
     outputDir: path.resolve('assets/portraits', 'thumbs'),
     stems: OPTIONAL_NUMBERED_STEMS,
-    sourceExtension: '.jpg',
+    sourceExtension: '.webp',
     optional: true,
   },
   {
