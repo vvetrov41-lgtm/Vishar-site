@@ -268,7 +268,16 @@ jobs:
           check(bindings.get('MCP_ENABLED')?.value === 'true', `MCP_ENABLED=${bindings.get('MCP_ENABLED')?.value}`);
           check(bindings.get('MCP_META_TOOLS_ENABLED')?.value === 'true', `MCP_META_TOOLS_ENABLED=${bindings.get('MCP_META_TOOLS_ENABLED')?.value}`);
           check(bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value === 'false', `MCP_GMAIL_TOOLS_ENABLED=${bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value}`);
-          check(String(bindings.get('SUPABASE_PUBLISHABLE_KEY')?.value || '').startsWith('sb_publishable_'), 'SUPABASE_PUBLISHABLE_KEY is not a publishable key');
+          // cloudflare-production-inventory.mjs redacts any binding whose name
+          // matches /publishable_key/, so the sanitized inventory never reveals
+          // this value. What the readback can prove is that the key is bound as
+          // an ordinary plain_text var the sanitizer treated as sensitive, and
+          // that no privileged credential is bound alongside it. The
+          // sb_publishable_ format itself is asserted by the pre-deploy gate,
+          // before anything reaches production.
+          const publishable = bindings.get('SUPABASE_PUBLISHABLE_KEY');
+          check(publishable?.type === 'plain_text', `SUPABASE_PUBLISHABLE_KEY type=${publishable?.type}`);
+          check(publishable?.value === '[redacted]', 'SUPABASE_PUBLISHABLE_KEY was not redacted by the inventory sanitizer');
 
           // No privileged credential may be bound to the MCP Worker.
           for (const name of ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ACCESS_TOKEN', 'CLOUDFLARE_API_TOKEN']) {
