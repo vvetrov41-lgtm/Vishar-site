@@ -33,7 +33,7 @@ assert.ok(ids.length <= 25, 'Cloudflare schema must stay below the preferred Cha
 for (const id of [...reads, ...writes]) assert.ok(ids.includes(id), `${id} must remain in the reviewed Cloudflare schema`);
 
 assert.match(schema, /^openapi: 3\.1\.0$/m);
-assert.match(schema, /url: https:\/\/gpt-operations\.vishartattoo\.com/);
+assert.match(schema, /url: https:\/\/gpt-cloudflare\.vishartattoo\.com/);
 assert.match(schema, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
 assert.match(schema, /tokenUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/token/);
 
