@@ -12,6 +12,7 @@
 // resolve the rest.
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { captureEvent } from '../lib/product-analytics';
 import './Inbox.css';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
@@ -202,6 +203,9 @@ export function ConversationPage({ conversationId }: { conversationId: string })
   }
 
   const archived = conversation.state === 'archived';
+  // Read here, where `conversation` is already narrowed, so the reply handler
+  // closes over a plain channel value rather than the whole record.
+  const replyChannel = conversation.channel;
   const canSend = mayReply && !archived;
 
   async function send(event: FormEvent) {
@@ -212,10 +216,20 @@ export function ConversationPage({ conversationId }: { conversationId: string })
     setActionError(null);
     try {
       await api.sendReply(conversationId, text, crypto.randomUUID());
+      // Channel and outcome only. The reply text, the conversation id and the
+      // recipient are never analytics data.
+      captureEvent('crm_conversation_reply_outcome', {
+        channel: replyChannel,
+        outcome: 'queued',
+      });
       setBody('');
       reloadMessages();
       reload();
     } catch (cause) {
+      captureEvent('crm_conversation_reply_outcome', {
+        channel: replyChannel,
+        outcome: 'failed',
+      });
       setActionError(cause instanceof Error ? cause.message : 'That did not work.');
     } finally {
       setBusy(false);

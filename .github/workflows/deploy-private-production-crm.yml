@@ -58,6 +58,11 @@ jobs:
       # Public booking links are handed to clients, so the branded production
       # booking host is pinned here rather than left to a build-time default.
       VITE_BOOKING_FORMS_ORIGIN: https://booking.vishartattoo.com
+      # Product analytics. Both are publishable, client-visible values, and the
+      # build stays analytics-free until the repository variables exist. The
+      # host is pinned to the project's own PostHog Cloud ingestion region.
+      VITE_POSTHOG_KEY: ${{ vars.CRM_PRODUCTION_POSTHOG_KEY }}
+      VITE_POSTHOG_HOST: ${{ vars.CRM_PRODUCTION_POSTHOG_HOST }}
       CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
       CRM_ORIGIN: ${{ vars.CRM_PRODUCTION_ORIGIN }}
 
@@ -156,6 +161,25 @@ jobs:
           if [ "$VITE_BOOKING_FORMS_ORIGIN" != 'https://booking.vishartattoo.com' ]; then
             echo 'The production CRM may generate booking links only on the production booking host.' >&2
             exit 1
+          fi
+
+          # Analytics is optional. When configured, both values must be exact:
+          # a publishable project key and an approved PostHog ingestion host.
+          if [ -n "$VITE_POSTHOG_KEY" ] || [ -n "$VITE_POSTHOG_HOST" ]; then
+            case "$VITE_POSTHOG_KEY" in
+              phc_*) ;;
+              *)
+                echo 'CRM_PRODUCTION_POSTHOG_KEY must be a publishable phc_ project key.' >&2
+                exit 1
+                ;;
+            esac
+            case "$VITE_POSTHOG_HOST" in
+              eu.i.posthog.com|us.i.posthog.com) ;;
+              *)
+                echo 'CRM_PRODUCTION_POSTHOG_HOST must be an approved PostHog ingestion host.' >&2
+                exit 1
+                ;;
+            esac
           fi
 
           if [ "$CRM_PAGES_PROJECT" != 'vishar-crm-production' ]; then

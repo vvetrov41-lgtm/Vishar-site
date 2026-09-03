@@ -1,4 +1,5 @@
 import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
+import { captureEvent, leadTimeDaysBucket } from './product-analytics';
 import type { CalendarProvider, PaymentStatus, SessionStatus } from './types';
 
 export type AppointmentType =
@@ -108,6 +109,10 @@ function normaliseAppointment(row: Partial<Appointment> & Pick<Appointment, 'id'
   } as Appointment;
 }
 
+// Appointment types the analytics registry recognises. Anything else reports
+// `other` rather than widening the allow-list from CRM data.
+const APPOINTMENT_KINDS_FOR_ANALYTICS = new Set<string>(['consultation', 'session', 'touch_up']);
+
 export function createAppointmentApi(client: CrmClient) {
   return {
     async listAppointments(filters: {
@@ -135,6 +140,15 @@ export function createAppointmentApi(client: CrmClient) {
     },
 
     async scheduleAppointment(input: ScheduleAppointmentInput) {
+      // Bounded enums only: the appointment kind, where the booking came from,
+      // and how far ahead it sits. No artist, client, enquiry or project id.
+      captureEvent('crm_appointment_booked', {
+        appointment_kind: APPOINTMENT_KINDS_FOR_ANALYTICS.has(input.appointmentType)
+          ? input.appointmentType
+          : 'other',
+        origin: 'crm',
+        lead_time_days_bucket: leadTimeDaysBucket(input.startAt),
+      });
       return unwrap<Record<string, unknown>>(
         await client.rpc('schedule_appointment', {
           p_artist_id: input.artistId,

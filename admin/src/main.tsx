@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { withConsequentialConfirmations } from './lib/consequential-client';
 import { LanguageProvider } from './lib/i18n';
+import { initAnalytics, readAnalyticsConfig } from './lib/product-analytics';
 import { RouterProvider } from './lib/router';
 import { SessionProvider } from './lib/session';
 import { SurfaceProvider, readSurface } from './lib/surface';
@@ -22,6 +23,9 @@ const client = withConsequentialConfirmations(
 const teamInviteUrl = readTeamInviteUrl(browserEnv, import.meta.env.DEV);
 // Which host this bundle is built for. Unset means public: see lib/surface.
 const surface = readSurface(browserEnv);
+// Explicit product analytics. Stays off unless the build carries an approved
+// PostHog project key and ingestion host; see lib/product-analytics.
+initAnalytics(readAnalyticsConfig(browserEnv));
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Missing #root');

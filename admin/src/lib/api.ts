@@ -1,4 +1,5 @@
 // Data access for the CRM.
+import { captureEvent } from './product-analytics';
 //
 // Every function here is a narrow read or a named RPC. There is no query
 // builder exposed to pages and no way to ask for an arbitrary table, so a page
@@ -436,6 +437,9 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     },
 
     async convertEnquiry(enquiryId: string, title: string, description?: string) {
+      // The outcome only. Neither the enquiry id nor the operator-written
+      // project title or description is analytics data.
+      captureEvent('crm_enquiry_converted', { outcome: 'converted' });
       return unwrap(
         await client.rpc('convert_enquiry_to_project', {
           p_enquiry_id: enquiryId,
