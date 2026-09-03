@@ -1,0 +1,337 @@
+name: GPT production Cloudflare domain rollout
+
+# One-shot topology migration from three GPT Action custom domains to four.
+# The crm-production environment admits the established release/private-crm-rc*
+# namespace. This exact branch is placed under the existing read-only inventory
+# exclusion so it cannot enter the broad Private production release workflow.
+# The inventory workflow may run alongside this workflow, but it is read-only.
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc636-inventory-gpt-cloudflare-domain
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gpt-production-cloudflare-domain-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      SOURCE_SHA: ${{ github.event.before }}
+      WORKER_NAME: vishar-gpt-actions-production
+      CORE_HOST: gpt-actions.vishartattoo.com
+      OPERATIONS_HOST: gpt-operations.vishartattoo.com
+      COMMUNICATIONS_HOST: gpt-communications.vishartattoo.com
+      CLOUDFLARE_HOST: gpt-cloudflare.vishartattoo.com
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Verify exact release trigger and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc636-inventory-gpt-cloudflare-domain' ]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$GITHUB_SHA" != "$APPROVED_SHA" ]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          [ "$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+      - name: Checkout exact approved canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical lineage and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Approved SHA is no longer the canonical Vishar CRM head.' >&2
+            exit 1
+          }
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+            'WhatsApp production onboarding validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
+              exit 1
+            }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate exact four-domain GPT source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          npm run test:gpt-production
+          node scripts/test-gpt-cloudflare-openapi.mjs
+          node scripts/test-cloudflare-control-config.mjs
+          npm run check:gpt-production-bundle
+          npm run scan:secrets
+          [ "$(grep -c 'custom_domain = true' wrangler.gpt-actions.production.toml)" -eq 4 ]
+          grep -Fq "pattern = \"$CORE_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
+          grep -Fq "pattern = \"$OPERATIONS_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
+          grep -Fq "pattern = \"$COMMUNICATIONS_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
+          grep -Fq "pattern = \"$CLOUDFLARE_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Verify production database has no pending migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase migration list
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-dry-run.log"
+          if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-dry-run.log"; then
+            echo 'Pending production database migration detected. Refusing GPT edge mutation.' >&2
+            exit 1
+          fi
+
+      - name: Fresh read-only Cloudflare preflight
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-before.json" \
+            --summary "$RUNNER_TEMP/cloudflare-before.md"
+          cat "$RUNNER_TEMP/cloudflare-before.md" >> "$GITHUB_STEP_SUMMARY"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) throw new Error('Production GPT Worker is missing');
+          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) throw new Error('Unexpected GPT Worker exposure');
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          for (const [name, value] of [
+            ['VISHAR_ENVIRONMENT', 'production'],
+            ['GPT_ACTIONS_ENABLED', 'true'],
+            ['GPT_OAUTH_RELAY_ENABLED', 'true'],
+            ['WEB_RESEARCH_ENABLED', 'true'],
+            ['WEB_RESEARCH_SEARCH_ENABLED', 'true'],
+            ['WEB_RESEARCH_SCRAPE_ENABLED', 'true'],
+            ['CLOUDFLARE_CONTROL_ENABLED', 'true'],
+            ['CLOUDFLARE_CONTROL_READ_ENABLED', 'true'],
+            ['CLOUDFLARE_CONTROL_WRITE_ENABLED', 'false'],
+            ['SUPABASE_URL', process.env.SUPABASE_URL],
+          ]) {
+            if (bindings.get(name)?.value !== value) throw new Error(`Unexpected ${name} production binding`);
+          }
+          const gmail = bindings.get('GMAIL_SERVICE');
+          if (gmail?.type !== 'service' || gmail?.service !== 'vishar-gmail-production' || gmail?.environment !== 'production') throw new Error('Unexpected Gmail service binding');
+          const gateway = bindings.get('CLOUDFLARE_GATEWAY');
+          if (gateway?.type !== 'service' || gateway?.service !== 'vishar-cloudflare-gateway' || gateway?.environment !== 'production') throw new Error('Unexpected Cloudflare gateway service binding');
+          const rateLimit = bindings.get('GPT_RATE_LIMIT');
+          if (rateLimit?.type !== 'ratelimit' || String(rateLimit.namespace_id) !== '1002' || Number(rateLimit.simple?.limit) !== 30 || Number(rateLimit.simple?.period) !== 60) throw new Error('Unexpected GPT production rate-limit binding');
+          if (!(worker.secret_names || []).includes('FIRECRAWL_API_KEY')) throw new Error('FIRECRAWL_API_KEY Worker secret is missing');
+
+          const three = [process.env.CORE_HOST, process.env.OPERATIONS_HOST, process.env.COMMUNICATIONS_HOST].sort();
+          const four = [...three, process.env.CLOUDFLARE_HOST].sort();
+          const rows = data.worker_custom_domains.filter((row) => row.service === process.env.WORKER_NAME);
+          const hosts = rows.map((row) => row.hostname).sort();
+          const isThree = JSON.stringify(hosts) === JSON.stringify(three);
+          const isFour = JSON.stringify(hosts) === JSON.stringify(four);
+          if (!isThree && !isFour) throw new Error(`Unexpected production GPT domain topology: ${hosts.join(', ')}`);
+          for (const row of rows) {
+            if (row.environment !== 'production' || row.zone_name !== 'vishartattoo.com' || row.enabled !== true) throw new Error(`Unexpected domain metadata for ${row.hostname}`);
+          }
+          const beforeVersion = worker.active_deployment?.versions?.[0]?.version_id;
+          if (!beforeVersion) throw new Error('No rollback target version');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `needs_deploy=${isThree ? 'true' : 'false'}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${beforeVersion}\n`);
+          NODE
+
+      - name: Prepare rollback config before mutation
+        if: steps.preflight.outputs.needs_deploy == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-cloudflare-domain-rollback.toml"
+          cp wrangler.gpt-actions.production.toml "$rollback_config"
+          sed -i '/gpt-cloudflare\.vishartattoo\.com/d' "$rollback_config"
+          [ "$(grep -c 'custom_domain = true' "$rollback_config")" -eq 3 ]
+          ! grep -Fq "$CLOUDFLARE_HOST" "$rollback_config"
+
+      - name: Re-check canonical and database immediately before mutation
+        if: steps.preflight.outputs.needs_deploy == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || { echo 'Canonical moved; refusing stale mutation.' >&2; exit 1; }
+          trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || { echo 'Release branch moved; refusing mutation.' >&2; exit 1; }
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-final-dry-run.log"
+          if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-final-dry-run.log"; then
+            echo 'Production migration state changed after preflight.' >&2
+            exit 1
+          fi
+
+      - name: Deploy GPT Worker on dedicated Cloudflare Action domain
+        if: steps.preflight.outputs.needs_deploy == 'true'
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.gpt-actions.production.toml --name "$WORKER_NAME" --strict \
+            --message "Add dedicated Cloudflare Action domain for $APPROVED_SHA" \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var GPT_OAUTH_RELAY_ENABLED:true \
+            --var GPT_ACTIONS_ENABLED:true \
+            --var WEB_RESEARCH_ENABLED:true \
+            --var WEB_RESEARCH_SEARCH_ENABLED:true \
+            --var WEB_RESEARCH_SCRAPE_ENABLED:true \
+            --var CLOUDFLARE_CONTROL_ENABLED:true \
+            --var CLOUDFLARE_CONTROL_READ_ENABLED:true \
+            --var CLOUDFLARE_CONTROL_WRITE_ENABLED:false
+
+      - name: Production readback and acceptance
+        id: readback
+        shell: bash
+        env:
+          BEFORE_VERSION: ${{ steps.preflight.outputs.before_version }}
+          NEEDS_DEPLOY: ${{ steps.preflight.outputs.needs_deploy }}
+        run: |
+          set -euo pipefail
+          success=false
+          for attempt in $(seq 1 20); do
+            if node scripts/cloudflare-production-inventory.mjs --output "$RUNNER_TEMP/cloudflare-after.json" --summary "$RUNNER_TEMP/cloudflare-after.md"; then
+              if node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) process.exit(1);
+          const expected = [process.env.CORE_HOST, process.env.OPERATIONS_HOST, process.env.COMMUNICATIONS_HOST, process.env.CLOUDFLARE_HOST].sort();
+          const rows = data.worker_custom_domains.filter((row) => row.service === process.env.WORKER_NAME);
+          const hosts = rows.map((row) => row.hostname).sort();
+          if (JSON.stringify(hosts) !== JSON.stringify(expected)) process.exit(1);
+          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) process.exit(1);
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          if (bindings.get('CLOUDFLARE_CONTROL_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('CLOUDFLARE_CONTROL_READ_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('CLOUDFLARE_CONTROL_WRITE_ENABLED')?.value !== 'false') process.exit(1);
+          const gateway = bindings.get('CLOUDFLARE_GATEWAY');
+          if (gateway?.type !== 'service' || gateway?.service !== 'vishar-cloudflare-gateway' || gateway?.environment !== 'production') process.exit(1);
+          const afterVersion = worker.active_deployment?.versions?.[0]?.version_id;
+          if (!afterVersion) process.exit(1);
+          if (process.env.NEEDS_DEPLOY === 'true' && afterVersion === process.env.BEFORE_VERSION) process.exit(1);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `after_version=${afterVersion}\n`);
+          NODE
+              then success=true; break; fi
+            fi
+            sleep 6
+          done
+          [ "$success" = true ] || { echo 'Four-domain Cloudflare readback did not converge.' >&2; exit 1; }
+
+          probe() {
+            expected="$1"; url="$2"
+            actual="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$url" || true)"
+            [ "$actual" = "$expected" ] || { echo "Boundary mismatch for $url: $actual" >&2; return 1; }
+          }
+          probe 200 "https://$CLOUDFLARE_HOST/privacy"
+          probe 401 "https://$CLOUDFLARE_HOST/v1/cloudflare/account"
+          probe 401 "https://$CLOUDFLARE_HOST/v1/cloudflare/zones"
+          cat "$RUNNER_TEMP/cloudflare-after.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Roll back to three-domain transport if readback fails
+        if: failure() && steps.preflight.outputs.needs_deploy == 'true' && steps.readback.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-cloudflare-domain-rollback.toml"
+          [ -f "$rollback_config" ]
+          npx wrangler deploy --config "$rollback_config" --name "$WORKER_NAME" --strict \
+            --message "Automatic rollback: Cloudflare Action domain readback failed for $APPROVED_SHA" \
+            --var SUPABASE_URL:"$SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production --var GPT_OAUTH_RELAY_ENABLED:true --var GPT_ACTIONS_ENABLED:true \
+            --var WEB_RESEARCH_ENABLED:true --var WEB_RESEARCH_SEARCH_ENABLED:true --var WEB_RESEARCH_SCRAPE_ENABLED:true \
+            --var CLOUDFLARE_CONTROL_ENABLED:true --var CLOUDFLARE_CONTROL_READ_ENABLED:true --var CLOUDFLARE_CONTROL_WRITE_ENABLED:false
+
+      - name: Reassert three-domain transport if deploy command fails
+        if: failure() && steps.preflight.outputs.needs_deploy == 'true' && steps.deploy.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-cloudflare-domain-rollback.toml"
+          [ -f "$rollback_config" ]
+          npx wrangler deploy --config "$rollback_config" --name "$WORKER_NAME" --strict \
+            --message "Automatic rollback: Cloudflare Action domain deploy failed for $APPROVED_SHA" \
+            --var SUPABASE_URL:"$SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var VISHAR_ENVIRONMENT:production --var GPT_OAUTH_RELAY_ENABLED:true --var GPT_ACTIONS_ENABLED:true \
+            --var WEB_RESEARCH_ENABLED:true --var WEB_RESEARCH_SEARCH_ENABLED:true --var WEB_RESEARCH_SCRAPE_ENABLED:true \
+            --var CLOUDFLARE_CONTROL_ENABLED:true --var CLOUDFLARE_CONTROL_READ_ENABLED:true --var CLOUDFLARE_CONTROL_WRITE_ENABLED:false
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### GPT production Cloudflare domain rollout'
+            echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
+            echo "- Trigger SHA: \`$GITHUB_SHA\`"
+            echo "- Previous Worker version: \`${{ steps.preflight.outputs.before_version || 'unknown' }}\`"
+            echo "- Accepted Worker version: \`${{ steps.readback.outputs.after_version || 'unknown' }}\`"
+            echo '- Target topology: Core, Operations, Communications, Cloudflare'
+            echo '- Cloudflare control: read enabled, write disabled'
+            echo '- No database, OAuth client or secret mutation'
+          } >> "$GITHUB_STEP_SUMMARY"
