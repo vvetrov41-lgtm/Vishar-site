@@ -322,10 +322,28 @@ jobs:
             fi
           }
 
-          # 1. Discovery is public, and advertises the CRM authorization server.
-          check 'protected-resource metadata' 200 "https://$MCP_HOST/.well-known/oauth-protected-resource"
-          jq -e --arg r "https://$MCP_HOST/mcp" '.resource == $r' "$RUNNER_TEMP/body.json" >/dev/null
-          jq -e --arg a "$SUPABASE_URL" '.authorization_servers == [$a]' "$RUNNER_TEMP/body.json" >/dev/null
+          # The Cloudflare API reports the new version before every edge colo
+          # serves it, so wait for the activated route to answer rather than
+          # racing it. The readback above already proved the deployment itself.
+          settled=false
+          for attempt in $(seq 1 30); do
+            code="$(curl -sS -o "$RUNNER_TEMP/body.json" -w '%{http_code}' --max-time 15 \
+              "https://$MCP_HOST/.well-known/oauth-protected-resource" || true)"
+            if [ "$code" = '200' ]; then settled=true; break; fi
+            sleep 6
+          done
+          if [ "$settled" != true ]; then
+            echo "FAIL protected-resource metadata never became reachable (last code: ${code:-none})" >&2
+            fail=1
+          else
+            echo 'PASS protected-resource metadata (200)'
+          fi
+
+          # 1. Discovery advertises this resource and the CRM authorization server.
+          jq -e --arg r "https://$MCP_HOST/mcp" '.resource == $r' "$RUNNER_TEMP/body.json" >/dev/null \
+            || { echo 'FAIL metadata does not advertise the exact MCP resource' >&2; fail=1; }
+          jq -e --arg a "$SUPABASE_URL" '.authorization_servers == [$a]' "$RUNNER_TEMP/body.json" >/dev/null \
+            || { echo 'FAIL metadata does not advertise the production authorization server' >&2; fail=1; }
 
           # 2. An unauthenticated MCP call is rejected with an RFC 9728 challenge.
           challenge="$(curl -sS -o /dev/null -D - --max-time 15 -X POST \
