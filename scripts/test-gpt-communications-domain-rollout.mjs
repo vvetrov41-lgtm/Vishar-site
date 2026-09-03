@@ -17,16 +17,17 @@ const communicationsIds = operationIds(communications);
 
 // Communications-domain topology remains unchanged. The current Operations
 // import now also carries the two bounded Web Research reads, so the three
-// existing ChatGPT Action sets contain 68 unique operations in total.
+// existing CRM ChatGPT Action sets contain 68 unique operations in total. The
+// dedicated Cloudflare Action set adds a fourth transport domain separately.
 assert.deepEqual([coreIds.length, operationsIds.length, communicationsIds.length], [28, 21, 19]);
 assert.equal(new Set([...coreIds, ...operationsIds, ...communicationsIds]).size, 68);
 assert.ok(operationsIds.includes('searchWeb'));
 assert.ok(operationsIds.includes('scrapeWebPage'));
 
-for (const host of ['gpt-actions', 'gpt-operations', 'gpt-communications']) {
+for (const host of ['gpt-actions', 'gpt-operations', 'gpt-communications', 'gpt-cloudflare']) {
   assert.match(wrangler, new RegExp(`pattern = "${host}\\.vishartattoo\\.com", custom_domain = true`));
 }
-assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 3);
+assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 4);
 assert.match(communications, /^\s*- url: https:\/\/gpt-communications\.vishartattoo\.com$/m);
 for (const schema of [core, operations, communications]) {
   assert.match(schema, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
@@ -75,4 +76,4 @@ assert.doesNotMatch(rollout, /configure_gpt_action_client|update\s+crm_private\.
   'transport rollout must not mutate GPT bindings or capability ceilings');
 assert.doesNotMatch(rollout, /gwaliusblwrzisrwnsvs|STAGING_SUPABASE|staging\.vishartattoo/i);
 
-console.log('GPT Communications-domain rollout tests passed: exact three-schema transport, canonical-only admission, no DB/binding mutation, fresh Cloudflare readback and rollback boundary.');
+console.log('GPT Communications-domain rollout tests passed: exact three-schema CRM transport plus dedicated Cloudflare domain, canonical-only admission, no DB/binding mutation, fresh Cloudflare readback and rollback boundary.');
