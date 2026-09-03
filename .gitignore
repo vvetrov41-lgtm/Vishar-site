@@ -1,5 +1,6 @@
 node_modules/
 .wrangler/
+.wrangler.gpt-cloudflare-domain-rollback.toml
 __pycache__/
 *.py[cod]
 .venv-gsc/
