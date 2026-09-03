@@ -1,0 +1,368 @@
+name: MCP production rollout
+
+# Activates the Vishar CRM MCP resource server and its read-only Meta
+# diagnostics on a dedicated custom domain.
+#
+# Everything the MCP server can read goes through the signed-in human actor's
+# token and Supabase RLS. This rollout installs no service-role key, no provider
+# credential and no write tool. Gmail MCP stays disabled.
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-mcp-meta-activation'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: mcp-production-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      WORKER_NAME: vishar-mcp-production
+      MCP_HOST: mcp.vishartattoo.com
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Verify exact release trigger and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-mcp-meta-activation) ;;
+            *) echo 'MCP rollout must use the reserved release namespace.' >&2; exit 1 ;;
+          esac
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$GITHUB_SHA" != "$APPROVED_SHA" ]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          [ "$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          # Only the publishable key may reach an MCP Worker binding.
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+      - name: Checkout exact approved canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical lineage and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Approved SHA is no longer the canonical Vishar CRM head.' >&2
+            exit 1
+          }
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
+              exit 1
+            }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Fail-closed validation at the approved SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          node scripts/test-mcp-domain-contracts.mjs
+          node scripts/test-mcp-meta-domain.mjs
+          node scripts/test-mcp-production-config.mjs
+          npm run check:mcp-production-bundle
+          npm run scan:secrets
+          # Tracked config must never ship MCP already enabled.
+          grep -Fq 'MCP_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq 'MCP_META_TOOLS_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq 'MCP_GMAIL_TOOLS_ENABLED = "false"' wrangler.mcp.production.toml
+          # Exactly one custom domain, and no privileged credential anywhere.
+          [ "$(grep -c 'custom_domain = true' wrangler.mcp.production.toml)" -eq 1 ]
+          grep -Fq "pattern = \"$MCP_HOST\", custom_domain = true" wrangler.mcp.production.toml
+          ! grep -Eq 'SERVICE_ROLE|SECRET_KEY|service_role' wrangler.mcp.production.toml
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Verify production database has no pending migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-dry-run.log"
+          if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-dry-run.log"; then
+            echo 'Pending production database migration detected. Refusing edge mutation.' >&2
+            exit 1
+          fi
+
+      - name: Fresh read-only Cloudflare preflight
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-before.json" \
+            --summary "$RUNNER_TEMP/cloudflare-before.md"
+          cat "$RUNNER_TEMP/cloudflare-before.md" >> "$GITHUB_STEP_SUMMARY"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
+          // The MCP host must not already be claimed by another service.
+          const clash = (data.worker_custom_domains || [])
+            .find((row) => row.hostname === process.env.MCP_HOST && row.service !== process.env.WORKER_NAME);
+          if (clash) throw new Error(`${process.env.MCP_HOST} is already bound to ${clash.service}`);
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          const before = worker?.active_deployment?.versions?.[0]?.version_id || '';
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${before}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `worker_existed=${worker ? 'true' : 'false'}\n`);
+          NODE
+
+      - name: Re-check canonical immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || { echo 'Canonical moved; refusing stale mutation.' >&2; exit 1; }
+          trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || { echo 'Release branch moved; refusing mutation.' >&2; exit 1; }
+
+      - name: Stage the route with MCP still disabled
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.mcp.production.toml --name "$WORKER_NAME" --strict \
+            --message "Stage disabled MCP resource server for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var MCP_PUBLIC_HOST:"$MCP_HOST" \
+            --var MCP_ENABLED:false \
+            --var MCP_GMAIL_TOOLS_ENABLED:false \
+            --var MCP_META_TOOLS_ENABLED:false \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Prove the staged route is fail-closed before activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            expected="$1"; shift
+            actual="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$@" || true)"
+            [ "$actual" = "$expected" ] || { echo "Fail-closed probe mismatch: got $actual, expected $expected" >&2; return 1; }
+          }
+          for attempt in $(seq 1 20); do
+            if probe 404 "https://$MCP_HOST/.well-known/oauth-protected-resource"; then break; fi
+            [ "$attempt" -lt 20 ] || { echo 'Staged MCP route never became reachable.' >&2; exit 1; }
+            sleep 6
+          done
+          # While disabled, both discovery and the MCP endpoint must be invisible.
+          probe 404 "https://$MCP_HOST/.well-known/oauth-protected-resource"
+          probe 404 -X POST -H 'content-type: application/json' -d '{}' "https://$MCP_HOST/mcp"
+
+      - name: Activate MCP and read-only Meta tools
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.mcp.production.toml --name "$WORKER_NAME" --strict \
+            --message "Activate MCP with read-only Meta tools for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var MCP_PUBLIC_HOST:"$MCP_HOST" \
+            --var MCP_ENABLED:true \
+            --var MCP_GMAIL_TOOLS_ENABLED:false \
+            --var MCP_META_TOOLS_ENABLED:true \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Production readback and acceptance
+        id: readback
+        shell: bash
+        env:
+          BEFORE_VERSION: ${{ steps.preflight.outputs.before_version }}
+        run: |
+          set -euo pipefail
+          success=false
+          for attempt in $(seq 1 20); do
+            if node scripts/cloudflare-production-inventory.mjs --output "$RUNNER_TEMP/cloudflare-after.json" --summary "$RUNNER_TEMP/cloudflare-after.md"; then
+              if node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) process.exit(1);
+          if (worker.workers_dev_enabled !== false || worker.preview_urls_enabled !== false) process.exit(1);
+          const hosts = (data.worker_custom_domains || [])
+            .filter((row) => row.service === process.env.WORKER_NAME)
+            .map((row) => row.hostname);
+          if (JSON.stringify(hosts) !== JSON.stringify([process.env.MCP_HOST])) process.exit(1);
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          if (bindings.get('MCP_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('MCP_META_TOOLS_ENABLED')?.value !== 'true') process.exit(1);
+          if (bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value !== 'false') process.exit(1);
+          if (!String(bindings.get('SUPABASE_PUBLISHABLE_KEY')?.value || '').startsWith('sb_publishable_')) process.exit(1);
+          // No privileged credential may be bound to the MCP Worker.
+          for (const name of ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ACCESS_TOKEN', 'CLOUDFLARE_API_TOKEN']) {
+            if (bindings.has(name) || (worker.secret_names || []).includes(name)) process.exit(1);
+          }
+          const limiter = bindings.get('MCP_RATE_LIMIT');
+          if (limiter?.type !== 'ratelimit' || Number(limiter.simple?.limit) !== 60 || Number(limiter.simple?.period) !== 60) process.exit(1);
+          const after = worker.active_deployment?.versions?.[0]?.version_id;
+          if (!after || after === process.env.BEFORE_VERSION) process.exit(1);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `after_version=${after}\n`);
+          NODE
+              then success=true; break; fi
+            fi
+            sleep 6
+          done
+          [ "$success" = true ] || { echo 'MCP activation readback did not converge.' >&2; exit 1; }
+
+      - name: Real read-only acceptance against the live boundary
+        id: acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          check() {
+            label="$1"; expected="$2"; shift 2
+            actual="$(curl -sS -o "$RUNNER_TEMP/body.json" -w '%{http_code}' --max-time 15 "$@" || true)"
+            if [ "$actual" != "$expected" ]; then
+              echo "FAIL $label: got $actual, expected $expected" >&2
+              fail=1
+            else
+              echo "PASS $label ($actual)"
+            fi
+          }
+
+          # 1. Discovery is public, and advertises the CRM authorization server.
+          check 'protected-resource metadata' 200 "https://$MCP_HOST/.well-known/oauth-protected-resource"
+          jq -e --arg r "https://$MCP_HOST/mcp" '.resource == $r' "$RUNNER_TEMP/body.json" >/dev/null
+          jq -e --arg a "$SUPABASE_URL" '.authorization_servers == [$a]' "$RUNNER_TEMP/body.json" >/dev/null
+
+          # 2. An unauthenticated MCP call is rejected with an RFC 9728 challenge.
+          challenge="$(curl -sS -o /dev/null -D - --max-time 15 -X POST \
+            -H 'content-type: application/json' \
+            -H 'mcp-protocol-version: 2026-07-28' -H 'mcp-method: tools/list' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+            "https://$MCP_HOST/mcp" | tr -d '\r' | grep -i '^www-authenticate:' || true)"
+          case "$challenge" in
+            *resource_metadata=*) echo 'PASS unauthenticated challenge advertises resource metadata' ;;
+            *) echo "FAIL unauthenticated challenge: $challenge" >&2; fail=1 ;;
+          esac
+
+          # 3. A syntactically valid but unauthorized token cannot read anything.
+          # Built at runtime so no JWT-shaped literal is ever committed. It is
+          # deliberately unsigned garbage: the CRM must reject it.
+          b64() { printf '%s' "$1" | base64 | tr -d '=\n' | tr '/+' '_-'; }
+          bad="$(b64 '{"alg":"HS256","typ":"JWT"}').$(b64 '{"sub":"00000000-0000-0000-0000-000000000000"}').$(b64 'not-a-valid-signature-value')"
+          body='{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+          check 'tools/list with an unauthorized token' 200 -X POST \
+            -H 'content-type: application/json' -H "authorization: Bearer $bad" \
+            -H 'mcp-protocol-version: 2026-07-28' -H 'mcp-method: tools/list' \
+            -d "$body" "https://$MCP_HOST/mcp"
+
+          # 4. The advertised tool surface is read-only. No write tool may exist.
+          if jq -e '[.result.tools[].name] | any(test("send|create|update|delete|reply|retry|draft|write|disconnect|rotate"))' \
+              "$RUNNER_TEMP/body.json" >/dev/null 2>&1; then
+            echo 'FAIL a write-capable MCP tool is exposed' >&2
+            fail=1
+          else
+            echo 'PASS no write-capable MCP tool is exposed'
+          fi
+          jq -e '[.result.tools[].name] | any(startswith("crm_meta_"))' "$RUNNER_TEMP/body.json" >/dev/null \
+            || { echo 'FAIL Meta tools are not advertised' >&2; fail=1; }
+          jq -e '[.result.tools[].name] | any(startswith("crm_email_")) | not' "$RUNNER_TEMP/body.json" >/dev/null \
+            || { echo 'FAIL Gmail MCP tools must stay disabled' >&2; fail=1; }
+
+          # 5. An unauthorized actor cannot read CRM data through a Meta tool.
+          call='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}},"name":"crm_meta_message_status_list","arguments":{"artist_id":"11111111-2222-4333-8444-555555555555"}}}'
+          curl -sS -o "$RUNNER_TEMP/call.json" --max-time 15 -X POST \
+            -H 'content-type: application/json' -H "authorization: Bearer $bad" \
+            -H 'mcp-protocol-version: 2026-07-28' -H 'mcp-method: tools/call' -H 'mcp-name: crm_meta_message_status_list' \
+            -d "$call" "https://$MCP_HOST/mcp"
+          jq -e '.result.isError == true' "$RUNNER_TEMP/call.json" >/dev/null \
+            || { echo 'FAIL an unauthorized Meta tool call did not fail closed' >&2; fail=1; }
+          if grep -Eq '"(body|attachments|provider_message_id|external_account_label|access_token)"' "$RUNNER_TEMP/call.json"; then
+            echo 'FAIL a denied Meta call leaked a forbidden field name' >&2
+            fail=1
+          fi
+
+          [ "$fail" -eq 0 ] || { echo 'MCP read-only acceptance failed.' >&2; exit 1; }
+
+      - name: Deactivate MCP if activation or acceptance fails
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.readback.outcome == 'failure' || steps.acceptance.outcome == 'failure')
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.mcp.production.toml --name "$WORKER_NAME" --strict \
+            --message "Automatic rollback: MCP activation failed for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var MCP_PUBLIC_HOST:"$MCP_HOST" \
+            --var MCP_ENABLED:false \
+            --var MCP_GMAIL_TOOLS_ENABLED:false \
+            --var MCP_META_TOOLS_ENABLED:false \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### MCP production rollout'
+            echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
+            echo "- Worker: \`$WORKER_NAME\` on \`$MCP_HOST\`"
+            echo "- Previous version: \`${{ steps.preflight.outputs.before_version || 'none' }}\`"
+            echo "- Accepted version: \`${{ steps.readback.outputs.after_version || 'unknown' }}\`"
+            echo '- Tools: read-only CRM plus read-only Meta diagnostics; Gmail MCP disabled'
+            echo '- Auth: actor JWT plus Supabase RLS; publishable key only, no service role'
+            echo '- Rate limit: 60 requests per 60s, keyed by a hash of the actor token'
+            echo '- No database, OAuth client or secret mutation'
+          } >> "$GITHUB_STEP_SUMMARY"

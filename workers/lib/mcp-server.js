@@ -19,6 +19,10 @@ export const MCP_PROTOCOL_VERSION = '2026-07-28';
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MCP_PATH = '/mcp';
+// RFC 9728 protected-resource metadata. An MCP client discovers the CRM
+// authorization server from here instead of being told one by the model.
+const RESOURCE_METADATA_PATH = '/.well-known/oauth-protected-resource';
+const MCP_SCOPES = Object.freeze(['crm.read']);
 const JSON_HEADERS = Object.freeze({
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store',
@@ -54,6 +58,63 @@ function configured(env) {
     && /^https:\/\/[a-z0-9]+\.supabase\.co$/.test(env.SUPABASE_URL)
     && typeof env?.SUPABASE_PUBLISHABLE_KEY === 'string'
     && env.SUPABASE_PUBLISHABLE_KEY.length >= 20;
+}
+
+/**
+ * The canonical resource identifier for this MCP server. It is derived from the
+ * deployed host, never from a client-supplied header, so a forwarded or spoofed
+ * Host cannot move the OAuth resource boundary.
+ */
+function resourceIdentifier(env) {
+  const host = typeof env?.MCP_PUBLIC_HOST === 'string' ? env.MCP_PUBLIC_HOST.trim().toLowerCase() : '';
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) return null;
+  return `https://${host}${MCP_PATH}`;
+}
+
+function metadataUrl(env) {
+  const host = typeof env?.MCP_PUBLIC_HOST === 'string' ? env.MCP_PUBLIC_HOST.trim().toLowerCase() : '';
+  return `https://${host}${RESOURCE_METADATA_PATH}`;
+}
+
+/** Builds the RFC 9728 challenge so a client knows where to authenticate. */
+function authenticateHeader(env, error = null) {
+  const parts = ['Bearer'];
+  const resource = resourceIdentifier(env);
+  if (resource) parts.push(`resource_metadata="${metadataUrl(env)}"`);
+  if (error) parts.push(`error="${error}"`);
+  return parts.length > 1 ? `${parts[0]} ${parts.slice(1).join(', ')}` : 'Bearer';
+}
+
+function protectedResourceMetadata(env) {
+  const resource = resourceIdentifier(env);
+  if (!resource) return null;
+  return {
+    resource,
+    authorization_servers: [env.SUPABASE_URL],
+    bearer_methods_supported: ['header'],
+    scopes_supported: [...MCP_SCOPES],
+    resource_documentation: 'https://vishartattoo.com/privacy/vishar-crm-meta/',
+    // The CRM is the authority on what an actor may read. MCP adds no scope of
+    // its own beyond a read boundary; RLS and capability checks still decide.
+    resource_policy_uri: 'https://vishartattoo.com/privacy/vishar-crm-meta/',
+  };
+}
+
+/**
+ * Per-actor-token rate limiting. The key is a SHA-256 prefix of the bearer, so
+ * a raw token is never used as a rate-limit key or persisted anywhere.
+ */
+async function rateLimitKey(token) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return [...new Uint8Array(digest).slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function enforceRateLimit(env, token) {
+  const limiter = env?.MCP_RATE_LIMIT;
+  if (!limiter || typeof limiter.limit !== 'function') return null;
+  const { success } = await limiter.limit({ key: `mcp:${await rateLimitKey(token)}` });
+  if (success) return null;
+  return response(429, { error: 'rate_limited' }, { 'retry-after': '60' });
 }
 
 function bearer(request) {
@@ -323,15 +384,30 @@ async function dispatch(request, env, body, token, fetchImpl) {
 
 export async function handleMcpRequest(request, env, fetchImpl = fetch) {
   const url = new URL(request.url);
-  if (url.pathname.replace(/\/+$/, '') !== MCP_PATH || request.method !== 'POST') {
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+
+  // Unauthenticated discovery: the only public surface, and it returns fixed
+  // deployment metadata with no CRM data in it.
+  if (path === RESOURCE_METADATA_PATH) {
+    if (!['GET', 'HEAD'].includes(request.method)) return response(405, { error: 'method_not_allowed' });
+    if (!configured(env)) return response(404, { error: 'not_found' });
+    const metadata = protectedResourceMetadata(env);
+    if (!metadata) return response(404, { error: 'not_found' });
+    return response(200, metadata);
+  }
+
+  if (path !== MCP_PATH || request.method !== 'POST') {
     return response(404, { error: 'not_found' });
   }
   if (!configured(env)) return response(404, { error: 'not_found' });
 
   const token = bearer(request);
   if (!token) {
-    return response(401, { error: 'oauth_token_required' }, { 'www-authenticate': 'Bearer' });
+    return response(401, { error: 'oauth_token_required' }, { 'www-authenticate': authenticateHeader(env, 'invalid_token') });
   }
+
+  const limited = await enforceRateLimit(env, token);
+  if (limited) return limited;
 
   let body;
   try {
@@ -368,6 +444,12 @@ export const __testing = Object.freeze({
   validateToolArguments,
   gmailEnabled,
   metaEnabled,
+  resourceIdentifier,
+  authenticateHeader,
+  protectedResourceMetadata,
+  enforceRateLimit,
+  RESOURCE_METADATA_PATH,
+  MCP_SCOPES,
   toolDefinitions,
   toolByName,
   callGmailTool,

@@ -11,6 +11,9 @@ on:
       - 'scripts/test-mcp-domain-contracts.mjs'
       - 'scripts/test-mcp-meta-domain.mjs'
       - 'wrangler.mcp.toml'
+      - 'wrangler.mcp.production.toml'
+      - 'scripts/test-mcp-production-config.mjs'
+      - '.github/workflows/mcp-production-rollout.yml'
       - '.github/workflows/mcp-domain-validation.yml'
       - 'docs/crm/MCP_DOMAIN_CONTRACTS.md'
   workflow_dispatch:
@@ -46,6 +49,16 @@ jobs:
 
       - name: Test Meta MCP diagnostic contracts
         run: node scripts/test-mcp-meta-domain.mjs
+
+      - name: Test production MCP boundary, rate limit and fail-closed flags
+        run: node scripts/test-mcp-production-config.mjs
+
+      - name: Compile production MCP Worker with Wrangler
+        env:
+          XDG_CONFIG_HOME: .wrangler/config
+          WRANGLER_LOG_PATH: .wrangler/mcp-production-wrangler.log
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx wrangler deploy --config wrangler.mcp.production.toml --dry-run --outdir .wrangler/mcp-production-dry-run
 
       - name: Compile dormant MCP Worker with Wrangler
         env:
