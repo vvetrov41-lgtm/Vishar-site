@@ -10,6 +10,12 @@ on:
   push:
     branches:
       - 'release/private-crm-rc*-inventory-calendar-access-sync-*'
+  # Onboarding an artist must not need a developer. The scheduled run projects
+  # the current CRM capability graph onto the Calendar hostname, so a new
+  # operator becomes able to reach the connector without anybody editing
+  # Cloudflare. It no-ops whenever the boundary already matches.
+  schedule:
+    - cron: '*/15 * * * *'
 
 permissions:
   actions: read
@@ -38,7 +44,7 @@ jobs:
           node scripts/test-calendar-access-sync.mjs
 
   sync-production:
-    name: Sync Calendar Access to operator policy
+    name: Sync Calendar Access to the CRM capability graph
     if: >-
       github.event_name == 'push'
       && github.actor == github.repository_owner
@@ -51,6 +57,8 @@ jobs:
       APPROVED_SHA: ${{ github.event.before }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
       CALENDAR_HOST: calendar.vishartattoo.com
       MARKER_FILE: .github/ops-triggers/calendar-access-sync.trigger
 
@@ -131,9 +139,9 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const state = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-access-before.json', 'utf8'));
-          if (state.source_host !== 'app.vishartattoo.com') throw new Error('unexpected source Access host');
+          if (state.source_kind !== 'supabase_operator_directory') throw new Error('unexpected Access source of truth');
           if (state.target_host !== 'calendar.vishartattoo.com') throw new Error('unexpected Calendar Access host');
-          if (!Number.isInteger(state.source_email_rule_count) || state.source_email_rule_count < 1) throw new Error('operator policy has no named emails');
+          if (!Number.isInteger(state.source_email_rule_count) || state.source_email_rule_count < 1) throw new Error('operator directory is empty');
           if (!Number.isInteger(state.target_email_rule_count) || state.target_email_rule_count < 1) throw new Error('Calendar policy has no named emails');
           if (!/^[0-9a-f]{64}$/.test(state.source_policy_digest || '')) throw new Error('source digest missing');
           if (!/^[0-9a-f]{64}$/.test(state.target_policy_digest || '')) throw new Error('target digest missing');
@@ -165,10 +173,10 @@ jobs:
           import fs from 'node:fs';
           const before = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-access-before.json', 'utf8'));
           const after = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-access-after.json', 'utf8'));
-          if (after.in_sync !== true) throw new Error('Calendar Access policy does not match operator policy after mutation');
+          if (after.in_sync !== true) throw new Error('Calendar Access policy does not match the CRM capability graph after mutation');
           if (after.source_policy_digest !== after.target_policy_digest) throw new Error('Calendar Access fingerprint mismatch');
           if (after.source_email_rule_count !== after.target_email_rule_count) throw new Error('Calendar Access named-email count mismatch');
-          if (before.source_policy_digest !== after.source_policy_digest) throw new Error('operator source policy changed during rollout');
+          if (before.source_policy_digest !== after.source_policy_digest) throw new Error('the operator directory changed during rollout');
           NODE
 
       - name: Verify Calendar hostname remains Access-gated
@@ -205,9 +213,143 @@ jobs:
           {
             echo '### Calendar Access production sync'
             echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
-            echo '- Source policy: operator CRM named-email allow policy'
+            echo '- Source of truth: Supabase manage-integrations capability graph'
             echo '- Target policy: Calendar Access allow policy only'
             echo '- Broad selectors such as Everyone or email-domain: refused by implementation'
+            echo '- Empty or owner-less directory: refused before any write'
             echo '- Supabase / Worker / Pages mutation: none'
             echo '- Email values and Cloudflare credentials: not printed or uploaded'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  sync-scheduled:
+    name: Project the CRM capability graph onto Calendar Access
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
+      CALENDAR_HOST: calendar.vishartattoo.com
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/platform-telegram-self-service
+          fetch-depth: 0
+
+      # The scheduled run carries no marker commit, so canonical's own current
+      # head is the approved source. It still may only execute code that has
+      # already passed every required workflow at that exact SHA.
+      - name: Resolve canonical head and require exact-head CI
+        id: gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ -n "$SUPABASE_SECRET_KEY" ]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [[ "$canonical_sha" =~ ^[0-9a-f]{40}$ ]]
+          git checkout --detach "$canonical_sha"
+          [ "$(git rev-parse HEAD)" = "$canonical_sha" ]
+          [ -z "$(git status --short)" ]
+          echo "approved_sha=$canonical_sha" >> "$GITHUB_OUTPUT"
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+            'WhatsApp production onboarding validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$canonical_sha&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            if ! jq -e --arg name "$workflow" --arg sha "$canonical_sha" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null; then
+              # A red or still-running canonical is not an incident for this
+              # job: it simply means there is no approved source to run from,
+              # so the boundary is left exactly as it is.
+              echo "green=false" >> "$GITHUB_OUTPUT"
+              echo "Skipping: '$workflow' is not green on $canonical_sha; boundary left unchanged." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "green=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.green == 'true'
+        with:
+          node-version: 22
+
+      - name: Revalidate fail-closed sync implementation
+        if: steps.gate.outputs.green == 'true'
+        run: |
+          set -euo pipefail
+          node --check scripts/calendar-access-sync.mjs
+          node scripts/test-calendar-access-sync.mjs
+
+      - name: Read the boundary before mutation
+        if: steps.gate.outputs.green == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/calendar-access-sync.mjs inspect --output "$RUNNER_TEMP/calendar-access-before.json"
+
+      - name: Project the capability graph onto Calendar Access
+        if: steps.gate.outputs.green == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/calendar-access-sync.mjs sync --output "$RUNNER_TEMP/calendar-access-sync.json"
+
+      - name: Independent readback
+        if: steps.gate.outputs.green == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/calendar-access-sync.mjs inspect --output "$RUNNER_TEMP/calendar-access-after.json"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const after = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-access-after.json', 'utf8'));
+          if (after.source_kind !== 'supabase_operator_directory') throw new Error('unexpected Access source of truth');
+          if (after.target_host !== 'calendar.vishartattoo.com') throw new Error('unexpected Calendar Access host');
+          if (after.in_sync !== true) throw new Error('Calendar Access policy does not match the CRM capability graph');
+          if (!Number.isInteger(after.target_email_rule_count) || after.target_email_rule_count < 1) throw new Error('Calendar policy has no named emails');
+          NODE
+
+      - name: Verify Calendar hostname remains Access-gated
+        if: steps.gate.outputs.green == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "https://$CALENDAR_HOST/health" || true)"
+            case "$status" in
+              302|303|307|401|403) exit 0 ;;
+              200) echo 'Calendar hostname became public after the scheduled sync.' >&2; exit 1 ;;
+            esac
+            sleep 6
+          done
+          echo 'Calendar Access boundary did not converge to a gated response.' >&2
+          exit 1
+
+      - name: Scheduled boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Calendar Access scheduled projection'
+            echo "- Canonical SHA: \`${{ steps.gate.outputs.approved_sha }}\`"
+            echo "- Exact-head CI green: \`${{ steps.gate.outputs.green }}\`"
+            echo '- Source of truth: Supabase manage-integrations capability graph'
+            echo '- Mutation scope: the Calendar Access allow policy only'
+            echo '- Email values and credentials: not printed or uploaded'
           } >> "$GITHUB_STEP_SUMMARY"

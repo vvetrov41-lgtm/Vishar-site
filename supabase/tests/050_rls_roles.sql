@@ -547,6 +547,7 @@ insert into expected_function_acl values
   ('public.set_calendar_connection_metadata(uuid,text,text,boolean)', false, false, true),
   ('public.authorize_calendar_actor(text,uuid)', false, false, true),
   ('public.resolve_calendar_artist_route(text,text)', false, false, true),
+  ('public.list_calendar_access_operators()', false, false, true),
   ('public.resolve_monzo_deposit_redirect(uuid)', false, false, true),
   ('public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', false, false, true),
   ('public.service_resolve_gmail_target(uuid,uuid,uuid)', false, false, true),

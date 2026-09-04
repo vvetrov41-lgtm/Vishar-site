@@ -80,7 +80,10 @@ Given a named operator already admitted to the private CRM by Cloudflare Access 
 - FR8 `public.list_calendar_connection_status()` returns one row per active artist the caller can manage, for any slug.
 - FR9 Event presentation lives in `artist_integrations.configuration.presentation`, is preserved across connect/disconnect, and defaults to `visibility = 'public'` plus artist display name.
 - FR10 `public.reset_calendar_expected_account(p_artist_id uuid)` clears the recorded Google account for an authorized operator only while the integration is disabled.
-- FR11 `calendar.vishartattoo.com` uses the private operator CRM's exact named-email allow set as its Cloudflare Access identity boundary. Synchronization refuses broad selector classes, mutates only the Calendar policy, reads the result back, and restores the previous Calendar policy if readback does not match.
+- FR11 `calendar.vishartattoo.com` derives its Cloudflare Access allow set from the CRM capability graph rather than from any hand-curated list. Synchronization refuses broad selector classes, mutates only the Calendar policy, reads the result back, and restores the previous Calendar policy if readback does not match.
+- FR12 `public.list_calendar_access_operators()` is backend-only and returns only normalised email addresses plus an owner marker, for active profiles that hold manage-integrations on an active artist.
+- FR13 The Access sync refuses to write an empty or owner-less allow set, so a directory failure can never lock the account out of its own connector or widen the boundary.
+- FR14 A scheduled projection applies membership changes without a developer, and runs only from a canonical head whose required workflows are all green.
 
 ## Non-functional requirements
 
@@ -97,12 +100,38 @@ Given a named operator already admitted to the private CRM by Cloudflare Access 
 - AC3 Production readback shows the generic Calendar Worker with no `VLADIMIR_*` / `KRISTINA_*` variables, existing KV/secrets/custom domain preserved, and the pre-existing five-minute drain preserved.
 - AC4 `list_calendar_connection_status()` supports a third artist and the generic CRM can target `/oauth/google/start/<slug>` without a source allowlist.
 - AC5 Vladimir's and Kristina's rows remain connected with their existing account bindings and presentation settings after rollout.
-- AC6 Cloudflare Access for Calendar has the same exact named-email allow-set fingerprint as the private operator CRM and the Calendar hostname remains Access-gated.
+- AC6 Cloudflare Access for Calendar has the same fingerprint as the CRM capability graph, contains every operator that currently holds manage-integrations, and the Calendar hostname remains Access-gated.
+- AC7 A newly granted membership reaches the Access boundary with no source change, no Worker variable and no manual Cloudflare edit.
 - AC7 A real third-artist connection completes end to end. This requires interactive Google consent from that artist and is the only interactive product acceptance step.
 
 ## Retained staging note
 
 The retained `vishar-crm-staging` Supabase project is an old long-lived environment. Fresh readback on 2026-09-04 showed migration history only through `0044`, while production and canonical are beyond `0137`. Applying only `0137` would skip required dependencies and would not be a valid staging proof. Staging is therefore fail-closed until an ordered catch-up or disposable fully migrated environment is available.
+
+## Access identity boundary
+
+Migration `0137` made the *authorization* universal, but one manual step
+survived: `calendar.vishartattoo.com` sits behind a Cloudflare Access policy
+whose named-email selectors were curated by hand. Onboarding an artist still
+meant a developer editing that list, so the flow was not self-service.
+
+Cloudflare Access cannot evaluate a Supabase capability, and the alternatives it
+does offer are all wrong here: `everyone` and an email-domain rule are far too
+broad for a connector that mints Google refresh tokens, a reusable Access group
+is the same hand-curated list one level down, and a service token cannot ride a
+top-level browser navigation.
+
+`0139` resolves it by inverting the source of truth. `list_calendar_access_operators()`
+is a backend-only projection of the same manage-integrations predicate the
+Worker already enforces, and the Access policy is rewritten from it. The edge
+allow-set therefore cannot be broader than the capability it mirrors, and it
+updates itself: granting a membership in the CRM is the only action onboarding
+needs.
+
+Access is now purely identity verification — it proves the operator controls a
+mailbox that currently holds manage-integrations somewhere. It decides nothing
+about *which* artist, which remains `resolve_calendar_artist_route` evaluated
+per request.
 
 ## Open gaps
 
