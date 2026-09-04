@@ -59,6 +59,39 @@ describe('Calendar Connections hardening', () => {
     ]).listCalendarConnectionStatus()).rejects.toThrow();
   });
 
+  it('accepts any artist slug but not a key that does not belong to it', async () => {
+    const sam = {
+      ...VALID,
+      artist_id: 'd629dab2-4d89-4f0c-bb96-34eb6f44eedc',
+      artist_slug: 'sam',
+      artist_display_name: 'Sam',
+      integration_key: 'google_calendar_sam',
+      external_account_label: null,
+      connected: false,
+    };
+
+    const rows = await apiFor([VALID, sam]).listCalendarConnectionStatus();
+    expect(rows.map((row) => row.artist_slug)).toEqual(['vladimir', 'sam']);
+
+    // A row whose selector names a different artist would let one artist's
+    // Connect button drive another artist's calendar.
+    await expect(apiFor([{ ...sam, integration_key: 'google_calendar_vladimir' }])
+      .listCalendarConnectionStatus()).rejects.toThrow();
+    await expect(apiFor([{ ...sam, artist_slug: 'Sam' }])
+      .listCalendarConnectionStatus()).rejects.toThrow();
+  });
+
+  it('clears a recorded Google account through the capability-checked RPC', async () => {
+    const rpc = vi.fn(async () => ({ data: { cleared: true }, error: null }));
+    const api = createCalendarConnectionsApi({ rpc } as unknown as CrmClient);
+
+    await api.resetCalendarExpectedAccount('d629dab2-4d89-4f0c-bb96-34eb6f44eedc');
+
+    expect(rpc).toHaveBeenCalledWith('reset_calendar_expected_account', {
+      p_artist_id: 'd629dab2-4d89-4f0c-bb96-34eb6f44eedc',
+    });
+  });
+
   it('maps permanent OAuth failures to reconnect rather than healthy', () => {
     expect(calendarConnectionHealth({
       connected: true,

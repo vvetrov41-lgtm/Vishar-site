@@ -32,20 +32,28 @@ function recordingLimiter(outcome = true) {
   };
 }
 
-await test('route classes are a closed enumeration', () => {
+await test('route classes are a closed enumeration for every artist', () => {
   assert.equal(rateLimitRouteClass('/health'), 'health');
   assert.equal(rateLimitRouteClass('/oauth/google/start/vladimir'), 'oauth_start');
   assert.equal(rateLimitRouteClass('/oauth/google/start/kristina'), 'oauth_start');
   assert.equal(rateLimitRouteClass('/oauth/google/callback'), 'oauth_callback');
   assert.equal(rateLimitRouteClass('/oauth/google/disconnect/vladimir'), 'oauth_disconnect');
   assert.equal(rateLimitRouteClass('/oauth/google/disconnect/kristina'), 'oauth_disconnect');
+  // The class is the route, never the artist, so a caller who invents artist
+  // references still spends the same oauth_start budget.
+  assert.equal(rateLimitRouteClass('/oauth/google/start/sam'), 'oauth_start');
+  assert.equal(rateLimitRouteClass('/oauth/google/start/mallory'), 'oauth_start');
+  assert.equal(
+    rateLimitRouteClass('/oauth/google/disconnect/new-artist-42'),
+    'oauth_disconnect',
+  );
 });
 
 await test('unrecognised paths cannot mint new buckets', () => {
   const classes = new Set([
     rateLimitRouteClass('/'),
     rateLimitRouteClass('/admin'),
-    rateLimitRouteClass('/oauth/google/start/mallory'),
+    rateLimitRouteClass('/oauth/google/start'),
     rateLimitRouteClass('/oauth/google/start/vladimir/../../etc'),
     rateLimitRouteClass('/health/'),
     rateLimitRouteClass(`/scan-${Math.random()}`),

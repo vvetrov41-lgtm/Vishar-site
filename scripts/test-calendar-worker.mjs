@@ -38,38 +38,71 @@ const kristinaId = 'a2222222-2222-4222-8222-222222222222';
 const sessionId = 'b1111111-1111-4111-8111-111111111111';
 const wisteriaLabelId = '0df5fe2d-13a3-42ae-8e07-8dc2c62c97a1';
 
+// The Worker no longer carries per-artist bindings: every artist-specific value
+// arrives on the backend-only outbox route, so onboarding an artist adds a
+// database row rather than a Worker variable.
 const env = {
   GOOGLE_OAUTH_CLIENT_ID: 'test-client-id',
   GOOGLE_OAUTH_CLIENT_SECRET: 'test-client-secret',
   CALENDAR_TOKEN_ENCRYPTION_KEY: encryptionKey,
-  VLADIMIR_ARTIST_ID: vladimirId,
-  VLADIMIR_GOOGLE_EMAIL: 'vvetrov41@gmail.com',
-  VLADIMIR_GOOGLE_EVENT_VISIBILITY: 'public',
-  VLADIMIR_GOOGLE_EVENT_DISPLAY_NAME: 'Vladimir',
-  VLADIMIR_GOOGLE_EVENT_COLOR_ID: '9',
-  KRISTINA_ARTIST_ID: kristinaId,
-  KRISTINA_GOOGLE_EMAIL: 'tinaakaten@gmail.com',
-  KRISTINA_GOOGLE_EVENT_VISIBILITY: 'public',
-  KRISTINA_GOOGLE_EVENT_DISPLAY_NAME: 'Kristina',
-  KRISTINA_GOOGLE_EVENT_LABEL_NAME: 'Wisteria',
-  KRISTINA_GOOGLE_EVENT_LABEL_COLOR: '#b39ddb',
   CRM_APPOINTMENTS_URL: 'https://vishar-crm-staging.pages.dev/#/appointments',
 };
 
-function routeFor(artistId = vladimirId, outboxId = 'outbox-1', kind = 'calendar_create') {
-  const isVladimir = artistId === vladimirId;
+const samId = 'd629dab2-4d89-4f0c-bb96-34eb6f44eedc';
+
+const ARTIST_ROUTES = {
+  [vladimirId]: {
+    slug: 'vladimir',
+    account: 'vvetrov41@gmail.com',
+    presentation: {
+      event_visibility: 'public',
+      event_display_name: 'Vladimir',
+      event_color_id: '9',
+      event_label_name: null,
+      event_label_color: null,
+    },
+  },
+  [kristinaId]: {
+    slug: 'kristina',
+    account: 'tinaakaten@gmail.com',
+    presentation: {
+      event_visibility: 'public',
+      event_display_name: 'Kristina',
+      event_color_id: null,
+      event_label_name: 'Wisteria',
+      event_label_color: '#b39ddb',
+    },
+  },
+  [samId]: {
+    slug: 'sam',
+    account: 'sam@example.test',
+    presentation: {
+      event_visibility: 'public',
+      event_display_name: 'Sam',
+      event_color_id: null,
+      event_label_name: null,
+      event_label_color: null,
+    },
+  },
+};
+
+function routeFor(artistId = vladimirId, outboxId = 'outbox-1', kind = 'calendar_create', overrides = {}) {
+  const artist = ARTIST_ROUTES[artistId];
   return {
     outbox_id: outboxId,
     artist_id: artistId,
     kind,
     integration_type: 'calendar',
     provider: 'google',
-    integration_key: isVladimir ? 'google_calendar_vladimir' : 'google_calendar_kristina',
-    external_account_label: isVladimir ? 'vvetrov41@gmail.com' : 'tinaakaten@gmail.com',
+    integration_key: `google_calendar_${artist.slug}`,
+    external_account_label: artist.account,
     configuration: {
       calendar_id: 'primary',
       oauth_scope: 'calendar.events',
       connection_mode: 'worker_oauth',
+      artist_slug: artist.slug,
+      presentation: { ...artist.presentation, ...(overrides.presentation || {}) },
+      ...(overrides.configuration || {}),
     },
   };
 }
@@ -140,8 +173,8 @@ await test('event projection contains trusted artist name, public visibility, Bl
   assert.ok(!JSON.stringify(event).includes('notes'));
 });
 
-await test('artist route validation is exact and gives both artists public trusted styling', async () => {
-  const vladimir = validateCalendarRoute(routeFor(), job(), env);
+await test('artist route validation is exact and keeps each artist its own styling', async () => {
+  const vladimir = validateCalendarRoute(routeFor(), job());
   assert.equal(vladimir.calendarId, 'primary');
   assert.equal(vladimir.eventVisibility, 'public');
   assert.equal(vladimir.eventDisplayName, 'Vladimir');
@@ -150,7 +183,6 @@ await test('artist route validation is exact and gives both artists public trust
   const kristina = validateCalendarRoute(
     routeFor(kristinaId),
     job({ artist_id: kristinaId }),
-    env,
   );
   assert.equal(kristina.calendarId, 'primary');
   assert.equal(kristina.eventVisibility, 'public');
@@ -162,31 +194,82 @@ await test('artist route validation is exact and gives both artists public trust
   const wrong = routeFor(kristinaId);
   wrong.outbox_id = 'outbox-1';
   await assert.rejects(
-    async () => validateCalendarRoute(wrong, job(), env),
+    async () => validateCalendarRoute(wrong, job()),
     (error) => error.code === 'provider_route_invalid',
   );
 });
 
-await test('invalid artist visibility, legacy color and label target fail closed before Google', async () => {
+await test('an artist the Worker has never heard of projects with no code change', async () => {
+  const sam = validateCalendarRoute(
+    routeFor(samId, 'outbox-sam'),
+    job({ artist_id: samId, outbox_id: 'outbox-sam' }),
+  );
+  assert.equal(sam.artist.alias, 'sam');
+  assert.equal(sam.artist.artistId, samId);
+  assert.equal(sam.artist.integrationKey, 'google_calendar_sam');
+  assert.equal(sam.artist.expectedEmail, 'sam@example.test');
+  assert.equal(sam.eventDisplayName, 'Sam');
+  assert.equal(sam.eventVisibility, 'public');
+  assert.equal(sam.eventColorId, null);
+});
+
+await test('a route whose selector or slug names another artist is refused', async () => {
+  const swappedKey = routeFor(samId, 'outbox-sam');
+  swappedKey.integration_key = 'google_calendar_vladimir';
   await assert.rejects(
-    async () => validateCalendarRoute(routeFor(), job(), {
-      ...env,
-      VLADIMIR_GOOGLE_EVENT_VISIBILITY: 'world-readable',
-    }),
+    async () => validateCalendarRoute(swappedKey, job({ artist_id: samId, outbox_id: 'outbox-sam' })),
+    (error) => error.code === 'artist_route_unconfigured',
+  );
+
+  const swappedSlug = routeFor(samId, 'outbox-sam', 'calendar_create', {
+    configuration: { artist_slug: 'vladimir' },
+  });
+  await assert.rejects(
+    async () => validateCalendarRoute(swappedSlug, job({ artist_id: samId, outbox_id: 'outbox-sam' })),
+    (error) => error.code === 'artist_route_unconfigured',
+  );
+
+  const noAccount = routeFor(samId, 'outbox-sam');
+  noAccount.external_account_label = null;
+  await assert.rejects(
+    async () => validateCalendarRoute(noAccount, job({ artist_id: samId, outbox_id: 'outbox-sam' })),
+    (error) => error.code === 'artist_route_unconfigured',
+  );
+
+  const notCalendarKey = routeFor(samId, 'outbox-sam');
+  notCalendarKey.integration_key = 'gmail_sam';
+  await assert.rejects(
+    async () => validateCalendarRoute(notCalendarKey, job({ artist_id: samId, outbox_id: 'outbox-sam' })),
+    (error) => error.code === 'artist_route_unconfigured',
+  );
+});
+
+await test('invalid server-owned visibility, colour and label target fail closed before Google', async () => {
+  await assert.rejects(
+    async () => validateCalendarRoute(
+      routeFor(vladimirId, 'outbox-1', 'calendar_create', {
+        presentation: { event_visibility: 'world-readable' },
+      }),
+      job(),
+    ),
     (error) => error.code === 'calendar_visibility_invalid',
   );
   await assert.rejects(
-    async () => validateCalendarRoute(routeFor(), job(), {
-      ...env,
-      VLADIMIR_GOOGLE_EVENT_COLOR_ID: '18',
-    }),
+    async () => validateCalendarRoute(
+      routeFor(vladimirId, 'outbox-1', 'calendar_create', {
+        presentation: { event_color_id: '18' },
+      }),
+      job(),
+    ),
     (error) => error.code === 'calendar_event_color_invalid',
   );
   await assert.rejects(
-    async () => validateCalendarRoute(routeFor(kristinaId), job({ artist_id: kristinaId }), {
-      ...env,
-      KRISTINA_GOOGLE_EVENT_LABEL_COLOR: '',
-    }),
+    async () => validateCalendarRoute(
+      routeFor(kristinaId, 'outbox-1', 'calendar_create', {
+        presentation: { event_label_color: null },
+      }),
+      job({ artist_id: kristinaId }),
+    ),
     (error) => error.code === 'calendar_event_label_target_invalid',
   );
 });

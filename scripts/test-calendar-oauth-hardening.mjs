@@ -4,14 +4,13 @@ import {
   accessEmail,
   buildDisconnectStateRecord,
   buildOAuthStateRecord,
-  calendarActorEmails,
   calendarReadiness,
-  canManageCalendarAlias,
   consumeDisconnectState,
   consumeOAuthState,
   disconnectConfirmationPage,
   disconnectConfirmationToken,
   disconnectReturnUrl,
+  isCalendarArtistRef,
   isConfirmedDisconnectRequest,
   requireOwnerAccess,
   validateGoogleAccount,
@@ -70,6 +69,76 @@ async function accessToken(overrides = {}) {
   return `${signingInput}.${base64Url(new Uint8Array(signature))}`;
 }
 
+// The Worker deliberately carries no artist table. This fixture stands in for
+// the CRM access graph the backend-only resolver reads, including an artist
+// that is deactivated and one that has never connected a Google account.
+const VLADIMIR_ID = 'a1111111-1111-4111-8111-111111111111';
+const KRISTINA_ID = 'a2222222-2222-4222-8222-222222222222';
+const SAM_ID = 'd629dab2-4d89-4f0c-bb96-34eb6f44eedc';
+const RETIRED_ID = 'a9999999-9999-4999-8999-999999999999';
+
+const CRM_ARTISTS = [
+  {
+    id: VLADIMIR_ID,
+    slug: 'vladimir',
+    displayName: 'Vladimir',
+    account: 'vvetrov41@gmail.com',
+    active: true,
+    operators: ['vvetrov41@gmail.com'],
+  },
+  {
+    id: KRISTINA_ID,
+    slug: 'kristina',
+    displayName: 'Kristina',
+    account: 'tinaakaten@gmail.com',
+    active: true,
+    operators: ['vvetrov41@gmail.com', 'tinaakaten@gmail.com'],
+    presentation: { event_label_name: 'Wisteria', event_label_color: '#b39ddb' },
+  },
+  {
+    id: SAM_ID,
+    slug: 'sam',
+    displayName: 'Sam',
+    account: null,
+    active: true,
+    operators: ['vishnyapnd@yandex.ru'],
+  },
+  {
+    id: RETIRED_ID,
+    slug: 'retired',
+    displayName: 'Retired',
+    account: null,
+    active: false,
+    operators: ['vvetrov41@gmail.com'],
+  },
+];
+
+function crmArtist(ref) {
+  return CRM_ARTISTS.find((artist) => artist.id === ref || artist.slug === ref) || null;
+}
+
+function resolverAnswer(actorEmail, ref) {
+  const artist = crmArtist(ref);
+  if (!artist || !artist.active) return null;
+  if (!artist.operators.includes(String(actorEmail).toLowerCase())) return null;
+  return {
+    artist_id: artist.id,
+    artist_slug: artist.slug,
+    artist_display_name: artist.displayName,
+    integration_key: `google_calendar_${artist.slug}`,
+    expected_account_email: artist.account,
+    connected: Boolean(artist.account),
+    presentation: {
+      event_visibility: 'public',
+      event_display_name: artist.displayName,
+      event_color_id: null,
+      event_label_name: null,
+      event_label_color: null,
+      ...(artist.presentation || {}),
+    },
+  };
+}
+
 const env = {
   VISHAR_ENVIRONMENT: 'staging',
   CALENDAR_OWNER_EMAILS: 'vvetrov41@gmail.com',
@@ -81,10 +150,6 @@ const env = {
   CALENDAR_TOKEN_ENCRYPTION_KEY: 'key',
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role',
-  VLADIMIR_ARTIST_ID: 'artist-vladimir',
-  VLADIMIR_GOOGLE_EMAIL: 'vvetrov41@gmail.com',
-  KRISTINA_ARTIST_ID: 'artist-kristina',
-  KRISTINA_GOOGLE_EMAIL: 'tinaakaten@gmail.com',
   CRM_RETURN_URL: 'https://vishar-crm-staging.pages.dev/#/appointments',
   CRM_APPOINTMENTS_URL: 'https://vishar-crm-staging.pages.dev/#/appointments',
   CALENDAR_OAUTH_STATE: {},
@@ -99,15 +164,15 @@ const certFetch = async (url) => {
   return Response.json({ keys: [publicJwk] });
 };
 
-const authorizedActorFetch = async (url, options = {}) => {
+const crmFetch = async (url, options = {}) => {
   const value = String(url);
   if (value.endsWith('/cdn-cgi/access/certs')) return certFetch(url);
-  if (value === 'https://example.supabase.co/rest/v1/rpc/authorize_calendar_actor') {
-    const body = JSON.parse(String(options.body || '{}'));
-    return Response.json(
-      body.p_actor_email === 'tinaakaten@gmail.com'
-      && body.p_artist_id === 'artist-kristina',
-    );
+  const body = JSON.parse(String(options.body || '{}'));
+  if (value.endsWith('/rpc/resolve_calendar_artist_route')) {
+    return Response.json(resolverAnswer(body.p_actor_email, body.p_artist_ref));
+  }
+  if (value.endsWith('/rpc/authorize_calendar_actor')) {
+    return Response.json(Boolean(resolverAnswer(body.p_actor_email, body.p_artist_id)));
   }
   throw new Error(`unexpected test fetch: ${value}`);
 };
@@ -124,6 +189,19 @@ function requestWithToken(token, email = 'vvetrov41@gmail.com', url = 'https://c
 const ownerRequest = requestWithToken(await accessToken(), ' Vvetrov41@Gmail.com ');
 const kristinaToken = await accessToken({ email: 'tinaakaten@gmail.com' });
 const kristinaRequest = requestWithToken(kristinaToken, ' tinaakaten@gmail.com ');
+const samToken = await accessToken({ email: 'vishnyapnd@yandex.ru' });
+
+function stateStore() {
+  const store = new Map();
+  return {
+    store,
+    namespace: {
+      put: async (key, value) => { store.set(key, value); },
+      get: async (key) => (store.has(key) ? JSON.parse(store.get(key)) : null),
+      delete: async (key) => { store.delete(key); },
+    },
+  };
+}
 
 await test('Cloudflare Access owner identity requires a valid signed JWT', async () => {
   assert.equal(accessEmail(ownerRequest), 'vvetrov41@gmail.com');
@@ -133,14 +211,17 @@ await test('Cloudflare Access owner identity requires a valid signed JWT', async
   assert.equal(await requireOwnerAccess(new Request(ownerRequest.url), env, certFetch), false);
 });
 
-await test('signed artist Access identity is allowed only for its own Calendar alias while owner keeps override', async () => {
-  assert.deepEqual(
-    calendarActorEmails(env).sort(),
-    ['tinaakaten@gmail.com', 'vvetrov41@gmail.com'],
-  );
+await test('Access proves identity for any operator; owner override stays owner-only', async () => {
+  // No artist email allow-list any more: a new artist's booking manager must be
+  // able to reach the connector on day one without a Worker variable.
   assert.equal(
     await verifiedCalendarActorEmail(kristinaRequest, env, certFetch),
     'tinaakaten@gmail.com',
+  );
+  const samRequest = requestWithToken(samToken, 'vishnyapnd@yandex.ru');
+  assert.equal(
+    await verifiedCalendarActorEmail(samRequest, env, certFetch),
+    'vishnyapnd@yandex.ru',
   );
   await assert.rejects(
     verifiedOwnerEmail(kristinaRequest, env, certFetch),
@@ -148,84 +229,116 @@ await test('signed artist Access identity is allowed only for its own Calendar a
       && error.code === 'owner_access_required'
       && error.status === 403,
   );
-  assert.equal(canManageCalendarAlias('tinaakaten@gmail.com', 'kristina', env), true);
-  assert.equal(canManageCalendarAlias('tinaakaten@gmail.com', 'vladimir', env), false);
-  assert.equal(canManageCalendarAlias('vvetrov41@gmail.com', 'vladimir', env), true);
-  assert.equal(canManageCalendarAlias('vvetrov41@gmail.com', 'kristina', env), true);
 });
 
-await test('a valid Access session outside the closed owner/artist allow-list is rejected', async () => {
-  const otherToken = await accessToken({ email: 'other@example.com' });
-  const otherRequest = requestWithToken(otherToken, 'other@example.com');
-  await assert.rejects(
-    verifiedCalendarActorEmail(otherRequest, env, certFetch),
-    (error) => error instanceof OAuthSecurityError
-      && error.code === 'owner_access_required'
-      && error.status === 403,
+await test('artist references are shape-checked before any backend call', () => {
+  assert.equal(isCalendarArtistRef('vladimir'), true);
+  assert.equal(isCalendarArtistRef('new-artist-42'), true);
+  assert.equal(isCalendarArtistRef(VLADIMIR_ID), true);
+  assert.equal(isCalendarArtistRef('Vladimir'), false);
+  assert.equal(isCalendarArtistRef('../admin'), false);
+  assert.equal(isCalendarArtistRef(''), false);
+});
+
+await test('resolver output is validated before it can drive a connection', () => {
+  const valid = resolverAnswer('vishnyapnd@yandex.ru', 'sam');
+  assert.equal(workerTesting.normalizedArtistRoute(valid).artistId, SAM_ID);
+  assert.equal(workerTesting.normalizedArtistRoute(valid).expectedEmail, '');
+  assert.equal(workerTesting.normalizedArtistRoute(null), null);
+  // A selector that names another artist would point one artist's consent at
+  // another artist's calendar row.
+  assert.equal(
+    workerTesting.normalizedArtistRoute({ ...valid, integration_key: 'google_calendar_vladimir' }),
+    null,
+  );
+  assert.equal(workerTesting.normalizedArtistRoute({ ...valid, artist_id: 'not-a-uuid' }), null);
+  assert.equal(workerTesting.normalizedArtistRoute({ ...valid, artist_slug: 'Sam' }), null);
+  assert.equal(
+    workerTesting.normalizedArtistRoute({ ...valid, expected_account_email: 'not an email' }),
+    null,
   );
 });
 
-await test('artist self-service start requires both own alias and current CRM capability', async () => {
-  const writes = new Map();
-  const scopedEnv = {
-    ...env,
-    CALENDAR_OAUTH_STATE: {
-      put: async (key, value) => { writes.set(key, value); },
-    },
-  };
-  const ownStartRequest = requestWithToken(
-    kristinaToken,
-    'tinaakaten@gmail.com',
-    'https://calendar-staging.vishartattoo.com/oauth/google/start/kristina',
+await test('a new artist starts OAuth with no Worker change and no artist variable', async () => {
+  const { store, namespace } = stateStore();
+  const scopedEnv = { ...env, CALENDAR_OAUTH_STATE: namespace };
+  const request = requestWithToken(
+    samToken,
+    'vishnyapnd@yandex.ru',
+    'https://calendar-staging.vishartattoo.com/oauth/google/start/sam',
   );
-  const response = await workerTesting.startOAuth(
-    ownStartRequest,
-    'kristina',
-    scopedEnv,
-    authorizedActorFetch,
-  );
+  const response = await workerTesting.startOAuth(request, 'sam', scopedEnv, crmFetch);
   assert.equal(response.status, 302);
   assert.match(response.headers.get('location') || '', /accounts\.google\.com\/o\/oauth2\/v2\/auth/);
-  assert.equal(writes.size, 1);
-
-  const crossArtistRequest = requestWithToken(
-    kristinaToken,
-    'tinaakaten@gmail.com',
-    'https://calendar-staging.vishartattoo.com/oauth/google/start/vladimir',
-  );
-  await assert.rejects(
-    workerTesting.startOAuth(crossArtistRequest, 'vladimir', scopedEnv, authorizedActorFetch),
-    (error) => error instanceof OAuthSecurityError
-      && error.code === 'calendar_artist_access_denied'
-      && error.status === 403,
-  );
-
-  await assert.rejects(
-    workerTesting.authorizeCalendarActor(
-      workerTesting.artistConfig('kristina', env),
-      'tinaakaten@gmail.com',
-      env,
-      async (url) => String(url).endsWith('/authorize_calendar_actor')
-        ? Response.json(false)
-        : certFetch(url),
-    ),
-    (error) => error instanceof OAuthSecurityError
-      && error.code === 'calendar_artist_access_denied'
-      && error.status === 403,
-  );
+  assert.equal(store.size, 1);
+  const record = JSON.parse([...store.values()][0]);
+  assert.equal(record.artistId, SAM_ID);
+  assert.equal(record.alias, 'sam');
+  assert.equal(record.ownerEmail, 'vishnyapnd@yandex.ru');
 });
 
-await test('CRM Calendar authorization backend errors fail closed without starting OAuth', async () => {
+await test('cross-artist, unknown and inactive artists are one indistinguishable denial', async () => {
+  const { namespace } = stateStore();
+  const scopedEnv = { ...env, CALENDAR_OAUTH_STATE: namespace };
+  const denied = async (ref, token, email) => {
+    const request = requestWithToken(
+      token,
+      email,
+      `https://calendar-staging.vishartattoo.com/oauth/google/start/${ref}`,
+    );
+    await assert.rejects(
+      workerTesting.startOAuth(request, ref, scopedEnv, crmFetch),
+      (error) => error instanceof OAuthSecurityError
+        && error.code === 'calendar_artist_access_denied'
+        && error.status === 403,
+      `expected denial for ${ref}`,
+    );
+  };
+
+  // Cross-artist: Sam's manager has no access to Vladimir.
+  await denied('vladimir', samToken, 'vishnyapnd@yandex.ru');
+  // Unauthorized operator for an artist that exists.
+  await denied('sam', kristinaToken, 'tinaakaten@gmail.com');
+  // Unknown artist.
+  await denied('nobody', samToken, 'vishnyapnd@yandex.ru');
+  // Inactive artist, even for the owner who is a member of it.
+  await denied('retired', await accessToken(), 'vvetrov41@gmail.com');
+  // Malformed reference never reaches the backend.
+  await denied('..', samToken, 'vishnyapnd@yandex.ru');
+});
+
+await test('CRM authorization backend errors fail closed without starting OAuth', async () => {
+  const { namespace } = stateStore();
+  const scopedEnv = { ...env, CALENDAR_OAUTH_STATE: namespace };
+  const request = requestWithToken(
+    samToken,
+    'vishnyapnd@yandex.ru',
+    'https://calendar-staging.vishartattoo.com/oauth/google/start/sam',
+  );
   await assert.rejects(
-    workerTesting.authorizeCalendarActor(
-      workerTesting.artistConfig('kristina', env),
-      'tinaakaten@gmail.com',
-      env,
-      async () => Response.json({ error: 'unavailable' }, { status: 503 }),
-    ),
+    workerTesting.startOAuth(request, 'sam', scopedEnv, async (url) => (
+      String(url).endsWith('/cdn-cgi/access/certs')
+        ? certFetch(url)
+        : Response.json({ error: 'unavailable' }, { status: 503 })
+    )),
     (error) => error instanceof OAuthSecurityError
       && error.code === 'calendar_actor_authorization_failed'
       && error.status === 502,
+  );
+
+  // A capability revoked between resolution and the write still blocks it.
+  await assert.rejects(
+    workerTesting.authorizeCalendarActor(
+      { artistId: SAM_ID },
+      'vishnyapnd@yandex.ru',
+      env,
+      async (url) => (String(url).endsWith('/authorize_calendar_actor')
+        ? Response.json(false)
+        : certFetch(url)),
+    ),
+    (error) => error instanceof OAuthSecurityError
+      && error.code === 'calendar_artist_access_denied'
+      && error.status === 403,
   );
 });
 
@@ -248,17 +361,12 @@ await test('Access JWT and forwarded email must identify the same actor', async 
 });
 
 await test('OAuth state is bound to the verified actor and consumed once', async () => {
-  const store = new Map();
-  const namespace = {
-    get: async (key) => store.has(key) ? JSON.parse(store.get(key)) : null,
-    delete: async (key) => { store.delete(key); },
-  };
-  const record = buildOAuthStateRecord('vladimir', 'v'.repeat(64), 'vvetrov41@gmail.com');
+  const { store, namespace } = stateStore();
+  const record = buildOAuthStateRecord(VLADIMIR_ID, 'vladimir', 'v'.repeat(64), 'vvetrov41@gmail.com');
   store.set('state:single-use', JSON.stringify(record));
-  assert.equal(
-    (await consumeOAuthState(namespace, 'single-use', 'vvetrov41@gmail.com')).alias,
-    'vladimir',
-  );
+  const consumed = await consumeOAuthState(namespace, 'single-use', 'vvetrov41@gmail.com');
+  assert.equal(consumed.artistId, VLADIMIR_ID);
+  assert.equal(consumed.alias, 'vladimir');
   await assert.rejects(
     consumeOAuthState(namespace, 'single-use', 'vvetrov41@gmail.com'),
     (error) => error instanceof OAuthSecurityError && error.code === 'oauth_state_invalid_or_expired',
@@ -266,14 +374,63 @@ await test('OAuth state is bound to the verified actor and consumed once', async
 });
 
 await test('OAuth state cannot be completed by a different verified actor', async () => {
-  const record = buildOAuthStateRecord('kristina', 'k'.repeat(64), 'tinaakaten@gmail.com');
-  const namespace = {
-    get: async () => record,
-    delete: async () => {},
-  };
+  const record = buildOAuthStateRecord(KRISTINA_ID, 'kristina', 'k'.repeat(64), 'tinaakaten@gmail.com');
+  const namespace = { get: async () => record, delete: async () => {} };
   await assert.rejects(
     consumeOAuthState(namespace, 'state', 'vvetrov41@gmail.com'),
     (error) => error.code === 'oauth_state_invalid_or_expired',
+  );
+});
+
+await test('OAuth state must carry an artist UUID, not a browser-supplied name', () => {
+  assert.throws(
+    () => buildOAuthStateRecord('vladimir', 'vladimir', 'v'.repeat(64), 'vvetrov41@gmail.com'),
+    (error) => error.code === 'oauth_state_invalid_or_expired',
+  );
+  assert.throws(
+    () => buildOAuthStateRecord(VLADIMIR_ID, 'Vladimir', 'v'.repeat(64), 'vvetrov41@gmail.com'),
+    (error) => error.code === 'oauth_state_invalid_or_expired',
+  );
+});
+
+await test('a substituted OAuth state cannot complete against another artist', async () => {
+  // The callback resolves the artist from the stored UUID, so tampering with
+  // the record's slug is caught before the authorization code is exchanged.
+  const { store, namespace } = stateStore();
+  store.set('state:swapped', JSON.stringify({
+    ...buildOAuthStateRecord(KRISTINA_ID, 'kristina', 'k'.repeat(64), 'tinaakaten@gmail.com'),
+    alias: 'vladimir',
+  }));
+  const callbackEnv = { ...env, CALENDAR_OAUTH_STATE: namespace };
+  const request = requestWithToken(
+    kristinaToken,
+    'tinaakaten@gmail.com',
+    'https://calendar-staging.vishartattoo.com/oauth/google/callback?state=swapped&code=abc',
+  );
+  await assert.rejects(
+    workerTesting.callback(request, callbackEnv, crmFetch),
+    (error) => error.code === 'oauth_state_invalid_or_expired',
+  );
+  assert.equal(store.has('state:swapped'), false);
+});
+
+await test('a state whose artist the actor may no longer manage is refused', async () => {
+  const { namespace } = stateStore();
+  namespace.put('state:stale', JSON.stringify(
+    buildOAuthStateRecord(SAM_ID, 'sam', 's'.repeat(64), 'vishnyapnd@yandex.ru'),
+  ));
+  const callbackEnv = { ...env, CALENDAR_OAUTH_STATE: namespace };
+  const request = requestWithToken(
+    samToken,
+    'vishnyapnd@yandex.ru',
+    'https://calendar-staging.vishartattoo.com/oauth/google/callback?state=stale&code=abc',
+  );
+  await assert.rejects(
+    workerTesting.callback(request, callbackEnv, async (url, options) => {
+      if (String(url).endsWith('/rpc/resolve_calendar_artist_route')) return Response.json(null);
+      return crmFetch(url, options);
+    }),
+    (error) => error.code === 'calendar_artist_access_denied' && error.status === 403,
   );
 });
 
@@ -285,13 +442,31 @@ await test('token exchange requires both access and refresh tokens', () => {
   );
 });
 
-await test('Google account validation is exact and requires verified email', () => {
+await test('a pinned Google account is exact; an unpinned artist binds on first consent', () => {
   assert.equal(
     validateGoogleAccount(true, { email: 'Vvetrov41@gmail.com', email_verified: true }, 'vvetrov41@gmail.com'),
     'vvetrov41@gmail.com',
   );
   assert.throws(
+    () => validateGoogleAccount(true, { email: 'someone@else.test', email_verified: true }, 'vvetrov41@gmail.com'),
+    (error) => error.code === 'google_account_mismatch' && error.status === 403,
+  );
+  assert.throws(
     () => validateGoogleAccount(true, { email: 'vvetrov41@gmail.com', email_verified: false }, 'vvetrov41@gmail.com'),
+    (error) => error.code === 'google_account_mismatch',
+  );
+  // First connection: nothing is pinned yet, so the verified account binds it.
+  assert.equal(
+    validateGoogleAccount(true, { email: 'Sam@example.test', email_verified: true }, ''),
+    'sam@example.test',
+  );
+  // An unverified or missing Google email is still refused with no pin.
+  assert.throws(
+    () => validateGoogleAccount(true, { email: 'sam@example.test', email_verified: false }, ''),
+    (error) => error.code === 'google_account_mismatch',
+  );
+  assert.throws(
+    () => validateGoogleAccount(true, { email_verified: true }, ''),
     (error) => error.code === 'google_account_mismatch',
   );
 });
@@ -301,7 +476,7 @@ await test('readiness reports booleans only and keeps the drain disabled', () =>
   assert.equal(status.bindings.oauthState, true);
   assert.equal(status.configuration.googleOauth, true);
   assert.equal(status.configuration.supabase, true);
-  assert.equal(status.configuration.artists, true);
+  assert.equal(status.configuration.artistRouting, true);
   assert.equal(status.configuration.ownerAccess, true);
   assert.equal(status.configuration.crmAppointments, true);
   assert.equal(status.scheduledDrain, false);
@@ -317,6 +492,10 @@ await test('readiness rejects ambiguous Supabase and Access configuration', () =
     false,
   );
   assert.equal(
+    calendarReadiness({ ...env, SUPABASE_URL: '' }).configuration.artistRouting,
+    false,
+  );
+  assert.equal(
     calendarReadiness({ ...env, CALENDAR_ACCESS_AUD: '' }).configuration.ownerAccess,
     false,
   );
@@ -325,8 +504,8 @@ await test('readiness rejects ambiguous Supabase and Access configuration', () =
 await test('disconnect confirmation is explicit, tokenized and escapes all URLs', () => {
   const token = 'd'.repeat(64);
   const page = disconnectConfirmationPage(
-    'vladimir',
-    'https://calendar-staging.vishartattoo.com/oauth/google/disconnect/vladimir?x="bad"',
+    'Sam <script>',
+    'https://calendar-staging.vishartattoo.com/oauth/google/disconnect/sam?x="bad"',
     'https://vishar-crm-staging.pages.dev/?a=<bad>#/appointments',
     token,
   );
@@ -334,6 +513,13 @@ await test('disconnect confirmation is explicit, tokenized and escapes all URLs'
   assert.match(page, new RegExp(`name="disconnect_token" value="${token}"`));
   assert.ok(!page.includes('<bad>'));
   assert.ok(!page.includes('x="bad"'));
+  // The display name is server-resolved, but it is still artist-controlled text.
+  assert.ok(!page.includes('<script>'));
+  assert.match(page, /Sam &lt;script&gt;/);
+  assert.throws(
+    () => disconnectConfirmationPage('', 'https://example.test/', 'https://example.test/', token),
+    (error) => error.code === 'artist_route_unconfigured' && error.status === 404,
+  );
 });
 
 await test('disconnect POST rejects a static cross-site payload without a nonce', async () => {
@@ -356,47 +542,52 @@ await test('disconnect POST rejects a static cross-site payload without a nonce'
 
 await test('disconnect nonce is verified-actor-bound, artist-bound and single-use', async () => {
   const token = 'n'.repeat(64);
-  const store = new Map();
-  const namespace = {
-    get: async (key) => store.has(key) ? JSON.parse(store.get(key)) : null,
-    delete: async (key) => { store.delete(key); },
-  };
+  const { store, namespace } = stateStore();
   store.set(
     `disconnect:${token}`,
-    JSON.stringify(buildDisconnectStateRecord('kristina', 'tinaakaten@gmail.com')),
+    JSON.stringify(buildDisconnectStateRecord(KRISTINA_ID, 'tinaakaten@gmail.com')),
   );
   assert.equal(
-    (await consumeDisconnectState(namespace, 'kristina', token, 'tinaakaten@gmail.com')).alias,
-    'kristina',
+    (await consumeDisconnectState(namespace, KRISTINA_ID, token, 'tinaakaten@gmail.com')).artistId,
+    KRISTINA_ID,
   );
   await assert.rejects(
-    consumeDisconnectState(namespace, 'kristina', token, 'tinaakaten@gmail.com'),
+    consumeDisconnectState(namespace, KRISTINA_ID, token, 'tinaakaten@gmail.com'),
     (error) => error.code === 'disconnect_confirmation_invalid_or_expired',
   );
 
   store.set(
     `disconnect:${token}`,
-    JSON.stringify(buildDisconnectStateRecord('kristina', 'tinaakaten@gmail.com')),
+    JSON.stringify(buildDisconnectStateRecord(KRISTINA_ID, 'tinaakaten@gmail.com')),
   );
   await assert.rejects(
-    consumeDisconnectState(namespace, 'vladimir', token, 'tinaakaten@gmail.com'),
+    consumeDisconnectState(namespace, VLADIMIR_ID, token, 'tinaakaten@gmail.com'),
+    (error) => error.code === 'disconnect_confirmation_invalid_or_expired',
+  );
+
+  store.set(
+    `disconnect:${token}`,
+    JSON.stringify(buildDisconnectStateRecord(KRISTINA_ID, 'tinaakaten@gmail.com')),
+  );
+  await assert.rejects(
+    consumeDisconnectState(namespace, KRISTINA_ID, token, 'vvetrov41@gmail.com'),
+    (error) => error.code === 'disconnect_confirmation_invalid_or_expired',
+  );
+
+  assert.throws(
+    () => buildDisconnectStateRecord('kristina', 'tinaakaten@gmail.com'),
     (error) => error.code === 'disconnect_confirmation_invalid_or_expired',
   );
 });
 
 await test('OAuth denial consumes its state before returning a safe error', async () => {
   const state = 'denied-state';
-  const store = new Map([[
+  const { store, namespace } = stateStore();
+  store.set(
     `state:${state}`,
-    JSON.stringify(buildOAuthStateRecord('vladimir', 'v'.repeat(64), 'vvetrov41@gmail.com')),
-  ]]);
-  const callbackEnv = {
-    ...env,
-    CALENDAR_OAUTH_STATE: {
-      get: async (key) => store.has(key) ? JSON.parse(store.get(key)) : null,
-      delete: async (key) => { store.delete(key); },
-    },
-  };
+    JSON.stringify(buildOAuthStateRecord(VLADIMIR_ID, 'vladimir', 'v'.repeat(64), 'vvetrov41@gmail.com')),
+  );
+  const callbackEnv = { ...env, CALENDAR_OAUTH_STATE: namespace };
   const denied = requestWithToken(
     await accessToken(),
     'vvetrov41@gmail.com',
@@ -406,6 +597,21 @@ await test('OAuth denial consumes its state before returning a safe error', asyn
   assert.equal(response.status, 400);
   assert.equal((await response.json()).code, 'google_authorisation_denied');
   assert.equal(store.has(`state:${state}`), false);
+});
+
+await test('route classes stay stable for any artist reference', () => {
+  assert.equal(workerTesting.rateLimitRouteClass('/health'), 'health');
+  assert.equal(workerTesting.rateLimitRouteClass('/oauth/google/callback'), 'oauth_callback');
+  assert.equal(workerTesting.rateLimitRouteClass('/oauth/google/start/sam'), 'oauth_start');
+  assert.equal(
+    workerTesting.rateLimitRouteClass(`/oauth/google/start/${VLADIMIR_ID}`),
+    'oauth_start',
+  );
+  assert.equal(
+    workerTesting.rateLimitRouteClass('/oauth/google/disconnect/new-artist-42'),
+    'oauth_disconnect',
+  );
+  assert.equal(workerTesting.rateLimitRouteClass('/oauth/google/start/a/b'), 'other');
 });
 
 await test('disconnect return URL preserves the hash route and contains no credentials', () => {

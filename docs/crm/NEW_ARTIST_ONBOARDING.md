@@ -308,6 +308,7 @@ Honest list. These are provider decisions, not gaps in this design.
 | Thing | Why it cannot be a CRM click |
 | --- | --- |
 | Google Calendar, Gmail | An OAuth consent screen the person must complete on Google |
+| Cloudflare Access for the Calendar connector | The new operator's email must be inside the `calendar.vishartattoo.com` Access policy before they can reach Connect |
 | Monzo | Strong Customer Authentication approval in the Monzo app |
 | WhatsApp | Meta Business verification and a template approval |
 | Instagram | Meta app review; this workstream is frozen |
@@ -315,6 +316,20 @@ Honest list. These are provider decisions, not gaps in this design.
 
 The checklist marks these `external` rather than `required`, so nobody goes
 looking for a button that does not exist.
+
+Google Calendar is otherwise a normal CRM operation since migration `0137`.
+Settings → Integrations → Google Calendar lists every active artist the
+signed-in operator can manage integrations for, and Connect opens
+`/oauth/google/start/<artist-slug>` on the Calendar connector. That slug is a
+lookup hint only: the connector resolves the authoritative artist, its route
+selector and its expected Google account from Supabase on every request. No
+Worker variable, no migration and no deploy is involved in adding the third,
+tenth or hundredth artist.
+
+The Google account an artist first consents with becomes the account that artist
+is pinned to, and one Google account cannot back two artists. If the wrong
+account was used, disconnect and then **Change Google account**, which the
+database refuses while the integration is still enabled.
 
 Everything else — the artist, the organization, the memberships, the
 capabilities, the booking form, the notifications, the automation defaults, the
