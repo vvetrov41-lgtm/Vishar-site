@@ -3,7 +3,7 @@ name: Public booking production rollout
 on:
   push:
     branches:
-      - 'release/public-booking-edge-*'
+      - 'release/private-crm-rc*-inventory-public-booking-*'
 
 permissions:
   actions: read
@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
-            release/public-booking-edge-*) ;;
+            release/private-crm-rc*-inventory-public-booking-*) ;;
             *) echo 'Unexpected public-booking release branch.' >&2; exit 1 ;;
           esac
           [ "$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
