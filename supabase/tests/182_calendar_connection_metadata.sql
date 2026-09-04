@@ -115,8 +115,8 @@ select is(
       and integration_type = 'calendar'
       and integration_key = 'google_calendar_vladimir'
   ),
-  '{"calendar_id":"primary","oauth_scope":"calendar.events","connection_mode":"worker_oauth"}'::jsonb,
-  'provider configuration is fixed and contains no credential material'
+  '{"calendar_id":"primary","oauth_scope":"calendar.events","connection_mode":"worker_oauth","artist_slug":"vladimir","presentation":{"event_visibility":"public","event_display_name":"Vladimir","event_color_id":null,"event_label_name":null,"event_label_color":null}}'::jsonb,
+  'provider configuration is fixed, server-derived and contains no credential material'
 );
 select is(
   (

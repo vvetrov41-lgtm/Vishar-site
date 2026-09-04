@@ -171,14 +171,30 @@ is not explicitly enabled, or if the approval phrase is not exact.
 
 Only after the deployment is verified.
 
-1. Vladimir authenticates to `calendar.vishartattoo.com` through Access
-   (one-time PIN to `vvetrov41@gmail.com`).
+Since migration `0137` the connector has no artist list of its own. The route is
+`/oauth/google/start/<artist-slug>`, and the slug is a lookup hint: the Worker
+asks the backend-only `resolve_calendar_artist_route` RPC which artist that
+means, whether it is active, and whether the Access identity currently holds
+`manage_integrations` for it. Unknown, inactive and unauthorized all return the
+same `calendar_artist_access_denied`, so onboarding a new artist needs no Worker
+change and no new Worker variable.
+
+1. The operator authenticates to `calendar.vishartattoo.com` through Access. Any
+   new artist's operator must be inside the Access application's policy — that
+   is the one piece of Cloudflare configuration onboarding still needs.
 2. `/oauth/google/start/vladimir` → **Vladimir signs into Google as
-   `vvetrov41@gmail.com`**. Any other Google account is rejected by
+   `vvetrov41@gmail.com`**. The expected account is the one Supabase already
+   records for that artist; any other Google account is rejected by
    `validateGoogleAccount`.
 3. `/oauth/google/start/kristina` → **Kristina signs into Google as
-   `tinaakaten@gmail.com`** at the consent screen. Vladimir initiates the flow
-   from his own Access session; only the Google sign-in is Kristina's.
+   `tinaakaten@gmail.com`** at the consent screen. Her own Access session or the
+   owner's can initiate the flow; only the Google sign-in is hers.
+4. `/oauth/google/start/<new-slug>` → an artist with no recorded account binds
+   the Google account they consent with. From then on that account is pinned, and
+   the same account cannot back a second artist. To rebind after a mistake,
+   disconnect first, then use **Change Google account** in Calendar Connections
+   (`reset_calendar_expected_account`), which refuses while the integration is
+   still enabled.
 
 Because production has no availability blocks and an empty outbox, a successful
 connect enqueues zero jobs. With the drain disabled and no cron, nothing is sent

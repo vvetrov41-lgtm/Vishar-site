@@ -76,11 +76,18 @@ describe('Calendar Connections navigation', () => {
   });
 
   it('treats return query parameters as a notice, not connection state', () => {
-    expect(connectionResultNotice('?calendar=connected&artist=vladimir', 'en')).toContain(
-      'reloaded from the CRM',
-    );
-    expect(connectionResultNotice('?calendar=connected&artist=unknown', 'en')).toBeNull();
-    expect(connectionResultNotice('?artist=vladimir', 'ru')).toBeNull();
+    // The notice names the artist only from rows the CRM actually loaded, so a
+    // crafted `?artist=` cannot put text on the page or reveal an artist this
+    // operator cannot manage.
+    const visible = new Map([['vladimir', 'Vladimir'], ['sam', 'Sam']]);
+    expect(connectionResultNotice('?calendar=connected&artist=vladimir', 'en', visible))
+      .toContain('reloaded from the CRM');
+    expect(connectionResultNotice('?calendar=connected&artist=sam', 'en', visible))
+      .toContain('Sam');
+    expect(connectionResultNotice('?calendar=connected&artist=unknown', 'en', visible)).toBeNull();
+    expect(connectionResultNotice('?calendar=connected&artist=kristina', 'en', visible)).toBeNull();
+    expect(connectionResultNotice('?calendar=connected&artist=vladimir', 'en')).toBeNull();
+    expect(connectionResultNotice('?artist=vladimir', 'ru', visible)).toBeNull();
   });
 
   it('preserves the Calendar Connections hash route after OAuth returns', () => {
@@ -89,7 +96,18 @@ describe('Calendar Connections navigation', () => {
     );
     expect(returned.pathname).toBe('/');
     expect(returned.hash).toBe('#/integrations/calendar');
-    expect(connectionResultNotice(returned.search, 'en')).toContain('reloaded from the CRM');
+    expect(connectionResultNotice(returned.search, 'en', new Map([['vladimir', 'Vladimir']])))
+      .toContain('reloaded from the CRM');
+  });
+
+  it('builds a connector URL for any artist slug and refuses a malformed one', () => {
+    const origin = 'https://calendar-staging.vishartattoo.com';
+    expect(calendarConnectorUrl(origin, 'start', 'sam'))
+      .toBe('https://calendar-staging.vishartattoo.com/oauth/google/start/sam');
+    expect(calendarConnectorUrl(origin, 'disconnect', 'new-artist-42'))
+      .toBe('https://calendar-staging.vishartattoo.com/oauth/google/disconnect/new-artist-42');
+    expect(() => calendarConnectorUrl(origin, 'start', '../admin')).toThrow(/unknown/i);
+    expect(() => calendarConnectorUrl(origin, 'start', 'Vladimir')).toThrow(/unknown/i);
   });
 
   it('shows integration navigation only to coarse roles that may hold artist capability', () => {

@@ -1,7 +1,8 @@
 const STATE_TTL_SECONDS = 600;
 const DISCONNECT_TTL_SECONDS = 600;
 const ACCESS_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
-const ALIASES = new Set(['vladimir', 'kristina']);
+const ARTIST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ARTIST_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,62}$/;
 const CONFIRMATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43,256}$/;
 const ACCESS_JWT_ALGORITHM = 'RS256';
 const accessJwksCache = new Map();
@@ -30,22 +31,17 @@ export function ownerEmails(env) {
     .filter(Boolean);
 }
 
-export function calendarActorEmails(env) {
-  return [...new Set([
-    ...ownerEmails(env),
-    normalizeEmail(env?.VLADIMIR_GOOGLE_EMAIL),
-    normalizeEmail(env?.KRISTINA_GOOGLE_EMAIL),
-  ].filter(Boolean))];
+// The artist reference that appears in an OAuth URL is a lookup hint only.
+// Every route still resolves the authoritative artist through the backend-only
+// `resolve_calendar_artist_route` RPC, so this only rejects references that
+// could never name an artist.
+export function isCalendarArtistRef(value) {
+  return typeof value === 'string'
+    && (ARTIST_SLUG_PATTERN.test(value) || ARTIST_ID_PATTERN.test(value));
 }
 
-export function canManageCalendarAlias(actorEmail, alias, env) {
-  const email = normalizeEmail(actorEmail);
-  if (!email || !ALIASES.has(alias)) return false;
-  if (ownerEmails(env).includes(email)) return true;
-  const expected = alias === 'vladimir'
-    ? normalizeEmail(env?.VLADIMIR_GOOGLE_EMAIL)
-    : normalizeEmail(env?.KRISTINA_GOOGLE_EMAIL);
-  return Boolean(expected && email === expected);
+export function isCalendarArtistId(value) {
+  return typeof value === 'string' && ARTIST_ID_PATTERN.test(value);
 }
 
 function normalizeTeamDomain(value) {
@@ -133,6 +129,11 @@ async function accessSigningKey(teamDomain, kid, fetchImpl) {
   }
 }
 
+// Cloudflare Access proves *who* is calling. It deliberately does not decide
+// *what* they may reach: every artist-scoped route then asks Supabase whether
+// this identity currently holds manage-integrations for that exact artist. An
+// email allowlist here would have to grow with every new artist, which is the
+// hardcoding this connector exists to remove.
 export async function verifiedCalendarActorEmail(request, env, fetchImpl = fetch) {
   const teamDomain = normalizeTeamDomain(env?.CALENDAR_ACCESS_TEAM_DOMAIN);
   const audience = String(env?.CALENDAR_ACCESS_AUD || '').trim();
@@ -173,7 +174,6 @@ export async function verifiedCalendarActorEmail(request, env, fetchImpl = fetch
     || (Number.isFinite(payload?.nbf) && payload.nbf > now)
     || !email
     || (forwardedEmail && forwardedEmail !== email)
-    || !calendarActorEmails(env).includes(email)
   ) {
     throw new OAuthSecurityError('owner_access_required', 403);
   }
@@ -228,9 +228,13 @@ export function assertDisconnectConfiguration(env) {
   }
 }
 
-export function buildOAuthStateRecord(alias, verifier, ownerEmail) {
+// State records carry the authoritative artist UUID the backend resolved, not
+// the reference the browser used. The callback re-resolves and re-authorizes
+// that UUID, so a state minted for one artist cannot complete against another.
+export function buildOAuthStateRecord(artistId, alias, verifier, ownerEmail) {
   if (
-    !ALIASES.has(alias)
+    !isCalendarArtistId(artistId)
+    || !ARTIST_SLUG_PATTERN.test(String(alias || ''))
     || typeof verifier !== 'string'
     || verifier.length < 43
     || !normalizeEmail(ownerEmail)
@@ -238,6 +242,7 @@ export function buildOAuthStateRecord(alias, verifier, ownerEmail) {
     throw new OAuthSecurityError('oauth_state_invalid_or_expired');
   }
   return {
+    artistId: String(artistId).toLowerCase(),
     alias,
     verifier,
     ownerEmail: normalizeEmail(ownerEmail),
@@ -254,31 +259,32 @@ export async function consumeOAuthState(namespace, state, ownerEmail) {
   await namespace.delete(key);
   if (
     !stored
-    || !ALIASES.has(stored.alias)
+    || !isCalendarArtistId(stored.artistId)
+    || !ARTIST_SLUG_PATTERN.test(String(stored.alias || ''))
     || typeof stored.verifier !== 'string'
     || stored.verifier.length < 43
     || normalizeEmail(stored.ownerEmail) !== normalizeEmail(ownerEmail)
   ) {
     throw new OAuthSecurityError('oauth_state_invalid_or_expired');
   }
-  return stored;
+  return { ...stored, artistId: String(stored.artistId).toLowerCase() };
 }
 
-export function buildDisconnectStateRecord(alias, ownerEmail) {
-  if (!ALIASES.has(alias) || !normalizeEmail(ownerEmail)) {
+export function buildDisconnectStateRecord(artistId, ownerEmail) {
+  if (!isCalendarArtistId(artistId) || !normalizeEmail(ownerEmail)) {
     throw new OAuthSecurityError('disconnect_confirmation_invalid_or_expired');
   }
   return {
-    alias,
+    artistId: String(artistId).toLowerCase(),
     ownerEmail: normalizeEmail(ownerEmail),
     createdAt: new Date().toISOString(),
   };
 }
 
-export async function consumeDisconnectState(namespace, alias, token, ownerEmail) {
+export async function consumeDisconnectState(namespace, artistId, token, ownerEmail) {
   if (
     !namespace
-    || !ALIASES.has(alias)
+    || !isCalendarArtistId(artistId)
     || typeof token !== 'string'
     || !CONFIRMATION_TOKEN_PATTERN.test(token)
   ) {
@@ -289,7 +295,7 @@ export async function consumeDisconnectState(namespace, alias, token, ownerEmail
   await namespace.delete(key);
   if (
     !stored
-    || stored.alias !== alias
+    || String(stored.artistId || '').toLowerCase() !== String(artistId).toLowerCase()
     || normalizeEmail(stored.ownerEmail) !== normalizeEmail(ownerEmail)
   ) {
     throw new OAuthSecurityError('disconnect_confirmation_invalid_or_expired');
@@ -310,13 +316,18 @@ export function validateTokenExchange(responseOk, tokens) {
   return tokens;
 }
 
+// `expectedEmail` is the account Supabase already records for this artist. The
+// first connection has none yet, so the verified Google account is what binds
+// it; from then on the database pins it and every later consent must match.
+// A missing or unverified Google email is still refused either way.
 export function validateGoogleAccount(responseOk, user, expectedEmail) {
   const accountEmail = normalizeEmail(user?.email);
+  const expected = normalizeEmail(expectedEmail);
   if (
     !responseOk
     || user?.email_verified !== true
     || !accountEmail
-    || accountEmail !== normalizeEmail(expectedEmail)
+    || (expected && accountEmail !== expected)
   ) {
     throw new OAuthSecurityError('google_account_mismatch', 403);
   }
@@ -327,14 +338,6 @@ export function calendarReadiness(env) {
   const hasSecretKey = Boolean(env?.SUPABASE_SECRET_KEY);
   const hasLegacyKey = Boolean(env?.SUPABASE_SERVICE_ROLE_KEY);
   const supabaseConfigured = Boolean(env?.SUPABASE_URL && (hasSecretKey !== hasLegacyKey));
-  const artistsConfigured = Boolean(
-    env?.VLADIMIR_ARTIST_ID
-    && env?.VLADIMIR_GOOGLE_EMAIL
-    && env?.KRISTINA_ARTIST_ID
-    && env?.KRISTINA_GOOGLE_EMAIL
-    && env.VLADIMIR_ARTIST_ID !== env.KRISTINA_ARTIST_ID
-    && normalizeEmail(env.VLADIMIR_GOOGLE_EMAIL) !== normalizeEmail(env.KRISTINA_GOOGLE_EMAIL)
-  );
   return {
     ok: true,
     service: 'vishar-calendar-oauth',
@@ -351,7 +354,10 @@ export function calendarReadiness(env) {
         && env?.CALENDAR_TOKEN_ENCRYPTION_KEY
       ),
       supabase: supabaseConfigured,
-      artists: artistsConfigured,
+      // Artist routing is resolved per request from Supabase, so readiness
+      // reports whether that resolver is reachable rather than how many
+      // artists happen to be configured in this Worker.
+      artistRouting: supabaseConfigured,
       ownerAccess: Boolean(
         normalizeTeamDomain(env?.CALENDAR_ACCESS_TEAM_DOMAIN)
         && String(env?.CALENDAR_ACCESS_AUD || '').trim()
@@ -373,12 +379,14 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-export function disconnectConfirmationPage(alias, actionUrl, crmReturnUrl, token) {
-  if (!ALIASES.has(alias)) throw new OAuthSecurityError('artist_route_unconfigured', 404);
+export function disconnectConfirmationPage(displayName, actionUrl, crmReturnUrl, token) {
+  const artistName = String(displayName || '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (!artistName || artistName.length > 120) {
+    throw new OAuthSecurityError('artist_route_unconfigured', 404);
+  }
   if (typeof token !== 'string' || !CONFIRMATION_TOKEN_PATTERN.test(token)) {
     throw new OAuthSecurityError('disconnect_confirmation_invalid_or_expired');
   }
-  const artistName = alias === 'vladimir' ? 'Vladimir' : 'Kristina';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -436,7 +444,8 @@ export function disconnectReturnUrl(env, alias, revoked) {
 }
 
 export const __testing = {
-  ALIASES,
+  ARTIST_ID_PATTERN,
+  ARTIST_SLUG_PATTERN,
   STATE_TTL_SECONDS,
   DISCONNECT_TTL_SECONDS,
   CONFIRMATION_TOKEN_PATTERN,

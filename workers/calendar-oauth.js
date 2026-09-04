@@ -13,12 +13,12 @@ import {
   buildDisconnectStateRecord,
   buildOAuthStateRecord,
   calendarReadiness,
-  canManageCalendarAlias,
   consumeDisconnectState,
   consumeOAuthState,
   disconnectConfirmationPage,
   disconnectConfirmationToken,
   disconnectReturnUrl,
+  isCalendarArtistRef,
   validateGoogleAccount,
   validateTokenExchange,
   verifiedCalendarActorEmail,
@@ -70,11 +70,16 @@ async function sha256Base64Url(value) {
   return base64Url(new Uint8Array(digest));
 }
 
+// The artist reference is not part of the rate-limit key: an operator who may
+// manage several artists still shares one budget per route class, and an
+// unknown reference cannot buy itself a fresh bucket.
+const ARTIST_ROUTE_PATTERN = /^\/oauth\/google\/(start|disconnect)\/([^/]+)$/;
+
 function rateLimitRouteClass(pathname) {
   if (pathname === '/health') return 'health';
-  if (/^\/oauth\/google\/start\/(vladimir|kristina)$/.test(pathname)) return 'oauth_start';
   if (pathname === '/oauth/google/callback') return 'oauth_callback';
-  if (/^\/oauth\/google\/disconnect\/(vladimir|kristina)$/.test(pathname)) return 'oauth_disconnect';
+  const match = pathname.match(ARTIST_ROUTE_PATTERN);
+  if (match) return match[1] === 'start' ? 'oauth_start' : 'oauth_disconnect';
   return 'other';
 }
 
@@ -93,26 +98,50 @@ async function enforceRateLimit(request, url, env) {
   return json({ ok: false, code: 'rate_limited' }, 429);
 }
 
-function artistConfig(alias, env) {
-  const configs = {
-    vladimir: {
-      artistId: env.VLADIMIR_ARTIST_ID,
-      expectedEmail: env.VLADIMIR_GOOGLE_EMAIL,
-      integrationKey: 'google_calendar_vladimir',
-      eventLabelName: env.VLADIMIR_GOOGLE_EVENT_LABEL_NAME || '',
-      eventLabelColor: env.VLADIMIR_GOOGLE_EVENT_LABEL_COLOR || '',
-    },
-    kristina: {
-      artistId: env.KRISTINA_ARTIST_ID,
-      expectedEmail: env.KRISTINA_GOOGLE_EMAIL,
-      integrationKey: 'google_calendar_kristina',
-      eventLabelName: env.KRISTINA_GOOGLE_EVENT_LABEL_NAME || '',
-      eventLabelColor: env.KRISTINA_GOOGLE_EVENT_LABEL_COLOR || '',
-    },
+const ARTIST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ARTIST_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,62}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
+
+// Shape check on what the backend returned. The Worker keeps no artist table of
+// its own, so this is the only place that decides a resolver answer is usable.
+function normalizedArtistRoute(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const artistId = typeof payload.artist_id === 'string' ? payload.artist_id.toLowerCase() : '';
+  const alias = typeof payload.artist_slug === 'string' ? payload.artist_slug : '';
+  const displayName = typeof payload.artist_display_name === 'string'
+    ? payload.artist_display_name.trim()
+    : '';
+  const integrationKey = typeof payload.integration_key === 'string' ? payload.integration_key : '';
+  const expectedEmail = typeof payload.expected_account_email === 'string'
+    ? payload.expected_account_email.trim().toLowerCase()
+    : '';
+  if (
+    !ARTIST_ID_PATTERN.test(artistId)
+    || !ARTIST_SLUG_PATTERN.test(alias)
+    || !displayName
+    || displayName.length > 120
+    || integrationKey !== `google_calendar_${alias}`
+    || (expectedEmail && !EMAIL_PATTERN.test(expectedEmail))
+  ) {
+    return null;
+  }
+  const presentation = payload.presentation && typeof payload.presentation === 'object'
+    ? payload.presentation
+    : {};
+  return {
+    artistId,
+    alias,
+    displayName,
+    integrationKey,
+    expectedEmail,
+    connected: payload.connected === true,
+    eventLabelName: typeof presentation.event_label_name === 'string'
+      ? presentation.event_label_name
+      : '',
+    eventLabelColor: typeof presentation.event_label_color === 'string'
+      ? presentation.event_label_color
+      : '',
   };
-  const config = configs[alias];
-  if (!config?.artistId || !config?.expectedEmail) return null;
-  return config;
 }
 
 function supabaseBackend(env) {
@@ -126,6 +155,39 @@ function supabaseBackend(env) {
     : { apikey: legacyKey, Authorization: `Bearer ${legacyKey}` };
 }
 
+// The single authority on which artist an OAuth URL means, whether that artist
+// is active and whether this Access identity may manage its integrations.
+// Unknown, inactive and unauthorized all come back as null so the endpoint
+// cannot be used to enumerate artists.
+async function resolveArtistRoute(artistRef, actorEmail, env, fetchImpl = fetch) {
+  if (!isCalendarArtistRef(artistRef)) {
+    throw new OAuthSecurityError('calendar_artist_access_denied', 403);
+  }
+  const url = `${env.SUPABASE_URL}/rest/v1/rpc/resolve_calendar_artist_route`;
+  const response = await fetchImpl(url, {
+    method: 'POST',
+    headers: {
+      ...supabaseBackend(env),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      p_actor_email: actorEmail,
+      p_artist_ref: artistRef,
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new OAuthSecurityError('calendar_actor_authorization_failed', 502);
+  }
+  const route = normalizedArtistRoute(payload);
+  if (!route) {
+    throw new OAuthSecurityError('calendar_artist_access_denied', 403);
+  }
+  return route;
+}
+
+// Re-checked immediately before every write, so a capability revoked between
+// consent and callback still blocks the token from landing.
 async function authorizeCalendarActor(config, actorEmail, env, fetchImpl = fetch) {
   const url = `${env.SUPABASE_URL}/rest/v1/rpc/authorize_calendar_actor`;
   const response = await fetchImpl(url, {
@@ -164,12 +226,6 @@ async function updateIntegrationMetadata(config, accountEmail, enabled, env, fet
     }),
   });
   if (!response.ok) throw new OAuthSecurityError('calendar_metadata_update_failed', 502);
-}
-
-function assertCalendarActorRoute(actorEmail, alias, env) {
-  if (!canManageCalendarAlias(actorEmail, alias, env)) {
-    throw new OAuthSecurityError('calendar_artist_access_denied', 403);
-  }
 }
 
 function normalizedLabelTarget(config) {
@@ -216,18 +272,16 @@ async function resolveGoogleEventLabel(accessToken, config, fetchImpl = fetch) {
   return matches[0].id.trim().toLowerCase();
 }
 
-async function startOAuth(request, alias, env, fetchImpl = fetch) {
+async function startOAuth(request, artistRef, env, fetchImpl = fetch) {
   const actorEmail = await verifiedCalendarActorEmail(request, env, fetchImpl);
-  const config = artistConfig(alias, env);
-  if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);
-  assertCalendarActorRoute(actorEmail, alias, env);
   assertOAuthStartConfiguration(env);
+  const config = await resolveArtistRoute(artistRef, actorEmail, env, fetchImpl);
   await authorizeCalendarActor(config, actorEmail, env, fetchImpl);
 
   const state = randomToken();
   const verifier = randomToken(64);
   const challenge = await sha256Base64Url(verifier);
-  const stateRecord = buildOAuthStateRecord(alias, verifier, actorEmail);
+  const stateRecord = buildOAuthStateRecord(config.artistId, config.alias, verifier, actorEmail);
   await env.CALENDAR_OAUTH_STATE.put(`state:${state}`, JSON.stringify(stateRecord), {
     expirationTtl: STATE_TTL_SECONDS,
   });
@@ -260,9 +314,12 @@ async function callback(request, env, fetchImpl = fetch) {
   if (oauthError) return json({ ok: false, code: 'google_authorisation_denied' }, 400);
   if (!code) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);
 
-  const config = artistConfig(stored.alias, env);
-  if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 400);
-  assertCalendarActorRoute(actorEmail, stored.alias, env);
+  // Resolve by the artist UUID the start route recorded, never by anything in
+  // the callback URL, and re-authorize before the code is exchanged.
+  const config = await resolveArtistRoute(stored.artistId, actorEmail, env, fetchImpl);
+  if (config.artistId !== stored.artistId || config.alias !== stored.alias) {
+    throw new OAuthSecurityError('oauth_state_invalid_or_expired');
+  }
   await authorizeCalendarActor(config, actorEmail, env, fetchImpl);
 
   const tokenResponse = await fetchImpl(GOOGLE_TOKEN_URL, {
@@ -328,24 +385,27 @@ async function callback(request, env, fetchImpl = fetch) {
   return Response.redirect(destination.toString(), 302);
 }
 
-async function disconnect(request, alias, env, fetchImpl = fetch) {
+async function disconnect(request, artistRef, env, fetchImpl = fetch) {
   const actorEmail = await verifiedCalendarActorEmail(request, env, fetchImpl);
-  const config = artistConfig(alias, env);
-  if (!config) return json({ ok: false, code: 'artist_route_unconfigured' }, 404);
-  assertCalendarActorRoute(actorEmail, alias, env);
   assertDisconnectConfiguration(env);
+  const config = await resolveArtistRoute(artistRef, actorEmail, env, fetchImpl);
   await authorizeCalendarActor(config, actorEmail, env, fetchImpl);
 
   if (request.method === 'GET') {
     const disconnectToken = randomToken();
     await env.CALENDAR_OAUTH_STATE.put(
       `disconnect:${disconnectToken}`,
-      JSON.stringify(buildDisconnectStateRecord(alias, actorEmail)),
+      JSON.stringify(buildDisconnectStateRecord(config.artistId, actorEmail)),
       { expirationTtl: DISCONNECT_TTL_SECONDS },
     );
     const returnUrl = env.CRM_RETURN_URL
       || 'https://vishar-crm-staging.pages.dev/#/appointments';
-    return html(disconnectConfirmationPage(alias, request.url, returnUrl, disconnectToken));
+    return html(disconnectConfirmationPage(
+      config.displayName,
+      request.url,
+      returnUrl,
+      disconnectToken,
+    ));
   }
   if (request.method !== 'POST') return json({ ok: false, code: 'method_not_allowed' }, 405);
   const disconnectToken = await disconnectConfirmationToken(request);
@@ -354,7 +414,7 @@ async function disconnect(request, alias, env, fetchImpl = fetch) {
   }
   await consumeDisconnectState(
     env.CALENDAR_OAUTH_STATE,
-    alias,
+    config.artistId,
     disconnectToken,
     actorEmail,
   );
@@ -371,13 +431,18 @@ async function disconnect(request, alias, env, fetchImpl = fetch) {
   }
 
   await env.CALENDAR_OAUTH_TOKENS.delete(tokenKey);
-  await updateIntegrationMetadata(config, config.expectedEmail, false, env, fetchImpl);
+  // With no account on record there is no metadata row to disable, and the
+  // upsert would reject the empty label. Clearing the envelope is the whole
+  // disconnect in that case.
+  if (config.expectedEmail) {
+    await updateIntegrationMetadata(config, config.expectedEmail, false, env, fetchImpl);
+  }
 
   const responseUrl = new URL(request.url);
   const wantsJson = responseUrl.searchParams.get('format') === 'json'
     || (request.headers.get('Accept') || '').includes('application/json');
-  if (wantsJson) return json({ ok: true, artist: alias, connected: false, revoked });
-  return Response.redirect(disconnectReturnUrl(env, alias, revoked), 303);
+  if (wantsJson) return json({ ok: true, artist: config.alias, connected: false, revoked });
+  return Response.redirect(disconnectReturnUrl(env, config.alias, revoked), 303);
 }
 
 async function runScheduledDrain(env) {
@@ -417,13 +482,20 @@ export default {
       if (request.method === 'GET' && url.pathname === '/health') {
         return json(calendarReadiness(env));
       }
-      const startMatch = url.pathname.match(/^\/oauth\/google\/start\/(vladimir|kristina)$/);
-      if (request.method === 'GET' && startMatch) return await startOAuth(request, startMatch[1], env);
       if (request.method === 'GET' && url.pathname === '/oauth/google/callback') {
         return await callback(request, env);
       }
-      const disconnectMatch = url.pathname.match(/^\/oauth\/google\/disconnect\/(vladimir|kristina)$/);
-      if (disconnectMatch) return await disconnect(request, disconnectMatch[1], env);
+      // Any artist reference is routable; whether it names an artist this
+      // operator may manage is decided by the backend resolver, not here.
+      const artistRoute = url.pathname.match(ARTIST_ROUTE_PATTERN);
+      if (artistRoute) {
+        const artistRef = decodeURIComponent(artistRoute[2]);
+        if (artistRoute[1] === 'start') {
+          if (request.method !== 'GET') return json({ ok: false, code: 'method_not_allowed' }, 405);
+          return await startOAuth(request, artistRef, env);
+        }
+        return await disconnect(request, artistRef, env);
+      }
       return json({ ok: false, code: 'not_found' }, 404);
     } catch (error) {
       const safe = errorResponse(error);
@@ -448,8 +520,9 @@ export const __testing = {
   GOOGLE_CALENDAR_EVENTS_SCOPE,
   GOOGLE_CALENDAR_METADATA_SCOPE,
   OAUTH_SCOPE,
-  artistConfig,
-  assertCalendarActorRoute,
+  ARTIST_ROUTE_PATTERN,
+  normalizedArtistRoute,
+  resolveArtistRoute,
   authorizeCalendarActor,
   enforceRateLimit,
   rateLimitActor,

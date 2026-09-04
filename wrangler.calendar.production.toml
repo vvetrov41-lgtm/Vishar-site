@@ -43,18 +43,15 @@ CRM_RETURN_URL = "https://crm.vishartattoo.com/#/integrations/calendar"
 CRM_APPOINTMENTS_URL = "https://crm.vishartattoo.com/#/appointments"
 CALENDAR_ACCESS_TEAM_DOMAIN = "https://vishar-site-pages.cloudflareaccess.com"
 CALENDAR_OWNER_EMAILS = "vvetrov41@gmail.com"
-VLADIMIR_ARTIST_ID = "a1111111-1111-4111-8111-111111111111"
-VLADIMIR_GOOGLE_EMAIL = "vvetrov41@gmail.com"
-VLADIMIR_GOOGLE_EVENT_VISIBILITY = "public"
-VLADIMIR_GOOGLE_EVENT_DISPLAY_NAME = "Vladimir"
-VLADIMIR_GOOGLE_EVENT_COLOR_ID = "9"
-KRISTINA_ARTIST_ID = "a2222222-2222-4222-8222-222222222222"
-KRISTINA_GOOGLE_EMAIL = "tinaakaten@gmail.com"
-KRISTINA_GOOGLE_EVENT_VISIBILITY = "public"
-KRISTINA_GOOGLE_EVENT_DISPLAY_NAME = "Kristina"
-KRISTINA_GOOGLE_EVENT_LABEL_NAME = "Wisteria"
-KRISTINA_GOOGLE_EVENT_LABEL_COLOR = "#b39ddb"
 CALENDAR_DRAIN_ENABLED = "false"
+
+# No per-artist variables live here any more.
+#
+# Artist identity, the expected Google account and event presentation are
+# resolved per request from Supabase by `resolve_calendar_artist_route` and
+# `resolve_outbox_route` (migration 0137). Onboarding an artist is a CRM
+# membership plus a consent, not a Worker deployment, so a `<NAME>_ARTIST_ID`
+# binding here would only be a second, drifting copy of the access graph.
 
 # This file is intentionally not directly deployable.
 #

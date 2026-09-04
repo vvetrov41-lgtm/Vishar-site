@@ -92,7 +92,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl) {
     p_outbox_id: claimed.outbox_id,
   });
   const route = firstRow(resolved);
-  const { calendarId } = validateCalendarRoute(route, claimed, env);
+  const { calendarId } = validateCalendarRoute(route, claimed);
   const refreshToken = await loadArtistRefreshToken(env, claimed, route);
   const accessToken = await refreshGoogleAccessToken(env, refreshToken, fetchImpl);
   const provider = createGoogleAvailabilityProvider({

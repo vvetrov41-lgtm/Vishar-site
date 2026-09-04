@@ -90,18 +90,14 @@ assert.equal(
   'Cloudflare Access application AUD must be exact',
 );
 assert.equal(exactValue('CALENDAR_OWNER_EMAILS'), 'vvetrov41@gmail.com', 'unexpected owner allowlist');
+// Artist routing is resolved per request from Supabase, so a per-artist Worker
+// variable here would be a drifting second copy of the CRM access graph.
+const stagingArtistBinding = active.match(/^\s*([A-Z][A-Z0-9_]*)_(ARTIST_ID|GOOGLE_EMAIL|GOOGLE_EVENT_[A-Z_]+)\s*=/m);
 assert.equal(
-  exactValue('VLADIMIR_ARTIST_ID'),
-  'a1111111-1111-4111-8111-111111111111',
-  'unexpected Vladimir artist ID',
+  stagingArtistBinding,
+  null,
+  `per-artist Worker variables are not permitted: ${stagingArtistBinding?.[0]?.trim() ?? ''}`,
 );
-assert.equal(exactValue('VLADIMIR_GOOGLE_EMAIL'), 'vvetrov41@gmail.com', 'unexpected Vladimir account');
-assert.equal(
-  exactValue('KRISTINA_ARTIST_ID'),
-  'a2222222-2222-4222-8222-222222222222',
-  'unexpected Kristina artist ID',
-);
-assert.equal(exactValue('KRISTINA_GOOGLE_EMAIL'), 'tinaakaten@gmail.com', 'unexpected Kristina account');
 assert.equal(
   exactValue('SUPABASE_URL'),
   'https://gwaliusblwrzisrwnsvs.supabase.co',
@@ -136,7 +132,7 @@ const result = {
     accessTeamDomain: true,
     accessAudience: true,
     ownerAllowlist: true,
-    artists: true,
+    artistRoutingIsServerResolved: true,
     supabase: true,
     kvBindings: bindings.length === 2,
     scheduledDrain: true,

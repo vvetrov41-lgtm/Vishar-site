@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
-import type {
-  CalendarConnectionStatus,
-  CalendarConnectorAlias,
+import {
+  isCalendarConnectorAlias,
+  type CalendarConnectionStatus,
+  type CalendarConnectorAlias,
 } from '../lib/calendar-connections-api';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
@@ -32,20 +33,26 @@ export function calendarConnectorUrl(
   alias: CalendarConnectorAlias,
 ): string {
   if (!connectorOrigin) throw new Error('Calendar connector is not configured.');
+  // The alias is only a lookup hint: the connector re-resolves the artist
+  // server-side and refuses anything this operator may not manage. Rejecting a
+  // malformed slug here just keeps a broken URL out of the address bar.
+  if (!isCalendarConnectorAlias(alias)) throw new Error('Unknown calendar artist.');
   return `${connectorOrigin}/oauth/google/${action}/${alias}`;
 }
 
 export function connectionResultNotice(
   search: string,
   language: Language,
-  visibleArtists?: ReadonlySet<string>,
+  visibleArtists?: ReadonlyMap<string, string>,
 ): string | null {
   const params = new URLSearchParams(search);
   const result = params.get('calendar');
   const artist = params.get('artist');
-  if ((artist !== 'vladimir' && artist !== 'kristina') || !result) return null;
-  if (visibleArtists && !visibleArtists.has(artist)) return null;
-  const name = artist === 'vladimir' ? 'Vladimir' : 'Kristina';
+  if (!artist || !isCalendarConnectorAlias(artist) || !result) return null;
+  // The display name comes from the loaded CRM rows, never from the URL, so a
+  // crafted `?artist=` cannot put arbitrary text on the page.
+  const name = visibleArtists?.get(artist);
+  if (!name) return null;
   if (result === 'connected') {
     return language === 'ru'
       ? `Google Calendar для ${name} подключён. Статус ниже повторно загружен из CRM.`
@@ -87,7 +94,10 @@ export function CalendarConnectionsPage() {
     ));
   }, [api, memberships, profile]);
   const visibleArtists = useMemo(
-    () => new Set((data ?? []).map((connection) => connection.artist_slug)),
+    () => new Map((data ?? []).map((connection) => [
+      connection.artist_slug,
+      connection.artist_display_name,
+    ])),
     [data],
   );
   const resultNotice = useMemo(
@@ -116,6 +126,7 @@ export function CalendarConnectionsPage() {
             connection={connection}
             language={language}
             connectorOrigin={CONNECTOR_ORIGIN}
+            onReload={reload}
           />
         ))}
       </div>
@@ -129,12 +140,17 @@ function ConnectionCard({
   connection,
   language,
   connectorOrigin,
+  onReload,
 }: {
   connection: CalendarConnectionStatus;
   language: Language;
   connectorOrigin: string;
+  onReload: () => void;
 }) {
+  const api = useApi();
   const copy = COPY[language];
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
   const health = calendarConnectionHealth(connection);
   const status = health === 'reconnect'
     ? copy.reconnectRequired
@@ -213,8 +229,30 @@ function ConnectionCard({
               {copy.disconnect}
             </button>
           ) : null}
+          {!connection.connected && connection.external_account_label ? (
+            <button
+              type="button"
+              disabled={clearing}
+              onClick={async () => {
+                setClearError(null);
+                setClearing(true);
+                try {
+                  await api.resetCalendarExpectedAccount(connection.artist_id);
+                  onReload();
+                } catch (error) {
+                  setClearError(error instanceof Error ? error.message : copy.changeAccountFailed);
+                } finally {
+                  setClearing(false);
+                }
+              }}
+              aria-label={`${copy.changeAccount}: ${connection.artist_display_name}`}
+            >
+              {copy.changeAccount}
+            </button>
+          ) : null}
         </div>
       ) : null}
+      {clearError ? <p className="notice warn" role="alert">{clearError}</p> : null}
     </section>
   );
 }
@@ -229,7 +267,7 @@ const COPY: Record<Language, Record<string, string>> = {
     loading: 'Loading calendar connections…',
     noneTitle: 'No calendar connections are available',
     noneHint: 'Your current artist memberships do not allow integration management.',
-    intro: 'Each artist uses a separate Google account, encrypted token envelope and primary calendar. The CRM never receives provider credentials.',
+    intro: 'Every artist you manage can connect their own Google account here. Each connection keeps a separate encrypted token envelope and primary calendar, and the CRM never receives provider credentials.',
     connectorDisabled: 'Calendar connection controls are disabled in this environment. Existing CRM metadata remains read-only.',
     securityNotice: 'Connect and disconnect use a top-level navigation through the Access-protected Calendar connector. Query parameters only display a notice; Supabase remains the source of truth.',
     connected: 'Connected',
@@ -239,6 +277,8 @@ const COPY: Record<Language, Record<string, string>> = {
     connect: 'Connect',
     reconnect: 'Reconnect',
     disconnect: 'Disconnect',
+    changeAccount: 'Change Google account',
+    changeAccountFailed: 'Could not clear the recorded Google account.',
     account: 'Google account',
     noAccount: 'No connected account',
     connectionUpdated: 'Connection metadata updated',
@@ -253,7 +293,7 @@ const COPY: Record<Language, Record<string, string>> = {
     loading: 'Загрузка подключений календаря…',
     noneTitle: 'Нет доступных подключений календаря',
     noneHint: 'Ваши текущие права на мастеров не разрешают управление интеграциями.',
-    intro: 'У каждого мастера отдельный Google-аккаунт, зашифрованный token envelope и основной календарь. CRM не получает данные доступа провайдера.',
+    intro: 'Любой мастер, которым ты управляешь, подключает здесь свой Google-аккаунт. У каждого подключения отдельный зашифрованный token envelope и основной календарь, CRM не получает данные доступа провайдера.',
     connectorDisabled: 'Управление подключением календаря отключено в этом окружении. Существующие метаданные CRM доступны только для просмотра.',
     securityNotice: 'Подключение и отключение открываются отдельной страницей через Calendar connector, защищённый Access. Параметры URL показывают только уведомление; источником истины остаётся Supabase.',
     connected: 'Подключён',
@@ -263,6 +303,8 @@ const COPY: Record<Language, Record<string, string>> = {
     connect: 'Подключить',
     reconnect: 'Переподключить',
     disconnect: 'Отключить',
+    changeAccount: 'Сменить Google-аккаунт',
+    changeAccountFailed: 'Не удалось очистить записанный Google-аккаунт.',
     account: 'Google-аккаунт',
     noAccount: 'Аккаунт не подключён',
     connectionUpdated: 'Метаданные подключения обновлены',

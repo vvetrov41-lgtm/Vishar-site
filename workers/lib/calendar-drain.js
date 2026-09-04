@@ -92,7 +92,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl) {
     eventVisibility,
     eventDisplayName,
     eventColorId,
-  } = validateCalendarRoute(route, claimed, env);
+  } = validateCalendarRoute(route, claimed);
   const tokenRecord = await loadArtistTokenRecord(env, claimed, route);
   const accessToken = await refreshGoogleAccessToken(env, tokenRecord.refreshToken, fetchImpl);
   const provider = createGoogleCalendarProvider({

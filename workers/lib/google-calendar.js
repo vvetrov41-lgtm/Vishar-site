@@ -4,6 +4,8 @@ const GOOGLE_CALENDAR_BASE_URL = 'https://www.googleapis.com/calendar/v3';
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const TOKEN_ENVELOPE_VERSION = 1;
 const EVENT_ID_PREFIX = 'vishar';
+const CALENDAR_KEY_PREFIX = 'google_calendar_';
+const ARTIST_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,62}$/;
 const GOOGLE_EVENT_VISIBILITIES = new Set(['default', 'public', 'private']);
 const GOOGLE_EVENT_COLOR_IDS = new Set(Array.from({ length: 11 }, (_, index) => String(index + 1)));
 const GOOGLE_EVENT_LABEL_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -180,53 +182,54 @@ function normalizeEventLabelColor(value) {
   return value.trim().toLowerCase();
 }
 
-export function artistCalendarConfig(env, artistId) {
-  const candidates = [
-    {
-      alias: 'vladimir',
-      artistId: env?.VLADIMIR_ARTIST_ID,
-      expectedEmail: env?.VLADIMIR_GOOGLE_EMAIL,
-      eventVisibility: env?.VLADIMIR_GOOGLE_EVENT_VISIBILITY,
-      eventDisplayName: env?.VLADIMIR_GOOGLE_EVENT_DISPLAY_NAME,
-      eventColorId: env?.VLADIMIR_GOOGLE_EVENT_COLOR_ID,
-      eventLabelName: env?.VLADIMIR_GOOGLE_EVENT_LABEL_NAME,
-      eventLabelColor: env?.VLADIMIR_GOOGLE_EVENT_LABEL_COLOR,
-      integrationKey: 'google_calendar_vladimir',
-    },
-    {
-      alias: 'kristina',
-      artistId: env?.KRISTINA_ARTIST_ID,
-      expectedEmail: env?.KRISTINA_GOOGLE_EMAIL,
-      eventVisibility: env?.KRISTINA_GOOGLE_EVENT_VISIBILITY,
-      eventDisplayName: env?.KRISTINA_GOOGLE_EVENT_DISPLAY_NAME,
-      eventColorId: env?.KRISTINA_GOOGLE_EVENT_COLOR_ID,
-      eventLabelName: env?.KRISTINA_GOOGLE_EVENT_LABEL_NAME,
-      eventLabelColor: env?.KRISTINA_GOOGLE_EVENT_LABEL_COLOR,
-      integrationKey: 'google_calendar_kristina',
-    },
-  ].filter((item) => item.artistId && item.expectedEmail);
+// Every value the projection needs comes from the backend-only outbox route:
+// the owning artist slug is baked into the selector by a database trigger, the
+// Google account is the one Supabase pinned at connect time, and event
+// presentation is the server-owned `configuration.presentation` blob. Nothing
+// here enumerates artists, so onboarding one is a database row, not a deploy.
+export function artistCalendarConfig(route, artistId) {
+  const configuration = route?.configuration && typeof route.configuration === 'object'
+    ? route.configuration
+    : {};
+  const integrationKey = typeof route?.integration_key === 'string' ? route.integration_key : '';
+  const alias = integrationKey.startsWith(CALENDAR_KEY_PREFIX)
+    ? integrationKey.slice(CALENDAR_KEY_PREFIX.length)
+    : '';
+  const expectedEmail = normalizeEmail(route?.external_account_label);
 
-  const matches = candidates.filter((item) => item.artistId === artistId);
-  if (matches.length !== 1) {
+  if (
+    !artistId
+    || route?.artist_id !== artistId
+    || !ARTIST_SLUG_PATTERN.test(alias)
+    || !expectedEmail
+    || (typeof configuration.artist_slug === 'string' && configuration.artist_slug !== alias)
+  ) {
     throw new CalendarConnectorError('artist_route_unconfigured');
   }
-  const eventLabelName = normalizeEventLabelName(matches[0].eventLabelName);
-  const eventLabelColor = normalizeEventLabelColor(matches[0].eventLabelColor);
+
+  const presentation = configuration.presentation && typeof configuration.presentation === 'object'
+    ? configuration.presentation
+    : {};
+  const eventLabelName = normalizeEventLabelName(presentation.event_label_name);
+  const eventLabelColor = normalizeEventLabelColor(presentation.event_label_color);
   if (Boolean(eventLabelName) !== Boolean(eventLabelColor)) {
     throw new CalendarConnectorError('calendar_event_label_target_invalid');
   }
+
   return {
-    ...matches[0],
-    expectedEmail: normalizeEmail(matches[0].expectedEmail),
-    eventVisibility: normalizeEventVisibility(matches[0].eventVisibility),
-    eventDisplayName: normalizeArtistDisplayName(matches[0].eventDisplayName),
-    eventColorId: normalizeEventColorId(matches[0].eventColorId),
+    alias,
+    artistId,
+    integrationKey,
+    expectedEmail,
+    eventVisibility: normalizeEventVisibility(presentation.event_visibility),
+    eventDisplayName: normalizeArtistDisplayName(presentation.event_display_name),
+    eventColorId: normalizeEventColorId(presentation.event_color_id),
     eventLabelName,
     eventLabelColor,
   };
 }
 
-export function validateCalendarRoute(route, job, env) {
+export function validateCalendarRoute(route, job) {
   if (
     !route
     || route.outbox_id !== job.outbox_id
@@ -238,16 +241,11 @@ export function validateCalendarRoute(route, job, env) {
     throw new CalendarConnectorError('provider_route_invalid');
   }
 
-  const artist = artistCalendarConfig(env, job.artist_id);
-  const routeEmail = normalizeEmail(route.external_account_label);
-  const configuration = route.configuration && typeof route.configuration === 'object'
-    ? route.configuration
-    : {};
+  const artist = artistCalendarConfig(route, job.artist_id);
+  const configuration = route.configuration;
 
   if (
-    route.integration_key !== artist.integrationKey
-    || routeEmail !== artist.expectedEmail
-    || configuration.calendar_id !== 'primary'
+    configuration.calendar_id !== 'primary'
     || configuration.connection_mode !== 'worker_oauth'
     || configuration.oauth_scope !== 'calendar.events'
   ) {
@@ -268,7 +266,7 @@ export async function loadArtistTokenRecord(env, job, route) {
     throw new CalendarConnectorError('calendar_not_configured');
   }
 
-  const { artist } = validateCalendarRoute(route, job, env);
+  const { artist } = validateCalendarRoute(route, job);
   const rawEnvelope = await env.CALENDAR_OAUTH_TOKENS.get(`artist:${job.artist_id}`);
   if (!rawEnvelope) {
     throw new CalendarConnectorError('calendar_not_configured');

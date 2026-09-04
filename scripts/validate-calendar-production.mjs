@@ -121,11 +121,18 @@ assert.equal(
 assert.equal(exactValue('CALENDAR_OWNER_EMAILS'), 'vvetrov41@gmail.com', 'unexpected Calendar owner allow-list');
 
 // --- Artist routing --------------------------------------------------------
+//
+// Artist identity, expected Google account and event presentation are resolved
+// per request from Supabase. A per-artist variable here would be a second copy
+// of the access graph that silently drifts, and it would put onboarding an
+// artist behind a Worker deployment.
 
-assert.equal(exactValue('VLADIMIR_ARTIST_ID'), 'a1111111-1111-4111-8111-111111111111', 'unexpected Vladimir artist id');
-assert.equal(exactValue('VLADIMIR_GOOGLE_EMAIL'), 'vvetrov41@gmail.com', 'unexpected Vladimir Google account');
-assert.equal(exactValue('KRISTINA_ARTIST_ID'), 'a2222222-2222-4222-8222-222222222222', 'unexpected Kristina artist id');
-assert.equal(exactValue('KRISTINA_GOOGLE_EMAIL'), 'tinaakaten@gmail.com', 'unexpected Kristina Google account');
+const artistBinding = active.match(/^\s*([A-Z][A-Z0-9_]*)_(ARTIST_ID|GOOGLE_EMAIL|GOOGLE_EVENT_[A-Z_]+)\s*=/m);
+assert.equal(
+  artistBinding,
+  null,
+  `per-artist Worker variables are not permitted: ${artistBinding?.[0]?.trim() ?? ''}`,
+);
 
 // --- Isolated Worker rate limiter ------------------------------------------
 

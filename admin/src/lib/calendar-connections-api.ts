@@ -1,13 +1,16 @@
 import { apiMessage, ApiError, friendlyMessage, type CrmClient } from './api';
 
-export type CalendarConnectorAlias = 'vladimir' | 'kristina';
+// Any active artist slug is a valid connector alias. The shape mirrors the
+// `artists_slug_shape` database constraint, so the CRM rejects a row the
+// database could never have produced without carrying its own artist list.
+export type CalendarConnectorAlias = string;
 
 export interface CalendarConnectionStatus {
   artist_id: string;
   artist_slug: CalendarConnectorAlias;
   artist_display_name: string;
   provider: 'google';
-  integration_key: 'google_calendar_vladimir' | 'google_calendar_kristina';
+  integration_key: string;
   connected: boolean;
   external_account_label: string | null;
   connection_updated_at: string | null;
@@ -18,20 +21,24 @@ export interface CalendarConnectionStatus {
   last_error_code: string | null;
 }
 
-const EXPECTED_KEYS: Record<CalendarConnectorAlias, CalendarConnectionStatus['integration_key']> = {
-  vladimir: 'google_calendar_vladimir',
-  kristina: 'google_calendar_kristina',
-};
-
+const ARTIST_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,62}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_ERROR_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
+
+// A CRM instance with hundreds of artists still renders one card per artist the
+// operator can manage, so the cap is a sanity bound rather than a headcount.
+const MAX_CONNECTIONS = 500;
 
 function invalidResponse(): ApiError {
   return new ApiError(apiMessage('Could not load calendar connections. Please try again.'));
 }
 
-function isAlias(value: unknown): value is CalendarConnectorAlias {
-  return value === 'vladimir' || value === 'kristina';
+export function isCalendarConnectorAlias(value: unknown): value is CalendarConnectorAlias {
+  return typeof value === 'string' && ARTIST_SLUG_PATTERN.test(value);
+}
+
+export function calendarIntegrationKey(alias: CalendarConnectorAlias): string {
+  return `google_calendar_${alias}`;
 }
 
 function isNullableString(value: unknown): value is string | null {
@@ -53,11 +60,11 @@ function validateRow(value: unknown): CalendarConnectionStatus {
   if (
     typeof row.artist_id !== 'string'
     || !UUID_PATTERN.test(row.artist_id)
-    || !isAlias(row.artist_slug)
+    || !isCalendarConnectorAlias(row.artist_slug)
     || typeof row.artist_display_name !== 'string'
     || row.artist_display_name.trim().length === 0
     || row.provider !== 'google'
-    || row.integration_key !== EXPECTED_KEYS[row.artist_slug]
+    || row.integration_key !== calendarIntegrationKey(row.artist_slug)
     || typeof row.connected !== 'boolean'
     || !isNullableString(row.external_account_label)
     || !isNullableDate(row.connection_updated_at)
@@ -74,7 +81,7 @@ function validateRow(value: unknown): CalendarConnectionStatus {
 }
 
 function validateResult(value: unknown): CalendarConnectionStatus[] {
-  if (!Array.isArray(value) || value.length > 2) throw invalidResponse();
+  if (!Array.isArray(value) || value.length > MAX_CONNECTIONS) throw invalidResponse();
   const rows = value.map(validateRow);
   const aliases = new Set(rows.map((row) => row.artist_slug));
   const artistIds = new Set(rows.map((row) => row.artist_id));
@@ -94,9 +101,24 @@ export function createCalendarConnectionsApi(client: CrmClient) {
       }
       return validateResult(result.data);
     },
+
+    // Clears the Google account the backend pinned for this artist so a
+    // different account can be authorised. The database refuses while the
+    // integration is still enabled.
+    async resetCalendarExpectedAccount(artistId: string): Promise<void> {
+      const result = await client.rpc('reset_calendar_expected_account', {
+        p_artist_id: artistId,
+      });
+      if (result.error) {
+        throw new ApiError(
+          friendlyMessage(result.error, 'clear the recorded Google account'),
+          result.error,
+        );
+      }
+    },
   };
 }
 
 export type CalendarConnectionsApi = ReturnType<typeof createCalendarConnectionsApi>;
 
-export const __testing = { validateRow, validateResult };
+export const __testing = { validateRow, validateResult, MAX_CONNECTIONS };

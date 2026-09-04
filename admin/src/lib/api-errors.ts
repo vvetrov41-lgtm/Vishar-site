@@ -39,6 +39,7 @@ export const API_OPERATIONS = {
   'change that appointment': { kind: 'write', ru: 'изменить эту запись' },
   'change that project status': { kind: 'write', ru: 'изменить статус проекта' },
   'change that role': { kind: 'write', ru: 'изменить роль сотрудника' },
+  'clear the recorded Google account': { kind: 'write', ru: 'очистить записанный Google-аккаунт' },
   'change that session': { kind: 'write', ru: 'изменить этот сеанс' },
   'change that status': { kind: 'write', ru: 'изменить статус' },
   'change that time off': { kind: 'write', ru: 'изменить этот выходной' },
