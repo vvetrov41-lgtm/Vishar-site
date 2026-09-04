@@ -102,6 +102,17 @@ function safeDnsRecord(record) {
   };
 }
 
+// Firewall expressions describe hostnames, paths and methods, none of which are
+// secret, but an expression could in principle compare against a header value.
+// Long opaque runs are masked so an inventory can never become an exfiltration
+// channel, while the routing shape stays readable.
+function safeExpression(value) {
+  if (typeof value !== 'string') return null;
+  return value
+    .replace(/"[A-Za-z0-9+/_=-]{24,}"/g, '"[redacted]"')
+    .slice(0, 2000);
+}
+
 function selectorKinds(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.flatMap((entry) => Object.keys(entry ?? {})))].sort();
@@ -191,6 +202,31 @@ async function main() {
     read(`/accounts/${accountId}/workers/durable_objects/namespaces`, { required: false }),
     read(`/accounts/${accountId}/queues?per_page=100`, { required: false }),
   ]);
+
+  // Zone firewall rulesets decide whether a request reaches Access at all, so
+  // an edge boundary review that stops at Access is incomplete.
+  const rulesetRows = await read(`/zones/${zone.id}/rulesets`, { required: false });
+  const firewallRulesets = [];
+  for (const ruleset of listRows(rulesetRows.result, 'zone rulesets', ['rulesets'])) {
+    const phase = String(ruleset?.phase || '');
+    if (!/^http_(request_firewall_custom|ratelimit|request_sanitize)$/.test(phase)) continue;
+    if (typeof ruleset?.id !== 'string') continue;
+    const detail = await read(`/zones/${zone.id}/rulesets/${ruleset.id}`, { required: false });
+    const rules = Array.isArray(detail.result?.rules) ? detail.result.rules : [];
+    firewallRulesets.push({
+      id: ruleset.id,
+      name: ruleset.name ?? null,
+      phase,
+      kind: ruleset.kind ?? null,
+      rules: rules.map((rule) => ({
+        id: rule?.id ?? null,
+        action: rule?.action ?? null,
+        enabled: rule?.enabled ?? null,
+        description: rule?.description ?? null,
+        expression: safeExpression(rule?.expression),
+      })),
+    });
+  }
 
   if (accountAccessRows.result == null && zoneAccessRows.result == null) {
     fail('Cloudflare Access applications are unreadable at both account and zone scope');
@@ -350,6 +386,7 @@ async function main() {
     })), 'pattern'),
     dns_records: sortBy(listRows(dnsRows.result, 'DNS records', ['records']).map(safeDnsRecord), 'name'),
     access_applications: accessApplications,
+    firewall_rulesets: firewallRulesets,
     http_boundaries: httpBoundaries,
     pages,
     storage: {
@@ -383,6 +420,12 @@ async function main() {
     `- Worker Routes: ${inventory.worker_routes.length}`,
     `- Pages projects: ${pages.length} (${pages.filter((project) => project.vishar_named).length} Vishar-named)`,
     `- Access applications: ${accessApplications.length} (account and zone scopes reconciled)`,
+    `- Firewall rulesets: ${firewallRulesets.length} (${firewallRulesets.reduce((total, set) => total + set.rules.length, 0)} rules)`,
+    ...firewallRulesets.flatMap((set) => [
+      '',
+      `  \`${set.phase}\` / \`${set.name ?? set.id}\``,
+      ...set.rules.map((rule) => `  - \`${rule.action}\`${rule.enabled === false ? ' (disabled)' : ''} ${rule.description ?? ''}\n    \`${rule.expression ?? ''}\``),
+    ]),
     `- Unauthenticated HTTP boundaries: ${httpBoundaries.length}`,
     `- DNS records inventoried: ${inventory.dns_records.length} (TXT and non-routing content redacted)`,
     '- Cloudflare mutations: none (GET requests only)',
