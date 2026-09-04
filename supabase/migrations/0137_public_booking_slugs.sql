@@ -41,14 +41,17 @@ where r.id = s.id
   and r.position = 1;
 
 -- If an active Artist already has source history but every source is disabled,
--- activate only its selected canonical source. This keeps existing active
--- sources unchanged and makes a previously-created hosted source usable.
+-- activate only its selected canonical source when that source can satisfy its
+-- own transport invariant. This keeps existing active sources unchanged, makes
+-- a previously-created hosted source usable, and leaves an incomplete external
+-- source disabled rather than violating its required-origin constraint.
 update public.booking_sources s
 set is_active = true
 from public.artists a
 where s.artist_id = a.id
   and s.is_public_booking
   and a.is_active
+  and (s.source_kind = 'hosted' or s.allowed_origin is not null)
   and not exists (
     select 1
     from public.booking_sources live
