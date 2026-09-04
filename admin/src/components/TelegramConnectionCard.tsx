@@ -31,6 +31,59 @@ export function TelegramConnectionCard({
     setCurrentDestination(destination);
   }, [destination]);
 
+  useEffect(() => {
+    if (!challenge) return undefined;
+
+    const expiresAt = Date.parse(challenge.expires_at);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      setChallenge(null);
+      setCommandCopied(false);
+      setStatusMessage(language === 'ru'
+        ? 'Ссылка подключения истекла. Создайте новую ссылку.'
+        : 'The linking link expired. Create a new link.');
+      return undefined;
+    }
+
+    let cancelled = false;
+    const expireTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      setChallenge(null);
+      setCommandCopied(false);
+      setStatusMessage(language === 'ru'
+        ? 'Ссылка подключения истекла. Создайте новую ссылку.'
+        : 'The linking link expired. Create a new link.');
+    }, Math.min(expiresAt - Date.now(), 2_147_483_647));
+
+    const pollStatus = async () => {
+      try {
+        const destinations = await api.listTelegramDestinations();
+        if (cancelled) return;
+        const next = destinations.find((candidate) => (
+          candidate.destination_kind === currentDestination.destination_kind
+          && candidate.artist_id === currentDestination.artist_id
+        ));
+        if (!next) return;
+        setCurrentDestination(next);
+        if (!next.is_connected) return;
+
+        setChallenge(null);
+        setCommandCopied(false);
+        setStatusMessage(language === 'ru' ? 'Подключение подтверждено.' : 'Connection confirmed.');
+        if (next.destination_kind === 'profile') onChanged();
+      } catch {
+        // Linking remains usable when a background status read fails. The
+        // explicit status button below still reports errors to the operator.
+      }
+    };
+
+    const pollTimer = window.setInterval(() => { void pollStatus(); }, 2_000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(expireTimer);
+      window.clearInterval(pollTimer);
+    };
+  }, [api, challenge, currentDestination.artist_id, currentDestination.destination_kind, language, onChanged]);
+
   const startLink = challenge && botUsername
     ? telegramStartUrl(botUsername, challenge)
     : null;
@@ -39,6 +92,7 @@ export function TelegramConnectionCard({
     : null;
 
   async function beginLink() {
+    if (challenge) return;
     setBusy(true);
     setError(null);
     setStatusMessage(null);
@@ -85,11 +139,11 @@ export function TelegramConnectionCard({
         setStatusMessage(
           next.destination_kind === 'artist'
             ? (language === 'ru'
-              ? 'Пока не подключено. Если Telegram не открыл выбор группы, скопируйте команду ниже и отправьте её в нужной группе.'
-              : 'Not connected yet. If Telegram did not open group selection, copy the command below and send it in the target group.')
+              ? 'Пока не подключено. Используйте текущую ссылку ниже. Не создавайте новую, потому что новая ссылка отменит предыдущую.'
+              : 'Not connected yet. Keep using the current link below. Do not create another one because a new link cancels the previous link.')
             : (language === 'ru'
-              ? 'Пока не подключено. Завершите запуск бота в Telegram и проверьте ещё раз.'
-              : 'Not connected yet. Finish starting the bot in Telegram and check again.'),
+              ? 'Пока не подключено. Завершите запуск бота по текущей ссылке и проверьте ещё раз.'
+              : 'Not connected yet. Finish starting the bot from the current link and check again.'),
         );
       }
     } catch (cause) {
@@ -108,8 +162,8 @@ export function TelegramConnectionCard({
       setCommandCopied(true);
     } catch {
       setError(language === 'ru'
-        ? 'Не удалось скопировать команду. Откройте Telegram и попробуйте ссылку подключения ещё раз.'
-        : 'Could not copy the command. Open Telegram and try the linking link again.');
+        ? 'Не удалось скопировать команду. Откройте Telegram и попробуйте текущую ссылку подключения ещё раз.'
+        : 'Could not copy the command. Open Telegram and try the current linking link again.');
     }
   }
 
@@ -176,11 +230,11 @@ export function TelegramConnectionCard({
           <p className="muted">
             {currentDestination.destination_kind === 'profile'
               ? (language === 'ru'
-                ? 'Откройте Telegram и нажмите Start. Ссылка одноразовая и действует 10 минут.'
-                : 'Open Telegram and press Start. The link is single-use and expires in 10 minutes.')
+                ? 'Откройте Telegram и нажмите Start. Пока эта ссылка действует, CRM не создаст вторую и не отменит её.'
+                : 'Open Telegram and press Start. While this link is active, CRM will not create a second link and cancel it.')
               : (language === 'ru'
-                ? 'Откройте Telegram, выберите группу и добавьте в неё бота. Если iPhone не показывает выбор группы, используйте кнопку «Скопировать команду». Ссылка и команда одноразовые и действуют 10 минут.'
-                : 'Open Telegram, choose the group and add the bot. If iPhone does not show group selection, use Copy linking command. The link and command are single-use and expire in 10 minutes.')}
+                ? 'Откройте Telegram, выберите группу и добавьте в неё бота. Если iPhone не показывает выбор группы, используйте кнопку «Скопировать команду». Пока эта ссылка действует, CRM не создаст вторую и не отменит её.'
+                : 'Open Telegram, choose the group and add the bot. If iPhone does not show group selection, use Copy linking command. While this link is active, CRM will not create a second link and cancel it.')}
           </p>
           <div className="actions">
             <a href={startLink} target="_blank" rel="noreferrer">
@@ -206,11 +260,13 @@ export function TelegramConnectionCard({
       ) : null}
 
       <div className="actions">
-        <button type="button" disabled={busy || !botUsername} onClick={() => { void beginLink(); }}>
-          {currentDestination.is_connected
-            ? (language === 'ru' ? 'Подключить заново' : 'Reconnect')
-            : (language === 'ru' ? 'Подключить' : 'Connect')}
-        </button>
+        {!challenge ? (
+          <button type="button" disabled={busy || !botUsername} onClick={() => { void beginLink(); }}>
+            {currentDestination.is_connected
+              ? (language === 'ru' ? 'Подключить заново' : 'Reconnect')
+              : (language === 'ru' ? 'Подключить' : 'Connect')}
+          </button>
+        ) : null}
         {currentDestination.is_connected ? (
           <button type="button" disabled={busy} onClick={() => { void disconnect(); }}>
             {language === 'ru' ? 'Отключить' : 'Disconnect'}

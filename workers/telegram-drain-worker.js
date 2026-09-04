@@ -18,6 +18,7 @@ const LINK_TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
 const CHAT_ID = /^-?[0-9]{1,20}$/;
 const WEBHOOK_SECRET = /^[A-Za-z0-9_-]{24,128}$/;
 const MAX_WEBHOOK_BYTES = 16 * 1024;
+const LINK_RECOVERY_MESSAGE = 'Vishar CRM: open CRM Settings → Telegram, tap Connect once, then use the newest Telegram link and press Start. Older links stop working when a new link is created.';
 
 function safeFailureCode(error, fallback = 'telegram_connector_error') {
   const code = error?.code;
@@ -170,6 +171,16 @@ async function readWebhookJson(request) {
   return value;
 }
 
+function telegramStartCommand(update) {
+  const message = update?.message;
+  const text = typeof message?.text === 'string' ? message.text.trim() : '';
+  const chatId = String(message?.chat?.id ?? '');
+  const chatType = typeof message?.chat?.type === 'string' ? message.chat.type : '';
+  if (!/^\/start(?:@[A-Za-z][A-Za-z0-9_]{4,31})?(?:\s+.*)?$/.test(text)) return null;
+  if (!CHAT_ID.test(chatId) || !['private', 'group', 'supergroup'].includes(chatType)) return null;
+  return { chatId, chatType };
+}
+
 function linkingMessage(update) {
   const message = update?.message;
   const text = typeof message?.text === 'string' ? message.text.trim() : '';
@@ -184,6 +195,20 @@ function linkingMessage(update) {
 function shouldRetryLinkingFailure(error) {
   if (error instanceof ConfigurationError) return true;
   return error instanceof SupabaseError && (error.status === 429 || error.status >= 500);
+}
+
+async function sendLinkingReply(env, chatId, text, fetchImpl = fetch) {
+  try {
+    await sendSharedTelegramNotification(env, chatId, text, fetchImpl);
+    return true;
+  } catch (error) {
+    // The durable linking state is authoritative. A Telegram reply failure must
+    // never make Telegram replay a consumed /start update or expose link data.
+    console.error('telegram linking reply failed', JSON.stringify({
+      code: safeFailureCode(error, 'telegram_linking_reply_error'),
+    }));
+    return false;
+  }
 }
 
 async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
@@ -206,8 +231,11 @@ async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
 
   const link = linkingMessage(update);
   if (!link) {
-    // Telegram retries non-2xx webhook responses. Unknown updates are not an
-    // error and must not create a retry loop.
+    // Plain /start and malformed linking commands are common after reopening an
+    // old Telegram tab. Give one generic recovery path without saying whether
+    // any supplied token was ever valid. Other Telegram updates stay silent.
+    const start = telegramStartCommand(update);
+    if (start) await sendLinkingReply(env, start.chatId, LINK_RECOVERY_MESSAGE, fetchImpl);
     return json(200, { ok: true });
   }
 
@@ -219,21 +247,17 @@ async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
       p_chat_type: link.chatType,
     });
   } catch (error) {
-    // A guessed, stale, revoked or already-consumed challenge must not become
-    // an oracle: database 4xx responses are acknowledged exactly like success.
-    // Transient backend/config failures are different - returning 503 lets
-    // Telegram retry the same update while the still-unconsumed challenge is
-    // valid instead of silently losing the connection attempt.
+    // Transient backend/config failures ask Telegram to retry while the token
+    // remains usable. Every permanent 4xx result gets the same recovery reply,
+    // so stale/revoked/guessed tokens cannot be distinguished as an oracle.
     if (shouldRetryLinkingFailure(error)) {
       return json(503, { error: 'temporarily_unavailable' });
     }
+    await sendLinkingReply(env, link.chatId, LINK_RECOVERY_MESSAGE, fetchImpl);
     return json(200, { ok: true });
   }
 
-  // Confirmation is best-effort and happens only after durable completion. A
-  // Telegram send failure must not ask Telegram to replay the /start command,
-  // because that could only hit an already-consumed challenge.
-  await sendSharedTelegramNotification(
+  await sendLinkingReply(
     env,
     link.chatId,
     'Vishar CRM: Telegram connected.',
@@ -291,6 +315,8 @@ export const __testing = {
   runScheduledDrain,
   runSharedGmailDrain,
   safeFailureCode,
+  sendLinkingReply,
   settleScheduledTasks,
   shouldRetryLinkingFailure,
+  telegramStartCommand,
 };

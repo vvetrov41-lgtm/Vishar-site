@@ -76,6 +76,7 @@ function makeFetch({
   destination = [],
   personalClaim = [],
   rpcFailure = null,
+  rpcFailureStatus = 500,
   telegramStatus = 200,
 } = {}) {
   const rpcCalls = [];
@@ -86,7 +87,9 @@ function makeFetch({
       const name = value.split('/').pop();
       const args = JSON.parse(init.body || '{}');
       rpcCalls.push({ name, args });
-      if (rpcFailure === name) return Response.json({ code: 'PGRST500' }, { status: 500 });
+      if (rpcFailure === name) {
+        return Response.json({ code: `PGRST${rpcFailureStatus}` }, { status: rpcFailureStatus });
+      }
       if (name === 'claim_telegram_outbox_by_id') return Response.json([job()]);
       if (name === 'resolve_outbox_route') return Response.json([route()]);
       if (name === 'service_resolve_telegram_destination') return Response.json(destination);
@@ -317,6 +320,12 @@ await test('linking parser and route accept only bounded Telegram input', async 
   assert.equal(workerTesting.linkingMessage({
     message: { text: `/start ${linkToken}`, chat: { id: 1, type: 'channel' } },
   }), null);
+  assert.deepEqual(workerTesting.telegramStartCommand({
+    message: { text: '/start', chat: { id: 600001, type: 'private' } },
+  }), { chatId: '600001', chatType: 'private' });
+  assert.equal(workerTesting.telegramStartCommand({
+    message: { text: 'hello', chat: { id: 600001, type: 'private' } },
+  }), null);
 });
 
 await test('dormant linking endpoint is 404 even on the exact webhook path', async () => {
@@ -395,6 +404,113 @@ await test('verified webhook completes one link and sends only a safe confirmati
     text: 'Vishar CRM: Telegram connected.',
     disable_web_page_preview: true,
   });
+});
+
+await test('plain start gives one safe recovery path without database access', async () => {
+  const env = {
+    ...baseEnv,
+    TELEGRAM_LINKING_ENABLED: 'true',
+    TELEGRAM_WEBHOOK_SECRET: webhookSecret,
+    TELEGRAM_BOT_TOKEN: sharedToken,
+  };
+  const mock = makeFetch();
+  const response = await workerTesting.handleLinkingWebhook(new Request(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': webhookSecret,
+    },
+    body: JSON.stringify({ message: { text: '/start', chat: { id: 600001, type: 'private' } } }),
+  }), env, mock.fetchImpl);
+  assert.equal(response.status, 200);
+  assert.equal(mock.rpcCalls.length, 0);
+  assert.equal(mock.telegramCalls.length, 1);
+  assert.equal(mock.telegramCalls[0].body.chat_id, '600001');
+  assert.match(mock.telegramCalls[0].body.text, /CRM Settings.*Telegram.*Connect once.*newest Telegram link.*Start/i);
+  assert.equal(mock.telegramCalls[0].body.text.includes(linkToken), false);
+});
+
+await test('malformed start uses the same recovery path and does not query the database', async () => {
+  const env = {
+    ...baseEnv,
+    TELEGRAM_LINKING_ENABLED: 'true',
+    TELEGRAM_WEBHOOK_SECRET: webhookSecret,
+    TELEGRAM_BOT_TOKEN: sharedToken,
+  };
+  const mock = makeFetch();
+  const response = await workerTesting.handleLinkingWebhook(new Request(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': webhookSecret,
+    },
+    body: JSON.stringify({ message: { text: '/start short', chat: { id: 600001, type: 'private' } } }),
+  }), env, mock.fetchImpl);
+  assert.equal(response.status, 200);
+  assert.equal(mock.rpcCalls.length, 0);
+  assert.equal(mock.telegramCalls.length, 1);
+  assert.match(mock.telegramCalls[0].body.text, /Connect once/i);
+});
+
+await test('expired or revoked link gets the generic recovery reply without becoming a token oracle', async () => {
+  const env = {
+    ...baseEnv,
+    TELEGRAM_LINKING_ENABLED: 'true',
+    TELEGRAM_WEBHOOK_SECRET: webhookSecret,
+    TELEGRAM_BOT_TOKEN: sharedToken,
+  };
+  const plain = makeFetch();
+  await workerTesting.handleLinkingWebhook(new Request(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': webhookSecret,
+    },
+    body: JSON.stringify({ message: { text: '/start', chat: { id: 600001, type: 'private' } } }),
+  }), env, plain.fetchImpl);
+
+  const stale = makeFetch({
+    rpcFailure: 'service_complete_telegram_link',
+    rpcFailureStatus: 400,
+  });
+  const response = await workerTesting.handleLinkingWebhook(new Request(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': webhookSecret,
+    },
+    body: JSON.stringify({ message: { text: `/start ${linkToken}`, chat: { id: 600001, type: 'private' } } }),
+  }), env, stale.fetchImpl);
+  assert.equal(response.status, 200);
+  assert.equal(stale.rpcCalls.length, 1);
+  assert.equal(stale.telegramCalls.length, 1);
+  assert.equal(stale.telegramCalls[0].body.text, plain.telegramCalls[0].body.text);
+  assert.equal(stale.telegramCalls[0].body.text.includes(linkToken), false);
+  assert.doesNotMatch(stale.telegramCalls[0].body.text, /expired|revoked|invalid/i);
+});
+
+await test('transient link backend failure stays retryable and sends no misleading reply', async () => {
+  const env = {
+    ...baseEnv,
+    TELEGRAM_LINKING_ENABLED: 'true',
+    TELEGRAM_WEBHOOK_SECRET: webhookSecret,
+    TELEGRAM_BOT_TOKEN: sharedToken,
+  };
+  const mock = makeFetch({
+    rpcFailure: 'service_complete_telegram_link',
+    rpcFailureStatus: 500,
+  });
+  const response = await workerTesting.handleLinkingWebhook(new Request(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-bot-api-secret-token': webhookSecret,
+    },
+    body: JSON.stringify({ message: { text: `/start ${linkToken}`, chat: { id: 600001, type: 'private' } } }),
+  }), env, mock.fetchImpl);
+  assert.equal(response.status, 503);
+  assert.equal(mock.rpcCalls.length, 1);
+  assert.equal(mock.telegramCalls.length, 0);
 });
 
 await test('unrelated Telegram updates are acknowledged without database access', async () => {
