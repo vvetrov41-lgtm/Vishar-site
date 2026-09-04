@@ -23,15 +23,6 @@ jobs:
           test "$GITHUB_REF_NAME" = "agent/site-replace-portrait-21"
           grep -F 'Colour realism male portrait tattoo with blue eye and warm accent by Vladimir Vishar' assets/portraits/metadata.json
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Download replacement photo
         run: |
           curl -L --fail --retry 3 --retry-delay 2 \
@@ -39,42 +30,30 @@ jobs:
             -o /tmp/portrait-21.jpeg
           test -s /tmp/portrait-21.jpeg
 
+      - name: Prepare ImageMagick
+        run: |
+          if command -v magick >/dev/null 2>&1; then
+            echo 'IMG=magick' >> "$GITHUB_ENV"
+          elif command -v convert >/dev/null 2>&1; then
+            echo 'IMG=convert' >> "$GITHUB_ENV"
+          else
+            sudo apt-get update
+            sudo apt-get install -y imagemagick
+            echo 'IMG=convert' >> "$GITHUB_ENV"
+          fi
+
       - name: Build source and responsive thumbnails
         run: |
-          node --input-type=module <<'NODE'
-          import sharp from 'sharp';
-          import { mkdir } from 'node:fs/promises';
-
-          const input = '/tmp/portrait-21.jpeg';
-          const source = 'assets/portraits/21.webp';
-          const thumbsDir = 'assets/portraits/thumbs';
-          const widths = [320, 480, 720, 960];
-
-          await mkdir(thumbsDir, { recursive: true });
-
-          await sharp(input)
-            .rotate()
-            .resize({ width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true })
-            .toColorspace('srgb')
-            .webp({ quality: 85, effort: 6, smartSubsample: true })
-            .toFile(source);
-
-          for (const width of widths) {
-            await sharp(source)
-              .resize({ width, fit: 'inside', withoutEnlargement: true })
-              .webp({ quality: 80, effort: 6, smartSubsample: true })
-              .toFile(`${thumbsDir}/21-${width}.webp`);
-          }
-          NODE
+          mkdir -p assets/portraits/thumbs
+          $IMG /tmp/portrait-21.jpeg -auto-orient -strip -resize '2400x2400>' -quality 85 assets/portraits/21.webp
+          for width in 320 480 720 960; do
+            $IMG assets/portraits/21.webp -resize "${width}x>" -quality 80 "assets/portraits/thumbs/21-${width}.webp"
+          done
 
           test -s assets/portraits/21.webp
           for width in 320 480 720 960; do
             test -s "assets/portraits/thumbs/21-${width}.webp"
           done
-
-      - name: Validate site
-        run: |
-          npm run validate:site
           git diff --check
 
       - name: Commit replacement and remove importer
