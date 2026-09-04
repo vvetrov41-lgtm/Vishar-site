@@ -83,7 +83,7 @@ Given a named operator already admitted to the private CRM by Cloudflare Access 
 - FR11 `calendar.vishartattoo.com` derives its Cloudflare Access allow set from the CRM capability graph rather than from any hand-curated list. Synchronization refuses broad selector classes, mutates only the Calendar policy, reads the result back, and restores the previous Calendar policy if readback does not match.
 - FR12 `public.list_calendar_access_operators()` is backend-only and returns only normalised email addresses plus an owner marker, for active profiles that hold manage-integrations on an active artist.
 - FR13 The Access sync refuses to write an empty or owner-less allow set, so a directory failure can never lock the account out of its own connector or widen the boundary.
-- FR14 A scheduled projection applies membership changes without a developer, and runs only from a canonical head whose required workflows are all green.
+- FR14 A scheduled projection applies membership changes without a developer, and runs only from a canonical head whose required workflows are all green. Because GitHub honours `schedule:` only on the default branch, that trigger lives on `main` and checks out canonical to run the reviewed script.
 - FR15 The zone firewall rule that scopes `calendar.vishartattoo.com` to the connector's routes names no artist. It allows `/health`, `/oauth/google/callback` and any reference under `/oauth/google/start/` and `/oauth/google/disconnect/`, and blocks everything else, so onboarding an artist changes no Cloudflare object.
 
 ## Non-functional requirements
