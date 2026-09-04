@@ -9,6 +9,7 @@ import {
   sendSharedTelegramNotification,
   sharedTelegramBotToken,
 } from './lib/telegram.js';
+import { reconcileProductionTelegramWebhook } from './lib/telegram-webhook-reconcile.js';
 import {
   handleAppointmentClientActionRequest,
   isAppointmentClientActionPath,
@@ -46,6 +47,19 @@ async function runScheduledDrain(env) {
   } catch (error) {
     console.error('telegram outbox drain failed', JSON.stringify({
       code: safeFailureCode(error),
+    }));
+    throw error;
+  }
+}
+
+async function runTelegramWebhookReconcile(env) {
+  try {
+    const summary = await reconcileProductionTelegramWebhook(env);
+    console.log('telegram webhook reconcile', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    console.error('telegram webhook reconcile failed', JSON.stringify({
+      code: safeFailureCode(error, 'telegram_webhook_reconcile_error'),
     }));
     throw error;
   }
@@ -284,6 +298,13 @@ export default {
     if (env.TELEGRAM_DRAIN_ENABLED === 'true') tasks.push(runScheduledDrain(env));
     else console.log('telegram outbox drain disabled');
 
+    // Linking ON in production now implies that Telegram must point at this
+    // exact Worker. The Worker already owns both required credentials, so it
+    // repairs provider-side webhook drift without copying secrets elsewhere.
+    if (env.VISHAR_ENVIRONMENT === 'production' && env.TELEGRAM_LINKING_ENABLED === 'true') {
+      tasks.push(runTelegramWebhookReconcile(env));
+    }
+
     // Production already shares this cron with the Gmail Worker. Keep each
     // bounded task independent so one failure cannot suppress another task's
     // execution or release the Worker lifetime while a sibling is still
@@ -314,6 +335,7 @@ export const __testing = {
   runScheduledAutomationTick,
   runScheduledDrain,
   runSharedGmailDrain,
+  runTelegramWebhookReconcile,
   safeFailureCode,
   sendLinkingReply,
   settleScheduledTasks,
