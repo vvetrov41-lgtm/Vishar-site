@@ -26,7 +26,9 @@ async function telegramApi(botToken, method, body, fetchImpl = fetch) {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body ?? {}),
-      redirect: 'error',
+      // Workers reject redirect:'error'. Keep redirects observable and refuse
+      // every non-2xx response below instead of following it with credentials.
+      redirect: 'manual',
     });
   } catch {
     throw failure('telegram_webhook_provider_unreachable');
