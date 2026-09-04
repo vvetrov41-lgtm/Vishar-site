@@ -58,11 +58,11 @@ jobs:
       # Public booking links are handed to clients, so the branded production
       # booking host is pinned here rather than left to a build-time default.
       VITE_BOOKING_FORMS_ORIGIN: https://booking.vishartattoo.com
-      # Product analytics. Both are publishable, client-visible values, and the
-      # build stays analytics-free until the repository variables exist. The
-      # host is pinned to the project's own PostHog Cloud ingestion region.
+      # Product analytics. The publishable key stays environment-owned, while
+      # the ingestion host is a repository-owned production invariant so a
+      # malformed mutable variable cannot block or redirect a Pages release.
       VITE_POSTHOG_KEY: ${{ vars.CRM_PRODUCTION_POSTHOG_KEY }}
-      VITE_POSTHOG_HOST: ${{ vars.CRM_PRODUCTION_POSTHOG_HOST }}
+      VITE_POSTHOG_HOST: eu.i.posthog.com
       CRM_PAGES_PROJECT: ${{ vars.CRM_PRODUCTION_PAGES_PROJECT }}
       CRM_ORIGIN: ${{ vars.CRM_PRODUCTION_ORIGIN }}
 
