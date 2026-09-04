@@ -131,7 +131,7 @@ function safeProvisioningDiagnostic(payload: Record<string, unknown> | null, res
 
 function assertMetaReviewTemplate(value: unknown): MetaReviewTemplateMetadata {
   if (!value || typeof value !== 'object') {
-    throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+    throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   const row = value as Record<string, unknown>;
   if (
@@ -141,22 +141,22 @@ function assertMetaReviewTemplate(value: unknown): MetaReviewTemplateMetadata {
     || typeof row.language !== 'string'
     || typeof row.category !== 'string'
   ) {
-    throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+    throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   return row as unknown as MetaReviewTemplateMetadata;
 }
 
 function assertMetaReviewResponse(value: unknown, expectedAction: 'create' | 'delete' | 'status'): MetaReviewTemplateResult {
   if (!value || typeof value !== 'object') {
-    throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+    throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   const row = value as Record<string, unknown>;
   if (row.ok !== true || row.action !== expectedAction) {
-    throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+    throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   if (expectedAction === 'delete') {
     if (typeof row.deleted !== 'boolean') {
-      throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+      throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
     }
     return { ok: true, action: expectedAction, deleted: row.deleted };
   }
