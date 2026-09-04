@@ -23,6 +23,21 @@ export interface WhatsAppProvisioningResult {
   verified_name: string | null;
 }
 
+export interface MetaReviewTemplateMetadata {
+  id: string | null;
+  name: 'meta_review_permission_demo';
+  status: string | null;
+  language: string;
+  category: string;
+}
+
+export interface MetaReviewTemplateResult {
+  ok: true;
+  action: 'create' | 'delete' | 'status';
+  template?: MetaReviewTemplateMetadata | null;
+  deleted?: boolean;
+}
+
 export type ExistingWhatsAppProvisioningResult = WhatsAppProvisioningResult;
 
 type WhatsAppArtist = Pick<Artist, 'id' | 'slug' | 'display_name'>;
@@ -112,6 +127,43 @@ function safeProvisioningDiagnostic(payload: Record<string, unknown> | null, res
   if (Number.isInteger(payload.graph_subcode)) details.push(`graph_subcode=${payload.graph_subcode}`);
   if (Number.isInteger(payload.upstream_status)) details.push(`upstream_status=${payload.upstream_status}`);
   return details.join(' ');
+}
+
+function assertMetaReviewTemplate(value: unknown): MetaReviewTemplateMetadata {
+  if (!value || typeof value !== 'object') {
+    throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+  }
+  const row = value as Record<string, unknown>;
+  if (
+    (row.id !== null && typeof row.id !== 'string')
+    || row.name !== 'meta_review_permission_demo'
+    || (row.status !== null && typeof row.status !== 'string')
+    || typeof row.language !== 'string'
+    || typeof row.category !== 'string'
+  ) {
+    throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+  }
+  return row as unknown as MetaReviewTemplateMetadata;
+}
+
+function assertMetaReviewResponse(value: unknown, expectedAction: 'create' | 'delete' | 'status'): MetaReviewTemplateResult {
+  if (!value || typeof value !== 'object') {
+    throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+  }
+  const row = value as Record<string, unknown>;
+  if (row.ok !== true || row.action !== expectedAction) {
+    throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+  }
+  if (expectedAction === 'delete') {
+    if (typeof row.deleted !== 'boolean') {
+      throw new ApiError(apiMessage('Meta review template returned an invalid response.'));
+    }
+    return { ok: true, action: expectedAction, deleted: row.deleted };
+  }
+  if (row.template !== null && row.template !== undefined) {
+    return { ok: true, action: expectedAction, template: assertMetaReviewTemplate(row.template) };
+  }
+  return { ok: true, action: expectedAction, template: null };
 }
 
 export function createWhatsAppConnectionsApi(client: CrmClient) {
@@ -241,6 +293,32 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
         },
         expectedIntegrationKey,
       );
+    },
+
+    async manageMetaReviewTemplate(action: 'create' | 'delete' | 'status'): Promise<MetaReviewTemplateResult> {
+      const accessToken = await crmAccessToken();
+      const response = await fetch('/api/whatsapp/meta-review/template', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action }),
+      });
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok) {
+        const error = payload && typeof payload.error === 'string'
+          ? payload.error
+          : `meta_review_failed_http_${response.status}`;
+        const details: string[] = [error];
+        if (payload && Number.isInteger(payload.graph_code)) details.push(`graph_code=${payload.graph_code}`);
+        if (payload && Number.isInteger(payload.graph_subcode)) details.push(`graph_subcode=${payload.graph_subcode}`);
+        if (payload && Number.isInteger(payload.upstream_status)) details.push(`upstream_status=${payload.upstream_status}`);
+        throw new ApiError(`Meta review template failed: ${details.join(' ')}.`);
+      }
+      return assertMetaReviewResponse(payload, action);
     },
   };
 }
