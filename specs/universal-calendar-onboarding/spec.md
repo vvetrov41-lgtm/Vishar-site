@@ -83,7 +83,7 @@ Given a named operator already admitted to the private CRM by Cloudflare Access 
 - FR11 `calendar.vishartattoo.com` derives its Cloudflare Access allow set from the CRM capability graph rather than from any hand-curated list. Synchronization refuses broad selector classes, mutates only the Calendar policy, reads the result back, and restores the previous Calendar policy if readback does not match.
 - FR12 `public.list_calendar_access_operators()` is backend-only and returns only normalised email addresses plus an owner marker, for active profiles that hold manage-integrations on an active artist.
 - FR13 The Access sync refuses to write an empty or owner-less allow set, so a directory failure can never lock the account out of its own connector or widen the boundary.
-- FR14 A scheduled projection applies membership changes without a developer, and runs only from a canonical head whose required workflows are all green.
+- FR14 A scheduled projection applies membership changes without a developer, and runs only from a canonical head whose required workflows are all green. It does not exist yet: GitHub fires cron only on the default branch, and the `crm-production` environment admits only the `release/private-crm-rc*` namespace, so `main` must be added to that environment's deployment branches first.
 - FR15 The zone firewall rule that scopes `calendar.vishartattoo.com` to the connector's routes names no artist. It allows `/health`, `/oauth/google/callback` and any reference under `/oauth/google/start/` and `/oauth/google/disconnect/`, and blocks everything else, so onboarding an artist changes no Cloudflare object.
 
 ## Non-functional requirements
@@ -177,5 +177,12 @@ connector's four route shapes is preserved, and Access plus
 - The production Cloudflare API token cannot read or edit Firewall Services, so
   the FR15 rollout cannot run until that token's scope is widened. Everything
   else for it is implemented and tested.
+- FR14 is unmet. The `*/15` cron shipped with `0139` never fired, because
+  GitHub honours `schedule:` only on the default branch; the repository has no
+  scheduled run in its history. Moving it to `main` is not sufficient on its
+  own either, because the `crm-production` environment rejects any ref outside
+  `release/private-crm-rc*`. Until `main` is admitted there, granting a
+  membership reaches the Access boundary on the next marker-triggered sync
+  rather than on its own.
 - No CRM surface edits `configuration.presentation`; new artists get defaults. Changing a colour or event label still needs a backend write.
 - Final third-artist acceptance requires the artist/operator to complete Google's interactive consent after the noninteractive Access boundary rollout is verified.
