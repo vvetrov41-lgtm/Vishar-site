@@ -1,4 +1,4 @@
--- 0137_public_booking_slugs.sql
+-- 0138_public_booking_slugs.sql
 --
 -- Stable human-readable public booking routes: /book/{artist-slug}.
 -- The slug is presentation only. Durable routing still resolves to one
@@ -7,8 +7,23 @@
 -- Existing UUID /forms links remain valid compatibility paths.
 
 -- ---------------------------------------------------------------------------
--- 1. One canonical public source per artist
+-- 1. Public origin configuration and one canonical source per artist
 -- ---------------------------------------------------------------------------
+
+-- Keep the public product origin as data rather than embedding an owner/domain
+-- identity in SQL function bodies. The value is canonical HTTPS configuration,
+-- not a routing identifier; artist_id remains authoritative.
+alter table public.system_settings
+  add column public_booking_origin text not null default 'https://vishartattoo.com';
+
+alter table public.system_settings
+  add constraint system_settings_public_booking_origin_canonical
+  check (
+    public_booking_origin = crm_private.canonical_booking_origin(public_booking_origin)
+  );
+
+comment on column public.system_settings.public_booking_origin is
+  'Canonical HTTPS origin used to present and validate public /book/{artist-slug} routes. Artist/source identity is resolved separately.';
 
 alter table public.booking_sources
   add column is_public_booking boolean not null default false;
@@ -40,18 +55,17 @@ from ranked r
 where r.id = s.id
   and r.position = 1;
 
--- If an active Artist already has source history but every source is disabled,
--- activate only its selected canonical source when that source can satisfy its
--- own transport invariant. This keeps existing active sources unchanged, makes
--- a previously-created hosted source usable, and leaves an incomplete external
--- source disabled rather than violating its required-origin constraint.
+-- Preserve the historical explicit-activation boundary for external websites.
+-- If an active Artist has only a previously-created hosted Vishar form and it
+-- is disabled, that hosted form can safely become usable because it requires no
+-- external Origin handshake. External sources are never auto-enabled here.
 update public.booking_sources s
 set is_active = true
 from public.artists a
 where s.artist_id = a.id
   and s.is_public_booking
   and a.is_active
-  and (s.source_kind = 'hosted' or s.allowed_origin is not null)
+  and s.source_kind = 'hosted'
   and not exists (
     select 1
     from public.booking_sources live
@@ -244,8 +258,8 @@ grant execute on function public.create_booking_source(uuid,text,text,text,text,
 -- ---------------------------------------------------------------------------
 
 -- `public-slug:<slug>` is generated only by the trusted Worker. It is not a
--- browser field and it is accepted only at the canonical Vishar origin. Normal
--- external source/origin/version resolution is unchanged.
+-- browser field and it is accepted only at the configured canonical public
+-- origin. Normal external source/origin/version resolution is unchanged.
 create or replace function public.resolve_booking_source(
   p_source_key text,
   p_origin text,
@@ -264,6 +278,7 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   v_origin text;
+  v_public_origin text;
   v_slug text;
 begin
   if not crm_private.is_service_backend() then
@@ -283,7 +298,12 @@ begin
   end if;
 
   if p_source_key like 'public-slug:%' then
-    if v_origin <> 'https://vishartattoo.com' then
+    select s.public_booking_origin
+    into v_public_origin
+    from public.system_settings s
+    where s.id;
+
+    if v_public_origin is null or v_origin <> v_public_origin then
       raise exception 'public booking slug origin is not permitted'
         using errcode = '42501';
     end if;
@@ -332,7 +352,7 @@ grant execute on function public.resolve_booking_source(text,text,text)
   to service_role;
 
 comment on function public.resolve_booking_source(text,text,text) is
-  'Backend-only source resolver. public-slug:<Artist slug> at https://vishartattoo.com resolves the one active canonical public source; all other calls retain exact external source/origin/version semantics.';
+  'Backend-only source resolver. public-slug:<Artist slug> at the configured public booking origin resolves the one active canonical public source; all other calls retain exact external source/origin/version semantics.';
 
 -- ---------------------------------------------------------------------------
 -- 4. CRM readback returns the canonical human URL without changing result shape
@@ -358,6 +378,8 @@ stable
 security definer
 set search_path = pg_catalog, public, crm_private
 as $$
+declare
+  v_public_origin text;
 begin
   if not public.is_active_user() then
     raise exception 'an active CRM profile is required' using errcode = '42501';
@@ -365,6 +387,15 @@ begin
 
   if p_artist_id is not null then
     perform crm_private.require_artist_access(p_artist_id, 'manage_booking_sources');
+  end if;
+
+  select s.public_booking_origin
+  into v_public_origin
+  from public.system_settings s
+  where s.id;
+
+  if v_public_origin is null then
+    raise exception 'public booking origin is not configured' using errcode = '55000';
   end if;
 
   return query
@@ -380,7 +411,7 @@ begin
     s.is_active,
     case
       when s.is_public_booking
-        then 'https://vishartattoo.com/book/' || a.slug
+        then v_public_origin || '/book/' || a.slug
       when s.source_kind = 'hosted'
         then '/forms/' || s.public_source_id::text
       else null
@@ -401,4 +432,4 @@ grant execute on function public.list_booking_sources(uuid)
   to authenticated;
 
 comment on function public.list_booking_sources(uuid) is
-  'Lists booking-source configuration for Artists the caller may manage. A canonical public source exposes its stable https://vishartattoo.com/book/{slug} URL through public_path; noncanonical hosted sources retain legacy UUID paths.';
+  'Lists booking-source configuration for Artists the caller may manage. A canonical public source exposes its stable configured /book/{slug} URL through public_path; noncanonical hosted sources retain legacy UUID paths.';
