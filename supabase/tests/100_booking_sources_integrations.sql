@@ -256,8 +256,10 @@ insert into public.artist_integrations (
     false
   ),
   (
+    -- Migration 0137 derives every calendar selector from the owning artist
+    -- slug, so a calendar row can no longer carry an arbitrary key.
     'a2222222-2222-4222-8222-222222222222',
-    'calendar', 'google', 'calendar_primary',
+    'calendar', 'google', 'google_calendar_kristina',
     'Kristina staging calendar metadata',
     '{"calendar_name":"Kristina staging","timezone":"Europe/London"}'::jsonb,
     true
@@ -303,7 +305,7 @@ select throws_ok(
       artist_id, integration_type, provider, integration_key, configuration
     ) values (
       'a2222222-2222-4222-8222-222222222222',
-      'calendar', 'google', 'calendar_bad_oauth',
+      'calendar', 'google', 'google_calendar_kristina',
       '{"oauth":{"refresh_token":"not-allowed"}}'::jsonb
     )$$,
   '23514', null,
@@ -326,7 +328,7 @@ select throws_ok(
       artist_id, integration_type, provider, integration_key, configuration
     ) values (
       'a2222222-2222-4222-8222-222222222222',
-      'calendar', 'google', 'calendar_primary', '{}'::jsonb
+      'calendar', 'google', 'google_calendar_kristina', '{}'::jsonb
     )$$,
   '23505', null,
   'duplicate artist/type/integration keys are rejected'
@@ -336,7 +338,7 @@ select throws_ok(
   $$update public.artist_integrations
     set artist_id = 'a1111111-1111-4111-8111-111111111111'
     where artist_id = 'a2222222-2222-4222-8222-222222222222'
-      and integration_key = 'calendar_primary'$$,
+      and integration_key = 'google_calendar_kristina'$$,
   '23514', null,
   'integration identity cannot be reassigned to another artist'
 );

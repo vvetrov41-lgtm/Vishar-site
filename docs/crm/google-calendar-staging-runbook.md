@@ -115,7 +115,7 @@ After deployment:
 2. Complete Access manually as the approved owner.
 3. Confirm `/health` returns only boolean readiness fields.
 4. Confirm both KV bindings report available.
-5. Confirm Google OAuth, Supabase, artists, Access-JWT configuration and both CRM URLs report available.
+5. Confirm Google OAuth, Supabase, artist routing, Access-JWT configuration and both CRM URLs report available. `configuration.artistRouting` reports whether the backend resolver is reachable; it replaced the old two-artist `configuration.artists` probe when artist routing moved into Supabase.
 6. Confirm `scheduledDrain` remains `false`.
 7. Confirm `workers.dev` remains disabled.
 8. Confirm an interactive route rejects a request with no Access JWT.

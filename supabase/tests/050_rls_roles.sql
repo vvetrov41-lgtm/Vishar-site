@@ -546,6 +546,7 @@ insert into expected_function_acl values
   ('public.record_calendar_availability_outbox_result(uuid,text,integer,boolean,text,text)', false, false, true),
   ('public.set_calendar_connection_metadata(uuid,text,text,boolean)', false, false, true),
   ('public.authorize_calendar_actor(text,uuid)', false, false, true),
+  ('public.resolve_calendar_artist_route(text,text)', false, false, true),
   ('public.resolve_monzo_deposit_redirect(uuid)', false, false, true),
   ('public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', false, false, true),
   ('public.service_resolve_gmail_target(uuid,uuid,uuid)', false, false, true),
@@ -564,6 +565,7 @@ insert into expected_function_acl values
   ('public.claim_email_outbox(text,integer,integer)', false, false, true),
   ('public.record_email_outbox_result(uuid,text,boolean,text,text)', false, false, true),
   ('public.list_calendar_connection_status()', false, true, false),
+  ('public.reset_calendar_expected_account(uuid)', false, true, false),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
   -- Vladimir's WhatsApp completion call is fixed to the prepared production
