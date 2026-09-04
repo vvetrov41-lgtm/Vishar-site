@@ -1,0 +1,235 @@
+name: Public booking production rollout
+
+on:
+  push:
+    branches:
+      - 'release/public-booking-edge-*'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: public-booking-production-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      WORKER_NAME: vishar-public-booking-edge
+      PRODUCTION_CONFIG: wrangler.public-booking.production.toml
+      PRODUCTION_HOST: https://vishartattoo.com
+      LEGACY_SAM_FORM: https://booking.vishartattoo.com/forms/eef34564-7203-4732-959d-908a0a5ac596
+      SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Verify release trigger and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/public-booking-edge-*) ;;
+            *) echo 'Unexpected public-booking release branch.' >&2; exit 1 ;;
+          esac
+          [ "$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+      - name: Checkout exact release SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical lineage and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ -z "$(git status --short)" ]
+          release_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$release_sha" = "$GITHUB_SHA" ]
+          [ "$canonical_sha" = "$GITHUB_SHA" ] || {
+            echo 'Release SHA is not the current canonical CRM head.' >&2
+            exit 1
+          }
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
+              exit 1
+            }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Revalidate the bounded edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          node scripts/test-public-booking-slugs.mjs
+          node scripts/test-public-booking-edge.mjs
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/public-booking-production.log \
+          WRANGLER_SEND_METRICS=false \
+          npx wrangler deploy --config "$PRODUCTION_CONFIG" --dry-run --outdir .wrangler/public-booking-production-dry-run
+          node scripts/scan-secrets.mjs
+          grep -Fq 'pattern = "vishartattoo.com/book/*"' "$PRODUCTION_CONFIG"
+          ! grep -Eq 'vishartattoo\.com/\*"' "$PRODUCTION_CONFIG"
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Require production database to match repository migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-dry-run.log"
+          if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-dry-run.log"; then
+            echo 'Production database has pending migration drift.' >&2
+            exit 1
+          fi
+
+      - name: Read current zone route before mutation
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          curl --fail --silent --show-error --get \
+            --header "$auth" \
+            --data-urlencode 'name=vishartattoo.com' \
+            --data-urlencode 'status=active' \
+            'https://api.cloudflare.com/client/v4/zones' > "$RUNNER_TEMP/zones.json"
+          ZONES_FILE="$RUNNER_TEMP/zones.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.ZONES_FILE, 'utf8'));
+          const rows = body?.result;
+          if (body?.success !== true || !Array.isArray(rows) || rows.length !== 1 || !rows[0]?.id) {
+            throw new Error('Unable to resolve exactly one active vishartattoo.com zone.');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `zone_id=${rows[0].id}\n`);
+          NODE
+          zone_id="$(grep '^zone_id=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2-)"
+          curl --fail --silent --show-error --header "$auth" \
+            "https://api.cloudflare.com/client/v4/zones/${zone_id}/workers/routes" > "$RUNNER_TEMP/routes-before.json"
+          ROUTES_FILE="$RUNNER_TEMP/routes-before.json" WORKER_NAME="$WORKER_NAME" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.ROUTES_FILE, 'utf8'));
+          if (body?.success !== true || !Array.isArray(body.result)) throw new Error('Unable to read Worker routes.');
+          const exact = body.result.filter((row) => row.pattern === 'vishartattoo.com/book/*');
+          if (exact.length > 1) throw new Error('Duplicate exact public-booking routes exist.');
+          if (exact.length === 1 && exact[0].script !== process.env.WORKER_NAME) {
+            throw new Error(`Public-booking route is owned by ${exact[0].script || 'another origin'}; refusing takeover.`);
+          }
+          NODE
+
+      - name: Re-check canonical immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          release_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ]
+          [ "$release_sha" = "$GITHUB_SHA" ]
+
+      - name: Deploy only the public booking edge and exact zone route
+        shell: bash
+        run: |
+          set -euo pipefail
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/public-booking-production.log \
+          WRANGLER_SEND_METRICS=false \
+          npx wrangler deploy --config "$PRODUCTION_CONFIG" --name "$WORKER_NAME" --strict
+
+      - name: Read back route, Worker settings and live public forms
+        shell: bash
+        env:
+          ZONE_ID: ${{ steps.preflight.outputs.zone_id }}
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          curl --fail --silent --show-error --header "$auth" \
+            "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/workers/routes" > "$RUNNER_TEMP/routes-after.json"
+          ROUTES_FILE="$RUNNER_TEMP/routes-after.json" WORKER_NAME="$WORKER_NAME" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.ROUTES_FILE, 'utf8'));
+          const exact = (body?.result || []).filter((row) => row.pattern === 'vishartattoo.com/book/*');
+          if (body?.success !== true || exact.length !== 1 || exact[0].script !== process.env.WORKER_NAME) {
+            throw new Error('Exact public-booking route did not converge to the expected Worker.');
+          }
+          NODE
+
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}"
+          curl --fail --silent --show-error --header "$auth" "$api/settings" > "$RUNNER_TEMP/settings.json"
+          SETTINGS_FILE="$RUNNER_TEMP/settings.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.SETTINGS_FILE, 'utf8'));
+          if (body?.success !== true || !body.result) throw new Error('Unable to read public-booking Worker settings.');
+          const bindings = Array.isArray(body.result.bindings) ? body.result.bindings : [];
+          if (bindings.length !== 0) throw new Error('Credential-free public-booking edge gained a live binding.');
+          NODE
+
+          for slug in vladimir kristina sam; do
+            status="$(curl -sS -o "$RUNNER_TEMP/book-${slug}.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/${slug}?release=${GITHUB_SHA}")"
+            test "$status" = '200'
+            grep -Fq '<form' "$RUNNER_TEMP/book-${slug}.html"
+          done
+          unknown="$(curl -sS -o "$RUNNER_TEMP/book-unknown.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/no-such-artist")"
+          test "$unknown" = '404'
+          grep -Fq 'Booking form unavailable' "$RUNNER_TEMP/book-unknown.html"
+
+          # Query parameters must never change tenant routing.
+          forged="$(curl -sS -o "$RUNNER_TEMP/book-forged.html" -w '%{http_code}' \
+            "${PRODUCTION_HOST}/book/vladimir?artist_id=kristina&source=forged")"
+          test "$forged" = '200'
+          grep -Fq 'Vladimir' "$RUNNER_TEMP/book-forged.html"
+          ! grep -Fqi 'Kristina' "$RUNNER_TEMP/book-forged.html"
+
+          # The human route is additive: Sam's previously issued UUID URL must
+          # still render after his existing source is selected and activated.
+          legacy="$(curl -sS -o "$RUNNER_TEMP/legacy-sam.html" -w '%{http_code}' "$LEGACY_SAM_FORM")"
+          test "$legacy" = '200'
+          grep -Fq '<form' "$RUNNER_TEMP/legacy-sam.html"
+          grep -Fq 'Sam' "$RUNNER_TEMP/legacy-sam.html"
+
+      - name: Production rollout summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Public booking production rollout'
+            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo '- Worker: `vishar-public-booking-edge`'
+            echo '- Route: `vishartattoo.com/book/*` only'
+            echo '- Bindings/secrets: expected zero'
+            echo '- Acceptance: Vladimir, Kristina, Sam, unknown slug, forged query, legacy Sam UUID link'
+            echo '- Customer/enquiry writes by rollout probes: none'
+          } >> "$GITHUB_STEP_SUMMARY"

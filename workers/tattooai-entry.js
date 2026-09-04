@@ -1,21 +1,13 @@
 // Production entrypoint wrapper for the public tattooai Worker.
 //
-// Platform-owned same-origin public surfaces are dispatched before the legacy
-// router. Everything else is delegated unchanged.
-//
-// Hosted booking forms own `/forms/`. Appointment client actions own
-// `/appointments/respond/`. Both namespaces include malformed identifiers so a
-// bad id cannot fall through to a different 404 surface. Appointment GET is
-// read-only and only POST can consume its one-time capability.
-//
-// The legacy router also computes CORS before it knows whether a request is a
-// registry-backed booking request. A browser FormData POST reaches the durable
-// route without preflight, but an external site that legitimately triggers
-// OPTIONS must receive the same dynamic CORS plumbing.
+// Platform-owned public surfaces are dispatched before the legacy router.
+// `/book/{artist-slug}` is the canonical human-facing booking route behind the
+// root-domain edge. `/forms/{uuid}` remains the legacy hosted compatibility path.
 
 import tattooai from './tattooai.js';
 import { getCorsHeaders, isRegistryBookingRequest } from './lib/http.js';
 import { handleHostedBookingRequest, isHostedBookingPath } from './routes/hosted-booking.js';
+import { handlePublicBookingRequest, isPublicBookingPath } from './routes/public-booking.js';
 import {
   handleAppointmentClientActionRequest,
   isAppointmentClientActionPath,
@@ -25,6 +17,10 @@ export default {
   async fetch(request, env, ctx) {
     if (isAppointmentClientActionPath(request)) {
       return handleAppointmentClientActionRequest(request, env, {});
+    }
+
+    if (isPublicBookingPath(request)) {
+      return handlePublicBookingRequest(request, env, {});
     }
 
     if (isHostedBookingPath(request)) {

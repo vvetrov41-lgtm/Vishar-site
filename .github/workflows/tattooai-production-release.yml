@@ -44,6 +44,7 @@ jobs:
         run: |
           npm audit --audit-level=moderate
           npm run test:worker
+          node scripts/test-public-booking-slugs.mjs
           npm run check:worker-bundle
 
   deploy:
@@ -101,9 +102,6 @@ jobs:
           test "$post_status" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
 
-          # The hosted booking namespace must answer a browser GET with the
-          # public renderer, not the POST-only intake boundary. Both probes use
-          # ids that resolve to nothing, so neither reads or writes an enquiry.
           malformed_status="$(curl -sS -o /tmp/tattooai-forms-malformed.html -w '%{http_code}' \
             "${endpoint}forms/not-a-uuid")"
           test "$malformed_status" = '404'
@@ -118,4 +116,16 @@ jobs:
           test "$unknown_status" = '404'
           grep -Fq 'Booking form unavailable' /tmp/tattooai-forms-unknown.html
 
-          echo "Live tattooai boundary matches the durable multipart Worker at $GITHUB_SHA"
+          # Database migration 0137 must already be live before this release.
+          # These are read-only public-form probes and create no customer data.
+          for slug in vladimir kristina sam; do
+            status="$(curl -sS -o "/tmp/tattooai-book-${slug}.html" -w '%{http_code}' "${endpoint}book/${slug}")"
+            test "$status" = '200'
+            grep -Fq '<form' "/tmp/tattooai-book-${slug}.html"
+          done
+          unknown_slug_status="$(curl -sS -o /tmp/tattooai-book-unknown.html -w '%{http_code}' \
+            "${endpoint}book/no-such-artist")"
+          test "$unknown_slug_status" = '404'
+          grep -Fq 'Booking form unavailable' /tmp/tattooai-book-unknown.html
+
+          echo "Live tattooai boundary matches the canonical public booking Worker at $GITHUB_SHA"

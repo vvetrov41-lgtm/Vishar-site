@@ -15,6 +15,25 @@ import { readBookingFormsOrigin } from '../lib/supabase';
 // names no origin falls back to the production booking host.
 const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
 const BOOKING_FORMS_ORIGIN = readBookingFormsOrigin(browserEnv, import.meta.env.DEV);
+const PUBLIC_BOOKING_ORIGIN = 'https://vishartattoo.com';
+const PUBLIC_BOOKING_PATH = /^\/book\/[a-z][a-z0-9-]{1,62}\/?$/;
+
+function canonicalPublicBookingUrl(source: BookingSource): string {
+  const value = source.public_path?.trim() ?? '';
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    if (
+      url.origin !== PUBLIC_BOOKING_ORIGIN
+      || !PUBLIC_BOOKING_PATH.test(url.pathname)
+      || url.search
+      || url.hash
+    ) return '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
 
 export function BookingSourcesPage() {
   const api = useApi();
@@ -271,6 +290,9 @@ function BookingSourceCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const target = bookingSourcePublicUrl(source, BOOKING_FORMS_ORIGIN);
+  const publicBookingTarget = canonicalPublicBookingUrl(source);
+  const copyTargetValue = publicBookingTarget || target;
+  const openTarget = publicBookingTarget || (source.source_kind === 'hosted' ? target : '');
 
   useEffect(() => {
     setLabel(source.display_label);
@@ -296,8 +318,8 @@ function BookingSourceCard({
   }
 
   function copyTarget() {
-    if (!target || !navigator.clipboard) return;
-    void navigator.clipboard.writeText(target).catch(() => undefined);
+    if (!copyTargetValue || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(copyTargetValue).catch(() => undefined);
   }
 
   return (
@@ -336,14 +358,27 @@ function BookingSourceCard({
         </label>
       ) : null}
 
-      {target ? (
+      {publicBookingTarget ? (
+        <label>
+          <span>{language === 'ru' ? 'Публичная ссылка на запись' : 'Public booking URL'}</span>
+          <input readOnly value={publicBookingTarget} aria-label={`${source.display_label} public booking URL`} />
+        </label>
+      ) : null}
+
+      {target && (!publicBookingTarget || source.source_kind === 'external') ? (
         <label>
           <span>
             {source.source_kind === 'hosted'
               ? (language === 'ru' ? 'Ссылка на форму' : 'Form URL')
               : (language === 'ru' ? 'Endpoint для формы сайта' : 'Website form endpoint')}
           </span>
-          <input readOnly value={target} aria-label={`${source.display_label} public URL`} />
+          <input
+            readOnly
+            value={target}
+            aria-label={source.source_kind === 'external'
+              ? `${source.display_label} endpoint URL`
+              : `${source.display_label} public URL`}
+          />
         </label>
       ) : null}
 
@@ -366,13 +401,13 @@ function BookingSourceCard({
             ? (language === 'ru' ? 'Выключить' : 'Disable')
             : (language === 'ru' ? 'Включить' : 'Enable')}
         </button>
-        {target ? (
+        {copyTargetValue ? (
           <button type="button" onClick={copyTarget}>
             {language === 'ru' ? 'Копировать ссылку' : 'Copy URL'}
           </button>
         ) : null}
-        {source.source_kind === 'hosted' && target ? (
-          <a href={target} target="_blank" rel="noreferrer">
+        {openTarget ? (
+          <a href={openTarget} target="_blank" rel="noreferrer">
             {language === 'ru' ? 'Открыть форму' : 'Open form'}
           </a>
         ) : null}

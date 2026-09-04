@@ -63,10 +63,15 @@ export const APPOINTMENT_CLIENT_ACTION_RPCS = new Set([
   'service_apply_appointment_client_action',
 ]);
 
-/** Read-only public-edge lookups added by platform-owned booking routes. */
+/** Existing read-only registry/hosted public-edge lookups. */
 export const READ_ONLY_RPCS = new Set([
   'resolve_booking_source_public',
   'resolve_hosted_booking_source',
+]);
+
+/** Canonical /book/{slug} lookup reuses the existing backend-only source resolver. */
+export const PUBLIC_SLUG_LOOKUP_RPCS = new Set([
+  'resolve_booking_source',
 ]);
 
 export class SupabaseError extends Error {
@@ -109,9 +114,6 @@ export function readSupabaseConfig(env) {
   }
 
   if (!rawUrl || (!secretKey && !legacyServiceRoleKey)) {
-    // Refusing here is the point. Falling back to notification-only behaviour
-    // would silently turn a durable booking system back into a Telegram relay,
-    // and the visitor would be told their enquiry was saved when it was not.
     throw new ConfigurationError('supabase_not_configured', 'The booking system is not configured.');
   }
 
@@ -135,8 +137,6 @@ export function readSupabaseConfig(env) {
     || parsedUrl.search
     || parsedUrl.hash
   ) {
-    // The backend key is sent to this origin. A typo or an arbitrary custom
-    // host must fail closed instead of receiving a privileged credential.
     throw new ConfigurationError(
       'invalid_supabase_url',
       'Configure the HTTPS project root URL from Supabase.'
@@ -171,6 +171,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       && !LIFECYCLE_ALERT_RPCS.has(name)
       && !APPOINTMENT_CLIENT_ACTION_RPCS.has(name)
       && !READ_ONLY_RPCS.has(name)
+      && !PUBLIC_SLUG_LOOKUP_RPCS.has(name)
     ) {
       throw new ConfigurationError('rpc_not_allowed', 'That database operation is not available.');
     }
@@ -193,9 +194,6 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
 
     let response = await request(1);
 
-    // Preserve the retry shipped in #474 while diagnosing it. HTTP 401 alone
-    // does NOT establish a root cause. Observe each response before it can be
-    // hidden by the existing retry. No new retry scope is added here.
     if (!response.ok && response.status === 401 && keyKind === 'secret') {
       response = await request(2);
     }
@@ -212,11 +210,6 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
   return { url, rpc, authHeaders, keyKind };
 }
 
-/**
- * Maps a database failure to a safe, visitor-facing error. A 4xx from PostgREST
- * means the payload was rejected by a constraint or a validation raise, which
- * is not retryable; a 5xx is.
- */
 export function toRequestError(error) {
   if (error instanceof RequestError || error instanceof ConfigurationError) return error;
   if (error instanceof SupabaseError) {
