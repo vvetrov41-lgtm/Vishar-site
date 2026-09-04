@@ -3,7 +3,7 @@
 ## Status
 
 - Feature: `universal-calendar-onboarding`
-- State: Production rollout, final third-artist acceptance pending
+- State: Production rollout; edge path scope and final third-artist acceptance pending
 - Owner/workstream: Vishar CRM Calendar production engineering
 - Related work: supersedes the two-artist Calendar OAuth allowlist introduced by `0030_calendar_connection_status.sql` and `0045_calendar_actor_authorization.sql`
 
@@ -84,6 +84,7 @@ Given a named operator already admitted to the private CRM by Cloudflare Access 
 - FR12 `public.list_calendar_access_operators()` is backend-only and returns only normalised email addresses plus an owner marker, for active profiles that hold manage-integrations on an active artist.
 - FR13 The Access sync refuses to write an empty or owner-less allow set, so a directory failure can never lock the account out of its own connector or widen the boundary.
 - FR14 A scheduled projection applies membership changes without a developer, and runs only from a canonical head whose required workflows are all green.
+- FR15 The zone firewall rule that scopes `calendar.vishartattoo.com` to the connector's routes names no artist. It allows `/health`, `/oauth/google/callback` and any reference under `/oauth/google/start/` and `/oauth/google/disconnect/`, and blocks everything else, so onboarding an artist changes no Cloudflare object.
 
 ## Non-functional requirements
 
@@ -102,6 +103,7 @@ Given a named operator already admitted to the private CRM by Cloudflare Access 
 - AC5 Vladimir's and Kristina's rows remain connected with their existing account bindings and presentation settings after rollout.
 - AC6 Cloudflare Access for Calendar has the same fingerprint as the CRM capability graph, contains every operator that currently holds manage-integrations, and the Calendar hostname remains Access-gated.
 - AC7 A newly granted membership reaches the Access boundary with no source change, no Worker variable and no manual Cloudflare edit.
+- AC8 `https://calendar.vishartattoo.com/oauth/google/start/<any-new-slug>` reaches the Cloudflare Access login redirect rather than a zone block page, while an off-scope path such as `/edge-scope-probe` is still blocked at the edge.
 - AC7 A real third-artist connection completes end to end. This requires interactive Google consent from that artist and is the only interactive product acceptance step.
 
 ## Retained staging note
@@ -133,7 +135,47 @@ mailbox that currently holds manage-integrations somewhere. It decides nothing
 about *which* artist, which remains `resolve_calendar_artist_route` evaluated
 per request.
 
+## Edge path scope
+
+A second per-artist allow-list survived `0139`, one layer in front of Access.
+Probing production on 2026-09-04 gives a deterministic exact-path pattern:
+
+```
+/health                            302 Access login
+/oauth/google/callback             302
+/oauth/google/start/vladimir       302
+/oauth/google/start/kristina       302
+/oauth/google/disconnect/vladimir  302
+/oauth/google/start/VLADIMIR       403 zone block page
+/oauth/google/start/vladimir/      403
+/oauth/google/start/sam            403
+/random-path                       403
+```
+
+The 403 body is the zone-level Cloudflare block page, it is case-sensitive, and
+it is specific to this hostname: `calendar-staging.vishartattoo.com` answers 302
+on every path. There is exactly one Access application for
+`calendar.vishartattoo.com` covering the bare hostname, so Access cannot be
+producing a per-path decision. The only layer left in front of Access is the
+zone firewall, and it enumerates the two launch artists.
+
+That is also why a "0 rulesets" inventory line was not evidence of absence: the
+production Cloudflare API token answers 403 to `/zones/{id}/rulesets`,
+`/firewall/lockdowns`, `/firewall/rules` and `/firewall/access_rules/rules`. It
+holds Access, DNS, Workers and Pages scopes but no Firewall Services scope, so
+the layer that carries the enumeration is the one layer it cannot see.
+
+`scripts/calendar-edge-scope-sync.mjs` replaces that one rule's expression with
+the artist-free scope in FR15 and nothing else: it refuses unless exactly one
+block rule at this hostname exists, reads back, verifies no neighbouring rule
+moved, and restores the original expression otherwise. Deny-by-default off the
+connector's four route shapes is preserved, and Access plus
+`resolve_calendar_artist_route` still decide identity and artist.
+
 ## Open gaps
 
+- The production Cloudflare API token cannot read or edit Firewall Services, so
+  the FR15 rollout cannot run until that token's scope is widened. Everything
+  else for it is implemented and tested.
 - No CRM surface edits `configuration.presentation`; new artists get defaults. Changing a colour or event label still needs a backend write.
 - Final third-artist acceptance requires the artist/operator to complete Google's interactive consent after the noninteractive Access boundary rollout is verified.
