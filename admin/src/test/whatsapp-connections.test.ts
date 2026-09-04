@@ -321,6 +321,7 @@ describe('WhatsApp Connections safety', () => {
     const api = createWhatsAppConnectionsApi(mocks.client);
     expect(Object.keys(api).sort()).toEqual([
       'listWhatsAppIntegrations',
+      'manageMetaReviewTemplate',
       'prepareWhatsAppIntegration',
       'provisionExistingProductionWhatsApp',
       'provisionProductionWhatsApp',
