@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {
   __testing,
+  isMarketingBookPath,
   isPublicBookingNamespace,
   isValidPublicBookingPath,
   proxyPublicBooking,
@@ -25,18 +26,45 @@ function upstream(response = new Response('<!doctype html><title>Booking | Vladi
   const calls = [];
   return {
     calls,
-    fetchImpl: async (url, init = {}) => { calls.push({ url: String(url), init }); return response.clone(); },
+    fetchImpl: async (input, init = {}) => {
+      calls.push({
+        url: input instanceof Request ? input.url : String(input),
+        request: input instanceof Request ? input : null,
+        init,
+      });
+      return response.clone();
+    },
   };
 }
 
-test('route owns only strict /book/{slug} paths', () => {
+test('route owns strict /book/{slug} paths while recognizing the existing marketing book page', () => {
   assert.equal(isPublicBookingNamespace('/book/vladimir'), true);
+  assert.equal(isPublicBookingNamespace('/book/'), true);
   assert.equal(isPublicBookingNamespace('/portfolio'), false);
+  assert.equal(isMarketingBookPath('/book/'), true);
+  assert.equal(isMarketingBookPath('/book/vladimir'), false);
   assert.equal(isValidPublicBookingPath('/book/vladimir'), true);
   assert.equal(isValidPublicBookingPath('/book/vladimir/'), true);
   for (const bad of ['/book/', '/book/Vladimir', '/book/v', '/book/vladimir/extra', '/portfolio']) {
     assert.equal(isValidPublicBookingPath(bad), false);
   }
+});
+
+test('existing /book/ marketing page passes through to the zone origin', async () => {
+  const { calls, fetchImpl } = upstream(new Response('<!doctype html><title>Composition & Light in Tattooing</title>', {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  }));
+  const response = await proxyPublicBooking(new Request('https://vishartattoo.com/book/?utm_source=site'), { fetchImpl });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://vishartattoo.com/book/?utm_source=site');
+  assert.ok(calls[0].request instanceof Request);
+
+  const post = await proxyPublicBooking(new Request('https://vishartattoo.com/book/', { method: 'POST' }), { fetchImpl });
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get('allow'), 'GET, HEAD');
+  assert.equal(calls.length, 1);
 });
 
 test('GET forwards only to the fixed intake origin and keeps query as non-authoritative analytics input', async () => {

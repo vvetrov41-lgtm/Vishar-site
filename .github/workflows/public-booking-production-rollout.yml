@@ -117,7 +117,7 @@ jobs:
             exit 1
           fi
 
-      - name: Read current zone route before mutation
+      - name: Read current zone, route, apex DNS and marketing baseline
         id: preflight
         shell: bash
         run: |
@@ -138,6 +138,7 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `zone_id=${rows[0].id}\n`);
           NODE
           zone_id="$(grep '^zone_id=' "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2-)"
+
           curl --fail --silent --show-error --header "$auth" \
             "https://api.cloudflare.com/client/v4/zones/${zone_id}/workers/routes" > "$RUNNER_TEMP/routes-before.json"
           ROUTES_FILE="$RUNNER_TEMP/routes-before.json" WORKER_NAME="$WORKER_NAME" node <<'NODE'
@@ -150,6 +151,33 @@ jobs:
             throw new Error(`Public-booking route is owned by ${exact[0].script || 'another origin'}; refusing takeover.`);
           }
           NODE
+
+          curl --fail --silent --show-error --get --header "$auth" \
+            --data-urlencode 'name=vishartattoo.com' \
+            --data-urlencode 'type=CNAME' \
+            "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" > "$RUNNER_TEMP/apex-dns-before.json"
+          DNS_FILE="$RUNNER_TEMP/apex-dns-before.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.DNS_FILE, 'utf8'));
+          const rows = body?.result;
+          if (body?.success !== true || !Array.isArray(rows) || rows.length !== 1) {
+            throw new Error('Expected exactly one apex CNAME record.');
+          }
+          const row = rows[0];
+          if (row.name !== 'vishartattoo.com' || row.type !== 'CNAME' || row.content !== 'vishar-site.pages.dev') {
+            throw new Error('Apex origin does not match the approved vishar-site Pages target.');
+          }
+          if (typeof row.proxied !== 'boolean' || !row.id) throw new Error('Malformed apex DNS readback.');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `dns_record_id=${row.id}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `dns_was_proxied=${row.proxied ? 'true' : 'false'}\n`);
+          NODE
+
+          home_status="$(curl -sS -o "$RUNNER_TEMP/home-before.html" -w '%{http_code}' "${PRODUCTION_HOST}/?public-booking-preflight=${GITHUB_SHA}")"
+          test "$home_status" = '200'
+          grep -Fq 'Realism, made to last.' "$RUNNER_TEMP/home-before.html"
+          book_status="$(curl -sS -o "$RUNNER_TEMP/book-marketing-before.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/?public-booking-preflight=${GITHUB_SHA}")"
+          test "$book_status" = '200'
+          grep -Fq 'Criteria instead of taste' "$RUNNER_TEMP/book-marketing-before.html"
 
       - name: Re-check canonical immediately before mutation
         shell: bash
@@ -169,10 +197,48 @@ jobs:
           WRANGLER_SEND_METRICS=false \
           npx wrangler deploy --config "$PRODUCTION_CONFIG" --name "$WORKER_NAME" --strict
 
-      - name: Read back route, Worker settings and live public forms
+      - name: Enable Cloudflare proxy only on the approved apex CNAME
+        id: apex_proxy
         shell: bash
         env:
           ZONE_ID: ${{ steps.preflight.outputs.zone_id }}
+          DNS_RECORD_ID: ${{ steps.preflight.outputs.dns_record_id }}
+          DNS_WAS_PROXIED: ${{ steps.preflight.outputs.dns_was_proxied }}
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          if [ "$DNS_WAS_PROXIED" = 'true' ]; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            # Record rollback intent before mutation so a partially successful
+            # API call still enters the guarded rollback path on later failure.
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            curl --fail --silent --show-error -X PATCH \
+              --header "$auth" \
+              --header 'Content-Type: application/json' \
+              --data '{"proxied":true}' \
+              "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${DNS_RECORD_ID}" \
+              > "$RUNNER_TEMP/apex-proxy-enable.json"
+          fi
+
+          curl --fail --silent --show-error --header "$auth" \
+            "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${DNS_RECORD_ID}" \
+            > "$RUNNER_TEMP/apex-dns-enabled.json"
+          DNS_FILE="$RUNNER_TEMP/apex-dns-enabled.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.DNS_FILE, 'utf8'));
+          const row = body?.result;
+          if (body?.success !== true || !row) throw new Error('Unable to read apex DNS after proxy mutation.');
+          if (row.name !== 'vishartattoo.com' || row.type !== 'CNAME' || row.content !== 'vishar-site.pages.dev' || row.proxied !== true) {
+            throw new Error('Apex DNS did not converge to the approved proxied Pages target.');
+          }
+          NODE
+
+      - name: Read back route, Worker settings, marketing site and live public forms
+        shell: bash
+        env:
+          ZONE_ID: ${{ steps.preflight.outputs.zone_id }}
+          DNS_RECORD_ID: ${{ steps.preflight.outputs.dns_record_id }}
         run: |
           set -euo pipefail
           auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
@@ -187,6 +253,18 @@ jobs:
           }
           NODE
 
+          curl --fail --silent --show-error --header "$auth" \
+            "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${DNS_RECORD_ID}" \
+            > "$RUNNER_TEMP/apex-dns-after.json"
+          DNS_FILE="$RUNNER_TEMP/apex-dns-after.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.DNS_FILE, 'utf8'));
+          const row = body?.result;
+          if (body?.success !== true || !row || row.proxied !== true || row.content !== 'vishar-site.pages.dev') {
+            throw new Error('Apex proxy readback is not the approved state.');
+          }
+          NODE
+
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}"
           curl --fail --silent --show-error --header "$auth" "$api/settings" > "$RUNNER_TEMP/settings.json"
           SETTINGS_FILE="$RUNNER_TEMP/settings.json" node <<'NODE'
@@ -197,11 +275,31 @@ jobs:
           if (bindings.length !== 0) throw new Error('Credential-free public-booking edge gained a live binding.');
           NODE
 
-          for slug in vladimir kristina sam; do
+          # DNS/route convergence can take a few seconds at the public edge.
+          ready=false
+          for attempt in $(seq 1 20); do
+            home_status="$(curl -sS -o "$RUNNER_TEMP/home-after.html" -w '%{http_code}' "${PRODUCTION_HOST}/?public-booking-release=${GITHUB_SHA}&attempt=${attempt}" || true)"
+            book_status="$(curl -sS -o "$RUNNER_TEMP/book-marketing-after.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/?public-booking-release=${GITHUB_SHA}&attempt=${attempt}" || true)"
+            vladimir_status="$(curl -sS -o "$RUNNER_TEMP/book-vladimir.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/vladimir?release=${GITHUB_SHA}&attempt=${attempt}" || true)"
+            if [ "$home_status" = '200' ] && grep -Fq 'Realism, made to last.' "$RUNNER_TEMP/home-after.html" \
+              && [ "$book_status" = '200' ] && grep -Fq 'Criteria instead of taste' "$RUNNER_TEMP/book-marketing-after.html" \
+              && [ "$vladimir_status" = '200' ] && grep -Fq '<form' "$RUNNER_TEMP/book-vladimir.html"; then
+              ready=true
+              break
+            fi
+            sleep 3
+          done
+          [ "$ready" = 'true' ]
+
+          for slug in kristina sam; do
             status="$(curl -sS -o "$RUNNER_TEMP/book-${slug}.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/${slug}?release=${GITHUB_SHA}")"
             test "$status" = '200'
             grep -Fq '<form' "$RUNNER_TEMP/book-${slug}.html"
           done
+          grep -Fq 'Vladimir' "$RUNNER_TEMP/book-vladimir.html"
+          grep -Fq 'Kristina' "$RUNNER_TEMP/book-kristina.html"
+          grep -Fq 'Sam' "$RUNNER_TEMP/book-sam.html"
+
           unknown="$(curl -sS -o "$RUNNER_TEMP/book-unknown.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/no-such-artist")"
           test "$unknown" = '404'
           grep -Fq 'Booking form unavailable' "$RUNNER_TEMP/book-unknown.html"
@@ -220,6 +318,33 @@ jobs:
           grep -Fq '<form' "$RUNNER_TEMP/legacy-sam.html"
           grep -Fq 'Sam' "$RUNNER_TEMP/legacy-sam.html"
 
+      - name: Roll back apex proxy if post-mutation acceptance fails
+        if: failure() && steps.apex_proxy.outputs.changed == 'true'
+        shell: bash
+        env:
+          ZONE_ID: ${{ steps.preflight.outputs.zone_id }}
+          DNS_RECORD_ID: ${{ steps.preflight.outputs.dns_record_id }}
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          curl --fail --silent --show-error -X PATCH \
+            --header "$auth" \
+            --header 'Content-Type: application/json' \
+            --data '{"proxied":false}' \
+            "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${DNS_RECORD_ID}" \
+            > "$RUNNER_TEMP/apex-proxy-rollback.json"
+          curl --fail --silent --show-error --header "$auth" \
+            "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${DNS_RECORD_ID}" \
+            > "$RUNNER_TEMP/apex-dns-rollback.json"
+          DNS_FILE="$RUNNER_TEMP/apex-dns-rollback.json" node <<'NODE'
+          const fs = require('node:fs');
+          const body = JSON.parse(fs.readFileSync(process.env.DNS_FILE, 'utf8'));
+          const row = body?.result;
+          if (body?.success !== true || !row || row.name !== 'vishartattoo.com' || row.content !== 'vishar-site.pages.dev' || row.proxied !== false) {
+            throw new Error('Apex DNS rollback did not restore the original DNS-only Pages target.');
+          }
+          NODE
+
       - name: Production rollout summary
         if: always()
         shell: bash
@@ -229,6 +354,8 @@ jobs:
             echo "- Exact SHA: \`$GITHUB_SHA\`"
             echo '- Worker: `vishar-public-booking-edge`'
             echo '- Route: `vishartattoo.com/book/*` only'
+            echo '- Apex DNS: exact `vishartattoo.com -> vishar-site.pages.dev` CNAME, proxied only after guarded preflight'
+            echo '- Existing marketing `/` and `/book/`: required to remain live'
             echo '- Bindings/secrets: expected zero'
             echo '- Acceptance: Vladimir, Kristina, Sam, unknown slug, forged query, legacy Sam UUID link'
             echo '- Customer/enquiry writes by rollout probes: none'

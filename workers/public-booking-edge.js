@@ -4,10 +4,15 @@
 // credential-bearing intake Worker on a fixed first-party origin and strips all
 // browser routing/authentication headers. The upstream database decides which
 // immutable Artist/source the slug represents.
+//
+// Cloudflare route wildcards match zero or more characters, so /book/* also
+// catches the pre-existing /book/ marketing page. That exact path is passed
+// through to the zone origin so enabling the proxied apex cannot hide the book.
 
 const HOST = 'vishartattoo.com';
 const UPSTREAM_ORIGIN = 'https://tattooai.vvetrov41.workers.dev';
 const BOOK_PREFIX = '/book/';
+const MARKETING_BOOK_PATH = '/book/';
 const BOOK_PATH = /^\/book\/[a-z][a-z0-9-]{1,62}\/?$/;
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'OPTIONS']);
 const MAX_REQUEST_BYTES = 13 * 1024 * 1024;
@@ -62,13 +67,35 @@ export function isPublicBookingNamespace(pathname) {
   return pathname.startsWith(BOOK_PREFIX);
 }
 
+export function isMarketingBookPath(pathname) {
+  return pathname === MARKETING_BOOK_PATH;
+}
+
 export function isValidPublicBookingPath(pathname) {
   return BOOK_PATH.test(pathname);
 }
 
 export async function proxyPublicBooking(request, { fetchImpl = fetch } = {}) {
   const url = new URL(request.url);
-  if (url.hostname !== HOST || !isValidPublicBookingPath(url.pathname)) {
+  if (url.hostname !== HOST) {
+    return plain(404, 'Not found.');
+  }
+
+  // A Worker Route can transparently fetch the incoming Request to the zone
+  // origin. Keep the existing public book page intact when the apex becomes
+  // proxied so the booking route can execute.
+  if (isMarketingBookPath(url.pathname)) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return plain(405, 'Method not allowed.', { Allow: 'GET, HEAD' });
+    }
+    try {
+      return await fetchImpl(request);
+    } catch {
+      return plain(502, 'The site is temporarily unavailable.');
+    }
+  }
+
+  if (!isValidPublicBookingPath(url.pathname)) {
     return plain(404, 'Not found.');
   }
   if (!METHODS.has(request.method)) {
@@ -139,6 +166,7 @@ export const __testing = Object.freeze({
   HOST,
   UPSTREAM_ORIGIN,
   BOOK_PREFIX,
+  MARKETING_BOOK_PATH,
   BOOK_PATH,
   METHODS,
   MAX_REQUEST_BYTES,
