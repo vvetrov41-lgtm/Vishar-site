@@ -1,0 +1,195 @@
+name: Telegram webhook reconcile release
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc655-telegram-webhook-reconcile'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-private-production-telegram
+  cancel-in-progress: false
+
+jobs:
+  telegram:
+    name: Telegram-only production rollout
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-telegram-drain-production
+      CANONICAL_TELEGRAM_SHA: 4c763abe388429be05d82d0eedb5eb34cc7e3c50
+
+    steps:
+      - name: Checkout exact release snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable Telegram-only release lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ] || {
+            echo 'Only the repository owner may run this production release.' >&2
+            exit 1
+          }
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc655-telegram-webhook-reconcile' ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor "$CANONICAL_TELEGRAM_SHA" "$GITHUB_SHA"
+          remote_sha="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
+          [ "$remote_sha" = "$GITHUB_SHA" ] || {
+            echo 'Release branch moved after trigger; refusing production mutation.' >&2
+            exit 1
+          }
+          unexpected="$(git diff --name-only "$CANONICAL_TELEGRAM_SHA" "$GITHUB_SHA" | grep -Ev '^\.github/workflows/(private-production-release|telegram-webhook-reconcile-release)\.yml$' || true)"
+          [ -z "$unexpected" ] || {
+            echo 'Telegram release contains non-ops changes after canonical SHA.' >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          }
+          git diff --quiet "$CANONICAL_TELEGRAM_SHA" "$GITHUB_SHA" -- workers scripts wrangler.telegram-drain.production.toml || {
+            echo 'Worker artifact drifted after canonical Telegram SHA.' >&2
+            exit 1
+          }
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit dependencies and scan secrets
+        run: |
+          npm audit --audit-level=moderate
+          npm run scan:secrets
+
+      - name: Re-run focused Telegram boundaries
+        run: |
+          node scripts/test-telegram-drain.mjs
+          node scripts/test-telegram-drain-worker.mjs
+          node scripts/test-telegram-self-service-worker.mjs
+          node scripts/test-telegram-webhook-runtime-reconcile.mjs
+          npm run test:telegram-production
+          npm run check:telegram-production-bundle
+
+      - name: Cloudflare production preflight before mutation
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/telegram.preflight.toml"
+          node scripts/generate-telegram-production-deploy-config.mjs "$config" --enable-linking
+          node scripts/preflight-telegram-production.mjs "$config" --allow-linking
+          rm -f "$config"
+
+      - name: Verify exact pre-provisioned Worker secret names
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          secrets_json="$(npx wrangler secret list --config wrangler.telegram-drain.production.toml --name "$WORKER_NAME" --format json)"
+          SECRET_LIST="$secrets_json" node <<'NODE'
+          const values = JSON.parse(process.env.SECRET_LIST || '[]');
+          const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
+          const expected = [
+            'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
+            'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+            'SUPABASE_SECRET_KEY',
+            'TELEGRAM_BOT_TOKEN',
+            'TELEGRAM_WEBHOOK_SECRET',
+          ].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Production Telegram Worker secret-name set mismatch: ${actual.join(', ')}`);
+          }
+          NODE
+
+      - name: Dry-run and deploy Telegram Worker only
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/telegram.deploy.toml"
+          output="$RUNNER_TEMP/telegram.deploy.ndjson"
+          trap 'rm -f "$config" "$output"' EXIT
+          node scripts/generate-telegram-production-deploy-config.mjs "$config" --enable-linking
+          grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$config"
+          grep -Fq 'GMAIL_SHARED_DRAIN_ENABLED = "true"' "$config"
+          grep -Fq 'TELEGRAM_LINKING_ENABLED = "true"' "$config"
+          grep -Fq 'binding = "GMAIL_SERVICE"' "$config"
+          grep -Fq 'service = "vishar-gmail-production"' "$config"
+          grep -Fq 'telegram.vishartattoo.com' "$config"
+          grep -Fq 'crons = ["*/5 * * * *"]' "$config"
+          node scripts/preflight-telegram-production.mjs "$config" --allow-linking
+          npx wrangler deploy --config "$config" --name "$WORKER_NAME" --dry-run --outdir "$RUNNER_TEMP/telegram-generated"
+          rm -f "$output"
+          WRANGLER_OUTPUT_FILE_PATH="$output" npx wrangler deploy --config "$config" --name "$WORKER_NAME"
+          node scripts/preflight-telegram-production.mjs "$config" --allow-linking
+          node <<'NODE'
+          const fs = require('fs');
+          const lines = fs.readFileSync(process.env.RUNNER_TEMP + '/telegram.deploy.ndjson', 'utf8')
+            .split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+          const deploys = lines.filter((entry) => entry?.type === 'deploy'
+            && entry?.worker_name === process.env.WORKER_NAME
+            && typeof entry?.version_id === 'string' && entry.version_id.length > 0);
+          if (deploys.length !== 1) throw new Error('Unable to resolve exactly one Telegram deploy version');
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/telegram-deployed-version', deploys[0].version_id);
+          NODE
+          deployed_version="$(cat "$RUNNER_TEMP/telegram-deployed-version")"
+          versions="$(npx wrangler versions list --name "$WORKER_NAME" --json)"
+          VERSIONS="$versions" DEPLOYED_VERSION="$deployed_version" node <<'NODE'
+          const versions = JSON.parse(process.env.VERSIONS || '[]');
+          if (!Array.isArray(versions) || !versions.some((entry) => entry?.id === process.env.DEPLOYED_VERSION)) {
+            throw new Error('Deployed Telegram version is absent from Worker version readback');
+          }
+          console.log(`TELEGRAM_WORKER_VERSION=${process.env.DEPLOYED_VERSION}`);
+          NODE
+          rm -f "$config" "$output"
+          trap - EXIT
+
+      - name: Verify live Telegram HTTP boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            expected="$1"
+            shift
+            actual="$(curl -sS -o /dev/null -w '%{http_code}' --retry 3 --retry-delay 2 "$@")"
+            [ "$actual" = "$expected" ] || {
+              echo "Telegram HTTP boundary mismatch: expected $expected, got $actual" >&2
+              exit 1
+            }
+          }
+          probe 404 https://telegram.vishartattoo.com/
+          probe 404 https://telegram.vishartattoo.com/anything
+          probe 405 https://telegram.vishartattoo.com/webhook
+          probe 404 -X POST https://telegram.vishartattoo.com/notwebhook
+          probe 401 -X POST https://telegram.vishartattoo.com/webhook
+
+      - name: Release summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Telegram-only production rollout'
+            echo
+            echo "- Exact release SHA: \`$GITHUB_SHA\`"
+            echo '- Canonical Worker source SHA: `4c763abe388429be05d82d0eedb5eb34cc7e3c50`'
+            echo '- Mutation target: `vishar-telegram-drain-production` only'
+            echo '- No Pages deployment, Supabase migration, Calendar Worker mutation, or secret mutation'
+            echo '- Linking remains enabled; cron remains `*/5 * * * *`'
+            echo '- Runtime now reconciles Telegram provider webhook from pre-existing Worker secrets and mandatory readback'
+          } >> "$GITHUB_STEP_SUMMARY"
