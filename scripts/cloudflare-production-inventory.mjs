@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path';
 const API_ROOT = 'https://api.cloudflare.com/client/v4';
 const VISHAR_NAME = /(vishar|tattooai|kristina|kisa)/i;
 const SENSITIVE_NAME = /(secret|token|password|private|credential|client_secret|api_key|publishable_key|webhook_secret|access_aud)/i;
+const REQUEST_PHASE = /^http_(request_firewall_custom|request_firewall_managed|ratelimit|request_sanitize|request_transform|request_redirect|request_origin)$/;
 const HTTP_BOUNDARIES = Object.freeze([
   'https://crm.vishartattoo.com/',
   'https://vishar-crm-production.pages.dev/',
@@ -204,20 +205,23 @@ async function main() {
   ]);
 
   // Zone firewall rulesets decide whether a request reaches Access at all, so
-  // an edge boundary review that stops at Access is incomplete.
+  // an edge boundary review that stops at Access is incomplete. The full phase
+  // index is recorded because "no custom rules" only means something once the
+  // listing itself is known to have been readable.
   const rulesetRows = await read(`/zones/${zone.id}/rulesets`, { required: false });
+  const rulesetIndex = sortBy(listRows(rulesetRows.result, 'zone rulesets', ['rulesets']).map((ruleset) => ({
+    id: typeof ruleset?.id === 'string' ? ruleset.id : null,
+    name: ruleset?.name ?? null,
+    phase: String(ruleset?.phase || ''),
+    kind: ruleset?.kind ?? null,
+  })), 'phase');
   const firewallRulesets = [];
-  for (const ruleset of listRows(rulesetRows.result, 'zone rulesets', ['rulesets'])) {
-    const phase = String(ruleset?.phase || '');
-    if (!/^http_(request_firewall_custom|ratelimit|request_sanitize)$/.test(phase)) continue;
-    if (typeof ruleset?.id !== 'string') continue;
+  for (const ruleset of rulesetIndex) {
+    if (!REQUEST_PHASE.test(ruleset.phase) || ruleset.id == null) continue;
     const detail = await read(`/zones/${zone.id}/rulesets/${ruleset.id}`, { required: false });
     const rules = Array.isArray(detail.result?.rules) ? detail.result.rules : [];
     firewallRulesets.push({
-      id: ruleset.id,
-      name: ruleset.name ?? null,
-      phase,
-      kind: ruleset.kind ?? null,
+      ...ruleset,
       rules: rules.map((rule) => ({
         id: rule?.id ?? null,
         action: rule?.action ?? null,
@@ -227,6 +231,35 @@ async function main() {
       })),
     });
   }
+
+  // Legacy zone firewall objects predate the rulesets API and are not always
+  // projected into it. A URL-scoped lockdown in particular serves exactly the
+  // "you have been blocked" page that a path-scoped Access application would
+  // not, so an inventory that skips them cannot explain a per-path 403.
+  const [lockdownRows, legacyRuleRows, ipRuleRows] = await Promise.all([
+    read(`/zones/${zone.id}/firewall/lockdowns?per_page=100`, { required: false }),
+    read(`/zones/${zone.id}/firewall/rules?per_page=100`, { required: false }),
+    read(`/zones/${zone.id}/firewall/access_rules/rules?per_page=100`, { required: false }),
+  ]);
+  const zoneLockdowns = listRows(lockdownRows.result, 'zone lockdowns', ['lockdowns']).map((row) => ({
+    id: row?.id ?? null,
+    paused: row?.paused ?? null,
+    description: row?.description ?? null,
+    urls: (Array.isArray(row?.urls) ? row.urls : []).map((url) => String(url).slice(0, 200)),
+    configuration_count: Array.isArray(row?.configurations) ? row.configurations.length : 0,
+  }));
+  const legacyFirewallRules = listRows(legacyRuleRows.result, 'legacy firewall rules', ['rules']).map((row) => ({
+    id: row?.id ?? null,
+    action: row?.action ?? null,
+    paused: row?.paused ?? null,
+    description: row?.description ?? null,
+    expression: safeExpression(row?.filter?.expression),
+  }));
+  const ipAccessRules = listRows(ipRuleRows.result, 'IP access rules', ['rules']).map((row) => ({
+    id: row?.id ?? null,
+    mode: row?.mode ?? null,
+    target: row?.configuration?.target ?? null,
+  }));
 
   if (accountAccessRows.result == null && zoneAccessRows.result == null) {
     fail('Cloudflare Access applications are unreadable at both account and zone scope');
@@ -386,7 +419,11 @@ async function main() {
     })), 'pattern'),
     dns_records: sortBy(listRows(dnsRows.result, 'DNS records', ['records']).map(safeDnsRecord), 'name'),
     access_applications: accessApplications,
+    ruleset_index: rulesetIndex,
     firewall_rulesets: firewallRulesets,
+    zone_lockdowns: zoneLockdowns,
+    legacy_firewall_rules: legacyFirewallRules,
+    ip_access_rules: ipAccessRules,
     http_boundaries: httpBoundaries,
     pages,
     storage: {
@@ -410,6 +447,13 @@ async function main() {
   await mkdir(dirname(summaryPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(inventory, null, 2)}\n`, { mode: 0o600 });
 
+  // A "zero rules" line is only evidence when the read behind it succeeded, so
+  // every security-relevant listing carries its own HTTP status.
+  const statusOf = (path) => {
+    const row = reads.find((entry) => entry.path === path);
+    return row ? String(row.status) : 'not read';
+  };
+
   const summary = [
     '### Cloudflare production inventory',
     '',
@@ -420,12 +464,19 @@ async function main() {
     `- Worker Routes: ${inventory.worker_routes.length}`,
     `- Pages projects: ${pages.length} (${pages.filter((project) => project.vishar_named).length} Vishar-named)`,
     `- Access applications: ${accessApplications.length} (account and zone scopes reconciled)`,
-    `- Firewall rulesets: ${firewallRulesets.length} (${firewallRulesets.reduce((total, set) => total + set.rules.length, 0)} rules)`,
+    ...accessApplications.map((app) => `  - \`${app.domain ?? '(no domain)'}\` type=${app.type ?? 'unknown'} scope=${app.scope_kind} policies=${app.policies.length} include=${[...new Set(app.policies.flatMap((policy) => policy.include_selector_kinds))].join(',') || 'none'}`),
+    `- Zone rulesets: HTTP ${statusOf(`/zones/${zone.id}/rulesets`)}, ${rulesetIndex.length} listed (${[...new Set(rulesetIndex.map((set) => set.phase))].join(', ') || 'none'})`,
+    `- Firewall rulesets inspected: ${firewallRulesets.length} (${firewallRulesets.reduce((total, set) => total + set.rules.length, 0)} rules)`,
     ...firewallRulesets.flatMap((set) => [
       '',
       `  \`${set.phase}\` / \`${set.name ?? set.id}\``,
       ...set.rules.map((rule) => `  - \`${rule.action}\`${rule.enabled === false ? ' (disabled)' : ''} ${rule.description ?? ''}\n    \`${rule.expression ?? ''}\``),
     ]),
+    `- Zone lockdowns: HTTP ${statusOf(`/zones/${zone.id}/firewall/lockdowns?per_page=100`)}, ${zoneLockdowns.length} configured`,
+    ...zoneLockdowns.map((lockdown) => `  - ${lockdown.paused ? '(paused) ' : ''}${lockdown.description ?? ''} urls=\`${lockdown.urls.join(' ') || 'none'}\` allowed_configurations=${lockdown.configuration_count}`),
+    `- Legacy firewall rules: HTTP ${statusOf(`/zones/${zone.id}/firewall/rules?per_page=100`)}, ${legacyFirewallRules.length} configured`,
+    ...legacyFirewallRules.map((rule) => `  - \`${rule.action}\`${rule.paused ? ' (paused)' : ''} ${rule.description ?? ''}\n    \`${rule.expression ?? ''}\``),
+    `- IP access rules: HTTP ${statusOf(`/zones/${zone.id}/firewall/access_rules/rules?per_page=100`)}, ${ipAccessRules.length} configured (${[...new Set(ipAccessRules.map((rule) => rule.mode))].join(', ') || 'none'})`,
     `- Unauthenticated HTTP boundaries: ${httpBoundaries.length}`,
     `- DNS records inventoried: ${inventory.dns_records.length} (TXT and non-routing content redacted)`,
     '- Cloudflare mutations: none (GET requests only)',
