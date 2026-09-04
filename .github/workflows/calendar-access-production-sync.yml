@@ -15,11 +15,11 @@ permissions:
   actions: read
   contents: read
 
-# Onboarding an artist must not need a developer, so the same sync also runs
-# every fifteen minutes. GitHub honours `schedule:` only on the default branch,
-# so that trigger lives in `.github/workflows/calendar-access-scheduled-projection.yml`
-# on `main`; it checks out this branch and runs this same script. A cron here
-# would never fire.
+# There is deliberately no `schedule:` here. GitHub fires cron only on the
+# default branch, and the `crm-production` environment admits only the
+# `release/private-crm-rc*` namespace, so a scheduled projection needs `main`
+# added to that environment's deployment branches before it can exist at all.
+# Until then the boundary moves on a marker commit, which is what this file is.
 
 concurrency:
   group: calendar-access-production-sync-${{ github.event.pull_request.number || github.ref }}
