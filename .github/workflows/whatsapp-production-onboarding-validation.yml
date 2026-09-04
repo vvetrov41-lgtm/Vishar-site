@@ -6,6 +6,7 @@ on:
       - agent/platform-telegram-self-service
       - agent/kristina-whatsapp-production-onboarding
       - agent/kristina-self-service-whatsapp-connect
+      - agent/meta-review-whatsapp-template-probe
       - release/private-crm-rc*
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - admin/public/_headers
       - admin/functions/api/whatsapp/embedded-signup/provision.js
       - admin/functions/api/whatsapp/existing-account/provision.js
+      - admin/functions/api/whatsapp/meta-review/template.js
       - admin/src/lib/meta-whatsapp-embedded-signup.ts
       - admin/src/lib/whatsapp-connections-api.ts
       - admin/src/pages/WhatsAppConnectionsPage.tsx
@@ -25,6 +27,7 @@ on:
       - scripts/check-private-crm-artifact.mjs
       - scripts/test-whatsapp-production-onboarding.mjs
       - scripts/test-whatsapp-existing-account-provisioning.mjs
+      - scripts/test-whatsapp-meta-review-template.mjs
       - scripts/generate-whatsapp-production-deploy-config.mjs
       - scripts/test-whatsapp-production-config.mjs
       - scripts/test-whatsapp-webhook-production-config.mjs
@@ -54,7 +57,7 @@ jobs:
             test -n "${GITHUB_HEAD_REF:-}"
           else
             case "$branch" in
-              agent/platform-telegram-self-service|agent/kristina-whatsapp-production-onboarding|agent/kristina-self-service-whatsapp-connect|release/private-crm-rc*) ;;
+              agent/platform-telegram-self-service|agent/kristina-whatsapp-production-onboarding|agent/kristina-self-service-whatsapp-connect|agent/meta-review-whatsapp-template-probe|release/private-crm-rc*) ;;
               *) echo "Unexpected WhatsApp onboarding branch: $branch" >&2; exit 1 ;;
             esac
           fi
@@ -76,6 +79,9 @@ jobs:
 
       - name: Test existing-account provisioning boundary
         run: node scripts/test-whatsapp-existing-account-provisioning.mjs
+
+      - name: Test Meta review template probe boundary
+        run: node scripts/test-whatsapp-meta-review-template.mjs
 
       - name: Test dynamic production deployment gates
         run: |
@@ -114,6 +120,7 @@ jobs:
           grep -Fq 'vishar-whatsapp-drain-production' /tmp/whatsapp-production-onboarding-worker.js
           grep -Fq 'ARTIST_WHATSAPP_' /tmp/whatsapp-production-onboarding-worker.js
           grep -Fq 'complete_artist_whatsapp_connection' /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'meta_review_permission_demo' /tmp/whatsapp-production-onboarding-worker.js
 
       - name: Test private CRM
         working-directory: admin
