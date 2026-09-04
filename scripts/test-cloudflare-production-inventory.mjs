@@ -36,6 +36,14 @@ assert.match(script, /Secret values: never requested; secret names only/);
 assert.match(script, /zones\/\$\{zone\.id\}\/access\/apps/);
 assert.match(script, /Access applications are unreadable at both account and zone scope/);
 assert.match(script, /HTTP_BOUNDARIES/);
+assert.match(script, /firewall\/lockdowns\?per_page=100/);
+assert.match(script, /firewall\/rules\?per_page=100/);
+assert.match(script, /firewall\/access_rules\/rules\?per_page=100/);
+assert.match(script, /const statusOf = \(path\)/);
+assert.match(script, /ruleset_index: rulesetIndex/);
+for (const key of ['lockdowns', 'rules']) {
+  assert.match(script, new RegExp(`listRows\\([a-zA-Z]+\\.result, '[^']+', \\['${key}'\\]\\)`));
+}
 assert.match(script, /redirect: 'manual'/);
 assert.match(script, /safeRedirectTarget/);
 assert.match(script, /target\.origin/);
