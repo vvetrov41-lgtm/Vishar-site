@@ -9,7 +9,7 @@
 // person's name being a real link to their account.
 
 import { describe, expect, it } from 'vitest';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
 import { LanguageProvider } from '../lib/i18n';
 import { MANAGER_ID, VLADIMIR_ARTIST_ID, renderWithSession } from './fixtures';
@@ -36,9 +36,19 @@ function renderShell(path = '/', localised = false) {
   });
 }
 
+// The shell keeps loading after the trigger first appears, so a node captured
+// by `findByRole` can be replaced by a later render before the click reaches
+// it. Clicking a detached node silently does nothing and the panel never opens,
+// which is why this always re-queries immediately before clicking and then
+// waits for the panel rather than asserting on the same tick.
+async function accountTrigger() {
+  return screen.findByRole('button', { name: /your account/i });
+}
+
 async function openPopover() {
-  const trigger = await screen.findByRole('button', { name: /your account/i });
+  const trigger = await accountTrigger();
   fireEvent.click(trigger);
+  await waitFor(() => expect(panel()).not.toBeNull());
   return trigger;
 }
 
@@ -49,13 +59,10 @@ function panel() {
 describe('the account popover', () => {
   it('starts closed and opens on the trigger', async () => {
     renderShell();
-    const trigger = await screen.findByRole('button', { name: /your account/i });
-
+    expect(await accountTrigger()).toHaveAttribute('aria-expanded', 'false');
     expect(panel()).toBeNull();
-    expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
-    fireEvent.click(trigger);
-    expect(panel()).not.toBeNull();
+    const trigger = await openPopover();
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
   });
 
