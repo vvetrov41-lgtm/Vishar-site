@@ -122,6 +122,43 @@ describe('Forms and websites management', () => {
     expect(document.body.textContent).not.toContain('artist_id');
   });
 
+  it('copies and opens the canonical /book URL while retaining the external website POST endpoint', async () => {
+    const clipboardWrite = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: clipboardWrite },
+    });
+    const platform = api({
+      listBookingSources: vi.fn(async () => [{
+        id: 'external-source-row',
+        artist_id: ARTIST_ONE,
+        public_source_id: PUBLIC_SOURCE,
+        source_kind: 'external',
+        display_label: 'Artist One website',
+        allowed_origin: 'https://artist-one.example',
+        form_template: 'tattoo-enquiry',
+        form_version: 'booking-v1',
+        is_active: true,
+        public_path: 'https://vishartattoo.com/book/one',
+        created_at: '2026-09-03T00:00:00Z',
+        updated_at: '2026-09-03T00:00:00Z',
+      }]),
+    });
+    vi.mocked(useApi).mockReturnValue(platform);
+
+    render(<BookingSourcesPage />);
+
+    expect(await screen.findByLabelText('Artist One website public booking URL'))
+      .toHaveValue('https://vishartattoo.com/book/one');
+    expect(screen.getByLabelText('Artist One website endpoint URL'))
+      .toHaveValue(`https://booking.vishartattoo.com/?source=${PUBLIC_SOURCE}`);
+
+    const open = screen.getByRole('link', { name: 'Open form' });
+    expect(open).toHaveAttribute('href', 'https://vishartattoo.com/book/one');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy URL' }));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith('https://vishartattoo.com/book/one'));
+  });
+
   it('fails closed before listing when a manager has no manageable Artist membership', () => {
     const platform = api();
     vi.mocked(useApi).mockReturnValue(platform);

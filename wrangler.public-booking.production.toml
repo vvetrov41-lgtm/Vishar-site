@@ -1,0 +1,11 @@
+name = "vishar-public-booking-edge"
+main = "workers/public-booking-edge.js"
+compatibility_date = "2026-05-25"
+workers_dev = false
+preview_urls = false
+
+# This Worker owns only the human-readable booking namespace. The rest of the
+# marketing site remains on its existing origin/routing stack.
+routes = [
+  { pattern = "vishartattoo.com/book/*", zone_name = "vishartattoo.com" }
+]

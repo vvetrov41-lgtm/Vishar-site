@@ -46,6 +46,15 @@ jobs:
       - name: Test Worker modules
         run: npm run test:worker
 
+      - name: Test canonical public booking slugs and root edge
+        run: |
+          node scripts/test-public-booking-slugs.mjs
+          node scripts/test-public-booking-edge.mjs
+          XDG_CONFIG_HOME=.wrangler/config \
+          WRANGLER_LOG_PATH=.wrangler/public-booking-edge.log \
+          WRANGLER_SEND_METRICS=false \
+          npx wrangler deploy --config wrangler.public-booking.production.toml --dry-run --outdir .wrangler/public-booking-edge-dry-run
+
       - name: Validate Telegram production configuration
         run: npm run test:telegram-production
 
@@ -184,10 +193,6 @@ jobs:
       - name: Run pgTAP suite
         run: supabase test db
 
-      # The pgTAP suite runs against a database where every migration has
-      # already been applied, so it cannot observe what a data migration does to
-      # rows that existed beforehand. This replays the history in stages against
-      # a throwaway database instead.
       - name: Verify the communications migration preserves existing WhatsApp records
         run: npm run test:communications-migration
 
