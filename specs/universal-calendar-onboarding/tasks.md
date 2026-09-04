@@ -18,9 +18,13 @@
 | T14 | Worker tests: denial matrix, state substitution, first bind, mismatch | Scenarios 3-6 | done |
 | T15 | pgTAP tests for `0137` | FR1, FR6-FR10 | done |
 | T16 | Admin tests | FR8 | done |
-| T17 | Exact-head CI green | AC1 | pending |
-| T18 | Staging migration + pgTAP | AC2 | pending |
-| T19 | Production migration | AC2 | pending |
-| T20 | Production Calendar Worker redeploy | AC3 | pending |
-| T21 | Production readback | AC3, AC4, AC5 | pending |
-| T22 | Third-artist acceptance (interactive Google consent) | AC6 | pending |
+| T17 | Exact-head CI green for implementation and rollout heads | AC1 | done |
+| T18 | Retained staging migration + pgTAP | AC2 | blocked: staging is at 0044; isolated 0137 is unsafe |
+| T19 | Production migration `0137` + migration-history readback | AC2 | done |
+| T20 | Production Calendar Worker redeploy | AC3 | done |
+| T21 | Production Pages / DB / Worker / Cloudflare readback | AC3, AC4, AC5 | done |
+| T22 | Fail-closed Calendar Access policy synchronizer + tests | FR11, AC6 | done |
+| T23 | Merge Access sync with exact-head CI | FR11, AC6 | in progress |
+| T24 | Production Calendar Access policy sync + independent readback | AC6 | pending |
+| T25 | Retained staging ordered catch-up plan / dry-run proof | AC2 | pending |
+| T26 | Third-artist acceptance (interactive Google consent) | AC7 | pending |
