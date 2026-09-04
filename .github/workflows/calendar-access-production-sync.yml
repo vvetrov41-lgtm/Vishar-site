@@ -1,0 +1,213 @@
+name: Calendar Access production sync
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/calendar-access-sync.mjs'
+      - 'scripts/test-calendar-access-sync.mjs'
+      - '.github/workflows/calendar-access-production-sync.yml'
+      - 'specs/universal-calendar-onboarding/**'
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-calendar-access-sync-*'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: calendar-access-production-sync-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate Calendar Access sync
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test fail-closed policy sync
+        run: |
+          set -euo pipefail
+          node --check scripts/calendar-access-sync.mjs
+          node --check scripts/test-calendar-access-sync.mjs
+          node scripts/test-calendar-access-sync.mjs
+
+  sync-production:
+    name: Sync Calendar Access to operator policy
+    if: >-
+      github.event_name == 'push'
+      && github.actor == github.repository_owner
+      && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CALENDAR_HOST: calendar.vishartattoo.com
+      MARKER_FILE: .github/ops-triggers/calendar-access-sync.trigger
+
+    steps:
+      - name: Checkout trigger ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify immutable marker, canonical source and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-inventory-calendar-access-sync-*) ;;
+            *) echo 'Calendar Access sync must use its isolated inventory release namespace.' >&2; exit 1 ;;
+          esac
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+          parent_count="$(git rev-list --parents -n 1 "$GITHUB_SHA" | awk '{print NF-1}')"
+          [ "$parent_count" = '1' ] || { echo 'Trigger must be a single-parent marker commit.' >&2; exit 1; }
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+
+          mapfile -t changed_files < <(git diff --name-only "$APPROVED_SHA" "$GITHUB_SHA")
+          [ "${#changed_files[@]}" = '1' ]
+          [ "${changed_files[0]}" = "$MARKER_FILE" ]
+          [ "$(tr -d '\r\n' < "$MARKER_FILE")" = "sync:$APPROVED_SHA" ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Canonical moved before Calendar Access admission.' >&2
+            exit 1
+          }
+          release_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$release_sha" = "$GITHUB_SHA" ]
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+            'WhatsApp production onboarding validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
+              exit 1
+            }
+          done
+
+          git checkout --detach "$APPROVED_SHA"
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Revalidate fail-closed sync implementation
+        run: |
+          set -euo pipefail
+          node --check scripts/calendar-access-sync.mjs
+          node scripts/test-calendar-access-sync.mjs
+
+      - name: Read Calendar and operator Access policies before mutation
+        run: |
+          set -euo pipefail
+          node scripts/calendar-access-sync.mjs inspect --output "$RUNNER_TEMP/calendar-access-before.json"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const state = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-access-before.json', 'utf8'));
+          if (state.source_host !== 'app.vishartattoo.com') throw new Error('unexpected source Access host');
+          if (state.target_host !== 'calendar.vishartattoo.com') throw new Error('unexpected Calendar Access host');
+          if (!Number.isInteger(state.source_email_rule_count) || state.source_email_rule_count < 1) throw new Error('operator policy has no named emails');
+          if (!Number.isInteger(state.target_email_rule_count) || state.target_email_rule_count < 1) throw new Error('Calendar policy has no named emails');
+          if (!/^[0-9a-f]{64}$/.test(state.source_policy_digest || '')) throw new Error('source digest missing');
+          if (!/^[0-9a-f]{64}$/.test(state.target_policy_digest || '')) throw new Error('target digest missing');
+          NODE
+
+      - name: Recheck immutable source immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Canonical moved after Calendar Access preflight.' >&2
+            exit 1
+          }
+          release_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$release_sha" = "$GITHUB_SHA" ]
+
+      - name: Synchronize only Calendar Access allow policy
+        run: |
+          set -euo pipefail
+          node scripts/calendar-access-sync.mjs sync --output "$RUNNER_TEMP/calendar-access-sync.json"
+
+      - name: Independent policy readback
+        run: |
+          set -euo pipefail
+          node scripts/calendar-access-sync.mjs inspect --output "$RUNNER_TEMP/calendar-access-after.json"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const before = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-access-before.json', 'utf8'));
+          const after = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-access-after.json', 'utf8'));
+          if (after.in_sync !== true) throw new Error('Calendar Access policy does not match operator policy after mutation');
+          if (after.source_policy_digest !== after.target_policy_digest) throw new Error('Calendar Access fingerprint mismatch');
+          if (after.source_email_rule_count !== after.target_email_rule_count) throw new Error('Calendar Access named-email count mismatch');
+          if (before.source_policy_digest !== after.source_policy_digest) throw new Error('operator source policy changed during rollout');
+          NODE
+
+      - name: Verify Calendar hostname remains Access-gated
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "https://$CALENDAR_HOST/health" || true)"
+            case "$status" in
+              302|303|307|401|403) exit 0 ;;
+              200) echo 'Calendar hostname became public after policy sync.' >&2; exit 1 ;;
+            esac
+            sleep 6
+          done
+          echo 'Calendar Access boundary did not converge to a gated response.' >&2
+          exit 1
+
+      - name: Upload sanitized Access evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendar-access-sync-${{ env.APPROVED_SHA }}
+          path: |
+            ${{ runner.temp }}/calendar-access-before.json
+            ${{ runner.temp }}/calendar-access-sync.json
+            ${{ runner.temp }}/calendar-access-after.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Calendar Access production sync'
+            echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
+            echo '- Source policy: operator CRM named-email allow policy'
+            echo '- Target policy: Calendar Access allow policy only'
+            echo '- Broad selectors such as Everyone or email-domain: refused by implementation'
+            echo '- Supabase / Worker / Pages mutation: none'
+            echo '- Email values and Cloudflare credentials: not printed or uploaded'
+          } >> "$GITHUB_STEP_SUMMARY"
