@@ -16,6 +16,7 @@ import type { Artist } from '../lib/types';
 import {
   whatsappCrmEnvironment,
   whatsappIntegrationKey,
+  type MetaReviewTemplateMetadata,
   type WhatsAppIntegrationMetadata,
 } from '../lib/whatsapp-connections-api';
 
@@ -49,6 +50,9 @@ export function WhatsAppConnectionsPage() {
   const [metaSdkReady, setMetaSdkReady] = useState(false);
   const [metaSdkError, setMetaSdkError] = useState<string | null>(null);
   const [existingMetaTokens, setExistingMetaTokens] = useState<Record<string, string>>({});
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewTemplate, setReviewTemplate] = useState<MetaReviewTemplateMetadata | null>(null);
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
   const canManageAnyArtist = profile?.role === 'owner'
     || (profile?.role === 'booking_manager' && memberships.some(
@@ -125,6 +129,42 @@ export function WhatsAppConnectionsPage() {
       .catch((cause) => {
         setMetaSdkError(describeWhatsAppEmbeddedSignupError(cause, language));
       });
+  }
+
+  async function runMetaReview(action: 'create' | 'delete' | 'status') {
+    setReviewBusy(true);
+    setActionError(null);
+    setReviewMessage(null);
+    try {
+      if (!api || !data || data.environment !== 'production' || profile?.role !== 'owner') {
+        throw new Error(language === 'ru'
+          ? 'Проверка Meta App Review доступна только владельцу production CRM.'
+          : 'Meta App Review controls are available only to the production CRM owner.');
+      }
+      const result = await api.manageMetaReviewTemplate(action);
+      if (action === 'delete') {
+        setReviewTemplate(null);
+        setReviewMessage(language === 'ru'
+          ? (result.deleted ? 'Тестовый шаблон удалён, readback подтвердил удаление.' : 'Тестового шаблона уже нет.')
+          : (result.deleted ? 'Test template deleted and deletion confirmed by readback.' : 'The test template is already absent.'));
+        return;
+      }
+      const template = result.template ?? null;
+      setReviewTemplate(template);
+      setReviewMessage(language === 'ru'
+        ? (template
+            ? `Readback Meta подтверждён: ${template.name}, статус ${template.status ?? 'unknown'}.`
+            : 'Тестовый шаблон отсутствует в review WABA.')
+        : (template
+            ? `Meta readback confirmed: ${template.name}, status ${template.status ?? 'unknown'}.`
+            : 'The test template is absent from the review WABA.'));
+    } catch (cause) {
+      setActionError(cause instanceof Error
+        ? cause.message
+        : (language === 'ru' ? 'Не удалось выполнить проверку Meta App Review.' : 'Could not run the Meta App Review check.'));
+    } finally {
+      setReviewBusy(false);
+    }
   }
 
   async function connectExistingMetaAccount(artist: Artist) {
@@ -247,7 +287,37 @@ export function WhatsAppConnectionsPage() {
       ) : null}
 
       {metaMessage ? <div className="notice" role="status">{metaMessage}</div> : null}
+      {reviewMessage ? <div className="notice" role="status">{reviewMessage}</div> : null}
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
+
+      {profile?.role === 'owner' && data.environment === 'production' ? (
+        <Section title={language === 'ru' ? 'Meta App Review' : 'Meta App Review'}>
+          <p className="notice">
+            {language === 'ru'
+              ? 'Изолированный сценарий для видео whatsapp_business_management. CRM может работать только с фиксированным шаблоном meta_review_permission_demo и только с review WABA, заданным на сервере. Клиентские данные и production WABA через этот экран выбрать нельзя.'
+              : 'Isolated whatsapp_business_management review flow. The CRM can only operate on the fixed meta_review_permission_demo template and the server-configured review WABA. Customer data and the production WABA cannot be selected here.'}
+          </p>
+          <dl className="definition">
+            <dt>{language === 'ru' ? 'Шаблон' : 'Template'}</dt>
+            <dd><code>meta_review_permission_demo</code></dd>
+            <dt>{language === 'ru' ? 'Readback' : 'Readback'}</dt>
+            <dd>{reviewTemplate
+              ? `${reviewTemplate.status ?? 'unknown'} · ${reviewTemplate.language} · ${reviewTemplate.category}`
+              : (language === 'ru' ? 'Ещё не выполнен' : 'Not checked yet')}</dd>
+          </dl>
+          <div className="actions">
+            <button type="button" disabled={reviewBusy || !api} onClick={() => { void runMetaReview('status'); }}>
+              {reviewBusy ? (language === 'ru' ? 'Проверяю…' : 'Checking…') : (language === 'ru' ? 'Проверить шаблон' : 'Check template')}
+            </button>
+            <button type="button" className="primary" disabled={reviewBusy || !api} onClick={() => { void runMetaReview('create'); }}>
+              {language === 'ru' ? 'Создать тестовый шаблон' : 'Create test template'}
+            </button>
+            <button type="button" disabled={reviewBusy || !api} onClick={() => { void runMetaReview('delete'); }}>
+              {language === 'ru' ? 'Удалить тестовый шаблон' : 'Delete test template'}
+            </button>
+          </div>
+        </Section>
+      ) : null}
 
       {data.artists.length === 0 ? (
         <EmptyState
