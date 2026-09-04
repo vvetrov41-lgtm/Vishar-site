@@ -5,12 +5,63 @@ import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const API = 'https://api.cloudflare.com/client/v4';
-const SOURCE_HOST = 'app.vishartattoo.com';
 const TARGET_HOST = 'calendar.vishartattoo.com';
+const SOURCE_KIND = 'supabase_operator_directory';
+const OPERATOR_RPC = 'list_calendar_access_operators';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+$/;
 
 function fail(message) {
   throw new Error(message);
+}
+
+// The Calendar hostname's allow-set is a projection of the CRM capability
+// graph, not a curated list. Reading it from Supabase is what makes onboarding
+// an artist a membership change rather than a Cloudflare edit; every guard
+// below exists so that projection can only ever narrow to real operators.
+export function operatorEmailsFrom(rows) {
+  if (!Array.isArray(rows)) fail('operator_directory_shape_invalid');
+  const emails = [];
+  let owners = 0;
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) fail('operator_directory_row_invalid');
+    const email = String(row.operator_email ?? '').trim().toLowerCase();
+    if (!EMAIL_RE.test(email) || email.length > 254) fail('operator_directory_email_invalid');
+    if (typeof row.is_owner !== 'boolean') fail('operator_directory_owner_flag_invalid');
+    if (row.is_owner) owners += 1;
+    emails.push(email);
+  }
+  const unique = [...new Set(emails)].sort();
+  if (unique.length !== emails.length) fail('operator_directory_has_duplicates');
+  // Fail closed rather than write a policy nobody can pass, and never let a
+  // directory that has lost every owner lock the account out of its own
+  // connector.
+  if (unique.length === 0) fail('operator_directory_is_empty');
+  if (owners === 0) fail('operator_directory_has_no_owner');
+  return unique;
+}
+
+function digestOf(emails) {
+  return createHash('sha256').update(JSON.stringify(emails)).digest('hex');
+}
+
+async function readOperatorDirectory({ supabaseUrl, supabaseKey, fetchImpl = fetch }) {
+  const base = String(supabaseUrl || '').trim().replace(/\/$/, '');
+  if (!/^https:\/\/[a-z0-9]{20}\.supabase\.co$/.test(base)) fail('supabase_url_invalid');
+  if (typeof supabaseKey !== 'string' || supabaseKey.trim().length < 20) fail('supabase_secret_key_missing');
+
+  const response = await fetchImpl(`${base}/rest/v1/rpc/${OPERATOR_RPC}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseKey.trim(),
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+    redirect: 'manual',
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) fail(`supabase_operator_directory_failed:${response.status}`);
+  return operatorEmailsFrom(payload);
 }
 
 function exactEmailRules(policy, label) {
@@ -39,37 +90,39 @@ function exactEmailRules(policy, label) {
 
 export function policyFingerprint(policy, label = 'policy') {
   const emails = exactEmailRules(policy, label);
-  const digest = createHash('sha256').update(JSON.stringify(emails)).digest('hex');
-  return { count: emails.length, digest };
+  return { count: emails.length, digest: digestOf(emails) };
 }
 
-function updatePayload(policy) {
-  exactEmailRules(policy, 'source');
+// The written policy is built here rather than copied from anywhere, so the
+// only selector shape that can ever reach Cloudflare is one exact email per
+// rule with no exclusions and no additional requirements.
+function updatePayload(emails, targetPolicy) {
+  if (!Array.isArray(emails) || emails.length === 0) fail('operator_directory_is_empty');
   const payload = {
-    name: 'Owner and named staff only',
+    name: 'CRM integration managers',
     decision: 'allow',
-    precedence: Number.isInteger(policy.precedence) ? policy.precedence : 1,
-    include: policy.include,
+    precedence: Number.isInteger(targetPolicy?.precedence) ? targetPolicy.precedence : 1,
+    include: emails.map((email) => ({ email: { email } })),
     exclude: [],
     require: [],
   };
-  if (typeof policy.session_duration === 'string' && policy.session_duration) {
-    payload.session_duration = policy.session_duration;
+  if (typeof targetPolicy?.session_duration === 'string' && targetPolicy.session_duration) {
+    payload.session_duration = targetPolicy.session_duration;
   }
   return payload;
 }
 
-function safeState(source, target) {
-  const sourceFp = policyFingerprint(source, 'source');
+function safeState(sourceEmails, target) {
   const targetFp = policyFingerprint(target, 'target');
+  const sourceDigest = digestOf(sourceEmails);
   return {
-    source_host: SOURCE_HOST,
+    source_kind: SOURCE_KIND,
     target_host: TARGET_HOST,
-    source_email_rule_count: sourceFp.count,
+    source_email_rule_count: sourceEmails.length,
     target_email_rule_count: targetFp.count,
-    source_policy_digest: sourceFp.digest,
+    source_policy_digest: sourceDigest,
     target_policy_digest: targetFp.digest,
-    in_sync: sourceFp.digest === targetFp.digest,
+    in_sync: sourceDigest === targetFp.digest,
   };
 }
 
@@ -115,12 +168,9 @@ function createClient({ accountId, token, fetchImpl = fetch }) {
   }
 
   async function read() {
-    const [sourceApp, targetApp] = await Promise.all([appFor(SOURCE_HOST), appFor(TARGET_HOST)]);
-    const [sourcePolicy, targetPolicy] = await Promise.all([
-      policyFor(sourceApp, 'source'),
-      policyFor(targetApp, 'target'),
-    ]);
-    return { sourceApp, targetApp, sourcePolicy, targetPolicy };
+    const targetApp = await appFor(TARGET_HOST);
+    const targetPolicy = await policyFor(targetApp, 'target');
+    return { targetApp, targetPolicy };
   }
 
   async function putPolicy(appId, policyId, payload) {
@@ -135,14 +185,17 @@ function createClient({ accountId, token, fetchImpl = fetch }) {
 
 export async function inspectCalendarAccess(options) {
   const client = createClient(options);
-  const state = await client.read();
-  return safeState(state.sourcePolicy, state.targetPolicy);
+  const [emails, state] = await Promise.all([readOperatorDirectory(options), client.read()]);
+  return safeState(emails, state.targetPolicy);
 }
 
 export async function syncCalendarAccess(options) {
   const client = createClient(options);
+  // The directory is read first and independently: if Supabase cannot answer,
+  // nothing is mutated and the existing boundary stands.
+  const emails = await readOperatorDirectory(options);
   const before = await client.read();
-  const beforeSafe = safeState(before.sourcePolicy, before.targetPolicy);
+  const beforeSafe = safeState(emails, before.targetPolicy);
   if (beforeSafe.in_sync) return { before: beforeSafe, after: beforeSafe, changed: false };
 
   const originalTargetPayload = {
@@ -159,10 +212,14 @@ export async function syncCalendarAccess(options) {
 
   let mutated = false;
   try {
-    await client.putPolicy(before.targetApp.id, before.targetPolicy.id, updatePayload(before.sourcePolicy));
+    await client.putPolicy(
+      before.targetApp.id,
+      before.targetPolicy.id,
+      updatePayload(emails, before.targetPolicy),
+    );
     mutated = true;
     const after = await client.read();
-    const afterSafe = safeState(after.sourcePolicy, after.targetPolicy);
+    const afterSafe = safeState(emails, after.targetPolicy);
     if (!afterSafe.in_sync) fail('calendar_access_readback_mismatch');
     return { before: beforeSafe, after: afterSafe, changed: true };
   } catch (error) {
@@ -191,13 +248,15 @@ async function main(argv = process.argv.slice(2)) {
   const options = {
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
     token: process.env.CLOUDFLARE_API_TOKEN || '',
+    supabaseUrl: process.env.SUPABASE_URL || '',
+    supabaseKey: process.env.SUPABASE_SECRET_KEY || '',
   };
   const result = mode === 'sync'
     ? await syncCalendarAccess(options)
     : await inspectCalendarAccess(options);
   await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
   const summary = mode === 'sync' ? result.after : result;
-  console.log(`Calendar Access ${mode}: source rules=${summary.source_email_rule_count}, target rules=${summary.target_email_rule_count}, in_sync=${summary.in_sync}${mode === 'sync' ? `, changed=${result.changed}` : ''}`);
+  console.log(`Calendar Access ${mode}: operators=${summary.source_email_rule_count}, policy rules=${summary.target_email_rule_count}, in_sync=${summary.in_sync}${mode === 'sync' ? `, changed=${result.changed}` : ''}`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
