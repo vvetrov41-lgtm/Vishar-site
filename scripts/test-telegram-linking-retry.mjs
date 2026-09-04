@@ -50,12 +50,25 @@ assert.equal(
 
 {
   const calls = [];
-  const response = await workerTesting.handleLinkingWebhook(request(), env, async (url) => {
-    calls.push(String(url));
-    return Response.json({ code: '22023' }, { status: 400 });
+  const bodies = [];
+  const response = await workerTesting.handleLinkingWebhook(request(), env, async (url, init = {}) => {
+    const value = String(url);
+    calls.push(value);
+    if (init.body) bodies.push(JSON.parse(init.body));
+    if (value.includes('/rest/v1/rpc/service_complete_telegram_link')) {
+      return Response.json({ code: '22023' }, { status: 400 });
+    }
+    if (value.includes('/sendMessage')) {
+      return Response.json({ ok: true });
+    }
+    throw new Error(`unexpected URL ${value}`);
   });
   assert.equal(response.status, 200, 'an invalid challenge must not reveal whether the token existed');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0], /service_complete_telegram_link$/);
+  assert.match(calls[1], /sendMessage$/);
+  assert.equal(bodies[1].text.includes(linkToken), false, 'the recovery reply must not reflect the linking token');
+  assert.doesNotMatch(bodies[1].text, /expired|revoked|invalid/i, 'the recovery reply must not classify the token');
 }
 
 {
