@@ -113,7 +113,10 @@ jobs:
           node scripts/cloudflare-production-inventory.mjs \
             --output "$RUNNER_TEMP/cloudflare-production-inventory.json" \
             --summary "$RUNNER_TEMP/cloudflare-production-inventory.md"
-          cat "$RUNNER_TEMP/cloudflare-production-inventory.md" >> "$GITHUB_STEP_SUMMARY"
+          # Also to stdout: the sanitized topology is the evidence this workflow
+          # exists to produce, and the run log is the only place an operator or
+          # an agent without artifact download can actually read it back.
+          tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/cloudflare-production-inventory.md"
 
       - name: Upload sanitized inventory evidence
         uses: actions/upload-artifact@v4
