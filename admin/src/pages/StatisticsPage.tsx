@@ -45,7 +45,6 @@ import {
   type Delta,
   type PeriodPair,
   type SourceBreakdownRow,
-  type StatisticsEnquiry,
 } from '../lib/statistics';
 import type { StatisticsDataset } from '../lib/statistics-api';
 import './StatisticsPage.css';
@@ -697,6 +696,3 @@ function sourceLabel(row: SourceBreakdownRow, language: Language): string {
 function rawSourceLabel(row: SourceBreakdownRow): string {
   return row.label ?? row.value ?? '';
 }
-
-export const __testing = { summarise, sourceLabel, weekdayName };
-export type { StatisticsEnquiry };

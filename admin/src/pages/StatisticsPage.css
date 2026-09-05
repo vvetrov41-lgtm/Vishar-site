@@ -9,12 +9,10 @@
  * rather than squeezing a quarter's worth of bars into a phone's width. */
 
 .stats-periods {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  /* Deliberately not sticky. AppShell's topbar is already sticky at top:0 with
+   * a higher stacking order and a height that changes with the artist selector,
+   * so a second sticky element here would scroll underneath it. */
   margin: 0 0 12px;
-  padding: 8px 0;
-  background: var(--bg);
 }
 
 .stats-period-row {

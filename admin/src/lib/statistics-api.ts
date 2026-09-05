@@ -141,7 +141,65 @@ export function createStatisticsApi(client: CrmClient) {
     return query;
   };
 
+  /**
+   * The finance reads, each of which the database refuses outright to a viewer
+   * without finance access on the artist.
+   *
+   * Returns null when nothing could be read. That is the same answer a viewer
+   * without the capability gets, which is the point: the screen has one code
+   * path for "no finance block" and cannot be talked into a second.
+   */
+  async function loadFinance(
+    request: StatisticsRequest,
+    projectIds: string[],
+  ): Promise<StatisticsFinance | null> {
+    const { window, artistId } = request;
+
+    const transactions = await readAllOptional<StatisticsTransaction>(
+      () => scoped(
+        'payment_transactions',
+        'id, artist_id, transaction_type, direction, amount, currency, status, occurred_at',
+        artistId,
+      )
+        .gte('occurred_at', window.from)
+        .lt('occurred_at', window.to)
+        .order('occurred_at', { ascending: true }),
+    );
+
+    const requests = await readAllOptional<StatisticsPaymentRequest>(
+      () => scoped(
+        'payment_requests',
+        'id, artist_id, purpose, amount, currency, status, created_at',
+        artistId,
+      )
+        .gte('created_at', window.from)
+        .lt('created_at', window.to)
+        .order('created_at', { ascending: true }),
+    );
+
+    // `projects_finance` is a security_invoker view over the private finance
+    // source, so it is scoped by the same rule as the tables above rather than
+    // by anything this module does.
+    const projectEstimates = projectIds.length === 0
+      ? []
+      : await readAllOptional<{ project_id: string; currency: string; estimate_total: number | string | null }>(
+        () => (client.from('projects_finance') as PostgrestQuery)
+          .select('project_id, currency, estimate_total')
+          .in('project_id', projectIds),
+      ) ?? [];
+
+    if (transactions === null && requests === null) return null;
+
+    return {
+      transactions: transactions ?? [],
+      requests: requests ?? [],
+      projectEstimates,
+    };
+  }
+
   return {
+    loadFinance,
+
     /**
      * Everything the Statistics screen needs, in as few round trips as the
      * shape of the questions allows.
@@ -278,7 +336,7 @@ export function createStatisticsApi(client: CrmClient) {
       );
 
       const finance = request.includeFinance
-        ? await this.loadFinance(request, projects.map((project) => project.id))
+        ? await loadFinance(request, projects.map((project) => project.id))
         : null;
 
       return {
@@ -291,61 +349,6 @@ export function createStatisticsApi(client: CrmClient) {
       };
     },
 
-    /**
-     * The finance reads, each of which the database refuses outright to a
-     * viewer without finance access on the artist.
-     *
-     * Returns null when nothing could be read. That is the same answer a viewer
-     * without the capability gets, which is the point: the screen has one code
-     * path for "no finance block" and cannot be talked into a second.
-     */
-    async loadFinance(
-      request: StatisticsRequest,
-      projectIds: string[],
-    ): Promise<StatisticsFinance | null> {
-      const { window, artistId } = request;
-
-      const transactions = await readAllOptional<StatisticsTransaction>(
-        () => scoped(
-          'payment_transactions',
-          'id, artist_id, transaction_type, direction, amount, currency, status, occurred_at',
-          artistId,
-        )
-          .gte('occurred_at', window.from)
-          .lt('occurred_at', window.to)
-          .order('occurred_at', { ascending: true }),
-      );
-
-      const requests = await readAllOptional<StatisticsPaymentRequest>(
-        () => scoped(
-          'payment_requests',
-          'id, artist_id, purpose, amount, currency, status, created_at',
-          artistId,
-        )
-          .gte('created_at', window.from)
-          .lt('created_at', window.to)
-          .order('created_at', { ascending: true }),
-      );
-
-      // `projects_finance` is a security_invoker view over the private finance
-      // source, so it is scoped by the same rule as the tables above rather
-      // than by anything this module does.
-      const projectEstimates = projectIds.length === 0
-        ? []
-        : await readAllOptional<{ project_id: string; currency: string; estimate_total: number | string | null }>(
-          () => (client.from('projects_finance') as PostgrestQuery)
-            .select('project_id, currency, estimate_total')
-            .in('project_id', projectIds),
-        ) ?? [];
-
-      if (transactions === null && requests === null) return null;
-
-      return {
-        transactions: transactions ?? [],
-        requests: requests ?? [],
-        projectEstimates,
-      };
-    },
   };
 }
 
