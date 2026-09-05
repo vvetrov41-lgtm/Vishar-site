@@ -200,6 +200,7 @@ async function handleEnquiryIntakeInternal(
         cover_up: enquiry.coverUp,
         preferred_timing: enquiry.timing || null,
         idea: enquiry.idea,
+        discovery_source: enquiry.discoverySource || null,
         source: enquiry.source,
         landing_page: enquiry.landingPage || null,
         referrer: enquiry.referrer || null,
