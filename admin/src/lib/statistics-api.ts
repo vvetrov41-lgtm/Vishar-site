@@ -361,3 +361,5 @@ function dedupeById<T extends { id: string }>(rows: T[]): T[] {
   for (const row of rows) seen.set(row.id, row);
   return [...seen.values()];
 }
+
+export type StatisticsApi = ReturnType<typeof createStatisticsApi>;
