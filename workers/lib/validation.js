@@ -13,6 +13,14 @@ export const PRIVACY_NOTICE_VERSION = '2026-07-29';
 
 export const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+export const ALLOWED_DISCOVERY_SOURCES = new Set([
+  'instagram',
+  'chatgpt',
+  'other_ai',
+  'friend_referral',
+  'google',
+  'other',
+]);
 
 const EXTENSION_FOR_MIME = {
   'image/jpeg': 'jpg',
@@ -45,6 +53,7 @@ export const FIELD_LIMITS = {
   coverUp: 40,
   timing: 160,
   idea: 3500,
+  discoverySource: 40,
   source: 200,
   landingPage: 500,
   referrer: 500,
@@ -130,6 +139,7 @@ export function parseEnquiryFields(form) {
     coverUp: cleanText(field(form, 'coverUp'), FIELD_LIMITS.coverUp),
     timing: cleanText(field(form, 'timing'), FIELD_LIMITS.timing),
     idea: cleanText(field(form, 'idea'), FIELD_LIMITS.idea),
+    discoverySource: cleanText(field(form, 'discoverySource'), FIELD_LIMITS.discoverySource),
     source: cleanText(field(form, 'source'), FIELD_LIMITS.source) || '/booking/',
     landingPage: cleanText(field(form, 'landingPage'), FIELD_LIMITS.landingPage),
     referrer: cleanText(field(form, 'referrer'), FIELD_LIMITS.referrer),
@@ -159,6 +169,13 @@ export function parseEnquiryFields(form) {
     throw new RequestError(
       'invalid_preferred_reply',
       'Please choose Email, WhatsApp or Instagram as the preferred reply.'
+    );
+  }
+
+  if (enquiry.discoverySource && !ALLOWED_DISCOVERY_SOURCES.has(enquiry.discoverySource)) {
+    throw new RequestError(
+      'invalid_discovery_source',
+      'Please choose how you heard about the artist from the available options.'
     );
   }
 
