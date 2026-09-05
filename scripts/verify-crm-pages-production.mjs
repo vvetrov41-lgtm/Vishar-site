@@ -9,6 +9,14 @@ const PRODUCTION_BINDINGS = Object.freeze([
   'CLOUDFLARE_ACCOUNT_ID:secret_text',
   'CLOUDFLARE_WORKERS_EDIT_TOKEN:secret_text',
   'META_APP_SECRET:secret_text',
+  // Meta App Review's bounded WhatsApp template-management probe
+  // (admin/functions/api/whatsapp/meta-review/template.js). The token and
+  // WABA id are scoped to the isolated Meta test WABA, never Vladimir's or
+  // Kristina's production account, and the gate stays off unless
+  // META_REVIEW_TEMPLATE_ENABLED is explicitly 'true'.
+  'META_REVIEW_ACCESS_TOKEN:secret_text',
+  'META_REVIEW_TEMPLATE_ENABLED:plain_text',
+  'META_REVIEW_WABA_ID:plain_text',
   'SUPABASE_PUBLISHABLE_KEY:secret_text',
 ]);
 
