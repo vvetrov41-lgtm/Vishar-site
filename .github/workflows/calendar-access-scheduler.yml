@@ -2,14 +2,17 @@ name: Calendar Access scheduler
 
 # Cron fires only on the default branch, and the `crm-production` environment
 # admits only the `release/private-crm-rc*` namespace. This file resolves that
-# without widening either: it lives where cron works and holds no production
-# credential at all, then hands the work to a runner that executes inside the
-# admitted namespace.
+# without widening either: it lives where cron works, holds no production
+# credential, and needs no write permission at all. It hands the work to a
+# runner that executes inside the admitted namespace.
 #
-# It moves one isolated ref in that namespace to the exact canonical CRM head
-# and dispatches `calendar-access-scheduled-runner.yml` on it. Moving a ref with
-# GITHUB_TOKEN raises no workflow run of its own, so the only thing that starts
-# is the dispatch, which is the documented exception to that rule.
+# The isolated release ref is a fixed, long-lived pointer. It is not moved per
+# run: what the ref decides is only which *workflow definition* executes, and
+# that definition is required to be byte-identical to the one on the default
+# branch. Which *code* runs is decided by the approved SHA passed as an input,
+# which the runner checks out itself after verifying it against canonical.
+# Moving the ref is therefore only needed when the runner itself changes, and
+# until it is moved the runner fails closed rather than running something stale.
 #
 # What it exists for: onboarding an artist must be a CRM membership change, not
 # a Cloudflare edit. The runner projects the manage-integrations capability
@@ -22,7 +25,7 @@ on:
 
 permissions:
   actions: write
-  contents: write
+  contents: read
 
 concurrency:
   group: calendar-access-scheduler
@@ -30,7 +33,7 @@ concurrency:
 
 jobs:
   dispatch:
-    name: Point the release ref at canonical and dispatch the runner
+    name: Dispatch the production runner on the isolated release ref
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -53,15 +56,18 @@ jobs:
           [[ "$canonical_sha" =~ ^[0-9a-f]{40}$ ]]
           echo "approved_sha=$canonical_sha" >> "$GITHUB_OUTPUT"
 
-          # The runner must be dispatchable and identical on both branches,
-          # otherwise the dispatch would run a definition nobody reviewed
-          # alongside the default-branch one.
-          git fetch --depth=1 origin "$CANONICAL_BRANCH"
-          git show "FETCH_HEAD:.github/workflows/$RUNNER_WORKFLOW" > "$RUNNER_TEMP/runner-canonical.yml"
-          cmp -s "$RUNNER_TEMP/runner-canonical.yml" ".github/workflows/$RUNNER_WORKFLOW" || {
-            echo 'The runner differs between the default branch and canonical; refusing to dispatch.' >&2
-            exit 1
-          }
+          # The runner definition must be the same on all three refs: here,
+          # where review saw it; on canonical, whose code it will run; and on
+          # the release ref, which is the copy that actually executes.
+          for ref in "$CANONICAL_BRANCH" "$RELEASE_REF"; do
+            git fetch --depth=1 origin "$ref"
+            git show "FETCH_HEAD:.github/workflows/$RUNNER_WORKFLOW" > "$RUNNER_TEMP/runner-$$.yml"
+            cmp -s "$RUNNER_TEMP/runner-$$.yml" ".github/workflows/$RUNNER_WORKFLOW" || {
+              echo "The runner on $ref differs from the default branch; refusing to dispatch." >&2
+              echo "Move $RELEASE_REF to the canonical head to adopt a changed runner." >&2
+              exit 1
+            }
+          done
 
           required_workflows=(
             'Static Validation'
@@ -85,33 +91,6 @@ jobs:
             fi
           done
           echo "green=true" >> "$GITHUB_OUTPUT"
-
-      # The ref is a pointer with no history value: it is always set to the
-      # exact approved canonical head, never merged or appended to.
-      - name: Move the isolated release ref to the approved head
-        if: steps.gate.outputs.green == 'true'
-        shell: bash
-        env:
-          APPROVED_SHA: ${{ steps.gate.outputs.approved_sha }}
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code origin "refs/heads/$RELEASE_REF" >/dev/null 2>&1; then
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$RELEASE_REF" \
-              -f sha="$APPROVED_SHA" -F force=true >/dev/null
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/heads/$RELEASE_REF" -f sha="$APPROVED_SHA" >/dev/null
-          fi
-          release_sha="$(git ls-remote origin "refs/heads/$RELEASE_REF" | awk 'NR == 1 {print $1}')"
-          [ "$release_sha" = "$APPROVED_SHA" ] || {
-            echo 'The release ref did not land on the approved canonical head.' >&2
-            exit 1
-          }
-          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
-          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
-            echo 'Canonical moved while the release ref was being positioned.' >&2
-            exit 1
-          }
 
       - name: Dispatch the production runner on the release ref
         id: dispatch
@@ -169,5 +148,5 @@ jobs:
             echo "- Exact-head CI green: \`${{ steps.gate.outputs.green }}\`"
             echo "- Release ref: \`$RELEASE_REF\`"
             echo '- Production credentials held by this job: none'
-            echo '- Cloudflare or Supabase access from this job: none'
+            echo '- Repository writes by this job: none'
           } >> "$GITHUB_STEP_SUMMARY"
