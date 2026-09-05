@@ -197,6 +197,10 @@ export const ENQUIRY = {
   idea: 'A realistic raven with natural lighting.',
   source: '/booking/',
   utm_source: 'google',
+  // Present in production and read by Statistics. Null here so the fixture
+  // exercises the source rule's fall-through rather than its first branch.
+  booking_source_id: null,
+  communication_channel: null,
   created_at: '2026-07-01T09:00:00Z',
   last_action_at: '2026-07-01T09:00:00Z',
   archived_at: null,
@@ -235,6 +239,7 @@ export const SESSION = {
   artist_id: VLADIMIR_ARTIST_ID,
   client_id: CLIENT_ID,
   project_id: PROJECT_ID,
+  enquiry_id: ENQUIRY_ID,
   appointment_type: 'tattoo_session' as const,
   status: 'proposed' as const,
   start_at: '2026-09-01T10:00:00Z',
@@ -248,6 +253,31 @@ export const SESSION = {
   notes: null,
   cancelled_at: null,
 };
+
+export const PAYMENT_TRANSACTIONS = [
+  {
+    id: 't1111111-1111-4111-8111-111111111111',
+    artist_id: VLADIMIR_ARTIST_ID,
+    transaction_type: 'payment' as const,
+    direction: 'credit' as const,
+    amount: 150,
+    currency: 'GBP',
+    status: 'succeeded' as const,
+    occurred_at: '2026-07-03T09:00:00Z',
+  },
+];
+
+export const PAYMENT_REQUESTS = [
+  {
+    id: 'r1111111-1111-4111-8111-111111111111',
+    artist_id: VLADIMIR_ARTIST_ID,
+    purpose: 'deposit' as const,
+    amount: 150,
+    currency: 'GBP',
+    status: 'paid' as const,
+    created_at: '2026-07-02T10:00:00Z',
+  },
+];
 
 export const ENQUIRY_FILE = {
   id: FILE_ID,
@@ -659,6 +689,12 @@ function tableResult(
       return { data: [{ id: 'fu-1', artist_id: VLADIMIR_ARTIST_ID, status: 'open', due_at: '2026-07-05T09:00:00Z', subject: 'Chase references', details: null, client_id: CLIENT_ID, enquiry_id: ENQUIRY_ID, project_id: null, assigned_to: null }], error: null };
     case 'activity_log':
       return { data: canManage ? ACTIVITY : [], error: null };
+    case 'payment_transactions':
+      // RLS is can_view_artist_finance(artist_id): a viewer without finance
+      // access reads zero rows, not an error.
+      return { data: role === 'owner' ? PAYMENT_TRANSACTIONS : [], error: null };
+    case 'payment_requests':
+      return { data: role === 'owner' ? PAYMENT_REQUESTS : [], error: null };
     case 'integration_outbox':
       return { data: role === 'owner' ? [{ id: 'job-1', artist_id: VLADIMIR_ARTIST_ID, kind: 'telegram_notification', status: 'failed', attempt_count: 3, max_attempts: 8, next_attempt_at: '2026-07-01T10:00:00Z', last_error_code: 'telegram_rejected', updated_at: '2026-07-01T09:30:00Z' }] : [], error: null };
     default:
@@ -752,6 +788,8 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     // screen that scopes a read by client, project or status would "pass" while
     // rendering rows the database would never have returned.
     const filters: { column: string; value: unknown }[] = [];
+    const bounds: { column: string; kind: 'gte' | 'lt'; value: unknown }[] = [];
+    let page: { start: number; end: number } | null = null;
     const chain: any = {
       select: () => chain,
       eq: (...args: unknown[]) => {
@@ -775,8 +813,26 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         queryCalls.push({ table, method: 'or', args });
         return chain;
       },
+      gte: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'gte', args });
+        if (typeof args[0] === 'string') bounds.push({ column: args[0], kind: 'gte', value: args[1] });
+        return chain;
+      },
+      lt: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'lt', args });
+        if (typeof args[0] === 'string') bounds.push({ column: args[0], kind: 'lt', value: args[1] });
+        return chain;
+      },
       order: () => chain,
       limit: () => chain,
+      // PostgREST pages with `range`, and a reader that pages has to be able to
+      // reach the end of one. Without the slice a paging read would be handed
+      // the same rows for ever.
+      range: (start: number, end: number) => {
+        queryCalls.push({ table, method: 'range', args: [start, end] });
+        page = { start, end };
+        return chain;
+      },
       maybeSingle: () => {
         const filtered = applyFilters(result.data);
         return Promise.resolve({
@@ -795,13 +851,29 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
      * quietly blank an unrelated screen.
      */
     function applyFilters(data: unknown): unknown {
-      if (!Array.isArray(data) || filters.length === 0) return data;
-      return data.filter((row: any) => filters.every(({ column, value }) => (
-        row === null
-        || typeof row !== 'object'
-        || !(column in row)
-        || row[column] === value
-      )));
+      if (!Array.isArray(data)) return data;
+      let rows = data;
+      if (filters.length > 0) {
+        rows = rows.filter((row: any) => filters.every(({ column, value }) => (
+          row === null
+          || typeof row !== 'object'
+          || !(column in row)
+          || row[column] === value
+        )));
+      }
+      // Half-open date windows, applied the way the database applies them, so a
+      // period-bounded read cannot "pass" by being handed every row.
+      if (bounds.length > 0) {
+        rows = rows.filter((row: any) => bounds.every(({ column, kind, value }) => {
+          if (row === null || typeof row !== 'object' || !(column in row)) return true;
+          const left = Date.parse(String(row[column]));
+          const right = Date.parse(String(value));
+          if (Number.isNaN(left) || Number.isNaN(right)) return true;
+          return kind === 'gte' ? left >= right : left < right;
+        }));
+      }
+      if (page) rows = rows.slice(page.start, page.end + 1);
+      return rows;
     }
 
     return chain;

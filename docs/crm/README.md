@@ -16,6 +16,7 @@ deployed, and no live infrastructure exists as a result of these files.
 | [`DEPLOYMENT.md`](./DEPLOYMENT.md) | Local/staging/production separation, migration order, deployment gates, what is intentionally not deployed. |
 | [`INTEGRATIONS.md`](./INTEGRATIONS.md) | Email, Calendar and AI boundaries. None is connected; this records the rules the interfaces enforce. |
 | [`NEW_ARTIST_ONBOARDING.md`](./NEW_ARTIST_ONBOARDING.md) | How a new artist joins: identity, workspace, memberships, capabilities, booking, integrations, notifications, automations, GPT/MCP, offboarding — and what still needs an action outside the CRM. |
+| [`STATISTICS.md`](./STATISTICS.md) | Every figure the Statistics screen shows, its exact formula, the access boundary each read crosses, and what was deliberately left out of the first version. |
 
 This documentation set covers only the CRM and booking data path. Website
 performance, Core Web Vitals, SEO and accessibility findings live in

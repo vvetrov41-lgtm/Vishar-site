@@ -49,6 +49,7 @@ import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
+import { StatisticsPage } from './pages/StatisticsPage';
 import { TelegramConnectionsPage } from './pages/TelegramConnectionsPage';
 import { UsersPage } from './pages/UsersPage';
 import { WhatsAppConnectionsPage } from './pages/WhatsAppConnectionsPage';
@@ -240,6 +241,13 @@ function Routes() {
       return <RequireCapability capability="viewSessions"><AppointmentsPage /></RequireCapability>;
     case '/availability':
       return <RequireCapability capability="viewSessions"><AvailabilityPage /></RequireCapability>;
+    // Behind the same capability as Today, and for the same reason: this is a
+    // count of the enquiries, projects and sessions the viewer already reads.
+    // It invents no role and grants no access - every read behind it is refused
+    // by the database to anyone the database refuses those tables to, and the
+    // money block appears only where finance rows came back.
+    case '/statistics':
+      return <RequireCapability capability="viewEnquiries"><StatisticsPage /></RequireCapability>;
     case '/automations':
       return <RequireCapability capability="viewAutomations"><ClientMessagesPage /></RequireCapability>;
     case '/automations/advanced':

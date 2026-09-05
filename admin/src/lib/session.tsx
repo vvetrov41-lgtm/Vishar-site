@@ -40,6 +40,7 @@ import { createControlPlaneApi, type ControlPlaneApi } from './control-plane-api
 import { createLifecycleApi, type LifecycleApi } from './lifecycle-api';
 import { createPlatformApi, type PlatformApi } from './platform-api';
 import { createSignupApi, type BootstrapResult, type SignupApi } from './signup-api';
+import { createStatisticsApi, type StatisticsApi } from './statistics-api';
 import { createTelegramConnectionsApi, type TelegramConnectionsApi } from './telegram-connections-api';
 import { passwordProblem } from './password';
 import { clearStaffInviteUrl, signupRedirectUrl } from './supabase';
@@ -67,7 +68,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi;
+export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -147,6 +148,7 @@ export function SessionProvider({
       createTelegramConnectionsApi(client),
       createLifecycleApi(client),
       createSignupApi(client),
+      createStatisticsApi(client),
     );
   }, [client, teamInviteUrl]);
 

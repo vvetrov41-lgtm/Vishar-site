@@ -72,6 +72,9 @@ describe('responsive navigation shell', () => {
     expect(within(work).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Enquiries',
       'Projects',
+      // Statistics is work, not setup: it is read every week rather than
+      // configured once.
+      'Statistics',
     ]);
     expect(within(money).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Payments',
@@ -97,6 +100,7 @@ describe('responsive navigation shell', () => {
     expect(within(dialog).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Enquiries',
       'Projects',
+      'Statistics',
       'Time off',
       'Automatic messages',
       'Notifications',
