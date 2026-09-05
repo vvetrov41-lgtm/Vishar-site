@@ -10,19 +10,19 @@ import {
   assertDisconnectConfiguration,
   assertOAuthCallbackConfiguration,
   assertOAuthStartConfiguration,
-  buildDisconnectStateRecord,
   buildOAuthStateRecord,
   calendarReadiness,
-  consumeDisconnectState,
-  consumeOAuthState,
-  disconnectConfirmationPage,
-  disconnectConfirmationToken,
-  disconnectReturnUrl,
   isCalendarArtistRef,
   validateGoogleAccount,
   validateTokenExchange,
   verifiedCalendarActorEmail,
 } from './lib/calendar-oauth-security.js';
+import {
+  CalendarCrmSessionError,
+  bearerToken,
+  consumeCrmOAuthState,
+  verifiedCrmActorEmail,
+} from './lib/calendar-crm-session.js';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -34,22 +34,11 @@ const OAUTH_SCOPE = `openid email ${GOOGLE_CALENDAR_EVENTS_SCOPE} ${GOOGLE_CALEN
 const EVENT_LABEL_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EVENT_LABEL_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const STATE_TTL_SECONDS = 600;
-const DISCONNECT_TTL_SECONDS = 600;
+const CRM_ORIGIN = 'https://crm.vishartattoo.com';
 
 const json = (body, status = 200) => Response.json(body, {
   status,
   headers: { 'Cache-Control': 'no-store' },
-});
-
-const html = (body, status = 200) => new Response(body, {
-  status,
-  headers: {
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-    'Referrer-Policy': 'no-referrer',
-    'X-Content-Type-Options': 'nosniff',
-  },
 });
 
 function base64Url(bytes) {
@@ -84,6 +73,8 @@ function rateLimitRouteClass(pathname) {
 }
 
 async function rateLimitActor(request) {
+  const crmToken = bearerToken(request);
+  if (crmToken) return `crm:${await sha256Base64Url(crmToken)}`;
   const assertion = request?.headers?.get('Cf-Access-Jwt-Assertion') || '';
   if (assertion) return `access:${await sha256Base64Url(assertion)}`;
   return `edge:${request?.headers?.get('CF-Connecting-IP') || 'unknown'}`;
@@ -96,6 +87,36 @@ async function enforceRateLimit(request, url, env) {
   const { success } = await limiter.limit({ key });
   if (success) return null;
   return json({ ok: false, code: 'rate_limited' }, 429);
+}
+
+function isCrmOrigin(request) {
+  return request?.headers?.get('Origin') === CRM_ORIGIN;
+}
+
+function requireCrmOrigin(request) {
+  if (!isCrmOrigin(request)) {
+    throw new CalendarCrmSessionError('crm_origin_required', 403);
+  }
+}
+
+function withCrmCors(response, request) {
+  if (!isCrmOrigin(request)) return response;
+  const headers = new Headers(response.headers);
+  headers.set('Access-Control-Allow-Origin', CRM_ORIGIN);
+  headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  headers.set('Access-Control-Max-Age', '600');
+  headers.append('Vary', 'Origin');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function preflight(request) {
+  if (!isCrmOrigin(request)) return json({ ok: false, code: 'crm_origin_required' }, 403);
+  return withCrmCors(new Response(null, { status: 204 }), request);
 }
 
 const ARTIST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -156,9 +177,7 @@ function supabaseBackend(env) {
 }
 
 // The single authority on which artist an OAuth URL means, whether that artist
-// is active and whether this Access identity may manage its integrations.
-// Unknown, inactive and unauthorized all come back as null so the endpoint
-// cannot be used to enumerate artists.
+// is active and whether this authenticated CRM identity may manage integrations.
 async function resolveArtistRoute(artistRef, actorEmail, env, fetchImpl = fetch) {
   if (!isCalendarArtistRef(artistRef)) {
     throw new OAuthSecurityError('calendar_artist_access_denied', 403);
@@ -272,8 +291,15 @@ async function resolveGoogleEventLabel(accessToken, config, fetchImpl = fetch) {
   return matches[0].id.trim().toLowerCase();
 }
 
+async function oauthActorEmail(request, env, fetchImpl = fetch) {
+  if (bearerToken(request)) return verifiedCrmActorEmail(request, env, fetchImpl);
+  // Kept for direct/internal compatibility tests. Public self-service routing
+  // below requires a CRM bearer token before this function is called.
+  return verifiedCalendarActorEmail(request, env, fetchImpl);
+}
+
 async function startOAuth(request, artistRef, env, fetchImpl = fetch) {
-  const actorEmail = await verifiedCalendarActorEmail(request, env, fetchImpl);
+  const actorEmail = await oauthActorEmail(request, env, fetchImpl);
   assertOAuthStartConfiguration(env);
   const config = await resolveArtistRoute(artistRef, actorEmail, env, fetchImpl);
   await authorizeCalendarActor(config, actorEmail, env, fetchImpl);
@@ -298,11 +324,12 @@ async function startOAuth(request, artistRef, env, fetchImpl = fetch) {
     code_challenge: challenge,
     code_challenge_method: 'S256',
   });
-  return Response.redirect(`${GOOGLE_AUTH_URL}?${params}`, 302);
+  const authorizationUrl = `${GOOGLE_AUTH_URL}?${params}`;
+  if (bearerToken(request)) return json({ ok: true, authorization_url: authorizationUrl });
+  return Response.redirect(authorizationUrl, 302);
 }
 
 async function callback(request, env, fetchImpl = fetch) {
-  const actorEmail = await verifiedCalendarActorEmail(request, env, fetchImpl);
   assertOAuthCallbackConfiguration(env);
   const url = new URL(request.url);
   const state = url.searchParams.get('state');
@@ -310,12 +337,13 @@ async function callback(request, env, fetchImpl = fetch) {
   const oauthError = url.searchParams.get('error');
   if (!state) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);
 
-  const stored = await consumeOAuthState(env.CALENDAR_OAUTH_STATE, state, actorEmail);
+  const stored = await consumeCrmOAuthState(env.CALENDAR_OAUTH_STATE, state);
+  const actorEmail = stored.actorEmail;
   if (oauthError) return json({ ok: false, code: 'google_authorisation_denied' }, 400);
   if (!code) return json({ ok: false, code: 'oauth_callback_invalid' }, 400);
 
-  // Resolve by the artist UUID the start route recorded, never by anything in
-  // the callback URL, and re-authorize before the code is exchanged.
+  // Resolve by the artist UUID the authenticated start route recorded, never by
+  // callback input, and re-authorize before the code is exchanged.
   const config = await resolveArtistRoute(stored.artistId, actorEmail, env, fetchImpl);
   if (config.artistId !== stored.artistId || config.alias !== stored.alias) {
     throw new OAuthSecurityError('oauth_state_invalid_or_expired');
@@ -386,38 +414,16 @@ async function callback(request, env, fetchImpl = fetch) {
 }
 
 async function disconnect(request, artistRef, env, fetchImpl = fetch) {
-  const actorEmail = await verifiedCalendarActorEmail(request, env, fetchImpl);
+  const actorEmail = await oauthActorEmail(request, env, fetchImpl);
   assertDisconnectConfiguration(env);
   const config = await resolveArtistRoute(artistRef, actorEmail, env, fetchImpl);
   await authorizeCalendarActor(config, actorEmail, env, fetchImpl);
-
-  if (request.method === 'GET') {
-    const disconnectToken = randomToken();
-    await env.CALENDAR_OAUTH_STATE.put(
-      `disconnect:${disconnectToken}`,
-      JSON.stringify(buildDisconnectStateRecord(config.artistId, actorEmail)),
-      { expirationTtl: DISCONNECT_TTL_SECONDS },
-    );
-    const returnUrl = env.CRM_RETURN_URL
-      || 'https://vishar-crm-staging.pages.dev/#/appointments';
-    return html(disconnectConfirmationPage(
-      config.displayName,
-      request.url,
-      returnUrl,
-      disconnectToken,
-    ));
-  }
   if (request.method !== 'POST') return json({ ok: false, code: 'method_not_allowed' }, 405);
-  const disconnectToken = await disconnectConfirmationToken(request);
-  if (!disconnectToken) {
+
+  const body = await request.json().catch(() => null);
+  if (body?.confirm !== 'disconnect') {
     return json({ ok: false, code: 'disconnect_confirmation_required' }, 400);
   }
-  await consumeDisconnectState(
-    env.CALENDAR_OAUTH_STATE,
-    config.artistId,
-    disconnectToken,
-    actorEmail,
-  );
 
   const tokenKey = `artist:${config.artistId}`;
   const rawEnvelope = await env.CALENDAR_OAUTH_TOKENS.get(tokenKey);
@@ -438,11 +444,7 @@ async function disconnect(request, artistRef, env, fetchImpl = fetch) {
     await updateIntegrationMetadata(config, config.expectedEmail, false, env, fetchImpl);
   }
 
-  const responseUrl = new URL(request.url);
-  const wantsJson = responseUrl.searchParams.get('format') === 'json'
-    || (request.headers.get('Accept') || '').includes('application/json');
-  if (wantsJson) return json({ ok: true, artist: config.alias, connected: false, revoked });
-  return Response.redirect(disconnectReturnUrl(env, config.alias, revoked), 303);
+  return json({ ok: true, artist: config.alias, connected: false, revoked });
 }
 
 async function runScheduledDrain(env) {
@@ -467,7 +469,7 @@ async function runScheduledDrain(env) {
 }
 
 function errorResponse(error) {
-  if (error instanceof OAuthSecurityError) {
+  if (error instanceof OAuthSecurityError || error instanceof CalendarCrmSessionError) {
     return json({ ok: false, code: error.code }, error.status);
   }
   return null;
@@ -475,35 +477,40 @@ function errorResponse(error) {
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    const artistRoute = url.pathname.match(ARTIST_ROUTE_PATTERN);
+    const isSelfService = url.pathname === '/oauth/google/callback' || Boolean(artistRoute);
     try {
-      const url = new URL(request.url);
       const limited = await enforceRateLimit(request, url, env);
-      if (limited) return limited;
+      if (limited) return isSelfService ? withCrmCors(limited, request) : limited;
       if (request.method === 'GET' && url.pathname === '/health') {
         return json(calendarReadiness(env));
       }
       if (request.method === 'GET' && url.pathname === '/oauth/google/callback') {
         return await callback(request, env);
       }
-      // Any artist reference is routable; whether it names an artist this
-      // operator may manage is decided by the backend resolver, not here.
-      const artistRoute = url.pathname.match(ARTIST_ROUTE_PATTERN);
       if (artistRoute) {
         const artistRef = decodeURIComponent(artistRoute[2]);
-        if (artistRoute[1] === 'start') {
-          if (request.method !== 'GET') return json({ ok: false, code: 'method_not_allowed' }, 405);
-          return await startOAuth(request, artistRef, env);
+        if (request.method === 'OPTIONS') return preflight(request);
+        if (request.method !== 'POST') {
+          return withCrmCors(json({ ok: false, code: 'method_not_allowed' }, 405), request);
         }
-        return await disconnect(request, artistRef, env);
+        requireCrmOrigin(request);
+        if (!bearerToken(request)) throw new CalendarCrmSessionError('crm_session_required', 401);
+        const response = artistRoute[1] === 'start'
+          ? await startOAuth(request, artistRef, env)
+          : await disconnect(request, artistRef, env);
+        return withCrmCors(response, request);
       }
       return json({ ok: false, code: 'not_found' }, 404);
     } catch (error) {
       const safe = errorResponse(error);
-      if (safe) return safe;
+      if (safe) return isSelfService ? withCrmCors(safe, request) : safe;
       console.error('calendar oauth worker failure', JSON.stringify({
         code: typeof error?.code === 'string' ? error.code : 'calendar_connector_error',
       }));
-      return json({ ok: false, code: 'calendar_connector_error' }, 500);
+      const response = json({ ok: false, code: 'calendar_connector_error' }, 500);
+      return isSelfService ? withCrmCors(response, request) : response;
     }
   },
 
@@ -521,16 +528,22 @@ export const __testing = {
   GOOGLE_CALENDAR_METADATA_SCOPE,
   OAUTH_SCOPE,
   ARTIST_ROUTE_PATTERN,
+  CRM_ORIGIN,
   normalizedArtistRoute,
   resolveArtistRoute,
   authorizeCalendarActor,
   enforceRateLimit,
   rateLimitActor,
   rateLimitRouteClass,
+  isCrmOrigin,
+  requireCrmOrigin,
+  withCrmCors,
+  preflight,
   supabaseBackend,
   updateIntegrationMetadata,
   normalizedLabelTarget,
   resolveGoogleEventLabel,
+  oauthActorEmail,
   startOAuth,
   callback,
   disconnect,
