@@ -83,8 +83,9 @@ Given a named operator already admitted to the private CRM by Cloudflare Access 
 - FR11 `calendar.vishartattoo.com` derives its Cloudflare Access allow set from the CRM capability graph rather than from any hand-curated list. Synchronization refuses broad selector classes, mutates only the Calendar policy, reads the result back, and restores the previous Calendar policy if readback does not match.
 - FR12 `public.list_calendar_access_operators()` is backend-only and returns only normalised email addresses plus an owner marker, for active profiles that hold manage-integrations on an active artist.
 - FR13 The Access sync refuses to write an empty or owner-less allow set, so a directory failure can never lock the account out of its own connector or widen the boundary.
-- FR14 A scheduled projection applies membership changes without a developer, and runs only from a canonical head whose required workflows are all green. It does not exist yet: GitHub fires cron only on the default branch, and the `crm-production` environment admits only the `release/private-crm-rc*` namespace, so `main` must be added to that environment's deployment branches first.
-- FR15 The zone firewall rule that scopes `calendar.vishartattoo.com` to the connector's routes names no artist. It allows `/health`, `/oauth/google/callback` and any reference under `/oauth/google/start/` and `/oauth/google/disconnect/`, and blocks everything else, so onboarding an artist changes no Cloudflare object.
+- FR14 A scheduled projection applies membership changes without a developer, and runs only from a canonical head whose required workflows are all green.
+- FR15 The zone firewall rule that scopes `calendar.vishartattoo.com` to the connector's routes names no artist. It keeps the `/cdn-cgi/access/` exemption and the existing method scoping, and allows any reference under `/oauth/google/start/` and `/oauth/google/disconnect/` instead of two enumerated ones, so onboarding an artist changes no Cloudflare object.
+- FR16 The scheduled projection reaches production without widening any boundary: a scheduler on the default branch holds no production credential, moves one isolated ref in the already-admitted `release/private-crm-rc*` namespace to the exact canonical head, and dispatches the runner on it. Everything holding a production secret still executes with `github.ref` inside that namespace.
 
 ## Non-functional requirements
 
@@ -156,33 +157,62 @@ The 403 body is the zone-level Cloudflare block page, it is case-sensitive, and
 it is specific to this hostname: `calendar-staging.vishartattoo.com` answers 302
 on every path. There is exactly one Access application for
 `calendar.vishartattoo.com` covering the bare hostname, so Access cannot be
-producing a per-path decision. The only layer left in front of Access is the
-zone firewall, and it enumerates the two launch artists.
+producing a per-path decision.
 
-That is also why a "0 rulesets" inventory line was not evidence of absence: the
-production Cloudflare API token answers 403 to `/zones/{id}/rulesets`,
-`/firewall/lockdowns`, `/firewall/rules` and `/firewall/access_rules/rules`. It
-holds Access, DNS, Workers and Pages scopes but no Firewall Services scope, so
-the layer that carries the enumeration is the one layer it cannot see.
+With Firewall Services read added to the production token on 2026-09-05, the
+rule is directly visible. It is a **legacy zone firewall rule**, not a ruleset
+rule — `/zones/{id}/firewall/rules` returns 200 and four rules, while
+`/zones/{id}/rulesets` is still 403 — and the Calendar one is named
+`Vishar Calendar production path boundary`, action `block`. It exempts
+`/cdn-cgi/access/*`, then `/health`, `/oauth/google/callback` and the two
+artists' start paths on GET, and the two artists' disconnect paths on GET or
+POST.
 
-`scripts/calendar-edge-scope-sync.mjs` replaces that one rule's expression with
-the artist-free scope in FR15 and nothing else: it refuses unless exactly one
-block rule at this hostname exists, reads back, verifies no neighbouring rule
-moved, and restores the original expression otherwise. Deny-by-default off the
-connector's four route shapes is preserved, and Access plus
-`resolve_calendar_artist_route` still decide identity and artist.
+Two properties of that rule are load-bearing and must survive the rewrite. The
+`/cdn-cgi/access/` prefix is Cloudflare Access's own login and callback surface,
+so dropping it would put the Access flow behind this very block and break the
+connector for every artist including the two that work today. The method
+scoping matches what the Worker serves, and dropping it would widen the
+boundary rather than narrow it.
+
+`scripts/calendar-edge-scope-sync.mjs` therefore changes exactly one dimension:
+the two enumerated references become `starts_with(..., "/oauth/google/start/")`
+and `starts_with(..., "/oauth/google/disconnect/")`. It rewrites the rule's
+filter, so the rule's action, priority and description are never sent; it
+refuses unless exactly one enabled block rule mentions this hostname and that
+rule already exempts Access; it reads back, verifies no neighbouring rule,
+identity or count moved, and restores the original expression otherwise.
+
+Note for future edge review: a "zero rules" inventory line is not evidence of
+absence. Before the token was widened, every firewall collection answered 403
+and the inventory reported `0`. Each security listing now carries the HTTP
+status of the read behind it, and `/zones/{id}/rulesets` still reports 403.
+
+## Scheduled projection without widening a boundary
+
+Cron fires only on the default branch, and the `crm-production` environment
+admits only the `release/private-crm-rc*` namespace. A scheduled job therefore
+cannot hold a production secret directly, and the answer is not to admit `main`
+to that environment.
+
+`calendar-access-scheduler.yml` lives on `main` with no production credential at
+all. It resolves the exact canonical head, requires every required workflow
+green at that SHA, moves one isolated ref in the admitted namespace to that
+head, and dispatches `calendar-access-scheduled-runner.yml` on that ref. Moving
+a ref with `GITHUB_TOKEN` raises no workflow run of its own, and
+`workflow_dispatch` is the documented exception to that rule, so the dispatch is
+the only thing that starts.
+
+The runner then executes with `github.ref` inside the admitted namespace and
+re-derives everything from its own view before touching anything: the ref name,
+the approved SHA, that the checkout is that SHA, that canonical still is, that
+the release ref still is, that the required workflows are green, and that its
+own definition is byte-identical to the one published on the default branch.
 
 ## Open gaps
 
-- The production Cloudflare API token cannot read or edit Firewall Services, so
-  the FR15 rollout cannot run until that token's scope is widened. Everything
-  else for it is implemented and tested.
-- FR14 is unmet. The `*/15` cron shipped with `0139` never fired, because
-  GitHub honours `schedule:` only on the default branch; the repository has no
-  scheduled run in its history. Moving it to `main` is not sufficient on its
-  own either, because the `crm-production` environment rejects any ref outside
-  `release/private-crm-rc*`. Until `main` is admitted there, granting a
-  membership reaches the Access boundary on the next marker-triggered sync
-  rather than on its own.
+- `/zones/{id}/rulesets` remains unreadable with the production token. The
+  Calendar boundary is a legacy firewall rule and is fully covered, but a future
+  ruleset-phase rule at this hostname would be invisible to the inventory.
 - No CRM surface edits `configuration.presentation`; new artists get defaults. Changing a colour or event label still needs a backend write.
 - Final third-artist acceptance requires the artist/operator to complete Google's interactive consent after the noninteractive Access boundary rollout is verified.

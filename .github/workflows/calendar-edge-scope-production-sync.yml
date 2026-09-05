@@ -132,8 +132,9 @@ jobs:
           import fs from 'node:fs';
           const state = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-edge-before.json', 'utf8'));
           if (state.host !== 'calendar.vishartattoo.com') throw new Error('unexpected Calendar host');
-          if (state.phase !== 'http_request_firewall_custom') throw new Error('unexpected firewall phase');
+          if (state.source !== 'zone_legacy_firewall_rule') throw new Error('unexpected firewall source');
           if (state.rule_action !== 'block') throw new Error('unexpected rule action');
+          if (state.allows_access_endpoints !== true) throw new Error('the rule does not exempt the Access endpoints');
           if (!/^[0-9a-f]{64}$/.test(state.current_expression_digest || '')) throw new Error('current digest missing');
           NODE
 
@@ -177,6 +178,8 @@ jobs:
           const after = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-edge-after.json', 'utf8'));
           if (after.in_sync !== true) throw new Error('the Calendar edge rule does not match the generic scope');
           if (after.enumerates_artists !== false) throw new Error('the Calendar edge rule still names an artist');
+          if (after.allows_access_endpoints !== true) throw new Error('the Calendar edge rule would block Cloudflare Access');
+          if (after.filter_id !== before.filter_id) throw new Error('the Calendar filter identity changed');
           if (after.rule_id !== before.rule_id) throw new Error('the Calendar edge rule identity changed');
           if (after.rule_count !== before.rule_count) throw new Error('the firewall rule count changed');
           if (after.other_rules_digest !== before.other_rules_digest) throw new Error('a neighbouring firewall rule changed');

@@ -12,20 +12,36 @@ import {
 
 const token = 't'.repeat(40);
 const zoneId = 'z'.repeat(32);
-const rulesetId = 'r'.repeat(32);
 
-const ENUMERATING = '(http.host eq "calendar.vishartattoo.com" and not ('
-  + 'http.request.uri.path eq "/health" or http.request.uri.path eq "/oauth/google/callback" or '
-  + 'http.request.uri.path eq "/oauth/google/start/vladimir" or http.request.uri.path eq "/oauth/google/start/kristina" or '
-  + 'http.request.uri.path eq "/oauth/google/disconnect/vladimir" or http.request.uri.path eq "/oauth/google/disconnect/kristina"))';
+// The live production expression, read from the zone on 2026-09-05.
+const ENUMERATING = [
+  '(http.host eq "calendar.vishartattoo.com" and not (',
+  '  starts_with(http.request.uri.path, "/cdn-cgi/access/") or',
+  '  (http.request.method eq "GET" and (',
+  '    http.request.uri.path eq "/health" or',
+  '    http.request.uri.path eq "/oauth/google/start/vladimir" or',
+  '    http.request.uri.path eq "/oauth/google/start/kristina" or',
+  '    http.request.uri.path eq "/oauth/google/callback"',
+  '  )) or',
+  '  ((http.request.method eq "GET" or http.request.method eq "POST") and (',
+  '    http.request.uri.path eq "/oauth/google/disconnect/vladimir" or',
+  '    http.request.uri.path eq "/oauth/google/disconnect/kristina"',
+  '  ))',
+  '))',
+].join('\n');
 
-function rule(overrides = {}) {
+function rule(overrides = {}, filterOverrides = {}) {
   return {
     id: 'c'.repeat(32),
     action: 'block',
-    enabled: true,
-    description: 'Calendar connector path scope',
-    expression: ENUMERATING,
+    paused: false,
+    description: 'Vishar Calendar production path boundary',
+    filter: {
+      id: 'f'.repeat(32),
+      paused: false,
+      expression: ENUMERATING,
+      ...filterOverrides,
+    },
     ...overrides,
   };
 }
@@ -34,17 +50,17 @@ function unrelatedRule() {
   return {
     id: 'u'.repeat(32),
     action: 'block',
-    enabled: true,
-    description: 'block a bad country',
-    expression: '(ip.geoip.country eq "XX")',
+    paused: false,
+    description: 'Vishar Team admin production path boundary',
+    filter: { id: 'g'.repeat(32), paused: false, expression: '(http.host eq "team.vishartattoo.com")' },
   };
 }
 
-function fake({ rules, failReadback = false, mutateNeighbour = false, rulesetKind = 'zone' } = {}) {
+function fake({ rules, failReadback = false, mutateNeighbour = false } = {}) {
   let current = rules ?? [unrelatedRule(), rule()];
-  let patchCount = 0;
+  let putCount = 0;
   let touchedOtherZone = false;
-  const patched = [];
+  const written = [];
 
   const ok = (result) => new Response(JSON.stringify({ success: true, result }), {
     status: 200,
@@ -63,39 +79,35 @@ function fake({ rules, failReadback = false, mutateNeighbour = false, rulesetKin
       touchedOtherZone = true;
       return ok(null);
     }
-    if (method === 'GET' && path === `/client/v4/zones/${zoneId}/rulesets`) {
-      return ok([
-        { id: 'managed', phase: 'http_request_firewall_managed', kind: 'zone' },
-        { id: rulesetId, phase: 'http_request_firewall_custom', kind: rulesetKind },
-      ]);
-    }
-    if (method === 'GET' && path === `/client/v4/zones/${zoneId}/rulesets/${rulesetId}`) {
-      if (failReadback && patchCount === 1) {
-        return ok({ id: rulesetId, rules: current.map((row) => (row.expression.includes('calendar.vishartattoo.com')
-          ? { ...row, expression: '(http.host eq "calendar.vishartattoo.com")' }
-          : row)) });
+    if (method === 'GET' && path === `/client/v4/zones/${zoneId}/firewall/rules?per_page=100`) {
+      if (failReadback && putCount === 1) {
+        return ok(current.map((row) => (row.filter.expression.includes('calendar.vishartattoo.com')
+          ? { ...row, filter: { ...row.filter, expression: '(http.host eq "calendar.vishartattoo.com")' } }
+          : row)));
       }
-      return ok({ id: rulesetId, rules: current });
+      return ok(current);
     }
-    if (method === 'PATCH' && path.startsWith(`/client/v4/zones/${zoneId}/rulesets/${rulesetId}/rules/`)) {
-      patchCount += 1;
-      const ruleId = path.split('/').pop();
+    if (method === 'PUT' && path.startsWith(`/client/v4/zones/${zoneId}/filters/`)) {
+      putCount += 1;
+      const filterId = path.split('/').pop();
       const body = JSON.parse(init.body || '{}');
-      patched.push(body.expression);
-      current = current.map((row) => (row.id === ruleId ? { ...row, ...body } : row));
+      written.push(body.expression);
+      current = current.map((row) => (row.filter.id === filterId
+        ? { ...row, filter: { ...row.filter, ...body } }
+        : row));
       if (mutateNeighbour) {
-        current = current.map((row) => (row.id === ruleId ? row : { ...row, enabled: false }));
+        current = current.map((row) => (row.filter.id === filterId ? row : { ...row, paused: true }));
       }
-      return ok({ id: rulesetId, rules: current });
+      return ok(body);
     }
     return new Response(JSON.stringify({ success: false, errors: [{ code: 1000 }] }), { status: 404 });
   }
 
   return {
     options: { token, fetchImpl },
-    getPatchCount: () => patchCount,
+    getPutCount: () => putCount,
     getRules: () => current,
-    getPatched: () => patched,
+    getWritten: () => written,
     touchedOtherZone: () => touchedOtherZone,
   };
 }
@@ -105,14 +117,23 @@ function fake({ rules, failReadback = false, mutateNeighbour = false, rulesetKin
 {
   const expression = expectedExpression();
   assert.equal(enumeratesArtists(expression), false, 'the replacement must not name any artist');
-  assert.equal(enumeratesArtists(ENUMERATING), true, 'the current production shape is per-artist enumeration');
+  assert.equal(enumeratesArtists(ENUMERATING), true, 'the live production shape is per-artist enumeration');
+  assert.doesNotMatch(expression, /vladimir|kristina/i);
+
+  // Everything except the artist dimension is carried over untouched. Losing
+  // the Access exemption in particular would break the connector for every
+  // artist, including the two that work today.
+  assert.match(expression, /starts_with\(http\.request\.uri\.path, "\/cdn-cgi\/access\/"\)/);
   assert.match(expression, /http\.host eq "calendar\.vishartattoo\.com"/);
-  // Deny-by-default survives: only the Worker's four route shapes are exempt.
   assert.match(expression, /http\.request\.uri\.path eq "\/health"/);
   assert.match(expression, /http\.request\.uri\.path eq "\/oauth\/google\/callback"/);
   assert.match(expression, /starts_with\(http\.request\.uri\.path, "\/oauth\/google\/start\/"\)/);
   assert.match(expression, /starts_with\(http\.request\.uri\.path, "\/oauth\/google\/disconnect\/"\)/);
-  assert.doesNotMatch(expression, /vladimir|kristina/i);
+
+  // Method scoping is preserved: GET for health, callback and start; GET or
+  // POST for disconnect, matching what the Worker serves.
+  assert.match(expression, /\(http\.request\.method eq "GET" and \(/);
+  assert.match(expression, /\(http\.request\.method eq "GET" or http\.request\.method eq "POST"\) and\n\s+starts_with\(http\.request\.uri\.path, "\/oauth\/google\/disconnect\/"\)/);
   assert.equal(expression, expectedExpression(), 'the expression must be deterministic');
 }
 
@@ -124,10 +145,11 @@ function fake({ rules, failReadback = false, mutateNeighbour = false, rulesetKin
   assert.throws(() => selectCalendarRule([unrelatedRule()]), /calendar_edge_rule_not_unique:0/);
   assert.throws(() => selectCalendarRule([rule(), rule({ id: 'd'.repeat(32) })]), /calendar_edge_rule_not_unique:2/);
   assert.throws(() => selectCalendarRule([rule({ action: 'skip' })]), /calendar_edge_rule_action_unsupported:skip/);
-  assert.throws(() => selectCalendarRule([rule({ enabled: false })]), /calendar_edge_rule_is_disabled/);
+  assert.throws(() => selectCalendarRule([rule({ paused: true })]), /calendar_edge_rule_is_disabled/);
+  assert.throws(() => selectCalendarRule([rule({}, { id: '' })]), /calendar_edge_filter_id_invalid/);
   assert.notEqual(
     otherRulesDigest([unrelatedRule(), rule()], 'c'.repeat(32)),
-    otherRulesDigest([{ ...unrelatedRule(), enabled: false }, rule()], 'c'.repeat(32)),
+    otherRulesDigest([{ ...unrelatedRule(), paused: true }, rule()], 'c'.repeat(32)),
     'a neighbouring rule change must change the digest',
   );
 }
@@ -138,35 +160,42 @@ function fake({ rules, failReadback = false, mutateNeighbour = false, rulesetKin
   const fake0 = fake();
   const inspected = await inspectCalendarEdgeScope(fake0.options);
   assert.equal(inspected.host, 'calendar.vishartattoo.com');
+  assert.equal(inspected.source, 'zone_legacy_firewall_rule');
   assert.equal(inspected.enumerates_artists, true);
+  assert.equal(inspected.allows_access_endpoints, true);
   assert.equal(inspected.in_sync, false);
-  assert.equal(fake0.getPatchCount(), 0, 'inspect must never mutate');
+  assert.equal(fake0.getPutCount(), 0, 'inspect must never mutate');
 
   const synced = await syncCalendarEdgeScope(fake0.options);
   assert.equal(synced.changed, true);
   assert.equal(synced.after.in_sync, true);
   assert.equal(synced.after.enumerates_artists, false);
-  assert.equal(fake0.getPatchCount(), 1);
-  assert.deepEqual(fake0.getPatched(), [expectedExpression()]);
-  assert.equal(fake0.getRules().find((row) => row.id === 'u'.repeat(32)).enabled, true, 'neighbouring rules stay untouched');
+  assert.equal(synced.after.allows_access_endpoints, true);
+  assert.equal(fake0.getPutCount(), 1);
+  assert.deepEqual(fake0.getWritten(), [expectedExpression()]);
+  assert.equal(fake0.getRules().find((row) => row.id === 'u'.repeat(32)).paused, false, 'neighbouring rules stay untouched');
+  assert.equal(fake0.getRules().find((row) => row.id === 'c'.repeat(32)).action, 'block', 'the action is never rewritten');
   assert.equal(fake0.touchedOtherZone(), false, 'only the production zone may be read or written');
 }
 
 // --- idempotence -------------------------------------------------------------
 
 {
-  const fake1 = fake({ rules: [unrelatedRule(), rule({ expression: expectedExpression() })] });
+  const fake1 = fake({ rules: [unrelatedRule(), rule({}, { expression: expectedExpression() })] });
   const synced = await syncCalendarEdgeScope(fake1.options);
   assert.equal(synced.changed, false);
-  assert.equal(fake1.getPatchCount(), 0);
+  assert.equal(fake1.getPutCount(), 0);
 }
 
 // --- fail closed -------------------------------------------------------------
 
 {
-  const fake2 = fake({ rulesetKind: 'custom' });
-  await assert.rejects(() => syncCalendarEdgeScope(fake2.options), /custom_firewall_entrypoint_not_unique/);
-  assert.equal(fake2.getPatchCount(), 0);
+  // A rule that does not already exempt Access is not the rule this script was
+  // written against, so it is left alone rather than rewritten.
+  const withoutAccess = ENUMERATING.replace('  starts_with(http.request.uri.path, "/cdn-cgi/access/") or\n', '');
+  const fake2 = fake({ rules: [unrelatedRule(), rule({}, { expression: withoutAccess })] });
+  await assert.rejects(() => syncCalendarEdgeScope(fake2.options), /calendar_edge_rule_does_not_exempt_access/);
+  assert.equal(fake2.getPutCount(), 0);
 }
 
 {
@@ -181,16 +210,16 @@ function fake({ rules, failReadback = false, mutateNeighbour = false, rulesetKin
 {
   const fake3 = fake({ failReadback: true });
   await assert.rejects(() => syncCalendarEdgeScope(fake3.options), /calendar_edge_readback_mismatch/);
-  assert.equal(fake3.getPatchCount(), 2, 'a failed readback must restore the original expression');
-  assert.equal(fake3.getPatched()[1], ENUMERATING);
+  assert.equal(fake3.getPutCount(), 2, 'a failed readback must restore the original expression');
+  assert.equal(fake3.getWritten()[1], ENUMERATING);
 }
 
 {
-  // A patch that moves a neighbouring rule is rolled back even though the
+  // A write that moves a neighbouring rule is rolled back even though the
   // Calendar rule itself came back exactly as intended.
   const fake4 = fake({ mutateNeighbour: true });
   await assert.rejects(() => syncCalendarEdgeScope(fake4.options), /calendar_edge_collateral_rule_change/);
-  assert.equal(fake4.getPatched()[1], ENUMERATING);
+  assert.equal(fake4.getWritten()[1], ENUMERATING);
 }
 
 console.log('calendar edge scope sync tests passed');
