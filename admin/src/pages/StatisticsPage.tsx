@@ -19,6 +19,7 @@
 
 import { useMemo, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
+import { DiscoverySourceSection } from '../components/DiscoverySourceSection';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { formatMoney } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
@@ -175,7 +176,7 @@ export function StatisticsPage() {
             value={format(view.repeat.repeat, locale)}
             detail={t('stats.kpi.repeatDetail', {
               active: view.repeat.active,
-              rate: percentOrDash(view.repeat.rate, locale),
+              rate: view.repeat.rate,
             })}
           />
           <Kpi
@@ -225,6 +226,13 @@ export function StatisticsPage() {
           <SourceTable rows={view.sources} locale={locale} language={language} />
         )}
       </Section>
+
+      <DiscoverySourceSection
+        enquiries={data.enquiries}
+        period={period.current}
+        language={language}
+        locale={locale}
+      />
 
       <Section title={t('stats.sessionsSection')}>
         <WeekdayChart counts={view.weekday} locale={locale} />
@@ -318,7 +326,7 @@ function summarise(data: StatisticsDataset, period: PeriodPair) {
 
   return {
     enquiries,
-    projects: delta(projectsIn(current), projectsIn(previous)),
+    projects: delta(projectsIn(current), enquiriesIn(previous)),
     completed: delta(sessionsNow.completed, sessionsBefore.completed),
     planned: delta(sessionsNow.planned, sessionsBefore.planned),
     cancelled: delta(sessionsNow.cancelled, sessionsBefore.cancelled),
