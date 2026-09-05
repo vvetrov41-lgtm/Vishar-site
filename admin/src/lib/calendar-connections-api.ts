@@ -24,6 +24,8 @@ export interface CalendarConnectionStatus {
 const ARTIST_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,62}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_ERROR_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
+const GOOGLE_AUTH_ORIGIN = 'https://accounts.google.com';
+const GOOGLE_AUTH_PATH = '/o/oauth2/v2/auth';
 
 // A CRM instance with hundreds of artists still renders one card per artist the
 // operator can manage, so the cap is a sanity bound rather than a headcount.
@@ -33,12 +35,30 @@ function invalidResponse(): ApiError {
   return new ApiError(apiMessage('Could not load calendar connections. Please try again.'));
 }
 
+function connectorError(code = 'calendar_connector_error'): ApiError {
+  return new ApiError(apiMessage(code));
+}
+
 export function isCalendarConnectorAlias(value: unknown): value is CalendarConnectorAlias {
   return typeof value === 'string' && ARTIST_SLUG_PATTERN.test(value);
 }
 
 export function calendarIntegrationKey(alias: CalendarConnectorAlias): string {
   return `google_calendar_${alias}`;
+}
+
+export function calendarConnectorUrl(
+  connectorOrigin: string,
+  action: 'start' | 'disconnect',
+  alias: CalendarConnectorAlias,
+): string {
+  if (!connectorOrigin) throw connectorError('calendar_connector_not_configured');
+  if (!isCalendarConnectorAlias(alias)) throw connectorError('calendar_artist_access_denied');
+  const origin = new URL(connectorOrigin);
+  if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/') {
+    throw connectorError('calendar_connector_not_configured');
+  }
+  return `${origin.origin}/oauth/google/${action}/${alias}`;
 }
 
 function isNullableString(value: unknown): value is string | null {
@@ -89,6 +109,79 @@ function validateResult(value: unknown): CalendarConnectionStatus[] {
   return rows;
 }
 
+async function connectorJson(
+  url: string,
+  accessToken: string,
+  options: { body?: Record<string, unknown> } = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<Record<string, unknown>> {
+  if (!accessToken.trim()) throw connectorError('crm_session_required');
+  const response = await fetchImpl(url, {
+    method: 'POST',
+    mode: 'cors',
+    credentials: 'omit',
+    redirect: 'error',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+  });
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok || payload?.ok !== true) {
+    const code = typeof payload?.code === 'string' && SAFE_ERROR_PATTERN.test(payload.code)
+      ? payload.code
+      : 'calendar_connector_error';
+    throw connectorError(code);
+  }
+  return payload;
+}
+
+export async function startCalendarConnection(
+  connectorOrigin: string,
+  alias: CalendarConnectorAlias,
+  accessToken: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const payload = await connectorJson(
+    calendarConnectorUrl(connectorOrigin, 'start', alias),
+    accessToken,
+    {},
+    fetchImpl,
+  );
+  if (typeof payload.authorization_url !== 'string') throw connectorError();
+  let authorizationUrl: URL;
+  try {
+    authorizationUrl = new URL(payload.authorization_url);
+  } catch {
+    throw connectorError();
+  }
+  if (
+    authorizationUrl.origin !== GOOGLE_AUTH_ORIGIN
+    || authorizationUrl.pathname !== GOOGLE_AUTH_PATH
+    || authorizationUrl.username
+    || authorizationUrl.password
+  ) {
+    throw connectorError();
+  }
+  return authorizationUrl.toString();
+}
+
+export async function disconnectCalendarConnection(
+  connectorOrigin: string,
+  alias: CalendarConnectorAlias,
+  accessToken: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  await connectorJson(
+    calendarConnectorUrl(connectorOrigin, 'disconnect', alias),
+    accessToken,
+    { body: { confirm: 'disconnect' } },
+    fetchImpl,
+  );
+}
+
 export function createCalendarConnectionsApi(client: CrmClient) {
   return {
     async listCalendarConnectionStatus(): Promise<CalendarConnectionStatus[]> {
@@ -121,4 +214,11 @@ export function createCalendarConnectionsApi(client: CrmClient) {
 
 export type CalendarConnectionsApi = ReturnType<typeof createCalendarConnectionsApi>;
 
-export const __testing = { validateRow, validateResult, MAX_CONNECTIONS };
+export const __testing = {
+  validateRow,
+  validateResult,
+  MAX_CONNECTIONS,
+  connectorJson,
+  GOOGLE_AUTH_ORIGIN,
+  GOOGLE_AUTH_PATH,
+};
