@@ -3,7 +3,7 @@
 ## Status
 
 - Feature: `universal-calendar-onboarding`
-- State: Production rollout; edge path scope and final third-artist acceptance pending
+- State: Production rollout complete; only the third artist's interactive Google consent remains
 - Owner/workstream: Vishar CRM Calendar production engineering
 - Related work: supersedes the two-artist Calendar OAuth allowlist introduced by `0030_calendar_connection_status.sql` and `0045_calendar_actor_authorization.sql`
 
@@ -105,6 +105,7 @@ Given a named operator already admitted to the private CRM by Cloudflare Access 
 - AC6 Cloudflare Access for Calendar has the same fingerprint as the CRM capability graph, contains every operator that currently holds manage-integrations, and the Calendar hostname remains Access-gated.
 - AC7 A newly granted membership reaches the Access boundary with no source change, no Worker variable and no manual Cloudflare edit.
 - AC8 `https://calendar.vishartattoo.com/oauth/google/start/<any-new-slug>` reaches the Cloudflare Access login redirect rather than a zone block page, while an off-scope path such as `/edge-scope-probe` is still blocked at the edge.
+- AC9 The scheduled projection reaches production from the default branch with no production credential on that branch, no repository write, and no change to the `crm-production` environment's deployment branches.
 - AC7 A real third-artist connection completes end to end. This requires interactive Google consent from that artist and is the only interactive product acceptance step.
 
 ## Retained staging note
@@ -183,6 +184,20 @@ refuses unless exactly one enabled block rule mentions this hostname and that
 rule already exempts Access; it reads back, verifies no neighbouring rule,
 identity or count moved, and restores the original expression otherwise.
 
+Rolled out on 2026-09-05 from canonical `9aa3df93`. Live readback afterwards:
+
+```
+/health                                302   /random-path                  403
+/oauth/google/callback                 302   /oauth/google/start/sam       302
+/oauth/google/start/vladimir           302   /oauth/google/start/…-artist  302
+/oauth/google/disconnect/vladimir      302   /oauth/google/disconnect/sam  302
+/cdn-cgi/access/login                  404 (reaches Access, not the zone block)
+```
+
+Any artist reference now reaches Access, off-scope paths are still blocked, and
+the Access surface is still exempt. Vladimir's and Kristina's connections are
+unchanged and the calendar outbox holds no failed job.
+
 Note for future edge review: a "zero rules" inventory line is not evidence of
 absence. Before the token was widened, every firewall collection answered 403
 and the inventory reported `0`. Each security listing now carries the HTTP
@@ -216,10 +231,20 @@ that canonical is still the approved SHA, that the checkout of that SHA is clean
 and carries the same runner definition, and that every required workflow is
 green at it.
 
+Proven end to end on 2026-09-05: the scheduler on `main` dispatched the runner,
+which executed on the release ref under `crm-production`, re-resolved canonical
+to a head that had moved since dispatch, synced, read back and confirmed the
+hostname still Access-gated. No environment policy and no token permission was
+widened for it.
+
 ## Open gaps
 
 - `/zones/{id}/rulesets` remains unreadable with the production token. The
   Calendar boundary is a legacy firewall rule and is fully covered, but a future
   ruleset-phase rule at this hostname would be invisible to the inventory.
+- Moving the isolated release ref is a manual step whenever the runner
+  definition itself changes, because the Actions token cannot write refs here.
+  It is not part of onboarding an artist, and the dispatch fails closed with a
+  message naming the fix until the ref is moved.
 - No CRM surface edits `configuration.presentation`; new artists get defaults. Changing a colour or event label still needs a backend write.
 - Final third-artist acceptance requires the artist/operator to complete Google's interactive consent after the noninteractive Access boundary rollout is verified.
