@@ -19,6 +19,35 @@ select ok(
   'database constrains non-null discovery values'
 );
 
+-- Self-contained public booking source. Do not depend on production seed rows or
+-- another pgTAP file's fixture state: this test must pass after --no-seed reset.
+insert into public.workspaces (
+  id, slug, display_name, workspace_type, timezone, default_currency, is_active
+) values (
+  '97500000-0000-4000-8000-000000000010',
+  'discovery-source-test', 'Discovery Source Test', 'solo',
+  'Europe/London', 'GBP', true
+);
+insert into public.artists (
+  id, workspace_id, slug, display_name, timezone, default_currency,
+  booking_reference_prefix, is_active
+) values (
+  '97500000-0000-4000-8000-000000000011',
+  '97500000-0000-4000-8000-000000000010',
+  'discovery-source-test', 'Discovery Source Test',
+  'Europe/London', 'GBP', 'DST', true
+);
+insert into public.booking_sources (
+  id, artist_id, source_key, allowed_origin, form_version, is_active,
+  public_source_id, source_kind, display_label, form_template, is_public_booking
+) values (
+  '97500000-0000-4000-8000-000000000012',
+  '97500000-0000-4000-8000-000000000011',
+  'discovery-source-hosted', null, 'booking-v1', true,
+  '97500000-0000-4000-8000-000000000013',
+  'hosted', 'Discovery source form', 'tattoo-enquiry', true
+);
+
 create function pg_temp.files() returns jsonb language sql immutable as $$
   select jsonb_build_array(jsonb_build_object(
     'mime_type', 'image/jpeg',
@@ -34,7 +63,7 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 create temporary table t_discovery_intake as
 select public.create_trusted_enquiry_intake(
-  'vladimir-website',
+  'public-slug:discovery-source-test',
   'https://vishartattoo.com',
   'booking-v1',
   '97500000-0000-4000-8000-000000000001',
@@ -51,7 +80,7 @@ select public.create_trusted_enquiry_intake(
     'preferred_timing', 'Flexible',
     'idea', 'Discovery attribution test.',
     'discovery_source', 'chatgpt',
-    'source', '/book/vladimir',
+    'source', '/book/discovery-source-test',
     'privacy_acknowledged', true,
     'privacy_notice_version', '2026-07-29'
   ),
@@ -69,25 +98,15 @@ select is(
 );
 
 select lives_ok(
-  $$insert into public.enquiries (
-      artist_id, client_id, reference_number, status, project_type, placement,
-      approximate_size, cover_up, idea, source, discovery_source
-    )
-    select artist_id, client_id, 'DISC-NULL', 'new', 'Test', 'Arm', '10 cm',
-           'No', 'Legacy compatible row', 'legacy-test', null
-    from public.enquiries
+  $$update public.enquiries
+    set discovery_source = null
     where id = (select (r ->> 'enquiry_id')::uuid from t_discovery_intake)$$,
   'legacy and non-public intake may leave discovery source unrecorded'
 );
 
 select throws_ok(
-  $$insert into public.enquiries (
-      artist_id, client_id, reference_number, status, project_type, placement,
-      approximate_size, cover_up, idea, source, discovery_source
-    )
-    select artist_id, client_id, 'DISC-BAD', 'new', 'Test', 'Arm', '10 cm',
-           'No', 'Invalid attribution row', 'constraint-test', 'invented-channel'
-    from public.enquiries
+  $$update public.enquiries
+    set discovery_source = 'invented-channel'
     where id = (select (r ->> 'enquiry_id')::uuid from t_discovery_intake)$$,
   '23514', null,
   'unsupported discovery categories cannot be stored'
