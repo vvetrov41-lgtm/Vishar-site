@@ -195,19 +195,26 @@ admits only the `release/private-crm-rc*` namespace. A scheduled job therefore
 cannot hold a production secret directly, and the answer is not to admit `main`
 to that environment.
 
-`calendar-access-scheduler.yml` lives on `main` with no production credential at
-all. It resolves the exact canonical head, requires every required workflow
-green at that SHA, moves one isolated ref in the admitted namespace to that
-head, and dispatches `calendar-access-scheduled-runner.yml` on that ref. Moving
-a ref with `GITHUB_TOKEN` raises no workflow run of its own, and
-`workflow_dispatch` is the documented exception to that rule, so the dispatch is
-the only thing that starts.
+`calendar-access-scheduler.yml` lives on `main` with no production credential
+and no write permission. It resolves the exact canonical head, requires every
+required workflow green at that SHA, and dispatches
+`calendar-access-scheduled-runner.yml` on a fixed isolated ref in the admitted
+namespace.
 
-The runner then executes with `github.ref` inside the admitted namespace and
+That ref is a long-lived pointer that is never moved per run, because it decides
+only which *workflow definition* executes. Which *code* executes is decided by
+the approved SHA passed as an input, which the runner checks out itself. So the
+bridge needs no repository write at all, and a stale ref cannot cause stale code
+to run: the definition must be byte-identical on the default branch, on
+canonical and on the release ref, and the scheduler refuses to dispatch when it
+is not. Moving the ref is therefore only needed when the runner itself changes.
+
+The runner executes with `github.ref` inside the admitted namespace and
 re-derives everything from its own view before touching anything: the ref name,
-the approved SHA, that the checkout is that SHA, that canonical still is, that
-the release ref still is, that the required workflows are green, and that its
-own definition is byte-identical to the one published on the default branch.
+the approved SHA shape, that its own definition matches the default branch's,
+that canonical is still the approved SHA, that the checkout of that SHA is clean
+and carries the same runner definition, and that every required workflow is
+green at it.
 
 ## Open gaps
 
