@@ -1,0 +1,173 @@
+name: Calendar Access scheduler
+
+# Cron fires only on the default branch, and the `crm-production` environment
+# admits only the `release/private-crm-rc*` namespace. This file resolves that
+# without widening either: it lives where cron works and holds no production
+# credential at all, then hands the work to a runner that executes inside the
+# admitted namespace.
+#
+# It moves one isolated ref in that namespace to the exact canonical CRM head
+# and dispatches `calendar-access-scheduled-runner.yml` on it. Moving a ref with
+# GITHUB_TOKEN raises no workflow run of its own, so the only thing that starts
+# is the dispatch, which is the documented exception to that rule.
+#
+# What it exists for: onboarding an artist must be a CRM membership change, not
+# a Cloudflare edit. The runner projects the manage-integrations capability
+# graph onto the Calendar Access allow-set, and no-ops when they already match.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: calendar-access-scheduler
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Point the release ref at canonical and dispatch the runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      RELEASE_REF: release/private-crm-rc-inventory-calendar-access-scheduled
+      RUNNER_WORKFLOW: calendar-access-scheduled-runner.yml
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve canonical head and require exact-head CI
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [[ "$canonical_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "approved_sha=$canonical_sha" >> "$GITHUB_OUTPUT"
+
+          # The runner must be dispatchable and identical on both branches,
+          # otherwise the dispatch would run a definition nobody reviewed
+          # alongside the default-branch one.
+          git fetch --depth=1 origin "$CANONICAL_BRANCH"
+          git show "FETCH_HEAD:.github/workflows/$RUNNER_WORKFLOW" > "$RUNNER_TEMP/runner-canonical.yml"
+          cmp -s "$RUNNER_TEMP/runner-canonical.yml" ".github/workflows/$RUNNER_WORKFLOW" || {
+            echo 'The runner differs between the default branch and canonical; refusing to dispatch.' >&2
+            exit 1
+          }
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+            'WhatsApp production onboarding validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$canonical_sha&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            if ! jq -e --arg name "$workflow" --arg sha "$canonical_sha" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/runs.json" >/dev/null; then
+              # A red or still-running canonical means there is no approved
+              # source to project from, so the boundary is left as it is.
+              echo "green=false" >> "$GITHUB_OUTPUT"
+              echo "Skipping: '$workflow' is not green on $canonical_sha; boundary left unchanged." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "green=true" >> "$GITHUB_OUTPUT"
+
+      # The ref is a pointer with no history value: it is always set to the
+      # exact approved canonical head, never merged or appended to.
+      - name: Move the isolated release ref to the approved head
+        if: steps.gate.outputs.green == 'true'
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ steps.gate.outputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin "refs/heads/$RELEASE_REF" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$RELEASE_REF" \
+              -f sha="$APPROVED_SHA" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/heads/$RELEASE_REF" -f sha="$APPROVED_SHA" >/dev/null
+          fi
+          release_sha="$(git ls-remote origin "refs/heads/$RELEASE_REF" | awk 'NR == 1 {print $1}')"
+          [ "$release_sha" = "$APPROVED_SHA" ] || {
+            echo 'The release ref did not land on the approved canonical head.' >&2
+            exit 1
+          }
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Canonical moved while the release ref was being positioned.' >&2
+            exit 1
+          }
+
+      - name: Dispatch the production runner on the release ref
+        id: dispatch
+        if: steps.gate.outputs.green == 'true'
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ steps.gate.outputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          before="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$RUNNER_WORKFLOW/runs?per_page=1" --jq '.workflow_runs[0].id // 0')"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/$RUNNER_WORKFLOW/dispatches" \
+            -f ref="$RELEASE_REF" \
+            -f "inputs[approved_sha]=$APPROVED_SHA"
+
+          run_id=''
+          for attempt in $(seq 1 20); do
+            sleep 6
+            candidate="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$RUNNER_WORKFLOW/runs?per_page=1" --jq '.workflow_runs[0].id // 0')"
+            if [ "$candidate" != "$before" ] && [ "$candidate" != '0' ]; then
+              run_id="$candidate"
+              break
+            fi
+          done
+          [ -n "$run_id" ] || { echo 'The dispatched runner never appeared.' >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Dispatched run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id"
+
+      # The scheduler mirrors the runner's outcome, so a projection that fails
+      # is visible here rather than only in a workflow nobody is watching.
+      - name: Mirror the runner outcome
+        if: steps.gate.outputs.green == 'true'
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 100); do
+            state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.status + ":" + (.conclusion // "none")')"
+            case "$state" in
+              completed:success) echo "Runner succeeded."; exit 0 ;;
+              completed:*) echo "Runner finished as ${state#completed:}." >&2; exit 1 ;;
+            esac
+            sleep 12
+          done
+          echo 'The dispatched runner did not finish in time.' >&2
+          exit 1
+
+      - name: Scheduler summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Calendar Access scheduler'
+            echo "- Canonical SHA: \`${{ steps.gate.outputs.approved_sha }}\`"
+            echo "- Exact-head CI green: \`${{ steps.gate.outputs.green }}\`"
+            echo "- Release ref: \`$RELEASE_REF\`"
+            echo '- Production credentials held by this job: none'
+            echo '- Cloudflare or Supabase access from this job: none'
+          } >> "$GITHUB_STEP_SUMMARY"
