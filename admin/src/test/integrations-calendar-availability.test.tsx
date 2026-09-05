@@ -28,7 +28,7 @@ describe('Calendar availability in the integrations hub', () => {
     expect(within(available).getByText('Google Calendar')).toBeInTheDocument();
     expect(within(available).getByText('Not connected')).toBeInTheDocument();
     expect(within(available).getByRole('link', { name: 'Connect' }))
-      .toHaveAttribute('href', '/integrations/calendar');
+      .toHaveAttribute('href', '#/integrations/calendar');
 
     // A hidden artist's existing Calendar metadata must not leak into the
     // fallback card that makes first-time onboarding possible.
