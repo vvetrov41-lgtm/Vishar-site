@@ -58,7 +58,7 @@
 
 - [x] T070 Reproduce and identify Kristina's provider blocker. Evidence: Meta returned `App not active`; dashboard app `1481226093843982` is `Not published`, with business verification complete but app settings/review incomplete. [FR-011, AC-010]
 - [x] T071 Add a public Vishar CRM Meta privacy notice and deletion instructions without changing the existing booking privacy acknowledgement contract. Evidence: `privacy/meta/index.html` plus sitemap entry; static validation and secret scan green.
-- [ ] T072 Publish the privacy page from an exact reviewed SHA and verify `https://vishartattoo.com/privacy/meta/` returns the intended notice.
+- [x] T072 Publish the privacy page from an exact reviewed SHA and verify `https://vishartattoo.com/privacy/meta/` returns the intended notice. Evidence: PR #601 merged to `main` at `06e54d08e212c2c131b0743960edf60994941f33`; live fetch on 2026-09-05 returned HTTP 200, canonical Vishar CRM privacy notice and the `#data-deletion` instructions.
 - [ ] T073 Complete Meta app settings with the verified privacy/deletion URL, 1024px icon and business category.
 - [ ] T074 Submit a WhatsApp-only App Review and Access Verification with accurate reviewer instructions; keep unrelated Instagram permissions out of this request.
 - [ ] T075 While provider review is pending, optionally grant Kristina a bounded temporary app role and record its later removal requirement.
