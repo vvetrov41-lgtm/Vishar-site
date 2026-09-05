@@ -49,7 +49,7 @@ test('strict /book namespace accepts only canonical lowercase artist slugs', () 
   assert.equal(__testing.PUBLIC_ORIGIN, 'https://vishartattoo.com');
 });
 
-test('GET resolves only the path slug and ignores forged artist/source query input', async () => {
+test('GET resolves only the path slug, renders bounded discovery choices and ignores forged routing input', async () => {
   const { calls, fetchImpl } = resolverFetch();
   const response = await handlePublicBookingRequest(
     new Request(`${URL}?artist_id=kristina&source=forged&utm_source=instagram`),
@@ -61,6 +61,18 @@ test('GET resolves only the path slug and ignores forged artist/source query inp
   assert.match(html, /<form/);
   assert.match(html, /Vladimir/);
   assert.doesNotMatch(html, /kristina|forged/i);
+  assert.match(html, /<select name="discoverySource" required>/);
+  for (const [value, label] of [
+    ['instagram', 'Instagram'],
+    ['chatgpt', 'ChatGPT'],
+    ['other_ai', 'Other AI \/ LLM'],
+    ['friend_referral', 'Friend \/ recommendation'],
+    ['google', 'Google'],
+    ['other', 'Other'],
+  ]) {
+    assert.match(html, new RegExp(`<option value="${value}">${label}</option>`));
+  }
+  assert.match(html, /For example: Instagram, ChatGPT, other AI\/LLMs, recommendations from friends, Google, etc\./);
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].body, {
     p_source_key: 'public-slug:vladimir',
