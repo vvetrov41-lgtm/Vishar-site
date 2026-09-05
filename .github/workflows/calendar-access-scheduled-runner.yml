@@ -14,8 +14,13 @@ name: Calendar Access scheduled runner
 #
 # This file must exist on the default branch to be dispatchable at all, and the
 # copy that actually executes is the one at the dispatched ref. The two are
-# required to be byte-identical below, so the code being run is always the code
-# published on the default branch.
+# required to be byte-identical below, so the definition being run is always the
+# one published on the default branch.
+#
+# The release ref is a fixed pointer and is not moved per run, so it decides
+# only which definition executes. Which code executes is decided by the
+# approved SHA input, which this job checks out itself after proving it is the
+# current canonical head. Neither half needs write access to the repository.
 
 on:
   workflow_dispatch:
@@ -73,28 +78,31 @@ jobs:
           [ -n "$SUPABASE_SECRET_KEY" ]
           [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
 
-          # The dispatched ref must be exactly the canonical head it claims to
-          # be, and canonical must still be there.
-          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
-          [ -z "$(git status --short)" ]
+          # The executing definition is the one at this ref; require it to match
+          # the definition published on the default branch, so a dispatchable
+          # workflow can never diverge from what review saw. Checked before the
+          # working tree is moved anywhere.
+          git fetch --depth=1 origin main
+          git show "FETCH_HEAD:$RUNNER_WORKFLOW" > "$RUNNER_TEMP/runner-on-default.yml"
+          cmp -s "$RUNNER_TEMP/runner-on-default.yml" "$RUNNER_WORKFLOW" || {
+            echo 'This runner differs from the definition on the default branch.' >&2
+            exit 1
+          }
+
+          # The approved SHA must still be the canonical head, and it is the
+          # code this job runs: the ref it was dispatched on decides nothing
+          # beyond which definition executes.
           canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
           [ "$canonical_sha" = "$APPROVED_SHA" ] || {
             echo 'Canonical moved between dispatch and execution.' >&2
             exit 1
           }
-          release_sha="$(git ls-remote origin "refs/heads/$RELEASE_REF" | awk 'NR == 1 {print $1}')"
-          [ "$release_sha" = "$APPROVED_SHA" ] || {
-            echo 'The release ref no longer points at the approved canonical head.' >&2
-            exit 1
-          }
-
-          # The executing definition is the one at this ref; require it to match
-          # the definition published on the default branch, so a dispatchable
-          # workflow can never diverge from what review saw.
-          git fetch --depth=1 origin main
-          git show "FETCH_HEAD:$RUNNER_WORKFLOW" > "$RUNNER_TEMP/runner-on-default.yml"
+          git fetch origin "$CANONICAL_BRANCH"
+          git checkout --detach "$APPROVED_SHA"
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
           cmp -s "$RUNNER_TEMP/runner-on-default.yml" "$RUNNER_WORKFLOW" || {
-            echo 'This runner differs from the definition on the default branch.' >&2
+            echo 'The canonical head carries a different runner definition.' >&2
             exit 1
           }
 
