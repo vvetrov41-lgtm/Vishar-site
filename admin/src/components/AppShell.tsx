@@ -30,6 +30,7 @@ const NAV_KEYS: Record<string, string> = {
   '/appointments': 'nav.appointments',
   '/sessions': 'nav.appointments',
   '/availability': 'nav.availability',
+  '/statistics': 'nav.statistics',
   '/automations': 'nav.automations',
   '/payments': 'nav.payments',
   '/integrations': 'nav.integrations',
@@ -578,6 +579,9 @@ export function groupNavItems(items: NavItem[]): { id: NavGroupId; items: NavIte
  */
 export function navGroupFor(path: string): NavGroupId {
   if (path === '/finance' || path === '/payments') return 'money';
+  // Statistics reads the work rather than the money: its finance block is one
+  // section of it and appears only where the database returns finance rows.
+  if (path === '/statistics') return 'work';
   if (
     path === '/availability'
     || path === '/automations'
@@ -634,6 +638,9 @@ function pageScopeFor(path: string): PageScope {
     // one artist, and PaymentsPage cannot render without one. Classifying it
     // as global hid the selector on the one screen that requires a selection.
     || path === '/payments'
+    // Every figure on Statistics is an artist-owned record, and the screen
+    // passes the selected artist into each read.
+    || path === '/statistics'
   ) return 'artist';
   return 'global';
 }
@@ -716,6 +723,8 @@ function NavIcon({ path }: { path: string }) {
       return <svg {...common}><circle cx="12" cy="8" r="3" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /><path d="M19 5v4M17 7h4" /></svg>;
     case '/activity':
       return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+    case '/statistics':
+      return <svg {...common}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg>;
     default:
       return <svg {...common}><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></svg>;
   }

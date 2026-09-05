@@ -198,6 +198,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
   { path: '/appointments', label: 'Calendar', capability: 'viewSessions' },
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
+  { path: '/statistics', label: 'Statistics', capability: 'viewEnquiries' },
   { path: '/automations', label: 'Automations', capability: 'viewAutomations' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
   // One entry. Calendar, WhatsApp and Instagram were three peers here, which

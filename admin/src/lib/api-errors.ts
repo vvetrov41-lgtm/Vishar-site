@@ -96,6 +96,7 @@ export const API_OPERATIONS = {
   'load scheduling preferences': { kind: 'read', ru: 'загрузить настройки расписания' },
   'load session finance': { kind: 'read', ru: 'загрузить финансы сеанса' },
   'load sessions': { kind: 'read', ru: 'загрузить сеансы' },
+  'load statistics': { kind: 'read', ru: 'загрузить статистику' },
   'load that client': { kind: 'read', ru: 'загрузить карточку клиента' },
   'load that email': { kind: 'read', ru: 'загрузить это письмо' },
   'load that enquiry': { kind: 'read', ru: 'загрузить заявку' },
