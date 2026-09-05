@@ -46,6 +46,10 @@ const PAGE_SIZE = 500;
  */
 const MAX_ROWS = 20000;
 
+export interface StatisticsEnquiryWithDiscovery extends StatisticsEnquiry {
+  discovery_source: string | null;
+}
+
 export interface StatisticsFinance {
   transactions: StatisticsTransaction[];
   requests: StatisticsPaymentRequest[];
@@ -54,7 +58,7 @@ export interface StatisticsFinance {
 
 export interface StatisticsDataset {
   /** Enquiries created inside the widest window asked for. */
-  enquiries: StatisticsEnquiry[];
+  enquiries: StatisticsEnquiryWithDiscovery[];
   /** Projects created inside that window, plus every project a cohort enquiry
    *  produced later - conversion is answered by existence, not by date. */
   projects: StatisticsProject[];
@@ -129,7 +133,7 @@ async function readAllOptional<T>(build: () => PostgrestQuery): Promise<T[] | nu
 }
 
 const ENQUIRY_COLUMNS =
-  'id, artist_id, client_id, status, source, booking_source_id, communication_channel, utm_source, created_at';
+  'id, artist_id, client_id, status, source, booking_source_id, communication_channel, utm_source, discovery_source, created_at';
 const PROJECT_COLUMNS = 'id, artist_id, client_id, enquiry_id, status, created_at';
 const SESSION_COLUMNS =
   'id, artist_id, client_id, project_id, enquiry_id, status, appointment_type, start_at, end_at, duration_hours, cancelled_at';
@@ -225,7 +229,7 @@ export function createStatisticsApi(client: CrmClient) {
       // the artist ever saw, so counting it would inflate every source and
       // depress every conversion rate.
       const enquiries = note(
-        await readAll<StatisticsEnquiry>(
+        await readAll<StatisticsEnquiryWithDiscovery>(
           () => scoped('enquiries', ENQUIRY_COLUMNS, artistId)
             .is('archived_at', null)
             .eq('intake_state', 'complete')
