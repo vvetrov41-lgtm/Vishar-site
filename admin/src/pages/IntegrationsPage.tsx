@@ -63,14 +63,17 @@ export function IntegrationsPage() {
       api.listAccessibleArtists(),
     ]);
     const visibleArtistIds = visibleIntegrationArtistIds(profile, artists, memberships);
-    return statuses.filter(
-      (status) => status.owner_kind !== 'artist' || visibleArtistIds.has(status.owner_id),
-    );
+    return {
+      statuses: statuses.filter(
+        (status) => status.owner_kind !== 'artist' || visibleArtistIds.has(status.owner_id),
+      ),
+      hasVisibleArtist: visibleArtistIds.size > 0,
+    };
   }, [api, memberships, profile]);
 
   const byChannel = useMemo(() => {
     const groups = new Map<IntegrationChannel, IntegrationStatus[]>();
-    for (const row of state.data ?? []) {
+    for (const row of state.data?.statuses ?? []) {
       const existing = groups.get(row.integration_type);
       if (existing) existing.push(row);
       else groups.set(row.integration_type, [row]);
@@ -82,6 +85,9 @@ export function IntegrationsPage() {
   if (state.error) return <ErrorState message={state.error} onRetry={state.reload} />;
 
   const channels = CHANNEL_ORDER.filter((channel) => byChannel.has(channel));
+  const showCalendarAvailability = Boolean(
+    state.data?.hasVisibleArtist && !byChannel.has('calendar'),
+  );
 
   return (
     <div className="stack">
@@ -101,7 +107,15 @@ export function IntegrationsPage() {
         </div>
       </Section>
 
-      {channels.length === 0 ? (
+      {showCalendarAvailability ? (
+        <Section title={language === 'ru' ? 'Доступные интеграции' : 'Available integrations'}>
+          <ul className="card-list">
+            <AvailableCalendarCard />
+          </ul>
+        </Section>
+      ) : null}
+
+      {channels.length === 0 && !showCalendarAvailability ? (
         <EmptyState
           title={language === 'ru' ? 'Провайдеры пока не подключены' : 'No providers connected yet'}
           hint={language === 'ru'
@@ -118,6 +132,30 @@ export function IntegrationsPage() {
         </Section>
       ))}
     </div>
+  );
+}
+
+function AvailableCalendarCard() {
+  const { language } = useLanguage();
+  return (
+    <li className="card" data-integration="calendar" data-health="not_connected">
+      <div className="card-header">
+        <strong>Google Calendar</strong>
+        <span className="badge badge-not_connected">
+          {HEALTH_LABELS.not_connected[language]}
+        </span>
+      </div>
+      <p className="muted">
+        {language === 'ru'
+          ? 'Подключите Google Calendar для мастера, которым вы управляете. Конкретный мастер и права повторно проверяются сервером перед OAuth.'
+          : 'Connect Google Calendar for an artist you manage. The server re-checks the exact artist and your permission before OAuth.'}
+      </p>
+      <div className="actions">
+        <Link to="/integrations/calendar">
+          {language === 'ru' ? 'Подключить' : 'Connect'}
+        </Link>
+      </div>
+    </li>
   );
 }
 
