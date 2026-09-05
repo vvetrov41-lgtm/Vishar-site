@@ -176,7 +176,7 @@ export function StatisticsPage() {
             value={format(view.repeat.repeat, locale)}
             detail={t('stats.kpi.repeatDetail', {
               active: view.repeat.active,
-              rate: view.repeat.rate,
+              rate: percentOrDash(view.repeat.rate, locale),
             })}
           />
           <Kpi
@@ -326,7 +326,7 @@ function summarise(data: StatisticsDataset, period: PeriodPair) {
 
   return {
     enquiries,
-    projects: delta(projectsIn(current), enquiriesIn(previous)),
+    projects: delta(projectsIn(current), projectsIn(previous)),
     completed: delta(sessionsNow.completed, sessionsBefore.completed),
     planned: delta(sessionsNow.planned, sessionsBefore.planned),
     cancelled: delta(sessionsNow.cancelled, sessionsBefore.cancelled),
