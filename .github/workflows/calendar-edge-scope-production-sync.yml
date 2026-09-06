@@ -38,7 +38,7 @@ jobs:
           node scripts/test-calendar-edge-scope-sync.mjs
 
   sync-production:
-    name: Replace the per-artist edge path scope
+    name: Sync Calendar edge path and method scope
     if: >-
       github.event_name == 'push'
       && github.actor == github.repository_owner
@@ -51,6 +51,7 @@ jobs:
       APPROVED_SHA: ${{ github.event.before }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
       CALENDAR_HOST: calendar.vishartattoo.com
+      CRM_ORIGIN: https://crm.vishartattoo.com
       MARKER_FILE: .github/ops-triggers/calendar-edge-scope-sync.trigger
 
     steps:
@@ -122,8 +123,6 @@ jobs:
           node --check scripts/calendar-edge-scope-sync.mjs
           node scripts/test-calendar-edge-scope-sync.mjs
 
-      # The pre-state is the evidence that the rule being replaced is the
-      # per-artist one, and that exactly one rule at this hostname exists.
       - name: Read the Calendar edge rule before mutation
         run: |
           set -euo pipefail
@@ -138,17 +137,22 @@ jobs:
           if (!/^[0-9a-f]{64}$/.test(state.current_expression_digest || '')) throw new Error('current digest missing');
           NODE
 
-      # The current edge behaviour is a fact, not a belief: a known artist path
-      # reaches Access while an unknown one is blocked before it.
-      - name: Record the per-artist edge behaviour before mutation
+      # Record the live state after the path-specific OAuth Access Bypass rollout.
+      # GET /start/* should already reach the public Worker and be rejected there;
+      # POST/OPTIONS may still be stopped by the legacy firewall until this sync.
+      - name: Record the Calendar edge behaviour before mutation
         shell: bash
         run: |
           set -euo pipefail
           known="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/start/vladimir" || true)"
           unknown="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/start/edge-scope-probe" || true)"
-          echo "before: known=$known unknown=$unknown"
+          post="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 -X POST -H "Origin: $CRM_ORIGIN" "https://$CALENDAR_HOST/oauth/google/start/edge-scope-probe" || true)"
+          options="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 -X OPTIONS -H "Origin: $CRM_ORIGIN" "https://$CALENDAR_HOST/oauth/google/start/edge-scope-probe" || true)"
+          echo "before: known_get=$known unknown_get=$unknown unknown_post=$post unknown_options=$options"
           echo "EDGE_BEFORE_KNOWN=$known" >> "$GITHUB_ENV"
           echo "EDGE_BEFORE_UNKNOWN=$unknown" >> "$GITHUB_ENV"
+          echo "EDGE_BEFORE_POST=$post" >> "$GITHUB_ENV"
+          echo "EDGE_BEFORE_OPTIONS=$options" >> "$GITHUB_ENV"
 
       - name: Recheck immutable source immediately before mutation
         shell: bash
@@ -180,33 +184,50 @@ jobs:
           if (after.enumerates_artists !== false) throw new Error('the Calendar edge rule still names an artist');
           if (after.allows_access_endpoints !== true) throw new Error('the Calendar edge rule would block Cloudflare Access');
           if (after.filter_id !== before.filter_id) throw new Error('the Calendar filter identity changed');
-          if (after.rule_id !== before.rule_id) throw new Error('the Calendar edge rule identity changed');
+          if (after.rule_id !== before.rule_id) throw new Error('the Calendar rule identity changed');
           if (after.rule_count !== before.rule_count) throw new Error('the firewall rule count changed');
           if (after.other_rules_digest !== before.other_rules_digest) throw new Error('a neighbouring firewall rule changed');
           NODE
 
-      # The acceptance is behavioural: a brand-new artist reference must reach
-      # the Access boundary, and an unrelated path must still be blocked there.
-      - name: Verify a new artist reference reaches Access and deny-by-default holds
+      # OAuth start and callback are intentionally path-specific Access Bypasses.
+      # Prove the exact GET/POST/OPTIONS behaviour reaches the Worker, while
+      # host-level operator routes and unrelated edge paths stay protected.
+      - name: Verify OAuth start methods reach Worker and deny-by-default holds
         shell: bash
         run: |
           set -euo pipefail
-          gated=false
+          ready=false
           for attempt in $(seq 1 20); do
-            unknown="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/start/edge-scope-probe" || true)"
-            case "$unknown" in
-              302|303|307|401) gated=true; break ;;
-              200) echo 'The Calendar connector became publicly reachable.' >&2; exit 1 ;;
-            esac
+            get_status="$(curl -sS -o "$RUNNER_TEMP/start-get.json" -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/start/edge-scope-probe" || true)"
+            post_status="$(curl -sS -o "$RUNNER_TEMP/start-post.json" -w '%{http_code}' -m 15 -X POST -H "Origin: $CRM_ORIGIN" "https://$CALENDAR_HOST/oauth/google/start/edge-scope-probe" || true)"
+            options_headers="$(curl -sS -D - -o /dev/null -m 15 -X OPTIONS -H "Origin: $CRM_ORIGIN" "https://$CALENDAR_HOST/oauth/google/start/edge-scope-probe" || true)"
+            options_status="$(printf '%s' "$options_headers" | awk 'toupper($1) ~ /^HTTP\// {code=$2} END {print code}')"
+            allow_origin="$(printf '%s' "$options_headers" | awk 'BEGIN{IGNORECASE=1} /^access-control-allow-origin:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}')"
+
+            if [ "$get_status" = '405' ] \
+              && [ "$post_status" = '401' ] \
+              && jq -e '.ok == false and .code == "calendar_session_required"' "$RUNNER_TEMP/start-post.json" >/dev/null 2>&1 \
+              && [ "$options_status" = '204' ] \
+              && [ "$allow_origin" = "$CRM_ORIGIN" ]; then
+              ready=true
+              break
+            fi
+            if [ "$get_status" = '200' ] || [ "$post_status" = '200' ]; then
+              echo 'Unauthenticated Calendar OAuth start became usable.' >&2
+              exit 1
+            fi
             sleep 6
           done
-          [ "$gated" = true ] || { echo 'An unknown artist reference is still blocked before Access.' >&2; exit 1; }
+          [ "$ready" = true ] || { echo 'Calendar OAuth POST/OPTIONS did not reach the public Worker with the expected authorization boundary.' >&2; exit 1; }
 
           known="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/start/vladimir" || true)"
-          case "$known" in 302|303|307|401) ;; *) echo "An existing artist route regressed: $known" >&2; exit 1 ;; esac
+          [ "$known" = '405' ] || { echo "Existing artist GET start boundary regressed: $known" >&2; exit 1; }
+
+          callback="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/callback?state=edge-scope-probe" || true)"
+          [ "$callback" = '400' ] || { echo "Public OAuth callback boundary regressed: $callback" >&2; exit 1; }
 
           health="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/health" || true)"
-          case "$health" in 302|303|307|401) ;; *) echo "The health route regressed: $health" >&2; exit 1 ;; esac
+          case "$health" in 302|303|307|401|403) ;; *) echo "The protected health route regressed: $health" >&2; exit 1 ;; esac
 
           off_scope="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/edge-scope-probe" || true)"
           [ "$off_scope" = '403' ] || { echo "Deny-by-default was weakened: off-scope path returned $off_scope" >&2; exit 1; }
@@ -230,10 +251,10 @@ jobs:
           {
             echo '### Calendar edge scope production sync'
             echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
-            echo "- Edge behaviour before: known artist \`$EDGE_BEFORE_KNOWN\`, unknown artist \`$EDGE_BEFORE_UNKNOWN\`"
+            echo "- Edge behaviour before: known GET \`$EDGE_BEFORE_KNOWN\`, unknown GET \`$EDGE_BEFORE_UNKNOWN\`, unknown POST \`$EDGE_BEFORE_POST\`, unknown OPTIONS \`$EDGE_BEFORE_OPTIONS\`"
             echo '- Mutation scope: one zone firewall rule expression at the Calendar hostname'
-            echo '- Removed: the per-artist path allow-list'
-            echo '- Kept: deny-by-default off the connector routes, Cloudflare Access, Supabase authorization'
+            echo '- Generic artist path scope preserved; POST and OPTIONS added only for `/oauth/google/start/*`'
+            echo '- Kept: deny-by-default off connector routes, host-level Access protection, path-specific OAuth Bypass and Worker/Supabase authorization'
             echo '- Worker / Pages / Supabase mutation: none'
             echo '- Rule expressions and credentials: not printed'
           } >> "$GITHUB_STEP_SUMMARY"
