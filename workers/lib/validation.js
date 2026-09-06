@@ -29,6 +29,16 @@ export const ALLOWED_DISCOVERY_SOURCES = new Set([
   'tattoo_convention',
 ]);
 
+const ALLOWED_DISCOVERY_DETAIL_SOURCES = new Set([
+  'ai',
+  'referral',
+  'other',
+  // Legacy rolling-deploy equivalents of ai/referral.
+  'chatgpt',
+  'other_ai',
+  'friend_referral',
+]);
+
 const EXTENSION_FOR_MIME = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -61,7 +71,7 @@ export const FIELD_LIMITS = {
   timing: 160,
   idea: 3500,
   discoverySource: 40,
-  discoverySourceDetail: 240,
+  discoverySourceDetail: 200,
   source: 200,
   landingPage: 500,
   referrer: 500,
@@ -166,11 +176,19 @@ export function parseEnquiryFields(form) {
     ),
   };
 
-  if (!enquiry.discoverySource) enquiry.discoverySourceDetail = '';
-
   const privacyAcknowledged = field(form, 'privacyAcknowledged') === 'true';
 
-  const required = ['name', 'email', 'preferredReply', 'projectType', 'placement', 'size', 'coverUp', 'idea'];
+  const required = [
+    'name',
+    'email',
+    'preferredReply',
+    'projectType',
+    'placement',
+    'size',
+    'coverUp',
+    'idea',
+    'discoverySource',
+  ];
   if (required.some((key) => !enquiry[key])) {
     throw new RequestError('missing_required_field', 'Please complete all required fields.');
   }
@@ -186,11 +204,22 @@ export function parseEnquiryFields(form) {
     );
   }
 
-  if (enquiry.discoverySource && !ALLOWED_DISCOVERY_SOURCES.has(enquiry.discoverySource)) {
+  if (!ALLOWED_DISCOVERY_SOURCES.has(enquiry.discoverySource)) {
     throw new RequestError(
       'invalid_discovery_source',
       'Please choose how you heard about the artist from the available options.'
     );
+  }
+
+  if (enquiry.discoverySource === 'other' && !enquiry.discoverySourceDetail) {
+    throw new RequestError(
+      'missing_discovery_source_detail',
+      'Please tell us where you found the artist.'
+    );
+  }
+
+  if (!ALLOWED_DISCOVERY_DETAIL_SOURCES.has(enquiry.discoverySource)) {
+    enquiry.discoverySourceDetail = '';
   }
 
   if (!privacyAcknowledged || enquiry.privacyNoticeVersion !== PRIVACY_NOTICE_VERSION) {
