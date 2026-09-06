@@ -178,17 +178,7 @@ export function parseEnquiryFields(form) {
 
   const privacyAcknowledged = field(form, 'privacyAcknowledged') === 'true';
 
-  const required = [
-    'name',
-    'email',
-    'preferredReply',
-    'projectType',
-    'placement',
-    'size',
-    'coverUp',
-    'idea',
-    'discoverySource',
-  ];
+  const required = ['name', 'email', 'preferredReply', 'projectType', 'placement', 'size', 'coverUp', 'idea'];
   if (required.some((key) => !enquiry[key])) {
     throw new RequestError('missing_required_field', 'Please complete all required fields.');
   }
@@ -204,7 +194,7 @@ export function parseEnquiryFields(form) {
     );
   }
 
-  if (!ALLOWED_DISCOVERY_SOURCES.has(enquiry.discoverySource)) {
+  if (enquiry.discoverySource && !ALLOWED_DISCOVERY_SOURCES.has(enquiry.discoverySource)) {
     throw new RequestError(
       'invalid_discovery_source',
       'Please choose how you heard about the artist from the available options.'
