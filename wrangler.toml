@@ -7,6 +7,8 @@ workers_dev = true
 binding = "AI"
 
 [vars]
+ALLOWED_ORIGINS = "https://vishartattoo.com,https://booking.vishartattoo.com,https://www.kristinavishar.com"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 VISHAR_ENVIRONMENT = "production"
 
 # A preview deploy is a separate Worker (`tattooai-preview`). Bindings are not
