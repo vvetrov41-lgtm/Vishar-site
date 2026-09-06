@@ -38,14 +38,13 @@
     q.q = [];
     w.oaiq = q;
 
-    // Measurement is denied before the Pixel is initialized. The existing
-    // site consent choice can grant it afterwards; without consent, events are
-    // blocked and are not replayed.
+    // OpenAI advertising measurement has its own consent state. This prevents
+    // an older analytics-only choice from silently enabling a new purpose.
     w.oaiq('consent', false);
     w.oaiq('init', { pixelId: 'XkQY5Xq3FbxJvAx2qDD9my' });
 
     var consent = null;
-    try { consent = localStorage.getItem('vishar-cookie-consent'); } catch (error) { consent = null; }
+    try { consent = localStorage.getItem('vishar-openai-ads-consent'); } catch (error) { consent = null; }
     if (consent === 'granted') w.oaiq('consent', true);
 
     var js = d.createElement(s);
@@ -172,17 +171,80 @@
     const instagramRequiredNote = document.getElementById('instagram-required-note');
     const startedAt = Date.now();
     const IDEMPOTENCY_STORAGE_KEY = 'vishar.enquiry.idempotencyKey';
+    const OPENAI_ADS_CONSENT_KEY = 'vishar-openai-ads-consent';
+    const GENERIC_CONSENT_KEY = 'vishar-cookie-consent';
     const PRIVACY_NOTICE_VERSION = '2026-09-06';
 
-    // Keep the Pixel's consent state synchronized with the site's existing
-    // optional analytics banner. The Pixel itself starts denied in <head>.
+    function storedConsent(key) {
+      try { return localStorage.getItem(key); } catch (error) { return null; }
+    }
+
+    function setOpenAiAdsConsent(value) {
+      try { localStorage.setItem(OPENAI_ADS_CONSENT_KEY, value); } catch (error) { /* private browsing */ }
+      try {
+        if (typeof window.oaiq === 'function') window.oaiq('consent', value === 'granted');
+      } catch (error) {
+        console.warn('OpenAI Ads consent update failed', error);
+      }
+    }
+
+    function customiseSharedConsentBanner() {
+      const banner = document.getElementById('cookie-consent');
+      if (!banner) return false;
+      const copy = banner.querySelector('p');
+      if (copy) {
+        copy.innerHTML = 'This site uses optional analytics and advertising measurement on this enquiry page. Nothing is measured unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a>';
+      }
+      return true;
+    }
+
+    function buildOpenAiAdsConsentBanner() {
+      if (document.getElementById('openai-ads-consent')) return;
+      const banner = document.createElement('div');
+      banner.id = 'openai-ads-consent';
+      banner.setAttribute('role', 'region');
+      banner.setAttribute('aria-label', 'Advertising measurement consent');
+      banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
+      banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional advertising measurement can tell me whether a ChatGPT ad resulted in an enquiry. It stays off unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="openai-ads-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button><button type="button" id="openai-ads-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button></div>';
+      document.body.appendChild(banner);
+
+      banner.querySelector('#openai-ads-accept').addEventListener('click', function () {
+        setOpenAiAdsConsent('granted');
+        banner.remove();
+      });
+      banner.querySelector('#openai-ads-decline').addEventListener('click', function () {
+        setOpenAiAdsConsent('denied');
+        banner.remove();
+      });
+    }
+
+    function syncOpenAiAdsConsentUi() {
+      const adsChoice = storedConsent(OPENAI_ADS_CONSENT_KEY);
+      if (adsChoice === 'granted' || adsChoice === 'denied') {
+        setOpenAiAdsConsent(adsChoice);
+        return;
+      }
+
+      // A fresh visitor can make one combined choice in the site's existing
+      // banner. Someone who already made an analytics-only choice gets a
+      // separate one-time prompt for the new advertising-measurement purpose.
+      if (storedConsent(GENERIC_CONSENT_KEY) === null && customiseSharedConsentBanner()) return;
+      buildOpenAiAdsConsentBanner();
+    }
+
     document.addEventListener('click', function (event) {
       var target = event.target && event.target.closest
         ? event.target.closest('#cookie-accept, #cookie-decline')
         : null;
-      if (!target || typeof window.oaiq !== 'function') return;
-      window.oaiq('consent', target.id === 'cookie-accept');
+      if (!target || storedConsent(OPENAI_ADS_CONSENT_KEY) !== null) return;
+      setOpenAiAdsConsent(target.id === 'cookie-accept' ? 'granted' : 'denied');
     });
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', syncOpenAiAdsConsentUi, { once: true });
+    } else {
+      syncOpenAiAdsConsentUi();
+    }
 
     function trackOpenAiLead(eventId) {
       try {
