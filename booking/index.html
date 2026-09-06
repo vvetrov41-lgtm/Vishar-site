@@ -240,10 +240,17 @@
       setOpenAiAdsConsent(target.id === 'cookie-accept' ? 'granted' : 'denied');
     });
 
+    function scheduleOpenAiAdsConsentUi() {
+      // components.js also initializes on DOMContentLoaded. Run one task later
+      // so its shared cookie banner exists before deciding whether a separate
+      // advertising-measurement prompt is needed.
+      window.setTimeout(syncOpenAiAdsConsentUi, 0);
+    }
+
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', syncOpenAiAdsConsentUi, { once: true });
+      document.addEventListener('DOMContentLoaded', scheduleOpenAiAdsConsentUi, { once: true });
     } else {
-      syncOpenAiAdsConsentUi();
+      scheduleOpenAiAdsConsentUi();
     }
 
     function trackOpenAiLead(eventId) {
