@@ -390,6 +390,14 @@ function BookingSourceCard({
         </p>
       ) : null}
 
+      {source.source_kind === 'hosted' && !source.is_active && openTarget ? (
+        <p className="muted" role="note">
+          {language === 'ru'
+            ? 'Чтобы просмотреть форму, сначала включите её.'
+            : 'To view the form, turn it on first.'}
+        </p>
+      ) : null}
+
       {error ? <div className="notice warn" role="alert">{error}</div> : null}
 
       <div className="actions">
