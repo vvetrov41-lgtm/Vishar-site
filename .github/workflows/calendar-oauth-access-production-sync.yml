@@ -1,0 +1,241 @@
+name: Calendar OAuth Access production sync
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/calendar-oauth-access-bypass-sync.mjs'
+      - 'scripts/test-calendar-oauth-access-bypass-sync.mjs'
+      - '.github/workflows/calendar-oauth-access-production-sync.yml'
+      - 'workers/calendar-public-oauth.js'
+      - 'wrangler.calendar.production.toml'
+  push:
+    branches:
+      - 'release/private-crm-rc*-calendar-oauth-access-*'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: calendar-oauth-access-production-sync-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate Calendar OAuth Access sync
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test exact path-only Bypass policy generator
+        run: |
+          set -euo pipefail
+          node --check scripts/calendar-oauth-access-bypass-sync.mjs
+          node --check scripts/test-calendar-oauth-access-bypass-sync.mjs
+          node scripts/test-calendar-oauth-access-bypass-sync.mjs
+
+  sync-production:
+    name: Publish only Calendar OAuth start and callback paths
+    if: >-
+      github.event_name == 'push'
+      && github.actor == github.repository_owner
+      && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CALENDAR_HOST: calendar.vishartattoo.com
+      MARKER_FILE: .github/ops-triggers/calendar-oauth-access-sync.trigger
+
+    steps:
+      - name: Checkout trigger ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify immutable marker, canonical source and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-calendar-oauth-access-*) ;;
+            *) echo 'Calendar OAuth Access sync must use its isolated release namespace.' >&2; exit 1 ;;
+          esac
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+          parent_count="$(git rev-list --parents -n 1 "$GITHUB_SHA" | awk '{print NF-1}')"
+          [ "$parent_count" = '1' ] || { echo 'Trigger must be a single-parent marker commit.' >&2; exit 1; }
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+
+          mapfile -t changed_files < <(git diff --name-only "$APPROVED_SHA" "$GITHUB_SHA")
+          [ "${#changed_files[@]}" = '1' ]
+          [ "${changed_files[0]}" = "$MARKER_FILE" ]
+          [ "$(tr -d '\r\n' < "$MARKER_FILE")" = "sync:$APPROVED_SHA" ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Canonical moved before Calendar OAuth Access admission.' >&2
+            exit 1
+          }
+          release_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$release_sha" = "$GITHUB_SHA" ]
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+            'WhatsApp production onboarding validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
+              exit 1
+            }
+          done
+
+          git checkout --detach "$APPROVED_SHA"
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Revalidate path-only Bypass implementation
+        run: |
+          set -euo pipefail
+          node --check scripts/calendar-oauth-access-bypass-sync.mjs
+          node scripts/test-calendar-oauth-access-bypass-sync.mjs
+
+      - name: Read Calendar Access state before mutation
+        run: |
+          set -euo pipefail
+          node scripts/calendar-oauth-access-bypass-sync.mjs inspect --output "$RUNNER_TEMP/calendar-oauth-access-before.json"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const state = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-oauth-access-before.json', 'utf8'));
+          if (state.host !== 'calendar.vishartattoo.com') throw new Error('unexpected Calendar host');
+          if (!/^[0-9a-f]{64}$/.test(state.root_access_fingerprint || '')) throw new Error('root Access fingerprint missing');
+          if (!Array.isArray(state.public_paths) || state.public_paths.length !== 2) throw new Error('unexpected public path count');
+          const domains = state.public_paths.map((row) => row.domain).sort();
+          const expected = [
+            'calendar.vishartattoo.com/oauth/google/callback',
+            'calendar.vishartattoo.com/oauth/google/start/*',
+          ].sort();
+          if (JSON.stringify(domains) !== JSON.stringify(expected)) throw new Error('unexpected public path scope');
+          NODE
+
+      - name: Record pre-mutation Access behaviour
+        shell: bash
+        run: |
+          set -euo pipefail
+          health="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/health" || true)"
+          start="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/start/vladimir" || true)"
+          callback="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/callback?state=access-probe" || true)"
+          echo "before: health=$health start=$start callback=$callback"
+          case "$health" in 302|303|307|401|403) ;; *) echo "Root Access boundary is not gated: $health" >&2; exit 1 ;; esac
+
+      - name: Recheck immutable source immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Canonical moved after Calendar OAuth Access preflight.' >&2
+            exit 1
+          }
+          release_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$release_sha" = "$GITHUB_SHA" ]
+
+      - name: Create only the two exact OAuth Bypass applications
+        run: |
+          set -euo pipefail
+          node scripts/calendar-oauth-access-bypass-sync.mjs sync --output "$RUNNER_TEMP/calendar-oauth-access-sync.json"
+
+      - name: Independent Access readback
+        run: |
+          set -euo pipefail
+          node scripts/calendar-oauth-access-bypass-sync.mjs inspect --output "$RUNNER_TEMP/calendar-oauth-access-after.json"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const before = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-oauth-access-before.json', 'utf8'));
+          const after = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/calendar-oauth-access-after.json', 'utf8'));
+          if (after.in_sync !== true) throw new Error('Calendar OAuth Access paths are not in sync');
+          if (after.root_access_fingerprint !== before.root_access_fingerprint) throw new Error('host-level Access application changed');
+          if (!after.public_paths.every((row) => row.exists && row.bypass_everyone && row.policy_count === 1)) {
+            throw new Error('an OAuth path does not have exactly one Everyone Bypass policy');
+          }
+          NODE
+
+      - name: Verify public OAuth paths and protected operator boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            start_headers="$(curl -sS -D - -o /dev/null -m 15 "https://$CALENDAR_HOST/oauth/google/start/vladimir" || true)"
+            start_status="$(printf '%s' "$start_headers" | awk 'toupper($1) ~ /^HTTP\// {code=$2} END {print code}')"
+            start_location="$(printf '%s' "$start_headers" | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}')"
+            callback_status="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/callback?state=access-probe" || true)"
+            health_status="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/health" || true)"
+
+            if printf '%s' "$start_location" | grep -qi 'cloudflareaccess.com'; then
+              echo 'OAuth start still redirects to Cloudflare Access.' >&2
+              exit 1
+            fi
+            # GET is intentionally rejected by the Worker once Access is bypassed.
+            if [ "$start_status" = '405' ] && [ "$callback_status" = '400' ]; then
+              case "$health_status" in
+                302|303|307|401|403) exit 0 ;;
+                200) echo 'Host-level/operator Access protection was weakened.' >&2; exit 1 ;;
+              esac
+            fi
+            sleep 6
+          done
+          echo 'Calendar OAuth path-specific Access Bypass did not converge.' >&2
+          exit 1
+
+      - name: Upload sanitized Access evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendar-oauth-access-sync-${{ env.APPROVED_SHA }}
+          path: |
+            ${{ runner.temp }}/calendar-oauth-access-before.json
+            ${{ runner.temp }}/calendar-oauth-access-sync.json
+            ${{ runner.temp }}/calendar-oauth-access-after.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Boundary summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Calendar OAuth Access production sync'
+            echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
+            echo '- Public Access Bypass: `/oauth/google/start/*` and `/oauth/google/callback` only'
+            echo '- Start remains Worker-authorized by CRM Origin, Supabase bearer session and manage-integrations capability'
+            echo '- Callback remains Worker-authorized by one-time OAuth state and re-resolved artist capability before token storage'
+            echo '- Host-level Calendar Access application and policies: fingerprinted before mutation and required unchanged after mutation'
+            echo '- `/health` remains Access-gated'
+            echo '- Worker / Pages / Supabase mutation: none'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -172,7 +172,7 @@ expectExcludes(calendar, 'rulesets', 'Calendar connector');
 // carries no retained-staging identifier.
 const calendarProductionConfig = directivesOf(read('wrangler.calendar.production.toml'));
 expectIncludes(calendarProductionConfig, 'name = "vishar-calendar-production"', 'Calendar production config');
-expectIncludes(calendarProductionConfig, 'main = "workers/calendar-oauth.js"', 'Calendar production config');
+expectIncludes(calendarProductionConfig, 'main = "workers/calendar-public-oauth.js"', 'Calendar production config');
 expectIncludes(calendarProductionConfig, 'workers_dev = false', 'Calendar production config');
 expectIncludes(calendarProductionConfig, 'preview_urls = false', 'Calendar production config');
 expectIncludes(calendarProductionConfig, 'CALENDAR_DRAIN_ENABLED = "false"', 'Calendar production config');
