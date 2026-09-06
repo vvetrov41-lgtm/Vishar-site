@@ -5,7 +5,7 @@
 // signed-in profile and must never be confused with an Artist's shared group.
 
 import { useCallback, useState } from 'react';
-import { TelegramConnectionCard } from '../components/TelegramConnectionCard';
+import { PersonalTelegramNotifications } from '../components/PersonalTelegramNotifications';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useLanguage } from '../lib/i18n';
@@ -26,18 +26,8 @@ export function NotificationsPage() {
   const { language } = useLanguage();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [telegramBusy, setTelegramBusy] = useState(false);
-  const [telegramActionError, setTelegramActionError] = useState<string | null>(null);
 
   const state = useAsync(() => api.listNotifications(), [api]);
-  const telegramState = useAsync(async () => {
-    const [info, destinations, notificationsEnabled] = await Promise.all([
-      api.getTelegramConnectorInfo(),
-      api.listTelegramDestinations(),
-      api.getTelegramNotificationsEnabled(),
-    ]);
-    return { info, destinations, notificationsEnabled };
-  }, [api]);
 
   const act = useCallback(
     async (id: string, run: () => Promise<unknown>) => {
@@ -55,77 +45,13 @@ export function NotificationsPage() {
     [state, language],
   );
 
-  async function setTelegramNotifications(enabled: boolean) {
-    setTelegramBusy(true);
-    setTelegramActionError(null);
-    try {
-      await api.setTelegramNotificationsEnabled(enabled);
-      telegramState.reload();
-    } catch (cause) {
-      setTelegramActionError(cause instanceof Error ? cause.message : (language === 'ru' ? 'Не удалось изменить настройки уведомлений Telegram.' : 'Could not update Telegram notifications.'));
-    } finally {
-      setTelegramBusy(false);
-    }
-  }
-
   const notifications = state.data ?? [];
   const unread = notifications.filter((item) => item.status !== 'read');
   const read = notifications.filter((item) => item.status === 'read');
-  const personalTelegram = telegramState.data?.destinations.find(
-    (destination) => destination.destination_kind === 'profile',
-  ) ?? null;
 
   return (
     <div className="stack">
-      <Section title={language === 'ru' ? 'Личные уведомления' : 'Personal delivery'}>
-        {telegramState.loading ? <LoadingState /> : null}
-        {telegramState.error ? (
-          <ErrorState message={telegramState.error} onRetry={telegramState.reload} />
-        ) : null}
-        {!telegramState.loading && !telegramState.error && personalTelegram ? (
-          <div className="stack">
-            <TelegramConnectionCard
-              destination={personalTelegram}
-              botUsername={telegramState.data?.info.bot_username ?? null}
-              onChanged={telegramState.reload}
-            />
-            {telegramActionError ? <ErrorState message={telegramActionError} /> : null}
-            {personalTelegram.is_connected ? (
-              <div className="card">
-                <div className="card-header">
-                  <strong>{language === 'ru' ? 'Доставка уведомлений' : 'Notification delivery'}</strong>
-                  <span className={`badge badge-${telegramState.data?.notificationsEnabled ? 'connected' : 'not_connected'}`}>
-                    {telegramState.data?.notificationsEnabled
-                      ? (language === 'ru' ? 'Включена' : 'Enabled')
-                      : (language === 'ru' ? 'Выключена' : 'Disabled')}
-                  </span>
-                </div>
-                <p className="muted">
-                  {language === 'ru'
-                    ? 'В CRM уведомления остаются всегда. Telegram является дополнительным личным каналом доставки.'
-                    : 'Notifications always remain in the CRM. Telegram is an optional personal delivery channel.'}
-                </p>
-                <div className="actions">
-                  <button
-                    type="button"
-                    disabled={telegramBusy || telegramState.data?.notificationsEnabled === true}
-                    onClick={() => { void setTelegramNotifications(true); }}
-                  >
-                    {language === 'ru' ? 'Включить Telegram' : 'Enable Telegram'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={telegramBusy || telegramState.data?.notificationsEnabled !== true}
-                    onClick={() => { void setTelegramNotifications(false); }}
-                  >
-                    {language === 'ru' ? 'Выключить Telegram' : 'Disable Telegram'}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </Section>
+      <PersonalTelegramNotifications />
 
       {actionError ? <ErrorState message={actionError} /> : null}
 
