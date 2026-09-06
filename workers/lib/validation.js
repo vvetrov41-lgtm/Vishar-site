@@ -15,11 +15,28 @@ export const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/web
 export const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
 export const ALLOWED_DISCOVERY_SOURCES = new Set([
   'instagram',
+  'google',
+  'ai',
+  'referral',
+  'convention',
+  'returning_client',
+  'other',
+  // Rolling-deploy compatibility with 0140-era forms. Migration 0141
+  // canonicalises these values before persistence.
   'chatgpt',
   'other_ai',
   'friend_referral',
-  'google',
+  'tattoo_convention',
+]);
+
+const ALLOWED_DISCOVERY_DETAIL_SOURCES = new Set([
+  'ai',
+  'referral',
   'other',
+  // Legacy rolling-deploy equivalents of ai/referral.
+  'chatgpt',
+  'other_ai',
+  'friend_referral',
 ]);
 
 const EXTENSION_FOR_MIME = {
@@ -54,6 +71,7 @@ export const FIELD_LIMITS = {
   timing: 160,
   idea: 3500,
   discoverySource: 40,
+  discoverySourceDetail: 240,
   source: 200,
   landingPage: 500,
   referrer: 500,
@@ -140,6 +158,10 @@ export function parseEnquiryFields(form) {
     timing: cleanText(field(form, 'timing'), FIELD_LIMITS.timing),
     idea: cleanText(field(form, 'idea'), FIELD_LIMITS.idea),
     discoverySource: cleanText(field(form, 'discoverySource'), FIELD_LIMITS.discoverySource),
+    discoverySourceDetail: cleanText(
+      field(form, 'discoverySourceDetail'),
+      FIELD_LIMITS.discoverySourceDetail
+    ),
     source: cleanText(field(form, 'source'), FIELD_LIMITS.source) || '/booking/',
     landingPage: cleanText(field(form, 'landingPage'), FIELD_LIMITS.landingPage),
     referrer: cleanText(field(form, 'referrer'), FIELD_LIMITS.referrer),
@@ -177,6 +199,17 @@ export function parseEnquiryFields(form) {
       'invalid_discovery_source',
       'Please choose how you heard about the artist from the available options.'
     );
+  }
+
+  if (enquiry.discoverySource === 'other' && !enquiry.discoverySourceDetail) {
+    throw new RequestError(
+      'missing_discovery_source_detail',
+      'Please tell us where you found the artist.'
+    );
+  }
+
+  if (!ALLOWED_DISCOVERY_DETAIL_SOURCES.has(enquiry.discoverySource)) {
+    enquiry.discoverySourceDetail = '';
   }
 
   if (!privacyAcknowledged || enquiry.privacyNoticeVersion !== PRIVACY_NOTICE_VERSION) {

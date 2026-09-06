@@ -1,0 +1,60 @@
+name: Referral source validation
+
+on:
+  pull_request:
+    paths:
+      - 'booking/index.html'
+      - 'workers/lib/validation.js'
+      - 'workers/routes/enquiries.js'
+      - 'workers/routes/hosted-booking.js'
+      - 'workers/routes/public-booking.js'
+      - 'supabase/migrations/0141_enquiry_discovery_source_detail.sql'
+      - 'scripts/test-referral-source-ux.mjs'
+      - '.github/workflows/referral-source-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify exact checkout
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "head=${actual}"
+          test "${actual}" = "${expected}"
+          test -z "$(git status --porcelain)"
+
+      - name: Syntax check changed Worker modules
+        run: |
+          set -euo pipefail
+          node --check workers/lib/validation.js
+          node --check workers/routes/enquiries.js
+          node --check workers/routes/hosted-booking.js
+          node --check workers/routes/public-booking.js
+
+      - name: Test referral source contract
+        run: node scripts/test-referral-source-ux.mjs
+
+      - name: Test existing booking contracts
+        run: |
+          set -euo pipefail
+          node scripts/test-worker-modules.mjs
+          node scripts/test-hosted-booking-forms.mjs
+
+      - name: Scan repository for committed secrets
+        run: node scripts/scan-secrets.mjs
