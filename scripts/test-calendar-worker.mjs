@@ -511,6 +511,70 @@ await test('drain skips stale versions and creates only the current styled artis
   assert.ok(acknowledgements[1].args.p_event_id);
 });
 
+// A self-service artist who never finished the Google consent has no
+// `artist_integrations` calendar row, so `resolve_outbox_route` raises and
+// PostgREST answers 400. The drain must record that as "calendar is not
+// configured" rather than the shared client's generic `database_unavailable`,
+// which is what the CRM showed the artist while the real cause was an
+// unfinished connection.
+await test('a missing calendar route is recorded as calendar_not_configured, not a database outage', async () => {
+  const rpcCalls = [];
+  const drainEnv = {
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-service-role',
+    CALENDAR_OAUTH_TOKENS: { get: async () => null },
+  };
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'claim_calendar_outbox') return Response.json([job({ outbox_id: 'unrouted-job' })]);
+      if (name === 'resolve_outbox_route') {
+        return Response.json({ code: '22023', message: 'artist provider route is unavailable' }, { status: 400 });
+      }
+      if (name === 'record_calendar_outbox_result') return Response.json({ status: 'failed' });
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    throw new Error(`unexpected URL ${value}`);
+  };
+
+  const result = await drainCalendarOutbox(drainEnv, { fetchImpl, workerId: 'calendar-worker-test' });
+  assert.equal(result.claimed, 1);
+  assert.equal(result.failed, 1);
+  const failure = rpcCalls.find((call) => call.name === 'record_calendar_outbox_result');
+  assert.ok(failure);
+  assert.equal(failure.args.p_succeeded, false);
+  assert.equal(failure.args.p_error_code, 'calendar_not_configured');
+});
+
+// A real backend outage must keep its retryable classification.
+await test('a backend outage while resolving the route stays database_unavailable', async () => {
+  const rpcCalls = [];
+  const drainEnv = {
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-service-role',
+    CALENDAR_OAUTH_TOKENS: { get: async () => null },
+  };
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'claim_calendar_outbox') return Response.json([job({ outbox_id: 'outage-job' })]);
+      if (name === 'resolve_outbox_route') return Response.json({ message: 'unavailable' }, { status: 503 });
+      if (name === 'record_calendar_outbox_result') return Response.json({ status: 'failed' });
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    throw new Error(`unexpected URL ${value}`);
+  };
+
+  const result = await drainCalendarOutbox(drainEnv, { fetchImpl, workerId: 'calendar-worker-test' });
+  assert.equal(result.failed, 1);
+  const failure = rpcCalls.find((call) => call.name === 'record_calendar_outbox_result');
+  assert.equal(failure.args.p_error_code, 'database_unavailable');
+});
+
 if (failures) {
   console.error(`\n${failures} calendar Worker test(s) failed, ${passes} passed.`);
   process.exit(1);

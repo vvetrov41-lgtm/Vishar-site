@@ -42,7 +42,7 @@ function makeHarness({ registryResult = [{
   destination_id: destinationId,
   destination_kind: 'artist',
   chat_id: sharedChatId,
-}], registryStatus = 200, withSharedToken = true, environment = 'production' } = {}) {
+}], registryStatus = 200, withSharedToken = true, environment = 'production', routeStatus = 200 } = {}) {
   const rpcCalls = [];
   const telegramCalls = [];
   const env = {
@@ -59,7 +59,15 @@ function makeHarness({ registryResult = [{
       const args = JSON.parse(init.body || '{}');
       rpcCalls.push({ name, args });
       if (name === 'claim_telegram_outbox_by_id') return Response.json([claimedJob]);
-      if (name === 'resolve_outbox_route') return Response.json([route]);
+      if (name === 'resolve_outbox_route') {
+        // Production reproduction of the third-party artist: the RPC raises
+        // `artist provider route is unavailable`, which the Supabase client
+        // surfaces as `database_unavailable`.
+        if (routeStatus !== 200) {
+          return Response.json({ message: 'artist provider route is unavailable' }, { status: routeStatus });
+        }
+        return Response.json([route]);
+      }
       if (name === 'service_resolve_telegram_destination') {
         if (registryStatus !== 200) return Response.json({ message: 'unavailable' }, { status: registryStatus });
         return Response.json(registryResult);
@@ -141,4 +149,60 @@ for (const scenario of [
   assert.ok(!h.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'));
 }
 
-console.log('Telegram registry cutover tests passed: production is registry-only even when shared credentials are absent, while retained staging keeps its explicit legacy binding path.');
+// ---------------------------------------------------------------------------
+// Third-party self-service artist: an active Telegram destination in the
+// registry and no `artist_integrations` row of type telegram at all. The
+// production drain must deliver from the registry without ever consulting
+// `resolve_outbox_route`, which is what killed the real notification after
+// eight attempts with a misleading `database_unavailable`.
+// ---------------------------------------------------------------------------
+{
+  const h = makeHarness({ routeStatus: 400 });
+  const result = await drainTelegramOutboxById(h.env, {
+    outboxId,
+    workerId,
+    fetchImpl: h.fetchImpl,
+  });
+  assert.deepEqual(result, { claimed: true, outboxId, outcome: 'succeeded' });
+  assert.equal(h.telegramCalls.length, 1);
+  assert.equal(h.telegramCalls[0].body.chat_id, sharedChatId);
+  assert.ok(h.telegramCalls[0].url.includes(sharedToken));
+  assert.ok(
+    !h.rpcCalls.some((call) => call.name === 'resolve_outbox_route'),
+    'production must not require the legacy artist_integrations route',
+  );
+  assert.ok(h.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'
+    && call.args.p_artist_id === artistId
+    && call.args.p_profile_id === null));
+  assert.ok(h.rpcCalls.some((call) => call.name === 'record_telegram_outbox_result'
+    && call.args.p_succeeded === true));
+}
+
+// An existing artist that still owns a legacy row takes the same registry path
+// and is likewise never routed through it, so backward compatibility costs no
+// extra round trip.
+{
+  const h = makeHarness();
+  await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
+  assert.ok(!h.rpcCalls.some((call) => call.name === 'resolve_outbox_route'));
+}
+
+// A missing destination stays a destination failure rather than degrading into
+// a database error, whether or not the legacy row exists.
+{
+  const h = makeHarness({ routeStatus: 400, registryResult: [] });
+  const result = await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'telegram_destination_unavailable');
+  assert.equal(h.telegramCalls.length, 0);
+}
+
+// Retained staging still exercises the legacy binding, so removing the eager
+// lookup did not delete the old path - it only stopped production paying for it.
+{
+  const h = makeHarness({ withSharedToken: false, environment: 'staging' });
+  await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
+  assert.ok(h.rpcCalls.some((call) => call.name === 'resolve_outbox_route'));
+}
+
+console.log('Telegram registry cutover tests passed: production is registry-only even when shared credentials are absent, a self-service artist with no legacy artist_integrations row still delivers, and retained staging keeps its explicit legacy binding path.');
