@@ -38,6 +38,10 @@ alter table public.enquiries
     )
   );
 
+alter table public.enquiries
+  add constraint enquiries_discovery_source_detail_length
+  check (discovery_source_detail is null or char_length(discovery_source_detail) <= 240);
+
 comment on column public.enquiries.discovery_source is
   'Client self-reported discovery category: instagram, google, ai, referral, convention, returning_client or other. Descriptive attribution only; never artist/source/provider routing authority. NULL means not recorded.';
 
@@ -68,7 +72,7 @@ declare
   );
   v_discovery_source text;
   v_discovery_source_detail text := nullif(
-    btrim(coalesce(p_enquiry ->> 'discovery_source_detail', '')),
+    left(btrim(coalesce(p_enquiry ->> 'discovery_source_detail', '')), 240),
     ''
   );
 begin
@@ -84,6 +88,10 @@ begin
     when 'tattoo_convention' then 'convention'
     else v_discovery_source_raw
   end;
+
+  if v_discovery_source is null then
+    v_discovery_source_detail := null;
+  end if;
 
   select s.* into v_source
   from public.booking_sources s
