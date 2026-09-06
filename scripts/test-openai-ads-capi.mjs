@@ -39,6 +39,20 @@ function loggerStub() {
   };
 }
 
+function collectKeys(value, keys = new Set()) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectKeys(item, keys);
+    return keys;
+  }
+  if (!value || typeof value !== 'object') return keys;
+
+  for (const [key, nested] of Object.entries(value)) {
+    keys.add(key.toLowerCase());
+    collectKeys(nested, keys);
+  }
+  return keys;
+}
+
 test('measurement context requires explicit granted consent', () => {
   const source = 'https://vishartattoo.com/booking/';
   assert.equal(ads.readOpenAiAdsMeasurementContext(form({ openaiAdsSourceUrl: source }), 'https://vishartattoo.com'), null);
@@ -157,9 +171,19 @@ test('consented lead uses the shared event id and contains no client identity', 
     user: { obref: 'opaque-obref-value' },
   });
 
-  const serialized = request.options.body.toLowerCase();
-  for (const forbidden of ['email', 'phone', 'instagram', 'full_name', 'tattoo', 'user_agent', 'ip_address']) {
-    assert.ok(!serialized.includes(forbidden), `${forbidden} must not be present in the CAPI payload`);
+  const payloadKeys = collectKeys(payload);
+  for (const forbidden of [
+    'email',
+    'phone',
+    'instagram',
+    'full_name',
+    'name',
+    'tattoo',
+    'idea',
+    'user_agent',
+    'ip_address',
+  ]) {
+    assert.ok(!payloadKeys.has(forbidden), `${forbidden} must not be a CAPI payload field`);
   }
 });
 
