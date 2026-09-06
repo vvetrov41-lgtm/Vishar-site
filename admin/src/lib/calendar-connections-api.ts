@@ -24,9 +24,6 @@ export interface CalendarConnectionStatus {
 const ARTIST_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,62}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_ERROR_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
-
-// A CRM instance with hundreds of artists still renders one card per artist the
-// operator can manage, so the cap is a sanity bound rather than a headcount.
 const MAX_CONNECTIONS = 500;
 
 function invalidResponse(): ApiError {
@@ -89,6 +86,26 @@ function validateResult(value: unknown): CalendarConnectionStatus[] {
   return rows;
 }
 
+function connectorStartUrl(origin: string, alias: CalendarConnectorAlias): string {
+  if (!origin) throw new ApiError(apiMessage('Calendar connector is not configured.'));
+  if (!isCalendarConnectorAlias(alias)) throw new ApiError(apiMessage('Unknown calendar artist.'));
+  return `${origin}/oauth/google/start/${alias}`;
+}
+
+function validatedAuthorizeUrl(value: unknown): string {
+  if (typeof value !== 'string') throw new ApiError(apiMessage('Could not start Google Calendar connection.'));
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new ApiError(apiMessage('Could not start Google Calendar connection.'));
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'accounts.google.com') {
+    throw new ApiError(apiMessage('Could not start Google Calendar connection.'));
+  }
+  return parsed.toString();
+}
+
 export function createCalendarConnectionsApi(client: CrmClient) {
   return {
     async listCalendarConnectionStatus(): Promise<CalendarConnectionStatus[]> {
@@ -100,6 +117,29 @@ export function createCalendarConnectionsApi(client: CrmClient) {
         );
       }
       return validateResult(result.data);
+    },
+
+    async beginCalendarOAuth(connectorOrigin: string, alias: CalendarConnectorAlias): Promise<string> {
+      const session = await client.auth.getSession();
+      const accessToken = session.data?.session?.access_token;
+      if (!accessToken) throw new ApiError(apiMessage('Your session has expired. Sign in again.'));
+      const response = await fetch(connectorStartUrl(connectorOrigin, alias), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      const payload = await response.json().catch(() => null) as { authorize_url?: unknown; code?: unknown } | null;
+      if (!response.ok) {
+        throw new ApiError(apiMessage(
+          payload?.code === 'calendar_session_required'
+            ? 'Your session has expired. Sign in again.'
+            : 'Could not start Google Calendar connection.'
+        ));
+      }
+      return validatedAuthorizeUrl(payload?.authorize_url);
     },
 
     // Clears the Google account the backend pinned for this artist so a
@@ -121,4 +161,10 @@ export function createCalendarConnectionsApi(client: CrmClient) {
 
 export type CalendarConnectionsApi = ReturnType<typeof createCalendarConnectionsApi>;
 
-export const __testing = { validateRow, validateResult, MAX_CONNECTIONS };
+export const __testing = {
+  validateRow,
+  validateResult,
+  connectorStartUrl,
+  validatedAuthorizeUrl,
+  MAX_CONNECTIONS,
+};
