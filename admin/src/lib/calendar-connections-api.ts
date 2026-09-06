@@ -30,6 +30,10 @@ function invalidResponse(): ApiError {
   return new ApiError(apiMessage('Could not load calendar connections. Please try again.'));
 }
 
+function oauthStartFailure(): ApiError {
+  return new ApiError(apiMessage('The authorization decision could not be completed.'));
+}
+
 export function isCalendarConnectorAlias(value: unknown): value is CalendarConnectorAlias {
   return typeof value === 'string' && ARTIST_SLUG_PATTERN.test(value);
 }
@@ -87,21 +91,21 @@ function validateResult(value: unknown): CalendarConnectionStatus[] {
 }
 
 function connectorStartUrl(origin: string, alias: CalendarConnectorAlias): string {
-  if (!origin) throw new ApiError(apiMessage('Calendar connector is not configured.'));
-  if (!isCalendarConnectorAlias(alias)) throw new ApiError(apiMessage('Unknown calendar artist.'));
+  if (!origin) throw new ApiError(apiMessage('The CRM is not configured.'));
+  if (!isCalendarConnectorAlias(alias)) throw oauthStartFailure();
   return `${origin}/oauth/google/start/${alias}`;
 }
 
 function validatedAuthorizeUrl(value: unknown): string {
-  if (typeof value !== 'string') throw new ApiError(apiMessage('Could not start Google Calendar connection.'));
+  if (typeof value !== 'string') throw oauthStartFailure();
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
-    throw new ApiError(apiMessage('Could not start Google Calendar connection.'));
+    throw oauthStartFailure();
   }
   if (parsed.protocol !== 'https:' || parsed.hostname !== 'accounts.google.com') {
-    throw new ApiError(apiMessage('Could not start Google Calendar connection.'));
+    throw oauthStartFailure();
   }
   return parsed.toString();
 }
@@ -133,11 +137,10 @@ export function createCalendarConnectionsApi(client: CrmClient) {
       });
       const payload = await response.json().catch(() => null) as { authorize_url?: unknown; code?: unknown } | null;
       if (!response.ok) {
-        throw new ApiError(apiMessage(
-          payload?.code === 'calendar_session_required'
-            ? 'Your session has expired. Sign in again.'
-            : 'Could not start Google Calendar connection.'
-        ));
+        if (payload?.code === 'calendar_session_required') {
+          throw new ApiError(apiMessage('Your session has expired. Sign in again.'));
+        }
+        throw oauthStartFailure();
       }
       return validatedAuthorizeUrl(payload?.authorize_url);
     },
