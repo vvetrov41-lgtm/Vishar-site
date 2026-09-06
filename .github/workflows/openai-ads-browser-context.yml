@@ -1,0 +1,49 @@
+name: OpenAI Ads browser context validation
+
+on:
+  pull_request:
+    paths:
+      - 'booking/index.html'
+      - 'privacy/index.html'
+      - 'scripts/test-openai-ads-browser-context.mjs'
+      - '.github/workflows/openai-ads-browser-context.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify exact checkout
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "head=${actual}"
+          test "${actual}" = "${expected}"
+          test -z "$(git status --porcelain)"
+
+      - name: Test consented browser-to-server handoff
+        run: node scripts/test-openai-ads-browser-context.mjs
+
+      - name: Validate site
+        run: npm run validate:site
+
+      - name: Scan repository for committed secrets
+        run: node scripts/scan-secrets.mjs
