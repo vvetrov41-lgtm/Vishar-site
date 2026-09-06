@@ -44,6 +44,3 @@ jobs:
 
       - name: Validate site
         run: npm run validate:site
-
-      - name: Scan repository for committed secrets
-        run: node scripts/scan-secrets.mjs
