@@ -34,7 +34,12 @@ export default {
     // The durable booking route is the only multipart consumer.
     if (isMultipartRequest(request)) {
       const logger = createLogger(newRequestId());
-      return handleEnquiryIntake(request, env, { cors, logger, fetchImpl: fetch });
+      return handleEnquiryIntake(request, env, {
+        cors,
+        logger,
+        fetchImpl: fetch,
+        schedule: (promise) => ctx.waitUntil(promise),
+      });
     }
 
     const body = await request.clone().json().catch(() => null);
