@@ -126,14 +126,16 @@ await test('shared bot prefers a private registry Artist destination and records
     fetchImpl: mock.fetchImpl,
   });
   assert.equal(result.outcome, 'succeeded');
+  // `resolve_outbox_route` is deliberately absent: it joins the legacy
+  // `artist_integrations` row, which a self-service artist never has, and the
+  // shared bot needs only the registry destination.
   assert.deepEqual(mock.rpcCalls.map((call) => call.name), [
     'claim_telegram_outbox_by_id',
-    'resolve_outbox_route',
     'service_resolve_telegram_destination',
     'service_record_telegram_notification_result',
     'record_telegram_outbox_result',
   ]);
-  assert.deepEqual(mock.rpcCalls[3].args, {
+  assert.deepEqual(mock.rpcCalls[2].args, {
     p_delivery_id: destinationId,
     p_worker_id: workerId,
     p_succeeded: true,
@@ -161,20 +163,22 @@ await test('registry provider failure records registry failure before outbox fai
     fetchImpl: mock.fetchImpl,
   });
   assert.equal(result.outcome, 'failed');
+  // `resolve_outbox_route` is deliberately absent: it joins the legacy
+  // `artist_integrations` row, which a self-service artist never has, and the
+  // shared bot needs only the registry destination.
   assert.deepEqual(mock.rpcCalls.map((call) => call.name), [
     'claim_telegram_outbox_by_id',
-    'resolve_outbox_route',
     'service_resolve_telegram_destination',
     'service_record_telegram_notification_result',
     'record_telegram_outbox_result',
   ]);
-  assert.deepEqual(mock.rpcCalls[3].args, {
+  assert.deepEqual(mock.rpcCalls[2].args, {
     p_delivery_id: destinationId,
     p_worker_id: workerId,
     p_succeeded: false,
     p_error_code: 'telegram_rejected',
   });
-  assert.equal(mock.rpcCalls[4].args.p_succeeded, false);
+  assert.equal(mock.rpcCalls[3].args.p_succeeded, false);
 });
 
 await test('registry evidence failure never converts an accepted Telegram send into a retry', async () => {

@@ -216,7 +216,14 @@ async function recordArtistRegistryResult(
   }
 }
 
-async function preferredArtistDelivery(env, supabase, route, job, text, fetchImpl) {
+// `resolveLegacyRoute` is a thunk rather than a resolved route because
+// `resolve_outbox_route` joins `public.artist_integrations`, which a
+// self-service artist never has. Production sends only through the shared bot
+// and the destination registry, so resolving that legacy row first turned a
+// perfectly connected third-party artist into a permanent delivery failure.
+// Only the retained staging fallback below still needs it, so only that branch
+// pays for it.
+async function preferredArtistDelivery(env, supabase, resolveLegacyRoute, job, text, fetchImpl) {
   const production = env?.VISHAR_ENVIRONMENT === 'production';
   const sharedConfigured = Boolean(sharedTelegramBotToken(env));
 
@@ -227,7 +234,7 @@ async function preferredArtistDelivery(env, supabase, route, job, text, fetchImp
       throw new TelegramDrainError('telegram_shared_bot_not_configured');
     }
     return {
-      notification: await sendNotification(env, route, text, fetchImpl),
+      notification: await sendNotification(env, await resolveLegacyRoute(), text, fetchImpl),
       registryDestinationId: null,
     };
   }
@@ -260,7 +267,7 @@ async function preferredArtistDelivery(env, supabase, route, job, text, fetchImp
   // progressive registry path and the old artist binding without weakening the
   // production invariant above.
   return {
-    notification: await sendNotification(env, route, text, fetchImpl),
+    notification: await sendNotification(env, await resolveLegacyRoute(), text, fetchImpl),
     registryDestinationId: null,
   };
 }
@@ -283,18 +290,21 @@ export async function processClaimedTelegramJob(env, {
     return recordFailure(supabase, claimedJob.outbox_id, workerId, errorCode);
   }
 
-  let delivery;
-  try {
+  const resolveLegacyRoute = async () => {
     const resolved = await supabase.rpc('resolve_outbox_route', {
       p_outbox_id: job.outbox_id,
     });
-    const route = validateTelegramRoute(firstRow(resolved), job);
+    return validateTelegramRoute(firstRow(resolved), job);
+  };
+
+  let delivery;
+  try {
     const text = buildEnquiryNotification({
       referenceNumber: job.reference_number,
       fileCount: job.file_count,
       clientConflict: job.client_conflict,
     });
-    delivery = await preferredArtistDelivery(env, supabase, route, job, text, fetchImpl);
+    delivery = await preferredArtistDelivery(env, supabase, resolveLegacyRoute, job, text, fetchImpl);
   } catch (error) {
     return recordFailure(
       supabase,

@@ -1,4 +1,4 @@
-import { createSupabaseClient } from './supabase.js';
+import { SupabaseError, createSupabaseClient } from './supabase.js';
 import {
   CalendarConnectorError,
   createGoogleCalendarProvider,
@@ -71,6 +71,32 @@ async function recordResult(supabase, job, workerId, result) {
   });
 }
 
+// `resolve_outbox_route` raises (PostgREST 400) when the artist has no enabled
+// Google Calendar integration, and the shared Supabase client labels every
+// non-2xx `database_unavailable`. That told an artist who had simply never
+// finished the Google consent that the CRM database was down, and it is what
+// made this class of failure so hard to read in production. Auth failures and
+// genuine backend outages keep their original code.
+async function resolveCalendarRoute(supabase, claimed) {
+  try {
+    return await supabase.rpc('resolve_outbox_route', {
+      p_outbox_id: claimed.outbox_id,
+    });
+  } catch (error) {
+    if (
+      error instanceof SupabaseError
+      && error.status >= 400
+      && error.status < 500
+      && error.status !== 401
+      && error.status !== 403
+      && error.status !== 429
+    ) {
+      throw new CalendarConnectorError('calendar_not_configured');
+    }
+    throw error;
+  }
+}
+
 async function processJob(job, env, supabase, workerId, fetchImpl) {
   const claimed = validateClaimedJob(job);
 
@@ -83,9 +109,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl) {
     throw new CalendarConnectorError('calendar_version_invalid');
   }
 
-  const resolved = await supabase.rpc('resolve_outbox_route', {
-    p_outbox_id: claimed.outbox_id,
-  });
+  const resolved = await resolveCalendarRoute(supabase, claimed);
   const route = firstRow(resolved);
   const {
     calendarId,
