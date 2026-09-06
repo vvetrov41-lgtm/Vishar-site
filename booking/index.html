@@ -129,6 +129,8 @@
             <label><span class="field-label">Approximate size <span class="required">*</span></span><input class="form-field" type="text" name="size" maxlength="120" placeholder="Centimetres or body area" required></label>
             <label><span class="field-label">Existing tattoo / cover-up? <span class="required">*</span></span><select class="form-field" name="coverUp" required><option value="">Choose one</option><option>No</option><option>Yes</option><option>Not sure</option></select></label>
             <label class="form-span"><span class="field-label">When would you like to start?</span><input class="form-field" type="text" name="timing" maxlength="160" placeholder="Preferred month, flexible dates, or as soon as available"></label>
+            <label class="form-span"><span class="field-label">How did you hear about Vladimir? <span class="required">*</span></span><select id="discovery-source" class="form-field" name="discoverySource" required><option value="">Choose one</option><option value="instagram">Instagram</option><option value="google">Google</option><option value="ai">ChatGPT / AI</option><option value="referral">Recommendation / Friend</option><option value="convention">Tattoo convention</option><option value="returning_client">Returning client</option><option value="other">Other</option></select></label>
+            <label id="discovery-detail-field" class="form-span hidden"><span id="discovery-detail-label" class="field-label">More details</span><input id="discovery-source-detail" class="form-field" type="text" name="discoverySourceDetail" maxlength="240"></label>
             <label class="form-span"><span class="field-label">Your idea <span class="required">*</span></span><textarea class="form-field idea-field" name="idea" maxlength="3500" placeholder="Describe the subject, mood, composition and any important personal details." required></textarea></label>
             <label class="form-span"><span class="field-label">Reference images <span class="required">*</span></span><input id="reference-files" class="form-field" type="file" name="references" accept="image/jpeg,image/png,image/webp" multiple required><span class="mt-2 block text-xs leading-relaxed text-white/35">Attach 1–3 JPG, PNG or WebP images, 4 MB each. For a cover-up, include one close-up and one wider placement photo.</span></label>
           </div>
@@ -169,6 +171,10 @@
     const instagramRequiredMark = document.getElementById('instagram-required-mark');
     const phoneRequiredNote = document.getElementById('phone-required-note');
     const instagramRequiredNote = document.getElementById('instagram-required-note');
+    const discoverySource = document.getElementById('discovery-source');
+    const discoveryDetailField = document.getElementById('discovery-detail-field');
+    const discoveryDetailLabel = document.getElementById('discovery-detail-label');
+    const discoverySourceDetail = document.getElementById('discovery-source-detail');
     const startedAt = Date.now();
     const IDEMPOTENCY_STORAGE_KEY = 'vishar.enquiry.idempotencyKey';
     const OPENAI_ADS_CONSENT_KEY = 'vishar-openai-ads-consent';
@@ -348,6 +354,20 @@
       if (!needsInstagram) instagramInput.setCustomValidity('');
     }
 
+    function syncDiscoveryRequirement() {
+      const value = discoverySource.value;
+      const showDetail = value === 'other' || value === 'referral' || value === 'ai';
+      discoveryDetailField.classList.toggle('hidden', !showDetail);
+      discoverySourceDetail.required = value === 'other';
+      if (value === 'other') discoveryDetailLabel.textContent = 'Please tell us where you found Vladimir';
+      else if (value === 'referral') discoveryDetailLabel.textContent = 'Who recommended Vladimir? (optional)';
+      else if (value === 'ai') discoveryDetailLabel.textContent = 'Which AI service? (optional)';
+      else {
+        discoveryDetailLabel.textContent = 'More details';
+        discoverySourceDetail.value = '';
+      }
+    }
+
     function validatePreferredContact() {
       syncPreferredContactRequirement();
       const missingWhatsApp = preferredReply.value === 'WhatsApp' && !phoneInput.value.trim();
@@ -357,6 +377,7 @@
     }
 
     preferredReply.addEventListener('change', syncPreferredContactRequirement);
+    discoverySource.addEventListener('change', syncDiscoveryRequirement);
     phoneInput.addEventListener('input', function () {
       if (phoneInput.value.trim()) phoneInput.setCustomValidity('');
     });
@@ -364,11 +385,13 @@
       if (instagramInput.value.trim()) instagramInput.setCustomValidity('');
     });
     syncPreferredContactRequirement();
+    syncDiscoveryRequirement();
 
     form.addEventListener('submit', async function (event) {
       event.preventDefault();
       status.className = 'status-box mt-4 text-sm text-white/50';
       validatePreferredContact();
+      syncDiscoveryRequirement();
       if (!form.reportValidity()) return;
 
       const files = Array.from(filesInput.files || []);
@@ -388,7 +411,8 @@
         const data = new FormData(form);
         const payload = new FormData();
         const textFields = ['name', 'email', 'phone', 'instagram', 'preferredReply', 'travellingFrom',
-                            'projectType', 'placement', 'size', 'coverUp', 'timing', 'idea', 'website'];
+                            'projectType', 'placement', 'size', 'coverUp', 'timing', 'discoverySource',
+                            'discoverySourceDetail', 'idea', 'website'];
         textFields.forEach(function (field) { payload.append(field, data.get(field) || ''); });
 
         const context = attribution();
@@ -437,6 +461,7 @@
           : 'Your enquiry has been sent directly to Vladimir.';
         form.reset();
         syncPreferredContactRequirement();
+        syncDiscoveryRequirement();
         successMessage.textContent = successText;
         form.classList.add('hidden');
         successPanel.classList.remove('hidden');
