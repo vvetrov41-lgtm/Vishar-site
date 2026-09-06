@@ -26,6 +26,10 @@ import {
   readTrustedBookingConfig,
   SUPPORTED_BOOKING_FORM_VERSION,
 } from '../lib/provider-routing.js';
+import {
+  readOpenAiAdsMeasurementContext,
+  scheduleOpenAiLeadConversion,
+} from '../lib/openai-ads.js';
 
 const SUPPORTED_HOSTED_FORM_TEMPLATE = 'tattoo-enquiry';
 
@@ -40,7 +44,7 @@ export async function handleHostedEnquiryIntake(request, env, hostedSourceId, op
 async function handleEnquiryIntakeInternal(
   request,
   env,
-  { cors = {}, logger, fetchImpl = fetch, hostedSourceId = null }
+  { cors = {}, logger, fetchImpl = fetch, hostedSourceId = null, schedule = null }
 ) {
   const startedAt = Date.now();
   const hostedMode = Boolean(hostedSourceId);
@@ -171,6 +175,7 @@ async function handleEnquiryIntakeInternal(
       return jsonResponse({ ok: true }, 200, responseCors);
     }
 
+    const openAiAdsContext = readOpenAiAdsMeasurementContext(form, origin);
     const files = await parseEnquiryFiles(form);
 
     if (!supabase) supabase = createSupabaseClient(env, fetchImpl);
@@ -270,6 +275,14 @@ async function handleEnquiryIntakeInternal(
     });
 
     if (intake.replayed && intake.intake_state === 'complete') {
+      scheduleOpenAiLeadConversion({
+        env,
+        eventId: idempotencyKey,
+        context: openAiAdsContext,
+        schedule,
+        fetchImpl,
+        logger,
+      });
       logger.info('enquiry.replayed', {
         route: 'enquiries',
         enquiryId,
@@ -359,6 +372,15 @@ async function handleEnquiryIntakeInternal(
         503
       );
     }
+
+    scheduleOpenAiLeadConversion({
+      env,
+      eventId: idempotencyKey,
+      context: openAiAdsContext,
+      schedule,
+      fetchImpl,
+      logger,
+    });
 
     const outboxId = finalization?.outbox_id;
     let notification = { delivered: false, errorCode: 'outbox_route_missing' };
