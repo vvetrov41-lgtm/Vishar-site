@@ -53,6 +53,11 @@ const HEALTH_LABELS: Record<IntegrationHealth, { en: string; ru: string }> = {
   error: { en: 'Error', ru: 'Ошибка' },
 };
 
+const TELEGRAM_PURPOSE = {
+  en: 'Telegram is used only for artist notifications. It is not a client messaging channel.',
+  ru: 'Telegram работает только для уведомлений мастеру. Это не канал переписки с клиентами.',
+};
+
 export function IntegrationsPage() {
   const api = useApi();
   const { profile, memberships } = useSession();
@@ -85,9 +90,13 @@ export function IntegrationsPage() {
   if (state.error) return <ErrorState message={state.error} onRetry={state.reload} />;
 
   const channels = CHANNEL_ORDER.filter((channel) => byChannel.has(channel));
+  const showTelegramAvailability = Boolean(
+    state.data?.hasVisibleArtist && !byChannel.has('telegram'),
+  );
   const showCalendarAvailability = Boolean(
     state.data?.hasVisibleArtist && !byChannel.has('calendar'),
   );
+  const hasAvailableIntegrations = showTelegramAvailability || showCalendarAvailability;
 
   return (
     <div className="stack">
@@ -107,15 +116,16 @@ export function IntegrationsPage() {
         </div>
       </Section>
 
-      {showCalendarAvailability ? (
+      {hasAvailableIntegrations ? (
         <Section title={language === 'ru' ? 'Доступные интеграции' : 'Available integrations'}>
           <ul className="card-list">
-            <AvailableCalendarCard />
+            {showTelegramAvailability ? <AvailableTelegramCard /> : null}
+            {showCalendarAvailability ? <AvailableCalendarCard /> : null}
           </ul>
         </Section>
       ) : null}
 
-      {channels.length === 0 && !showCalendarAvailability ? (
+      {channels.length === 0 && !hasAvailableIntegrations ? (
         <EmptyState
           title={language === 'ru' ? 'Провайдеры пока не подключены' : 'No providers connected yet'}
           hint={language === 'ru'
@@ -132,6 +142,26 @@ export function IntegrationsPage() {
         </Section>
       ))}
     </div>
+  );
+}
+
+function AvailableTelegramCard() {
+  const { language } = useLanguage();
+  return (
+    <li className="card" data-integration="telegram" data-health="not_connected">
+      <div className="card-header">
+        <strong>Telegram</strong>
+        <span className="badge badge-not_connected">
+          {HEALTH_LABELS.not_connected[language]}
+        </span>
+      </div>
+      <p className="muted">{TELEGRAM_PURPOSE[language]}</p>
+      <div className="actions">
+        <Link to="/integrations/telegram">
+          {language === 'ru' ? 'Подключить' : 'Connect'}
+        </Link>
+      </div>
+    </li>
   );
 }
 
@@ -181,6 +211,7 @@ function IntegrationCard({
         <span className={`badge badge-${health}`}>{HEALTH_LABELS[health][language]}</span>
       </div>
 
+      {channel === 'telegram' ? <p className="muted">{TELEGRAM_PURPOSE[language]}</p> : null}
       {status.display_label ? <p className="muted">{status.display_label}</p> : null}
 
       <dl className="meta">
