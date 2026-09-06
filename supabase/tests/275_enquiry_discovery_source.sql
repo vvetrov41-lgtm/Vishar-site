@@ -1,12 +1,15 @@
 -- 275_enquiry_discovery_source.sql
--- Migration 0140: self-reported discovery attribution is bounded metadata,
--- persists through the trusted booking intake, and never becomes routing input.
+-- Migrations 0140-0141: self-reported discovery attribution is bounded metadata,
+-- legacy values are canonicalised, optional detail persists separately, and
+-- neither field becomes routing input.
 
 begin;
 select no_plan();
 
 select has_column('public', 'enquiries', 'discovery_source',
   'enquiries stores self-reported discovery attribution');
+select has_column('public', 'enquiries', 'discovery_source_detail',
+  'enquiries stores optional discovery attribution detail separately');
 select col_is_null('public', 'enquiries', 'discovery_source',
   'legacy enquiries may keep discovery source unrecorded');
 select ok(
@@ -79,7 +82,9 @@ select public.create_trusted_enquiry_intake(
     'cover_up', 'No',
     'preferred_timing', 'Flexible',
     'idea', 'Discovery attribution test.',
+    -- Deliberately use the 0140 value to prove rolling-deploy compatibility.
     'discovery_source', 'chatgpt',
+    'discovery_source_detail', 'ChatGPT',
     'source', '/book/discovery-source-test',
     'privacy_acknowledged', true,
     'privacy_notice_version', '2026-07-29'
@@ -93,13 +98,22 @@ select is(
   (select discovery_source
    from public.enquiries
    where id = (select (r ->> 'enquiry_id')::uuid from t_discovery_intake)),
-  'chatgpt'::text,
-  'trusted booking intake persists the selected stable discovery category'
+  'ai'::text,
+  'trusted booking intake canonicalises the legacy discovery category'
+);
+
+select is(
+  (select discovery_source_detail
+   from public.enquiries
+   where id = (select (r ->> 'enquiry_id')::uuid from t_discovery_intake)),
+  'ChatGPT'::text,
+  'trusted booking intake persists discovery detail separately'
 );
 
 select lives_ok(
   $$update public.enquiries
-    set discovery_source = null
+    set discovery_source = null,
+        discovery_source_detail = null
     where id = (select (r ->> 'enquiry_id')::uuid from t_discovery_intake)$$,
   'legacy and non-public intake may leave discovery source unrecorded'
 );
@@ -110,6 +124,15 @@ select throws_ok(
     where id = (select (r ->> 'enquiry_id')::uuid from t_discovery_intake)$$,
   '23514', null,
   'unsupported discovery categories cannot be stored'
+);
+
+select throws_ok(
+  $$update public.enquiries
+    set discovery_source = 'google',
+        discovery_source_detail = 'not allowed for this category'
+    where id = (select (r ->> 'enquiry_id')::uuid from t_discovery_intake)$$,
+  '23514', null,
+  'discovery detail cannot be attached to categories that do not use it'
 );
 
 select * from finish();
