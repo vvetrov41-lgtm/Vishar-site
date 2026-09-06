@@ -215,10 +215,14 @@ export default {
           return cors ? new Response(null, { status: 204, headers: cors }) : json({ ok: false, code: 'calendar_origin_denied' }, 403);
         }
         if (request.method !== 'POST') return json({ ok: false, code: 'method_not_allowed' }, 405);
+        const limited = await calendar.enforceRateLimit(request, url, env);
+        if (limited) return limited;
         return await publicStart(request, decodeURIComponent(start[1]), env);
       }
       if (url.pathname === '/oauth/google/callback') {
         if (request.method !== 'GET') return json({ ok: false, code: 'method_not_allowed' }, 405);
+        const limited = await calendar.enforceRateLimit(request, url, env);
+        if (limited) return limited;
         return await publicCallback(request, env);
       }
       return calendarWorker.fetch(request, env, ctx);
