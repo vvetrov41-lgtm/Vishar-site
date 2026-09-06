@@ -60,10 +60,41 @@ assert.equal(exactValue('name'), 'vishar-calendar-production', 'unexpected Worke
 assert.notEqual(exactValue('name'), RETAINED_STAGING.workerName, 'production must not reuse the staging Worker name');
 
 const workerEntrypoint = exactValue('main');
-assert.equal(workerEntrypoint, 'workers/calendar-oauth.js', 'unexpected Worker entrypoint');
+assert.equal(workerEntrypoint, 'workers/calendar-public-oauth.js', 'unexpected Worker entrypoint');
+const workerEntrypointPath = resolve(process.cwd(), workerEntrypoint);
 assert.ok(
-  existsSync(resolve(process.cwd(), workerEntrypoint)),
+  existsSync(workerEntrypointPath),
   'configured Calendar Worker entrypoint must exist in the exact checkout',
+);
+const workerSource = readFileSync(workerEntrypointPath, 'utf8');
+assert.match(
+  workerSource,
+  /import calendarWorker, \{ __testing as calendar \} from '\.\/calendar-oauth\.js';/,
+  'public OAuth entrypoint must delegate protected Calendar behavior to the existing worker',
+);
+assert.match(
+  workerSource,
+  /verifiedSupabaseActorEmail\(request, env, fetchImpl\)/,
+  'public OAuth start must authenticate through the existing CRM session',
+);
+assert.match(
+  workerSource,
+  /calendar\.authorizeCalendarActor\(config, actorEmail, env, fetchImpl\)/,
+  'public OAuth must re-check artist authorization server-side',
+);
+assert.ok(
+  (workerSource.match(/calendar\.enforceRateLimit\(request, url, env\)/g) || []).length >= 2,
+  'public OAuth start and callback must retain the Calendar Worker rate limit',
+);
+assert.match(
+  workerSource,
+  /return calendarWorker\.fetch\(request, env, ctx\);/,
+  'non-public Calendar routes must remain delegated to the protected worker',
+);
+assert.match(
+  workerSource,
+  /return calendarWorker\.scheduled\(controller, env, ctx\);/,
+  'scheduled Calendar work must remain delegated to the existing worker',
 );
 
 // --- No public exposure ----------------------------------------------------
