@@ -18,7 +18,10 @@ vi.mock('../lib/session', () => ({
 }));
 
 vi.mock('../lib/i18n', () => ({
-  useLanguage: () => ({ language: 'en' as const }),
+  useLanguage: () => ({
+    language: 'en' as const,
+    t: (key: string) => key,
+  }),
 }));
 
 import { PersonalTelegramNotifications } from '../components/PersonalTelegramNotifications';
