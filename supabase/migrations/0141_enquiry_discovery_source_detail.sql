@@ -40,7 +40,7 @@ alter table public.enquiries
 
 alter table public.enquiries
   add constraint enquiries_discovery_source_detail_length
-  check (discovery_source_detail is null or char_length(discovery_source_detail) <= 200),
+  check (discovery_source_detail is null or char_length(discovery_source_detail) <= 240),
   add constraint enquiries_discovery_source_detail_category
   check (
     discovery_source_detail is null
@@ -77,7 +77,7 @@ declare
   );
   v_discovery_source text;
   v_discovery_source_detail text := nullif(
-    left(btrim(coalesce(p_enquiry ->> 'discovery_source_detail', '')), 200),
+    left(btrim(coalesce(p_enquiry ->> 'discovery_source_detail', '')), 240),
     ''
   );
 begin
