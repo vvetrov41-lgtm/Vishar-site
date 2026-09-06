@@ -1,0 +1,1 @@
+Fresh-session images paired one-to-one with the confirmed healed gallery entries. Pair index 01 corresponds to source numbers 1 (fresh) and 2 (healed), continuing through pair 25 for source numbers 49 and 50. These files are used only for Fresh vs Healed comparison cards.
