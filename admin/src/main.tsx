@@ -9,6 +9,7 @@ import { SessionProvider } from './lib/session';
 import { SurfaceProvider, readSurface } from './lib/surface';
 import { createCrmClient, isStaffInviteUrl, readTeamInviteUrl } from './lib/supabase';
 import './styles.css';
+import './mobile-overflow.css';
 
 // `import.meta.env` is replaced at build time by Vite. Only VITE_-prefixed
 // values are exposed to the bundle, which is one more reason a secret or
