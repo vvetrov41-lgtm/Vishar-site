@@ -31,6 +31,33 @@ const NAV_LINKS = [
 { id: 'ai-tools',       label: 'Studio Tools',    href: '/ai-tools/' }
 ];
 
+const COLLECTION_LINKS = [
+  {
+    id: 'portrait',
+    label: 'Portraits',
+    href: '/portrait-tattoo-artist-london/',
+    description: 'Colour and black-and-grey portrait realism.',
+    image: '/assets/portraits/01.webp',
+    alt: 'Colour realism pirate portrait tattoo by Vladimir Vishar'
+  },
+  {
+    id: 'large-scale',
+    label: 'Large Scale',
+    href: '/large-scale-realism-tattoo-london/',
+    description: 'Sleeves and multi-session realism projects.',
+    image: '/assets/large-scale/01.jpg',
+    alt: 'Large-scale colour realism sleeve tattoo by Vladimir Vishar'
+  },
+  {
+    id: 'healed',
+    label: 'Fresh vs Healed',
+    href: '/healed-tattoos/',
+    description: 'Matched fresh and confirmed healed tattoo comparisons.',
+    image: '/assets/healed/01.webp',
+    alt: 'Confirmed healed black and grey skull realism tattoo by Vladimir Vishar'
+  }
+];
+
 const SOCIALS = [
 { label: 'Instagram', href: INSTAGRAM },
 { label: 'YouTube',   href: 'https://youtube.com/@vladimir_vishar' },
@@ -62,7 +89,7 @@ const MOBILE_SOCIALS = [
   {
     label: 'YouTube',
     href: 'https://youtube.com/@vladimir_vishar',
-    icon: '<path d="M21.6 7.2a2.5 2.5 0 0 0-1.76-1.77C18.3 5 12 5 12 5s-6.3 0-7.84.43A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.76 1.77C5.7 19 12 19 12 19s6.3 0 7.84-.43a2.5 2.5 0 0 0 1.76-1.77A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8Z" fill="currentColor" stroke="none"/><path d="m10 15 5.2-3L10 9v6Z" fill="#000" stroke="none"/>'
+    icon: '<path d="M21.6 7.2a2.5 2.5 0 0 0-1.76-1.77C18.3 5 12 5 12 5s-6.3 0-7.84.43A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.76 1.77C5.7 19 12 19s6.3 0 7.84-.43a2.5 2.5 0 0 0 1.76-1.77A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8Z" fill="currentColor" stroke="none"/><path d="m10 15 5.2-3L10 9v6Z" fill="#000" stroke="none"/>'
   },
   {
     label: 'Email',
@@ -172,6 +199,10 @@ const pageLinks = NAV_LINKS.map(l =>
   `<a href="${l.href}" class="hover:text-white transition-colors">${esc(l.label)}</a>`
 ).join('\n');
 
+const collectionLinks = COLLECTION_LINKS.map(l =>
+  `<a href="${l.href}" class="hover:text-white transition-colors">${esc(l.label)}</a>`
+).join('\n');
+
 const socialLinks = SOCIALS.map(s =>
   `<a href="${s.href}" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">${esc(s.label)}</a>`
 ).join('\n');
@@ -179,7 +210,7 @@ const socialLinks = SOCIALS.map(s =>
 el.innerHTML = `
   <footer class="py-20 border-t border-white/5 px-6">
     <div class="max-w-[1200px] mx-auto">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
         <div>
           <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
           <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>London enquiries now open</p>
@@ -190,6 +221,12 @@ el.innerHTML = `
           <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Pages</p>
           <div class="flex flex-col space-y-2 text-sm text-white/60">
             ${pageLinks}
+          </div>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Collections</p>
+          <div class="flex flex-col space-y-2 text-sm text-white/60">
+            ${collectionLinks}
           </div>
         </div>
         <div>
@@ -594,6 +631,39 @@ cards.forEach(function (item) {
   heading.parentNode.insertBefore(marker, heading);
 });
 
+}
+
+/* ── Homepage Portfolio Collections ── */
+function addHomepagePortfolioCollections() {
+if (pageId !== 'home' || document.getElementById('portfolio-collections')) return;
+
+const portfolio = document.getElementById('portfolio');
+const grid = document.getElementById('portfolio-grid');
+if (!portfolio || !grid) return;
+
+const block = document.createElement('div');
+block.id = 'portfolio-collections';
+block.className = 'max-w-[1400px] mx-auto mt-10';
+block.innerHTML = `
+  <div class="mb-5 text-center">
+    <p class="text-xs uppercase tracking-[0.28em] text-white/60">Dedicated galleries</p>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    ${COLLECTION_LINKS.map(function (item) {
+      return `<a href="${item.href}" class="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.06]">
+        <div class="aspect-[16/10] overflow-hidden bg-white/5">
+          <img src="${item.image}" alt="${esc(item.alt)}" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+        </div>
+        <div class="p-5 text-left">
+          <h3 class="text-lg font-semibold text-white">${esc(item.label)}</h3>
+          <p class="mt-2 text-sm leading-relaxed text-white/50">${esc(item.description)}</p>
+          <span class="mt-4 inline-block text-sm text-white/70">View gallery →</span>
+        </div>
+      </a>`;
+    }).join('')}
+  </div>`;
+
+grid.insertAdjacentElement('afterend', block);
 }
 
 /* ── Service Feature Cards ── */
@@ -1050,6 +1120,7 @@ buildConsentBanner();
 populateBookingWindow();
 refineHomepageTabletLayout();
 refineHomepageSpecialitiesCards();
+addHomepagePortfolioCollections();
 refineServiceFeatureCards();
 removeOtherSpecialitiesMarkers();
 addHomepageApproachBlock();
