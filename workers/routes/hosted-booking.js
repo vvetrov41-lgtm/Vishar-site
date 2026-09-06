@@ -87,7 +87,7 @@ function renderHostedForm(meta, sourceId) {
 <meta name="robots" content="noindex,nofollow">
 <title>${label} | ${artist}</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#050505;color:#f5f5f7}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#171717 0,#050505 42%);min-height:100vh}.wrap{max-width:980px;margin:0 auto;padding:56px 20px 80px}.eyebrow{text-transform:uppercase;letter-spacing:.18em;font-size:12px;color:#92929a}.hero{margin:10px 0 10px;font-size:clamp(36px,7vw,72px);line-height:1;letter-spacing:-.04em}.lead{max-width:700px;color:#a1a1aa;font-size:18px;line-height:1.6}.card{margin-top:38px;padding:24px;border:1px solid #262626;border-radius:28px;background:rgba(18,18,18,.9)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.span{grid-column:1/-1}label{display:block;font-size:13px;color:#c7c7cc}input,select,textarea{display:block;width:100%;margin-top:8px;border:1px solid #333;border-radius:14px;background:#101010;color:#fff;padding:13px 14px;font:inherit}textarea{min-height:150px;resize:vertical}input[type=file]{padding:10px}.required{color:#93c5fd}.privacy{margin-top:22px;padding:16px;border:1px solid #262626;border-radius:16px;color:#a1a1aa;font-size:13px;line-height:1.55}.privacy summary{cursor:pointer;color:#f5f5f7;font-weight:600}.check{display:flex;gap:10px;align-items:flex-start;margin-top:18px;color:#b7b7bf;line-height:1.45}.check input{width:auto;margin:3px 0 0}.submit{margin-top:22px;width:100%;border:0;border-radius:999px;background:#fff;color:#050505;padding:15px 20px;font-weight:700;font-size:16px;cursor:pointer}.submit:disabled{opacity:.5;cursor:wait}.status{min-height:24px;margin-top:14px;color:#a1a1aa}.hp{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}@media(max-width:680px){.grid{grid-template-columns:1fr}.span{grid-column:auto}.wrap{padding-top:38px}.card{padding:18px;border-radius:22px}}
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#050505;color:#f5f5f7}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:radial-gradient(circle at top,#171717 0,#050505 42%);min-height:100vh}.wrap{max-width:980px;margin:0 auto;padding:56px 20px 80px}.eyebrow{text-transform:uppercase;letter-spacing:.18em;font-size:12px;color:#92929a}.hero{margin:10px 0 10px;font-size:clamp(36px,7vw,72px);line-height:1;letter-spacing:-.04em}.lead{max-width:700px;color:#a1a1aa;font-size:18px;line-height:1.6}.card{margin-top:38px;padding:24px;border:1px solid #262626;border-radius:28px;background:rgba(18,18,18,.9)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.span{grid-column:1/-1}label{display:block;font-size:13px;color:#c7c7cc}input,select,textarea{display:block;width:100%;margin-top:8px;border:1px solid #333;border-radius:14px;background:#101010;color:#fff;padding:13px 14px;font:inherit}textarea{min-height:150px;resize:vertical}input[type=file]{padding:10px}.required{color:#93c5fd}.privacy{margin-top:22px;padding:16px;border:1px solid #262626;border-radius:16px;color:#a1a1aa;font-size:13px;line-height:1.55}.privacy summary{cursor:pointer;color:#f5f5f7;font-weight:600}.check{display:flex;gap:10px;align-items:flex-start;margin-top:18px;color:#b7b7bf;line-height:1.45}.check input{width:auto;margin:3px 0 0}.submit{margin-top:22px;width:100%;border:0;border-radius:999px;background:#fff;color:#050505;padding:15px 20px;font-weight:700;font-size:16px;cursor:pointer}.submit:disabled{opacity:.5;cursor:wait}.status{min-height:24px;margin-top:14px;color:#a1a1aa}.hp{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}@media(max-width:680px){.grid{grid-template-columns:1fr}.span{grid-column:auto}.wrap{padding-top:38px}.card{padding:18px;border-radius:22px}}
 </style>
 </head>
 <body>
@@ -108,6 +108,8 @@ function renderHostedForm(meta, sourceId) {
 <label>Approximate size <span class="required">*</span><input name="size" maxlength="120" placeholder="Centimetres or body area" required></label>
 <label>Existing tattoo / cover-up? <span class="required">*</span><select name="coverUp" required><option value="">Choose one</option><option>No</option><option>Yes</option><option>Not sure</option></select></label>
 <label class="span">When would you like to start?<input name="timing" maxlength="160" placeholder="Preferred month or flexible dates"></label>
+<label class="span">How did you hear about ${artist}? <span class="required">*</span><select id="discoverySource" name="discoverySource" required><option value="">Choose one</option><option value="instagram">Instagram</option><option value="google">Google</option><option value="ai">ChatGPT / AI</option><option value="referral">Recommendation / Friend</option><option value="convention">Tattoo convention</option><option value="returning_client">Returning client</option><option value="other">Other</option></select></label>
+<label id="discoveryDetailField" class="span" hidden><span id="discoveryDetailLabel">More details</span><input id="discoverySourceDetail" name="discoverySourceDetail" maxlength="240"></label>
 <label class="span">Your idea <span class="required">*</span><textarea name="idea" maxlength="3500" required></textarea></label>
 <label class="span">Reference images <span class="required">*</span><input id="references" name="references" type="file" accept="image/jpeg,image/png,image/webp" multiple required><small>Attach 1-3 JPG, PNG or WebP images, up to 4 MB each.</small></label>
 </div>
@@ -128,18 +130,30 @@ function renderHostedForm(meta, sourceId) {
   var preferred=document.getElementById('preferredReply');
   var phone=document.getElementById('phone');
   var instagram=document.getElementById('instagram');
+  var discovery=document.getElementById('discoverySource');
+  var discoveryDetailField=document.getElementById('discoveryDetailField');
+  var discoveryDetailLabel=document.getElementById('discoveryDetailLabel');
+  var discoveryDetail=document.getElementById('discoverySourceDetail');
   var keyName='vishar.hosted.enquiry.${escapeHtml(sourceId)}';
   function key(){var value='';try{value=sessionStorage.getItem(keyName)||'';}catch(e){}if(value)return value;if(!crypto||!crypto.randomUUID)throw new Error('Please update your browser and try again.');value=crypto.randomUUID();try{sessionStorage.setItem(keyName,value);}catch(e){}return value;}
   function clearKey(){try{sessionStorage.removeItem(keyName);}catch(e){}}
-  function sync(){phone.required=preferred.value==='WhatsApp';instagram.required=preferred.value==='Instagram';}
-  preferred.addEventListener('change',sync);sync();
+  function sync(){
+    phone.required=preferred.value==='WhatsApp';instagram.required=preferred.value==='Instagram';
+    var value=discovery.value;var show=value==='other'||value==='referral'||value==='ai';
+    discoveryDetailField.hidden=!show;discoveryDetail.required=value==='other';
+    if(value==='other')discoveryDetailLabel.textContent='Please tell us where you found ${artist}';
+    else if(value==='referral')discoveryDetailLabel.textContent='Who recommended ${artist}? (optional)';
+    else if(value==='ai')discoveryDetailLabel.textContent='Which AI service? (optional)';
+    else{discoveryDetailLabel.textContent='More details';discoveryDetail.value='';}
+  }
+  preferred.addEventListener('change',sync);discovery.addEventListener('change',sync);sync();
   form.addEventListener('submit',async function(event){
     event.preventDefault();sync();if(!form.reportValidity())return;
     var selected=Array.from(files.files||[]);if(selected.length<1||selected.length>3||selected.some(function(file){return file.size>4*1024*1024;})){status.textContent='Please attach 1-3 reference images, up to 4 MB each.';return;}
     submit.disabled=true;submit.textContent='Sending...';status.textContent='Uploading your enquiry securely...';
     try{
       var raw=new FormData(form);var payload=new FormData();
-      ['name','email','phone','instagram','preferredReply','travellingFrom','projectType','placement','size','coverUp','timing','idea','website'].forEach(function(name){payload.append(name,raw.get(name)||'');});
+      ['name','email','phone','instagram','preferredReply','travellingFrom','projectType','placement','size','coverUp','timing','discoverySource','discoverySourceDetail','idea','website'].forEach(function(name){payload.append(name,raw.get(name)||'');});
       var params=new URLSearchParams(location.search);
       payload.append('idempotencyKey',key());
       payload.append('privacyAcknowledged',raw.get('privacyAcknowledged')?'true':'false');
