@@ -267,6 +267,28 @@
       }
     }
 
+    function cookieValue(name) {
+      const prefix = name + '=';
+      const cookies = String(document.cookie || '').split(';');
+      for (let index = 0; index < cookies.length; index += 1) {
+        const cookie = cookies[index].trim();
+        if (cookie.indexOf(prefix) === 0) return cookie.slice(prefix.length);
+      }
+      return '';
+    }
+
+    function openAiAdsServerContext() {
+      if (storedConsent(OPENAI_ADS_CONSENT_KEY) !== 'granted') return null;
+      let sourceUrl = '';
+      try { sourceUrl = window.location.origin + window.location.pathname; } catch (error) { sourceUrl = ''; }
+      if (!sourceUrl) return null;
+      return {
+        sourceUrl,
+        oppref: cookieValue('__oppref'),
+        obref: cookieValue('__obref')
+      };
+    }
+
     // One key per attempt, kept in sessionStorage until the enquiry is
     // confirmed saved. A retry after a dropped connection therefore reuses the
     // same key, and the server returns the original enquiry instead of
@@ -386,6 +408,15 @@
         payload.append('utmContent', context.utmContent);
         payload.append('utmTerm', context.utmTerm);
         payload.append('elapsedMs', String(Date.now() - startedAt));
+
+        const adsContext = openAiAdsServerContext();
+        if (adsContext) {
+          payload.append('openaiAdsMeasurementConsent', 'granted');
+          payload.append('openaiAdsSourceUrl', adsContext.sourceUrl);
+          if (adsContext.oppref) payload.append('openaiAdsOppref', adsContext.oppref);
+          if (adsContext.obref) payload.append('openaiAdsObref', adsContext.obref);
+        }
+
         files.forEach(function (file) { payload.append('references', file, file.name); });
 
         const response = await fetch(endpoint, { method: 'POST', body: payload });
