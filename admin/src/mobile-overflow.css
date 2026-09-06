@@ -1,0 +1,5 @@
+/* Long URLs and template variables are legitimate client-message content.
+   Keep those unbroken tokens inside mobile cards instead of widening the page. */
+.card {
+  overflow-wrap: anywhere;
+}
