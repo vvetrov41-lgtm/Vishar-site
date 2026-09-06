@@ -328,19 +328,32 @@ export function SessionProvider({
       throw new Error('Choose a password between 12 and 128 characters.');
     }
 
+    const emailRedirectTo = typeof window === 'undefined'
+      ? undefined
+      : signupRedirectUrl(window.location.origin);
     const result = await client.auth.signUp({
       email: address,
       password,
-      options: {
-        emailRedirectTo: typeof window === 'undefined'
-          ? undefined
-          : signupRedirectUrl(window.location.origin),
-      },
+      options: { emailRedirectTo },
     });
     if (result.error) {
-      // Deliberately generic, for the same reason sign-in is: a specific "that
-      // address already exists" turns this form into an account oracle.
-      throw new Error('That did not work. Check the address and try again, or sign in if you already have an account.');
+      // A pending signup may already own this Auth address because a previous
+      // confirmation message was sent. Recover by asking Auth to issue a fresh
+      // signup link. The browser still gets the same generic outcome, so this
+      // does not become an account-existence oracle.
+      if (typeof client.auth.resend !== 'function') {
+        throw new Error('That did not work. Check the address and try again, or sign in if you already have an account.');
+      }
+      const resent = await client.auth.resend({
+        type: 'signup',
+        email: address,
+        options: { emailRedirectTo },
+      });
+      if (resent.error) {
+        throw new Error('That did not work. Check the address and try again, or sign in if you already have an account.');
+      }
+      setEmail(address);
+      return false;
     }
 
     setEmail(address);

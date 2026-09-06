@@ -31,6 +31,8 @@ interface HarnessOptions {
   signedIn?: boolean;
   emailConfirmed?: boolean;
   signupOpen?: boolean;
+  signUpError?: boolean;
+  resendError?: boolean;
   /** An RPC the database refuses, with its SQLSTATE. */
   failBootstrap?: { code: string; message: string };
 }
@@ -101,11 +103,22 @@ function createClient(options: HarnessOptions) {
             emailRedirectTo: credentials.options?.emailRedirectTo,
           },
         });
+        if (options.signUpError) {
+          return { data: { session: null, user: null }, error: { message: 'User already registered' } };
+        }
         // The production shape: no session until the address is confirmed.
         return { data: { session: null, user: {} }, error: null };
       },
-      resend: async (payload: { type: string; email: string }) => {
-        calls.push({ name: 'auth.resend', args: { type: payload.type, email: payload.email } });
+      resend: async (payload: { type: string; email: string; options?: { emailRedirectTo?: string } }) => {
+        calls.push({
+          name: 'auth.resend',
+          args: {
+            type: payload.type,
+            email: payload.email,
+            emailRedirectTo: payload.options?.emailRedirectTo,
+          },
+        });
+        if (options.resendError) return { data: {}, error: { message: 'rate limited' } };
         return { data: {}, error: null };
       },
     }),
@@ -205,6 +218,40 @@ describe('creating an account', () => {
     expect(signUp?.args?.emailRedirectTo).toMatch(/\?signup=1$/);
     // Nothing was created in the CRM by signing up.
     expect(calls.some((call) => call.name === 'bootstrap_artist_account')).toBe(false);
+  });
+
+  it('resends confirmation when Auth already has a pending signup for the address', async () => {
+    const { calls } = renderApp({ signupOpen: true, signUpError: true }, '/signup');
+
+    fireEvent.change(await screen.findByLabelText(/^email$/i), {
+      target: { value: 'new.artist@example.test' },
+    });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: PASSWORD } });
+    fireEvent.change(screen.getByLabelText(/repeat password/i), { target: { value: PASSWORD } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    const resend = calls.find((call) => call.name === 'auth.resend');
+    expect(resend?.args?.type).toBe('signup');
+    expect(resend?.args?.email).toBe('new.artist@example.test');
+    expect(resend?.args?.emailRedirectTo).toMatch(/\?signup=1$/);
+    expect(calls.some((call) => call.name === 'bootstrap_artist_account')).toBe(false);
+  });
+
+  it('keeps the generic failure when both signup and resend fail', async () => {
+    const { calls } = renderApp({ signupOpen: true, signUpError: true, resendError: true }, '/signup');
+
+    fireEvent.change(await screen.findByLabelText(/^email$/i), {
+      target: { value: 'new.artist@example.test' },
+    });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: PASSWORD } });
+    fireEvent.change(screen.getByLabelText(/repeat password/i), { target: { value: PASSWORD } });
+    fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/that did not work/i);
+    expect(calls.filter((call) => call.name === 'auth.resend')).toHaveLength(1);
   });
 
   it('refuses a mismatched confirmation before contacting the server', async () => {
