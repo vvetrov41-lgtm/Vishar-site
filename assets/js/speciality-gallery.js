@@ -82,7 +82,7 @@
 
     return `
       <figure class="overflow-hidden bg-white/5 rounded-2xl">
-        <a href="${image.source}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden" aria-label="Open image ${index + 1}">
+        <a href="${image.source}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden" aria-label="Open ${escapeHtml(alt)}">
           ${media}
         </a>
         ${caption ? `<figcaption class="p-4 text-sm text-white/50">${escapeHtml(caption)}</figcaption>` : ''}
@@ -130,13 +130,13 @@
         <div class="grid grid-cols-2 gap-2 p-2">
           <div>
             <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Fresh</p>
-            <a href="${freshSource}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open fresh image ${index + 1}">
+            <a href="${freshSource}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open ${escapeHtml(freshAlt)}">
               ${freshMedia}
             </a>
           </div>
           <div>
             <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Healed</p>
-            <a href="${healedSource}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open healed image ${index + 1}">
+            <a href="${healedSource}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open ${escapeHtml(healedAlt)}">
               ${healedMedia}
             </a>
           </div>
