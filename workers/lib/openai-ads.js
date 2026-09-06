@@ -8,6 +8,10 @@
 const OPENAI_ADS_PIXEL_ID = 'XkQY5Xq3FbxJvAx2qDD9my';
 const OPENAI_ADS_EVENTS_ENDPOINT = 'https://bzr.openai.com/v1/events';
 const INTEGRATION_SOURCE = 'vishar_booking_worker';
+const VISHAR_MEASUREMENT_ORIGINS = new Set([
+  'https://vishartattoo.com',
+  'https://www.vishartattoo.com',
+]);
 const MAX_SOURCE_URL_LENGTH = 2048;
 const MAX_OPAQUE_REF_LENGTH = 2048;
 const REQUEST_TIMEOUT_MS = 5000;
@@ -21,13 +25,13 @@ function boundedOpaque(value) {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > MAX_OPAQUE_REF_LENGTH) return '';
-  if(/[\u0000-\u001f\u007f]/.test(trimmed)) return '';
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return '';
   return trimmed;
 }
 
 function sanitizeSourceUrl(value, observedOrigin) {
   if (typeof value !== 'string' || !value || value.length > MAX_SOURCE_URL_LENGTH) return '';
-  if (typeof observedOrigin !== 'string' || !observedOrigin) return '';
+  if (!VISHAR_MEASUREMENT_ORIGINS.has(observedOrigin)) return '';
 
   try {
     const parsed = new URL(value);
@@ -50,6 +54,8 @@ function sanitizeSourceUrl(value, observedOrigin) {
  * the dedicated OpenAI Ads measurement consent. They are never persisted in
  * Supabase. A forged value cannot affect booking ownership or provider routing;
  * it can only request measurement of the request that is already being handled.
+ * The observed Origin is additionally pinned to Vladimir's public site so a
+ * future tenant or external booking source cannot contaminate Vladimir's Pixel.
  */
 export function readOpenAiAdsMeasurementContext(form, observedOrigin) {
   if (stringField(form, 'openaiAdsMeasurementConsent') !== 'granted') return null;
