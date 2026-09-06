@@ -71,7 +71,7 @@ export const FIELD_LIMITS = {
   timing: 160,
   idea: 3500,
   discoverySource: 40,
-  discoverySourceDetail: 200,
+  discoverySourceDetail: 240,
   source: 200,
   landingPage: 500,
   referrer: 500,
