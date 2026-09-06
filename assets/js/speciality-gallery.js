@@ -98,6 +98,14 @@
     const freshAlt = `Fresh-session ${subject} by Vladimir Vishar`;
     const freshSource = `${config.base}fresh/${image.stem}.webp`;
 
+    // Pair 05 received a replacement healed source. The previous responsive set
+    // was truncated in transit, so bypass those files and cache-bust the verified source.
+    const useVerifiedHealedSource = config.base === '/assets/healed/' && image.stem === '05';
+    const healedSource = useVerifiedHealedSource
+      ? `${image.source}?v=20260906c`
+      : image.source;
+    const healedThumbnailWidths = useVerifiedHealedSource ? [] : thumbnailWidths;
+
     const freshMedia = responsiveMedia(
       freshSource,
       `${config.base}fresh/thumbs/`,
@@ -108,11 +116,11 @@
       'contain',
     );
     const healedMedia = responsiveMedia(
-      image.source,
+      healedSource,
       `${config.base}thumbs/`,
       image.stem,
       healedAlt,
-      thumbnailWidths,
+      healedThumbnailWidths,
       '(min-width: 768px) 25vw, 50vw',
       'contain',
     );
@@ -128,7 +136,7 @@
           </div>
           <div>
             <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Healed</p>
-            <a href="${image.source}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open healed image ${index + 1}">
+            <a href="${healedSource}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open healed image ${index + 1}">
               ${healedMedia}
             </a>
           </div>
