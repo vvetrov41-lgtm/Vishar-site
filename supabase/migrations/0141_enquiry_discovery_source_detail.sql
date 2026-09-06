@@ -40,13 +40,18 @@ alter table public.enquiries
 
 alter table public.enquiries
   add constraint enquiries_discovery_source_detail_length
-  check (discovery_source_detail is null or char_length(discovery_source_detail) <= 240);
+  check (discovery_source_detail is null or char_length(discovery_source_detail) <= 200),
+  add constraint enquiries_discovery_source_detail_category
+  check (
+    discovery_source_detail is null
+    or discovery_source in ('ai', 'referral', 'other')
+  );
 
 comment on column public.enquiries.discovery_source is
   'Client self-reported discovery category: instagram, google, ai, referral, convention, returning_client or other. Descriptive attribution only; never artist/source/provider routing authority. NULL means not recorded.';
 
 comment on column public.enquiries.discovery_source_detail is
-  'Optional free-text detail for self-reported discovery attribution, such as AI service, referrer name or an Other source. Never routing authority.';
+  'Optional free-text detail for AI, referral or Other discovery attribution. Never routing authority.';
 
 create or replace function crm_private.create_enquiry_for_booking_source(
   p_booking_source_id uuid,
@@ -72,7 +77,7 @@ declare
   );
   v_discovery_source text;
   v_discovery_source_detail text := nullif(
-    left(btrim(coalesce(p_enquiry ->> 'discovery_source_detail', '')), 240),
+    left(btrim(coalesce(p_enquiry ->> 'discovery_source_detail', '')), 200),
     ''
   );
 begin
@@ -89,7 +94,8 @@ begin
     else v_discovery_source_raw
   end;
 
-  if v_discovery_source is null then
+  if v_discovery_source is null
+     or v_discovery_source not in ('ai', 'referral', 'other') then
     v_discovery_source_detail := null;
   end if;
 
