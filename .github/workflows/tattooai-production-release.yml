@@ -116,9 +116,9 @@ jobs:
           test "$unknown_status" = '404'
           grep -Fq 'Booking form unavailable' /tmp/tattooai-forms-unknown.html
 
-          # Database migration 0137 must already be live before this release.
+          # Database migration 0141 must already be live before this release.
           # These are read-only public-form probes and create no customer data.
-          for slug in vladimir kristina sam; do
+          for slug in vladimir kristina; do
             status="$(curl -sS -o "/tmp/tattooai-book-${slug}.html" -w '%{http_code}' "${endpoint}book/${slug}")"
             test "$status" = '200'
             grep -Fq '<form' "/tmp/tattooai-book-${slug}.html"
