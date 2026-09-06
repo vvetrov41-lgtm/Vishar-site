@@ -54,17 +54,31 @@
     };
   }
 
+  function responsiveMedia(source, srcsetBase, stem, alt, thumbnailWidths, sizes, fit) {
+    const style = fit === 'contain' ? ' style="object-fit:contain;background:#000"' : '';
+    const imageTag = `<img src="${source}" loading="lazy" decoding="async" width="900" height="1200" alt="${escapeHtml(alt)}" class="w-full h-full transition-transform duration-1000 group-hover:scale-105"${style}>`;
+
+    if (!thumbnailWidths.length) return imageTag;
+
+    const srcset = thumbnailWidths
+      .map((width) => `${srcsetBase}${stem}-${width}.webp ${width}w`)
+      .join(', ');
+    return `<picture><source type="image/webp" srcset="${srcset}" sizes="${sizes}">${imageTag}</picture>`;
+  }
+
   function imageMarkup(config, image, metadata, index, thumbnailWidths) {
     const info = metadata[image.stem] || {};
     const alt = info.alt || `${config.genericAlt} - image ${index + 1}`;
     const caption = info.caption || info.healed_for || '';
-    const imageTag = `<img src="${image.source}" loading="lazy" decoding="async" width="900" height="1200" alt="${escapeHtml(alt)}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">`;
-
-    let media = imageTag;
-    if (thumbnailWidths.length) {
-      const srcset = thumbnailWidths.map((width) => `${config.base}thumbs/${image.stem}-${width}.webp ${width}w`).join(', ');
-      media = `<picture><source type="image/webp" srcset="${srcset}" sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw">${imageTag}</picture>`;
-    }
+    const media = responsiveMedia(
+      image.source,
+      `${config.base}thumbs/`,
+      image.stem,
+      alt,
+      thumbnailWidths,
+      '(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw',
+      'cover',
+    );
 
     return `
       <figure class="overflow-hidden bg-white/5 rounded-2xl">
@@ -72,6 +86,53 @@
           ${media}
         </a>
         ${caption ? `<figcaption class="p-4 text-sm text-white/50">${escapeHtml(caption)}</figcaption>` : ''}
+      </figure>`;
+  }
+
+  function healedPairMarkup(config, image, metadata, index, thumbnailWidths) {
+    const info = metadata[image.stem] || {};
+    const healedAlt = info.alt || `${config.genericAlt} - image ${index + 1}`;
+    const subject = healedAlt
+      .replace(/^Confirmed healed\s+/i, '')
+      .replace(/\s+by Vladimir Vishar$/i, '');
+    const freshAlt = `Fresh-session ${subject} by Vladimir Vishar`;
+    const freshSource = `${config.base}fresh/${image.stem}.webp`;
+
+    const freshMedia = responsiveMedia(
+      freshSource,
+      `${config.base}fresh/thumbs/`,
+      image.stem,
+      freshAlt,
+      thumbnailWidths,
+      '(min-width: 768px) 25vw, 50vw',
+      'contain',
+    );
+    const healedMedia = responsiveMedia(
+      image.source,
+      `${config.base}thumbs/`,
+      image.stem,
+      healedAlt,
+      thumbnailWidths,
+      '(min-width: 768px) 25vw, 50vw',
+      'contain',
+    );
+
+    return `
+      <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10">
+        <div class="grid grid-cols-2 gap-2 p-2">
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Fresh</p>
+            <a href="${freshSource}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open fresh image ${index + 1}">
+              ${freshMedia}
+            </a>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Healed</p>
+            <a href="${image.source}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open healed image ${index + 1}">
+              ${healedMedia}
+            </a>
+          </div>
+        </div>
       </figure>`;
   }
 
@@ -97,9 +158,11 @@
 
     if (!images.length) return;
 
-    grid.innerHTML = images
-      .map((image, index) => imageMarkup(config, image, metadata, index, thumbnailWidths))
-      .join('');
+    const markup = key === 'healed'
+      ? images.map((image, index) => healedPairMarkup(config, image, metadata, index, thumbnailWidths))
+      : images.map((image, index) => imageMarkup(config, image, metadata, index, thumbnailWidths));
+
+    grid.innerHTML = markup.join('');
     section.classList.remove('hidden');
     section.removeAttribute('aria-hidden');
   }
