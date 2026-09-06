@@ -92,7 +92,7 @@ export function PasswordSetupPage() {
 const COPY: Record<Language, Record<string, string>> = {
   en: {
     title: 'Set your CRM password',
-    intro: 'Your invitation has been verified and your CRM access is active. Set a password before entering the CRM.',
+    intro: 'Your secure email link has been verified. Set a new password before entering the CRM.',
     password: 'New password',
     confirm: 'Confirm new password',
     requirements: 'Use 12 to 128 characters. Production Auth may require a stronger password.',
@@ -101,11 +101,11 @@ const COPY: Record<Language, Record<string, string>> = {
     failed: 'Could not set that password.',
     save: 'Set password',
     saving: 'Saving…',
-    next: 'After the password is saved, this invitation session is closed. Sign in again with your email and new password.',
+    next: 'After the password is saved, this secure session is closed. Sign in again with your email and new password.',
   },
   ru: {
     title: 'Установите пароль CRM',
-    intro: 'Приглашение подтверждено, доступ к CRM активирован. Перед входом установите пароль.',
+    intro: 'Защищённая ссылка из письма подтверждена. Установите новый пароль перед входом в CRM.',
     password: 'Новый пароль',
     confirm: 'Повторите новый пароль',
     requirements: 'От 12 до 128 символов. Настройки production Auth могут требовать более сложный пароль.',
@@ -114,6 +114,6 @@ const COPY: Record<Language, Record<string, string>> = {
     failed: 'Не удалось установить пароль.',
     save: 'Установить пароль',
     saving: 'Сохранение…',
-    next: 'После сохранения пароля сессия приглашения будет закрыта. Войдите снова обычным способом с email и новым паролем.',
+    next: 'После сохранения пароля защищённая сессия будет закрыта. Войдите снова с email и новым паролем.',
   },
 };
