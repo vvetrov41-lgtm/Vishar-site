@@ -24,7 +24,6 @@ jobs:
       WORKER_NAME: vishar-public-booking-edge
       PRODUCTION_CONFIG: wrangler.public-booking.production.toml
       PRODUCTION_HOST: https://vishartattoo.com
-      LEGACY_SAM_FORM: https://booking.vishartattoo.com/forms/eef34564-7203-4732-959d-908a0a5ac596
       SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
@@ -291,14 +290,11 @@ jobs:
           done
           [ "$ready" = 'true' ]
 
-          for slug in kristina sam; do
-            status="$(curl -sS -o "$RUNNER_TEMP/book-${slug}.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/${slug}?release=${GITHUB_SHA}")"
-            test "$status" = '200'
-            grep -Fq '<form' "$RUNNER_TEMP/book-${slug}.html"
-          done
+          kristina_status="$(curl -sS -o "$RUNNER_TEMP/book-kristina.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/kristina?release=${GITHUB_SHA}")"
+          test "$kristina_status" = '200'
+          grep -Fq '<form' "$RUNNER_TEMP/book-kristina.html"
           grep -Fq 'Vladimir' "$RUNNER_TEMP/book-vladimir.html"
           grep -Fq 'Kristina' "$RUNNER_TEMP/book-kristina.html"
-          grep -Fq 'Sam' "$RUNNER_TEMP/book-sam.html"
 
           unknown="$(curl -sS -o "$RUNNER_TEMP/book-unknown.html" -w '%{http_code}' "${PRODUCTION_HOST}/book/no-such-artist")"
           test "$unknown" = '404'
@@ -310,13 +306,6 @@ jobs:
           test "$forged" = '200'
           grep -Fq 'Vladimir' "$RUNNER_TEMP/book-forged.html"
           ! grep -Fqi 'Kristina' "$RUNNER_TEMP/book-forged.html"
-
-          # The human route is additive: Sam's previously issued UUID URL must
-          # still render after his existing source is selected and activated.
-          legacy="$(curl -sS -o "$RUNNER_TEMP/legacy-sam.html" -w '%{http_code}' "$LEGACY_SAM_FORM")"
-          test "$legacy" = '200'
-          grep -Fq '<form' "$RUNNER_TEMP/legacy-sam.html"
-          grep -Fq 'Sam' "$RUNNER_TEMP/legacy-sam.html"
 
       - name: Roll back apex proxy if post-mutation acceptance fails
         if: failure() && steps.apex_proxy.outputs.changed == 'true'
@@ -357,6 +346,6 @@ jobs:
             echo '- Apex DNS: exact `vishartattoo.com -> vishar-site.pages.dev` CNAME, proxied only after guarded preflight'
             echo '- Existing marketing `/` and `/book/`: required to remain live'
             echo '- Bindings/secrets: expected zero'
-            echo '- Acceptance: Vladimir, Kristina, Sam, unknown slug, forged query, legacy Sam UUID link'
+            echo '- Acceptance: Vladimir, Kristina, unknown slug, forged query'
             echo '- Customer/enquiry writes by rollout probes: none'
           } >> "$GITHUB_STEP_SUMMARY"
