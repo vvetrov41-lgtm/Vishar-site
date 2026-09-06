@@ -1,1 +1,213 @@
-{}
+{
+  "_gallery": {
+    "sourceExtension": ".webp",
+    "thumbnailWidths": [
+      320,
+      480,
+      720,
+      960
+    ],
+    "status": "confirmed-healed",
+    "pairing": "Fresh source numbers are odd; healed source numbers are the following even number."
+  },
+  "01": {
+    "alt": "Confirmed healed black and grey skull realism tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 1,
+    "fresh_source_number": 1,
+    "healed_source_number": 2
+  },
+  "02": {
+    "alt": "Confirmed healed black and grey skull and skeleton realism tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 2,
+    "fresh_source_number": 3,
+    "healed_source_number": 4
+  },
+  "03": {
+    "alt": "Confirmed healed colour realism cat portrait tattoo with round goggles by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 3,
+    "fresh_source_number": 5,
+    "healed_source_number": 6
+  },
+  "04": {
+    "alt": "Confirmed healed black and grey horror character portrait tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 4,
+    "fresh_source_number": 7,
+    "healed_source_number": 8
+  },
+  "05": {
+    "alt": "Confirmed healed black and grey skull realism forearm tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 5,
+    "fresh_source_number": 9,
+    "healed_source_number": 10
+  },
+  "06": {
+    "alt": "Confirmed healed black and grey warrior mask portrait tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 6,
+    "fresh_source_number": 11,
+    "healed_source_number": 12
+  },
+  "07": {
+    "alt": "Confirmed healed female portrait realism tattoo with red graphic accents by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 7,
+    "fresh_source_number": 13,
+    "healed_source_number": 14
+  },
+  "08": {
+    "alt": "Confirmed healed black and grey fantasy warrior realism tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 8,
+    "fresh_source_number": 15,
+    "healed_source_number": 16
+  },
+  "09": {
+    "alt": "Confirmed healed colour realism dog portrait tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 9,
+    "fresh_source_number": 17,
+    "healed_source_number": 18
+  },
+  "10": {
+    "alt": "Confirmed healed black and grey horror portrait tattoo with geometric facial details by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 10,
+    "fresh_source_number": 19,
+    "healed_source_number": 20
+  },
+  "11": {
+    "alt": "Confirmed healed dark realism skull composition tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 11,
+    "fresh_source_number": 21,
+    "healed_source_number": 22
+  },
+  "12": {
+    "alt": "Confirmed healed colour realism bird and floral tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 12,
+    "fresh_source_number": 23,
+    "healed_source_number": 24
+  },
+  "13": {
+    "alt": "Confirmed healed colour realism dog portrait tattoo with script by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 13,
+    "fresh_source_number": 25,
+    "healed_source_number": 26
+  },
+  "14": {
+    "alt": "Confirmed healed colour realism reptile eye hand tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 14,
+    "fresh_source_number": 27,
+    "healed_source_number": 28
+  },
+  "15": {
+    "alt": "Confirmed healed black and grey male portrait tattoo with organic background by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 15,
+    "fresh_source_number": 29,
+    "healed_source_number": 30
+  },
+  "16": {
+    "alt": "Confirmed healed colour realism animal portrait forearm tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 16,
+    "fresh_source_number": 31,
+    "healed_source_number": 32
+  },
+  "17": {
+    "alt": "Confirmed healed colour realism dog portrait tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 17,
+    "fresh_source_number": 33,
+    "healed_source_number": 34
+  },
+  "18": {
+    "alt": "Confirmed healed colour realism sleeve tattoo with floral details by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 18,
+    "fresh_source_number": 35,
+    "healed_source_number": 36
+  },
+  "19": {
+    "alt": "Confirmed healed colour realism dog portrait tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 19,
+    "fresh_source_number": 37,
+    "healed_source_number": 38
+  },
+  "20": {
+    "alt": "Confirmed healed colour realism dog portrait tattoo with lettering by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 20,
+    "fresh_source_number": 39,
+    "healed_source_number": 40
+  },
+  "21": {
+    "alt": "Confirmed healed black and grey architectural realism tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 21,
+    "fresh_source_number": 41,
+    "healed_source_number": 42
+  },
+  "22": {
+    "alt": "Confirmed healed black and grey clock and ornamental realism tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 22,
+    "fresh_source_number": 43,
+    "healed_source_number": 44
+  },
+  "23": {
+    "alt": "Confirmed healed colour realism dark portrait tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 23,
+    "fresh_source_number": 45,
+    "healed_source_number": 46
+  },
+  "24": {
+    "alt": "Confirmed healed female portrait realism tattoo with abstract details by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 24,
+    "fresh_source_number": 47,
+    "healed_source_number": 48
+  },
+  "25": {
+    "alt": "Confirmed healed large-scale portrait collage realism tattoo by Vladimir Vishar",
+    "caption": "",
+    "status": "healed",
+    "pair_id": 25,
+    "fresh_source_number": 49,
+    "healed_source_number": 50
+  }
+}
