@@ -38,7 +38,7 @@ describe('Telegram in the integrations hub', () => {
     })).closest('section') as HTMLElement;
 
     expect(within(telegram).getByText(NOTIFICATIONS_ONLY)).toBeInTheDocument();
-    expect(within(telegram).getByText('Connected')).toBeInTheDocument();
+    expect(within(telegram).getByText('Connected', { selector: '.badge' })).toBeInTheDocument();
     expect(within(telegram).getByRole('link', { name: 'Manage' }))
       .toHaveAttribute('href', '#/integrations/telegram');
   });
