@@ -391,7 +391,10 @@ function BookingSourceCard({
       ) : null}
 
       {source.source_kind === 'hosted' && !source.is_active && openTarget ? (
-        <p className="muted" role="note">
+        <p
+          role="note"
+          style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: '0.85rem' }}
+        >
           {language === 'ru'
             ? 'Чтобы просмотреть форму, сначала включите её.'
             : 'To view the form, turn it on first.'}
