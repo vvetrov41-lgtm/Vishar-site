@@ -74,8 +74,6 @@ export function LoginPage() {
           {t('login.noAccount')} <Link to="/signup">{t('login.createAccount')}</Link>
         </p>
       ) : null}
-
-      <p className="notice">{t('login.notice')}</p>
     </div>
   );
 }
