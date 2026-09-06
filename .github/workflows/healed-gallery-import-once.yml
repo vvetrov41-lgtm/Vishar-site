@@ -39,7 +39,6 @@ jobs:
         run: |
           node <<'NODE'
           const fs = require('fs');
-          const path = require('path');
           const meta = JSON.parse(fs.readFileSync('assets/healed/metadata.json', 'utf8'));
           const stems = Object.keys(meta).filter(k => /^\d{2}$/.test(k)).sort();
           if (stems.length !== 25) throw new Error(`Expected 25 healed entries, found ${stems.length}`);
@@ -66,17 +65,23 @@ jobs:
           from pathlib import Path
           p = Path('healed-tattoos/index.html')
           s = p.read_text()
-          replacements = {
-            'https://vishartattoo.com/assets/gallery/05.jpg': 'https://vishartattoo.com/assets/healed/01.webp',
-            '"contentUrl":"https://vishartattoo.com/assets/gallery/05.jpg","name":"Confirmed healed leg tattoo example","caption":"Vladimir Vishar at a tattoo convention next to a client\'s healed leg tattoo"': '"contentUrl":"https://vishartattoo.com/assets/healed/01.webp","name":"Confirmed healed realism tattoo example","caption":"Confirmed healed realism tattoo by Vladimir Vishar"',
-            'More Confirmed Healed Work': 'Confirmed Healed Work',
-            'Only explicitly confirmed healed photographs are loaded into this gallery.': '25 explicitly confirmed healed photographs are loaded into this gallery.',
-            'As more confirmed healed photographs are added, they appear in the dedicated gallery below without mixing them with same-day session photos.': 'The dedicated gallery below contains 25 confirmed healed photographs, kept separate from the corresponding fresh-session images.'
-          }
-          for old, new in replacements.items():
-            if old not in s:
-              raise SystemExit(f'Missing expected page text: {old}')
-            s = s.replace(old, new)
+
+          schema_old = '"contentUrl":"https://vishartattoo.com/assets/gallery/05.jpg","name":"Confirmed healed leg tattoo example","caption":"Vladimir Vishar at a tattoo convention next to a client\'s healed leg tattoo"'
+          schema_new = '"contentUrl":"https://vishartattoo.com/assets/healed/01.webp","name":"Confirmed healed realism tattoo example","caption":"Confirmed healed realism tattoo by Vladimir Vishar"'
+          if schema_old not in s:
+              raise SystemExit('Missing expected healed ImageObject schema')
+          s = s.replace(schema_old, schema_new, 1)
+
+          replacements = [
+            ('https://vishartattoo.com/assets/gallery/05.jpg', 'https://vishartattoo.com/assets/healed/01.webp'),
+            ('More Confirmed Healed Work', 'Confirmed Healed Work'),
+            ('Only explicitly confirmed healed photographs are loaded into this gallery.', '25 explicitly confirmed healed photographs are loaded into this gallery.'),
+            ('As more confirmed healed photographs are added, they appear in the dedicated gallery below without mixing them with same-day session photos.', 'The dedicated gallery below contains 25 confirmed healed photographs, kept separate from the corresponding fresh-session images.')
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit(f'Missing expected page text: {old}')
+              s = s.replace(old, new)
           p.write_text(s)
           PY
 
