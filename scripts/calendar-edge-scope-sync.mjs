@@ -28,17 +28,21 @@ function digestOf(value) {
 }
 
 // Everything the live rule allows other than the two artist slugs is kept
-// exactly as it is:
+// exactly as it is. The only method widening is the one required by the
+// authenticated CRM self-service start request:
 //
 //   - /cdn-cgi/access/* is Cloudflare Access's own login and callback surface.
 //     Dropping it would put the Access flow behind the block this rule applies,
 //     which would break the connector for every artist including the two that
 //     work today.
-//   - the method scoping is unchanged: GET for health, callback and start,
-//     GET or POST for disconnect, matching what the Worker actually serves.
+//   - GET remains allowed for health, callback and start so the existing Access
+//     boundary and legacy probes keep working during rollout.
+//   - POST and OPTIONS are additionally allowed only for /oauth/google/start/*,
+//     matching the public OAuth Worker and browser CORS preflight.
+//   - GET or POST for disconnect remains unchanged.
 //
-// The single difference is that a reference under start/ and disconnect/ is now
-// any reference rather than an enumerated one.
+// Artist references under start/ and disconnect/ become generic prefixes rather
+// than an enumerated allow-list.
 export function expectedExpression() {
   const expression = [
     `(http.host eq "${CALENDAR_HOST}" and not (`,
@@ -48,6 +52,8 @@ export function expectedExpression() {
     '    http.request.uri.path eq "/oauth/google/callback" or',
     '    starts_with(http.request.uri.path, "/oauth/google/start/")',
     '  )) or',
+    '  ((http.request.method eq "POST" or http.request.method eq "OPTIONS") and',
+    '    starts_with(http.request.uri.path, "/oauth/google/start/")) or',
     '  ((http.request.method eq "GET" or http.request.method eq "POST") and',
     '    starts_with(http.request.uri.path, "/oauth/google/disconnect/"))',
     '))',
