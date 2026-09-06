@@ -3,9 +3,9 @@
 ## Status
 
 - Feature: `openai-ads-capi`
-- State: In implementation
+- State: Converged
 - Owner/workstream: OpenAI Ads measurement
-- Related PRs/issues: none yet
+- Related PRs/issues: #696 (Worker), #697 (website companion)
 
 ## Problem
 
@@ -100,8 +100,9 @@ No new database records are required. Measurement context is request-scoped only
 
 ## Open questions
 
-- None for implementation. Production secret provisioning and deployment remain separate authorized steps.
+- None for code implementation. Ads Manager currently has the Vishar Tattoo web conversion source, but no configured conversion event setting. CAPI key provisioning, conversion-event configuration, Cloudflare secret storage, deployment, and controlled production verification remain separate rollout work.
 
 ## Requirement changes
 
 - 2026-09-06: Initial feature specification created from the current Pixel implementation and current OpenAI Ads CAPI documentation.
+- 2026-09-06: Converged implementation across PR #696 and companion PR #697 after exact-head CI passed; production activation remains explicitly deferred.
