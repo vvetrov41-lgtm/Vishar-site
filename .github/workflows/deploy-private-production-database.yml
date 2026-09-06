@@ -1,6 +1,9 @@
 name: Deploy private production CRM database
 
 on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-database-*'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -20,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: deploy-private-production-crm-database
@@ -36,14 +40,14 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
       PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
       PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
+      DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
+      APPROVAL_PHRASE: ${{ github.event_name == 'push' && 'DEPLOY_PRIVATE_CRM_DATABASE' || inputs.approval_phrase }}
 
     steps:
       - name: Verify exact release branch and explicit production gate
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
-          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
           DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
@@ -55,6 +59,21 @@ jobs:
               exit 1
               ;;
           esac
+
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            case "$GITHUB_REF_NAME" in
+              release/private-crm-rc*-database-*) ;;
+              *)
+                echo 'Automatic database rollout requires a bounded *-database-* release branch.' >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          if ! printf '%s' "$APPROVED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo 'approved_sha must be a full 40-character commit SHA.' >&2
+            exit 1
+          fi
 
           if [ "$APPROVED_SHA" != "$GITHUB_SHA" ]; then
             echo 'approved_sha must exactly match the workflow source SHA.' >&2
@@ -102,17 +121,80 @@ jobs:
       - name: Checkout exact approved SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.approved_sha }}
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
 
-      - name: Verify checkout SHA
+      - name: Verify immutable release tip and canonical lineage
         shell: bash
-        env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
         run: |
           set -euo pipefail
+
           actual="$(git rev-parse HEAD)"
           test "$actual" = "$APPROVED_SHA"
           test -z "$(git status --short)"
+
+          release_tip="$(git ls-remote --heads origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
+          if [ -z "$release_tip" ] || [ "$release_tip" != "$APPROVED_SHA" ]; then
+            echo 'Release branch moved after this workflow started; refusing production rollout.' >&2
+            exit 1
+          fi
+
+          canonical_tip="$(git ls-remote --heads origin 'refs/heads/agent/platform-telegram-self-service' | awk 'NR == 1 {print $1}')"
+          if [ -z "$canonical_tip" ]; then
+            echo 'Cannot resolve canonical CRM branch tip.' >&2
+            exit 1
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = 'push' ] && [ "$canonical_tip" != "$APPROVED_SHA" ]; then
+            echo 'Automatic database rollout requires the exact current canonical CRM SHA.' >&2
+            echo "canonical=${canonical_tip} approved=${APPROVED_SHA}" >&2
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$APPROVED_SHA" "$canonical_tip"; then
+            echo 'Approved release SHA is outside the canonical CRM lineage.' >&2
+            exit 1
+          fi
+
+      - name: Verify normal exact-head CI is green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          runs_file="$(mktemp)"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/commits/${APPROVED_SHA}/check-runs?per_page=100" \
+            --jq '.check_runs[] | [.name, .status, (.conclusion // "none"), .started_at] | @tsv' \
+            > "$runs_file"
+
+          problems=''
+          while IFS= read -r required; do
+            latest="$(awk -F'\t' -v name="$required" '$1 == name { print $4 "\t" $2 "\t" $3 }' "$runs_file" | sort -r | head -1)"
+            if [ -z "$latest" ]; then
+              problems="${problems}${required}: absent; "
+              continue
+            fi
+            status="$(printf '%s' "$latest" | cut -f2)"
+            conclusion="$(printf '%s' "$latest" | cut -f3)"
+            echo "required check: ${required} -> ${status}/${conclusion}"
+            if [ "$status" != 'completed' ] || [ "$conclusion" != 'success' ]; then
+              problems="${problems}${required}: ${status}/${conclusion}; "
+            fi
+          done <<'REQUIRED'
+          static-validation
+          Private CRM
+          Supabase migrations and pgTAP
+          Public site and Worker
+          REQUIRED
+
+          rm -f "$runs_file"
+
+          if [ -n "$problems" ]; then
+            echo "Normal exact-head CI is not green: ${problems}" >&2
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -160,27 +242,27 @@ jobs:
         run: supabase db push --dry-run
 
       - name: Apply production migrations without seed
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         run: supabase db push
 
       - name: Show migration state after production deploy
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         run: supabase migration list
 
       - name: Production database boundary summary
         if: always()
         shell: bash
-        env:
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
         run: |
           {
             echo '### Private CRM production database gate'
             echo
-            echo "- Exact SHA: \`$GITHUB_SHA\`"
+            echo "- Exact SHA: \`$APPROVED_SHA\`"
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Local validation: clean no-seed reset, pgTAP and PostgreSQL lint'
+            echo '- Normal exact-head CI: required and green before mutation'
             echo '- Remote validation: migration list and db push --dry-run'
+            echo '- Automatic push rollout: exact current canonical SHA only'
             echo '- Remote reset command: none'
             echo '- Seed command: none'
           } >> "$GITHUB_STEP_SUMMARY"
