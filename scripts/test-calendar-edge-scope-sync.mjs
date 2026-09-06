@@ -120,9 +120,9 @@ function fake({ rules, failReadback = false, mutateNeighbour = false } = {}) {
   assert.equal(enumeratesArtists(ENUMERATING), true, 'the live production shape is per-artist enumeration');
   assert.doesNotMatch(expression, /vladimir|kristina/i);
 
-  // Everything except the artist dimension is carried over untouched. Losing
-  // the Access exemption in particular would break the connector for every
-  // artist, including the two that work today.
+  // Everything except the artist dimension and the narrowly required start
+  // methods is carried over. Losing the Access exemption in particular would
+  // break the connector for every artist, including the two that work today.
   assert.match(expression, /starts_with\(http\.request\.uri\.path, "\/cdn-cgi\/access\/"\)/);
   assert.match(expression, /http\.host eq "calendar\.vishartattoo\.com"/);
   assert.match(expression, /http\.request\.uri\.path eq "\/health"/);
@@ -130,10 +130,24 @@ function fake({ rules, failReadback = false, mutateNeighbour = false } = {}) {
   assert.match(expression, /starts_with\(http\.request\.uri\.path, "\/oauth\/google\/start\/"\)/);
   assert.match(expression, /starts_with\(http\.request\.uri\.path, "\/oauth\/google\/disconnect\/"\)/);
 
-  // Method scoping is preserved: GET for health, callback and start; GET or
-  // POST for disconnect, matching what the Worker serves.
+  // GET remains for the existing health/callback/start boundary and rollout
+  // probes. The only widening is POST + OPTIONS for the start prefix, matching
+  // the authenticated CRM request and browser CORS preflight. Disconnect stays
+  // GET + POST exactly as before.
   assert.match(expression, /\(http\.request\.method eq "GET" and \(/);
-  assert.match(expression, /\(http\.request\.method eq "GET" or http\.request\.method eq "POST"\) and\n\s+starts_with\(http\.request\.uri\.path, "\/oauth\/google\/disconnect\/"\)/);
+  assert.match(
+    expression,
+    /\(\(http\.request\.method eq "POST" or http\.request\.method eq "OPTIONS"\) and\n\s+starts_with\(http\.request\.uri\.path, "\/oauth\/google\/start\/"\)\)/,
+  );
+  assert.match(
+    expression,
+    /\(\(http\.request\.method eq "GET" or http\.request\.method eq "POST"\) and\n\s+starts_with\(http\.request\.uri\.path, "\/oauth\/google\/disconnect\/"\)\)/,
+  );
+  assert.doesNotMatch(
+    expression,
+    /http\.request\.method eq "OPTIONS"[^\n]*disconnect/,
+    'OPTIONS must not be widened to disconnect',
+  );
   assert.equal(expression, expectedExpression(), 'the expression must be deterministic');
 }
 
