@@ -102,6 +102,28 @@ jobs:
           test "$post_status" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
 
+          # These deliberately incomplete multipart requests must resolve the
+          # live website route/source and then fail at field validation. The
+          # missing-field error happens before file parsing or persistence, so
+          # these probes create no client or enquiry data.
+          vladimir_probe_id="$(cat /proc/sys/kernel/random/uuid)"
+          vladimir_probe_status="$(curl -sS -o /tmp/tattooai-vladimir-probe.json -w '%{http_code}' \
+            -X POST "$endpoint" \
+            -H 'Origin: https://vishartattoo.com' \
+            -F "idempotencyKey=${vladimir_probe_id}" \
+            -F 'name=Production route probe')"
+          test "$vladimir_probe_status" = '400'
+          grep -Fq 'missing_required_field' /tmp/tattooai-vladimir-probe.json
+
+          kristina_probe_id="$(cat /proc/sys/kernel/random/uuid)"
+          kristina_probe_status="$(curl -sS -o /tmp/tattooai-kristina-probe.json -w '%{http_code}' \
+            -X POST 'https://www.kristinavishar.com/api/booking' \
+            -H 'Origin: https://www.kristinavishar.com' \
+            -F "idempotencyKey=${kristina_probe_id}" \
+            -F 'name=Production route probe')"
+          test "$kristina_probe_status" = '400'
+          grep -Fq 'missing_required_field' /tmp/tattooai-kristina-probe.json
+
           malformed_status="$(curl -sS -o /tmp/tattooai-forms-malformed.html -w '%{http_code}' \
             "${endpoint}forms/not-a-uuid")"
           test "$malformed_status" = '404'
