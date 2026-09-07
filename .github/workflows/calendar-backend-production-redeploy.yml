@@ -148,7 +148,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/generate-calendar-production-deploy-config.mjs "$CALENDAR_DEPLOY_CONFIG"
-          grep -Fq 'main = "workers/calendar-oauth.js"' "$CALENDAR_DEPLOY_CONFIG"
+          grep -Fq 'main = "workers/calendar-public-oauth.js"' "$CALENDAR_DEPLOY_CONFIG"
           grep -Fq 'CALENDAR_DRAIN_ENABLED = "true"' "$CALENDAR_DEPLOY_CONFIG"
           grep -Fq 'crons = ["*/5 * * * *"]' "$CALENDAR_DEPLOY_CONFIG"
           grep -Fq "id = \"$CALENDAR_KV_STATE_ID\"" "$CALENDAR_DEPLOY_CONFIG"
