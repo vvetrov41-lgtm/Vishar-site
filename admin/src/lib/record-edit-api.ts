@@ -59,7 +59,7 @@ function archiveResult<T>(
       const message = record === 'client'
         ? apiMessage('This client has an active project. Archive or close that project before deleting the client.')
         : hint === 'ENQUIRY_HAS_ACTIVE_APPOINTMENT'
-          ? apiMessage('This enquiry has an active appointment. Cancel or finish that appointment before deleting the enquiry.')
+          ? friendlyMessage(result.error, 'delete that enquiry')
           : apiMessage('This enquiry has an active project. Archive or close that project before deleting the enquiry.');
       throw new ApiError(message, result.error);
     }
