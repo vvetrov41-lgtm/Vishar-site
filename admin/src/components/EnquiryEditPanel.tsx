@@ -23,6 +23,7 @@ export function EnquiryEditPanel({
 }) {
   const { navigate } = useRouter();
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [projectType, setProjectType] = useState(value(enquiry.project_type));
@@ -37,6 +38,8 @@ export function EnquiryEditPanel({
   const copy = language === 'ru' ? {
     edit: 'Редактировать заявку',
     delete: 'Удалить заявку',
+    deleteConfirm: 'Удалить эту заявку из рабочих списков? История сохранится для аудита. Если у заявки есть активный проект или запись, удаление будет заблокировано.',
+    deleteConfirmAction: 'Да, удалить заявку',
     save: 'Сохранить',
     cancel: 'Отмена',
     type: 'Тип',
@@ -50,6 +53,8 @@ export function EnquiryEditPanel({
   } : {
     edit: 'Edit enquiry',
     delete: 'Delete enquiry',
+    deleteConfirm: 'Delete this enquiry from working lists? Its history is retained for audit. If it has an active project or appointment, deletion will be blocked.',
+    deleteConfirmAction: 'Yes, delete enquiry',
     save: 'Save',
     cancel: 'Cancel',
     type: 'Type',
@@ -79,10 +84,21 @@ export function EnquiryEditPanel({
     return (
       <>
         {error ? <div className="notice warn" role="alert" style={{ marginTop: 12 }}>{error}</div> : null}
+        {confirmDelete ? (
+          <div className="notice warn" role="alert" style={{ marginTop: 12 }}>
+            <p style={{ marginTop: 0 }}>{copy.deleteConfirm}</p>
+            <div className="actions">
+              <button type="button" className="danger" disabled={busy} onClick={() => { void archive(); }}>
+                {copy.deleteConfirmAction}
+              </button>
+              <button type="button" disabled={busy} onClick={() => setConfirmDelete(false)}>{copy.cancel}</button>
+            </div>
+          </div>
+        ) : null}
         <div className="actions" style={{ marginTop: 12 }}>
-          <button type="button" disabled={busy} onClick={() => setEditing(true)}>{copy.edit}</button>
-          {role === 'owner' ? (
-            <button type="button" className="danger" disabled={busy} onClick={() => { void archive(); }}>
+          <button type="button" disabled={busy} onClick={() => { setConfirmDelete(false); setEditing(true); }}>{copy.edit}</button>
+          {!confirmDelete ? (
+            <button type="button" className="danger" disabled={busy} onClick={() => { setError(null); setConfirmDelete(true); }}>
               {copy.delete}
             </button>
           ) : null}
