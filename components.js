@@ -14,8 +14,7 @@ const EMAIL = 'info@vishartattoo.com';
 const INSTAGRAM = 'https://www.instagram.com/vladimir_vishar';
 const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
 
-// Replace with the real GA4 measurement ID when analytics goes live — until then this is a harmless placeholder.
-const GA_MEASUREMENT_ID = 'G-XXXXXXXXXX';
+const GA_MEASUREMENT_ID = 'G-2LLK879TRG';
 const CONSENT_KEY = 'vishar-cookie-consent';
 
 const NAV_LINKS = [
@@ -538,21 +537,45 @@ window.addEventListener('scroll', function () {
 
 }
 
-/* ── Analytics (GA4, consent-gated) ── */
-function loadAnalytics() {
-if (GA_MEASUREMENT_ID.indexOf('G-XXXX') === 0) return; // placeholder — no-op until a real ID is set
-if (document.getElementById('ga4-script')) return; // already loaded
-
+/* ── Analytics (GA4, Google Consent Mode v2) ──
+   The dataLayer/gtag stub and the consent default must exist before anything
+   else runs, so the "denied" signal is in place before the GA4 tag itself
+   is ever requested. This is an analytics-only setup: ad_storage,
+   ad_user_data and ad_personalization stay permanently denied and are never
+   updated anywhere in this file. */
 window.dataLayer = window.dataLayer || [];
 window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
+window.gtag('consent', 'default', {
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+  analytics_storage: 'denied',
+  wait_for_update: 500
+});
+
+function loadAnalytics() {
+if (document.getElementById('ga4-script')) return; // already loaded — never queue a second config
+
 window.gtag('js', new Date());
-window.gtag('config', GA_MEASUREMENT_ID);
+window.gtag('config', GA_MEASUREMENT_ID, {
+  allow_google_signals: false,
+  allow_ad_personalization_signals: false
+});
 
 const s = document.createElement('script');
 s.id = 'ga4-script';
 s.async = true;
 s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_MEASUREMENT_ID;
 document.head.appendChild(s);
+}
+
+function grantAnalyticsConsent() {
+window.gtag('consent', 'update', { analytics_storage: 'granted' });
+loadAnalytics();
+}
+
+function denyAnalyticsConsent() {
+window.gtag('consent', 'update', { analytics_storage: 'denied' });
 }
 
 function getConsent() {
@@ -566,8 +589,8 @@ try { localStorage.setItem(CONSENT_KEY, value); } catch (e) { /* private browsin
 /* ── Cookie consent banner ── */
 function buildConsentBanner() {
 const stored = getConsent();
-if (stored === 'granted') { loadAnalytics(); return; }
-if (stored === 'denied') return;
+if (stored === 'granted') { grantAnalyticsConsent(); return; }
+if (stored === 'denied') { denyAnalyticsConsent(); return; }
 if (document.getElementById('cookie-consent')) return;
 
 const banner = document.createElement('div');
@@ -586,11 +609,12 @@ document.body.appendChild(banner);
 banner.querySelector('#cookie-accept').addEventListener('click', function () {
   setConsent('granted');
   banner.remove();
-  loadAnalytics();
+  grantAnalyticsConsent();
 });
 banner.querySelector('#cookie-decline').addEventListener('click', function () {
   setConsent('denied');
   banner.remove();
+  denyAnalyticsConsent();
 });
 }
 
