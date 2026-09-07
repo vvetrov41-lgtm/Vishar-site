@@ -209,7 +209,6 @@ select public.create_manual_enquiry(
 grant select on pg_temp.enquiry_active to authenticated, service_role;
 
 reset role;
-set local role service_role;
 insert into public.sessions (
   artist_id, client_id, enquiry_id, appointment_type, status, start_at, end_at
 ) values (
