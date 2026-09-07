@@ -4,22 +4,21 @@ import { readFile } from 'node:fs/promises';
 const notifications = await readFile('admin/src/pages/NotificationsPage.tsx', 'utf8');
 const integrations = await readFile('admin/src/pages/IntegrationsPage.tsx', 'utf8');
 const telegramConnections = await readFile('admin/src/pages/TelegramConnectionsPage.tsx', 'utf8');
-const personalTelegram = await readFile('admin/src/components/PersonalTelegramNotifications.tsx', 'utf8');
 
-assert.match(
+assert.doesNotMatch(
   notifications,
-  /<PersonalTelegramNotifications\s*\/>/,
-  'Notifications must render personal Telegram settings.',
+  /PersonalTelegramNotifications/,
+  'Notifications must not render the legacy personal Telegram integration.',
 );
 assert.match(
   notifications,
   /<ArtistTelegramNotifications\s*\/>/,
-  'Notifications must render artist Telegram settings.',
+  'Notifications must render the single artist-bound Telegram integration.',
 );
 assert.match(
   notifications,
   /canAccess\(profile\?\.role,\s*'manageIntegrations',\s*memberships\)/,
-  'Artist Telegram settings must stay behind manageIntegrations.',
+  'Telegram settings must stay behind manageIntegrations.',
 );
 
 assert.doesNotMatch(
@@ -41,23 +40,17 @@ assert.doesNotMatch(
 assert.match(
   telegramConnections,
   /export function ArtistTelegramNotifications\(\)/,
-  'Artist Telegram settings must remain reusable for the Notifications page.',
+  'The single Telegram integration must remain reusable on Notifications.',
 );
 assert.doesNotMatch(
   telegramConnections,
   /PersonalTelegramNotifications/,
-  'The legacy Telegram deep-link page must not duplicate personal Telegram settings.',
+  'The compatibility Telegram route must not restore the legacy personal integration.',
 );
-
 assert.match(
-  personalTelegram,
-  /Новые заявки отправляются в Telegram, настроенный для мастера\./,
-  'Personal Telegram copy must explain artist-bound enquiry delivery without pointing to a hidden section.',
-);
-assert.doesNotMatch(
-  personalTelegram,
-  /Telegram мастеров» ниже/,
-  'Personal Telegram copy must not point non-managers to an artist section they cannot see.',
+  telegramConnections,
+  /<Section title="Telegram">/,
+  'The visible integration must be presented simply as Telegram, not as a second artist-specific product.',
 );
 
-console.log('Telegram settings surface contract passed.');
+console.log('Single Telegram settings integration contract passed.');
