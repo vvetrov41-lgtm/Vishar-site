@@ -1,5 +1,5 @@
 -- 213_record_archival.sql
--- Synthetic-only validation for owner-only CRM cleanup.
+-- Synthetic-only validation for scoped enquiry cleanup and owner-only client cleanup.
 
 begin;
 select no_plan();
@@ -52,13 +52,13 @@ select public.create_manual_enquiry(
 grant select on archive_client_fixture to authenticated, service_role;
 
 select pg_temp.claims('{"sub":"fa222222-2222-4222-8222-222222222222","role":"authenticated"}');
-select throws_ok(
-  format(
-    $$select public.update_enquiry_details(%L::uuid, '{"_archive":true}'::jsonb)$$,
-    (select r ->> 'enquiry_id' from archive_enquiry_fixture)
-  ),
-  '42501', null,
-  'booking manager cannot archive an enquiry through the canonical edit RPC'
+select is(
+  public.update_enquiry_details(
+    (select (r ->> 'enquiry_id')::uuid from archive_enquiry_fixture),
+    '{"_archive":true}'::jsonb
+  ) ->> 'changed',
+  'true',
+  'booking manager can archive an enquiry in the managed artist scope'
 );
 select throws_ok(
   format(
@@ -75,8 +75,8 @@ select is(
     (select (r ->> 'enquiry_id')::uuid from archive_enquiry_fixture),
     '{"_archive":true}'::jsonb
   ) ->> 'changed',
-  'true',
-  'owner can archive an erroneous enquiry'
+  'false',
+  'repeating enquiry cleanup after a scoped manager is an idempotent no-op'
 );
 select ok(
   (select archived_at is not null
