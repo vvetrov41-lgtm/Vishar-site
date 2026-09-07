@@ -145,6 +145,19 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
             artistId={bookingArtistId}
             clientId={clientId}
             clientName={client.full_name}
+            /* Tattoo work belongs to a project, and the database refuses one
+               without. This screen already holds the client's projects and
+               enquiries, so it offers them rather than sending an operator to
+               another page to find out which. */
+            projectOptions={projects.map((project) => ({
+              id: project.id,
+              label: project.title,
+              enquiryId: project.enquiry_id,
+            }))}
+            enquiryOptions={enquiries.map((enquiry) => ({
+              id: enquiry.id,
+              label: enquiry.reference_number,
+            }))}
             onBooked={() => reload()}
           />
         </Section>
