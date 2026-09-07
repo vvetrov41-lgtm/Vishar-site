@@ -1,0 +1,13 @@
+/* Booking controls that communicate state, not just action.
+   Duration shortcuts already expose aria-pressed; make that pressed state
+   visually unmistakable on touch screens as well. */
+.booking-panel .actions button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.booking-panel .actions button[aria-pressed='true']:focus-visible {
+  outline-offset: 3px;
+}

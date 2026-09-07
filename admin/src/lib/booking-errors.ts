@@ -36,6 +36,7 @@ export const BOOKING_ERROR_CODES = [
   'INVALID_APPOINTMENT_TYPE',
   'INVALID_APPOINTMENT_STATUS',
   'INVALID_APPOINTMENT_WINDOW',
+  'INVALID_APPOINTMENT_STEP',
   'PERMISSION_DENIED',
 ] as const;
 
@@ -118,6 +119,8 @@ const MESSAGES: Record<Language, Record<BookingErrorCode, string>> = {
     INVALID_APPOINTMENT_TYPE: 'Choose what kind of appointment this is.',
     INVALID_APPOINTMENT_STATUS: 'A new appointment cannot start in that state.',
     INVALID_APPOINTMENT_WINDOW: 'Give a start and a later end.',
+    INVALID_APPOINTMENT_STEP:
+      'Appointment times use five-minute steps. Choose a time such as 10:00, 10:05 or 10:10.',
     PERMISSION_DENIED:
       'You do not have permission to book this. Nothing was saved — ask the studio owner for access.',
   },
@@ -145,6 +148,8 @@ const MESSAGES: Record<Language, Record<BookingErrorCode, string>> = {
     INVALID_APPOINTMENT_TYPE: 'Выберите тип записи.',
     INVALID_APPOINTMENT_STATUS: 'Новая запись не может начинаться в таком состоянии.',
     INVALID_APPOINTMENT_WINDOW: 'Укажите начало и более позднее окончание.',
+    INVALID_APPOINTMENT_STEP:
+      'Время записи задаётся с шагом 5 минут. Выберите, например, 10:00, 10:05 или 10:10.',
     PERMISSION_DENIED:
       'Недостаточно прав, чтобы создать эту запись. Изменения не сохранены — попросите владельца студии открыть доступ.',
   },
