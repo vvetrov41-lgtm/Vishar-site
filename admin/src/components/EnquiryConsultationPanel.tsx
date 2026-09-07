@@ -11,6 +11,11 @@ const CONSULTATION_TYPES: AppointmentType[] = [
 ];
 
 const DURATIONS = [15, 20, 30];
+const FIVE_MINUTES_MS = 5 * 60_000;
+
+function isFiveMinuteBoundary(value: Date): boolean {
+  return value.getTime() % FIVE_MINUTES_MS === 0;
+}
 
 export function EnquiryConsultationPanel({
   enquiry,
@@ -30,7 +35,6 @@ export function EnquiryConsultationPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [clash, setClash] = useState<{ count: number; first: string } | null>(null);
-  const [clashAcknowledged, setClashAcknowledged] = useState(false);
 
   async function schedule() {
     const start = new Date(startAt);
@@ -38,25 +42,32 @@ export function EnquiryConsultationPanel({
       setError(copy.invalidStart);
       return;
     }
+    if (!isFiveMinuteBoundary(start)) {
+      setError(copy.invalidStep);
+      return;
+    }
 
     const end = new Date(start.getTime() + durationMinutes * 60_000);
     setBusy(true);
     setError(null);
     setNotice(null);
+    setClash(null);
     try {
-      // One conflict policy across every booking form. Consultations used to
-      // refuse outright while a tattoo session only warned, which put the
-      // stricter rule on the lower-stakes action; both now say what the clash
-      // is and require the operator to say they meant it.
-      const conflicts = await api.listAppointmentConflicts({
+      // Ask the policy-aware conflict RPC, not the old raw overlap reader.
+      // `blocks` is computed by the same rules schedule_appointment enforces,
+      // so the preflight and the write cannot disagree about whether a
+      // consultation may run alongside another appointment.
+      const conflicts = await api.listBookingConflicts({
         artistId: enquiry.artist_id,
+        appointmentType,
         startAt: start.toISOString(),
         endAt: end.toISOString(),
       });
-      if (conflicts.length > 0 && !clashAcknowledged) {
+      const blocking = conflicts.filter((conflict) => conflict.blocks);
+      if (blocking.length > 0) {
         setClash({
-          count: conflicts.length,
-          first: formatDateTime(conflicts[0].start_at, language),
+          count: blocking.length,
+          first: formatDateTime(blocking[0].start_at, language),
         });
         return;
       }
@@ -75,7 +86,6 @@ export function EnquiryConsultationPanel({
       setStartAt('');
       setNotes('');
       setClash(null);
-      setClashAcknowledged(false);
       setNotice(copy.created(
         typeLabel(appointmentType, language),
         formatDateTime(start.toISOString(), language),
@@ -100,7 +110,10 @@ export function EnquiryConsultationPanel({
           <select
             value={appointmentType}
             disabled={busy}
-            onChange={(event) => setAppointmentType(event.target.value as AppointmentType)}
+            onChange={(event) => {
+              setAppointmentType(event.target.value as AppointmentType);
+              setClash(null);
+            }}
           >
             {CONSULTATION_TYPES.map((type) => (
               <option key={type} value={type}>{typeLabel(type, language)}</option>
@@ -111,12 +124,12 @@ export function EnquiryConsultationPanel({
           <span>{copy.start}</span>
           <input
             type="datetime-local"
+            step={300}
             value={startAt}
             disabled={busy}
             onChange={(event) => {
               setStartAt(event.target.value);
               setClash(null);
-              setClashAcknowledged(false);
             }}
           />
         </label>
@@ -128,7 +141,6 @@ export function EnquiryConsultationPanel({
             onChange={(event) => {
               setDurationMinutes(Number(event.target.value));
               setClash(null);
-              setClashAcknowledged(false);
             }}
           >
             {DURATIONS.map((minutes) => (
@@ -158,14 +170,6 @@ export function EnquiryConsultationPanel({
       {clash ? (
         <div className="notice warn" role="alert">
           <p style={{ margin: 0 }}>{copy.conflict(clash.count, clash.first)}</p>
-          <label className="conflict-acknowledgement">
-            <input
-              type="checkbox"
-              checked={clashAcknowledged}
-              onChange={(event) => setClashAcknowledged(event.target.checked)}
-            />
-            <span>{copy.bookAnyway}</span>
-          </label>
         </div>
       ) : null}
       {notice ? <p className="notice ok" role="status">{notice}</p> : null}
@@ -193,9 +197,9 @@ const COPY = {
     schedule: 'Schedule consultation',
     saving: 'Checking schedule…',
     created: (type: string, date: string) => `${type} booked for ${date} and linked to this enquiry. It is proposed until you confirm it.`,
-    bookAnyway: 'I mean to book over this clash',
     invalidStart: 'Choose a valid consultation date and time.',
-    conflict: (count: number, first: string) => `This time overlaps ${count} active appointment${count === 1 ? '' : 's'}. The first starts ${first}.`,
+    invalidStep: 'Choose a time in five-minute steps, for example 10:00, 10:05 or 10:10.',
+    conflict: (count: number, first: string) => `This time is blocked by ${count} active appointment${count === 1 ? '' : 's'}. The first starts ${first}. Choose another time.`,
     failed: 'Could not schedule that consultation.',
   },
   ru: {
@@ -209,9 +213,9 @@ const COPY = {
     schedule: 'Записать на консультацию',
     saving: 'Проверяю расписание…',
     created: (type: string, date: string) => `${type} на ${date} создана и привязана к этой заявке. Запись предложена и ждёт подтверждения.`,
-    bookAnyway: 'Я осознанно записываю поверх пересечения',
     invalidStart: 'Укажи корректные дату и время консультации.',
-    conflict: (count: number, first: string) => `Это время пересекается с активными записями: ${count}. Первая начинается ${first}.`,
+    invalidStep: 'Выберите время с шагом 5 минут, например 10:00, 10:05 или 10:10.',
+    conflict: (count: number, first: string) => `Это время занято активными записями: ${count}. Первая начинается ${first}. Выберите другое время.`,
     failed: 'Не удалось создать консультацию.',
   },
 } as const;
