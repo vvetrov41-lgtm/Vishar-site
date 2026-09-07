@@ -31,6 +31,12 @@ import {
   findConsecutiveDaySlots,
   type Slot,
 } from '../lib/availability';
+import {
+  bookingErrorCode,
+  bookingErrorMessage,
+  isSlotConflict,
+  type BookingErrorCode,
+} from '../lib/booking-errors';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { useApi } from '../lib/session';
@@ -108,7 +114,6 @@ export function BookingPanel({
   const [searching, setSearching] = useState(false);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [chosenProjectId, setChosenProjectId] = useState('');
   const [chosenEnquiryId, setChosenEnquiryId] = useState('');
@@ -121,23 +126,43 @@ export function BookingPanel({
   const alongside = (conflicts ?? []).filter((conflict) => !conflict.blocks);
 
   const durations = DURATION_MINUTES[appointmentType];
-  // A caller that fixed the link wins; otherwise whatever the operator chose.
-  const effectiveProjectId = projectId ?? (chosenProjectId || null);
-  const chosenProject = (projectOptions ?? []).find((option) => option.id === chosenProjectId);
+  const wantsProject = appointmentFamily(appointmentType) === 'tattoo';
+  // One project, or one enquiry and no project, is not a choice - it is the
+  // answer. The same reasoning the client workspace already applies to the
+  // artist: where there is nothing to decide, do not make the operator decide
+  // it. A consultation gets no default, because there the link is genuinely
+  // optional.
+  const soleProjectId = projectOptions?.length === 1 ? projectOptions[0].id : null;
+  const soleEnquiryId = enquiryOptions?.length === 1 ? enquiryOptions[0].id : null;
+  const defaultProjectId = wantsProject ? soleProjectId : null;
+  const defaultEnquiryId = wantsProject && !soleProjectId ? soleEnquiryId : null;
+
+  // A caller that fixed the link wins; otherwise whatever the operator chose,
+  // otherwise the only thing it could be.
+  const selectedProjectId = chosenProjectId || defaultProjectId || '';
+  const effectiveProjectId = projectId ?? (selectedProjectId || null);
+  const chosenProject = (projectOptions ?? []).find((option) => option.id === selectedProjectId);
+  const selectedEnquiryId = chosenEnquiryId || defaultEnquiryId || '';
   const effectiveEnquiryId = enquiryId
     ?? chosenProject?.enquiryId
-    ?? (chosenEnquiryId || null);
-  const wantsProject = appointmentFamily(appointmentType) === 'tattoo';
-  const projectMissing = wantsProject
-    && !effectiveProjectId
-    && (projectOptions?.length ?? 0) > 0;
+    ?? (selectedEnquiryId || null);
+  // A tattoo session booked from an enquiry no longer needs a project chosen
+  // first: schedule_appointment creates the enquiry's project once and reuses
+  // it afterwards. A touch-up is the exception - it belongs to the project of
+  // the piece being touched up, so that project has to be named.
+  const derivesProject = wantsProject
+    && appointmentType !== 'touch_up'
+    && !!effectiveEnquiryId;
+  const projectMissing = wantsProject && !effectiveProjectId && !derivesProject;
+  const projectMissingCode: BookingErrorCode = appointmentType === 'touch_up'
+    ? 'TOUCH_UP_PROJECT_REQUIRED'
+    : 'PROJECT_REQUIRED';
 
   const grouped = useMemo(() => groupByDay(slots ?? []), [slots]);
 
   async function runSearch(event: FormEvent) {
     event.preventDefault();
     setError(null);
-    setWarning(null);
     setNotice(null);
     setChosen(null);
     setSeries(null);
@@ -247,7 +272,7 @@ export function BookingPanel({
       return;
     }
     if (projectMissing) {
-      setError(copy.projectRequired);
+      setError(bookingErrorMessage(projectMissingCode, language));
       return;
     }
     setBooking(true);
@@ -262,21 +287,40 @@ export function BookingPanel({
         enquiryId: effectiveEnquiryId,
         projectId: effectiveProjectId,
       });
-      const appointmentId = typeof result?.appointment_id === 'string' ? result.appointment_id : null;
-      onBooked(appointmentId);
+      onBooked(result.appointment_id);
       setStage('search');
       setChosen(null);
       setSlots(null);
       setSeries(null);
       setConflicts(null);
-      setNotice(copy.booked);
+      // Say what was created. The project is made in the same transaction as
+      // the session, so "Project created" is a fact by the time this renders,
+      // not a promise.
+      setNotice(
+        result.replayed
+          ? copy.alreadyBooked
+          : result.project_created
+            ? `${copy.projectCreated} ${copy.booked}`
+            : copy.booked
+      );
     } catch (cause) {
-      // The database holds the schedule lock and re-checks availability inside
-      // the booking transaction, so a slot that went stale between being
-      // offered and being confirmed is refused here rather than double-booked.
-      // Re-searching is the honest recovery, so say so.
-      setError(cause instanceof Error ? cause.message : copy.bookFailed);
-      setWarning(copy.staleSlot);
+      // Only the database knows why it refused, and now it says so. Telling
+      // the operator the schedule changed is right exactly when it did; for a
+      // missing project, a permission problem or a broken link it was always
+      // a lie that sent them back to re-search a slot nobody had taken.
+      const code = bookingErrorCode(cause);
+      setError(
+        code
+          ? bookingErrorMessage(code, language)
+          : cause instanceof Error ? cause.message : copy.bookFailed
+      );
+      // Only a genuine schedule change makes the offered times wrong. Clearing
+      // them then is the honest recovery; clearing them because a project was
+      // missing would throw away a search that is still perfectly valid.
+      if (isSlotConflict(code)) {
+        setSlots(null);
+        setSeries(null);
+      }
       setStage('search');
       setChosen(null);
     } finally {
@@ -307,15 +351,8 @@ export function BookingPanel({
           </label>
 
           <label>
-            <span>{copy.duration}</span>
-            <input
-              type="number"
-              min={15}
-              max={720}
-              step={15}
-              value={durationMinutes}
-              onChange={(event) => setDurationMinutes(Number(event.target.value) || 15)}
-            />
+            <span>{copy.from}</span>
+            <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
           </label>
         </div>
 
@@ -325,10 +362,10 @@ export function BookingPanel({
           <label>
             <span>{copy.project}{wantsProject ? '' : ` · ${copy.optional}`}</span>
             <select
-              value={chosenProjectId}
+              value={selectedProjectId}
               onChange={(event) => { setChosenProjectId(event.target.value); setSlots(null); }}
             >
-              <option value="">{copy.noProject}</option>
+              {defaultProjectId ? null : <option value="">{copy.noProject}</option>}
               {(projectOptions ?? []).map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
               ))}
@@ -340,10 +377,10 @@ export function BookingPanel({
           <label>
             <span>{copy.enquiry} · {copy.optional}</span>
             <select
-              value={chosenEnquiryId}
+              value={selectedEnquiryId}
               onChange={(event) => setChosenEnquiryId(event.target.value)}
             >
-              <option value="">{copy.noEnquiry}</option>
+              {defaultEnquiryId ? null : <option value="">{copy.noEnquiry}</option>}
               {(enquiryOptions ?? []).map((option) => (
                 <option key={option.id} value={option.id}>{option.label}</option>
               ))}
@@ -352,7 +389,9 @@ export function BookingPanel({
         ) : null}
 
         {projectMissing ? (
-          <p className="notice warn" role="status">{copy.projectRequired}</p>
+          <p className="notice warn" role="status">
+            {bookingErrorMessage(projectMissingCode, language)}
+          </p>
         ) : null}
 
         <div className="actions" aria-label={copy.durationShortcuts}>
@@ -369,24 +408,17 @@ export function BookingPanel({
           ))}
         </div>
 
-        <div className="form-grid">
-          <label>
-            <span>{copy.from}</span>
-            <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
-          </label>
-
-          <label>
-            <span>{copy.days}</span>
-            <select
-              value={consecutiveDays}
-              onChange={(event) => setConsecutiveDays(Number(event.target.value))}
-            >
-              <option value={1}>{copy.oneSession}</option>
-              <option value={2}>{copy.twoDays}</option>
-              <option value={3}>{copy.threeDays}</option>
-            </select>
-          </label>
-        </div>
+        <label>
+          <span>{copy.days}</span>
+          <select
+            value={consecutiveDays}
+            onChange={(event) => setConsecutiveDays(Number(event.target.value))}
+          >
+            <option value={1}>{copy.oneSession}</option>
+            <option value={2}>{copy.twoDays}</option>
+            <option value={3}>{copy.threeDays}</option>
+          </select>
+        </label>
 
         {/* The window comes from the artist, not from this form. Saying which
             window is being searched keeps the result explainable; changing it
@@ -411,7 +443,6 @@ export function BookingPanel({
       </form>
 
       {error ? <p className="notice warn" role="alert">{error}</p> : null}
-      {warning ? <p className="notice warn" role="status">{warning}</p> : null}
       {notice ? <p className="notice ok" role="status">{notice}</p> : null}
 
       {stage === 'chosen' && chosen ? (
@@ -497,6 +528,17 @@ export function BookingPanel({
       {manual ? (
         <div className="booking-manual">
           <p className="meta">{copy.manualHint}</p>
+          <label>
+            <span>{copy.duration}</span>
+            <input
+              type="number"
+              min={15}
+              max={720}
+              step={15}
+              value={durationMinutes}
+              onChange={(event) => setDurationMinutes(Number(event.target.value) || 15)}
+            />
+          </label>
           <div className="form-grid">
             <label>
               <span>{copy.start}</span>
@@ -652,7 +694,6 @@ const COPY = {
     optional: 'optional',
     noProject: 'No project',
     noEnquiry: 'No enquiry',
-    projectRequired: 'A tattoo session belongs to a project. Choose which one.',
     search: 'Find free times',
     searching: 'Looking…',
     searchFailed: 'Could not check the schedule.',
@@ -670,15 +711,16 @@ const COPY = {
     booking: 'Booking…',
     chooseAnother: 'Choose another time',
     bookFailed: 'Could not book that appointment.',
-    staleSlot: 'The schedule changed while you were deciding. Search again to see what is free now.',
     showManual: 'Enter a time myself',
     hideManual: 'Hide manual entry',
-    manualHint: 'For a time the client has already named, or one outside the hours above.',
+    manualHint: 'For an exact length, a time the client has already named, or one outside the hours above.',
     start: 'Start',
     end: 'End',
     bookManual: 'Book this exact time',
     manualInvalid: 'Give a start and a later end.',
     booked: 'Booked. It is proposed until the client confirms it.',
+    projectCreated: 'Project created.',
+    alreadyBooked: 'That appointment was already booked. Nothing was duplicated.',
     checkTime: 'Check this time',
     checking: 'Checking the schedule\u2026',
     wouldClash: 'This clashes with {count} booking(s) and will be refused.',
@@ -707,7 +749,6 @@ const COPY = {
     optional: 'необязательно',
     noProject: 'Без проекта',
     noEnquiry: 'Без заявки',
-    projectRequired: 'Тату-сеанс относится к проекту. Выберите, к какому.',
     search: 'Найти свободное время',
     searching: 'Ищем…',
     searchFailed: 'Не удалось проверить расписание.',
@@ -725,15 +766,16 @@ const COPY = {
     booking: 'Записываем…',
     chooseAnother: 'Выбрать другое время',
     bookFailed: 'Не удалось создать запись.',
-    staleSlot: 'Расписание изменилось, пока вы выбирали. Найдите свободное время заново.',
     showManual: 'Ввести время вручную',
     hideManual: 'Скрыть ручной ввод',
-    manualHint: 'Для времени, которое клиент уже назвал, или вне указанных часов.',
+    manualHint: 'Для точной длительности, времени, которое клиент уже назвал, или вне указанных часов.',
     start: 'Начало',
     end: 'Конец',
     bookManual: 'Записать на это время',
     manualInvalid: 'Укажите начало и более позднее окончание.',
     booked: 'Записано. Запись предварительная, пока клиент не подтвердит.',
+    projectCreated: 'Проект создан.',
+    alreadyBooked: 'Эта запись уже создана. Дубль не появился.',
     checkTime: 'Проверить это время',
     checking: 'Проверяем расписание\u2026',
     wouldClash: 'Пересекается с {count} записью(ями) — такая запись будет отклонена.',

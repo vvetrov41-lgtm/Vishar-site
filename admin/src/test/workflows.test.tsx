@@ -25,9 +25,14 @@ describe('enquiry workflow', () => {
       path: `/enquiries/${ENQUIRY_ID}`,
     });
 
-    expect(await screen.findByText('+44 7700 900 099')).toBeInTheDocument();
+    expect((await screen.findAllByText('+44 7700 900 099')).length).toBeGreaterThan(0);
     expect(screen.getByRole('alert')).toHaveTextContent(/matched different client cards/i);
-    expect(screen.getByText('+44 7700 900 000')).toBeInTheDocument();
+    expect(screen.getAllByText('+44 7700 900 000').length).toBeGreaterThan(0);
+
+    // And the difference is named rather than merely announced: the two values
+    // sit side by side under the field they disagree about.
+    expect(screen.getByText('Enquiry:')).toBeInTheDocument();
+    expect(screen.getByText('CRM:')).toBeInTheDocument();
   });
 
   it('changes status through transition_enquiry_status', async () => {
