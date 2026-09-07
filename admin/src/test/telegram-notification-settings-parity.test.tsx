@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getTelegramConnectorInfo: vi.fn(),
   listTelegramDestinations: vi.fn(),
+  listAccessibleArtists: vi.fn(),
   getTelegramNotificationsEnabled: vi.fn(),
   setTelegramNotificationsEnabled: vi.fn(),
   beginTelegramLink: vi.fn(),
@@ -13,8 +14,23 @@ const mocks = vi.hoisted(() => ({
   snoozeFollowUp: vi.fn(),
 }));
 
+const session = vi.hoisted(() => ({
+  profile: {
+    id: 'p1111111-1111-4111-8111-111111111111',
+    display_name: 'Andrei Cotici',
+    role: 'booking_manager' as const,
+    is_active: true,
+  },
+  memberships: [{
+    artist_id: 'a1111111-1111-4111-8111-111111111111',
+    is_active: true,
+    can_manage_integrations: true,
+  }],
+}));
+
 vi.mock('../lib/session', () => ({
   useApi: () => mocks,
+  useSession: () => session,
 }));
 
 vi.mock('../lib/i18n', () => ({
@@ -53,6 +69,12 @@ beforeEach(() => {
     personalDestination,
     legacyArtistDestination,
   ]);
+  mocks.listAccessibleArtists.mockResolvedValue([{
+    id: 'a1111111-1111-4111-8111-111111111111',
+    slug: 'andrei-cotici',
+    display_name: 'Andrei Cotici',
+    is_active: true,
+  }]);
   mocks.getTelegramNotificationsEnabled.mockResolvedValue(true);
   mocks.setTelegramNotificationsEnabled.mockResolvedValue(true);
   mocks.disconnectTelegramDestination.mockResolvedValue(true);
@@ -83,7 +105,12 @@ describe('personal Telegram settings parity', () => {
     expect(screen.getByText('Your Telegram')).toBeInTheDocument();
     expect(screen.getByText('Notification delivery')).toBeInTheDocument();
     expect(screen.queryByText('Shared Telegram bot')).not.toBeInTheDocument();
-    expect(screen.queryByText('Artist Telegram')).not.toBeInTheDocument();
+
+    // A new enquiry is delivered through the artist destination, so the page
+    // that configures Telegram has to offer it. Without this an artist connects
+    // personal Telegram, believes they are done, and never hears about a booking.
+    expect(await screen.findByText('Artist Telegram')).toBeInTheDocument();
+    expect(await screen.findByText('Legacy Artist Telegram')).toBeInTheDocument();
 
     integration.unmount();
     render(<NotificationsPage />);
@@ -91,5 +118,28 @@ describe('personal Telegram settings parity', () => {
     expect(await screen.findByText('Personal delivery')).toBeInTheDocument();
     expect(screen.getByText('Your Telegram')).toBeInTheDocument();
     expect(screen.getByText('Notification delivery')).toBeInTheDocument();
+  });
+
+  it('offers the artist destination that enquiry notifications actually use', async () => {
+    render(<TelegramConnectionsPage />);
+
+    expect(await screen.findByText('Legacy Artist Telegram')).toBeInTheDocument();
+    expect(
+      screen.getByText('New enquiry notifications are delivered to this Telegram, not to your personal one.'),
+    ).toBeInTheDocument();
+  });
+
+  it('hides artist destinations this profile may not manage', async () => {
+    mocks.listAccessibleArtists.mockResolvedValue([{
+      id: 'a9999999-9999-4999-8999-999999999999',
+      slug: 'someone-else',
+      display_name: 'Someone Else',
+      is_active: true,
+    }]);
+
+    render(<TelegramConnectionsPage />);
+
+    expect(await screen.findByText('No manageable artists')).toBeInTheDocument();
+    expect(screen.queryByText('Legacy Artist Telegram')).not.toBeInTheDocument();
   });
 });
