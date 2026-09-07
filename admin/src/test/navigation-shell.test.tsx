@@ -189,9 +189,14 @@ describe('detail-route continuity', () => {
   it('places enquiry workflow actions before long record content', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}` });
 
-    const actions = await screen.findByRole('heading', { level: 2, name: 'Enquiry actions' });
-    const contact = screen.getByRole('heading', { level: 2, name: 'Current client details' });
-    expect(actions.compareDocumentPosition(contact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const actions = await screen.findByRole('heading', { level: 2, name: 'Next action' });
+    const record = screen.getByRole('heading', { level: 2, name: 'The project' });
+    expect(actions.compareDocumentPosition(record) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // The client card is further down still, collapsed to its own heading and
+    // a count, because the summary above already carries the contact details.
+    const contact = screen.getByText('Current client details');
+    expect(record.compareDocumentPosition(contact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('links an overdue dashboard follow-up directly to its enquiry', async () => {

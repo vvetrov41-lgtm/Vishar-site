@@ -1,4 +1,6 @@
 import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
+import { bookingErrorCode, bookingErrorMessage } from './booking-errors';
+import { currentLanguage } from './i18n';
 import { captureEvent, leadTimeDaysBucket } from './product-analytics';
 import type { CalendarProvider, PaymentStatus, SessionStatus } from './types';
 
@@ -69,11 +71,14 @@ export interface ScheduleAppointmentInput {
   notes?: string | null;
 }
 
+/**
+ * A refusal the database named gets its own sentence; anything else falls back
+ * to the generic operation phrase. The code also travels on the thrown error,
+ * so a caller can act on it rather than matching on prose.
+ */
 function appointmentMessage(error: any, what: ApiOperation): string {
-  const message = typeof error?.message === 'string' ? error.message : '';
-  if (message.includes('artist availability blocks this time')) {
-    return 'That time is blocked in artist availability.';
-  }
+  const code = bookingErrorCode(error);
+  if (code) return bookingErrorMessage(code, currentLanguage());
   return friendlyMessage(error, what);
 }
 
@@ -82,6 +87,37 @@ function unwrap<T>(result: { data: T | null; error: any }, what: ApiOperation): 
     throw new ApiError(appointmentMessage(result.error, what), result.error);
   }
   return (result.data ?? ([] as unknown)) as T;
+}
+
+/**
+ * What `public.schedule_appointment` answers with. `project_created` is how
+ * the interface knows to say "Project created" without asking again, and
+ * `replayed` marks the second of two identical requests - a double tap - which
+ * returns the appointment that already exists rather than a second one.
+ */
+export interface ScheduledAppointment {
+  appointment_id: string | null;
+  session_id: string | null;
+  project_id: string | null;
+  enquiry_id: string | null;
+  appointment_type: AppointmentType;
+  status: SessionStatus;
+  project_created: boolean;
+  replayed: boolean;
+}
+
+function normaliseScheduled(result: Record<string, unknown>): ScheduledAppointment {
+  const appointmentId = typeof result.appointment_id === 'string' ? result.appointment_id : null;
+  return {
+    appointment_id: appointmentId,
+    session_id: typeof result.session_id === 'string' ? result.session_id : appointmentId,
+    project_id: typeof result.project_id === 'string' ? result.project_id : null,
+    enquiry_id: typeof result.enquiry_id === 'string' ? result.enquiry_id : null,
+    appointment_type: (result.appointment_type as AppointmentType) ?? 'tattoo_session',
+    status: (result.status as SessionStatus) ?? 'proposed',
+    project_created: result.project_created === true,
+    replayed: result.replayed === true,
+  };
 }
 
 function normaliseAppointment(row: Partial<Appointment> & Pick<Appointment, 'id' | 'artist_id' | 'status' | 'start_at' | 'end_at'>): Appointment {
@@ -139,7 +175,7 @@ export function createAppointmentApi(client: CrmClient) {
       return rows.map(normaliseAppointment);
     },
 
-    async scheduleAppointment(input: ScheduleAppointmentInput) {
+    async scheduleAppointment(input: ScheduleAppointmentInput): Promise<ScheduledAppointment> {
       // Bounded enums only: the appointment kind, where the booking came from,
       // and how far ahead it sits. No artist, client, enquiry or project id.
       captureEvent('crm_appointment_booked', {
@@ -149,7 +185,7 @@ export function createAppointmentApi(client: CrmClient) {
         origin: 'crm',
         lead_time_days_bucket: leadTimeDaysBucket(input.startAt),
       });
-      return unwrap<Record<string, unknown>>(
+      return normaliseScheduled(unwrap<Record<string, unknown>>(
         await client.rpc('schedule_appointment', {
           p_artist_id: input.artistId,
           p_client_id: input.clientId,
@@ -162,7 +198,7 @@ export function createAppointmentApi(client: CrmClient) {
           p_notes: input.notes ?? null,
         }),
         'schedule that appointment'
-      );
+      ));
     },
 
     async setAppointmentStatus(appointmentId: string, status: SessionStatus) {

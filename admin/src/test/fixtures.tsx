@@ -417,8 +417,15 @@ export interface FakeClientOptions {
    * for instance - rather than asserting it never happens.
    */
   failRpc?: string;
-  /** The error `failRpc` returns. Defaults to a generic refusal. */
-  failRpcError?: { code: string; message: string };
+  /**
+   * The error `failRpc` returns. Defaults to a generic refusal.
+   *
+   * `hint` carries the machine-readable booking code the database attaches
+   * through `crm_private.booking_error`, which is what decides the sentence
+   * the operator reads. Omitting it is the realistic shape of a failure the
+   * booking path does not name.
+   */
+  failRpcError?: { code: string; message: string; hint?: string };
   /** Override the enquiry lifecycle state for workflow-specific screens. */
   enquiryStatus?: EnquiryStatus;
   /** Artist identities returned by list_accessible_artists(). */

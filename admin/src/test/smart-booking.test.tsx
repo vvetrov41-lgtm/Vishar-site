@@ -169,11 +169,8 @@ describe('booking a session by asking for one', () => {
     expect(screen.queryByRole('heading', { name: offHeading })).not.toBeInTheDocument();
   });
 
-  it('fails closed when the schedule changes between offering and confirming', async () => {
-    // schedule_appointment takes crm_private.lock_artist_schedule and re-checks
-    // availability inside the same transaction, so the database is what refuses
-    // a stale slot. The interface must report that, not swallow it.
-    await openPanel({ failRpc: 'schedule_appointment' });
+  async function bookAndFail(failRpcError?: { code: string; message: string; hint?: string }) {
+    await openPanel({ failRpc: 'schedule_appointment', failRpcError });
 
     fireEvent.click(screen.getByRole('button', { name: '7 h' }));
     fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
@@ -182,11 +179,52 @@ describe('booking a session by asking for one', () => {
     fireEvent.click(slots[0]);
     const summary = await screen.findByRole('group', { name: 'Booking summary' });
     fireEvent.click(within(summary).getByRole('button', { name: 'Book it' }));
+    return screen.findByRole('alert');
+  }
 
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
+  it('fails closed when the schedule changes between offering and confirming', async () => {
+    // schedule_appointment takes crm_private.lock_artist_schedule and re-checks
+    // availability inside the same transaction, so the database is what refuses
+    // a stale slot. The interface must report that, not swallow it.
+    await bookAndFail({
+      code: '22023',
+      message: 'another tattoo session already occupies this time',
+      hint: 'SLOT_NO_LONGER_AVAILABLE',
+    });
+
     // And it says what to do about it, rather than leaving a dead summary.
     expect(await screen.findByText(/The schedule changed while you were deciding/)).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Booking summary' })).not.toBeInTheDocument();
+  });
+
+  it('does not blame the schedule for a refusal that has nothing to do with it', async () => {
+    // The bug this replaces: every booking failure claimed the schedule had
+    // changed, so a missing project sent the operator back to re-search a slot
+    // nobody had taken.
+    const alert = await bookAndFail({
+      code: '22023',
+      message: 'tattoo work belongs to a project',
+      hint: 'PROJECT_REQUIRED',
+    });
+
+    expect(alert).toHaveTextContent(/Tattoo work belongs to a project/);
+    expect(screen.queryByText(/The schedule changed while you were deciding/)).not.toBeInTheDocument();
+  });
+
+  it('says a permission refusal is a permission refusal', async () => {
+    const alert = await bookAndFail({ code: '42501', message: 'artist access is not permitted' });
+
+    expect(alert).toHaveTextContent(/do not have permission to book this/);
+    expect(screen.queryByText(/The schedule changed while you were deciding/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a failure it cannot name to the generic answer', async () => {
+    // No hint, no recognised SQLSTATE: the honest answer is that the booking
+    // did not happen, not an invented cause.
+    const alert = await bookAndFail({ code: '08006', message: 'connection failure' });
+
+    expect(alert).toHaveTextContent(/Could not schedule that appointment/);
+    expect(screen.queryByText(/The schedule changed while you were deciding/)).not.toBeInTheDocument();
   });
 
   it('takes the working window from the artist instead of asking for it', async () => {
@@ -232,7 +270,7 @@ describe('booking a session by asking for one', () => {
   it('keeps manual entry for a time the client already named', async () => {
     await openPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Enter a time myself' }));
-    expect(await screen.findByText(/For a time the client has already named/)).toBeInTheDocument();
+    expect(await screen.findByText(/a time the client has already named/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Book this exact time' })).toBeInTheDocument();
   });
 
