@@ -876,6 +876,12 @@ insert into expected_function_acl values
   ('public.set_my_display_name(text)', false, true, false),
   ('public.delete_my_account(text)', false, true, false),
 
+  -- Single-profile Telegram enquiry routing. Both functions are backend-only:
+  -- routing materialises a deduplicated internal notification without returning
+  -- a provider destination, while recovery requeues only an evidenced-safe dead job.
+  ('public.service_route_telegram_enquiry_notification(uuid,text)', false, false, true),
+  ('public.service_recover_telegram_enquiry_outbox(uuid)', false, false, true),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),

@@ -40,6 +40,7 @@ const expectedTelegramRpcSurface = [
   'service_complete_telegram_link',
   'service_record_telegram_notification_result',
   'service_resolve_telegram_destination',
+  'service_route_telegram_enquiry_notification',
 ].sort();
 if (JSON.stringify(telegramRpcSurface) !== JSON.stringify(expectedTelegramRpcSurface)) {
   throw new Error(`Telegram self-service Worker RPC surface changed: ${telegramRpcSurface.join(', ')}`);

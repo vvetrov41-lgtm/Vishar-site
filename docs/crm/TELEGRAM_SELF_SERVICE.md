@@ -1,5 +1,8 @@
 # Telegram self-service linking and delivery
 
+> Production convergence note, 2026-09-07: the current product requirement is one profile-scoped Telegram connection in Notifications. It receives both enquiry alerts and personal CRM notifications through the personal delivery queue. The historical two-destination Phase F-G design below is retained as rollout history until the bounded convergence release is fully deployed.
+
+
 Status: Phase F-G implementation contract, Draft PR #391. Nothing in this file implies production activation.
 
 ## 1. Two destination types

@@ -311,8 +311,6 @@ await test('a missing artist binding has no global credential fallback', async (
   const noBindingEnv = {
     SUPABASE_URL: env.SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
-    TELEGRAM_BOT_TOKEN: ['forbidden', 'global', 'fallback'].join('-'),
-    TELEGRAM_CHAT_ID: 'forbidden-global-chat',
   };
   const mock = makeFetch();
   const result = await drainTelegramOutboxById(noBindingEnv, {

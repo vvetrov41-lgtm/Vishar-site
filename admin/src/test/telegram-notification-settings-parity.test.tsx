@@ -89,26 +89,26 @@ describe('Telegram notification settings parity', () => {
     render(<PersonalTelegramNotifications />);
 
     expect(await screen.findByText('Your Telegram')).toBeInTheDocument();
-    expect(screen.getByText('Personal CRM notifications')).toBeInTheDocument();
+    expect(screen.getByText('Telegram notifications')).toBeInTheDocument();
     expect(screen.getByText('Enabled', { selector: '.badge' })).toBeInTheDocument();
     expect(screen.queryByText('Legacy Artist Telegram')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Disable personal Telegram' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disable Telegram' }));
     await waitFor(() => {
       expect(mocks.setTelegramNotificationsEnabled).toHaveBeenCalledWith(false);
     });
   });
 
-  it('shows personal and artist destinations together on Notifications for integration managers', async () => {
+  it('shows only the single profile Telegram connection on Notifications', async () => {
     render(<NotificationsPage />);
 
-    expect(await screen.findByText('Personal Telegram')).toBeInTheDocument();
+    expect(await screen.findByText('Telegram')).toBeInTheDocument();
     expect(await screen.findByText('Your Telegram')).toBeInTheDocument();
-    expect(await screen.findByText('Artist Telegram')).toBeInTheDocument();
-    expect(await screen.findByText('Legacy Artist Telegram')).toBeInTheDocument();
-    expect(
-      screen.getByText('New enquiry notifications are delivered to this Telegram, not to your personal one.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText(
+      'New enquiries and personal CRM notifications use this single connection.',
+    )).toBeInTheDocument();
+    expect(screen.queryByText('Artist Telegram')).not.toBeInTheDocument();
+    expect(screen.queryByText('Legacy Artist Telegram')).not.toBeInTheDocument();
   });
 
   it('keeps the old Telegram deep link as artist-only compatibility UI', async () => {
@@ -120,19 +120,19 @@ describe('Telegram notification settings parity', () => {
     expect(screen.queryByText('Your Telegram')).not.toBeInTheDocument();
   });
 
-  it('does not point non-managers to a hidden artist section', async () => {
+  it('uses the same single connection for profiles without integration management', async () => {
     session.memberships[0].can_manage_integrations = false;
     render(<NotificationsPage />);
 
-    expect(await screen.findByText('Personal Telegram')).toBeInTheDocument();
-    expect(screen.queryByText('Artist Telegram')).not.toBeInTheDocument();
+    expect(await screen.findByText('Telegram')).toBeInTheDocument();
+    expect(await screen.findByText('Your Telegram')).toBeInTheDocument();
     expect(screen.getByText(
-      'This controls only personal CRM notification delivery. New enquiries are sent to the Telegram destination configured for the artist.',
+      'New enquiries and personal CRM notifications use this single connection.',
     )).toBeInTheDocument();
-    expect(screen.queryByText(/below/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Artist Telegram')).not.toBeInTheDocument();
   });
 
-  it('hides artist destinations this profile may not manage', async () => {
+  it('does not expose legacy artist destinations outside the compatibility page', async () => {
     mocks.listAccessibleArtists.mockResolvedValue([{
       id: 'a9999999-9999-4999-8999-999999999999',
       slug: 'someone-else',
@@ -142,7 +142,8 @@ describe('Telegram notification settings parity', () => {
 
     render(<NotificationsPage />);
 
-    expect(await screen.findByText('No manageable artists')).toBeInTheDocument();
+    expect(await screen.findByText('Your Telegram')).toBeInTheDocument();
     expect(screen.queryByText('Legacy Artist Telegram')).not.toBeInTheDocument();
+    expect(screen.queryByText('No manageable artists')).not.toBeInTheDocument();
   });
 });

@@ -1,21 +1,17 @@
 // The notification centre.
 //
 // Telegram delivery belongs here rather than in the generic integrations hub.
-// Personal Telegram is addressed to the signed-in person. Artist Telegram is a
-// separate destination used for new enquiry notifications and is shown only to
-// profiles that may manage artist integrations. Keeping both on one screen
-// avoids contradictory "connected" states across two navigation sections.
+// One profile-scoped Telegram connection delivers both new enquiry alerts and
+// personal CRM notifications. A second artist/group destination is not exposed.
 
 import { useCallback, useState } from 'react';
 import { PersonalTelegramNotifications } from '../components/PersonalTelegramNotifications';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useLanguage } from '../lib/i18n';
-import { canAccess } from '../lib/permissions';
 import { snoozeUntil, type CrmNotification } from '../lib/platform-api';
 import { Link } from '../lib/router';
-import { useApi, useSession } from '../lib/session';
-import { ArtistTelegramNotifications } from './TelegramConnectionsPage';
+import { useApi } from '../lib/session';
 
 type SnoozeChoice = '15m' | '1h' | 'tomorrow';
 
@@ -27,11 +23,9 @@ const SNOOZE_LABELS: Record<SnoozeChoice, { en: string; ru: string }> = {
 
 export function NotificationsPage() {
   const api = useApi();
-  const { profile, memberships } = useSession();
   const { language } = useLanguage();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const canManageArtistTelegram = canAccess(profile?.role, 'manageIntegrations', memberships);
 
   const state = useAsync(() => api.listNotifications(), [api]);
 
@@ -58,8 +52,6 @@ export function NotificationsPage() {
   return (
     <div className="stack">
       <PersonalTelegramNotifications />
-      {canManageArtistTelegram ? <ArtistTelegramNotifications /> : null}
-
       {actionError ? <ErrorState message={actionError} /> : null}
 
       {state.loading ? <LoadingState /> : null}
