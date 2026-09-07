@@ -53,8 +53,8 @@ const COLLECTION_LINKS = [
     label: 'Fresh vs Healed',
     href: '/healed-tattoos/',
     description: 'Matched fresh and confirmed healed tattoo comparisons.',
-    image: '/assets/healed/01.webp',
-    alt: 'Confirmed healed black and grey skull realism tattoo by Vladimir Vishar'
+    image: '/assets/healed/06.webp',
+    alt: 'Confirmed healed black and grey warrior mask portrait tattoo by Vladimir Vishar'
   }
 ];
 
