@@ -37,8 +37,8 @@ const COLLECTION_LINKS = [
     label: 'Portraits',
     href: '/portrait-tattoo-artist-london/',
     description: 'Colour and black-and-grey portrait realism.',
-    image: '/assets/portraits/01.webp',
-    alt: 'Colour realism pirate portrait tattoo by Vladimir Vishar'
+    image: '/assets/portraits/05.webp',
+    alt: 'Colour realism female portrait tattoo with graphic lettering by Vladimir Vishar'
   },
   {
     id: 'large-scale',
