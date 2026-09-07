@@ -112,6 +112,40 @@ function validateRegistryDestination(value, expectedKind) {
   return { ...row, chat_id: String(row.chat_id) };
 }
 
+
+function validatePersonalEnquiryRouting(value, job) {
+  const row = firstRow(value);
+  if (
+    !row
+    || typeof row.routed !== 'boolean'
+    || !Number.isInteger(row.notification_count)
+    || row.notification_count < 0
+    || row.notification_count > 20
+    || (row.error_code !== null
+      && row.error_code !== undefined
+      && !/^[a-z][a-z0-9_]{2,63}$/.test(row.error_code))
+  ) {
+    throw new TelegramDrainError('telegram_personal_route_invalid');
+  }
+  if (row.routed !== (row.notification_count > 0)) {
+    throw new TelegramDrainError('telegram_personal_route_invalid');
+  }
+  return {
+    routed: row.routed,
+    notificationCount: row.notification_count,
+    errorCode: row.error_code ?? null,
+    outboxId: job.outbox_id,
+  };
+}
+
+async function routeEnquiryToPersonalNotification(supabase, job, workerId) {
+  const result = await supabase.rpc('service_route_telegram_enquiry_notification', {
+    p_outbox_id: job.outbox_id,
+    p_worker_id: workerId,
+  });
+  return validatePersonalEnquiryRouting(result, job);
+}
+
 function trustedCrmOrigin(env) {
   const raw = typeof env?.CRM_ORIGIN === 'string' ? env.CRM_ORIGIN.trim() : '';
   if (!raw) return null;
@@ -288,6 +322,40 @@ export async function processClaimedTelegramJob(env, {
       return { outcome: 'unrecorded', errorCode };
     }
     return recordFailure(supabase, claimedJob.outbox_id, workerId, errorCode);
+  }
+
+  // The shared production bot now mirrors enquiry alerts through the same
+  // profile-scoped notification pipeline as every other Telegram notification.
+  // The routing RPC creates only durable internal notifications. It does not
+  // call Telegram, so an acknowledgement retry is idempotent and provider-safe.
+  if (sharedTelegramBotToken(env)) {
+    let routed;
+    try {
+      routed = await routeEnquiryToPersonalNotification(supabase, job, workerId);
+    } catch (error) {
+      return recordFailure(
+        supabase,
+        job.outbox_id,
+        workerId,
+        safeErrorCode(error),
+      );
+    }
+    if (!routed.routed) {
+      return recordFailure(
+        supabase,
+        job.outbox_id,
+        workerId,
+        routed.errorCode ?? 'telegram_destination_unavailable',
+      );
+    }
+    try {
+      await recordResult(supabase, job.outbox_id, workerId, true);
+      return { outcome: 'succeeded' };
+    } catch {
+      // No provider call happened here. The notification dedupe key makes a
+      // later outbox retry safe while the personal delivery queue owns sending.
+      return { outcome: 'unrecorded', errorCode: 'telegram_acknowledgement_failed' };
+    }
   }
 
   const resolveLegacyRoute = async () => {
@@ -502,6 +570,7 @@ export const __testing = {
   validateClaimedJob,
   validateExplicitInputs,
   validatePersonalDelivery,
+  validatePersonalEnquiryRouting,
   validateRegistryDestination,
   validateTelegramRoute,
 };

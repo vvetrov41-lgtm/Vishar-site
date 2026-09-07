@@ -5,10 +5,8 @@ import { bindingNameFor } from '../workers/lib/provider-routing.js';
 const outboxId = 'd9111111-1111-4111-8111-111111111111';
 const enquiryId = 'd9211111-1111-4111-8111-111111111111';
 const artistId = 'a1111111-1111-4111-8111-111111111111';
-const destinationId = 'e1111111-1111-4111-8111-111111111111';
 const workerId = 'telegram-worker-cutover';
 const sharedToken = 'shared-production-bot-token-1234567890';
-const sharedChatId = '-1001234567890';
 const legacyToken = 'legacy-bot-token';
 const legacyChatId = '-1009999999999';
 const integrationKey = 'vladimir-production';
@@ -38,11 +36,14 @@ const route = {
   configuration: {},
 };
 
-function makeHarness({ registryResult = [{
-  destination_id: destinationId,
-  destination_kind: 'artist',
-  chat_id: sharedChatId,
-}], registryStatus = 200, withSharedToken = true, environment = 'production', routeStatus = 200 } = {}) {
+function makeHarness({
+  routed = true,
+  notificationCount = routed ? 1 : 0,
+  errorCode = routed ? null : 'telegram_destination_unavailable',
+  routeStatus = 200,
+  withSharedToken = true,
+  environment = 'production',
+} = {}) {
   const rpcCalls = [];
   const telegramCalls = [];
   const env = {
@@ -59,20 +60,11 @@ function makeHarness({ registryResult = [{
       const args = JSON.parse(init.body || '{}');
       rpcCalls.push({ name, args });
       if (name === 'claim_telegram_outbox_by_id') return Response.json([claimedJob]);
-      if (name === 'resolve_outbox_route') {
-        // Production reproduction of the third-party artist: the RPC raises
-        // `artist provider route is unavailable`, which the Supabase client
-        // surfaces as `database_unavailable`.
-        if (routeStatus !== 200) {
-          return Response.json({ message: 'artist provider route is unavailable' }, { status: routeStatus });
-        }
-        return Response.json([route]);
+      if (name === 'service_route_telegram_enquiry_notification') {
+        if (routeStatus !== 200) return Response.json({ message: 'unavailable' }, { status: routeStatus });
+        return Response.json({ routed, notification_count: notificationCount, error_code: errorCode });
       }
-      if (name === 'service_resolve_telegram_destination') {
-        if (registryStatus !== 200) return Response.json({ message: 'unavailable' }, { status: registryStatus });
-        return Response.json(registryResult);
-      }
-      if (name === 'service_record_telegram_notification_result') return Response.json({ ok: true });
+      if (name === 'resolve_outbox_route') return Response.json([route]);
       if (name === 'record_telegram_outbox_result') return Response.json({ ok: true });
       throw new Error(`unexpected RPC ${name}`);
     }
@@ -87,122 +79,51 @@ function makeHarness({ registryResult = [{
 
 {
   const h = makeHarness();
-  const result = await drainTelegramOutboxById(h.env, {
-    outboxId,
-    workerId,
-    fetchImpl: h.fetchImpl,
-  });
+  const result = await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
   assert.deepEqual(result, { claimed: true, outboxId, outcome: 'succeeded' });
-  assert.equal(h.telegramCalls.length, 1);
-  assert.equal(h.telegramCalls[0].body.chat_id, sharedChatId);
-  assert.ok(h.telegramCalls[0].url.includes(sharedToken));
-  assert.ok(!h.telegramCalls[0].url.includes(legacyToken));
-  assert.ok(h.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'));
-  assert.ok(h.rpcCalls.some((call) => call.name === 'service_record_telegram_notification_result'
-    && call.args.p_delivery_id === destinationId
-    && call.args.p_succeeded === true));
-}
-
-for (const scenario of [
-  { label: 'missing registry destination', registryResult: [] },
-  { label: 'registry backend failure', registryStatus: 503 },
-]) {
-  const h = makeHarness(scenario);
-  const result = await drainTelegramOutboxById(h.env, {
-    outboxId,
-    workerId,
-    fetchImpl: h.fetchImpl,
-  });
-  assert.equal(result.claimed, true, scenario.label);
-  assert.equal(result.outcome, 'failed', scenario.label);
-  assert.equal(result.errorCode, 'telegram_destination_unavailable', scenario.label);
-  assert.equal(h.telegramCalls.length, 0, `${scenario.label}: legacy binding must not be used`);
-  assert.ok(h.rpcCalls.some((call) => call.name === 'record_telegram_outbox_result'
-    && call.args.p_succeeded === false
-    && call.args.p_error_code === 'telegram_destination_unavailable'));
+  assert.equal(h.telegramCalls.length, 0, 'outbox routing must not call Telegram directly');
+  assert.deepEqual(h.rpcCalls.map((call) => call.name), [
+    'claim_telegram_outbox_by_id',
+    'service_route_telegram_enquiry_notification',
+    'record_telegram_outbox_result',
+  ]);
+  assert.deepEqual(h.rpcCalls[1].args, { p_outbox_id: outboxId, p_worker_id: workerId });
 }
 
 {
-  const h = makeHarness({ withSharedToken: false });
-  const result = await drainTelegramOutboxById(h.env, {
-    outboxId,
-    workerId,
-    fetchImpl: h.fetchImpl,
-  });
-  assert.equal(result.outcome, 'failed');
-  assert.equal(result.errorCode, 'telegram_shared_bot_not_configured');
-  assert.equal(h.telegramCalls.length, 0);
-  assert.ok(!h.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'));
-}
-
-{
-  const h = makeHarness({ withSharedToken: false, environment: 'staging' });
-  const result = await drainTelegramOutboxById(h.env, {
-    outboxId,
-    workerId,
-    fetchImpl: h.fetchImpl,
-  });
-  assert.deepEqual(result, { claimed: true, outboxId, outcome: 'succeeded' });
-  assert.equal(h.telegramCalls.length, 1);
-  assert.equal(h.telegramCalls[0].body.chat_id, legacyChatId);
-  assert.ok(h.telegramCalls[0].url.includes(legacyToken));
-  assert.ok(!h.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'));
-}
-
-// ---------------------------------------------------------------------------
-// Third-party self-service artist: an active Telegram destination in the
-// registry and no `artist_integrations` row of type telegram at all. The
-// production drain must deliver from the registry without ever consulting
-// `resolve_outbox_route`, which is what killed the real notification after
-// eight attempts with a misleading `database_unavailable`.
-// ---------------------------------------------------------------------------
-{
-  const h = makeHarness({ routeStatus: 400 });
-  const result = await drainTelegramOutboxById(h.env, {
-    outboxId,
-    workerId,
-    fetchImpl: h.fetchImpl,
-  });
-  assert.deepEqual(result, { claimed: true, outboxId, outcome: 'succeeded' });
-  assert.equal(h.telegramCalls.length, 1);
-  assert.equal(h.telegramCalls[0].body.chat_id, sharedChatId);
-  assert.ok(h.telegramCalls[0].url.includes(sharedToken));
-  assert.ok(
-    !h.rpcCalls.some((call) => call.name === 'resolve_outbox_route'),
-    'production must not require the legacy artist_integrations route',
-  );
-  assert.ok(h.rpcCalls.some((call) => call.name === 'service_resolve_telegram_destination'
-    && call.args.p_artist_id === artistId
-    && call.args.p_profile_id === null));
-  assert.ok(h.rpcCalls.some((call) => call.name === 'record_telegram_outbox_result'
-    && call.args.p_succeeded === true));
-}
-
-// An existing artist that still owns a legacy row takes the same registry path
-// and is likewise never routed through it, so backward compatibility costs no
-// extra round trip.
-{
-  const h = makeHarness();
-  await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
-  assert.ok(!h.rpcCalls.some((call) => call.name === 'resolve_outbox_route'));
-}
-
-// A missing destination stays a destination failure rather than degrading into
-// a database error, whether or not the legacy row exists.
-{
-  const h = makeHarness({ routeStatus: 400, registryResult: [] });
+  const h = makeHarness({ routed: false });
   const result = await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
   assert.equal(result.outcome, 'failed');
   assert.equal(result.errorCode, 'telegram_destination_unavailable');
   assert.equal(h.telegramCalls.length, 0);
+  assert.ok(h.rpcCalls.some((call) => call.name === 'record_telegram_outbox_result'
+    && call.args.p_succeeded === false));
 }
 
-// Retained staging still exercises the legacy binding, so removing the eager
-// lookup did not delete the old path - it only stopped production paying for it.
+{
+  const h = makeHarness({ routeStatus: 503 });
+  const result = await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'database_unavailable');
+  assert.equal(h.telegramCalls.length, 0);
+}
+
+{
+  const h = makeHarness({ withSharedToken: false });
+  const result = await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'telegram_shared_bot_not_configured');
+  assert.equal(h.telegramCalls.length, 0);
+}
+
 {
   const h = makeHarness({ withSharedToken: false, environment: 'staging' });
-  await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
+  const result = await drainTelegramOutboxById(h.env, { outboxId, workerId, fetchImpl: h.fetchImpl });
+  assert.deepEqual(result, { claimed: true, outboxId, outcome: 'succeeded' });
+  assert.equal(h.telegramCalls.length, 1);
+  assert.equal(h.telegramCalls[0].body.chat_id, legacyChatId);
   assert.ok(h.rpcCalls.some((call) => call.name === 'resolve_outbox_route'));
+  assert.ok(!h.rpcCalls.some((call) => call.name === 'service_route_telegram_enquiry_notification'));
 }
 
-console.log('Telegram registry cutover tests passed: production is registry-only even when shared credentials are absent, a self-service artist with no legacy artist_integrations row still delivers, and retained staging keeps its explicit legacy binding path.');
+console.log('Telegram single-profile routing tests passed: production outbox routing is provider-free and the personal delivery queue owns the only Telegram send.');

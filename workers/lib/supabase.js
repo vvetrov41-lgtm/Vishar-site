@@ -38,6 +38,7 @@ export const ALLOWED_RPCS = new Set([
 /** Phase F-G Telegram operations. Kept separate so the legacy intake surface stays pinned. */
 export const TELEGRAM_SELF_SERVICE_RPCS = new Set([
   'service_complete_telegram_link',
+  'service_route_telegram_enquiry_notification',
   'service_resolve_telegram_destination',
   'service_claim_telegram_notifications',
   'service_record_telegram_notification_result',
