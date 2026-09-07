@@ -55,9 +55,12 @@ function archiveResult<T>(
 ): T | null {
   if (result.error) {
     if (result.error?.code === '55000') {
+      const hint = typeof result.error?.hint === 'string' ? result.error.hint : '';
       const message = record === 'client'
         ? apiMessage('This client has an active project. Archive or close that project before deleting the client.')
-        : apiMessage('This enquiry has an active project. Archive or close that project before deleting the enquiry.');
+        : hint === 'ENQUIRY_HAS_ACTIVE_APPOINTMENT'
+          ? apiMessage('This enquiry has an active appointment. Cancel or finish that appointment before deleting the enquiry.')
+          : apiMessage('This enquiry has an active project. Archive or close that project before deleting the enquiry.');
       throw new ApiError(message, result.error);
     }
     throw new ApiError(friendlyMessage(result.error, record === 'client' ? 'delete that client' : 'delete that enquiry'), result.error);
