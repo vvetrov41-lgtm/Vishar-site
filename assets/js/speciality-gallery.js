@@ -89,7 +89,7 @@
       </figure>`;
   }
 
-  function healedPairMarkup(config, image, metadata, index, thumbnailWidths) {
+  function healedPairMarkup(config, image, metadata, index) {
     const info = metadata[image.stem] || {};
     const healedAlt = info.alt || `${config.genericAlt} - image ${index + 1}`;
     const subject = healedAlt
@@ -97,30 +97,27 @@
       .replace(/\s+by Vladimir Vishar$/i, '');
     const freshAlt = `Fresh-session ${subject} by Vladimir Vishar`;
     const freshSource = `${config.base}fresh/${image.stem}.webp`;
-
-    // Pair 05 received a replacement healed source. The previous responsive set
-    // was truncated in transit, so bypass those files and cache-bust the verified source.
-    const useVerifiedHealedSource = config.base === '/assets/healed/' && image.stem === '05';
-    const healedSource = useVerifiedHealedSource
-      ? `${image.source}?v=20260906c`
+    const healedSource = image.stem === '05'
+      ? `${image.source}?v=20260907`
       : image.source;
-    const healedThumbnailWidths = useVerifiedHealedSource ? [] : thumbnailWidths;
 
+    // Healed comparisons use the verified original sources directly. This avoids
+    // stale or incomplete responsive derivatives leaving black image cards.
     const freshMedia = responsiveMedia(
       freshSource,
-      `${config.base}fresh/thumbs/`,
+      '',
       image.stem,
       freshAlt,
-      thumbnailWidths,
+      [],
       '(min-width: 768px) 25vw, 50vw',
       'contain',
     );
     const healedMedia = responsiveMedia(
       healedSource,
-      `${config.base}thumbs/`,
+      '',
       image.stem,
       healedAlt,
-      healedThumbnailWidths,
+      [],
       '(min-width: 768px) 25vw, 50vw',
       'contain',
     );
@@ -167,7 +164,7 @@
     if (!images.length) return;
 
     const markup = key === 'healed'
-      ? images.map((image, index) => healedPairMarkup(config, image, metadata, index, thumbnailWidths))
+      ? images.map((image, index) => healedPairMarkup(config, image, metadata, index))
       : images.map((image, index) => imageMarkup(config, image, metadata, index, thumbnailWidths));
 
     grid.innerHTML = markup.join('');
