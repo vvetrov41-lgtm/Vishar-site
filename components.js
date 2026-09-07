@@ -59,7 +59,7 @@ const COLLECTION_LINKS = [
     href: '/portrait-tattoo-artist-london/',
     description: 'Colour and black-and-grey portrait realism.',
     image: '/assets/portraits/05.webp',
-    alt: 'Colour realism portrait tattoo by Vladimir Vishar'
+    alt: 'Colour realism Vivienne Westwood portrait tattoo by Vladimir Vishar'
   },
   {
     id: 'large-scale',
@@ -657,23 +657,13 @@ document.head.appendChild(style);
 function removeHomepageLegacySpecialities() {
 if (pageId !== 'home') return;
 
-const titles = ['Colour Realism', 'Black & Grey', 'Cover-ups'];
-const headings = titles.map(function (title) {
-  return Array.from(document.querySelectorAll('main h2, main h3, main h4')).find(function (el) {
-    return el.textContent.trim() === title;
-  });
+const heading = Array.from(document.querySelectorAll('main h2')).find(function (el) {
+  return el.textContent.trim() === 'Colour, black-and-grey, and cover-up realism';
 });
+if (!heading) return;
 
-if (headings.some(function (heading) { return !heading; })) return;
-
-const section = headings[0].closest('section');
-if (!section) return;
-
-const sameSection = headings.every(function (heading) {
-  return heading.closest('section') === section;
-});
-
-if (sameSection) section.remove();
+const section = heading.closest('section');
+if (section) section.remove();
 }
 
 /* ── Homepage Portfolio Collections ── */
