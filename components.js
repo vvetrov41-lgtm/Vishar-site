@@ -653,17 +653,17 @@ document.head.appendChild(style);
 
 }
 
-/* ── Legacy homepage specialities ── */
+/* ── Legacy homepage service cards ── */
 function removeHomepageLegacySpecialities() {
 if (pageId !== 'home') return;
 
-const heading = Array.from(document.querySelectorAll('main h2')).find(function (el) {
-  return el.textContent.trim() === 'Colour, black-and-grey, and cover-up realism';
+const marker = Array.from(document.querySelectorAll('main p')).find(function (el) {
+  return el.textContent.trim() === "Old ink into something you'd actually choose. Photo assessment first, no obligation.";
 });
-if (!heading) return;
+if (!marker) return;
 
-const section = heading.closest('section');
-if (section) section.remove();
+const section = marker.closest('section');
+if (section && !section.id) section.remove();
 }
 
 /* ── Homepage Portfolio Collections ── */
@@ -932,7 +932,6 @@ function initMobileMenuA11y() {
   });
 }
 
-
 /* ── Shared Lightbox Zoom ── */
 window.initLightboxZoom = function () {
 const lb = document.getElementById('lightbox');
@@ -1027,8 +1026,6 @@ function onClose() {
   lastFocused = null;
 }
 
-// The page gallery scripts toggle aria-hidden when opening/closing; observing it
-// keeps focus management in one place without touching any gallery logic.
 let wasOpen = lb.getAttribute('aria-hidden') === 'false';
 const observer = new MutationObserver(function () {
   const isOpen = lb.getAttribute('aria-hidden') === 'false';
@@ -1067,14 +1064,12 @@ document.addEventListener('keydown', function (e) {
 document.addEventListener('keydown', function (e) {
 if (e.key !== 'Escape') return;
 
-// Lightbox first
 const lb = document.getElementById('lightbox');
 if (lb && !lb.classList.contains('hidden')) {
   if (typeof window.closeLightbox === 'function') window.closeLightbox();
   return;
 }
 
-// Mobile menu
 const overlay = document.getElementById('mobile-overlay');
 if (overlay && !overlay.classList.contains('hidden')) {
   window.toggleMenu();
@@ -1174,7 +1169,6 @@ const els = document.querySelectorAll('.reveal');
 if (!els.length) return;
 
 if (!('IntersectionObserver' in window)) {
-  // Fallback: show everything
   els.forEach(function (el) { el.classList.add('visible'); });
   return;
 }
@@ -1190,7 +1184,6 @@ const observer = new IntersectionObserver(function (entries) {
 
 els.forEach(function (el) { observer.observe(el); });
 
-  // Failsafe for mobile/older browsers where observer callbacks can be delayed.
   window.setTimeout(function () {
     document.querySelectorAll('.reveal:not(.visible)').forEach(function (el) {
       const rect = el.getBoundingClientRect();
