@@ -2,7 +2,9 @@
 //
 // Provider connections and booking entry points share one administration hub.
 // Safe status metadata comes from list_integration_status(); forms/websites
-// have their own capability-scoped management RPCs and screen.
+// have their own capability-scoped management RPCs and screen. Telegram is
+// intentionally absent: all Telegram notification settings live on the
+// Notifications page so users do not see two contradictory connection states.
 
 import { useMemo } from 'react';
 import { useAsync } from '../components/AsyncData';
@@ -19,7 +21,6 @@ import { Link } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
 
 const CHANNEL_ORDER: IntegrationChannel[] = [
-  'telegram',
   'calendar',
   'email',
   'whatsapp',
@@ -39,7 +40,6 @@ const CHANNEL_LABELS: Record<IntegrationChannel, { en: string; ru: string }> = {
 };
 
 const CHANNEL_ROUTES: Partial<Record<IntegrationChannel, string>> = {
-  telegram: '/integrations/telegram',
   calendar: '/integrations/calendar',
   whatsapp: '/integrations/whatsapp',
   instagram: '/integrations/instagram',
@@ -51,11 +51,6 @@ const HEALTH_LABELS: Record<IntegrationHealth, { en: string; ru: string }> = {
   not_connected: { en: 'Not connected', ru: 'Не подключено' },
   needs_attention: { en: 'Needs attention', ru: 'Требует внимания' },
   error: { en: 'Error', ru: 'Ошибка' },
-};
-
-const TELEGRAM_PURPOSE = {
-  en: 'Telegram is used only for artist notifications. It is not a client messaging channel.',
-  ru: 'Telegram работает только для уведомлений мастеру. Это не канал переписки с клиентами.',
 };
 
 export function IntegrationsPage() {
@@ -90,13 +85,10 @@ export function IntegrationsPage() {
   if (state.error) return <ErrorState message={state.error} onRetry={state.reload} />;
 
   const channels = CHANNEL_ORDER.filter((channel) => byChannel.has(channel));
-  const showTelegramAvailability = Boolean(
-    state.data?.hasVisibleArtist && !byChannel.has('telegram'),
-  );
   const showCalendarAvailability = Boolean(
     state.data?.hasVisibleArtist && !byChannel.has('calendar'),
   );
-  const hasAvailableIntegrations = showTelegramAvailability || showCalendarAvailability;
+  const hasAvailableIntegrations = showCalendarAvailability;
 
   return (
     <div className="stack">
@@ -119,7 +111,6 @@ export function IntegrationsPage() {
       {hasAvailableIntegrations ? (
         <Section title={language === 'ru' ? 'Доступные интеграции' : 'Available integrations'}>
           <ul className="card-list">
-            {showTelegramAvailability ? <AvailableTelegramCard /> : null}
             {showCalendarAvailability ? <AvailableCalendarCard /> : null}
           </ul>
         </Section>
@@ -142,26 +133,6 @@ export function IntegrationsPage() {
         </Section>
       ))}
     </div>
-  );
-}
-
-function AvailableTelegramCard() {
-  const { language } = useLanguage();
-  return (
-    <li className="card" data-integration="telegram" data-health="not_connected">
-      <div className="card-header">
-        <strong>Telegram</strong>
-        <span className="badge badge-not_connected">
-          {HEALTH_LABELS.not_connected[language]}
-        </span>
-      </div>
-      <p className="muted">{TELEGRAM_PURPOSE[language]}</p>
-      <div className="actions">
-        <Link to="/integrations/telegram">
-          {language === 'ru' ? 'Подключить' : 'Connect'}
-        </Link>
-      </div>
-    </li>
   );
 }
 
@@ -211,7 +182,6 @@ function IntegrationCard({
         <span className={`badge badge-${health}`}>{HEALTH_LABELS[health][language]}</span>
       </div>
 
-      {channel === 'telegram' ? <p className="muted">{TELEGRAM_PURPOSE[language]}</p> : null}
       {status.display_label ? <p className="muted">{status.display_label}</p> : null}
 
       <dl className="meta">
