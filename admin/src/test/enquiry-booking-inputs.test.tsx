@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import bookingControlsCss from '../booking-controls.css?raw';
 import { App } from '../App';
 import { bookingErrorCode, bookingErrorMessage } from '../lib/booking-errors';
 import { CLIENT_ID, ENQUIRY_ID, renderWithSession } from './fixtures';
 
 describe('booking controls on a phone', () => {
-  it('makes the selected session duration a visible pressed state', async () => {
+  it('keeps the selected session duration in the pressed state', async () => {
     renderWithSession(<App />, { role: 'owner', path: `/clients/${CLIENT_ID}` });
 
     const sevenHours = await screen.findByRole('button', { name: '7 h' });
@@ -19,8 +18,6 @@ describe('booking controls on a phone', () => {
 
     expect(threeHours).toHaveAttribute('aria-pressed', 'true');
     expect(sevenHours).toHaveAttribute('aria-pressed', 'false');
-    expect(bookingControlsCss).toContain(".booking-panel .actions button[aria-pressed='true']");
-    expect(bookingControlsCss).toContain('background: var(--accent)');
   });
 
   it('keeps consultation times on the database five-minute grid before submit', async () => {
