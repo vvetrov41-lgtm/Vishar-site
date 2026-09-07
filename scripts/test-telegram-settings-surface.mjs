@@ -51,8 +51,13 @@ assert.doesNotMatch(
 
 assert.match(
   personalTelegram,
-  /Новые заявки отправляются в «Telegram мастеров» ниже\./,
-  'Personal Telegram copy must explain where new enquiries are delivered.',
+  /Новые заявки отправляются в Telegram, настроенный для мастера\./,
+  'Personal Telegram copy must explain artist-bound enquiry delivery without pointing to a hidden section.',
+);
+assert.doesNotMatch(
+  personalTelegram,
+  /Telegram мастеров» ниже/,
+  'Personal Telegram copy must not point non-managers to an artist section they cannot see.',
 );
 
 console.log('Telegram settings surface contract passed.');
