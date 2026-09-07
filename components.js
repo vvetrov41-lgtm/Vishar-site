@@ -42,8 +42,8 @@ const COLLECTION_LINKS = [
     label: 'Black & Grey',
     href: '/black-and-grey-realism-london/',
     description: 'Black and grey realism with strong tonal structure and depth.',
-    image: '/assets/black-grey/01.webp',
-    alt: 'Black and grey realism tattoo by Vladimir Vishar'
+    image: '/assets/black-grey/08.webp',
+    alt: 'Black and grey realism tattoo by Vladimir Vishar London - 8'
   },
   {
     id: 'cover-up',
@@ -844,14 +844,6 @@ aboutSection.parentNode.insertBefore(section, aboutSection.nextSibling);
 }
 
 /* ── Mobile Menu Toggle ── */
-// Every other body-level element (skip link, footer, sticky CTA, lightbox,
-// cookie consent banner, ...) is made inert while the overlay is open, so
-// Tab/Shift+Tab and screen-reader browse-mode can never land outside it —
-// mirrors the lightbox's own background-inert helper instead of hand-
-// maintaining a partial list. #site-nav is deliberately excluded: it holds
-// the menu toggle button itself, which must stay mouse-clickable so the
-// existing "click the X icon to close" behaviour keeps working; keyboard
-// Tab is still kept out of it by the explicit trap in initMobileMenuA11y().
 function setMobileMenuBackgroundInert(overlay, makeInert) {
   const siteNav = document.getElementById('site-nav');
   Array.from(document.body.children).forEach(function (el) {
@@ -880,14 +872,10 @@ const isOpen = !overlay.classList.contains('hidden');
 overlay.setAttribute('aria-hidden', String(!isOpen));
 if (toggle) toggle.setAttribute('aria-expanded', String(isOpen));
 
-// Swap hamburger ↔ X icon
 if (iconOpen) iconOpen.classList.toggle('hidden', isOpen);
 if (iconClose) iconClose.classList.toggle('hidden', !isOpen);
 
 document.body.classList.toggle('lightbox-active', isOpen);
-
-// Keep keyboard focus inside the menu: the rest of the page is made inert
-// while it's open, and focus moves into the menu / back to the toggle.
 setMobileMenuBackgroundInert(overlay, isOpen);
 
 if (isOpen) {
@@ -901,9 +889,6 @@ if (isOpen) {
 
 };
 
-/* ── Mobile menu: explicit Tab/Shift+Tab trap ──
- * Belt-and-suspenders alongside `inert`: keeps the same guarantee on engines
- * where `inert` support is incomplete, and mirrors the lightbox's own trap. */
 function initMobileMenuA11y() {
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Tab') return;
