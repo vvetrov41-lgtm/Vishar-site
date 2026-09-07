@@ -38,15 +38,15 @@ const COLLECTION_LINKS = [
     href: '/portrait-tattoo-artist-london/',
     description: 'Colour and black-and-grey portrait realism.',
     image: '/assets/portraits/05.webp',
-    alt: 'Colour realism female portrait tattoo with graphic lettering by Vladimir Vishar'
+    alt: 'Colour realism Vivienne Westwood portrait tattoo by Vladimir Vishar'
   },
   {
     id: 'large-scale',
     label: 'Large Scale',
     href: '/large-scale-realism-tattoo-london/',
     description: 'Sleeves and multi-session realism projects.',
-    image: '/assets/large-scale/01.jpg',
-    alt: 'Large-scale colour realism sleeve tattoo by Vladimir Vishar'
+    image: '/assets/large-scale/02.jpg',
+    alt: 'Large-scale black and grey realism arm tattoo by Vladimir Vishar'
   },
   {
     id: 'healed',
