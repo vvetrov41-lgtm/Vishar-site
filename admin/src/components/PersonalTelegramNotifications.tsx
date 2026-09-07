@@ -72,8 +72,8 @@ export function PersonalTelegramNotifications() {
               </div>
               <p className="muted">
                 {language === 'ru'
-                  ? 'Здесь включается только личная доставка уведомлений CRM. Новые заявки отправляются в «Telegram мастеров» ниже.'
-                  : 'This controls only personal CRM notification delivery. New enquiries are sent to Artist Telegram below.'}
+                  ? 'Здесь включается только личная доставка уведомлений CRM. Новые заявки отправляются в Telegram, настроенный для мастера.'
+                  : 'This controls only personal CRM notification delivery. New enquiries are sent to the Telegram destination configured for the artist.'}
               </p>
               <div className="actions">
                 <button
