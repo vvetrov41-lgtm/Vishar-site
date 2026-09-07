@@ -164,7 +164,7 @@ await test('routing backend failure records a retryable failure without a provid
     fetchImpl: mock.fetchImpl,
   });
   assert.equal(result.outcome, 'failed');
-  assert.equal(result.errorCode, 'telegram_connector_error');
+  assert.equal(result.errorCode, 'database_unavailable');
   assert.equal(mock.telegramCalls.length, 0);
 });
 

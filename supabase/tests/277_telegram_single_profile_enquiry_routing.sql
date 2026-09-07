@@ -27,7 +27,14 @@ insert into public.artist_memberships(
   'f7770000-0000-4000-8000-000000000001',
   'a1111111-1111-4111-8111-111111111111',
   'artist',false,false,true,true,true
-);
+)
+on conflict (profile_id,artist_id) do update
+set access_level = excluded.access_level,
+    can_view_finance = excluded.can_view_finance,
+    can_manage_finance = excluded.can_manage_finance,
+    can_manage_sessions = excluded.can_manage_sessions,
+    can_manage_integrations = excluded.can_manage_integrations,
+    is_active = excluded.is_active;
 insert into crm_private.telegram_destinations(
   id,destination_kind,profile_id,chat_id,chat_type,safe_label,is_active,connected_by_profile_id
 ) values (
