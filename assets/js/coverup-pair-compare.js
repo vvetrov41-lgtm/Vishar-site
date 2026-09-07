@@ -246,9 +246,12 @@
     bindGallery();
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
-  } else {
+  // This script is deferred on the cover-up page. Waiting for DOMContentLoaded
+  // lets the legacy inline gallery builder run first; this final rebuild then
+  // replaces it, so only the six paired comparison cards remain.
+  if (document.readyState === 'complete') {
     init();
+  } else {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
   }
 })();
