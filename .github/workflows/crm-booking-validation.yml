@@ -58,6 +58,9 @@ jobs:
       - name: Validate Telegram production configuration
         run: npm run test:telegram-production
 
+      - name: Validate single Telegram settings surface
+        run: node scripts/test-telegram-settings-surface.mjs
+
       - name: Validate WhatsApp production configuration
         run: npm run test:whatsapp-production
 

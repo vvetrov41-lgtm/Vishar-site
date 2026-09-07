@@ -122,11 +122,11 @@ describe('integrations hub', () => {
     PROFILES.owner.display_name = originalOwnerDisplayName;
   });
 
-  it('groups every visible channel under one screen', async () => {
+  it('keeps notification-only Telegram out of the integrations hub', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/integrations' });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Telegram' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: 'WhatsApp' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'WhatsApp' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Telegram' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { level: 2, name: 'Calendar' })).not.toBeInTheDocument();
   });
 
@@ -142,7 +142,7 @@ describe('integrations hub', () => {
   it('does not expose another artist credential status', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/integrations' });
 
-    await screen.findByRole('heading', { level: 2, name: 'Telegram' });
+    await screen.findByRole('heading', { level: 2, name: 'WhatsApp' });
     expect(screen.queryByRole('heading', { level: 2, name: 'Calendar' })).not.toBeInTheDocument();
     expect(screen.queryByText('Kristina Vishar')).not.toBeInTheDocument();
     expect(screen.queryByText('kristina@example.test')).not.toBeInTheDocument();
@@ -150,7 +150,7 @@ describe('integrations hub', () => {
 
   it('never renders a raw owner identifier', async () => {
     const { container } = renderWithSession(<App />, { role: 'owner', path: '/integrations' });
-    await screen.findByRole('heading', { level: 2, name: 'Telegram' });
+    await screen.findByRole('heading', { level: 2, name: 'WhatsApp' });
     expect(container.textContent).not.toContain(VLADIMIR_ARTIST_ID);
   });
 });
