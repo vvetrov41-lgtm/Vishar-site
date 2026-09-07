@@ -9,17 +9,17 @@ const personalTelegram = await readFile('admin/src/components/PersonalTelegramNo
 assert.match(
   notifications,
   /<PersonalTelegramNotifications\s*\/>/,
-  'Notifications must render personal Telegram settings.',
+  'Notifications must render the single profile Telegram settings card.',
 );
-assert.match(
+assert.doesNotMatch(
   notifications,
-  /<ArtistTelegramNotifications\s*\/>/,
-  'Notifications must render artist Telegram settings.',
+  /ArtistTelegramNotifications/,
+  'Notifications must not expose a second artist Telegram settings surface.',
 );
-assert.match(
+assert.doesNotMatch(
   notifications,
   /canAccess\(profile\?\.role,\s*'manageIntegrations',\s*memberships\)/,
-  'Artist Telegram settings must stay behind manageIntegrations.',
+  'The single Telegram card must not depend on artist integration-management capability.',
 );
 
 assert.doesNotMatch(
@@ -41,23 +41,23 @@ assert.doesNotMatch(
 assert.match(
   telegramConnections,
   /export function ArtistTelegramNotifications\(\)/,
-  'Artist Telegram settings must remain reusable for the Notifications page.',
+  'The retained deep-link compatibility component must remain isolated from Notifications.',
 );
 assert.doesNotMatch(
   telegramConnections,
   /PersonalTelegramNotifications/,
-  'The legacy Telegram deep-link page must not duplicate personal Telegram settings.',
+  'The legacy Telegram deep-link page must not duplicate the profile Telegram settings.',
 );
 
 assert.match(
   personalTelegram,
-  /Новые заявки отправляются в Telegram, настроенный для мастера\./,
-  'Personal Telegram copy must explain artist-bound enquiry delivery without pointing to a hidden section.',
+  /Новые заявки и личные уведомления CRM приходят через это единственное подключение\./,
+  'Telegram copy must state that enquiries and personal CRM notifications share one connection.',
 );
 assert.doesNotMatch(
   personalTelegram,
-  /Telegram мастеров» ниже/,
-  'Personal Telegram copy must not point non-managers to an artist section they cannot see.',
+  /Telegram мастеров|Personal Telegram|Личный Telegram/,
+  'The single Telegram card must not direct users toward a second artist or personal Telegram connection.',
 );
 
 console.log('Telegram settings surface contract passed.');
