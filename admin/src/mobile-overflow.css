@@ -3,3 +3,20 @@
 .card {
   overflow-wrap: anywhere;
 }
+
+/* Checkbox controls inside the enquiry/client conflict resolver must not inherit
+   the full-width form-input rule. On a narrow phone that rule consumed almost
+   the entire row and squeezed the action label down to one character per line. */
+.contact-diff-choice input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  flex: 0 0 auto;
+  padding: 0;
+}
+.contact-diff-choice span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: normal;
+  word-break: normal;
+}
