@@ -20,9 +20,6 @@ const CONSENT_KEY = 'vishar-cookie-consent';
 
 const NAV_LINKS = [
 { id: 'home',           label: 'Home',           href: '/' },
-{ id: 'colour-realism', label: 'Colour Realism', href: '/colour-realism-tattoo-london/' },
-{ id: 'black-grey',     label: 'Black & Grey',   href: '/black-and-grey-realism-london/' },
-{ id: 'cover-up',       label: 'Cover-ups',      href: '/cover-up-tattoo-london/' },
 { id: 'booking',        label: 'Book a Tattoo',  href: '/booking/' },
 { id: 'about',          label: 'About',           href: '/about/' },
 { id: 'book',           label: 'The Book',        href: '/book/' },
@@ -33,12 +30,36 @@ const NAV_LINKS = [
 
 const COLLECTION_LINKS = [
   {
+    id: 'colour-realism',
+    label: 'Colour Realism',
+    href: '/colour-realism-tattoo-london/',
+    description: 'Vivid photorealistic colour tattoos and custom compositions.',
+    image: '/assets/colour-realism/01.webp',
+    alt: 'Colour realism tattoo by Vladimir Vishar'
+  },
+  {
+    id: 'black-grey',
+    label: 'Black & Grey',
+    href: '/black-and-grey-realism-london/',
+    description: 'Black and grey realism with strong tonal structure and depth.',
+    image: '/assets/black-grey/01.webp',
+    alt: 'Black and grey realism tattoo by Vladimir Vishar'
+  },
+  {
+    id: 'cover-up',
+    label: 'Cover-ups',
+    href: '/cover-up-tattoo-london/',
+    description: 'Before and after transformations of existing tattoos.',
+    image: '/assets/cover-ups/after-01.webp',
+    alt: 'Completed cover-up tattoo by Vladimir Vishar'
+  },
+  {
     id: 'portrait',
     label: 'Portraits',
     href: '/portrait-tattoo-artist-london/',
     description: 'Colour and black-and-grey portrait realism.',
     image: '/assets/portraits/05.webp',
-    alt: 'Colour realism Vivienne Westwood portrait tattoo by Vladimir Vishar'
+    alt: 'Colour realism portrait tattoo by Vladimir Vishar'
   },
   {
     id: 'large-scale',
@@ -99,6 +120,7 @@ const MOBILE_SOCIALS = [
 ];
 
 const pageId = window.PAGE_ID || '';
+const portfolioActive = COLLECTION_LINKS.some(function (item) { return item.id === pageId; });
 
 /* ── Helpers ── */
 function esc(str) {
@@ -129,14 +151,40 @@ function buildNav() {
 const el = document.getElementById('site-nav');
 if (!el) return;
 
+const desktopPortfolioLinks = COLLECTION_LINKS.map(function (item) {
+  const active = item.id === pageId;
+  return `<a href="${item.href}" class="${active ? 'is-active' : ''}">${esc(item.label)}</a>`;
+}).join('\n');
+
+const mobilePortfolioLinks = COLLECTION_LINKS.map(function (item) {
+  const active = item.id === pageId;
+  return `<a href="${item.href}" onclick="toggleMenu()" class="${active ? 'text-apple-blue' : ''}">${esc(item.label)}</a>`;
+}).join('\n');
+
 const desktopLinks = NAV_LINKS.map(l => {
   const active = l.id === pageId;
-  return `<a href="${l.href}" class="hover:text-white transition-colors ${active ? 'text-white' : ''}">${esc(l.label)}</a>`;
+  const link = `<a href="${l.href}" class="hover:text-white transition-colors ${active ? 'text-white' : ''}">${esc(l.label)}</a>`;
+  if (l.id !== 'home') return link;
+  return `${link}
+    <details id="desktop-portfolio-menu" class="portfolio-desktop-wrap">
+      <summary class="portfolio-desktop-trigger ${portfolioActive ? 'text-white' : ''}">Portfolio
+        <svg class="portfolio-nav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </summary>
+      <div class="portfolio-desktop-menu">${desktopPortfolioLinks}</div>
+    </details>`;
 }).join('\n');
 
 const mobileLinks = NAV_LINKS.map(l => {
   const active = l.id === pageId;
-  return `<a href="${l.href}" onclick="toggleMenu()" class="transition-colors ${active ? 'text-apple-blue' : 'hover:text-white/80'}">${esc(l.label)}</a>`;
+  const link = `<a href="${l.href}" onclick="toggleMenu()" class="transition-colors ${active ? 'text-apple-blue' : 'hover:text-white/80'}">${esc(l.label)}</a>`;
+  if (l.id !== 'home') return link;
+  return `${link}
+    <details id="mobile-portfolio-menu" class="mobile-portfolio ${portfolioActive ? 'is-active' : ''}">
+      <summary class="mobile-portfolio-toggle">Portfolio
+        <svg class="mobile-portfolio-chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </summary>
+      <div class="mobile-portfolio-links">${mobilePortfolioLinks}</div>
+    </details>`;
 }).join('\n');
 
 const mobileSocialLinks = MOBILE_SOCIALS.map(s => {
@@ -152,7 +200,7 @@ el.innerHTML = `
   <nav class="fixed top-0 w-full z-[100] glass border-b border-white/10" role="navigation" aria-label="Main">
     <div class="max-w-[1200px] mx-auto px-6 h-14 flex justify-between items-center">
       <a href="/" class="text-lg font-medium tracking-tight hover:opacity-70 transition-opacity">Vladimir Vishar</a>
-      <div class="hidden lg:flex space-x-6 text-[12px] font-normal text-white/60">
+      <div class="hidden lg:flex space-x-6 text-[12px] font-normal text-white/60 items-center">
         ${desktopLinks}
       </div>
       <button class="lg:hidden text-white p-2 -mr-2" onclick="toggleMenu()"
@@ -172,7 +220,7 @@ el.innerHTML = `
          class="hidden fixed inset-0 left-0 right-0 top-14 max-w-full box-border overflow-x-hidden overflow-y-auto bg-black/95 backdrop-blur-md z-[90] flex flex-col px-6 pt-10 pb-8 space-y-5 text-xl font-medium"
          aria-hidden="true">
       ${mobileLinks}
-      <div class="pt-4 mt-auto border-t border-white/10">
+      <div class="mobile-menu-footer pt-4 mt-auto border-t border-white/10">
         <div class="mb-5 flex items-center justify-center gap-1" role="group" aria-label="Social media and email">
           ${mobileSocialLinks}
         </div>
@@ -188,6 +236,23 @@ if (overlay && overlay.parentElement !== document.body) {
   document.body.appendChild(overlay);
 }
 
+}
+
+function initPortfolioNavigation() {
+  const desktopPortfolio = document.getElementById('desktop-portfolio-menu');
+  if (desktopPortfolio) {
+    document.addEventListener('click', function (event) {
+      if (desktopPortfolio.open && !desktopPortfolio.contains(event.target)) {
+        desktopPortfolio.removeAttribute('open');
+      }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape' || !desktopPortfolio.open) return;
+      desktopPortfolio.removeAttribute('open');
+      const summary = desktopPortfolio.querySelector('summary');
+      if (summary) summary.focus();
+    });
+  }
 }
 
 /* ── Footer ── */
@@ -646,7 +711,7 @@ block.id = 'portfolio-collections';
 block.className = 'max-w-[1400px] mx-auto mt-10';
 block.innerHTML = `
   <div class="mb-5 text-center">
-    <p class="text-xs uppercase tracking-[0.28em] text-white/60">Dedicated galleries</p>
+    <p class="text-xs uppercase tracking-[0.28em] text-white/60">Portfolio galleries</p>
   </div>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
     ${COLLECTION_LINKS.map(function (item) {
@@ -721,6 +786,48 @@ Array.from(document.querySelectorAll('main section')).forEach(function (section)
     marker.remove();
   });
 });
+}
+
+function addPortfolioCrosslinks() {
+if (!portfolioActive || document.getElementById('portfolio-crosslinks')) return;
+
+const current = COLLECTION_LINKS.find(function (item) { return item.id === pageId; });
+const others = COLLECTION_LINKS.filter(function (item) { return item.id !== pageId; });
+if (!current || !others.length) return;
+
+const existing = Array.from(document.querySelectorAll('main section')).find(function (section) {
+  return Array.from(section.querySelectorAll('p')).some(function (el) {
+    return el.textContent.trim().toLowerCase() === 'other specialities';
+  });
+});
+
+const section = existing || document.createElement('section');
+section.id = 'portfolio-crosslinks';
+section.className = 'py-20 px-6 border-y border-white/5';
+section.innerHTML = `
+  <div class="max-w-[1200px] mx-auto">
+    <div class="text-center mb-10">
+      <p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-4">Portfolio</p>
+      <h2 class="text-3xl md:text-4xl font-semibold tracking-tight">Explore other galleries</h2>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      ${others.map(function (item) {
+        return `<a href="${item.href}" class="rounded-2xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.07] transition-colors group">
+          <h3 class="text-lg font-semibold text-white">${esc(item.label)}</h3>
+          <p class="mt-2 text-sm leading-relaxed text-white/50">${esc(item.description)}</p>
+          <span class="mt-4 inline-block text-sm text-white/70 group-hover:text-white transition-colors">View gallery →</span>
+        </a>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+if (!existing) {
+  const main = document.querySelector('main');
+  if (!main) return;
+  const target = document.getElementById('faq') || document.getElementById('book');
+  if (target && target.parentNode === main) main.insertBefore(section, target);
+  else main.appendChild(section);
+}
 }
 
 /* ── Homepage Approach Block ── */
@@ -818,8 +925,10 @@ setMobileMenuBackgroundInert(overlay, isOpen);
 if (isOpen) {
   const firstLink = overlay.querySelector('a');
   if (firstLink) firstLink.focus();
-} else if (toggle) {
-  toggle.focus();
+} else {
+  const portfolioMenu = document.getElementById('mobile-portfolio-menu');
+  if (portfolioMenu) portfolioMenu.removeAttribute('open');
+  if (toggle) toggle.focus();
 }
 
 };
@@ -834,7 +943,7 @@ function initMobileMenuA11y() {
     const overlay = document.getElementById('mobile-overlay');
     if (!overlay || overlay.classList.contains('hidden')) return;
 
-    const focusables = Array.from(overlay.querySelectorAll('a[href]')).filter(function (el) {
+    const focusables = Array.from(overlay.querySelectorAll('a[href], summary, button:not([disabled])')).filter(function (el) {
       return el.offsetParent !== null;
     });
     if (!focusables.length) return;
@@ -1016,13 +1125,29 @@ function injectMotionStyles() {
     '.motion-ready .reveal{opacity:0;transform:translate3d(0,28px,0) scale(.985);filter:blur(6px) brightness(.72)}',
     '.motion-ready .reveal.visible{opacity:1;transform:translate3d(0,0,0) scale(1);filter:blur(0) brightness(1)}',
     '.hero-parallax{will-change:transform,opacity;transform-origin:center top}',
+    '.portfolio-desktop-wrap{position:relative}',
+    '.portfolio-desktop-trigger{display:flex;align-items:center;gap:4px;list-style:none;cursor:pointer;transition:color .2s ease}',
+    '.portfolio-desktop-trigger::-webkit-details-marker{display:none}',
+    '.portfolio-nav-chevron{transition:transform .2s ease}',
+    '.portfolio-desktop-wrap[open] .portfolio-nav-chevron{transform:rotate(180deg)}',
+    '.portfolio-desktop-menu{position:absolute;top:calc(100% + 14px);left:50%;transform:translateX(-50%);min-width:230px;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(18,18,20,.96);box-shadow:0 18px 50px rgba(0,0,0,.45);backdrop-filter:blur(20px);z-index:130}',
+    '.portfolio-desktop-menu a{display:block;padding:10px 12px;border-radius:10px;color:rgba(255,255,255,.68);white-space:nowrap;transition:background .2s ease,color .2s ease}',
+    '.portfolio-desktop-menu a:hover,.portfolio-desktop-menu a:focus-visible,.portfolio-desktop-menu a.is-active{background:rgba(255,255,255,.08);color:#fff}',
     '#mobile-overlay.hidden{display:none!important}',
     '#mobile-overlay{position:fixed!important;left:0!important;right:0!important;top:3.5rem!important;bottom:0!important;z-index:999!important;display:flex!important;flex-direction:column!important;padding:1.75rem!important;padding-top:2rem!important;gap:.95rem!important;overflow-y:auto!important;background:linear-gradient(180deg,rgba(10,10,12,.48),rgba(0,0,0,.30))!important;-webkit-backdrop-filter:blur(8px) saturate(110%)!important;backdrop-filter:blur(8px) saturate(110%)!important}',
     '#mobile-overlay a{position:relative!important;z-index:1!important;text-shadow:0 2px 12px rgba(0,0,0,.45)!important}',
-    '#mobile-overlay>a{font-size:clamp(1.55rem,7vw,2.25rem)!important;line-height:1.12!important;font-weight:560!important;color:rgba(255,255,255,.94)!important;text-decoration:none!important}',
-    '#mobile-overlay>a.text-apple-blue{color:#0a84ff!important}',
-    '#mobile-overlay>div{margin-top:auto!important;padding-top:1.25rem!important;border-top:1px solid rgba(255,255,255,.14)!important}',
-    '#mobile-overlay>div>a{display:block!important;width:100%!important;border-radius:9999px!important;background:rgba(255,255,255,.92)!important;color:#000!important;text-align:center!important;padding:.9rem 1.15rem!important;font-size:1rem!important;font-weight:650!important;text-shadow:none!important}',
+    '#mobile-overlay>a,#mobile-overlay>.mobile-portfolio>.mobile-portfolio-toggle{font-size:clamp(1.55rem,7vw,2.25rem)!important;line-height:1.12!important;font-weight:560!important;color:rgba(255,255,255,.94)!important;text-decoration:none!important}',
+    '#mobile-overlay>a.text-apple-blue,#mobile-overlay>.mobile-portfolio.is-active>.mobile-portfolio-toggle{color:#0a84ff!important}',
+    '#mobile-overlay>.mobile-portfolio{margin:0!important;padding:0!important;border:0!important}',
+    '.mobile-portfolio-toggle{display:flex!important;align-items:center!important;justify-content:space-between!important;list-style:none!important;cursor:pointer!important}',
+    '.mobile-portfolio-toggle::-webkit-details-marker{display:none}',
+    '.mobile-portfolio-chevron{transition:transform .2s ease}',
+    '.mobile-portfolio[open] .mobile-portfolio-chevron{transform:rotate(180deg)}',
+    '.mobile-portfolio-links{display:grid!important;gap:.55rem!important;padding:.8rem 0 .25rem 1rem!important}',
+    '.mobile-portfolio-links a{font-size:1rem!important;line-height:1.3!important;font-weight:500!important;color:rgba(255,255,255,.62)!important;text-decoration:none!important}',
+    '.mobile-portfolio-links a.text-apple-blue{color:#0a84ff!important}',
+    '#mobile-overlay>.mobile-menu-footer{margin-top:auto!important;padding-top:1.25rem!important;border-top:1px solid rgba(255,255,255,.14)!important}',
+    '#mobile-overlay>.mobile-menu-footer>a{display:block!important;width:100%!important;border-radius:9999px!important;background:rgba(255,255,255,.92)!important;color:#000!important;text-align:center!important;padding:.9rem 1.15rem!important;font-size:1rem!important;font-weight:650!important;text-shadow:none!important}',
     'body.lightbox-active{overflow:hidden!important;touch-action:none!important}',
     '.booking-video-orb{position:relative!important;overflow:hidden!important;background:#050505!important;color:#fff!important}',
     '.booking-video-orb:hover,.booking-video-orb:focus-visible{background:#050505!important;color:#fff!important}',
@@ -1112,6 +1237,7 @@ els.forEach(function (el) { observer.observe(el); });
 /* ── Init ── */
 document.addEventListener('DOMContentLoaded', function () {
 buildNav();
+initPortfolioNavigation();
 buildFooter();
 setupBookingCircleVideo();
 setupAiIdeaLeadCapture();
@@ -1123,6 +1249,7 @@ refineHomepageSpecialitiesCards();
 addHomepagePortfolioCollections();
 refineServiceFeatureCards();
 removeOtherSpecialitiesMarkers();
+addPortfolioCrosslinks();
 addHomepageApproachBlock();
 injectMotionStyles();
 applyRevealToSections();
