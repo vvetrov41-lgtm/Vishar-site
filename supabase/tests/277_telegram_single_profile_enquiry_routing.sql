@@ -45,8 +45,8 @@ insert into crm_private.telegram_destinations(
 insert into public.notification_preferences(profile_id,channel,is_enabled)
 values ('f7770000-0000-4000-8000-000000000001','telegram',true);
 
-insert into public.clients(id,full_name,email,email_normalized)
-values ('f7772000-0000-4000-8000-000000000001','Test Client','single-client@example.test','single-client@example.test');
+insert into public.clients(id,full_name,email)
+values ('f7772000-0000-4000-8000-000000000001','Test Client','single-client@example.test');
 insert into public.enquiries(
   id,client_id,idempotency_key,intake_fingerprint,status,intake_state,
   submitted_full_name,submitted_email,privacy_notice_version,privacy_acknowledged_at,
