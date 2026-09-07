@@ -52,11 +52,13 @@ insert into public.enquiries(
   '2026-07-29',now(),'a1111111-1111-4111-8111-111111111111'
 );
 insert into public.enquiry_files(
-  id,enquiry_id,storage_bucket,storage_path,mime_type,safe_extension,byte_size,upload_state
+  id,enquiry_id,ordinal,storage_path,mime_type,safe_extension,byte_size,upload_state,uploaded_at
 ) values (
   'f7775000-0000-4000-8000-000000000001',
   'f7773000-0000-4000-8000-000000000001',
-  'crm-files','test/single-profile.png','image/png','png',4096,'ready'
+  0,
+  'clients/f7772000-0000-4000-8000-000000000001/enquiries/f7773000-0000-4000-8000-000000000001/references/f7775000-0000-4000-8000-000000000001.png',
+  'image/png','png',4096,'ready',now()
 );
 insert into public.integration_outbox(
   id,kind,dedupe_key,status,payload,client_id,enquiry_id,artist_id,
