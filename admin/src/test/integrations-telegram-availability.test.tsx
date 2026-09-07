@@ -14,7 +14,7 @@ describe('Telegram settings surface', () => {
     PROFILES.owner.display_name = 'Kristina Vishar';
     renderWithSession(<App />, { role: 'owner', path: '/integrations' });
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Available integrations' }))
+    expect(await screen.findByRole('heading', { level: 2, name: 'Forms and websites' }))
       .toBeInTheDocument();
     expect(screen.queryByText('Telegram')).not.toBeInTheDocument();
   });
