@@ -88,6 +88,7 @@ select is(
   true,
   'leased enquiry routes to the artist profile notification'
 );
+reset role;
 select is(
   (select count(*)::int from public.notifications
    where entity_id='f7773000-0000-4000-8000-000000000001'
@@ -95,6 +96,7 @@ select is(
   1,
   'routing creates exactly one personal notification'
 );
+set local role service_role;
 select is(
   (public.service_route_telegram_enquiry_notification(
     'f7776000-0000-4000-8000-000000000001','telegram-test-worker'
