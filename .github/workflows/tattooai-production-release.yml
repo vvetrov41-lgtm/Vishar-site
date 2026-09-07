@@ -102,10 +102,9 @@ jobs:
           test "$post_status" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
 
-          # These deliberately incomplete multipart requests must resolve the
-          # live website route/source and then fail at field validation. The
-          # missing-field error happens before file parsing or persistence, so
-          # these probes create no client or enquiry data.
+          # Vladimir's personal form talks directly to the Worker root. This
+          # incomplete multipart request must resolve the trusted production
+          # source and then fail at field validation, before any persistence.
           vladimir_probe_id="$(cat /proc/sys/kernel/random/uuid)"
           vladimir_probe_status="$(curl -sS -o /tmp/tattooai-vladimir-probe.json -w '%{http_code}' \
             -X POST "$endpoint" \
@@ -115,14 +114,34 @@ jobs:
           test "$vladimir_probe_status" = '400'
           grep -Fq 'missing_required_field' /tmp/tattooai-vladimir-probe.json
 
-          kristina_probe_id="$(cat /proc/sys/kernel/random/uuid)"
+          # Mirror the fields that Kristina's live browser form actually sends.
+          # The same-origin /api/booking adapter must add its trusted routing,
+          # idempotency and privacy metadata. With all text fields valid but no
+          # image attached, the shared Worker must reach file validation and
+          # return invalid_file_count. That stage is still before persistence,
+          # so this proves the live form contract without creating customer data.
           kristina_probe_status="$(curl -sS -o /tmp/tattooai-kristina-probe.json -w '%{http_code}' \
             -X POST 'https://www.kristinavishar.com/api/booking' \
             -H 'Origin: https://www.kristinavishar.com' \
-            -F "idempotencyKey=${kristina_probe_id}" \
-            -F 'name=Production route probe')"
+            -H 'Accept: application/json' \
+            -F 'name=Production route probe' \
+            -F 'email=route-probe@example.invalid' \
+            -F 'phone=' \
+            -F 'instagram=' \
+            -F 'preferredReply=Email' \
+            -F 'travellingFrom=London' \
+            -F 'projectType=Custom colour' \
+            -F 'placement=Forearm' \
+            -F 'size=10 cm' \
+            -F 'coverUp=No' \
+            -F 'timing=Flexible' \
+            -F 'discoverySource=google' \
+            -F 'discoverySourceDetail=' \
+            -F 'idea=Production route contract probe' \
+            -F 'website=' \
+            -F 'consent=yes')"
           test "$kristina_probe_status" = '400'
-          grep -Fq 'missing_required_field' /tmp/tattooai-kristina-probe.json
+          grep -Fq 'invalid_file_count' /tmp/tattooai-kristina-probe.json
 
           malformed_status="$(curl -sS -o /tmp/tattooai-forms-malformed.html -w '%{http_code}' \
             "${endpoint}forms/not-a-uuid")"
