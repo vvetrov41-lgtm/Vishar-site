@@ -653,49 +653,27 @@ document.head.appendChild(style);
 
 }
 
-/* ── Shared Specialities Cards ── */
-function refineHomepageSpecialitiesCards() {
+/* ── Legacy homepage specialities ── */
+function removeHomepageLegacySpecialities() {
 if (pageId !== 'home') return;
 
-const cards = [
-  { title: 'Colour Realism', marker: '01', snippet: 'Colour Realism', emoji: '🎨' },
-  { title: 'Black & Grey', marker: '02', snippet: 'Black & Grey', emoji: '🖤' },
-  { title: 'Cover-ups', marker: '03', snippet: 'Cover-ups', emoji: '🔄' }
-];
-
-cards.forEach(function (item) {
-  const heading = Array.from(document.querySelectorAll('main h2, main h3, main h4')).find(function (el) {
-    return el.textContent.trim() === item.title;
+const titles = ['Colour Realism', 'Black & Grey', 'Cover-ups'];
+const headings = titles.map(function (title) {
+  return Array.from(document.querySelectorAll('main h2, main h3, main h4')).find(function (el) {
+    return el.textContent.trim() === title;
   });
-  if (!heading) return;
-
-  let card = heading.closest('a, article, div');
-  while (card && card !== document.body) {
-    const text = card.textContent || '';
-    if (text.indexOf(item.snippet) !== -1) break;
-    card = card.parentElement;
-  }
-  if (!card || card === document.body) card = heading.parentElement;
-
-  card.classList.remove('text-center');
-  card.classList.add('text-left');
-
-  card.querySelectorAll('.text-center').forEach(function (el) {
-    el.classList.remove('text-center');
-    el.classList.add('text-left');
-  });
-
-  const previous = heading.previousElementSibling;
-  if (previous && previous.textContent.trim() === item.emoji) previous.remove();
-
-  if (heading.previousElementSibling && heading.previousElementSibling.classList.contains('speciality-marker')) return;
-
-  const marker = document.createElement('p');
-  marker.className = 'speciality-marker mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35';
-  marker.textContent = item.marker;
-  heading.parentNode.insertBefore(marker, heading);
 });
 
+if (headings.some(function (heading) { return !heading; })) return;
+
+const section = headings[0].closest('section');
+if (!section) return;
+
+const sameSection = headings.every(function (heading) {
+  return heading.closest('section') === section;
+});
+
+if (sameSection) section.remove();
 }
 
 /* ── Homepage Portfolio Collections ── */
@@ -1138,7 +1116,7 @@ function injectMotionStyles() {
     '#mobile-overlay a{position:relative!important;z-index:1!important;text-shadow:0 2px 12px rgba(0,0,0,.45)!important}',
     '#mobile-overlay>a,#mobile-overlay>.mobile-portfolio>.mobile-portfolio-toggle{font-size:clamp(1.55rem,7vw,2.25rem)!important;line-height:1.12!important;font-weight:560!important;color:rgba(255,255,255,.94)!important;text-decoration:none!important}',
     '#mobile-overlay>a.text-apple-blue,#mobile-overlay>.mobile-portfolio.is-active>.mobile-portfolio-toggle{color:#0a84ff!important}',
-    '#mobile-overlay>.mobile-portfolio{margin:0!important;padding:0!important;border:0!important}',
+    '#mobile-overlay>.mobile-portfolio{margin:0!important;margin-top:1.25rem!important;padding:0!important;border:0!important}',
     '.mobile-portfolio-toggle{display:flex!important;align-items:center!important;justify-content:space-between!important;list-style:none!important;cursor:pointer!important}',
     '.mobile-portfolio-toggle::-webkit-details-marker{display:none}',
     '.mobile-portfolio-chevron{transition:transform .2s ease}',
@@ -1245,7 +1223,7 @@ buildStickyCta();
 buildConsentBanner();
 populateBookingWindow();
 refineHomepageTabletLayout();
-refineHomepageSpecialitiesCards();
+removeHomepageLegacySpecialities();
 addHomepagePortfolioCollections();
 refineServiceFeatureCards();
 removeOtherSpecialitiesMarkers();
