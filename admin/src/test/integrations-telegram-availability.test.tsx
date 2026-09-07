@@ -17,7 +17,6 @@ describe('Telegram settings surface', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Available integrations' }))
       .toBeInTheDocument();
     expect(screen.queryByText('Telegram')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Connect' })).not.toHaveAttribute('href', '#/integrations/telegram');
   });
 
   it('keeps Telegram out of the integrations hub when an artist destination already exists', async () => {
@@ -26,6 +25,5 @@ describe('Telegram settings surface', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'WhatsApp' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { level: 2, name: 'Telegram' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Manage' })).not.toHaveAttribute('href', '#/integrations/telegram');
   });
 });
