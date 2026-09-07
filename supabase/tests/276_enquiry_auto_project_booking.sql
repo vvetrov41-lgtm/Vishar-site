@@ -12,6 +12,14 @@
 begin;
 select no_plan();
 
+-- Keep all generated test slots on a five-minute boundary regardless of the
+-- second at which CI starts the suite. The production trigger correctly rejects
+-- arbitrary seconds; a test fixture must not depend on wall-clock seconds.
+create function pg_temp.booking_base() returns timestamptz language sql stable as $$
+  select date_trunc('day', now()) + interval '9 hours'
+$$;
+grant execute on function pg_temp.booking_base() to authenticated, service_role;
+
 -- ---------------------------------------------------------------------------
 -- Fixtures
 -- ---------------------------------------------------------------------------
@@ -171,8 +179,8 @@ select public.schedule_appointment(
   'a1111111-1111-4111-8111-111111111111',
   (select client_a from clients),
   'tattoo_session',
-  now() + interval '10 days',
-  now() + interval '10 days 7 hours',
+  pg_temp.booking_base() + interval '10 days',
+  pg_temp.booking_base() + interval '10 days 7 hours',
   'confirmed',
   (select enquiry_a from fixtures),
   null,
@@ -256,8 +264,8 @@ select public.schedule_appointment(
   'a1111111-1111-4111-8111-111111111111',
   (select client_a from clients),
   'tattoo_session',
-  now() + interval '20 days',
-  now() + interval '20 days 7 hours',
+  pg_temp.booking_base() + interval '20 days',
+  pg_temp.booking_base() + interval '20 days 7 hours',
   'proposed',
   (select enquiry_a from fixtures),
   null,
@@ -291,8 +299,8 @@ select public.schedule_appointment(
   'a1111111-1111-4111-8111-111111111111',
   (select client_b from clients),
   'in_person_consultation',
-  now() + interval '11 days',
-  now() + interval '11 days 30 minutes',
+  pg_temp.booking_base() + interval '11 days',
+  pg_temp.booking_base() + interval '11 days 30 minutes',
   'confirmed',
   (select enquiry_b from fixtures),
   null,
@@ -326,8 +334,8 @@ select public.schedule_appointment(
   'a1111111-1111-4111-8111-111111111111',
   (select client_b from clients),
   'in_person_consultation',
-  now() + interval '11 days',
-  now() + interval '11 days 30 minutes',
+  pg_temp.booking_base() + interval '11 days',
+  pg_temp.booking_base() + interval '11 days 30 minutes',
   'confirmed',
   (select enquiry_b from fixtures),
   null,
@@ -359,8 +367,8 @@ select public.schedule_appointment(
   'a1111111-1111-4111-8111-111111111111',
   (select client_a from clients),
   'tattoo_session',
-  now() + interval '20 days',
-  now() + interval '20 days 7 hours',
+  pg_temp.booking_base() + interval '20 days',
+  pg_temp.booking_base() + interval '20 days 7 hours',
   'proposed',
   (select enquiry_a from fixtures),
   null,
@@ -386,7 +394,7 @@ select is(
   pg_temp.refusal_hint(format(
     $$select public.schedule_appointment(
         'a1111111-1111-4111-8111-111111111111', %L, 'tattoo_session',
-        now() + interval '10 days 2 hours', now() + interval '10 days 6 hours',
+        pg_temp.booking_base() + interval '10 days 2 hours', pg_temp.booking_base() + interval '10 days 6 hours',
         'confirmed', %L, null, null)$$,
     (select client_c from clients), (select enquiry_c from fixtures))),
   'SLOT_NO_LONGER_AVAILABLE',
@@ -421,7 +429,7 @@ select is(
   pg_temp.refusal_hint(format(
     $$select public.schedule_appointment(
         'a1111111-1111-4111-8111-111111111111', %L, 'tattoo_session',
-        now() + interval '40 days', now() + interval '40 days 7 hours',
+        pg_temp.booking_base() + interval '40 days', pg_temp.booking_base() + interval '40 days 7 hours',
         'confirmed', null, null, null)$$,
     (select client_c from clients))),
   'PROJECT_REQUIRED',
@@ -436,7 +444,7 @@ select is(
   pg_temp.refusal_hint(format(
     $$select public.schedule_appointment(
         'a1111111-1111-4111-8111-111111111111', %L, 'touch_up',
-        now() + interval '41 days', now() + interval '41 days 2 hours',
+        pg_temp.booking_base() + interval '41 days', pg_temp.booking_base() + interval '41 days 2 hours',
         'confirmed', %L, null, null)$$,
     (select client_d from clients), (select enquiry_d from fixtures))),
   'TOUCH_UP_PROJECT_REQUIRED',
@@ -455,8 +463,8 @@ select public.schedule_appointment(
   'a1111111-1111-4111-8111-111111111111',
   (select client_a from clients),
   'touch_up',
-  now() + interval '50 days',
-  now() + interval '50 days 2 hours',
+  pg_temp.booking_base() + interval '50 days',
+  pg_temp.booking_base() + interval '50 days 2 hours',
   'proposed',
   (select enquiry_a from fixtures),
   null,
@@ -484,7 +492,7 @@ select throws_ok(
   format(
     $$select public.schedule_appointment(
         'a2222222-2222-4222-8222-222222222222', %L, 'in_person_consultation',
-        now() + interval '60 days', now() + interval '60 days 30 minutes',
+        pg_temp.booking_base() + interval '60 days', pg_temp.booking_base() + interval '60 days 30 minutes',
         'confirmed', null, null, null)$$,
     (select client_a from clients)),
   '42501', null,
@@ -495,7 +503,7 @@ select is(
   pg_temp.refusal_hint(format(
     $$select public.schedule_appointment(
         'a1111111-1111-4111-8111-111111111111', %L, 'tattoo_session',
-        now() + interval '61 days', now() + interval '61 days 7 hours',
+        pg_temp.booking_base() + interval '61 days', pg_temp.booking_base() + interval '61 days 7 hours',
         'confirmed', %L, null, null)$$,
     (select client_b from clients), (select enquiry_a from fixtures))),
   'ENQUIRY_LINK_MISMATCH',
@@ -514,7 +522,7 @@ select throws_ok(
   format(
     $$select public.schedule_appointment(
         'a1111111-1111-4111-8111-111111111111', %L, 'in_person_consultation',
-        now() + interval '62 days', now() + interval '62 days 30 minutes',
+        pg_temp.booking_base() + interval '62 days', pg_temp.booking_base() + interval '62 days 30 minutes',
         'confirmed', null, null, null)$$,
     (select client_a from clients)),
   '42501', null,
