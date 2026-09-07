@@ -6,10 +6,11 @@ import { useLanguage } from '../lib/i18n';
 import { useApi } from '../lib/session';
 
 /**
- * The single user-facing Telegram notification configuration surface.
+ * Personal Telegram delivery for the signed-in profile.
  *
- * Both Notifications and Integrations render this component so connection
- * state and the delivery preference cannot drift into separate UX models.
+ * This is intentionally different from an artist-bound destination: personal
+ * CRM reminders can be mirrored here, while new enquiries are routed to the
+ * artist Telegram configured alongside it on the Notifications page.
  */
 export function PersonalTelegramNotifications() {
   const api = useApi();
@@ -48,7 +49,7 @@ export function PersonalTelegramNotifications() {
   ) ?? null;
 
   return (
-    <Section title={language === 'ru' ? 'Личные уведомления' : 'Personal delivery'}>
+    <Section title={language === 'ru' ? 'Личный Telegram' : 'Personal Telegram'}>
       {state.loading ? <LoadingState /> : null}
       {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : null}
       {!state.loading && !state.error && personalTelegram ? (
@@ -62,17 +63,17 @@ export function PersonalTelegramNotifications() {
           {personalTelegram.is_connected ? (
             <div className="card">
               <div className="card-header">
-                <strong>{language === 'ru' ? 'Доставка уведомлений' : 'Notification delivery'}</strong>
+                <strong>{language === 'ru' ? 'Личные CRM-уведомления' : 'Personal CRM notifications'}</strong>
                 <span className={`badge badge-${state.data?.notificationsEnabled ? 'connected' : 'not_connected'}`}>
                   {state.data?.notificationsEnabled
-                    ? (language === 'ru' ? 'Включена' : 'Enabled')
-                    : (language === 'ru' ? 'Выключена' : 'Disabled')}
+                    ? (language === 'ru' ? 'Включены' : 'Enabled')
+                    : (language === 'ru' ? 'Выключены' : 'Disabled')}
                 </span>
               </div>
               <p className="muted">
                 {language === 'ru'
-                  ? 'В CRM уведомления остаются всегда. Telegram является дополнительным личным каналом доставки.'
-                  : 'Notifications always remain in the CRM. Telegram is an optional personal delivery channel.'}
+                  ? 'Здесь включается только личная доставка уведомлений CRM. Новые заявки отправляются в «Telegram мастеров» ниже.'
+                  : 'This controls only personal CRM notification delivery. New enquiries are sent to Artist Telegram below.'}
               </p>
               <div className="actions">
                 <button
@@ -80,14 +81,14 @@ export function PersonalTelegramNotifications() {
                   disabled={busy || state.data?.notificationsEnabled === true}
                   onClick={() => { void setNotifications(true); }}
                 >
-                  {language === 'ru' ? 'Включить Telegram' : 'Enable Telegram'}
+                  {language === 'ru' ? 'Включить личный Telegram' : 'Enable personal Telegram'}
                 </button>
                 <button
                   type="button"
                   disabled={busy || state.data?.notificationsEnabled !== true}
                   onClick={() => { void setNotifications(false); }}
                 >
-                  {language === 'ru' ? 'Выключить Telegram' : 'Disable Telegram'}
+                  {language === 'ru' ? 'Выключить личный Telegram' : 'Disable personal Telegram'}
                 </button>
               </div>
             </div>
