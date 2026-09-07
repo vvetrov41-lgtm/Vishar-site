@@ -1,13 +1,11 @@
 // The notification centre.
 //
-// Telegram delivery belongs here rather than in the generic integrations hub.
-// Personal Telegram is addressed to the signed-in person. Artist Telegram is a
-// separate destination used for new enquiry notifications and is shown only to
-// profiles that may manage artist integrations. Keeping both on one screen
-// avoids contradictory "connected" states across two navigation sections.
+// Telegram delivery is configured in one place: Notifications. The visible
+// connection is the artist-bound destination used for new enquiry delivery.
+// Legacy profile Telegram remains backend-compatible but is not a second
+// user-facing integration.
 
 import { useCallback, useState } from 'react';
-import { PersonalTelegramNotifications } from '../components/PersonalTelegramNotifications';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useLanguage } from '../lib/i18n';
@@ -47,8 +45,7 @@ export function NotificationsPage() {
       } finally {
         setBusyId(null);
       }
-    },
-    [state, language],
+    }, [state, language],
   );
 
   const notifications = state.data ?? [];
@@ -57,7 +54,6 @@ export function NotificationsPage() {
 
   return (
     <div className="stack">
-      <PersonalTelegramNotifications />
       {canManageArtistTelegram ? <ArtistTelegramNotifications /> : null}
 
       {actionError ? <ErrorState message={actionError} /> : null}
