@@ -14,7 +14,7 @@ describe('scheduling a consultation from an enquiry', () => {
   it('sits with the other enquiry actions, without pressing Edit first', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}` });
 
-    const actions = await screen.findByRole('heading', { level: 2, name: 'Enquiry actions' });
+    const actions = await screen.findByRole('heading', { level: 2, name: 'Next action' });
     const schedule = await screen.findByRole('heading', { name: 'Schedule a consultation' });
 
     // Inside the actions section, and ahead of the record content it used to

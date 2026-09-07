@@ -931,3 +931,57 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
     gap: 12px;
   }
 }
+
+/* A section collapsed down to its own heading plus a count. Used where the
+   answer is usually "nothing yet" and the heading alone was costing a card. */
+.collapsed-section { padding: 12px 14px; }
+.collapsed-section > summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.collapsed-section > summary::-webkit-details-marker { display: none; }
+.collapsed-section-count {
+  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.collapsed-section-body { margin-top: 12px; }
+
+/* The enquiry summary: everything needed to recognise the enquiry, above the
+   fold, without a card per fact. */
+.enquiry-summary-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.enquiry-summary-reference { font-size: 1.1rem; font-weight: 600; margin: 0; }
+.enquiry-summary-idea {
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.enquiry-summary .definition { margin-top: 10px; }
+
+/* Field-level contact differences, so the operator can see what changed
+   instead of being told that something did. */
+.contact-diff { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.contact-diff-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.contact-diff-field { font-weight: 600; font-size: 0.9rem; margin: 0 0 6px; }
+.contact-diff-value { margin: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+.contact-diff-value .contact-diff-label { color: var(--muted); }
+.contact-diff-choice { display: flex; align-items: center; gap: 8px; min-height: var(--tap); }

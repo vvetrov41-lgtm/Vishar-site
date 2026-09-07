@@ -225,16 +225,27 @@ select throws_ok(
   'a consultation longer than 30 minutes is rejected'
 );
 
-select throws_ok(
-  $$select public.schedule_appointment(
-      'a1111111-1111-4111-8111-111111111111',
-      'b8211111-1111-4111-8111-111111111111',
-      'tattoo_session',
-      '2026-09-13T09:00:00Z', '2026-09-13T16:00:00Z',
-      'proposed', 'b8311111-1111-4111-8111-111111111111', null, null
-    )$$,
-  '22023', null,
-  'a tattoo session cannot be created without a project'
+-- A tattoo session still cannot exist without a project - the constraint is
+-- unchanged - but naming the project is no longer the operator's job. Booking
+-- from an enquiry that already has one joins it rather than refusing.
+create temporary table reused_project as
+select public.schedule_appointment(
+  'a1111111-1111-4111-8111-111111111111',
+  'b8211111-1111-4111-8111-111111111111',
+  'tattoo_session',
+  '2026-09-13T09:00:00Z', '2026-09-13T16:00:00Z',
+  'proposed', 'b8311111-1111-4111-8111-111111111111', null, null
+) as result;
+
+select is(
+  (select (result ->> 'project_id')::uuid from reused_project),
+  'b8511111-1111-4111-8111-111111111111'::uuid,
+  'a tattoo session booked from an enquiry joins that enquiry''s project'
+);
+
+select ok(
+  not (select (result ->> 'project_created')::boolean from reused_project),
+  'and reuses it rather than creating a second one'
 );
 
 select throws_ok(

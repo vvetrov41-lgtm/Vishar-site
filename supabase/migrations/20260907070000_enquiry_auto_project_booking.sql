@@ -242,7 +242,8 @@ begin
      or v_enquiry.client_id is distinct from p_client_id then
     perform crm_private.booking_error(
       'ENQUIRY_LINK_MISMATCH',
-      'this enquiry belongs to a different artist or client'
+      'this enquiry belongs to a different artist or client',
+      '23514'
     );
   end if;
 
@@ -501,7 +502,8 @@ begin
          or v_project.client_id is distinct from p_client_id then
         perform crm_private.booking_error(
           'PROJECT_LINK_MISMATCH',
-          'that project belongs to a different artist or client'
+          'that project belongs to a different artist or client',
+          '23514'
         );
       end if;
       if p_enquiry_id is not null
@@ -509,7 +511,8 @@ begin
          and v_project.enquiry_id <> p_enquiry_id then
         perform crm_private.booking_error(
           'PROJECT_LINK_MISMATCH',
-          'that project belongs to a different enquiry'
+          'that project belongs to a different enquiry',
+          '23514'
         );
       end if;
     elsif p_enquiry_id is not null then

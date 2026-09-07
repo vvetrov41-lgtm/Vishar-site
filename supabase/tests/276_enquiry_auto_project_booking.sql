@@ -76,8 +76,11 @@ end;
 $$;
 grant execute on function pg_temp.refusal_hint(text) to authenticated, service_role;
 
+-- Returns the intake result rather than reading `public.enquiries` back: the
+-- fixture runs as the Worker role, which writes enquiries through the intake
+-- RPC and is not granted a direct read of the table.
 create function pg_temp.new_enquiry(p_key uuid, p_email text, p_idea text)
-returns uuid language plpgsql as $$
+returns jsonb language plpgsql as $$
 declare
   v_result jsonb;
   v_enquiry uuid;
@@ -106,7 +109,10 @@ begin
   from jsonb_array_elements(v_result -> 'files') as manifests(manifest);
 
   perform public.finalize_enquiry_intake(v_enquiry);
-  return v_enquiry;
+  return jsonb_build_object(
+    'enquiry_id', v_enquiry,
+    'client_id', (v_result ->> 'client_id')::uuid
+  );
 end;
 $$;
 grant execute on function pg_temp.new_enquiry(uuid, text, text) to service_role;
@@ -114,20 +120,29 @@ grant execute on function pg_temp.new_enquiry(uuid, text, text) to service_role;
 set local role service_role;
 select pg_temp.act_as_worker();
 
+create temporary table intake as
+select
+  pg_temp.new_enquiry('ab000000-0000-4000-8000-000000000001', 'first@example.test', 'A raven')  as a,
+  pg_temp.new_enquiry('ab000000-0000-4000-8000-000000000002', 'second@example.test', 'A snake') as b,
+  pg_temp.new_enquiry('ab000000-0000-4000-8000-000000000003', 'third@example.test', 'A wolf')   as c,
+  pg_temp.new_enquiry('ab000000-0000-4000-8000-000000000004', 'fourth@example.test', 'A moth')  as d;
+
 create temporary table fixtures as
 select
-  pg_temp.new_enquiry('ab000000-0000-4000-8000-000000000001', 'first@example.test', 'A raven')  as enquiry_a,
-  pg_temp.new_enquiry('ab000000-0000-4000-8000-000000000002', 'second@example.test', 'A snake') as enquiry_b,
-  pg_temp.new_enquiry('ab000000-0000-4000-8000-000000000003', 'third@example.test', 'A wolf')   as enquiry_c,
-  pg_temp.new_enquiry('ab000000-0000-4000-8000-000000000004', 'fourth@example.test', 'A moth')  as enquiry_d;
+  (a ->> 'enquiry_id')::uuid as enquiry_a,
+  (b ->> 'enquiry_id')::uuid as enquiry_b,
+  (c ->> 'enquiry_id')::uuid as enquiry_c,
+  (d ->> 'enquiry_id')::uuid as enquiry_d
+from intake;
 grant select on fixtures to authenticated, service_role;
 
 create temporary table clients as
 select
-  (select client_id from public.enquiries where id = (select enquiry_a from fixtures)) as client_a,
-  (select client_id from public.enquiries where id = (select enquiry_b from fixtures)) as client_b,
-  (select client_id from public.enquiries where id = (select enquiry_c from fixtures)) as client_c,
-  (select client_id from public.enquiries where id = (select enquiry_d from fixtures)) as client_d;
+  (a ->> 'client_id')::uuid as client_a,
+  (b ->> 'client_id')::uuid as client_b,
+  (c ->> 'client_id')::uuid as client_c,
+  (d ->> 'client_id')::uuid as client_d
+from intake;
 grant select on clients to authenticated, service_role;
 
 reset role;

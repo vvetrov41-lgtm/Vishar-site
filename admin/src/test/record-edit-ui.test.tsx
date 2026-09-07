@@ -25,7 +25,9 @@ describe('CRM record editing UI', () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}`, rpcCalls });
 
-    expect(await screen.findByText('+44 7700 900 099')).toBeInTheDocument();
+    // Two places legitimately show the submitted number now: the field-level
+    // difference against the client card, and the immutable snapshot.
+    expect((await screen.findAllByText('+44 7700 900 099')).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Edit enquiry' }));
     fireEvent.change(screen.getByLabelText('Timing'), { target: { value: 'November' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -36,7 +38,7 @@ describe('CRM record editing UI', () => {
       expect(call!.args?.p_enquiry_id).toBe(ENQUIRY_ID);
       expect((call!.args?.p_enquiry as Record<string, unknown>).preferred_timing).toBe('November');
     });
-    expect(screen.getByText('+44 7700 900 099')).toBeInTheDocument();
+    expect(screen.getAllByText('+44 7700 900 099').length).toBeGreaterThan(0);
   });
 
   it('shows record delete controls to owners but not booking managers', async () => {
@@ -96,7 +98,7 @@ describe('CRM record editing UI', () => {
     expect(details).not.toHaveAttribute('open');
     fireEvent.click(summary);
     expect(details).toHaveAttribute('open');
-    expect(screen.getByText('+44 7700 900 099')).toBeInTheDocument();
+    expect(screen.getAllByText('+44 7700 900 099').length).toBeGreaterThan(0);
   });
 
   it('mints a fresh signed reference before opening the original', async () => {
