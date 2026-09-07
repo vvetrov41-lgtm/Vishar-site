@@ -117,6 +117,13 @@ grant execute on function pg_temp.availability_claims(text)
 insert into public.clients (id, full_name, email) values
   ('e8211111-1111-4111-8111-111111111111', 'Availability Client', 'availability-client@example.test');
 
+insert into public.clients (id, workspace_id, full_name, email)
+select
+  'e8222222-2222-4222-8222-222222222222', a.workspace_id,
+  'Availability Other Artist Client', 'availability-other-artist@example.test'
+from public.artists a
+where a.id = 'a2222222-2222-4222-8222-222222222222';
+
 insert into public.enquiries (
   id, client_id, artist_id, reference_number, idempotency_key,
   intake_fingerprint, status, intake_state, submitted_full_name,
@@ -183,7 +190,7 @@ select is(
 select lives_ok(
   $$select public.schedule_appointment(
       'a2222222-2222-4222-8222-222222222222',
-      'e8211111-1111-4111-8111-111111111111',
+      'e8222222-2222-4222-8222-222222222222',
       'video_consultation',
       '2026-10-02T10:00:00Z', '2026-10-02T10:30:00Z',
       'proposed', null, null, 'Synthetic Kristina isolation appointment'
