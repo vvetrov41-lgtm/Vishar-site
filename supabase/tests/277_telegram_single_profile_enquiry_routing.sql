@@ -19,7 +19,7 @@ select ok(not has_function_privilege('authenticated',
 insert into auth.users(id,email)
 values ('f7770000-0000-4000-8000-000000000001','single-telegram@example.test');
 insert into public.profiles(id,email,display_name,role,is_active)
-values ('f7770000-0000-4000-8000-000000000001','single-telegram@example.test','Single Telegram Artist','artist',true);
+values ('f7770000-0000-4000-8000-000000000001','single-telegram@example.test','Single Telegram Artist','owner',true);
 insert into public.artist_memberships(
   profile_id,artist_id,access_level,can_view_finance,can_manage_finance,
   can_manage_sessions,can_manage_integrations,is_active

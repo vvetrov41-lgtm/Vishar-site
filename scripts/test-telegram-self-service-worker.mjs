@@ -74,6 +74,7 @@ function route() {
 
 function makeFetch({
   destination = [],
+  enquiryRoute = [{ routed: true, notification_count: 1, error_code: null }],
   personalClaim = [],
   rpcFailure = null,
   rpcFailureStatus = 500,
@@ -93,6 +94,7 @@ function makeFetch({
       if (name === 'claim_telegram_outbox_by_id') return Response.json([job()]);
       if (name === 'resolve_outbox_route') return Response.json([route()]);
       if (name === 'service_resolve_telegram_destination') return Response.json(destination);
+      if (name === 'service_route_telegram_enquiry_notification') return Response.json(enquiryRoute);
       if (name === 'record_telegram_outbox_result') return Response.json({ ok: true });
       if (name === 'service_claim_telegram_notifications') return Response.json(personalClaim);
       if (name === 'service_record_telegram_notification_result') return Response.json({ ok: true });
@@ -111,51 +113,35 @@ function makeFetch({
   return { fetchImpl, rpcCalls, telegramCalls };
 }
 
-await test('shared bot prefers a private registry Artist destination and records registry success', async () => {
+await test('shared bot routes enquiry into the single profile notification queue without a provider call', async () => {
   const env = { ...baseEnv, TELEGRAM_BOT_TOKEN: sharedToken };
-  const mock = makeFetch({
-    destination: [{
-      destination_id: destinationId,
-      destination_kind: 'artist',
-      chat_id: registryChat,
-    }],
-  });
+  const mock = makeFetch();
   const result = await drainTelegramOutboxById(env, {
     outboxId,
     workerId,
     fetchImpl: mock.fetchImpl,
   });
   assert.equal(result.outcome, 'succeeded');
-  // `resolve_outbox_route` is deliberately absent: it joins the legacy
-  // `artist_integrations` row, which a self-service artist never has, and the
-  // shared bot needs only the registry destination.
   assert.deepEqual(mock.rpcCalls.map((call) => call.name), [
     'claim_telegram_outbox_by_id',
-    'service_resolve_telegram_destination',
-    'service_record_telegram_notification_result',
+    'service_route_telegram_enquiry_notification',
     'record_telegram_outbox_result',
   ]);
-  assert.deepEqual(mock.rpcCalls[2].args, {
-    p_delivery_id: destinationId,
+  assert.deepEqual(mock.rpcCalls[1].args, {
+    p_outbox_id: outboxId,
     p_worker_id: workerId,
-    p_succeeded: true,
-    p_error_code: null,
   });
-  assert.equal(mock.telegramCalls.length, 1);
-  assert.equal(mock.telegramCalls[0].body.chat_id, registryChat);
-  assert.ok(mock.telegramCalls[0].url.includes(sharedToken));
-  assert.ok(!mock.telegramCalls[0].url.includes(legacyToken));
+  assert.equal(mock.telegramCalls.length, 0);
 });
 
-await test('registry provider failure records registry failure before outbox failure', async () => {
+await test('missing profile route fails closed without a provider call', async () => {
   const env = { ...baseEnv, TELEGRAM_BOT_TOKEN: sharedToken };
   const mock = makeFetch({
-    destination: [{
-      destination_id: destinationId,
-      destination_kind: 'artist',
-      chat_id: registryChat,
+    enquiryRoute: [{
+      routed: false,
+      notification_count: 0,
+      error_code: 'telegram_destination_unavailable',
     }],
-    telegramStatus: 502,
   });
   const result = await drainTelegramOutboxById(env, {
     outboxId,
@@ -163,71 +149,36 @@ await test('registry provider failure records registry failure before outbox fai
     fetchImpl: mock.fetchImpl,
   });
   assert.equal(result.outcome, 'failed');
-  // `resolve_outbox_route` is deliberately absent: it joins the legacy
-  // `artist_integrations` row, which a self-service artist never has, and the
-  // shared bot needs only the registry destination.
-  assert.deepEqual(mock.rpcCalls.map((call) => call.name), [
-    'claim_telegram_outbox_by_id',
-    'service_resolve_telegram_destination',
-    'service_record_telegram_notification_result',
-    'record_telegram_outbox_result',
-  ]);
-  assert.deepEqual(mock.rpcCalls[2].args, {
-    p_delivery_id: destinationId,
-    p_worker_id: workerId,
-    p_succeeded: false,
-    p_error_code: 'telegram_rejected',
-  });
-  assert.equal(mock.rpcCalls[3].args.p_succeeded, false);
-});
-
-await test('registry evidence failure never converts an accepted Telegram send into a retry', async () => {
-  const env = { ...baseEnv, TELEGRAM_BOT_TOKEN: sharedToken };
-  const mock = makeFetch({
-    destination: [{
-      destination_id: destinationId,
-      destination_kind: 'artist',
-      chat_id: registryChat,
-    }],
-    rpcFailure: 'service_record_telegram_notification_result',
-  });
-  const result = await drainTelegramOutboxById(env, {
-    outboxId,
-    workerId,
-    fetchImpl: mock.fetchImpl,
-  });
-  assert.equal(result.outcome, 'succeeded');
-  assert.equal(mock.telegramCalls.length, 1);
+  assert.equal(result.errorCode, 'telegram_destination_unavailable');
+  assert.equal(mock.telegramCalls.length, 0);
   assert.equal(mock.rpcCalls.at(-1).name, 'record_telegram_outbox_result');
-  assert.equal(mock.rpcCalls.at(-1).args.p_succeeded, true);
+  assert.equal(mock.rpcCalls.at(-1).args.p_succeeded, false);
 });
 
-await test('no registry row keeps the exact legacy binding fallback', async () => {
+await test('routing backend failure records a retryable failure without a provider call', async () => {
   const env = { ...baseEnv, TELEGRAM_BOT_TOKEN: sharedToken };
-  const mock = makeFetch({ destination: [] });
+  const mock = makeFetch({ rpcFailure: 'service_route_telegram_enquiry_notification' });
   const result = await drainTelegramOutboxById(env, {
     outboxId,
     workerId,
     fetchImpl: mock.fetchImpl,
   });
-  assert.equal(result.outcome, 'succeeded');
-  assert.equal(mock.telegramCalls[0].body.chat_id, legacyChat);
-  assert.ok(mock.telegramCalls[0].url.includes(legacyToken));
-  assert.ok(!mock.rpcCalls.some((call) => call.name === 'service_record_telegram_notification_result'));
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'telegram_connector_error');
+  assert.equal(mock.telegramCalls.length, 0);
 });
 
-await test('registry lookup failure also preserves the rollout fallback', async () => {
+await test('outbox acknowledgement failure stays provider-safe because routing is deduplicated', async () => {
   const env = { ...baseEnv, TELEGRAM_BOT_TOKEN: sharedToken };
-  const mock = makeFetch({ rpcFailure: 'service_resolve_telegram_destination' });
+  const mock = makeFetch({ rpcFailure: 'record_telegram_outbox_result' });
   const result = await drainTelegramOutboxById(env, {
     outboxId,
     workerId,
     fetchImpl: mock.fetchImpl,
   });
-  assert.equal(result.outcome, 'succeeded');
-  assert.equal(mock.telegramCalls[0].body.chat_id, legacyChat);
-  assert.ok(mock.telegramCalls[0].url.includes(legacyToken));
-  assert.ok(!mock.rpcCalls.some((call) => call.name === 'service_record_telegram_notification_result'));
+  assert.equal(result.outcome, 'unrecorded');
+  assert.equal(result.errorCode, 'telegram_acknowledgement_failed');
+  assert.equal(mock.telegramCalls.length, 0);
 });
 
 await test('without a shared bot token the legacy path makes no registry call', async () => {
