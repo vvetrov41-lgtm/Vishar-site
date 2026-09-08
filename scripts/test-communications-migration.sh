@@ -76,7 +76,10 @@ echo "Stage 1: migrations up to $BASELINE"
 for file in "$MIGRATIONS"/*.sql; do
   number="$(basename "$file" | cut -c1-4)"
   if [ "$number" \> "$BASELINE" ]; then continue; fi
-  psql_test -f "$file" >/dev/null
+  # Supabase applies each migration atomically. Mirror that production
+  # contract here so migration-local temporary tables with ON COMMIT DROP
+  # remain available for the whole migration file.
+  psql_test -1 -f "$file" >/dev/null
 done
 
 echo "Stage 2: seed production-shaped WhatsApp rows"
@@ -176,7 +179,9 @@ echo "Stage 3: communications migrations after $BASELINE"
 for file in "$MIGRATIONS"/*.sql; do
   number="$(basename "$file" | cut -c1-4)"
   if [ "$number" \> "$BASELINE" ]; then
-    psql_test -f "$file" >/dev/null
+    # Keep each migration file in one transaction, matching Supabase's actual
+    # migration runner rather than psql's statement-by-statement autocommit.
+    psql_test -1 -f "$file" >/dev/null
   fi
 done
 

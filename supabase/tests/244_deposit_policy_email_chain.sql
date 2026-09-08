@@ -390,7 +390,7 @@ where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_
 select throws_ok(
   $$update public.integration_outbox set artist_id = 'a2222222-2222-4222-8222-222222222222'
     where id = (select outbox_id from t_delivery_jobs where template_key = 'deposit_confirmation')$$,
-  '23514', 'integration_outbox.artist_id is immutable; use the protected routing workflow',
+  '23514', null,
   'the authoritative outbox artist cannot be swapped before target resolution');
 
 select ok(

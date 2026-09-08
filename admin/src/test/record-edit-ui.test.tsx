@@ -41,7 +41,7 @@ describe('CRM record editing UI', () => {
     expect(screen.getAllByText('+44 7700 900 099').length).toBeGreaterThan(0);
   });
 
-  it('shows record delete controls to owners but not booking managers', async () => {
+  it('keeps client deletion owner-only but lets a scoped manager delete an enquiry with confirmation', async () => {
     const ownerClient = renderWithSession(<App />, { role: 'owner', path: `/clients/${CLIENT_ID}` });
     expect(await screen.findByRole('button', { name: 'Delete client' })).toBeInTheDocument();
     ownerClient.unmount();
@@ -55,9 +55,19 @@ describe('CRM record editing UI', () => {
     expect(screen.queryByRole('button', { name: 'Delete client' })).not.toBeInTheDocument();
     managerClient.unmount();
 
-    renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}` });
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}`, rpcCalls });
     expect(await screen.findByRole('button', { name: 'Edit enquiry' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete enquiry' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete enquiry' }));
+    expect(screen.getByText(/Delete this enquiry from working lists/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, delete enquiry' }));
+
+    await waitFor(() => {
+      const call = rpcCalls.find((entry) => entry.name === 'update_enquiry_details'
+        && (entry.args?.p_enquiry as Record<string, unknown> | undefined)?._archive === true);
+      expect(call).toBeDefined();
+      expect(call!.args?.p_enquiry_id).toBe(ENQUIRY_ID);
+    });
   });
 
   it('offers post-intake reference upload to a booking manager but not destructive removal', async () => {

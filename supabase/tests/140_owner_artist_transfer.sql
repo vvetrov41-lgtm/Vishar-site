@@ -1,6 +1,6 @@
 -- 140_owner_artist_transfer.sql
 --
--- Owner-only atomic artist transfer before payment, calendar, trusted-source or
+-- Owner-only, atomic artist transfer before payment, calendar, trusted-source or
 -- routed integration state exists. Historical activity remains append-only in
 -- its original artist scope.
 
@@ -18,6 +18,23 @@ insert into public.profiles (id, email, display_name, role, is_active) values
    'Transfer Owner', 'owner', true),
   ('b8222222-2222-4222-8222-222222222222', 'transfer-manager@example.test',
    'Transfer Manager', 'booking_manager', true);
+
+-- This legacy transfer test predates workspace-owned client cards. Model the
+-- valid modern case explicitly: both artists belong to one studio workspace.
+-- Cross-workspace transfers must not reuse another tenant's client card.
+update public.workspaces
+set workspace_type = 'studio'
+where id = (
+  select workspace_id from public.artists
+  where id = 'a1111111-1111-4111-8111-111111111111'
+);
+
+update public.artists
+set workspace_id = (
+  select workspace_id from public.artists
+  where id = 'a1111111-1111-4111-8111-111111111111'
+)
+where id = 'a2222222-2222-4222-8222-222222222222';
 
 insert into public.artist_memberships (
   profile_id, artist_id, access_level,
