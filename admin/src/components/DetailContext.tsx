@@ -33,26 +33,23 @@ export function RecordArtistContext({ artistId }: { artistId: string }) {
   if (!artist) {
     return (
       <div className="notice warn" role="status" style={{ marginBottom: 12 }}>
-        <strong style={{ display: 'block' }}>
-          {language === 'ru' ? 'Мастер записи недоступен в текущем списке' : 'Record artist is not in the current list'}
-        </strong>
-        <span>
-          {language === 'ru'
-            ? 'Запись остаётся основной точкой истины; доступ по-прежнему контролируется базой данных.'
-            : 'The record remains authoritative; database access controls still apply.'}
-        </span>
+        <strong>{language === 'ru' ? 'Мастер записи недоступен' : 'Record artist unavailable'}</strong>
       </div>
     );
   }
 
   return (
-    <div className={mismatch ? 'notice warn' : 'notice'} role="status" style={{ marginBottom: 12 }}>
-      <strong style={{ display: 'block', color: mismatch ? undefined : 'var(--text)' }}>
+    <div
+      className={mismatch ? 'notice warn' : 'notice'}
+      role="status"
+      style={{ marginBottom: 12, paddingBlock: mismatch ? undefined : 9 }}
+    >
+      <strong style={{ color: mismatch ? undefined : 'var(--text)' }}>
         {language === 'ru' ? 'Мастер' : 'Artist'}: {artist.display_name}
       </strong>
       {mismatch ? (
         <>
-          <span>
+          <span style={{ display: 'block', marginTop: 4 }}>
             {language === 'ru'
               ? `Фильтр CRM сейчас установлен на ${selectedArtist?.display_name ?? 'другого мастера'}.`
               : `The CRM filter is currently set to ${selectedArtist?.display_name ?? 'another artist'}.`}
@@ -63,13 +60,7 @@ export function RecordArtistContext({ artistId }: { artistId: string }) {
             </button>
           </div>
         </>
-      ) : (
-        <span>
-          {language === 'ru'
-            ? 'Контекст записи совпадает с текущим фильтром или открыт список всех мастеров.'
-            : 'The record matches the current filter, or all assigned artists are selected.'}
-        </span>
-      )}
+      ) : null}
     </div>
   );
 }
