@@ -12,7 +12,15 @@ name: AI router production probe
 # Every request uses the endpoint's own fixed synthetic prompts. No customer
 # data is read and no records are created.
 
+# Triggered by pushing a `probe/ai-router-production-*` branch, the same pattern
+# the tattooai release uses, because a workflow_dispatch entry is only
+# dispatchable from the default branch and the CRM trunk is not `main`. The run
+# asserts its own lineage before touching anything, so a probe branch cannot
+# carry unreviewed code into a job that holds production credentials.
 on:
+  push:
+    branches:
+      - 'probe/ai-router-production-*'
   workflow_dispatch:
     inputs:
       confirm_probe:
@@ -29,7 +37,7 @@ concurrency:
 
 jobs:
   probe:
-    if: inputs.confirm_probe == 'PROBE AI ROUTER PRODUCTION'
+    if: github.event_name == 'push' || inputs.confirm_probe == 'PROBE AI ROUTER PRODUCTION'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -40,8 +48,19 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
     steps:
-      - name: Checkout
+      - name: Checkout exact probe snapshot
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the probe snapshot is canonical
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch origin agent/platform-telegram-self-service --no-tags
+          git merge-base --is-ancestor origin/agent/platform-telegram-self-service "$GITHUB_SHA"
+          echo 'Probe snapshot descends from the canonical branch.'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
