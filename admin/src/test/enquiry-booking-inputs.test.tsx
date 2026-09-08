@@ -20,22 +20,20 @@ describe('booking controls on a phone', () => {
     expect(sevenHours).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('keeps consultation times on the database five-minute grid before submit', async () => {
-    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+  it('uses the same deterministic five-minute picker for consultations', async () => {
     renderWithSession(<App />, {
       role: 'owner',
       path: `/enquiries/${ENQUIRY_ID}`,
-      rpcCalls,
     });
 
-    const start = await screen.findByLabelText('Date and time');
-    expect(start).toHaveAttribute('step', '300');
+    await screen.findByRole('group', { name: 'Date and time' });
 
-    fireEvent.change(start, { target: { value: '2030-01-08T10:03' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Schedule consultation' }));
-
-    expect(await screen.findByText(/Choose a time in five-minute steps/)).toBeInTheDocument();
-    expect(rpcCalls.find((entry) => entry.name === 'schedule_appointment')).toBeUndefined();
+    const minute = screen.getByLabelText('Minute') as HTMLSelectElement;
+    expect(Array.from(minute.options).map((option) => option.value)).toEqual([
+      '00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55',
+    ]);
+    expect(Array.from(minute.options).some((option) => option.value === '03')).toBe(false);
+    expect(document.querySelector('input[type="datetime-local"]')).toBeNull();
   });
 
   it('uses the policy-aware conflict read and books a valid consultation', async () => {
@@ -46,8 +44,10 @@ describe('booking controls on a phone', () => {
       rpcCalls,
     });
 
-    const start = await screen.findByLabelText('Date and time');
-    fireEvent.change(start, { target: { value: '2030-01-08T10:05' } });
+    await screen.findByRole('group', { name: 'Date and time' });
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2030-01-08' } });
+    fireEvent.change(screen.getByLabelText('Hour'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Minute'), { target: { value: '05' } });
     fireEvent.click(screen.getByRole('button', { name: 'Schedule consultation' }));
 
     await waitFor(() => {
