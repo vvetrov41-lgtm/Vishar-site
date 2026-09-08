@@ -93,7 +93,7 @@ describe('one booking behaviour', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Enter a time myself' }));
     setManualStart('2026-09-02T10:00');
-    expect(screen.getByLabelText('End')).toHaveValue(expect.stringMatching(/17:00/));
+    expect((screen.getByLabelText('End') as HTMLInputElement).value).toMatch(/17:00/);
     fireEvent.click(screen.getByRole('button', { name: 'Book this exact time' }));
 
     await waitFor(() => {
@@ -130,7 +130,7 @@ describe('one booking behaviour', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Enter a time myself' }));
     setManualStart('2026-09-01T11:00');
-    expect(screen.getByLabelText('End')).toHaveValue(expect.stringMatching(/11:30/));
+    expect((screen.getByLabelText('End') as HTMLInputElement).value).toMatch(/11:30/);
     fireEvent.click(screen.getByRole('button', { name: 'Check this time' }));
 
     // A consultation during a tattoo session is reported, not refused - which
