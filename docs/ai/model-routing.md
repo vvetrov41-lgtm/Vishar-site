@@ -1,27 +1,37 @@
 # Model routing
 
-## What this replaces
+## What this is
 
-Before this layer there was exactly one model call in the whole system:
-`workers/tattooai.js` invoked the Cloudflare `AI` binding with
-`@cf/meta/llama-3.1-8b-instruct` for the two public assistants. There was no
-outbound OpenAI path anywhere in the CRM — the `gpt-actions` Workers are the
-opposite direction, an OpenAPI surface a Custom GPT calls *into*.
+Every model call in the system goes through one capability router. Callers name
+a **task**; the router picks the tier, enforces the cost ceiling, normalises the
+answer and emits sanitized telemetry.
+
+Three of the four tiers — DeepSeek, Qwen and Llama — execute on the account's
+existing Cloudflare `AI` binding. There is no DeepSeek account, no Alibaba
+account, no vendor endpoint and no vendor API key anywhere in the system. The
+binding is the transport; it is deliberately not the abstraction, so each tier
+keeps its own adapter, its own model id and its own configuration keys, and
+moving one back to a vendor API later would touch that adapter alone.
+
+The fourth tier, OpenAI, is external and entirely optional. No chain depends on
+it: a test asserts that every task still resolves with `OPENAI_API_KEY` absent.
+
+## History
+
+Before this router there was exactly one model call: `workers/tattooai.js`
+invoked the `AI` binding with `@cf/meta/llama-3.1-8b-instruct` for the two
+public assistants. There was never an outbound OpenAI path — the `gpt-actions`
+Workers are the opposite direction, an OpenAPI surface a Custom GPT calls *into*.
 
 That single call was also broken. Cloudflare retired
 `@cf/meta/llama-3.1-8b-instruct` on 2026-05-30, so `env.AI.run` threw on every
-request and both live assistants answered HTTP 500 (`error code: 1101`),
-verified against the deployed Worker on 2026-09-08. The incumbent adapter now
-calls `@cf/meta/llama-3.1-8b-instruct-fast`, which Cloudflare's own deprecation
-notice names as a variant that stays active.
+request and both live assistants answered HTTP 500 (`error code: 1101`), verified
+against the deployed Worker on 2026-09-08. The Llama tier now calls
+`@cf/meta/llama-3.1-8b-instruct-fast`, which Cloudflare's deprecation notice
+names as a variant that stays active.
 
-So "keep the OpenAI path as a fallback" had nothing to keep. What exists now:
-
-- a capability router every model call goes through;
-- four provider adapters behind it — DeepSeek, Qwen, OpenAI and the incumbent
-  Workers AI binding;
-- the two live public tasks still ending on Workers AI, so the site behaves
-  exactly as before while no external key is configured.
+The DeepSeek and Qwen tiers were first built against the vendors' own HTTPS APIs
+and moved onto the `AI` binding once both models became Cloudflare-hosted.
 
 ## How a caller asks for work
 
@@ -40,26 +50,44 @@ if (result.ok) use(result.text);
 `result` is always an object, including on total failure (`{ok: false, errorCode}`).
 The router does not throw into a request path.
 
+## Tiers
+
+| Tier | Runs on | Model | Notes |
+|---|---|---|---|
+| `workers_ai` | `env.AI` | `@cf/meta/llama-3.1-8b-instruct-fast` | the cheap, high-volume tier and the safety net |
+| `deepseek` | `env.AI` | `@cf/deepseek-ai/deepseek-v4-flash-0731` | reasoning, structure, 1.3M context. **Requires Workers Paid** or prepaid AI Gateway credits |
+| `qwen` | `env.AI` | `@cf/qwen/qwen3.8-27b` | vision, image-text-to-text, 262K context |
+| `openai` | HTTPS | `gpt-4o-mini` | optional external second opinion; skipped when unconfigured |
+
 ## Tasks and where they route
 
 | Task | Modality | Default chain | Live today |
 |---|---|---|---|
-| `concept_consult` | text | DeepSeek → Workers AI | yes, `/ai-tools/` idea assistant |
-| `aftercare_support` | text | DeepSeek → Workers AI | yes, `/aftercare/` assistant |
-| `text_summarization` | text | DeepSeek → Workers AI | declared |
-| `text_classification` | text, JSON | DeepSeek → OpenAI | declared |
-| `text_extraction` | text, JSON | DeepSeek → OpenAI | declared |
-| `high_quality_reasoning` | text | OpenAI → DeepSeek | declared |
+| `concept_consult` | text | Llama → DeepSeek | yes, `/ai-tools/` idea assistant |
+| `aftercare_support` | text | Llama → DeepSeek | yes, `/aftercare/` assistant |
+| `text_summarization` | text | DeepSeek → Llama | declared |
+| `text_classification` | text, JSON | DeepSeek → Llama | declared |
+| `text_extraction` | text, JSON | DeepSeek → Llama | declared |
+| `high_quality_reasoning` | text | DeepSeek → OpenAI | declared |
 | `vision_reference_understanding` | vision | Qwen → OpenAI | declared |
 | `vision_document_extraction` | vision, JSON | Qwen → OpenAI | declared |
 
-DeepSeek leads where a cheaper model is good enough and a fallback exists. Qwen
-leads image *understanding*; no image generation moved anywhere. OpenAI leads
-where judgement quality is the point and backs up the cheaper tiers everywhere
-else, which is what stops any single provider becoming a hard dependency.
+### Why Llama leads the public assistants
 
-Reference images attached to a booking enquiry are **not** analysed. Nothing in
-the intake path calls the router, and turning that on is a product and privacy
+The usual "DeepSeek is the cheap tier" assumption inverts on Workers AI.
+DeepSeek V4 Flash is $0.44/M in and $1.32/M out; Llama 3.1 8B is roughly a third
+of that. The two public assistants are short, high-volume replies that do not
+need a frontier model, so they stay on Llama and escalate to DeepSeek only if it
+fails. The tasks that lead with DeepSeek are the ones that actually buy
+something with the price: reasoning, schema-constrained output and long context.
+
+DeepSeek additionally requires the Workers Paid plan or prepaid AI Gateway
+credits. It is never alone in a chain, so an account without either degrades to
+the next tier rather than failing.
+
+Qwen leads image *understanding*; nothing here generates images. Reference
+images attached to a booking enquiry are still **not** analysed — nothing in the
+intake path calls the router, and turning that on is a product and privacy
 decision, not a routing one.
 
 ## Configuration
@@ -69,27 +97,22 @@ variables. Nothing is decided in the browser and nothing reaches it.
 
 | Variable | Effect |
 |---|---|
-| `AI_ROUTE_<TASK>` | ordered provider list, e.g. `deepseek,workers_ai` |
-| `AI_MODEL_DEEPSEEK_TEXT` | DeepSeek model id |
-| `AI_MODEL_QWEN_VISION` / `AI_MODEL_QWEN_TEXT` | Qwen model ids |
+| `AI_ROUTE_<TASK>` | ordered tier list, e.g. `workers_ai,deepseek` |
+| `AI_MODEL_DEEPSEEK_TEXT` | DeepSeek model id, must match `@cf/...` |
+| `AI_MODEL_QWEN_VISION` / `AI_MODEL_QWEN_TEXT` | Qwen model ids, must match `@cf/...` |
+| `AI_MODEL_WORKERS_AI_TEXT` | Llama model id, must match `@cf/...` |
 | `AI_MODEL_OPENAI_TEXT` / `AI_MODEL_OPENAI_VISION` | OpenAI model ids |
-| `AI_MODEL_WORKERS_AI_TEXT` | Workers AI model id |
-| `AI_QWEN_BASE_URL` | DashScope region endpoint, restricted to `*.aliyuncs.com` |
 
-An override that names an unknown provider, repeats one, exceeds the two-provider
-cap or fails the model-id pattern is ignored and the compiled default stands.
+An override that names an unknown tier, repeats one, exceeds the two-tier cap or
+fails the model-id pattern is ignored and the compiled default stands. A model
+id that is not a Cloudflare `@cf/...` id is rejected on the binding-backed
+tiers, so a stray vendor model name cannot silently redirect a chain.
 
 ### Secrets
 
-API keys are Worker **secrets**, never repository content and never `[vars]`:
-
-- `DEEPSEEK_API_KEY`
-- `QWEN_API_KEY`
-- `OPENAI_API_KEY`
-
-A provider with no key configured is skipped during selection — it is never
-attempted and never counted as a fallback. With none of the three set, both live
-public chains resolve to Workers AI and the site is unchanged.
+There is one, and it is optional: `OPENAI_API_KEY`, a Worker secret. The
+binding-backed tiers have no credential at all — a tier is "configured" exactly
+when `env.AI` is present, and billing runs through the Cloudflare account.
 
 ## Cost controls
 
@@ -130,14 +153,19 @@ headers, so a browser cannot reach it.
   client data. Returns the provider, model, fallback state, per-attempt timings
   and a short preview of the model's answer to that synthetic prompt.
 
-Keep it disabled outside a release readback window.
+Run it with the `AI router production probe` workflow rather than by hand. It
+reads back the live routing, probes the DeepSeek and Qwen tiers with fixed
+synthetic payloads, confirms the public assistants still answer, and closes the
+window again.
 
 ## Adding a provider
 
 1. New adapter under `workers/lib/ai/providers/` exporting `id`, `modalities`,
    `configure(env, modality)` and `invoke({config, request, fetchImpl, signal})`.
    Everything provider-shaped — URL, auth, body, response parsing, model ids —
-   stays inside it.
+   stays inside it. A Cloudflare-hosted tier can reuse
+   `providers/workers-ai-binding.js` for the transport; an external one can reuse
+   `providers/chat-completions.js`.
 2. Register it in `PROVIDERS` in `workers/lib/ai/router.js`.
 3. Add it to the relevant chains in `workers/lib/ai/tasks.js`.
 4. Extend `scripts/test-ai-model-router.mjs`.

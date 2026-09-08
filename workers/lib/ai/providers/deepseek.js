@@ -1,42 +1,38 @@
-// DeepSeek adapter — the low-cost text tier.
+// DeepSeek tier — Cloudflare-hosted.
 //
-// Selected for bulk text work (drafting, summarising, extraction, classification)
-// where the cheaper model is good enough and a fallback exists. It is never the
-// only provider in a chain, and it never serves image work: `modalities` is the
-// enforcement point, not a comment.
+// Runs DeepSeek V4 Flash through the account's existing `AI` binding, so the
+// CRM needs no DeepSeek account, no egress to the vendor's own endpoint and no
+// vendor API key. It stays a distinct provider tier rather than "another
+// Workers AI model": the router selects it by name, its model id is configured
+// separately, and pointing it back at a vendor endpoint would be a change to
+// this file alone.
+//
+// Cost note, because it inverts the usual assumption: on Workers AI this model
+// is $0.44/M in and $1.32/M out, several times the Llama 8B tier. It earns that
+// on reasoning, extraction and long-context work (1.3M token window), not on
+// short public assistant replies. The task chains in ../tasks.js reflect that.
+//
+// Paid access: Cloudflare gates this model behind the Workers Paid plan or
+// prepaid AI Gateway credits. On an account without either, the binding throws
+// and the router falls through to the next tier — which is why it is never
+// alone in a chain.
 
-import { callChatCompletions } from './chat-completions.js';
+import { bindingFor, callBindingModel, resolveModel } from './workers-ai-binding.js';
 
 export const id = 'deepseek';
 export const modalities = Object.freeze(new Set(['text']));
 
-const DEFAULT_URL = 'https://api.deepseek.com/chat/completions';
-const DEFAULT_TEXT_MODEL = 'deepseek-chat';
-const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{1,63}$/;
-const MIN_KEY_LENGTH = 20;
+const DEFAULT_TEXT_MODEL = '@cf/deepseek-ai/deepseek-v4-flash-0731';
 
-function modelFor(env) {
-  const configured = typeof env?.AI_MODEL_DEEPSEEK_TEXT === 'string' ? env.AI_MODEL_DEEPSEEK_TEXT.trim() : '';
-  return MODEL_RE.test(configured) ? configured : DEFAULT_TEXT_MODEL;
-}
-
-/** Credentials come from the Worker environment only, never from a request. */
 export function configure(env, modality) {
   if (!modalities.has(modality)) return null;
-  const apiKey = typeof env?.DEEPSEEK_API_KEY === 'string' ? env.DEEPSEEK_API_KEY.trim() : '';
-  if (apiKey.length < MIN_KEY_LENGTH) return null;
-  return { apiKey, model: modelFor(env), url: DEFAULT_URL };
+  const binding = bindingFor(env);
+  if (!binding) return null;
+  return { binding, model: resolveModel(env, 'AI_MODEL_DEEPSEEK_TEXT', DEFAULT_TEXT_MODEL) };
 }
 
-export async function invoke({ config, request, fetchImpl, signal }) {
-  return callChatCompletions({
-    url: config.url,
-    apiKey: config.apiKey,
-    model: config.model,
-    request,
-    fetchImpl,
-    signal,
-  });
+export async function invoke({ config, request, signal }) {
+  return callBindingModel({ binding: config.binding, model: config.model, request, signal });
 }
 
-export const __testing = Object.freeze({ DEFAULT_URL, DEFAULT_TEXT_MODEL, MIN_KEY_LENGTH });
+export const __testing = Object.freeze({ DEFAULT_TEXT_MODEL });

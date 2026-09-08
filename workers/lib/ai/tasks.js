@@ -10,6 +10,14 @@
 // `aftercare_support`). The rest are declared capabilities with adapters behind
 // them: they are reachable through the router and the guarded probe, and are
 // wired to a caller when a CRM surface actually needs them.
+//
+// Chain order is a cost decision, and on Workers AI the cheap tier is Llama 8B,
+// not DeepSeek: DeepSeek V4 Flash costs $0.44/$1.32 per M against Llama's
+// $0.15-ish, and it additionally requires the Workers Paid plan. So the two
+// short, high-volume public assistant replies stay on Llama and escalate to
+// DeepSeek only if that fails, while the tasks that actually benefit from
+// reasoning, structure or a long context lead with DeepSeek. Every one of these
+// orders is overridable server-side via `AI_ROUTE_<TASK>`.
 
 /** A request may never touch more than this many providers, whatever a route says. */
 export const MAX_PROVIDERS_PER_REQUEST = 2;
@@ -30,7 +38,7 @@ const TASKS = Object.freeze({
   concept_consult: {
     capability: 'drafting',
     modality: 'text',
-    chain: ['deepseek', 'workers_ai'],
+    chain: ['workers_ai', 'deepseek'],
     timeoutMs: 15_000,
     maxOutputTokens: 500,
     temperature: 0.4,
@@ -39,7 +47,7 @@ const TASKS = Object.freeze({
   aftercare_support: {
     capability: 'drafting',
     modality: 'text',
-    chain: ['deepseek', 'workers_ai'],
+    chain: ['workers_ai', 'deepseek'],
     timeoutMs: 15_000,
     maxOutputTokens: 600,
     temperature: 0.2,
@@ -50,7 +58,7 @@ const TASKS = Object.freeze({
   text_extraction: {
     capability: 'extraction',
     modality: 'text',
-    chain: ['deepseek', 'openai'],
+    chain: ['deepseek', 'workers_ai'],
     timeoutMs: 20_000,
     maxOutputTokens: 800,
     temperature: 0,
@@ -59,7 +67,7 @@ const TASKS = Object.freeze({
   text_classification: {
     capability: 'classification',
     modality: 'text',
-    chain: ['deepseek', 'openai'],
+    chain: ['deepseek', 'workers_ai'],
     timeoutMs: 15_000,
     maxOutputTokens: 200,
     temperature: 0,
@@ -74,12 +82,12 @@ const TASKS = Object.freeze({
     temperature: 0.2,
     structured: false,
   },
-  // Deliberately OpenAI-first. Where judgement quality is the point, the cheaper
-  // model is the fallback rather than the default.
+  // DeepSeek-first: reasoning is what this tier is for. OpenAI stays as an
+  // optional external second opinion and is simply skipped when no key exists.
   high_quality_reasoning: {
     capability: 'reasoning',
     modality: 'text',
-    chain: ['openai', 'deepseek'],
+    chain: ['deepseek', 'openai'],
     timeoutMs: 30_000,
     maxOutputTokens: 1_200,
     temperature: 0.2,

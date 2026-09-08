@@ -1,8 +1,9 @@
-// OpenAI adapter — quality tier and cross-provider fallback.
+// OpenAI tier — the only external provider left, and entirely optional.
 //
-// Kept first for `high_quality_reasoning` and last for the cheaper task classes.
-// Its presence is what stops DeepSeek or Qwen becoming a single point of failure
-// for a whole capability.
+// The DeepSeek and Qwen tiers now run on the Cloudflare `AI` binding, so no
+// chain depends on this adapter: an unconfigured provider is skipped during
+// selection, never attempted. OPENAI_API_KEY buys a second opinion outside
+// Cloudflare for reasoning and vision; without it those chains still resolve.
 
 import { callChatCompletions } from './chat-completions.js';
 

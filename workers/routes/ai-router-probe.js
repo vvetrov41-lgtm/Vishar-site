@@ -16,6 +16,12 @@
 // at least 32 characters is configured. While off the path does not exist:
 // it answers 404, the same as any unknown path, and reveals nothing.
 //
+// In production the flag is set in wrangler.toml, which marks the build as
+// willing to serve a probe; the operative gate is the token, and no token
+// exists in steady state. The production probe workflow provisions an ephemeral
+// one, uses it, and deletes it in the same run, so the window is minutes long
+// and the value never leaves the runner.
+//
 // No CORS headers are emitted. A browser cannot reach this from the site.
 
 import { describeRouting, runModelTask } from '../lib/ai/router.js';

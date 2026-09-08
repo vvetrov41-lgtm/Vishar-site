@@ -20,19 +20,20 @@ Set these repository secrets before running the workflow:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-## Optional model-provider secrets
+## Model provider secrets
 
-The public assistants route through the capability router described in
-`docs/ai/model-routing.md`. These secrets are optional: with none of them set,
-both live chains resolve to the existing `AI` binding and behaviour is unchanged.
+There is one, and it is optional:
 
-- `DEEPSEEK_API_KEY` — enables the low-cost text tier
-- `QWEN_API_KEY` — enables the multimodal tier
-- `OPENAI_API_KEY` — enables the quality tier and cross-provider fallback
+- `OPENAI_API_KEY` — an external second opinion for reasoning and vision.
 
-Set them with `wrangler secret put <NAME>` against the `tattooai` Worker, or in
-the Cloudflare dashboard. Model identifiers and per-task provider order are
-plain variables in `wrangler.toml`, not secrets.
+The DeepSeek, Qwen and Llama tiers all run on the `AI` binding above, so they
+need no key and no account outside Cloudflare. See `docs/ai/model-routing.md`.
+
+DeepSeek V4 Flash requires the Workers Paid plan or prepaid AI Gateway credits.
+Without either, chains that lead with DeepSeek fall through to the next tier.
+
+Model identifiers and per-task tier order are plain variables in
+`wrangler.toml`, not secrets.
 
 Do not commit any secrets to the repository.
 
