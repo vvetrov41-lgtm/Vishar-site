@@ -115,6 +115,7 @@ export function EnquiryConsultationPanel({
           <span>{copy.start}</span>
           <input
             type="datetime-local"
+            data-appointment-time-step="unrestricted"
             value={startAt}
             disabled={busy}
             onChange={(event) => {
