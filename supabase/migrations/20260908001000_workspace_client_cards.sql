@@ -18,7 +18,7 @@ create temporary table _client_workspace_scope (
   client_id uuid not null,
   workspace_id uuid not null,
   primary key (client_id, workspace_id)
-) on commit drop;
+);
 
 insert into _client_workspace_scope (client_id, workspace_id)
 select e.client_id, a.workspace_id
@@ -59,7 +59,7 @@ $$;
 
 create temporary table _shared_client_ids (
   client_id uuid primary key
-) on commit drop;
+);
 
 insert into _shared_client_ids (client_id)
 select client_id
@@ -105,7 +105,7 @@ create temporary table _client_workspace_map (
   new_client_id uuid not null,
   primary key (old_client_id, workspace_id),
   unique (new_client_id)
-) on commit drop;
+);
 
 insert into _client_workspace_map (old_client_id, workspace_id, new_client_id)
 select client_id,
