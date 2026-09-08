@@ -222,6 +222,13 @@ where a.id = x.artist_id
   and m.workspace_id = a.workspace_id
   and x.client_id <> m.new_client_id;
 
+-- activity_log is intentionally append-only at runtime. Re-keying client_id is
+-- a one-time tenant-key migration, not an operator audit mutation. Disable only
+-- the row UPDATE/DELETE guard for this statement and restore it immediately in
+-- the same migration transaction. Any later failure rolls the trigger state and
+-- the re-key back together.
+alter table public.activity_log disable trigger activity_log_append_only;
+
 update public.activity_log x
 set client_id = m.new_client_id
 from public.artists a, _client_workspace_map m
@@ -230,6 +237,8 @@ where x.artist_id is not null
   and m.old_client_id = x.client_id
   and m.workspace_id = a.workspace_id
   and x.client_id <> m.new_client_id;
+
+alter table public.activity_log enable trigger activity_log_append_only;
 
 update crm_private.gmail_thread_contexts x
 set client_id = m.new_client_id
@@ -462,7 +471,7 @@ begin
     raise exception 'client full_name is required' using errcode = '22023';
   end if;
   if v_email is not null
-     and v_email !~ '^[^[:space:]@]+@[^[:space:]@]+\\.[^[:space:]@]+$' then
+     and v_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' then
     raise exception 'client email is invalid' using errcode = '22023';
   end if;
   if v_preferred_contact is not null
