@@ -159,6 +159,7 @@ select public.service_complete_enquiry_ai_job(
   (select (j->>'lease_token')::uuid from pg_temp.claim_a2),
   pg_temp.valid_result(),'qwen','@cf/qwen/qwen3.8-27b'
 ) as r;
+grant select on pg_temp.complete_a to authenticated,service_role;
 
 select is((select r->>'status' from pg_temp.complete_a),'succeeded','schema-valid Qwen result is accepted');
 select is(
