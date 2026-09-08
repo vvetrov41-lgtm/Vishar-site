@@ -267,10 +267,23 @@ describe('booking a session by asking for one', () => {
     }
   });
 
-  it('keeps manual entry for a time the client already named', async () => {
+  it('keeps manual entry on five-minute steps and derives the end from duration', async () => {
     await openPanel();
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
     fireEvent.click(screen.getByRole('button', { name: 'Enter a time myself' }));
-    expect(await screen.findByText(/a time the client has already named/)).toBeInTheDocument();
+
+    expect(await screen.findByText(/End time follows the selected duration automatically/)).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('420')).not.toBeInTheDocument();
+
+    const start = screen.getByLabelText('Start') as HTMLInputElement;
+    const end = screen.getByLabelText('End') as HTMLInputElement;
+    expect(start.step).toBe('300');
+    expect(end.step).toBe('300');
+    expect(end).toHaveAttribute('readonly');
+
+    const date = dayValue(1);
+    fireEvent.change(start, { target: { value: `${date}T09:00` } });
+    await waitFor(() => expect(end.value).toBe(`${date}T16:00`));
     expect(screen.getByRole('button', { name: 'Book this exact time' })).toBeInTheDocument();
   });
 
