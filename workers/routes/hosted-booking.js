@@ -187,7 +187,7 @@ async function resolveHostedMeta(sourceId, env, fetchImpl) {
   return Array.isArray(result) ? result[0] : result;
 }
 
-export async function handleHostedBookingRequest(request, env, { logger, fetchImpl = fetch } = {}) {
+export async function handleHostedBookingRequest(request, env, { logger, fetchImpl = fetch, schedule = null } = {}) {
   const routeLogger = logger || createLogger(newRequestId());
   const sourceId = readHostedBookingSourceId(request);
   if (!sourceId) return unavailablePage(404);
@@ -214,6 +214,7 @@ export async function handleHostedBookingRequest(request, env, { logger, fetchIm
       cors: {},
       logger: routeLogger,
       fetchImpl,
+      schedule,
     });
   }
 

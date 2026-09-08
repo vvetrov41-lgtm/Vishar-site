@@ -20,6 +20,7 @@ import {
 import { parseEnquiryFields, parseEnquiryFiles } from '../lib/validation.js';
 import { createSupabaseClient, SupabaseError, toRequestError } from '../lib/supabase.js';
 import { createStorageClient } from '../lib/storage.js';
+import { scheduleEnquiryAi } from '../lib/enquiry-ai.js';
 import { buildEnquiryNotification, sendNotification } from '../lib/telegram.js';
 import {
   readBookingSourcePublicId,
@@ -275,6 +276,7 @@ async function handleEnquiryIntakeInternal(
     });
 
     if (intake.replayed && intake.intake_state === 'complete') {
+      scheduleEnquiryAi(env, enquiryId, schedule, { supabase, fetchImpl });
       scheduleOpenAiLeadConversion({
         env,
         eventId: idempotencyKey,
@@ -382,6 +384,7 @@ async function handleEnquiryIntakeInternal(
       logger,
     });
 
+    scheduleEnquiryAi(env, enquiryId, schedule, { supabase, fetchImpl });
     const outboxId = finalization?.outbox_id;
     let notification = { delivered: false, errorCode: 'outbox_route_missing' };
     if (outboxId) {

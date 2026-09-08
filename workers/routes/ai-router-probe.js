@@ -25,6 +25,7 @@
 // No CORS headers are emitted. A browser cannot reach this from the site.
 
 import { describeRouting, runModelTask } from '../lib/ai/router.js';
+import { ENQUIRY_AI_SYSTEM, validateEnquiryAnalysis } from '../lib/ai/enquiry-schema.js';
 import { createLogger, newRequestId } from '../lib/logging.js';
 
 const PATH = '/internal/ai-router';
@@ -38,6 +39,16 @@ const PROBE_IMAGE_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR42mO4o6FBEmIY1TCqYfhqAAAyBCwQhCQ/2gAAAABJRU5ErkJggg==';
 
 const PROBES = Object.freeze({
+  enquiry_intake: {
+    system: ENQUIRY_AI_SYSTEM,
+    input: JSON.stringify({ untrusted_client_data: {
+      client: { full_name: 'Synthetic Probe', email: 'probe@example.invalid' },
+      enquiry: { idea: 'A black and grey Neptune tattoo on the outer forearm, about twenty centimetres.' },
+      artist: { display_name: 'Studio artist' }, reference_images_present: false,
+    } }),
+    images: [],
+    requiredKeys: ['fields', 'summary', 'missing_information', 'draft_reply'],
+  },
   concept_consult: {
     system: 'You are a routing probe. Reply with exactly the word: ROUTED.',
     input: 'Reply with the single word ROUTED.',
@@ -142,18 +153,21 @@ export async function handleAiRouterProbeRequest(request, env, { fetchImpl = fet
   // Attempts are already bounded operational tokens. The preview is the model's
   // answer to a fixed synthetic prompt, so echoing a short slice proves real
   // inference without exposing anything about a person.
-  return json(result.ok ? 200 : 502, {
-    ok: result.ok,
+  const schemaValid = task === 'enquiry_intake' ? Boolean(result.ok && validateEnquiryAnalysis(result.json)) : null;
+  const ok = result.ok && schemaValid !== false;
+  return json(ok ? 200 : 502, {
+    ok,
+    ...(schemaValid !== null ? { schemaValid } : {}),
     task: result.task,
     capability: result.capability ?? null,
     provider: result.provider ?? null,
     model: result.model ?? null,
     fallbackUsed: result.fallbackUsed ?? false,
-    errorCode: result.errorCode ?? null,
+    errorCode: schemaValid === false && result.ok ? 'output_invalid' : result.errorCode ?? null,
     durationMs: result.durationMs,
     attempts: result.attempts,
     outputChars: result.ok ? result.text.length : 0,
-    outputPreview: result.ok ? result.text.slice(0, MAX_PREVIEW_CHARS) : null,
+    outputPreview: task === 'enquiry_intake' ? null : result.ok ? result.text.slice(0, MAX_PREVIEW_CHARS) : null,
   });
 }
 

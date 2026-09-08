@@ -182,6 +182,10 @@ await test('every declared task resolves to known providers and bounded limits',
 });
 
 await test('chain order follows Workers AI cost, not the old vendor assumption', () => {
+  assert.deepEqual(
+    [...tasks.resolveTask({}, 'enquiry_intake', router.PROVIDER_IDS).chain],
+    ['qwen', 'workers_ai'],
+  );
   // Short, high-volume public replies stay on the cheap Llama tier and escalate.
   for (const name of ['concept_consult', 'aftercare_support']) {
     const chain = tasks.resolveTask({}, name, router.PROVIDER_IDS).chain;

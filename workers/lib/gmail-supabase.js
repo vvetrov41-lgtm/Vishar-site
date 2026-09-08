@@ -10,6 +10,7 @@ const BACKEND_RPCS = new Set([
   'service_disable_gmail_integration',
   'service_upsert_gmail_thread_context',
   'service_get_gmail_thread_context',
+  'service_observe_gmail_enquiry_ai',
   'claim_email_outbox',
   'record_email_outbox_result',
 ]);
@@ -48,6 +49,8 @@ async function callRpc(origin, name, args, headers, fetchImpl, observe, retrySec
       body: JSON.stringify(args || {}),
       // Workers supports manual/follow only. Reject 3xx below without forwarding credentials.
       redirect: 'manual',
+      // Keep optional enrichment bounded even if its database request stalls.
+      ...(name === 'service_observe_gmail_enquiry_ai' ? { signal: AbortSignal.timeout(1500) } : {}),
     });
     details = observe
       ? await observe(name, response, startedAt, attempt)

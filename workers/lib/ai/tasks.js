@@ -34,6 +34,15 @@ export const MAX_IMAGE_BYTES = 1_500_000;
 export const ALLOWED_IMAGE_MIME_TYPES = Object.freeze(['image/jpeg', 'image/png', 'image/webp']);
 
 const TASKS = Object.freeze({
+  enquiry_intake: {
+    capability: 'extraction',
+    modality: 'text',
+    chain: ['qwen', 'workers_ai'],
+    timeoutMs: 25_000,
+    maxOutputTokens: 2_000,
+    temperature: 0,
+    structured: true,
+  },
   // --- live public-site traffic ---------------------------------------------
   concept_consult: {
     capability: 'drafting',

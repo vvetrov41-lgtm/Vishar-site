@@ -111,7 +111,7 @@ function trustedIntakeRequest(request) {
   return new Request(request, { headers });
 }
 
-export async function handlePublicBookingRequest(request, env, { logger, fetchImpl = fetch } = {}) {
+export async function handlePublicBookingRequest(request, env, { logger, fetchImpl = fetch, schedule = null } = {}) {
   const routeLogger = logger || createLogger(newRequestId());
   const slug = readPublicBookingSlug(request);
   if (!slug) return unavailablePage(404);
@@ -130,7 +130,7 @@ export async function handlePublicBookingRequest(request, env, { logger, fetchIm
         BOOKING_SOURCE_KEY: `public-slug:${slug}`,
         BOOKING_FORM_VERSION: SUPPORTED_BOOKING_FORM_VERSION,
       },
-      { cors: {}, logger: routeLogger, fetchImpl },
+      { cors: {}, logger: routeLogger, fetchImpl, schedule },
     );
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') {
