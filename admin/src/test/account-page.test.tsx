@@ -65,6 +65,7 @@ describe('the account page', () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     renderAccount({ rpcCalls });
     await screen.findByRole('heading', { name: 'Account' });
+    await screen.findByDisplayValue('Manager');
 
     fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Sam' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

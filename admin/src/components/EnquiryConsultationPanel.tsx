@@ -1,6 +1,13 @@
 import { useState } from 'react';
+import { snapAppointmentStart } from '../lib/appointment-time-step';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
+import {
+  composeManualDateTime,
+  MANUAL_HOUR_OPTIONS,
+  MANUAL_MINUTE_OPTIONS,
+  splitManualDateTime,
+} from '../lib/manual-time-control';
 import { useApi } from '../lib/session';
 import type { AppointmentType } from '../lib/appointment-api';
 import type { Enquiry } from '../lib/types';
@@ -11,11 +18,6 @@ const CONSULTATION_TYPES: AppointmentType[] = [
 ];
 
 const DURATIONS = [15, 20, 30];
-const FIVE_MINUTES_MS = 5 * 60_000;
-
-function isFiveMinuteBoundary(value: Date): boolean {
-  return value.getTime() % FIVE_MINUTES_MS === 0;
-}
 
 export function EnquiryConsultationPanel({
   enquiry,
@@ -28,7 +30,7 @@ export function EnquiryConsultationPanel({
   const { language } = useLanguage();
   const copy = COPY[language];
   const [appointmentType, setAppointmentType] = useState<AppointmentType>('in_person_consultation');
-  const [startAt, setStartAt] = useState('');
+  const [startAt, setStartAt] = useState(() => snapAppointmentStart(new Date()));
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -36,14 +38,18 @@ export function EnquiryConsultationPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [clash, setClash] = useState<{ count: number; first: string } | null>(null);
 
+  const startParts = splitManualDateTime(startAt, todayValue());
+
+  function updateStart(next: Partial<typeof startParts>) {
+    setStartAt(composeManualDateTime({ ...startParts, ...next }));
+    setClash(null);
+    setError(null);
+  }
+
   async function schedule() {
     const start = new Date(startAt);
     if (!startAt || Number.isNaN(start.getTime())) {
       setError(copy.invalidStart);
-      return;
-    }
-    if (!isFiveMinuteBoundary(start)) {
-      setError(copy.invalidStep);
       return;
     }
 
@@ -83,7 +89,7 @@ export function EnquiryConsultationPanel({
         projectId: null,
         notes: notes.trim() || null,
       });
-      setStartAt('');
+      setStartAt(snapAppointmentStart(new Date()));
       setNotes('');
       setClash(null);
       setNotice(copy.created(
@@ -121,19 +127,6 @@ export function EnquiryConsultationPanel({
           </select>
         </label>
         <label>
-          <span>{copy.start}</span>
-          <input
-            type="datetime-local"
-            step={300}
-            value={startAt}
-            disabled={busy}
-            onChange={(event) => {
-              setStartAt(event.target.value);
-              setClash(null);
-            }}
-          />
-        </label>
-        <label>
           <span>{copy.duration}</span>
           <select
             value={durationMinutes}
@@ -149,6 +142,43 @@ export function EnquiryConsultationPanel({
           </select>
         </label>
       </div>
+
+      <div className="booking-manual-time-grid" role="group" aria-label={copy.start}>
+        <label>
+          <span>{copy.date}</span>
+          <input
+            type="date"
+            value={startParts.date}
+            disabled={busy}
+            onChange={(event) => updateStart({ date: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>{copy.hour}</span>
+          <select
+            value={startParts.hour}
+            disabled={busy}
+            onChange={(event) => updateStart({ hour: event.target.value })}
+          >
+            {MANUAL_HOUR_OPTIONS.map((hour) => (
+              <option key={hour} value={hour}>{hour}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>{copy.minute}</span>
+          <select
+            value={startParts.minute}
+            disabled={busy}
+            onChange={(event) => updateStart({ minute: event.target.value })}
+          >
+            {MANUAL_MINUTE_OPTIONS.map((minute) => (
+              <option key={minute} value={minute}>{minute}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       <label>
         <span>{copy.notes}</span>
         <textarea
@@ -178,6 +208,13 @@ export function EnquiryConsultationPanel({
   );
 }
 
+function todayValue(): string {
+  const now = new Date();
+  const month = `${now.getMonth() + 1}`.padStart(2, '0');
+  const day = `${now.getDate()}`.padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 function typeLabel(type: AppointmentType, language: 'en' | 'ru') {
   if (language === 'ru') {
     return type === 'video_consultation' ? 'Видеоконсультация' : 'Очная консультация';
@@ -191,6 +228,9 @@ const COPY = {
     hint: 'Create a consultation directly from this enquiry. A project is not created until you decide to proceed with the tattoo.',
     type: 'Consultation type',
     start: 'Date and time',
+    date: 'Date',
+    hour: 'Hour',
+    minute: 'Minute',
     duration: 'Duration',
     notes: 'Notes (optional)',
     minutes: (value: number) => `${value} min`,
@@ -198,7 +238,6 @@ const COPY = {
     saving: 'Checking schedule…',
     created: (type: string, date: string) => `${type} booked for ${date} and linked to this enquiry. It is proposed until you confirm it.`,
     invalidStart: 'Choose a valid consultation date and time.',
-    invalidStep: 'Choose a time in five-minute steps, for example 10:00, 10:05 or 10:10.',
     conflict: (count: number, first: string) => `This time is blocked by ${count} active appointment${count === 1 ? '' : 's'}. The first starts ${first}. Choose another time.`,
     failed: 'Could not schedule that consultation.',
   },
@@ -207,6 +246,9 @@ const COPY = {
     hint: 'Создай консультацию прямо из заявки. Проект появится только тогда, когда решишь продолжить работу над татуировкой.',
     type: 'Тип консультации',
     start: 'Дата и время',
+    date: 'Дата',
+    hour: 'Час',
+    minute: 'Минута',
     duration: 'Длительность',
     notes: 'Заметка (необязательно)',
     minutes: (value: number) => `${value} мин`,
@@ -214,7 +256,6 @@ const COPY = {
     saving: 'Проверяю расписание…',
     created: (type: string, date: string) => `${type} на ${date} создана и привязана к этой заявке. Запись предложена и ждёт подтверждения.`,
     invalidStart: 'Укажи корректные дату и время консультации.',
-    invalidStep: 'Выберите время с шагом 5 минут, например 10:00, 10:05 или 10:10.',
     conflict: (count: number, first: string) => `Это время занято активными записями: ${count}. Первая начинается ${first}. Выберите другое время.`,
     failed: 'Не удалось создать консультацию.',
   },
