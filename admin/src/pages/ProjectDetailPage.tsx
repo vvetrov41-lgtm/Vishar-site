@@ -118,8 +118,15 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     sessionFinance.find((entry) => entry.session_id === appointmentId)?.price ?? null;
   const hasConfirmedWork = appointments.some((appointment) => ['confirmed', 'completed'].includes(appointment.status));
   const lifecycleMismatch = project.status === 'draft' && (project.deposit_status === 'paid' || hasConfirmedWork);
+  const now = Date.now();
   const nextAppointment = [...appointments]
     .filter((appointment) => ['draft', 'proposed', 'confirmed'].includes(appointment.status))
+    .filter((appointment) => {
+      const endAt = new Date(appointment.end_at).getTime();
+      if (Number.isFinite(endAt)) return endAt > now;
+      const startAt = new Date(appointment.start_at).getTime();
+      return Number.isFinite(startAt) && startAt >= now;
+    })
     .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0] ?? null;
 
   async function changeProjectStatus(nextStatus: ProjectStatus) {
@@ -136,8 +143,19 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         return;
       }
     }
+
     setProjectStatus(nextStatus);
-    await run(() => api.setProjectStatus(project.id, nextStatus));
+    setBusy(true);
+    setActionError(null);
+    try {
+      await api.setProjectStatus(project.id, nextStatus);
+      reload();
+    } catch (cause) {
+      setProjectStatus(project.status);
+      setActionError(cause instanceof Error ? cause.message : t('project.actionFailed'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -242,9 +260,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     {typeLabel(appointment.appointment_type, language)} · {durationValue(appointment.duration_hours, language)}
                     {' · '}{label('paymentStatus', appointment.payment_status)}
                     {mayViewFinance && price !== null ? ` · ${formatMoney(price, appointment.currency, language)}` : ''}
-                    {appointment.calendar_sync_status === 'failed' || appointment.calendar_sync_status === 'synced'
-                      ? ` · ${copy.calendar}: ${calendarSyncLabel(appointment, language)}`
-                      : ''}
+                    {` · ${copy.calendar}: ${calendarSyncLabel(appointment, language)}`}
                   </div>
 
                   {mayManageAppointments && active ? (
