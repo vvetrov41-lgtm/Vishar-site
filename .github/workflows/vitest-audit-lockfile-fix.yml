@@ -1,0 +1,50 @@
+name: One-shot Vitest security lockfile update
+
+on:
+  push:
+    branches:
+      - fix/vitest-audit-20260908
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vitest-audit-lockfile-fix
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/vitest-audit-20260908
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - name: Generate patched lockfile and validate CRM
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd admin
+          npm install --save-dev vitest@4.1.11 --package-lock-only --ignore-scripts
+          npm ci
+          npm audit --audit-level=moderate
+          npm test -- --run
+          npm run typecheck
+          npm run build
+      - name: Commit only dependency metadata and remove this one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/vitest-audit-lockfile-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin/package.json admin/package-lock.json .github/workflows/vitest-audit-lockfile-fix.yml
+          git diff --cached --check
+          git commit -m 'Security: update Vitest to patched 4.1.11'
+          git push origin HEAD:fix/vitest-audit-20260908
