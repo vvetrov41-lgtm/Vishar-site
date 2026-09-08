@@ -42,6 +42,14 @@ async function chooseClientOnCalendar(options: Record<string, unknown> = {}) {
   return rendered;
 }
 
+function setManualStart(value: string) {
+  const [date, time] = value.split('T');
+  const [hour, minute] = time.split(':');
+  fireEvent.change(screen.getByLabelText('Date'), { target: { value: date } });
+  fireEvent.change(screen.getByLabelText('Hour'), { target: { value: hour } });
+  fireEvent.change(screen.getByLabelText('Minute'), { target: { value: minute } });
+}
+
 describe('choosing a client', () => {
   it('searches rather than listing every client in a native picker', async () => {
     renderWithSession(<App />, {
@@ -84,12 +92,8 @@ describe('one booking behaviour', () => {
       target: { value: PROJECT_ID },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Enter a time myself' }));
-    fireEvent.change(await screen.findByLabelText('Start'), {
-      target: { value: '2026-09-02T10:00' },
-    });
-    fireEvent.change(screen.getByLabelText('End'), {
-      target: { value: '2026-09-02T17:00' },
-    });
+    setManualStart('2026-09-02T10:00');
+    expect((screen.getByLabelText('End') as HTMLInputElement).value).toMatch(/17:00/);
     fireEvent.click(screen.getByRole('button', { name: 'Book this exact time' }));
 
     await waitFor(() => {
@@ -109,12 +113,7 @@ describe('one booking behaviour', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Enter a time myself' }));
     // The fixture artist already has a session in this window.
-    fireEvent.change(await screen.findByLabelText('Start'), {
-      target: { value: '2026-09-01T11:00' },
-    });
-    fireEvent.change(screen.getByLabelText('End'), {
-      target: { value: '2026-09-01T13:00' },
-    });
+    setManualStart('2026-09-01T11:00');
     fireEvent.click(screen.getByRole('button', { name: 'Check this time' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/will be refused/);
@@ -130,12 +129,8 @@ describe('one booking behaviour', () => {
       target: { value: 'in_person_consultation' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Enter a time myself' }));
-    fireEvent.change(await screen.findByLabelText('Start'), {
-      target: { value: '2026-09-01T11:00' },
-    });
-    fireEvent.change(screen.getByLabelText('End'), {
-      target: { value: '2026-09-01T11:30' },
-    });
+    setManualStart('2026-09-01T11:00');
+    expect((screen.getByLabelText('End') as HTMLInputElement).value).toMatch(/11:30/);
     fireEvent.click(screen.getByRole('button', { name: 'Check this time' }));
 
     // A consultation during a tattoo session is reported, not refused - which
