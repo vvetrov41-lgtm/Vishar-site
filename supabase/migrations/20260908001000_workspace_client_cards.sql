@@ -11,6 +11,13 @@
 alter table public.clients
   add column if not exists workspace_id uuid;
 
+-- activity_log is intentionally append-only at runtime. Several re-key updates
+-- below can emit audit inserts before activity_log itself is re-keyed. Disable
+-- the row UPDATE/DELETE guard before any such DML so PostgreSQL never sees
+-- pending activity_log trigger events before this ALTER. The migration runs in
+-- one transaction, so any later failure rolls both data and trigger state back.
+alter table public.activity_log disable trigger activity_log_append_only;
+
 -- Build the authoritative set of workspaces in which each existing client has
 -- actual CRM work. Audit/outbox rows do not create ownership; they follow the
 -- business records below.
@@ -221,13 +228,6 @@ where a.id = x.artist_id
   and m.old_client_id = x.client_id
   and m.workspace_id = a.workspace_id
   and x.client_id <> m.new_client_id;
-
--- activity_log is intentionally append-only at runtime. Re-keying client_id is
--- a one-time tenant-key migration, not an operator audit mutation. Disable only
--- the row UPDATE/DELETE guard for this statement and restore it immediately in
--- the same migration transaction. Any later failure rolls the trigger state and
--- the re-key back together.
-alter table public.activity_log disable trigger activity_log_append_only;
 
 update public.activity_log x
 set client_id = m.new_client_id
