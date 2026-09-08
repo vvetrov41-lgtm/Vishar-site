@@ -45,31 +45,31 @@ export function RecordArtistContext({ artistId }: { artistId: string }) {
     );
   }
 
+  if (!mismatch) {
+    return (
+      <div className="detail-artist-context" role="status" style={{ marginBottom: 8 }}>
+        <span className="badge">
+          {language === 'ru' ? 'Мастер' : 'Artist'}: {artist.display_name}
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className={mismatch ? 'notice warn' : 'notice'} role="status" style={{ marginBottom: 12 }}>
-      <strong style={{ display: 'block', color: mismatch ? undefined : 'var(--text)' }}>
+    <div className="notice warn" role="status" style={{ marginBottom: 12 }}>
+      <strong style={{ display: 'block' }}>
         {language === 'ru' ? 'Мастер' : 'Artist'}: {artist.display_name}
       </strong>
-      {mismatch ? (
-        <>
-          <span>
-            {language === 'ru'
-              ? `Фильтр CRM сейчас установлен на ${selectedArtist?.display_name ?? 'другого мастера'}.`
-              : `The CRM filter is currently set to ${selectedArtist?.display_name ?? 'another artist'}.`}
-          </span>
-          <div className="actions">
-            <button type="button" onClick={() => setSelectedArtistId(artist.id)}>
-              {language === 'ru' ? `Переключить на ${artist.display_name}` : `Switch to ${artist.display_name}`}
-            </button>
-          </div>
-        </>
-      ) : (
-        <span>
-          {language === 'ru'
-            ? 'Контекст записи совпадает с текущим фильтром или открыт список всех мастеров.'
-            : 'The record matches the current filter, or all assigned artists are selected.'}
-        </span>
-      )}
+      <span>
+        {language === 'ru'
+          ? `Фильтр CRM сейчас установлен на ${selectedArtist?.display_name ?? 'другого мастера'}.`
+          : `The CRM filter is currently set to ${selectedArtist?.display_name ?? 'another artist'}.`}
+      </span>
+      <div className="actions">
+        <button type="button" onClick={() => setSelectedArtistId(artist.id)}>
+          {language === 'ru' ? `Переключить на ${artist.display_name}` : `Switch to ${artist.display_name}`}
+        </button>
+      </div>
     </div>
   );
 }
