@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { formatMoney } from '../lib/format';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { useLanguage } from '../lib/i18n';
+import { Link } from '../lib/router';
 import { useApi } from '../lib/session';
 import type { Appointment } from '../lib/appointment-api';
 import type {
@@ -187,16 +188,21 @@ export function ProjectDepositPanel({
 
   return (
     <>
-      <div className="notice">
-        <strong>{copy.workflowTitle}</strong>
-        <div style={{ marginTop: 6 }}>{copy.workflowSteps}</div>
-      </div>
+      <details>
+        <summary className="meta" style={{ cursor: 'pointer' }}>{copy.workflowHelp}</summary>
+        <p className="notice" style={{ marginTop: 8 }}>{copy.workflowSteps}</p>
+      </details>
 
       {loading ? <p className="notice">{copy.loading}</p> : null}
       {legacyPaid ? <p className="notice ok">{copy.legacyPaidNotice}</p> : null}
 
       {!loading && preview && !preview.policy_configured ? (
-        <p className="notice warn">{copy.noPolicy}</p>
+        <div className="notice warn">
+          <div>{copy.noPolicy}</div>
+          <div className="actions" style={{ marginTop: 8 }}>
+            <Link to="/payments" className="badge">{copy.configurePayments}</Link>
+          </div>
+        </div>
       ) : null}
       {!loading && preview?.policy_configured && !preview.calculable ? (
         <p className="notice warn">{copy.notCalculable}</p>
@@ -299,8 +305,8 @@ export function ProjectDepositPanel({
       {!loading
         && project.deposit_status !== 'paid'
         && formattedManualProjectAmount ? (
-          <div className="card" style={{ marginTop: 18 }}>
-            <h3 style={{ fontSize: '1rem', marginBottom: 6 }}>{copy.manualProjectTitle}</h3>
+          <details style={{ marginTop: 18 }}>
+            <summary>{copy.manualProjectTitle}</summary>
             <p className="notice">{copy.manualProjectHelp}</p>
             <div className="actions" style={{ marginTop: 10 }}>
               <button
@@ -314,7 +320,7 @@ export function ProjectDepositPanel({
                   : copy.manualProjectAction(formattedManualProjectAmount)}
               </button>
             </div>
-          </div>
+          </details>
         ) : null}
 
       {created ? (
@@ -552,8 +558,9 @@ function requestStatus(status: ProjectPaymentRequest['status'], language: 'en' |
 
 const COPY = {
   en: {
-    workflowTitle: 'Deposit in three steps',
+    workflowHelp: 'How deposits work',
     workflowSteps: '1. Check the amount. 2. Create the payment link. 3. Send it to the client. When Monzo reports the payment, CRM reconciles it against that request.',
+    configurePayments: 'Configure in Payments',
     stepAmount: '1. Deposit amount',
     currentAmount: 'Current deposit amount',
     usingRecommended: (amount: string) => `Using the recommended amount: ${amount}.`,
@@ -566,7 +573,7 @@ const COPY = {
     stepLink: '2. Payment link',
     linkHelp: (amount: string) => `The next button creates a payment request for exactly ${amount}. After that, the amount is locked for this request.`,
     createRequest: (amount: string) => `Create deposit link for ${amount}`,
-    manualProjectTitle: 'Alternative: confirm deposit manually',
+    manualProjectTitle: 'Confirm deposit manually',
     manualProjectHelp: 'Use this only after you have independently verified that the deposit was received. CRM records a human manual settlement and does not create or match a bank transaction.',
     manualProjectAction: (amount: string) => `Confirm ${amount} deposit manually`,
     manualProjectConfirm: (amount: string) => `Confirm that ${amount} has already been received? No bank transaction will be created or matched.`,
@@ -585,7 +592,7 @@ const COPY = {
     destinationConfigured: (amount: string) => `Reusable ${amount} link configured`,
     destinationMissing: (amount: string) => `No Monzo payment link is configured for ${amount}.`,
     authoritativeNotice: 'The server recalculates and validates the amount when the payment request is created. An issued request keeps its original amount.',
-    noPolicy: 'This artist has no project deposit policy yet. Configure one under Payments before requesting a project deposit.',
+    noPolicy: 'This artist has no project deposit policy yet. Configure one before requesting a project deposit.',
     notCalculable: 'This project deposit cannot be calculated yet. A percentage policy needs a positive project estimate.',
     loading: 'Loading deposit…',
     loadFailed: 'Could not load project payment requests.',
@@ -626,8 +633,9 @@ const COPY = {
     saving: 'Saving…',
   },
   ru: {
-    workflowTitle: 'Депозит в три шага',
+    workflowHelp: 'Как работает депозит',
     workflowSteps: '1. Проверь сумму. 2. Создай ссылку на оплату. 3. Отправь её клиенту. Когда Monzo сообщит об оплате, CRM сопоставит деньги именно с этим запросом.',
+    configurePayments: 'Настроить в «Платежах»',
     stepAmount: '1. Сумма депозита',
     currentAmount: 'Текущая сумма депозита',
     usingRecommended: (amount: string) => `Используется рекомендованная сумма: ${amount}.`,
@@ -640,7 +648,7 @@ const COPY = {
     stepLink: '2. Ссылка на оплату',
     linkHelp: (amount: string) => `Следующая кнопка создаст запрос ровно на ${amount}. После создания сумма этого запроса уже не меняется.`,
     createRequest: (amount: string) => `Создать ссылку на депозит ${amount}`,
-    manualProjectTitle: 'Альтернатива: подтвердить депозит вручную',
+    manualProjectTitle: 'Подтвердить депозит вручную',
     manualProjectHelp: 'Используй только если ты сам проверил, что депозит получен. CRM запишет ручное подтверждение сотрудником и не будет создавать или сопоставлять банковский платёж.',
     manualProjectAction: (amount: string) => `Подтвердить депозит ${amount} вручную`,
     manualProjectConfirm: (amount: string) => `Подтвердить, что ${amount} уже получены? Банковский платёж не будет создан или сопоставлен.`,
@@ -659,7 +667,7 @@ const COPY = {
     destinationConfigured: (amount: string) => `Ссылка на ${amount} настроена`,
     destinationMissing: (amount: string) => `Для ${amount} ещё не настроена ссылка Monzo.`,
     authoritativeNotice: 'При создании платёжного запроса сервер повторно рассчитывает и проверяет сумму. Уже созданный запрос всегда сохраняет исходную сумму.',
-    noPolicy: 'Для этого мастера ещё не настроено правило депозита проекта. Настрой его в разделе «Платежи» перед запросом депозита.',
+    noPolicy: 'Для этого мастера ещё не настроено правило депозита проекта. Настрой его перед запросом депозита.',
     notCalculable: 'Депозит проекта пока нельзя рассчитать. Для процентного правила нужна положительная смета проекта.',
     loading: 'Загружаем депозит…',
     loadFailed: 'Не удалось загрузить платёжные запросы проекта.',
