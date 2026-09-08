@@ -292,9 +292,9 @@ await test('with no external keys the live chain still lands on the Cloudflare b
 
   assert.equal(result.ok, true);
   assert.equal(result.provider, 'workers_ai');
-  assert.equal(result.model, '@cf/meta/llama-3.1-8b-instruct');
+  assert.equal(result.model, '@cf/meta/llama-3.1-8b-instruct-fast');
   assert.equal(result.fallbackUsed, false, 'an unconfigured provider is skipped, not attempted');
-  assert.equal(binding.calls[0].model, '@cf/meta/llama-3.1-8b-instruct');
+  assert.equal(binding.calls[0].model, '@cf/meta/llama-3.1-8b-instruct-fast');
   assert.equal(binding.calls[0].options.messages[1].content, INPUT);
   assert.equal(fetchImpl.calls.length, 0);
 });
@@ -424,7 +424,7 @@ await test('telemetry identifies the route without carrying content or credentia
   assert.equal(completed.task, 'concept_consult');
   assert.equal(completed.capability, 'drafting');
   assert.equal(completed.provider, 'workers_ai');
-  assert.equal(completed.model, 'cf-meta-llama-3.1-8b-instruct');
+  assert.equal(completed.model, 'cf-meta-llama-3.1-8b-instruct-fast');
   assert.equal(completed.fallbackUsed, true);
   assert.equal(completed.providerAttempts, 2);
   assert.ok(typeof completed.durationMs === 'number');

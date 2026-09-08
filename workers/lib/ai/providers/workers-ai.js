@@ -8,13 +8,18 @@
 //
 // The binding has no AbortSignal, so the router's timeout is applied by racing
 // the call rather than cancelling it.
+//
+// The model is `-fast`, not the plain id the site used to call. Cloudflare
+// retired `@cf/meta/llama-3.1-8b-instruct` on 2026-05-30 and both public
+// assistants have been throwing on every request since; the deprecation notice
+// names the `-fast` variants as the ones that stay active.
 
 import { ProviderError } from '../errors.js';
 
 export const id = 'workers_ai';
 export const modalities = Object.freeze(new Set(['text']));
 
-const DEFAULT_TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const DEFAULT_TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const MODEL_RE = /^@[a-z0-9]+\/[A-Za-z0-9._/-]{2,80}$/;
 
 function modelFor(env) {

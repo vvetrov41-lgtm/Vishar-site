@@ -33,7 +33,7 @@ AI_MODEL_QWEN_VISION = "qwen-vl-plus"
 AI_MODEL_QWEN_TEXT = "qwen-plus"
 AI_MODEL_OPENAI_TEXT = "gpt-4o-mini"
 AI_MODEL_OPENAI_VISION = "gpt-4o-mini"
-AI_MODEL_WORKERS_AI_TEXT = "@cf/meta/llama-3.1-8b-instruct"
+AI_MODEL_WORKERS_AI_TEXT = "@cf/meta/llama-3.1-8b-instruct-fast"
 
 # A preview deploy is a separate Worker (`tattooai-preview`). Bindings are not
 # inherited by Wrangler environments, so the existing AI routes are declared

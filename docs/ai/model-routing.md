@@ -8,6 +8,13 @@ Before this layer there was exactly one model call in the whole system:
 outbound OpenAI path anywhere in the CRM — the `gpt-actions` Workers are the
 opposite direction, an OpenAPI surface a Custom GPT calls *into*.
 
+That single call was also broken. Cloudflare retired
+`@cf/meta/llama-3.1-8b-instruct` on 2026-05-30, so `env.AI.run` threw on every
+request and both live assistants answered HTTP 500 (`error code: 1101`),
+verified against the deployed Worker on 2026-09-08. The incumbent adapter now
+calls `@cf/meta/llama-3.1-8b-instruct-fast`, which Cloudflare's own deprecation
+notice names as a variant that stays active.
+
 So "keep the OpenAI path as a fallback" had nothing to keep. What exists now:
 
 - a capability router every model call goes through;
