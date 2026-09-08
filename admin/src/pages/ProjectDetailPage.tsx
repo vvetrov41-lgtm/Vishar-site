@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
@@ -30,8 +30,6 @@ interface ProjectData {
   notes: InternalNote[];
   activity: ActivityEntry[];
 }
-
-
 
 const PROJECT_STATUSES: ProjectStatus[] = ['draft', 'active', 'on_hold', 'completed', 'cancelled'];
 
@@ -69,8 +67,6 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       can(role, 'viewActivity') ? api.listActivity({ projectId }) : Promise.resolve([]),
     ]);
 
-    // Booking a session without seeing whose session it is was the sharpest
-    // instance of the project page describing the record instead of the person.
     const [clientRow] = await api.listClientsByIds([project.client_id]);
 
     return {
@@ -122,21 +118,40 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     sessionFinance.find((entry) => entry.session_id === appointmentId)?.price ?? null;
   const hasConfirmedWork = appointments.some((appointment) => ['confirmed', 'completed'].includes(appointment.status));
   const lifecycleMismatch = project.status === 'draft' && (project.deposit_status === 'paid' || hasConfirmedWork);
+  const nextAppointment = useMemo(() => findNextAppointment(appointments), [appointments]);
+
+  async function saveProjectStatus(nextStatus: ProjectStatus) {
+    setProjectStatus(nextStatus);
+    if (nextStatus === project.status) return;
+    if (nextStatus === 'cancelled') {
+      const approved = await confirmDialog({
+        title: copy.cancelProjectTitle,
+        message: copy.cancelProjectConfirm,
+        confirmLabel: copy.cancelProjectAction,
+        cancelLabel: cancelLabelFor(language),
+      });
+      if (!approved) {
+        setProjectStatus(project.status);
+        return;
+      }
+    }
+    await run(() => api.setProjectStatus(project.id, nextStatus));
+  }
 
   return (
     <>
       <DetailBackLink to="/projects" sectionLabel={t('nav.projects')} />
       <RecordArtistContext artistId={project.artist_id} />
 
-      <div className="card">
-        <h2 style={{ fontSize: '1.2rem' }}>{clientName ?? project.title}</h2>
+      <div className="card" style={{ paddingBlock: 14 }}>
+        <h2 style={{ fontSize: '1.2rem', marginBottom: 4 }}>{clientName ?? project.title}</h2>
         {clientName ? (
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0 0 8px' }}>
             {project.title}
           </p>
         ) : null}
-        <div>
-          <span className="badge">{projectStatusLabel(project.status, language)}</span>{' '}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <span className="badge">{projectStatusLabel(project.status, language)}</span>
           <span className={project.deposit_status === 'paid' ? 'badge ok' : 'badge'}>
             {copy.deposit}: {depositStatusLabel(project.deposit_status, language, finance?.deposit_amount ?? null)}
             {mayViewFinance && finance?.deposit_amount !== null && finance?.deposit_amount !== undefined
@@ -145,9 +160,9 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           </span>
         </div>
         {project.description ? (
-          <p style={{ whiteSpace: 'pre-wrap', color: 'var(--muted)' }}>{project.description}</p>
+          <p style={{ whiteSpace: 'pre-wrap', color: 'var(--muted)', marginBlock: 10 }}>{project.description}</p>
         ) : null}
-        <div className="actions">
+        <div className="actions" style={{ marginTop: 8 }}>
           <Link to={`/clients/${project.client_id}`} className="badge">{t('project.openClient')}</Link>
           {project.enquiry_id ? (
             <Link to={`/enquiries/${project.enquiry_id}`} className="badge">{t('project.openEnquiry')}</Link>
@@ -155,40 +170,18 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         </div>
 
         {mayManageProject ? (
-          <div style={{ marginTop: 14 }}>
+          <div style={{ marginTop: 10 }}>
             <label htmlFor="project-status">{copy.projectStatus}</label>
-            <div className="field-row">
-              <select
-                id="project-status"
-                value={projectStatus}
-                disabled={busy}
-                onChange={(event) => setProjectStatus(event.target.value as ProjectStatus)}
-              >
-                {PROJECT_STATUSES.map((status) => (
-                  <option key={status} value={status}>{projectStatusLabel(status, language)}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={busy || projectStatus === project.status}
-                onClick={() => {
-                  void (async () => {
-                    if (projectStatus === 'cancelled') {
-                      const approved = await confirmDialog({
-                        title: copy.cancelProjectTitle,
-                        message: copy.cancelProjectConfirm,
-                        confirmLabel: copy.cancelProjectAction,
-                        cancelLabel: cancelLabelFor(language),
-                      });
-                      if (!approved) return;
-                    }
-                    await run(() => api.setProjectStatus(project.id, projectStatus));
-                  })();
-                }}
-              >
-                {copy.saveStatus}
-              </button>
-            </div>
+            <select
+              id="project-status"
+              value={projectStatus}
+              disabled={busy}
+              onChange={(event) => { void saveProjectStatus(event.target.value as ProjectStatus); }}
+            >
+              {PROJECT_STATUSES.map((status) => (
+                <option key={status} value={status}>{projectStatusLabel(status, language)}</option>
+              ))}
+            </select>
           </div>
         ) : null}
       </div>
@@ -198,23 +191,34 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       ) : null}
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 
-      <Section title={t('project.estimate')}>
-        <ProjectEstimatePanel
-          project={project}
-          finance={finance}
-          appointments={appointments}
-          mayViewFinance={mayViewFinance}
-          mayManage={mayEditEstimate}
-          onSaved={reload}
-        />
-        {!mayViewFinance ? (
-          <p className="notice" style={{ marginTop: 12 }}>{t('project.ratesOwnerOnly')}</p>
-        ) : null}
-      </Section>
+      {nextAppointment ? (
+        <Section title={copy.nextAppointment}>
+          <div className="row" style={{ paddingBlock: 10 }}>
+            <div className="title">{formatDateTime(nextAppointment.start_at, language)}</div>
+            <div className="meta" style={{ marginTop: 4 }}>
+              <span className="badge">{typeLabel(nextAppointment.appointment_type, language)}</span>{' '}
+              <span className={nextAppointment.status === 'confirmed' ? 'badge ok' : 'badge'}>
+                {label('sessionStatus', nextAppointment.status)}
+              </span>{' '}
+              <span className="badge">{durationValue(nextAppointment.duration_hours, language)}</span>
+            </div>
+            {mayManageAppointments && ['draft', 'proposed', 'confirmed'].includes(nextAppointment.status) ? (
+              <div className="actions" style={{ marginTop: 8 }}>
+                {['draft', 'proposed'].includes(nextAppointment.status) ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => { void run(() => api.setAppointmentStatus(nextAppointment.id, 'confirmed')); }}
+                  >
+                    {t('project.confirm')}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
 
-      {/* The same panel as the client workspace and the calendar. A project
-          books through the project, so the session is linked without the
-          operator having to remember to pick it. */}
       {mayManageAppointments ? (
         <Section title={t('booking.title')}>
           <BookingPanel
@@ -229,16 +233,16 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
       <Section title={copy.appointments}>
         {appointments.length === 0 ? (
-          <EmptyState title={copy.noAppointments} />
+          <p className="meta" style={{ margin: 0 }}>{copy.noAppointments}</p>
         ) : (
-          <div className="list">
+          <div className="list" style={{ gap: 8 }}>
             {appointments.map((appointment) => {
               const price = priceFor(appointment.id);
               const active = ['draft', 'proposed', 'confirmed'].includes(appointment.status);
               return (
-                <div key={appointment.id} className="row">
+                <div key={appointment.id} className="row" style={{ paddingBlock: 10 }}>
                   <div className="title">{formatDateTime(appointment.start_at, language)}</div>
-                  <div className="meta">
+                  <div className="meta" style={{ marginTop: 4 }}>
                     <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
                     <span className={appointment.status === 'confirmed' ? 'badge ok' : 'badge'}>
                       {label('sessionStatus', appointment.status)}
@@ -260,7 +264,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                   ) : null}
 
                   {mayManageAppointments ? (
-                    <div className="actions">
+                    <div className="actions" style={{ marginTop: 8 }}>
                       {['draft', 'proposed'].includes(appointment.status) ? (
                         <button
                           type="button" disabled={busy}
@@ -301,12 +305,24 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* The inline planner that used to live here is gone. The shared
-            booking panel above does everything it did - durations, manual
-            entry and the pre-submit clash warning - and is the same panel
-            every other screen uses. */}
+        <details style={{ marginTop: 10 }}>
+          <summary className="meta" style={{ cursor: 'pointer' }}>{copy.calendarHelp}</summary>
+          <p className="notice" style={{ marginTop: 8 }}>{copy.calendarNotice}</p>
+        </details>
+      </Section>
 
-        <p className="notice" style={{ marginTop: 12 }}>{copy.calendarNotice}</p>
+      <Section title={t('project.estimate')}>
+        <ProjectEstimatePanel
+          project={project}
+          finance={finance}
+          appointments={appointments}
+          mayViewFinance={mayViewFinance}
+          mayManage={mayEditEstimate}
+          onSaved={reload}
+        />
+        {!mayViewFinance ? (
+          <p className="notice" style={{ marginTop: 12 }}>{t('project.ratesOwnerOnly')}</p>
+        ) : null}
       </Section>
 
       {mayManageFinance ? (
@@ -323,7 +339,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
       {can(role, 'viewNotes') ? (
         <Section title={t('project.notes')}>
-          {notes.length === 0 ? <EmptyState title={t('project.noNotes')} /> : (
+          {notes.length === 0 ? <p className="meta" style={{ margin: 0 }}>{t('project.noNotes')}</p> : (
             <ul className="timeline">
               {notes.map((note) => (
                 <li key={note.id}>
@@ -345,7 +361,13 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   );
 }
 
-
+function findNextAppointment(appointments: Appointment[]): Appointment | null {
+  const active = appointments
+    .filter((appointment) => ['draft', 'proposed', 'confirmed'].includes(appointment.status))
+    .sort((left, right) => new Date(left.start_at).getTime() - new Date(right.start_at).getTime());
+  const now = Date.now();
+  return active.find((appointment) => new Date(appointment.start_at).getTime() >= now) ?? active[0] ?? null;
+}
 
 function durationShortcut(minutes: number, language: Language): string {
   if (minutes < 60) return language === 'ru' ? `${minutes} мин` : `${minutes} min`;
@@ -389,51 +411,33 @@ const COPY = {
   en: {
     deposit: 'Deposit',
     projectStatus: 'Project status',
-    saveStatus: 'Save status',
     cancelProjectConfirm: 'Mark this project cancelled?',
     cancelProjectTitle: 'Cancel this project?',
     cancelProjectAction: 'Cancel project',
     draftMismatch: 'This project is still a draft even though it already has a paid deposit or confirmed work. Set it to Active if work is proceeding.',
+    nextAppointment: 'Next appointment',
     appointments: 'Appointments',
     noAppointments: 'No appointments planned',
-    appointmentPayment: 'Session payment',
-    appointmentPrice: 'Planned price',
+    appointmentPayment: 'Payment',
+    appointmentPrice: 'Price',
     calendar: 'Calendar',
-    addAppointment: 'Add another appointment',
-    appointmentType: 'Appointment type',
-    proposedStart: 'Proposed start',
-    proposedEnd: 'Proposed end',
-    duration: 'Duration shortcuts',
-    checking: 'Checking the schedule…',
-    conflicts: (count: number, date: string) => `Conflicting active appointments: ${count}. The first starts ${date}.`,
-    bookAnyway: 'I mean to book over this clash',
-    booked: (type: string, client: string, date: string) => `${type} booked for ${client}, ${date}. It is proposed until you confirm it.`,
-    propose: 'Propose appointment',
+    calendarHelp: 'How calendar sync works',
     calendarNotice: 'CRM is the schedule source of truth. Proposed appointments stay in CRM; each confirmed appointment shows its actual Google Calendar sync state above.',
   },
   ru: {
     deposit: 'Депозит',
     projectStatus: 'Статус проекта',
-    saveStatus: 'Сохранить статус',
     cancelProjectConfirm: 'Отметить этот проект отменённым?',
     cancelProjectTitle: 'Отменить проект?',
     cancelProjectAction: 'Отменить проект',
     draftMismatch: 'Проект всё ещё в черновике, хотя депозит уже оплачен или есть подтверждённая запись. Если работа идёт, переведи проект в статус «активный».',
+    nextAppointment: 'Следующий сеанс',
     appointments: 'Записи',
     noAppointments: 'Записей пока нет',
-    appointmentPayment: 'Оплата сеанса',
-    appointmentPrice: 'Плановая стоимость',
+    appointmentPayment: 'Оплата',
+    appointmentPrice: 'Цена',
     calendar: 'Календарь',
-    addAppointment: 'Добавить ещё одну запись',
-    appointmentType: 'Тип записи',
-    proposedStart: 'Предлагаемое начало',
-    proposedEnd: 'Предлагаемое окончание',
-    duration: 'Быстрый выбор длительности',
-    checking: 'Проверяем расписание…',
-    conflicts: (count: number, date: string) => `Пересекающихся активных записей: ${count}. Первая начинается ${date}.`,
-    bookAnyway: 'Я осознанно записываю поверх пересечения',
-    booked: (type: string, client: string, date: string) => `${type} для ${client} записан на ${date}. Запись предложена и ждёт подтверждения.`,
-    propose: 'Предложить запись',
+    calendarHelp: 'Как работает синхронизация календаря',
     calendarNotice: 'Расписание в CRM является основным. Предложенные записи остаются в CRM, а у каждой подтверждённой записи выше показывается фактический статус синхронизации с Google Calendar.',
   },
 } as const;
