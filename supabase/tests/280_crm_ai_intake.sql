@@ -15,19 +15,26 @@ create function pg_temp.claims(p_sub uuid) returns void language sql as $$
   select set_config('request.jwt.claims',jsonb_build_object('sub',p_sub,'role','authenticated')::text,true)::void;
 $$;
 grant execute on function pg_temp.claims(uuid) to authenticated,service_role;
+create function pg_temp.service_claims() returns void language sql as $$
+  select set_config('request.jwt.claims','{"role":"service_role"}',true)::void;
+$$;
+grant execute on function pg_temp.service_claims() to service_role;
 
 set local role authenticated;
 select pg_temp.claims('a8111111-1111-4111-8111-111111111111');
 select public.set_self_service_signup(true);
 reset role;
+select pg_temp.service_claims();
 set local role authenticated;
 select pg_temp.claims('a8222222-2222-4222-8222-222222222222');
 select public.bootstrap_artist_account('AI Artist A','AI Workspace A');
 reset role;
+select pg_temp.service_claims();
 set local role authenticated;
 select pg_temp.claims('a8333333-3333-4333-8333-333333333333');
 select public.bootstrap_artist_account('AI Artist B','AI Workspace B');
 reset role;
+select pg_temp.service_claims();
 
 create temporary table pg_temp.tenants as
 select profile_id,artist_id,workspace_id from crm_private.self_service_accounts
@@ -47,6 +54,7 @@ select public.create_manual_enquiry(
 ) as r;
 grant select on pg_temp.enquiry_a to authenticated,service_role;
 reset role;
+select pg_temp.service_claims();
 
 set local role authenticated;
 select pg_temp.claims('a8333333-3333-4333-8333-333333333333');
@@ -60,6 +68,7 @@ select public.create_manual_enquiry(
 ) as r;
 grant select on pg_temp.enquiry_b to authenticated,service_role;
 reset role;
+select pg_temp.service_claims();
 
 create function pg_temp.valid_result(p_reply text default 'Hi Maya, thanks for the details. Could you share your preferred timing and style? I will review everything and get back to you.')
 returns jsonb language sql immutable as $$
@@ -120,6 +129,7 @@ select public.update_enquiry_details(
   '{"idea":"Fine-line moth with leaves and stars"}'::jsonb
 );
 reset role;
+select pg_temp.service_claims();
 
 select is(
   public.service_complete_enquiry_ai_job(
@@ -140,6 +150,7 @@ set local role authenticated;
 select pg_temp.claims('a8222222-2222-4222-8222-222222222222');
 select public.retry_enquiry_ai((select (r->>'enquiry_id')::uuid from pg_temp.enquiry_a));
 reset role;
+select pg_temp.service_claims();
 create temporary table pg_temp.claim_a2 as
 select (public.service_claim_enquiry_ai_jobs(1,(select (r->>'enquiry_id')::uuid from pg_temp.enquiry_a))->0) as j;
 create temporary table pg_temp.complete_a as
@@ -272,6 +283,7 @@ select throws_ok(
   'private AI jobs are inaccessible to authenticated clients'
 );
 reset role;
+select pg_temp.service_claims();
 
 select is((select images_enabled from crm_private.enquiry_ai_config),false,'client image understanding remains server-side disabled');
 select * from finish();
