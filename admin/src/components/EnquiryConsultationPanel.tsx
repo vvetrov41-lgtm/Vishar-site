@@ -11,11 +11,6 @@ const CONSULTATION_TYPES: AppointmentType[] = [
 ];
 
 const DURATIONS = [15, 20, 30];
-const FIVE_MINUTES_MS = 5 * 60_000;
-
-function isFiveMinuteBoundary(value: Date): boolean {
-  return value.getTime() % FIVE_MINUTES_MS === 0;
-}
 
 export function EnquiryConsultationPanel({
   enquiry,
@@ -40,10 +35,6 @@ export function EnquiryConsultationPanel({
     const start = new Date(startAt);
     if (!startAt || Number.isNaN(start.getTime())) {
       setError(copy.invalidStart);
-      return;
-    }
-    if (!isFiveMinuteBoundary(start)) {
-      setError(copy.invalidStep);
       return;
     }
 
@@ -124,7 +115,6 @@ export function EnquiryConsultationPanel({
           <span>{copy.start}</span>
           <input
             type="datetime-local"
-            step={300}
             value={startAt}
             disabled={busy}
             onChange={(event) => {
@@ -198,7 +188,6 @@ const COPY = {
     saving: 'Checking schedule…',
     created: (type: string, date: string) => `${type} booked for ${date} and linked to this enquiry. It is proposed until you confirm it.`,
     invalidStart: 'Choose a valid consultation date and time.',
-    invalidStep: 'Choose a time in five-minute steps, for example 10:00, 10:05 or 10:10.',
     conflict: (count: number, first: string) => `This time is blocked by ${count} active appointment${count === 1 ? '' : 's'}. The first starts ${first}. Choose another time.`,
     failed: 'Could not schedule that consultation.',
   },
@@ -214,7 +203,6 @@ const COPY = {
     saving: 'Проверяю расписание…',
     created: (type: string, date: string) => `${type} на ${date} создана и привязана к этой заявке. Запись предложена и ждёт подтверждения.`,
     invalidStart: 'Укажи корректные дату и время консультации.',
-    invalidStep: 'Выберите время с шагом 5 минут, например 10:00, 10:05 или 10:10.',
     conflict: (count: number, first: string) => `Это время занято активными записями: ${count}. Первая начинается ${first}. Выберите другое время.`,
     failed: 'Не удалось создать консультацию.',
   },
