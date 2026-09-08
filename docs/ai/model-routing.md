@@ -68,7 +68,7 @@ The router does not throw into a request path.
 | `text_summarization` | text | DeepSeek → Llama | declared |
 | `text_classification` | text, JSON | DeepSeek → Llama | declared |
 | `text_extraction` | text, JSON | DeepSeek → Llama | declared |
-| `high_quality_reasoning` | text | DeepSeek → OpenAI | declared |
+| `high_quality_reasoning` | text | DeepSeek → Qwen | declared |
 | `vision_reference_understanding` | vision | Qwen → OpenAI | declared |
 | `vision_document_extraction` | vision, JSON | Qwen → OpenAI | declared |
 
@@ -82,8 +82,11 @@ fails. The tasks that lead with DeepSeek are the ones that actually buy
 something with the price: reasoning, schema-constrained output and long context.
 
 DeepSeek additionally requires the Workers Paid plan or prepaid AI Gateway
-credits. It is never alone in a chain, so an account without either degrades to
-the next tier rather than failing.
+credits. A production probe on 2026-09-08 confirmed this account does not have
+them: the tier routes correctly and the binding then refuses the model with
+`provider_unavailable` in under 200ms. So DeepSeek is never alone in a chain,
+and it is never paired only with OpenAI either — every chain keeps a tier that
+needs neither a key nor a paid plan, and a test enforces that.
 
 Qwen leads image *understanding*; nothing here generates images. Reference
 images attached to a booking enquiry are still **not** analysed — nothing in the

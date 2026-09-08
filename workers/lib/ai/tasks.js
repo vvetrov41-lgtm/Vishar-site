@@ -82,12 +82,14 @@ const TASKS = Object.freeze({
     temperature: 0.2,
     structured: false,
   },
-  // DeepSeek-first: reasoning is what this tier is for. OpenAI stays as an
-  // optional external second opinion and is simply skipped when no key exists.
+  // DeepSeek-first: reasoning is what this tier is for. Qwen backs it up rather
+  // than OpenAI, because DeepSeek is gated behind Workers Paid and OpenAI needs
+  // a key: pairing the two would leave this task with nothing on an account
+  // that has neither. Qwen also reasons and is not plan-gated.
   high_quality_reasoning: {
     capability: 'reasoning',
     modality: 'text',
-    chain: ['deepseek', 'openai'],
+    chain: ['deepseek', 'qwen'],
     timeoutMs: 30_000,
     maxOutputTokens: 1_200,
     temperature: 0.2,

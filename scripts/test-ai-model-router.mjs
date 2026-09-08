@@ -191,16 +191,29 @@ await test('chain order follows Workers AI cost, not the old vendor assumption',
   for (const name of ['text_summarization', 'text_classification', 'text_extraction', 'high_quality_reasoning']) {
     assert.equal(tasks.resolveTask({}, name, router.PROVIDER_IDS).chain[0], 'deepseek', name);
   }
+  assert.deepEqual(
+    [...tasks.resolveTask({}, 'high_quality_reasoning', router.PROVIDER_IDS).chain],
+    ['deepseek', 'qwen'],
+  );
   for (const name of ['vision_reference_understanding', 'vision_document_extraction']) {
     assert.equal(tasks.resolveTask({}, name, router.PROVIDER_IDS).chain[0], 'qwen', name);
   }
 });
 
-await test('no chain depends on the external OpenAI tier', () => {
+await test('every task keeps a tier that needs neither a key nor a paid plan', () => {
+  // OpenAI needs OPENAI_API_KEY. DeepSeek V4 Flash is gated behind Workers Paid
+  // or prepaid AI Gateway credits, which a production probe confirmed this
+  // account does not have. A chain built only from those two can strand a task.
+  const needsAKey = new Set(['openai']);
+  const needsAPaidPlan = new Set(['deepseek']);
+
   for (const name of tasks.TASK_NAMES) {
     const plan = tasks.resolveTask({}, name, router.PROVIDER_IDS);
-    const cloudflareBacked = plan.chain.filter((id) => id !== 'openai');
-    assert.ok(cloudflareBacked.length >= 1, `${name} would stall without OPENAI_API_KEY`);
+    const alwaysAvailable = plan.chain.filter((id) => !needsAKey.has(id) && !needsAPaidPlan.has(id));
+    assert.ok(
+      alwaysAvailable.length >= 1,
+      `${name} routes only to gated tiers (${plan.chain.join(', ')}) and would strand`,
+    );
   }
 });
 
@@ -644,7 +657,7 @@ await test('the readback reports every tier as available from the binding alone'
   assert.equal(vision.available, true, 'vision is available with no external key at all');
   const reasoning = payload.routing.tasks.find((t) => t.task === 'high_quality_reasoning');
   assert.equal(reasoning.selected, 'deepseek');
-  assert.equal(reasoning.fallback, null, 'OpenAI is absent, so there is no second tier');
+  assert.equal(reasoning.fallback, 'qwen', 'reasoning must keep a tier that needs no key');
 
   assert.ok(!JSON.stringify(payload).includes(token));
 });
