@@ -238,6 +238,12 @@ where x.artist_id is not null
   and m.workspace_id = a.workspace_id
   and x.client_id <> m.new_client_id;
 
+-- activity_log has several initially-deferred foreign keys. Re-key DML and
+-- audit inserts above leave those constraint-trigger events pending until
+-- transaction end. Flush them before ALTER TABLE restores the append-only
+-- guard; PostgreSQL rejects trigger DDL while the table has pending events.
+set constraints all immediate;
+
 alter table public.activity_log enable trigger activity_log_append_only;
 
 update crm_private.gmail_thread_contexts x
