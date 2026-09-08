@@ -12,9 +12,19 @@ import {
   handleAppointmentClientActionRequest,
   isAppointmentClientActionPath,
 } from './routes/appointment-client-action.js';
+import {
+  handleAiRouterProbeRequest,
+  isAiRouterProbePath,
+} from './routes/ai-router-probe.js';
 
 export default {
   async fetch(request, env, ctx) {
+    // Operator-only model-routing readback. Answers 404 unless explicitly
+    // enabled and token-authenticated, and never emits CORS headers.
+    if (isAiRouterProbePath(request)) {
+      return handleAiRouterProbeRequest(request, env, { fetchImpl: fetch });
+    }
+
     if (isAppointmentClientActionPath(request)) {
       return handleAppointmentClientActionRequest(request, env, {});
     }
