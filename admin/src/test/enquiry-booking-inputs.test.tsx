@@ -20,7 +20,7 @@ describe('booking controls on a phone', () => {
     expect(sevenHours).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('keeps consultation times on the database five-minute grid before submit', async () => {
+  it('allows unrestricted native consultation minutes before submit', async () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     renderWithSession(<App />, {
       role: 'owner',
@@ -29,13 +29,15 @@ describe('booking controls on a phone', () => {
     });
 
     const start = await screen.findByLabelText('Date and time');
-    expect(start).toHaveAttribute('step', '300');
+    expect(start).not.toHaveAttribute('step');
 
     fireEvent.change(start, { target: { value: '2030-01-08T10:03' } });
     fireEvent.click(screen.getByRole('button', { name: 'Schedule consultation' }));
 
-    expect(await screen.findByText(/Choose a time in five-minute steps/)).toBeInTheDocument();
-    expect(rpcCalls.find((entry) => entry.name === 'schedule_appointment')).toBeUndefined();
+    await waitFor(() => {
+      expect(rpcCalls.find((entry) => entry.name === 'list_booking_conflicts')).toBeDefined();
+      expect(rpcCalls.find((entry) => entry.name === 'schedule_appointment')).toBeDefined();
+    });
   });
 
   it('uses the policy-aware conflict read and books a valid consultation', async () => {
