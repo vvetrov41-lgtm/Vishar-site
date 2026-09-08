@@ -33,6 +33,11 @@ export function ProjectEstimatePanel({
     : null;
   const paidDeposit = mayViewFinance && project.deposit_status === 'paid' ? (finance?.deposit_amount ?? 0) : 0;
   const remaining = mayViewFinance && fallbackTotal !== null ? Math.max(0, fallbackTotal - paidDeposit) : null;
+  const hasEstimate = fallbackSessions !== null
+    || fallbackHours !== null
+    || fallbackRate !== null
+    || fallbackTotal !== null
+    || paidDeposit > 0;
 
   const [editing, setEditing] = useState(false);
   const [sessions, setSessions] = useState(numberToInput(fallbackSessions));
@@ -110,32 +115,35 @@ export function ProjectEstimatePanel({
 
   return (
     <>
-      <dl className="definition">
-        <dt>{copy.sessions}</dt>
-        <dd>
-          {fallbackSessions ?? '—'}
-          {project.estimated_sessions === null && planned.sessions > 0 ? <span className="meta"> {copy.fromAppointments}</span> : null}
-        </dd>
-        <dt>{copy.hours}</dt>
-        <dd>
-          {fallbackHours ?? '—'}
-          {project.estimated_hours === null && planned.hours > 0 ? <span className="meta"> {copy.fromAppointments}</span> : null}
-        </dd>
-        {mayViewFinance ? (
-          <>
-            <dt>{copy.hourlyRate}</dt><dd>{formatMoney(fallbackRate, project.currency, language)}</dd>
-            <dt>{copy.estimateTotal}</dt><dd>{formatMoney(fallbackTotal, project.currency, language)}</dd>
-            <dt>{copy.depositReceived}</dt>
-            <dd>{paidDeposit > 0 ? formatMoney(paidDeposit, project.currency, language) : '—'}</dd>
-            <dt>{copy.remaining}</dt><dd>{formatMoney(remaining, project.currency, language)}</dd>
-          </>
-        ) : null}
-      </dl>
+      {hasEstimate ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {fallbackSessions !== null ? (
+            <span className="badge">{copy.sessionsShort}: {fallbackSessions}</span>
+          ) : null}
+          {fallbackHours !== null ? (
+            <span className="badge">{copy.hoursShort}: {fallbackHours}</span>
+          ) : null}
+          {mayViewFinance && fallbackRate !== null ? (
+            <span className="badge">{formatMoney(fallbackRate, project.currency, language)}/{copy.hourShort}</span>
+          ) : null}
+          {mayViewFinance && fallbackTotal !== null ? (
+            <span className="badge">{copy.estimateShort}: {formatMoney(fallbackTotal, project.currency, language)}</span>
+          ) : null}
+          {mayViewFinance && paidDeposit > 0 ? (
+            <span className="badge ok">{copy.depositShort}: {formatMoney(paidDeposit, project.currency, language)}</span>
+          ) : null}
+          {mayViewFinance && remaining !== null ? (
+            <span className="badge">{copy.remainingShort}: {formatMoney(remaining, project.currency, language)}</span>
+          ) : null}
+        </div>
+      ) : (
+        <p className="meta" style={{ margin: 0 }}>{copy.notSet}</p>
+      )}
 
       {mayManage ? (
-        <div className="actions" style={{ marginTop: 12 }}>
+        <div className="actions" style={{ marginTop: 10 }}>
           <button type="button" onClick={() => setEditing((value) => !value)} aria-expanded={editing}>
-            {editing ? copy.close : copy.edit}
+            {editing ? copy.close : (hasEstimate ? copy.edit : copy.setup)}
           </button>
         </div>
       ) : null}
@@ -214,9 +222,14 @@ const COPY = {
     hours: 'Planned hours',
     hourlyRate: 'Hourly rate',
     estimateTotal: 'Estimated total',
-    depositReceived: 'Deposit received',
-    remaining: 'Estimated balance after deposit',
-    fromAppointments: '(from appointments)',
+    sessionsShort: 'Sessions',
+    hoursShort: 'Hours',
+    hourShort: 'h',
+    estimateShort: 'Estimate',
+    depositShort: 'Deposit',
+    remainingShort: 'Left',
+    notSet: 'Estimate is not set yet.',
+    setup: 'Set estimate',
     edit: 'Edit estimate',
     close: 'Close estimate editor',
     useAppointments: 'Use planned appointments',
@@ -232,9 +245,14 @@ const COPY = {
     hours: 'Плановые часы',
     hourlyRate: 'Почасовая ставка',
     estimateTotal: 'Предварительная сумма',
-    depositReceived: 'Получено депозитом',
-    remaining: 'Ориентировочно осталось после депозита',
-    fromAppointments: '(из записей)',
+    sessionsShort: 'Сеансы',
+    hoursShort: 'Часы',
+    hourShort: 'ч',
+    estimateShort: 'Прогноз',
+    depositShort: 'Депозит',
+    remainingShort: 'Осталось',
+    notSet: 'Расчёт пока не задан.',
+    setup: 'Настроить расчёт',
     edit: 'Редактировать расчёт',
     close: 'Закрыть расчёт',
     useAppointments: 'Взять часы из записей',
