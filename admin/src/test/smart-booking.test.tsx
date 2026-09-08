@@ -267,23 +267,27 @@ describe('booking a session by asking for one', () => {
     }
   });
 
-  it('keeps manual entry on five-minute steps and derives the end from duration', async () => {
+  it('uses deterministic five-minute choices and derives the end from duration', async () => {
     await openPanel();
     fireEvent.click(screen.getByRole('button', { name: '7 h' }));
     fireEvent.click(screen.getByRole('button', { name: 'Enter a time myself' }));
 
-    expect(await screen.findByText(/End time follows the selected duration automatically/)).toBeInTheDocument();
+    expect(await screen.findByText(/Choose the date, hour and a five-minute start/)).toBeInTheDocument();
     expect(screen.queryByDisplayValue('420')).not.toBeInTheDocument();
-
-    const start = screen.getByLabelText('Start') as HTMLInputElement;
-    const end = screen.getByLabelText('End') as HTMLInputElement;
-    expect(start.step).toBe('300');
-    expect(end.step).toBe('300');
-    expect(end).toHaveAttribute('readonly');
+    expect(screen.queryByDisplayValue(/datetime-local/i)).not.toBeInTheDocument();
 
     const date = dayValue(1);
-    fireEvent.change(start, { target: { value: `${date}T09:00` } });
-    await waitFor(() => expect(end.value).toBe(`${date}T16:00`));
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: date } });
+    fireEvent.change(screen.getByLabelText('Hour'), { target: { value: '09' } });
+    const minute = screen.getByLabelText('Minute') as HTMLSelectElement;
+    expect([...minute.options].map((option) => option.value)).toEqual([
+      '00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55',
+    ]);
+    fireEvent.change(minute, { target: { value: '00' } });
+
+    const end = screen.getByLabelText('End') as HTMLInputElement;
+    await waitFor(() => expect(end.value).toMatch(/16:00/));
+    expect(end).toHaveAttribute('readonly');
     expect(screen.getByRole('button', { name: 'Book this exact time' })).toBeInTheDocument();
   });
 
