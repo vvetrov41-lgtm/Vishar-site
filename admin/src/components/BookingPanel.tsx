@@ -38,11 +38,16 @@ import {
   type BookingErrorCode,
 } from '../lib/booking-errors';
 import {
-  APPOINTMENT_TIME_STEP_SECONDS,
   appointmentEndValue,
   appointmentTimeRange,
   snapAppointmentStart,
 } from '../lib/appointment-time-step';
+import {
+  composeManualDateTime,
+  MANUAL_HOUR_OPTIONS,
+  MANUAL_MINUTE_OPTIONS,
+  splitManualDateTime,
+} from '../lib/manual-time-control';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { useApi } from '../lib/session';
@@ -132,18 +137,11 @@ export function BookingPanel({
 
   const durations = DURATION_MINUTES[appointmentType];
   const wantsProject = appointmentFamily(appointmentType) === 'tattoo';
-  // One project, or one enquiry and no project, is not a choice - it is the
-  // answer. The same reasoning the client workspace already applies to the
-  // artist: where there is nothing to decide, do not make the operator decide
-  // it. A consultation gets no default, because there the link is genuinely
-  // optional.
   const soleProjectId = projectOptions?.length === 1 ? projectOptions[0].id : null;
   const soleEnquiryId = enquiryOptions?.length === 1 ? enquiryOptions[0].id : null;
   const defaultProjectId = wantsProject ? soleProjectId : null;
   const defaultEnquiryId = wantsProject && !soleProjectId ? soleEnquiryId : null;
 
-  // A caller that fixed the link wins; otherwise whatever the operator chose,
-  // otherwise the only thing it could be.
   const selectedProjectId = chosenProjectId || defaultProjectId || '';
   const effectiveProjectId = projectId ?? (selectedProjectId || null);
   const chosenProject = (projectOptions ?? []).find((option) => option.id === selectedProjectId);
@@ -151,10 +149,6 @@ export function BookingPanel({
   const effectiveEnquiryId = enquiryId
     ?? chosenProject?.enquiryId
     ?? (selectedEnquiryId || null);
-  // A tattoo session booked from an enquiry no longer needs a project chosen
-  // first: schedule_appointment creates the enquiry's project once and reuses
-  // it afterwards. A touch-up is the exception - it belongs to the project of
-  // the piece being touched up, so that project has to be named.
   const derivesProject = wantsProject
     && appointmentType !== 'touch_up'
     && !!effectiveEnquiryId;
@@ -168,6 +162,7 @@ export function BookingPanel({
     () => appointmentEndValue(manualStart, durationMinutes),
     [manualStart, durationMinutes],
   );
+  const manualParts = splitManualDateTime(manualStart, todayValue());
 
   function chooseDuration(minutes: number) {
     setDurationMinutes(minutes);
@@ -175,6 +170,12 @@ export function BookingPanel({
     setSeries(null);
     setChosen(null);
     setStage('search');
+    setConflicts(null);
+  }
+
+  function updateManualStart(next: Partial<typeof manualParts>) {
+    const value = composeManualDateTime({ ...manualParts, ...next });
+    setManualStart(value);
     setConflicts(null);
   }
 
@@ -195,10 +196,6 @@ export function BookingPanel({
       const to = new Date(from);
       to.setDate(to.getDate() + SEARCH_DAYS);
 
-      // Every input is an authoritative server read: listAppointments is
-      // RLS-filtered, and the preference, override and time-off RPCs are all
-      // SECURITY DEFINER behind require_artist_access. Nothing about "free" is
-      // decided from anything the browser made up.
       const [appointments, timeOff, prefs, dayOverrides] = await Promise.all([
         api.listAppointments({ artistId }),
         api.listAvailabilityBlocks({
@@ -222,11 +219,8 @@ export function BookingPanel({
         from,
         to,
         durationMinutes,
-        // The artist's own boundary, not a number typed into this form.
         dayWindow: dayWindowFor(appointmentType, prefs, undefined),
         windowForDay: (day: string) => dayWindowFor(appointmentType, prefs, overrideByDay.get(day)),
-        // The policy the database will apply at write time, applied here so
-        // the panel cannot offer a time the booking would then refuse.
         policy: conflictPolicyFor(appointmentType, prefs),
         preferredStarts: appointmentFamily(appointmentType) === 'tattoo'
           ? prefs.tattoo_preferred_starts
@@ -252,12 +246,6 @@ export function BookingPanel({
     }
   }
 
-  /**
-   * What else is in the diary at a manually typed time, and whether it would
-   * refuse the booking. Asked of the database, using the same policy the write
-   * path enforces - so this cannot warn about something the booking would
-   * happily accept, or stay silent about something it would refuse.
-   */
   async function checkManualConflicts(startAt: string, endAt: string) {
     if (!artistId) return;
     setCheckingConflicts(true);
@@ -269,8 +257,6 @@ export function BookingPanel({
         endAt,
       }));
     } catch {
-      // A failed advisory read must not block a booking the database will
-      // check anyway. It just means no warning is shown.
       setConflicts(null);
     } finally {
       setCheckingConflicts(false);
@@ -308,9 +294,6 @@ export function BookingPanel({
       setSlots(null);
       setSeries(null);
       setConflicts(null);
-      // Say what was created. The project is made in the same transaction as
-      // the session, so "Project created" is a fact by the time this renders,
-      // not a promise.
       setNotice(
         result.replayed
           ? copy.alreadyBooked
@@ -319,19 +302,12 @@ export function BookingPanel({
             : copy.booked
       );
     } catch (cause) {
-      // Only the database knows why it refused, and now it says so. Telling
-      // the operator the schedule changed is right exactly when it did; for a
-      // missing project, a permission problem or a broken link it was always
-      // a lie that sent them back to re-search a slot nobody had taken.
       const code = bookingErrorCode(cause);
       setError(
         code
           ? bookingErrorMessage(code, language)
           : cause instanceof Error ? cause.message : copy.bookFailed
       );
-      // Only a genuine schedule change makes the offered times wrong. Clearing
-      // them then is the honest recovery; clearing them because a project was
-      // missing would throw away a search that is still perfectly valid.
       if (isSlotConflict(code)) {
         setSlots(null);
         setSeries(null);
@@ -370,8 +346,6 @@ export function BookingPanel({
           </label>
         </div>
 
-        {/* Only where the calling screen has not already fixed the link. A
-            booking opened from a project is already that project's. */}
         {!projectId && (projectOptions?.length ?? 0) > 0 ? (
           <label>
             <span>{copy.project}{wantsProject ? '' : ` · ${copy.optional}`}</span>
@@ -434,9 +408,6 @@ export function BookingPanel({
           </select>
         </label>
 
-        {/* The window comes from the artist, not from this form. Saying which
-            window is being searched keeps the result explainable; changing it
-            belongs in Settings, where it persists. */}
         {preferences ? (
           <p className="meta booking-window-note">
             {copy.windowNote
@@ -530,8 +501,6 @@ export function BookingPanel({
                       onClick={() => { setChosen(slot); setStage('chosen'); }}
                     >
                       <span className="title">{timeLabel(slot.start, language)}</span>
-                      {/* Why this is valid, in the operator's terms: how much
-                          room the gap actually has, so they can offer more. */}
                       <span className="meta">
                         {copy.roomFree.replace('{room}', durationLabel(slot.availableMinutes, language))}
                         {slot.availableMinutes === durationMinutes ? ` · ${copy.exactFit}` : ''}
@@ -552,34 +521,40 @@ export function BookingPanel({
           <p className="meta">
             {copy.duration}: <strong>{durationLabel(durationMinutes, language)}</strong>
           </p>
-          <div className="form-grid">
+          <div className="booking-manual-time-grid" role="group" aria-label={copy.start}>
             <label>
-              <span>{copy.start}</span>
+              <span>{copy.date}</span>
               <input
-                type="datetime-local"
-                step={APPOINTMENT_TIME_STEP_SECONDS}
-                value={manualStart}
-                onChange={(event) => {
-                  setManualStart(event.target.value);
-                  setConflicts(null);
-                }}
+                type="date"
+                value={manualParts.date}
+                onChange={(event) => updateManualStart({ date: event.target.value })}
               />
             </label>
             <label>
-              <span>{copy.end}</span>
-              <input
-                type="datetime-local"
-                step={APPOINTMENT_TIME_STEP_SECONDS}
-                value={manualEnd}
-                readOnly
-              />
+              <span>{copy.hour}</span>
+              <select
+                value={manualParts.hour}
+                onChange={(event) => updateManualStart({ hour: event.target.value })}
+              >
+                {MANUAL_HOUR_OPTIONS.map((hour) => <option key={hour} value={hour}>{hour}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>{copy.minute}</span>
+              <select
+                value={manualParts.minute}
+                onChange={(event) => updateManualStart({ minute: event.target.value })}
+              >
+                {MANUAL_MINUTE_OPTIONS.map((minute) => <option key={minute} value={minute}>{minute}</option>)}
+              </select>
             </label>
           </div>
+          <label className="booking-derived-end">
+            <span>{copy.end}</span>
+            <input type="text" value={manualEnd ? manualDateTimeLabel(manualEnd, language) : ''} readOnly />
+          </label>
           {checkingConflicts ? <p className="meta">{copy.checking}</p> : null}
 
-          {/* What else is happening then, split by whether it would actually
-              refuse the booking. A consultation running alongside a tattoo
-              session is worth knowing about and is not an obstacle. */}
           {blocking.length > 0 ? (
             <p className="notice warn" role="alert">
               {copy.wouldClash.replace('{count}', String(blocking.length))}
@@ -609,9 +584,6 @@ export function BookingPanel({
             <button
               type="button"
               className={blocking.length > 0 ? undefined : 'primary'}
-              // The database refuses a real clash regardless; disabling here
-              // would only hide why. It stays pressable and the warning says
-              // what will happen.
               disabled={booking || !manualStart || !manualEnd}
               onClick={() => {
                 const times = manualTimes();
@@ -684,6 +656,15 @@ function timeLabel(iso: string, language: Language): string {
   );
 }
 
+function manualDateTimeLabel(value: string, language: Language): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(
+    language === 'ru' ? 'ru-RU' : 'en-GB',
+    { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' },
+  );
+}
+
 export function durationLabel(minutes: number, language: Language): string {
   if (minutes < 60) return language === 'ru' ? `${minutes} мин` : `${minutes} min`;
   const hours = Math.floor(minutes / 60);
@@ -703,7 +684,7 @@ const COPY = {
     oneSession: 'One session',
     twoDays: 'Two days in a row',
     threeDays: 'Three days in a row',
-    windowNote: 'Searching this artist\u2019s hours: {from} to {to}.',
+    windowNote: 'Searching this artist’s hours: {from} to {to}.',
     overridesApplied: '{count} day(s) in range have their own hours.',
     preferredStart: 'usual start',
     project: 'Project',
@@ -730,8 +711,11 @@ const COPY = {
     bookFailed: 'Could not book that appointment.',
     showManual: 'Enter a time myself',
     hideManual: 'Hide manual entry',
-    manualHint: 'Choose the start time. End time follows the selected duration automatically.',
+    manualHint: 'Choose the date, hour and a five-minute start. End time follows the selected duration automatically.',
     start: 'Start',
+    date: 'Date',
+    hour: 'Hour',
+    minute: 'Minute',
     end: 'End',
     bookManual: 'Book this exact time',
     manualInvalid: 'Choose a valid start time.',
@@ -739,7 +723,7 @@ const COPY = {
     projectCreated: 'Project created.',
     alreadyBooked: 'That appointment was already booked. Nothing was duplicated.',
     checkTime: 'Check this time',
-    checking: 'Checking the schedule\u2026',
+    checking: 'Checking the schedule…',
     wouldClash: 'This clashes with {count} booking(s) and will be refused.',
     alsoThen: '{count} other appointment(s) happen then. They do not block this one.',
     types: {
@@ -785,8 +769,11 @@ const COPY = {
     bookFailed: 'Не удалось создать запись.',
     showManual: 'Ввести время вручную',
     hideManual: 'Скрыть ручной ввод',
-    manualHint: 'Выберите время начала. Конец рассчитывается автоматически по выбранной длительности.',
+    manualHint: 'Выберите дату, час и минуту с шагом 5 минут. Конец рассчитывается автоматически по выбранной длительности.',
     start: 'Начало',
+    date: 'Дата',
+    hour: 'Час',
+    minute: 'Минута',
     end: 'Конец',
     bookManual: 'Записать на это время',
     manualInvalid: 'Выберите корректное время начала.',
@@ -794,7 +781,7 @@ const COPY = {
     projectCreated: 'Проект создан.',
     alreadyBooked: 'Эта запись уже создана. Дубль не появился.',
     checkTime: 'Проверить это время',
-    checking: 'Проверяем расписание\u2026',
+    checking: 'Проверяем расписание…',
     wouldClash: 'Пересекается с {count} записью(ями) — такая запись будет отклонена.',
     alsoThen: 'В это же время есть ещё {count} запись(и). Они не мешают.',
     types: {
