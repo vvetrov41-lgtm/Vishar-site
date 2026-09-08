@@ -83,8 +83,8 @@ begin
         if jsonb_typeof(v_field->'value') <> 'boolean' then return false; end if;
       else
         if jsonb_typeof(v_field->'value') <> 'string'
-          or length(btrim(v_field->>'value')) not between 1 and
-            case when v_key in ('project_description','notes') then 2000 else 500 end
+          or length(btrim(v_field->>'value')) < 1
+          or length(btrim(v_field->>'value')) > (case when v_key in ('project_description','notes') then 2000 else 500 end)
           then return false; end if;
         if v_key = 'colour' and v_field->>'value' not in ('colour','black_and_grey','mixed') then return false; end if;
         if v_key = 'discovery_source' and v_field->>'value' not in ('instagram','chatgpt','other_ai','friend_referral','google','other') then return false; end if;
