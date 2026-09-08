@@ -27,6 +27,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: admin/package-lock.json
+      - name: Use current npm 11
+        run: npm install --global npm@11
       - name: Generate patched lockfile
         working-directory: admin
         run: npm install --save-dev --save-exact vitest@4.1.11 --package-lock-only
