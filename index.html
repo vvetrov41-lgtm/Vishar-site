@@ -149,7 +149,110 @@
     <div id="machine-bg" aria-hidden="true" style="position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity .6s ease;contain:strict;will-change:opacity"></div>
 
     <!-- Nav (injected by components.js) -->
-    <div id="site-nav"></div>
+    <div id="site-nav">
+      <!-- build:nav -->
+      <nav class="fixed top-0 w-full z-[100] glass border-b border-white/10" role="navigation" aria-label="Main">
+          <div class="max-w-[1200px] mx-auto px-6 h-14 flex justify-between items-center">
+            <a href="/" class="text-lg font-medium tracking-tight hover:opacity-70 transition-opacity">Vladimir Vishar</a>
+            <div class="hidden lg:flex space-x-6 text-[12px] font-normal text-white/60 items-center">
+              <a href="/" class="hover:text-white transition-colors text-white">Home</a>
+              <details id="desktop-portfolio-menu" class="portfolio-desktop-wrap">
+                <summary class="portfolio-desktop-trigger">Portfolio
+                  <svg class="portfolio-nav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </summary>
+                <div class="portfolio-desktop-menu">
+              <a href="/colour-realism-tattoo-london/">Colour Realism</a>
+              <a href="/black-and-grey-realism-london/">Black &amp; Grey</a>
+              <a href="/cover-up-tattoo-london/">Cover-ups</a>
+              <a href="/portrait-tattoo-artist-london/">Portraits</a>
+              <a href="/large-scale-realism-tattoo-london/">Large Scale</a>
+              <a href="/healed-tattoos/">Fresh vs Healed</a>
+                </div>
+              </details>
+              <a href="/booking/" class="hover:text-white transition-colors">Book a Tattoo</a>
+              <a href="/about/" class="hover:text-white transition-colors">About</a>
+              <a href="/book/" class="hover:text-white transition-colors">The Book</a>
+              <a href="/aftercare/" class="hover:text-white transition-colors">Aftercare</a>
+              <a href="/faq/" class="hover:text-white transition-colors">FAQ</a>
+              <a href="/ai-tools/" class="hover:text-white transition-colors">Studio Tools</a>
+            </div>
+            <button class="lg:hidden text-white p-2 -mr-2" onclick="toggleMenu()"
+                    aria-label="Toggle menu" aria-controls="mobile-overlay"
+                    aria-expanded="false" id="mobile-menu-toggle">
+              <svg id="menu-icon-open" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-16 6h16" />
+              </svg>
+              <svg id="menu-icon-close" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div id="mobile-overlay"
+               class="hidden fixed inset-0 left-0 right-0 top-14 max-w-full box-border overflow-x-hidden overflow-y-auto bg-black/95 backdrop-blur-md z-[90] flex flex-col px-6 pt-10 pb-8 space-y-5 text-xl font-medium"
+               aria-hidden="true">
+            <a href="/" onclick="toggleMenu()" class="transition-colors text-apple-blue">Home</a>
+            <details id="mobile-portfolio-menu" class="mobile-portfolio">
+              <summary class="mobile-portfolio-toggle">Portfolio
+                <svg class="mobile-portfolio-chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </summary>
+              <div class="mobile-portfolio-links">
+              <a href="/colour-realism-tattoo-london/" onclick="toggleMenu()">Colour Realism</a>
+              <a href="/black-and-grey-realism-london/" onclick="toggleMenu()">Black &amp; Grey</a>
+              <a href="/cover-up-tattoo-london/" onclick="toggleMenu()">Cover-ups</a>
+              <a href="/portrait-tattoo-artist-london/" onclick="toggleMenu()">Portraits</a>
+              <a href="/large-scale-realism-tattoo-london/" onclick="toggleMenu()">Large Scale</a>
+              <a href="/healed-tattoos/" onclick="toggleMenu()">Fresh vs Healed</a>
+              </div>
+            </details>
+            <a href="/booking/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Book a Tattoo</a>
+            <a href="/about/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">About</a>
+            <a href="/book/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">The Book</a>
+            <a href="/aftercare/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Aftercare</a>
+            <a href="/faq/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">FAQ</a>
+            <a href="/ai-tools/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Studio Tools</a>
+            <div class="mobile-menu-footer pt-4 mt-auto border-t border-white/10">
+              <div class="mb-5 flex items-center justify-center gap-1" role="group" aria-label="Social media and email">
+              <a href="https://www.instagram.com/vladimir_vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Instagram" title="Instagram">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.25"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://www.tiktok.com/@vladimir.vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="TikTok" title="TikTok">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4v10.2a4.2 4.2 0 1 1-3.6-4.16v2.82a1.6 1.6 0 1 0 1 1.48V4h2.6Zm0 0c.35 2.05 1.55 3.25 3.5 3.6v2.65A6.45 6.45 0 0 1 14.5 8.9"/></svg>
+              </a>
+              <a href="https://www.facebook.com/profile.php?id=100088974927193" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Facebook" title="Facebook">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.2 8.2h3V4.4c-.52-.07-2.3-.2-4.4-.2-4.1 0-6.9 2.5-6.9 7.1v4H2v4.3h3.9V24h4.8v-4.4h4l.64-4.3h-4.64v-3.58c0-1.25.34-2.1 2.12-2.1h2.38V8.2Z" transform="translate(3 -2) scale(.82)" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://uk.pinterest.com/VladimirVisharTatt/" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Pinterest" title="Pinterest">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2a8.8 8.8 0 0 0-3.2 17c-.08-1.45-.02-3.2.36-4.83l1.13-4.78s-.28-.58-.28-1.43c0-1.34.77-2.34 1.74-2.34.82 0 1.22.62 1.22 1.36 0 .83-.53 2.06-.8 3.2-.23.96.48 1.75 1.43 1.75 1.72 0 3.04-1.81 3.04-4.43 0-2.32-1.67-3.94-4.05-3.94-2.76 0-4.38 2.07-4.38 4.21 0 .84.32 1.73.72 2.22.08.1.09.18.07.28l-.27 1.1c-.04.18-.14.22-.33.13-1.23-.57-2-2.37-2-3.82 0-3.1 2.25-5.95 6.5-5.95 3.41 0 6.06 2.43 6.06 5.68 0 3.39-2.14 6.12-5.1 6.12-1 0-1.93-.52-2.25-1.13l-.61 2.33c-.22.85-.82 1.92-1.22 2.57.92.28 1.89.43 2.9.43a8.8 8.8 0 1 0 0-17.6Z" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://youtube.com/@vladimir_vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="YouTube" title="YouTube">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.6 7.2a2.5 2.5 0 0 0-1.76-1.77C18.3 5 12 5 12 5s-6.3 0-7.84.43A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.76 1.77C5.7 19 12 19 12 19s6.3 0 7.84-.43a2.5 2.5 0 0 0 1.76-1.77A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8Z" fill="currentColor" stroke="none"/><path d="m10 15 5.2-3L10 9v6Z" fill="#000" stroke="none"/></svg>
+              </a>
+              <a href="mailto:info@vishartattoo.com"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Email" title="Email">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg>
+              </a>
+              </div>
+              <a href="/booking/"
+                 class="block w-full text-center py-3 bg-white text-black rounded-full font-semibold text-base"
+                 onclick="toggleMenu()">Start an inquiry</a>
+            </div>
+          </div>
+        </nav>
+      <!-- /build:nav -->
+    </div>
 
     <!-- Hero -->
     <main id="main-content" tabindex="-1" style="position:relative;z-index:1">
@@ -566,7 +669,99 @@
             <h2 class="text-4xl md:text-5xl font-semibold tracking-tight">Colour, black-and-grey, and cover-up realism</h2>
             <p class="max-w-2xl mx-auto text-white/50 mt-5 leading-relaxed">Custom realism built around contrast, placement, and how the image will age on skin — from vivid colour work to black-and-grey depth and considered cover-up solutions.</p>
         </div>
-        <div id="portfolio-grid" class="max-w-[1400px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+        <div id="portfolio-grid" class="max-w-[1400px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-2">
+            <!-- build:portfolio-grid -->
+                        <button type="button" data-portfolio-index="0" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 1 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/01-320.webp 320w, /assets/portfolio/thumbs/01-480.webp 480w, /assets/portfolio/thumbs/01-720.webp 720w, /assets/portfolio/thumbs/01-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/01.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 1" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="1" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 2 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/02-320.webp 320w, /assets/portfolio/thumbs/02-480.webp 480w, /assets/portfolio/thumbs/02-720.webp 720w, /assets/portfolio/thumbs/02-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/02.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 2" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="2" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 3 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/03-320.webp 320w, /assets/portfolio/thumbs/03-480.webp 480w, /assets/portfolio/thumbs/03-720.webp 720w, /assets/portfolio/thumbs/03-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/03.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 3" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="3" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 4 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/04-320.webp 320w, /assets/portfolio/thumbs/04-480.webp 480w, /assets/portfolio/thumbs/04-720.webp 720w, /assets/portfolio/thumbs/04-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/04.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 4" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="4" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 5 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/05-320.webp 320w, /assets/portfolio/thumbs/05-480.webp 480w, /assets/portfolio/thumbs/05-720.webp 720w, /assets/portfolio/thumbs/05-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/05.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 5" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="5" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 6 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/06-320.webp 320w, /assets/portfolio/thumbs/06-480.webp 480w, /assets/portfolio/thumbs/06-720.webp 720w, /assets/portfolio/thumbs/06-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/06.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 6" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="6" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 7 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/07-320.webp 320w, /assets/portfolio/thumbs/07-480.webp 480w, /assets/portfolio/thumbs/07-720.webp 720w, /assets/portfolio/thumbs/07-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/07.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 7" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="7" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 8 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/08-320.webp 320w, /assets/portfolio/thumbs/08-480.webp 480w, /assets/portfolio/thumbs/08-720.webp 720w, /assets/portfolio/thumbs/08-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/08.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 8" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="8" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 9 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/09-320.webp 320w, /assets/portfolio/thumbs/09-480.webp 480w, /assets/portfolio/thumbs/09-720.webp 720w, /assets/portfolio/thumbs/09-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/09.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 9" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="9" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 10 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/10-320.webp 320w, /assets/portfolio/thumbs/10-480.webp 480w, /assets/portfolio/thumbs/10-720.webp 720w, /assets/portfolio/thumbs/10-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/10.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 10" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="10" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 11 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/11-320.webp 320w, /assets/portfolio/thumbs/11-480.webp 480w, /assets/portfolio/thumbs/11-720.webp 720w, /assets/portfolio/thumbs/11-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/11.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 11" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="11" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 12 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/12-320.webp 320w, /assets/portfolio/thumbs/12-480.webp 480w, /assets/portfolio/thumbs/12-720.webp 720w, /assets/portfolio/thumbs/12-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/12.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 12" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="12" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 13 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/13-320.webp 320w, /assets/portfolio/thumbs/13-480.webp 480w, /assets/portfolio/thumbs/13-720.webp 720w, /assets/portfolio/thumbs/13-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/13.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 13" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="13" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 14 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/14-320.webp 320w, /assets/portfolio/thumbs/14-480.webp 480w, /assets/portfolio/thumbs/14-720.webp 720w, /assets/portfolio/thumbs/14-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/14.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 14" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="14" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 15 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/15-320.webp 320w, /assets/portfolio/thumbs/15-480.webp 480w, /assets/portfolio/thumbs/15-720.webp 720w, /assets/portfolio/thumbs/15-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/15.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 15" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="15" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 16 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/16-320.webp 320w, /assets/portfolio/thumbs/16-480.webp 480w, /assets/portfolio/thumbs/16-720.webp 720w, /assets/portfolio/thumbs/16-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/16.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 16" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="16" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 17 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/17-320.webp 320w, /assets/portfolio/thumbs/17-480.webp 480w, /assets/portfolio/thumbs/17-720.webp 720w, /assets/portfolio/thumbs/17-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/17.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 17" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="17" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 18 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/18-320.webp 320w, /assets/portfolio/thumbs/18-480.webp 480w, /assets/portfolio/thumbs/18-720.webp 720w, /assets/portfolio/thumbs/18-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/18.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 18" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="18" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 19 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/19-320.webp 320w, /assets/portfolio/thumbs/19-480.webp 480w, /assets/portfolio/thumbs/19-720.webp 720w, /assets/portfolio/thumbs/19-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/19.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 19" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+                        <button type="button" data-portfolio-index="19" class="aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full" aria-label="Open portfolio image 20 of 20"><picture><source type="image/webp" srcset="/assets/portfolio/thumbs/20-320.webp 320w, /assets/portfolio/thumbs/20-480.webp 480w, /assets/portfolio/thumbs/20-720.webp 720w, /assets/portfolio/thumbs/20-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)"><img src="/assets/portfolio/20.jpg" loading="lazy" decoding="async" width="900" height="1200" alt="Realism tattoo by Vladimir Vishar, London — portfolio piece 20" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture><div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div></button>
+            <!-- /build:portfolio-grid -->
+        </div>
+        <!-- build:portfolio-collections -->
+        <div id="portfolio-collections" class="max-w-[1400px] mx-auto mt-10">
+          <div class="mb-5 text-center">
+            <p class="text-xs uppercase tracking-[0.28em] text-white/60">Portfolio galleries</p>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <a href="/colour-realism-tattoo-london/" class="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.06]">
+                <div class="aspect-[16/10] overflow-hidden bg-white/5">
+                  <img src="/assets/colour-realism/01.webp" alt="Colour realism tattoo by Vladimir Vishar" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+                </div>
+                <div class="p-5 text-left">
+                  <h3 class="text-lg font-semibold text-white">Colour Realism</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-white/50">Vivid photorealistic colour tattoos and custom compositions.</p>
+                  <span class="mt-4 inline-block text-sm text-white/70">View gallery →</span>
+                </div>
+              </a>
+              <a href="/black-and-grey-realism-london/" class="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.06]">
+                <div class="aspect-[16/10] overflow-hidden bg-white/5">
+                  <img src="/assets/black-grey/08.webp" alt="Black and grey realism tattoo by Vladimir Vishar London - 8" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+                </div>
+                <div class="p-5 text-left">
+                  <h3 class="text-lg font-semibold text-white">Black &amp; Grey</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-white/50">Black and grey realism with strong tonal structure and depth.</p>
+                  <span class="mt-4 inline-block text-sm text-white/70">View gallery →</span>
+                </div>
+              </a>
+              <a href="/cover-up-tattoo-london/" class="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.06]">
+                <div class="aspect-[16/10] overflow-hidden bg-white/5">
+                  <img src="/assets/cover-ups/after-01.webp" alt="Completed cover-up tattoo by Vladimir Vishar" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+                </div>
+                <div class="p-5 text-left">
+                  <h3 class="text-lg font-semibold text-white">Cover-ups</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-white/50">Before and after transformations of existing tattoos.</p>
+                  <span class="mt-4 inline-block text-sm text-white/70">View gallery →</span>
+                </div>
+              </a>
+              <a href="/portrait-tattoo-artist-london/" class="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.06]">
+                <div class="aspect-[16/10] overflow-hidden bg-white/5">
+                  <img src="/assets/portraits/05.webp" alt="Colour realism Vivienne Westwood portrait tattoo by Vladimir Vishar" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+                </div>
+                <div class="p-5 text-left">
+                  <h3 class="text-lg font-semibold text-white">Portraits</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-white/50">Colour and black-and-grey portrait realism.</p>
+                  <span class="mt-4 inline-block text-sm text-white/70">View gallery →</span>
+                </div>
+              </a>
+              <a href="/large-scale-realism-tattoo-london/" class="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.06]">
+                <div class="aspect-[16/10] overflow-hidden bg-white/5">
+                  <img src="/assets/large-scale/02.jpg" alt="Large-scale black and grey realism arm tattoo by Vladimir Vishar" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+                </div>
+                <div class="p-5 text-left">
+                  <h3 class="text-lg font-semibold text-white">Large Scale</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-white/50">Sleeves and multi-session realism projects.</p>
+                  <span class="mt-4 inline-block text-sm text-white/70">View gallery →</span>
+                </div>
+              </a>
+              <a href="/healed-tattoos/" class="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.06]">
+                <div class="aspect-[16/10] overflow-hidden bg-white/5">
+                  <img src="/assets/healed/06.webp" alt="Confirmed healed black and grey warrior mask portrait tattoo by Vladimir Vishar" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+                </div>
+                <div class="p-5 text-left">
+                  <h3 class="text-lg font-semibold text-white">Fresh vs Healed</h3>
+                  <p class="mt-2 text-sm leading-relaxed text-white/50">Matched fresh and confirmed healed tattoo comparisons.</p>
+                  <span class="mt-4 inline-block text-sm text-white/70">View gallery →</span>
+                </div>
+              </a>
+          </div>
+        </div>
+        <!-- /build:portfolio-collections -->
         <div class="max-w-[1400px] mx-auto mt-6 text-center">
             <p class="text-xs uppercase tracking-[0.28em] text-white/60">More recent work</p>
             <a href="https://www.instagram.com/vladimir_vishar/" target="_blank" rel="noopener noreferrer" class="inline-block mt-2 text-sm text-white/65 hover:text-white underline underline-offset-4">
@@ -616,17 +811,34 @@
                 <p><a href="/about/#recognition" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">Press features &amp; awards →</a></p>
             </div>
         </div>
-    </section>
-
-    <!-- Services cross-links -->
-    <section class="py-16 px-6">
-        <div class="max-w-[1000px] mx-auto">
-            <div class="grid sm:grid-cols-3 gap-4">
-                <a href="/colour-realism-tattoo-london/" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift group"><h3 class="text-lg font-semibold mb-2 group-hover:text-white transition-colors">Colour Realism</h3><p class="text-sm text-white/40">Portraits, wildlife, florals. Built around your reference, your skin, your placement.</p></a>
-                <a href="/black-and-grey-realism-london/" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift group"><h3 class="text-lg font-semibold mb-2 group-hover:text-white transition-colors">Black &amp; Grey</h3><p class="text-sm text-white/40">Contrast and shading. Portraits, mythology, dark realism and horror pieces.</p></a>
-                <a href="/cover-up-tattoo-london/" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center card-lift group"><h3 class="text-lg font-semibold mb-2 group-hover:text-white transition-colors">Cover-ups</h3><p class="text-sm text-white/40">Old ink into something you'd actually choose. Photo assessment first, no obligation.</p></a>
+        <!-- build:homepage-approach -->
+        <section id="homepage-approach" class="px-6 pb-20">
+          <div class="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-[0.9fr_1.4fr] gap-8 lg:gap-12 items-start">
+            <div>
+              <p class="text-[10px] uppercase tracking-[0.35em] text-white/30 mb-4">Approach</p>
+              <h2 class="text-3xl md:text-5xl font-semibold tracking-tight mb-5">How I approach a project</h2>
+              <p class="text-base md:text-lg leading-relaxed text-white/50 max-w-xl">Every piece starts with placement, skin, references, and what the tattoo needs to do on the body. The goal is a custom design that reads clearly now and still holds up over time.</p>
             </div>
-        </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+                <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">01</p>
+                <h3 class="text-lg font-semibold mb-3">Fit first</h3>
+                <p class="text-sm leading-relaxed text-white/60">The design is built around placement, flow, scale, and how the image will sit on the body.</p>
+              </article>
+              <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+                <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">02</p>
+                <h3 class="text-lg font-semibold mb-3">Reference-led</h3>
+                <p class="text-sm leading-relaxed text-white/60">Your references set the direction. The final image is adjusted into a custom tattoo design.</p>
+              </article>
+              <article class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+                <p class="mb-4 text-[10px] font-medium uppercase tracking-[0.35em] text-white/35">03</p>
+                <h3 class="text-lg font-semibold mb-3">Realistic scope</h3>
+                <p class="text-sm leading-relaxed text-white/60">Cover-ups, detail level, time estimate, and limitations are assessed before you decide to book.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+        <!-- /build:homepage-approach -->
     </section>
 
     <!-- Gallery (6 photos) -->
@@ -635,7 +847,16 @@
             <div class="flex flex-col md:flex-row justify-between items-center md:items-end text-center md:text-left mb-12 gap-4">
                 <div><h2 class="text-3xl font-semibold tracking-tight">The Studio</h2><p class="text-white/40">Environment &amp; Creative Process</p></div>
             </div>
-            <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 gap-6"></div>
+            <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 gap-6">
+                <!-- build:studio-grid -->
+                                <div class="aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group"><picture><source type="image/webp" srcset="/assets/gallery/thumbs/01-320.webp 320w, /assets/gallery/thumbs/01-480.webp 480w, /assets/gallery/thumbs/01-720.webp 720w, /assets/gallery/thumbs/01-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 96px) / 3), 384px), calc((100vw - 72px) / 2)"><img src="/assets/gallery/01.jpg" loading="lazy" decoding="async" width="900" height="900" alt="Vladimir Vishar holding a tattoo convention award, with a colour realism sleeve visible" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500"></picture></div>
+                                <div class="aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group"><picture><source type="image/webp" srcset="/assets/gallery/thumbs/02-320.webp 320w, /assets/gallery/thumbs/02-480.webp 480w, /assets/gallery/thumbs/02-720.webp 720w, /assets/gallery/thumbs/02-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 96px) / 3), 384px), calc((100vw - 72px) / 2)"><img src="/assets/gallery/02.jpg" loading="lazy" decoding="async" width="900" height="900" alt="Portrait of Vladimir Vishar, London realism tattoo artist" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500"></picture></div>
+                                <div class="aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group"><picture><source type="image/webp" srcset="/assets/gallery/thumbs/03-320.webp 320w, /assets/gallery/thumbs/03-480.webp 480w, /assets/gallery/thumbs/03-720.webp 720w, /assets/gallery/thumbs/03-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 96px) / 3), 384px), calc((100vw - 72px) / 2)"><img src="/assets/gallery/03.jpg" loading="lazy" decoding="async" width="900" height="900" alt="Vladimir Vishar featured on the cover of Ink Legends Magazine" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500"></picture></div>
+                                <div class="aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group"><picture><source type="image/webp" srcset="/assets/gallery/thumbs/04-320.webp 320w, /assets/gallery/thumbs/04-480.webp 480w, /assets/gallery/thumbs/04-720.webp 720w, /assets/gallery/thumbs/04-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 96px) / 3), 384px), calc((100vw - 72px) / 2)"><img src="/assets/gallery/04.jpg" loading="lazy" decoding="async" width="900" height="900" alt="Vladimir Vishar painting a dark realism skull piece" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500"></picture></div>
+                                <div class="aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group"><picture><source type="image/webp" srcset="/assets/gallery/thumbs/05-320.webp 320w, /assets/gallery/thumbs/05-480.webp 480w, /assets/gallery/thumbs/05-720.webp 720w, /assets/gallery/thumbs/05-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 96px) / 3), 384px), calc((100vw - 72px) / 2)"><img src="/assets/gallery/05.jpg" loading="lazy" decoding="async" width="900" height="900" alt="Vladimir Vishar at a tattoo convention next to a client's healed leg tattoo" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500"></picture></div>
+                                <div class="aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group"><picture><source type="image/webp" srcset="/assets/gallery/thumbs/06-320.webp 320w, /assets/gallery/thumbs/06-480.webp 480w, /assets/gallery/thumbs/06-720.webp 720w, /assets/gallery/thumbs/06-960.webp 960w" sizes="(min-width: 768px) min(calc((100vw - 96px) / 3), 384px), calc((100vw - 72px) / 2)"><img src="/assets/gallery/06.jpg" loading="lazy" decoding="async" width="900" height="900" alt="Vladimir Vishar tattooing a client's arm in the studio" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500"></picture></div>
+                <!-- /build:studio-grid -->
+            </div>
         </div>
     </section>
 
@@ -770,7 +991,66 @@
     <div id="sticky-cta" data-cta-text="Send your concept — £140/hr"></div>
 
     <!-- Footer (injected by components.js) -->
-    <div id="site-footer"></div>
+    <div id="site-footer">
+      <!-- build:footer -->
+      <footer class="py-20 border-t border-white/5 px-6">
+          <div class="max-w-[1200px] mx-auto">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
+              <div>
+                <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
+                <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>London enquiries now open</p>
+                <p class="text-sm text-white/60 leading-relaxed mt-3">Private studio details are confirmed with each appointment.<br>By appointment only · No walk-ins</p>
+                <a href="mailto:info@vishartattoo.com" class="text-sm text-white/60 hover:text-white mt-3 inline-block transition-colors">info@vishartattoo.com</a>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Pages</p>
+                <div class="flex flex-col space-y-2 text-sm text-white/60">
+                  <a href="/" class="hover:text-white transition-colors">Home</a>
+                  <a href="/booking/" class="hover:text-white transition-colors">Book a Tattoo</a>
+                  <a href="/about/" class="hover:text-white transition-colors">About</a>
+                  <a href="/book/" class="hover:text-white transition-colors">The Book</a>
+                  <a href="/aftercare/" class="hover:text-white transition-colors">Aftercare</a>
+                  <a href="/faq/" class="hover:text-white transition-colors">FAQ</a>
+                  <a href="/ai-tools/" class="hover:text-white transition-colors">Studio Tools</a>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Collections</p>
+                <div class="flex flex-col space-y-2 text-sm text-white/60">
+                  <a href="/colour-realism-tattoo-london/" class="hover:text-white transition-colors">Colour Realism</a>
+                  <a href="/black-and-grey-realism-london/" class="hover:text-white transition-colors">Black &amp; Grey</a>
+                  <a href="/cover-up-tattoo-london/" class="hover:text-white transition-colors">Cover-ups</a>
+                  <a href="/portrait-tattoo-artist-london/" class="hover:text-white transition-colors">Portraits</a>
+                  <a href="/large-scale-realism-tattoo-london/" class="hover:text-white transition-colors">Large Scale</a>
+                  <a href="/healed-tattoos/" class="hover:text-white transition-colors">Fresh vs Healed</a>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Social</p>
+                <div class="flex flex-col space-y-2 text-sm text-white/60">
+                  <a href="https://www.instagram.com/vladimir_vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">Instagram</a>
+                  <a href="https://youtube.com/@vladimir_vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">YouTube</a>
+                  <a href="https://www.tiktok.com/@vladimir.vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">TikTok</a>
+                  <a href="https://www.facebook.com/profile.php?id=100088974927193" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">Facebook</a>
+                </div>
+              </div>
+            </div>
+            <div class="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div class="text-xs text-white/40 uppercase tracking-[0.4em]">
+                &copy; <span data-current-year>2026</span> Vladimir Vishar. All rights reserved.
+              </div>
+              <div class="flex items-center gap-6">
+                <a href="/privacy/" class="text-xs text-white/60 hover:text-white transition-colors">Privacy &amp; Cookies</a>
+                <a href="/booking/"
+                   class="text-xs text-white/60 hover:text-white transition-colors">
+                  Start an inquiry →
+                </a>
+              </div>
+            </div>
+          </div>
+        </footer>
+      <!-- /build:footer -->
+    </div>
 
     <!-- Lightbox -->
     <div id="lightbox" class="fixed inset-0 z-[1000] bg-black/98 hidden items-center justify-center p-4 backdrop-blur-xl" onclick="onLbClick(event)" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Portfolio image preview">
@@ -920,57 +1200,21 @@
     }
 
     /* ── Portfolio + Gallery grids ── */
+    /* ── Portfolio lightbox sources ──
+       The portfolio and studio grids are rendered into the HTML at build time
+       by scripts/build-static-html.mjs. This list only feeds the lightbox,
+       which still opens the full-size JPG for a card. */
     const portfolioImages = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg','07.jpg','08.jpg','09.jpg','10.jpg','11.jpg','12.jpg','13.jpg','14.jpg','15.jpg','16.jpg','17.jpg','18.jpg','19.jpg','20.jpg'];
-    const galleryFiles = ['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg'];
-    const galleryAlts = [
-      'Vladimir Vishar holding a tattoo convention award, with a colour realism sleeve visible',
-      'Portrait of Vladimir Vishar, London realism tattoo artist',
-      'Vladimir Vishar featured on the cover of Ink Legends Magazine',
-      'Vladimir Vishar painting a dark realism skull piece',
-      'Vladimir Vishar at a tattoo convention next to a client\'s healed leg tattoo',
-      'Vladimir Vishar tattooing a client\'s arm in the studio'
-    ];
-    const webpPortfolioPilot = new Set(['01.jpg','02.jpg','03.jpg','04.jpg','05.jpg','06.jpg','07.jpg','08.jpg','09.jpg','10.jpg','11.jpg','12.jpg','13.jpg','14.jpg','15.jpg','16.jpg','17.jpg','18.jpg','19.jpg','20.jpg']);
     let lbIdx = 0;
-    function buildPortfolioImage(file, altText) {
-      if (!webpPortfolioPilot.has(file)) {
-        return `<img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105">`;
-      }
-      const base = file.replace(/\.jpg$/i, '');
-      const srcset = [320, 480, 720, 960].map(w => `/assets/portfolio/thumbs/${base}-${w}.webp ${w}w`).join(', ');
-      const sizes = '(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)';
-      return `<picture><source type="image/webp" srcset="${srcset}" sizes="${sizes}"><img src="/assets/portfolio/${file}" loading="lazy" decoding="async" width="900" height="1200" alt="${altText}" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"></picture>`;
-    }
 
-    function buildStudioGalleryImage(file, altText) {
-      const base = file.replace(/\.jpg$/i, '');
-      const srcset = [320, 480, 720, 960].map(w => `/assets/gallery/thumbs/${base}-${w}.webp ${w}w`).join(', ');
-      const sizes = '(min-width: 768px) min(calc((100vw - 96px) / 3), 384px), calc((100vw - 72px) / 2)';
-      return `<picture><source type="image/webp" srcset="${srcset}" sizes="${sizes}"><img src="/assets/gallery/${file}" loading="lazy" decoding="async" width="900" height="900" alt="${altText}" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500"></picture>`;
-    }
-
-    function buildImageGrid() {
+    function bindPortfolioGrid() {
       const pg = document.getElementById('portfolio-grid');
-      if (pg) {
-        portfolioImages.forEach((file, i) => {
-          const w = document.createElement('button');
-          w.type = 'button';
-          w.className = 'aspect-[3/4] overflow-hidden bg-apple-darkGray cursor-zoom-in group relative text-left w-full';
-          w.setAttribute('aria-label', `Open portfolio image ${i+1} of ${portfolioImages.length}`);
-          w.addEventListener('click', () => openLb(i));
-          w.innerHTML = `${buildPortfolioImage(file, `Realism tattoo by Vladimir Vishar, London — portfolio piece ${i+1}`)}<div class="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><span class="text-xs uppercase tracking-widest font-semibold">View</span></div>`;
-          pg.appendChild(w);
-        });
-      }
-      const gg = document.getElementById('gallery-grid');
-      if (gg) {
-        galleryFiles.forEach((file, i) => {
-          const w = document.createElement('div');
-          w.className = 'aspect-square bg-apple-darkGray rounded-2xl overflow-hidden group';
-          w.innerHTML = buildStudioGalleryImage(file, galleryAlts[i] || 'Vladimir Vishar, London realism tattoo artist');
-          gg.appendChild(w);
-        });
-      }
+      if (!pg) return;
+      pg.querySelectorAll('[data-portfolio-index]').forEach((button) => {
+        const index = Number(button.getAttribute('data-portfolio-index'));
+        if (!Number.isFinite(index) || index < 0 || index >= portfolioImages.length) return;
+        button.addEventListener('click', () => openLb(index));
+      });
     }
 
     /* ── Lightbox ── */
@@ -1099,7 +1343,7 @@
 
     /* ── Init ── */
     document.addEventListener('DOMContentLoaded', () => {
-      buildImageGrid();
+      bindPortfolioGrid();
       buildFaq();
       renderReviews(3);
       const rc = document.getElementById('reviews-count');

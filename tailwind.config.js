@@ -17,7 +17,13 @@ module.exports = {
     './privacy/index.html',
     './404.html',
     './components.js',
-    './assets/js/speciality-gallery.js'
+    './assets/js/speciality-gallery.js',
+    // Build-time source of truth for the nav, footer and gallery markup that
+    // scripts/build-static-html.mjs writes into the pages above. The generated
+    // markup also lands in those HTML files, so this is belt-and-braces for the
+    // case where the CSS is rebuilt before the HTML.
+    './scripts/lib/site-content.mjs',
+    './scripts/lib/site-galleries.mjs'
   ],
   theme: {
     extend: {

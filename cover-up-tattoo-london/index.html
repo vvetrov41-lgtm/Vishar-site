@@ -113,7 +113,110 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </head>
 <body class="antialiased">
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <div id="site-nav"></div>
+    <div id="site-nav">
+      <!-- build:nav -->
+      <nav class="fixed top-0 w-full z-[100] glass border-b border-white/10" role="navigation" aria-label="Main">
+          <div class="max-w-[1200px] mx-auto px-6 h-14 flex justify-between items-center">
+            <a href="/" class="text-lg font-medium tracking-tight hover:opacity-70 transition-opacity">Vladimir Vishar</a>
+            <div class="hidden lg:flex space-x-6 text-[12px] font-normal text-white/60 items-center">
+              <a href="/" class="hover:text-white transition-colors">Home</a>
+              <details id="desktop-portfolio-menu" class="portfolio-desktop-wrap">
+                <summary class="portfolio-desktop-trigger text-white">Portfolio
+                  <svg class="portfolio-nav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </summary>
+                <div class="portfolio-desktop-menu">
+              <a href="/colour-realism-tattoo-london/">Colour Realism</a>
+              <a href="/black-and-grey-realism-london/">Black &amp; Grey</a>
+              <a href="/cover-up-tattoo-london/" class="is-active">Cover-ups</a>
+              <a href="/portrait-tattoo-artist-london/">Portraits</a>
+              <a href="/large-scale-realism-tattoo-london/">Large Scale</a>
+              <a href="/healed-tattoos/">Fresh vs Healed</a>
+                </div>
+              </details>
+              <a href="/booking/" class="hover:text-white transition-colors">Book a Tattoo</a>
+              <a href="/about/" class="hover:text-white transition-colors">About</a>
+              <a href="/book/" class="hover:text-white transition-colors">The Book</a>
+              <a href="/aftercare/" class="hover:text-white transition-colors">Aftercare</a>
+              <a href="/faq/" class="hover:text-white transition-colors">FAQ</a>
+              <a href="/ai-tools/" class="hover:text-white transition-colors">Studio Tools</a>
+            </div>
+            <button class="lg:hidden text-white p-2 -mr-2" onclick="toggleMenu()"
+                    aria-label="Toggle menu" aria-controls="mobile-overlay"
+                    aria-expanded="false" id="mobile-menu-toggle">
+              <svg id="menu-icon-open" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-16 6h16" />
+              </svg>
+              <svg id="menu-icon-close" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div id="mobile-overlay"
+               class="hidden fixed inset-0 left-0 right-0 top-14 max-w-full box-border overflow-x-hidden overflow-y-auto bg-black/95 backdrop-blur-md z-[90] flex flex-col px-6 pt-10 pb-8 space-y-5 text-xl font-medium"
+               aria-hidden="true">
+            <a href="/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Home</a>
+            <details id="mobile-portfolio-menu" class="mobile-portfolio is-active">
+              <summary class="mobile-portfolio-toggle">Portfolio
+                <svg class="mobile-portfolio-chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </summary>
+              <div class="mobile-portfolio-links">
+              <a href="/colour-realism-tattoo-london/" onclick="toggleMenu()">Colour Realism</a>
+              <a href="/black-and-grey-realism-london/" onclick="toggleMenu()">Black &amp; Grey</a>
+              <a href="/cover-up-tattoo-london/" onclick="toggleMenu()" class="text-apple-blue">Cover-ups</a>
+              <a href="/portrait-tattoo-artist-london/" onclick="toggleMenu()">Portraits</a>
+              <a href="/large-scale-realism-tattoo-london/" onclick="toggleMenu()">Large Scale</a>
+              <a href="/healed-tattoos/" onclick="toggleMenu()">Fresh vs Healed</a>
+              </div>
+            </details>
+            <a href="/booking/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Book a Tattoo</a>
+            <a href="/about/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">About</a>
+            <a href="/book/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">The Book</a>
+            <a href="/aftercare/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Aftercare</a>
+            <a href="/faq/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">FAQ</a>
+            <a href="/ai-tools/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Studio Tools</a>
+            <div class="mobile-menu-footer pt-4 mt-auto border-t border-white/10">
+              <div class="mb-5 flex items-center justify-center gap-1" role="group" aria-label="Social media and email">
+              <a href="https://www.instagram.com/vladimir_vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Instagram" title="Instagram">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.25"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://www.tiktok.com/@vladimir.vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="TikTok" title="TikTok">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4v10.2a4.2 4.2 0 1 1-3.6-4.16v2.82a1.6 1.6 0 1 0 1 1.48V4h2.6Zm0 0c.35 2.05 1.55 3.25 3.5 3.6v2.65A6.45 6.45 0 0 1 14.5 8.9"/></svg>
+              </a>
+              <a href="https://www.facebook.com/profile.php?id=100088974927193" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Facebook" title="Facebook">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.2 8.2h3V4.4c-.52-.07-2.3-.2-4.4-.2-4.1 0-6.9 2.5-6.9 7.1v4H2v4.3h3.9V24h4.8v-4.4h4l.64-4.3h-4.64v-3.58c0-1.25.34-2.1 2.12-2.1h2.38V8.2Z" transform="translate(3 -2) scale(.82)" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://uk.pinterest.com/VladimirVisharTatt/" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Pinterest" title="Pinterest">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2a8.8 8.8 0 0 0-3.2 17c-.08-1.45-.02-3.2.36-4.83l1.13-4.78s-.28-.58-.28-1.43c0-1.34.77-2.34 1.74-2.34.82 0 1.22.62 1.22 1.36 0 .83-.53 2.06-.8 3.2-.23.96.48 1.75 1.43 1.75 1.72 0 3.04-1.81 3.04-4.43 0-2.32-1.67-3.94-4.05-3.94-2.76 0-4.38 2.07-4.38 4.21 0 .84.32 1.73.72 2.22.08.1.09.18.07.28l-.27 1.1c-.04.18-.14.22-.33.13-1.23-.57-2-2.37-2-3.82 0-3.1 2.25-5.95 6.5-5.95 3.41 0 6.06 2.43 6.06 5.68 0 3.39-2.14 6.12-5.1 6.12-1 0-1.93-.52-2.25-1.13l-.61 2.33c-.22.85-.82 1.92-1.22 2.57.92.28 1.89.43 2.9.43a8.8 8.8 0 1 0 0-17.6Z" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://youtube.com/@vladimir_vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="YouTube" title="YouTube">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.6 7.2a2.5 2.5 0 0 0-1.76-1.77C18.3 5 12 5 12 5s-6.3 0-7.84.43A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.76 1.77C5.7 19 12 19 12 19s6.3 0 7.84-.43a2.5 2.5 0 0 0 1.76-1.77A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8Z" fill="currentColor" stroke="none"/><path d="m10 15 5.2-3L10 9v6Z" fill="#000" stroke="none"/></svg>
+              </a>
+              <a href="mailto:info@vishartattoo.com"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Email" title="Email">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg>
+              </a>
+              </div>
+              <a href="/booking/"
+                 class="block w-full text-center py-3 bg-white text-black rounded-full font-semibold text-base"
+                 onclick="toggleMenu()">Start an inquiry</a>
+            </div>
+          </div>
+        </nav>
+      <!-- /build:nav -->
+    </div>
     <main id="main-content" tabindex="-1">
 
 <div class="pt-20 px-6 max-w-[1200px] mx-auto">
@@ -166,12 +269,112 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </section>
 
 <!-- Before / After Gallery -->
-<section id="gallery" class="py-24 px-4 bg-apple-darkGray/30">
-    <div class="max-w-[1200px] mx-auto text-center mb-16">
-        <h2 class="text-4xl font-semibold tracking-tight">Before &amp; After</h2>
-        <p class="text-white/40 mt-2">Real transformations by Vladimir Vishar</p>
+<section id="gallery" class="py-24 px-4 border-y border-white/5">
+    <div class="max-w-[1200px] mx-auto text-center mb-12">
+        <p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-4">6 matched cover-up pairs</p>
+        <h2 class="text-3xl md:text-5xl font-semibold tracking-tight">Before &amp; After</h2>
+        <p class="text-white/50 mt-4 max-w-2xl mx-auto">The original tattoo is shown on the left. The completed cover-up is shown on the right.</p>
     </div>
-    <div id="coverup-gallery" class="max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-8"></div>
+    <div id="coverup-gallery" class="max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- build:gallery -->
+    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="1">
+      <div class="grid grid-cols-2 gap-2 p-2">
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
+          <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Old tattoo before cover-up, comparison 1 by Vladimir Vishar">
+            <img src="/assets/cover-ups/before-01.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Old tattoo before cover-up, comparison 1 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
+          <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Completed cover-up tattoo, comparison 1 by Vladimir Vishar">
+            <img src="/assets/cover-ups/after-01.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Completed cover-up tattoo, comparison 1 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+      </div>
+    </figure>
+    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="2">
+      <div class="grid grid-cols-2 gap-2 p-2">
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
+          <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Old tattoo before cover-up, comparison 2 by Vladimir Vishar">
+            <img src="/assets/cover-ups/before-02.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Old tattoo before cover-up, comparison 2 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
+          <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Completed cover-up tattoo, comparison 2 by Vladimir Vishar">
+            <img src="/assets/cover-ups/after-02.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Completed cover-up tattoo, comparison 2 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+      </div>
+    </figure>
+    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="3">
+      <div class="grid grid-cols-2 gap-2 p-2">
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
+          <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Old tattoo before cover-up, comparison 3 by Vladimir Vishar">
+            <img src="/assets/cover-ups/before-03.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Old tattoo before cover-up, comparison 3 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
+          <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Completed cover-up tattoo, comparison 3 by Vladimir Vishar">
+            <img src="/assets/cover-ups/after-03.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Completed cover-up tattoo, comparison 3 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+      </div>
+    </figure>
+    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="4">
+      <div class="grid grid-cols-2 gap-2 p-2">
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
+          <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Old tattoo before cover-up, comparison 4 by Vladimir Vishar">
+            <img src="/assets/cover-ups/before-04.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Old tattoo before cover-up, comparison 4 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
+          <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Completed cover-up tattoo, comparison 4 by Vladimir Vishar">
+            <img src="/assets/cover-ups/after-04.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Completed cover-up tattoo, comparison 4 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+      </div>
+    </figure>
+    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="5">
+      <div class="grid grid-cols-2 gap-2 p-2">
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
+          <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Old tattoo before cover-up, comparison 5 by Vladimir Vishar">
+            <img src="/assets/cover-ups/before-05.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Old tattoo before cover-up, comparison 5 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
+          <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Completed cover-up tattoo, comparison 5 by Vladimir Vishar">
+            <img src="/assets/cover-ups/after-05.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Completed cover-up tattoo, comparison 5 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+      </div>
+    </figure>
+    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="6">
+      <div class="grid grid-cols-2 gap-2 p-2">
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
+          <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Old tattoo before cover-up, comparison 6 by Vladimir Vishar">
+            <img src="/assets/cover-ups/before-06.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Old tattoo before cover-up, comparison 6 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
+          <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Completed cover-up tattoo, comparison 6 by Vladimir Vishar">
+            <img src="/assets/cover-ups/after-06.webp" loading="lazy" decoding="async" width="900" height="1200" alt="Completed cover-up tattoo, comparison 6 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+      </div>
+    </figure>
+<!-- /build:gallery -->
+    </div>
     <div class="text-center mt-12"><a href="/#portfolio" class="inline-flex items-center gap-2 text-white/60 hover:text-white transition-colors text-sm font-medium">View full portfolio →</a></div>
     <div class="max-w-[700px] mx-auto mt-12 rounded-3xl border border-white/10 bg-white/5 p-8">
         <p class="text-white/70 leading-relaxed">&ldquo;Have had 2 seven hour sessions with Vladimir on a cover up… Vladimir is an exceptionally talented artist.&rdquo;</p>
@@ -179,91 +382,6 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
     </div>
 </section>
 
-<script>
-(function(){
-  /*
-   * Before/After pairs. Create folder: /assets/cover-ups/
-   * Name files: before-01.jpg, after-01.jpg, before-02.jpg, after-02.jpg, etc.
-   * Each pair = one card with two images side by side.
-   */
-  var pairs = [
-    { before: 'before-01.jpg', after: 'after-01.jpg', desc: '' },
-    { before: 'before-02.jpg', after: 'after-02.jpg', desc: '' },
-    { before: 'before-03.jpg', after: 'after-03.jpg', desc: '' },
-    { before: 'before-04.jpg', after: 'after-04.jpg', desc: '' },
-    { before: 'before-05.jpg', after: 'after-05.jpg', desc: '' },
-    { before: 'before-06.jpg', after: 'after-06.jpg', desc: '' }
-  ];
-  var basePath = '/assets/cover-ups/';
-
-
-  var webpCoverUpMap = {
-    'before-01.jpg': 'before-01.webp',
-    'after-01.jpg': 'after-01.webp',
-    'before-02.jpg': 'before-02.webp',
-    'after-02.jpg': 'after-02.webp',
-    'before-03.jpg': 'before-03.webp',
-    'after-03.jpg': 'after-03.webp',
-    'before-04.jpg': 'before-04.webp',
-    'after-04.jpg': 'after-04.webp',
-    'before-05.jpg': 'before-05.webp',
-    'after-05.jpg': 'after-05.webp',
-    'before-06.jpg': 'before-06.webp',
-    'after-06.jpg': 'after-06.webp'
-  };
-
-  var COVERUP_THUMB_WIDTHS = [320, 480, 720, 960];
-  var COVERUP_SIZES = '(min-width: 768px) min(calc((100vw - 66px) / 4), 291.5px), calc((100vw - 33px) / 2)';
-
-  function coverUpThumbSrcset(webpFile) {
-    var stem = webpFile.replace(/\.webp$/i, '');
-    return COVERUP_THUMB_WIDTHS.map(function(w){
-      return basePath + 'thumbs/' + stem + '-' + w + '.webp ' + w + 'w';
-    }).join(', ');
-  }
-
-  function buildImageMarkup(fileName, altText) {
-    var fallbackSrc = basePath + fileName;
-    var webpFile = webpCoverUpMap[fileName];
-    if (!webpFile) {
-      return "<img src=\"" + fallbackSrc + "\" loading=\"lazy\" decoding=\"async\" width=\"600\" height=\"800\" alt=\"" + altText + "\" class=\"w-full aspect-[3/4] object-cover bg-apple-darkGray\">";
-    }
-    return "<picture><source srcset=\"" + coverUpThumbSrcset(webpFile) + "\" sizes=\"" + COVERUP_SIZES + "\" type=\"image/webp\"><img src=\"" + fallbackSrc + "\" loading=\"lazy\" decoding=\"async\" width=\"600\" height=\"800\" alt=\"" + altText + "\" class=\"w-full aspect-[3/4] object-cover bg-apple-darkGray\"></picture>";
-  }
-
-  function buildGallery() {
-    var grid = document.getElementById('coverup-gallery');
-    if (!grid) return;
-    coverUpSlides = [];
-    pairs.forEach(function(pair, i) {
-      var beforeSrc = basePath + pair.before;
-      var afterSrc = basePath + pair.after;
-      var card = document.createElement('div');
-      card.className = 'rounded-2xl border border-white/10 bg-white/5 overflow-hidden card-lift';
-      var beforeIndex = coverUpSlides.push(beforeSrc) - 1;
-      var afterIndex = coverUpSlides.push(afterSrc) - 1;
-      card.innerHTML =
-        '<div class="grid grid-cols-2 gap-px bg-white/10">' +
-          '<button type="button" class="relative cursor-zoom-in text-left" data-slide-index="' + beforeIndex + '" aria-label="Open before image ' + (i+1) + '">' +
-            buildImageMarkup(pair.before, 'Cover-up before – ' + (i+1)) +
-            '<span class="absolute top-3 left-3 text-[10px] uppercase tracking-[0.2em] bg-black/70 text-white/60 px-3 py-1 rounded-full backdrop-blur-sm">Before</span>' +
-          '</button>' +
-          '<button type="button" class="relative cursor-zoom-in text-left" data-slide-index="' + afterIndex + '" aria-label="Open after image ' + (i+1) + '">' +
-            buildImageMarkup(pair.after, 'Cover-up after – ' + (i+1)) +
-            '<span class="absolute top-3 left-3 text-[10px] uppercase tracking-[0.2em] bg-white/90 text-black px-3 py-1 rounded-full backdrop-blur-sm">After</span>' +
-          '</button>' +
-        '</div>' +
-        (pair.desc ? '<p class="p-4 text-sm text-white/40">' + pair.desc + '</p>' : '');
-      grid.appendChild(card);
-      card.querySelectorAll('[data-slide-index]').forEach(function(btn){
-        var index = Number(btn.getAttribute('data-slide-index'));
-        btn.addEventListener('click', function(){ openCoverUpLightbox(index); });
-      });
-    });
-  }
-  document.addEventListener('DOMContentLoaded', buildGallery);
-})();
-</script>
 
 <section class="py-24 px-6">
     <div class="max-w-[900px] mx-auto">
@@ -279,18 +397,43 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
     </div>
 </section>
 
-<section class="py-16 px-6 border-y border-white/5">
-    <div class="max-w-[900px] mx-auto">
-        <p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-6 text-center">Other specialities</p>
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <a href="/colour-realism-tattoo-london/" class="rounded-2xl border border-white/10 bg-white/5 p-6 hover:bg-white/10 transition-colors group card-lift"><h3 class="text-lg font-semibold mb-1 group-hover:text-white transition-colors">Colour Realism</h3><p class="text-sm text-white/40">Vivid photorealistic colour work.</p></a>
-            <a href="/black-and-grey-realism-london/" class="rounded-2xl border border-white/10 bg-white/5 p-6 hover:bg-white/10 transition-colors group card-lift"><h3 class="text-lg font-semibold mb-1 group-hover:text-white transition-colors">Black &amp; Grey Realism</h3><p class="text-sm text-white/40">Dramatic monochrome with smooth shading.</p></a>
-            <a href="/portrait-tattoo-artist-london/" class="rounded-2xl border border-white/10 bg-white/5 p-6 hover:bg-white/10 transition-colors group card-lift"><h3 class="text-lg font-semibold mb-1 group-hover:text-white transition-colors">Portraits</h3><p class="text-sm text-white/40">Colour and black-and-grey portrait realism.</p></a>
-            <a href="/large-scale-realism-tattoo-london/" class="rounded-2xl border border-white/10 bg-white/5 p-6 hover:bg-white/10 transition-colors group card-lift"><h3 class="text-lg font-semibold mb-1 group-hover:text-white transition-colors">Large Scale</h3><p class="text-sm text-white/40">Sleeves and multi-session realism projects.</p></a>
-            <a href="/healed-tattoos/" class="rounded-2xl border border-white/10 bg-white/5 p-6 hover:bg-white/10 transition-colors group card-lift"><h3 class="text-lg font-semibold mb-1 group-hover:text-white transition-colors">Fresh vs Healed</h3><p class="text-sm text-white/40">Matched fresh and confirmed healed tattoo comparisons.</p></a>
-        </div>
+<!-- build:crosslinks -->
+<section id="portfolio-crosslinks" class="py-20 px-6 border-y border-white/5">
+  <div class="max-w-[1200px] mx-auto">
+    <div class="text-center mb-10">
+      <p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-4">Portfolio</p>
+      <h2 class="text-3xl md:text-4xl font-semibold tracking-tight">Explore other galleries</h2>
     </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <a href="/colour-realism-tattoo-london/" class="rounded-2xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.07] transition-colors group">
+          <h3 class="text-lg font-semibold text-white">Colour Realism</h3>
+          <p class="mt-2 text-sm leading-relaxed text-white/50">Vivid photorealistic colour tattoos and custom compositions.</p>
+          <span class="mt-4 inline-block text-sm text-white/70 group-hover:text-white transition-colors">View gallery →</span>
+        </a>
+        <a href="/black-and-grey-realism-london/" class="rounded-2xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.07] transition-colors group">
+          <h3 class="text-lg font-semibold text-white">Black &amp; Grey</h3>
+          <p class="mt-2 text-sm leading-relaxed text-white/50">Black and grey realism with strong tonal structure and depth.</p>
+          <span class="mt-4 inline-block text-sm text-white/70 group-hover:text-white transition-colors">View gallery →</span>
+        </a>
+        <a href="/portrait-tattoo-artist-london/" class="rounded-2xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.07] transition-colors group">
+          <h3 class="text-lg font-semibold text-white">Portraits</h3>
+          <p class="mt-2 text-sm leading-relaxed text-white/50">Colour and black-and-grey portrait realism.</p>
+          <span class="mt-4 inline-block text-sm text-white/70 group-hover:text-white transition-colors">View gallery →</span>
+        </a>
+        <a href="/large-scale-realism-tattoo-london/" class="rounded-2xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.07] transition-colors group">
+          <h3 class="text-lg font-semibold text-white">Large Scale</h3>
+          <p class="mt-2 text-sm leading-relaxed text-white/50">Sleeves and multi-session realism projects.</p>
+          <span class="mt-4 inline-block text-sm text-white/70 group-hover:text-white transition-colors">View gallery →</span>
+        </a>
+        <a href="/healed-tattoos/" class="rounded-2xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.07] transition-colors group">
+          <h3 class="text-lg font-semibold text-white">Fresh vs Healed</h3>
+          <p class="mt-2 text-sm leading-relaxed text-white/50">Matched fresh and confirmed healed tattoo comparisons.</p>
+          <span class="mt-4 inline-block text-sm text-white/70 group-hover:text-white transition-colors">View gallery →</span>
+        </a>
+    </div>
+  </div>
 </section>
+<!-- /build:crosslinks -->
 
 <section id="faq" class="py-24 px-6 bg-apple-darkGray/10">
     <div class="max-w-[800px] mx-auto">
@@ -326,62 +469,72 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </section>
 </main>
 
-<div id="lightbox" class="fixed inset-0 z-[1000] bg-black/98 hidden items-center justify-center p-4 backdrop-blur-xl" onclick="onCoverUpLightboxClick(event)" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Portfolio image preview">
-    <button class="lb-nav lb-nav--prev" onclick="navigateCoverUpLightbox(-1)" aria-label="Previous image"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
-    <img id="lightbox-img" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" class="max-w-full max-h-[90vh] object-contain shadow-2xl transition-transform duration-500 cursor-zoom-out" alt="Fullscreen view">
-    <button class="lb-nav lb-nav--next" onclick="navigateCoverUpLightbox(1)" aria-label="Next image"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
-    <div class="lb-counter" id="lb-counter"></div>
 </div>
 
 <div id="sticky-cta" data-cta-text="Free Cover-up Assessment — Send Photos"></div>
-<div id="site-footer"></div>
+<div id="site-footer">
+  <!-- build:footer -->
+  <footer class="py-20 border-t border-white/5 px-6">
+      <div class="max-w-[1200px] mx-auto">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
+          <div>
+            <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
+            <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>London enquiries now open</p>
+            <p class="text-sm text-white/60 leading-relaxed mt-3">Private studio details are confirmed with each appointment.<br>By appointment only · No walk-ins</p>
+            <a href="mailto:info@vishartattoo.com" class="text-sm text-white/60 hover:text-white mt-3 inline-block transition-colors">info@vishartattoo.com</a>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Pages</p>
+            <div class="flex flex-col space-y-2 text-sm text-white/60">
+              <a href="/" class="hover:text-white transition-colors">Home</a>
+              <a href="/booking/" class="hover:text-white transition-colors">Book a Tattoo</a>
+              <a href="/about/" class="hover:text-white transition-colors">About</a>
+              <a href="/book/" class="hover:text-white transition-colors">The Book</a>
+              <a href="/aftercare/" class="hover:text-white transition-colors">Aftercare</a>
+              <a href="/faq/" class="hover:text-white transition-colors">FAQ</a>
+              <a href="/ai-tools/" class="hover:text-white transition-colors">Studio Tools</a>
+            </div>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Collections</p>
+            <div class="flex flex-col space-y-2 text-sm text-white/60">
+              <a href="/colour-realism-tattoo-london/" class="hover:text-white transition-colors">Colour Realism</a>
+              <a href="/black-and-grey-realism-london/" class="hover:text-white transition-colors">Black &amp; Grey</a>
+              <a href="/cover-up-tattoo-london/" class="hover:text-white transition-colors">Cover-ups</a>
+              <a href="/portrait-tattoo-artist-london/" class="hover:text-white transition-colors">Portraits</a>
+              <a href="/large-scale-realism-tattoo-london/" class="hover:text-white transition-colors">Large Scale</a>
+              <a href="/healed-tattoos/" class="hover:text-white transition-colors">Fresh vs Healed</a>
+            </div>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Social</p>
+            <div class="flex flex-col space-y-2 text-sm text-white/60">
+              <a href="https://www.instagram.com/vladimir_vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">Instagram</a>
+              <a href="https://youtube.com/@vladimir_vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">YouTube</a>
+              <a href="https://www.tiktok.com/@vladimir.vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">TikTok</a>
+              <a href="https://www.facebook.com/profile.php?id=100088974927193" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">Facebook</a>
+            </div>
+          </div>
+        </div>
+        <div class="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div class="text-xs text-white/40 uppercase tracking-[0.4em]">
+            &copy; <span data-current-year>2026</span> Vladimir Vishar. All rights reserved.
+          </div>
+          <div class="flex items-center gap-6">
+            <a href="/privacy/" class="text-xs text-white/60 hover:text-white transition-colors">Privacy &amp; Cookies</a>
+            <a href="/booking/"
+               class="text-xs text-white/60 hover:text-white transition-colors">
+              Start an inquiry →
+            </a>
+          </div>
+        </div>
+      </div>
+    </footer>
+  <!-- /build:footer -->
+</div>
 <script src="/components.js" defer></script>
 <script>
 function toggleFaq(btn){const item=btn.parentElement;const was=item.classList.contains('active');document.querySelectorAll('.faq-item').forEach(i=>{i.classList.remove('active');i.querySelector('button').setAttribute('aria-expanded','false');});if(!was){item.classList.add('active');btn.setAttribute('aria-expanded','true');}}
-let coverUpSlides=[],coverUpLbIndex=0;
-function openCoverUpLightbox(i){
-  if(!coverUpSlides.length||i<0)return;
-  coverUpLbIndex=i;
-  updateCoverUpLightbox();
-  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
-  const lb=document.getElementById('lightbox');
-  lb.classList.remove('hidden');
-  lb.setAttribute('data-open','true');
-  lb.setAttribute('aria-hidden','false');
-  document.body.classList.add('lightbox-active');
-  if (typeof window.initLightboxZoom === 'function') window.initLightboxZoom();
-  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
-}
-window.closeLightbox=function(){
-  const lb=document.getElementById('lightbox');
-  lb.classList.add('hidden');
-  lb.removeAttribute('data-open');
-  lb.setAttribute('aria-hidden','true');
-  document.body.classList.remove('lightbox-active');
-  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
-};
-function navigateCoverUpLightbox(d){
-  if(!coverUpSlides.length)return;
-  coverUpLbIndex=(coverUpLbIndex+d+coverUpSlides.length)%coverUpSlides.length;
-  updateCoverUpLightbox();
-  if (typeof window.resetLightboxZoom === 'function') window.resetLightboxZoom();
-}
-function updateCoverUpLightbox(){
-  const img=document.getElementById('lightbox-img');
-  img.src=coverUpSlides[coverUpLbIndex];
-  img.alt='Cover-up tattoo – fullscreen';
-  document.getElementById('lb-counter').textContent=(coverUpLbIndex+1)+' / '+coverUpSlides.length;
-}
-function onCoverUpLightboxClick(e){
-  if(e.target===document.getElementById('lightbox'))closeLightbox();
-}
-(function(){let sx=0;const lb=document.getElementById('lightbox');lb.addEventListener('touchstart',e=>{sx=e.changedTouches[0].screenX},{passive:true});lb.addEventListener('touchend',e=>{const d=e.changedTouches[0].screenX-sx;if(Math.abs(d)>50)navigateCoverUpLightbox(d>0?-1:1);},{passive:true});})();
-document.addEventListener('keydown',e=>{
-  if(document.getElementById('lightbox').classList.contains('hidden'))return;
-  if(e.key==='ArrowRight')navigateCoverUpLightbox(1);
-  if(e.key==='ArrowLeft')navigateCoverUpLightbox(-1);
-  if(e.key==='Escape')closeLightbox();
-});
 </script>
 <script src="/assets/js/coverup-pair-compare.js?v=20260907-pair2" defer></script>
 

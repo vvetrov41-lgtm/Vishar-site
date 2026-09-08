@@ -26,56 +26,6 @@
     };
   }
 
-  function imageMarkup(item) {
-    return `<img src="${item.source}" loading="lazy" decoding="async" width="900" height="1200" alt="${item.alt}" class="w-full h-full" style="object-fit:contain;background:#000">`;
-  }
-
-  function cardMarkup(pair, index) {
-    return `
-      <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="${index}">
-        <div class="grid grid-cols-2 gap-2 p-2">
-          <div>
-            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
-            <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open ${pair.before.alt}">
-              ${imageMarkup(pair.before)}
-            </button>
-          </div>
-          <div>
-            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
-            <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open ${pair.after.alt}">
-              ${imageMarkup(pair.after)}
-            </button>
-          </div>
-        </div>
-      </figure>`;
-  }
-
-  function rebuildGallery() {
-    const section = document.getElementById('gallery');
-    const grid = document.getElementById('coverup-gallery');
-    if (!section || !grid) return false;
-
-    section.className = 'py-24 px-4 border-y border-white/5';
-    grid.className = 'max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-6';
-
-    const intro = section.querySelector('.max-w-\\[1200px\\].mx-auto.text-center');
-    if (intro) {
-      intro.classList.remove('mb-16');
-      intro.classList.add('mb-12');
-      intro.innerHTML = `
-        <p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-4">6 matched cover-up pairs</p>
-        <h2 class="text-3xl md:text-5xl font-semibold tracking-tight">Before &amp; After</h2>
-        <p class="text-white/50 mt-4 max-w-2xl mx-auto">The original tattoo is shown on the left. The completed cover-up is shown on the right.</p>`;
-    }
-
-    const cards = [];
-    for (let i = 1; i <= PAIR_COUNT; i += 1) {
-      cards.push(cardMarkup(pairData(i), i));
-    }
-    grid.innerHTML = cards.join('');
-    return true;
-  }
-
   function ensureLightbox() {
     let overlay = document.getElementById('coverup-pair-lightbox');
     if (overlay) return overlay;
@@ -241,17 +191,12 @@
     });
   }
 
-  function init() {
-    if (!rebuildGallery()) return;
-    bindGallery();
-  }
-
-  // This script is deferred on the cover-up page. Waiting for DOMContentLoaded
-  // lets the legacy inline gallery builder run first; this final rebuild then
-  // replaces it, so only the six paired comparison cards remain.
-  if (document.readyState === 'complete') {
-    init();
+  // The six paired comparison cards are rendered into the page HTML at build
+  // time by scripts/build-static-html.mjs, so this script only attaches the
+  // before/after compare lightbox to them.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindGallery, { once: true });
   } else {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
+    bindGallery();
   }
 })();
