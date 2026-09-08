@@ -116,10 +116,19 @@ jobs:
 
           # Mirror the fields that Kristina's live browser form actually sends.
           # The same-origin /api/booking adapter must add its trusted routing,
-          # idempotency and privacy metadata. With all text fields valid but no
-          # image attached, the shared Worker must reach file validation and
-          # return invalid_file_count. That stage is still before persistence,
-          # so this proves the live form contract without creating customer data.
+          # idempotency and privacy metadata and forward to this Worker.
+          #
+          # The attachment is a text file sent under an image content type, so
+          # the adapter's own file-count check passes and the request has to
+          # reach the shared Worker's file validation, which rejects it by
+          # extension. Getting the Worker's own error code back through the
+          # adapter is what proves the two are still wired together; the
+          # adapter answers the zero-attachment case itself and never forwards
+          # it, so that case proves nothing about this Worker.
+          #
+          # File validation runs before persistence, so this creates no
+          # customer data.
+          printf 'not an image' > /tmp/tattooai-not-an-image.txt
           kristina_probe_status="$(curl -sS -o /tmp/tattooai-kristina-probe.json -w '%{http_code}' \
             -X POST 'https://www.kristinavishar.com/api/booking' \
             -H 'Origin: https://www.kristinavishar.com' \
@@ -139,9 +148,10 @@ jobs:
             -F 'discoverySourceDetail=' \
             -F 'idea=Production route contract probe' \
             -F 'website=' \
-            -F 'consent=yes')"
+            -F 'consent=yes' \
+            -F 'references=@/tmp/tattooai-not-an-image.txt;type=image/png')"
           test "$kristina_probe_status" = '400'
-          grep -Fq 'invalid_file_count' /tmp/tattooai-kristina-probe.json
+          grep -Fq '"code":"invalid_file_extension"' /tmp/tattooai-kristina-probe.json
 
           malformed_status="$(curl -sS -o /tmp/tattooai-forms-malformed.html -w '%{http_code}' \
             "${endpoint}forms/not-a-uuid")"
