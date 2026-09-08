@@ -39,7 +39,6 @@ import {
 } from '../lib/booking-errors';
 import {
   appointmentEndValue,
-  appointmentTimeRange,
   snapAppointmentStart,
 } from '../lib/appointment-time-step';
 import {
@@ -130,6 +129,7 @@ export function BookingPanel({
   const [chosenEnquiryId, setChosenEnquiryId] = useState('');
   const [manual, setManual] = useState(false);
   const [manualStart, setManualStart] = useState('');
+  const [manualEndOverride, setManualEndOverride] = useState('');
   const [checkingConflicts, setCheckingConflicts] = useState(false);
 
   const blocking = (conflicts ?? []).filter((conflict) => conflict.blocks);
@@ -158,14 +158,23 @@ export function BookingPanel({
     : 'PROJECT_REQUIRED';
 
   const grouped = useMemo(() => groupByDay(slots ?? []), [slots]);
-  const manualEnd = useMemo(
+  const automaticManualEnd = useMemo(
     () => appointmentEndValue(manualStart, durationMinutes),
     [manualStart, durationMinutes],
   );
+  const manualEnd = manualEndOverride || automaticManualEnd;
   const manualParts = splitManualDateTime(manualStart, todayValue());
+  const manualEndParts = splitManualDateTime(manualEnd, manualParts.date || todayValue());
+  const customManualEnd = manualEndOverride !== '';
+
+  function syncDurationToRange(startValue: string, endValue: string) {
+    const minutes = durationBetween(startValue, endValue);
+    if (minutes !== null) setDurationMinutes(minutes);
+  }
 
   function chooseDuration(minutes: number) {
     setDurationMinutes(minutes);
+    setManualEndOverride('');
     setSlots(null);
     setSeries(null);
     setChosen(null);
@@ -176,6 +185,14 @@ export function BookingPanel({
   function updateManualStart(next: Partial<typeof manualParts>) {
     const value = composeManualDateTime({ ...manualParts, ...next });
     setManualStart(value);
+    if (customManualEnd) syncDurationToRange(value, manualEndOverride);
+    setConflicts(null);
+  }
+
+  function updateManualEnd(next: Partial<typeof manualEndParts>) {
+    const value = composeManualDateTime({ ...manualEndParts, ...next });
+    setManualEndOverride(value);
+    syncDurationToRange(manualStart, value);
     setConflicts(null);
   }
 
@@ -264,7 +281,16 @@ export function BookingPanel({
   }
 
   function manualTimes(): { start: string; end: string } | null {
-    return appointmentTimeRange(manualStart, durationMinutes);
+    const start = new Date(manualStart);
+    const end = new Date(manualEnd);
+    if (
+      !manualStart
+      || !manualEnd
+      || Number.isNaN(start.getTime())
+      || Number.isNaN(end.getTime())
+      || end <= start
+    ) return null;
+    return { start: start.toISOString(), end: end.toISOString() };
   }
 
   async function book(startAt: string, endAt: string) {
@@ -549,10 +575,74 @@ export function BookingPanel({
               </select>
             </label>
           </div>
-          <label className="booking-derived-end">
-            <span>{copy.end}</span>
-            <input type="text" value={manualEnd ? manualDateTimeLabel(manualEnd, language) : ''} readOnly />
-          </label>
+
+          {customManualEnd ? (
+            <>
+              <div className="booking-manual-time-grid" role="group" aria-label={copy.end}>
+                <label>
+                  <span>{copy.endDate}</span>
+                  <input
+                    type="date"
+                    value={manualEndParts.date}
+                    onChange={(event) => updateManualEnd({ date: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>{copy.endHour}</span>
+                  <select
+                    value={manualEndParts.hour}
+                    onChange={(event) => updateManualEnd({ hour: event.target.value })}
+                  >
+                    {MANUAL_HOUR_OPTIONS.map((hour) => <option key={hour} value={hour}>{hour}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>{copy.endMinute}</span>
+                  <select
+                    value={manualEndParts.minute}
+                    onChange={(event) => updateManualEnd({ minute: event.target.value })}
+                  >
+                    {MANUAL_MINUTE_OPTIONS.map((minute) => <option key={minute} value={minute}>{minute}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualEndOverride('');
+                    setConflicts(null);
+                  }}
+                >
+                  {copy.useDurationEnd}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="booking-derived-end">
+                <span>{copy.end}</span>
+                <input type="text" value={manualEnd ? manualDateTimeLabel(manualEnd, language) : ''} readOnly />
+              </label>
+              <div className="actions">
+                <button
+                  type="button"
+                  disabled={!automaticManualEnd}
+                  onClick={() => {
+                    setManualEndOverride(automaticManualEnd);
+                    setConflicts(null);
+                  }}
+                >
+                  {copy.customEnd}
+                </button>
+              </div>
+            </>
+          )}
+
+          {customManualEnd && !manualTimes() ? (
+            <p className="notice warn" role="alert">{copy.endAfterStart}</p>
+          ) : null}
+
           {checkingConflicts ? <p className="meta">{copy.checking}</p> : null}
 
           {blocking.length > 0 ? (
@@ -569,7 +659,7 @@ export function BookingPanel({
           <div className="actions">
             <button
               type="button"
-              disabled={booking || !manualStart || !manualEnd}
+              disabled={booking || !manualTimes()}
               onClick={() => {
                 const times = manualTimes();
                 if (!times) {
@@ -584,7 +674,7 @@ export function BookingPanel({
             <button
               type="button"
               className={blocking.length > 0 ? undefined : 'primary'}
-              disabled={booking || !manualStart || !manualEnd}
+              disabled={booking || !manualTimes()}
               onClick={() => {
                 const times = manualTimes();
                 if (!times) {
@@ -665,6 +755,14 @@ function manualDateTimeLabel(value: string, language: Language): string {
   );
 }
 
+function durationBetween(startValue: string, endValue: string): number | null {
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null;
+  const minutes = Math.round((end.getTime() - start.getTime()) / 60_000);
+  return minutes > 0 ? minutes : null;
+}
+
 export function durationLabel(minutes: number, language: Language): string {
   if (minutes < 60) return language === 'ru' ? `${minutes} мин` : `${minutes} min`;
   const hours = Math.floor(minutes / 60);
@@ -711,14 +809,20 @@ const COPY = {
     bookFailed: 'Could not book that appointment.',
     showManual: 'Enter a time myself',
     hideManual: 'Hide manual entry',
-    manualHint: 'Choose the date, hour and a five-minute start. End time follows the selected duration automatically.',
+    manualHint: 'Choose the date, hour and a five-minute start. End time follows the selected duration until you edit it.',
     start: 'Start',
     date: 'Date',
     hour: 'Hour',
     minute: 'Minute',
     end: 'End',
+    endDate: 'End date',
+    endHour: 'End hour',
+    endMinute: 'End minute',
+    customEnd: 'Set custom end',
+    useDurationEnd: 'Calculate end from duration',
+    endAfterStart: 'End time must be after the start time.',
     bookManual: 'Book this exact time',
-    manualInvalid: 'Choose a valid start time.',
+    manualInvalid: 'Choose a valid start and end time.',
     booked: 'Booked. It is proposed until the client confirms it.',
     projectCreated: 'Project created.',
     alreadyBooked: 'That appointment was already booked. Nothing was duplicated.',
@@ -769,14 +873,20 @@ const COPY = {
     bookFailed: 'Не удалось создать запись.',
     showManual: 'Ввести время вручную',
     hideManual: 'Скрыть ручной ввод',
-    manualHint: 'Выберите дату, час и минуту с шагом 5 минут. Конец рассчитывается автоматически по выбранной длительности.',
+    manualHint: 'Выберите дату, час и минуту с шагом 5 минут. Конец считается по выбранной длительности, пока вы не измените его вручную.',
     start: 'Начало',
     date: 'Дата',
     hour: 'Час',
     minute: 'Минута',
     end: 'Конец',
+    endDate: 'Дата окончания',
+    endHour: 'Час окончания',
+    endMinute: 'Минута окончания',
+    customEnd: 'Изменить конец вручную',
+    useDurationEnd: 'Считать конец по длительности',
+    endAfterStart: 'Время окончания должно быть позже времени начала.',
     bookManual: 'Записать на это время',
-    manualInvalid: 'Выберите корректное время начала.',
+    manualInvalid: 'Выберите корректные время начала и окончания.',
     booked: 'Записано. Запись предварительная, пока клиент не подтвердит.',
     projectCreated: 'Проект создан.',
     alreadyBooked: 'Эта запись уже создана. Дубль не появился.',
