@@ -2,7 +2,9 @@ export const APPOINTMENT_TIME_STEP_SECONDS = 300;
 export const APPOINTMENT_TIME_STEP_MINUTES = APPOINTMENT_TIME_STEP_SECONDS / 60;
 
 export function applyAppointmentTimeStep(root: ParentNode = document): void {
-  root.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]').forEach((input) => {
+  root.querySelectorAll<HTMLInputElement>(
+    'input[type="datetime-local"]:not([data-appointment-time-step="unrestricted"])',
+  ).forEach((input) => {
     input.step = String(APPOINTMENT_TIME_STEP_SECONDS);
   });
 }
