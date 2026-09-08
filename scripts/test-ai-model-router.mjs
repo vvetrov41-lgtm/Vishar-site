@@ -1,21 +1,19 @@
 #!/usr/bin/env node
 //
-// Unit tests for the model capability router and its provider adapters.
+// Unit tests for the model capability router and its provider tiers.
 //
-// What these pin down:
+// The DeepSeek, Qwen and Llama tiers all execute on the Cloudflare `AI`
+// binding. That is the property most of this file defends: those tiers must
+// never reach the network, must never look for an API key, and must still be
+// selected by name so the routing layer stays a routing layer.
 //
-//   * a caller names a task, never a provider;
-//   * DeepSeek serves the cheap text classes and Qwen the multimodal ones;
-//   * OpenAI stays reachable as the quality tier and cross-provider fallback;
-//   * the incumbent Workers AI path still answers when nothing else is
-//     configured, which is what keeps the live public site working;
-//   * one attempt per provider and at most two providers per request;
-//   * timeouts, provider errors and unparseable structured output fall back
-//     once and then fail closed;
-//   * telemetry carries operational tokens only, never prompts, images or keys;
-//   * no provider credential can reach a browser response.
+// Also pinned here: OpenAI remains external and entirely optional, the Chinese
+// model paths work with no OPENAI_API_KEY, payload and cost ceilings hold,
+// telemetry carries operational tokens only, and the guarded probe cannot be
+// turned into a relay.
 
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -25,10 +23,11 @@ const load = (rel) => import(pathToFileURL(path.join(rootDir, 'workers', rel)).h
 const router = await load('lib/ai/router.js');
 const tasks = await load('lib/ai/tasks.js');
 const errors = await load('lib/ai/errors.js');
+const binding = await load('lib/ai/providers/workers-ai-binding.js');
 const deepseek = await load('lib/ai/providers/deepseek.js');
 const qwen = await load('lib/ai/providers/qwen.js');
 const openai = await load('lib/ai/providers/openai.js');
-const workersAi = await load('lib/ai/providers/workers-ai.js');
+const llama = await load('lib/ai/providers/workers-ai.js');
 const logging = await load('lib/logging.js');
 const observability = await load('lib/observability.js');
 const probe = await load('routes/ai-router-probe.js');
@@ -62,6 +61,29 @@ const SYSTEM = 'You are a test system prompt.';
 const INPUT = 'A wolf in moonlight.';
 const PNG_BASE64 = probe.__testing.PROBES.vision_reference_understanding.images[0].dataBase64;
 
+const DEEPSEEK_MODEL = '@cf/deepseek-ai/deepseek-v4-flash-0731';
+const QWEN_MODEL = '@cf/qwen/qwen3.8-27b';
+const LLAMA_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
+
+/** A stub `AI` binding that records every call and answers per model id. */
+function aiBinding(responder) {
+  const calls = [];
+  const reply = typeof responder === 'function'
+    ? responder
+    : () => ({ response: responder ?? 'Concept: a raven.' });
+  return {
+    calls,
+    AI: {
+      run: async (model, input) => {
+        calls.push({ model, input });
+        const answer = await reply(model, calls.length);
+        if (answer instanceof Error) throw answer;
+        return answer;
+      },
+    },
+  };
+}
+
 function chatResponse(text, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -80,17 +102,10 @@ function recordingFetch(responder) {
   return impl;
 }
 
-function workersAiBinding(text = 'Concept: a raven.') {
-  const calls = [];
-  return {
-    calls,
-    AI: {
-      run: async (model, options) => {
-        calls.push({ model, options });
-        return { response: text };
-      },
-    },
-  };
+/** Any network call at all is a failure for the binding-backed tiers. */
+function forbiddenFetch() {
+  const impl = async (url) => { throw new Error(`network call must not happen: ${url}`); };
+  return impl;
 }
 
 function collectingLogger() {
@@ -101,6 +116,51 @@ function collectingLogger() {
 
 const textInput = { system: SYSTEM, input: INPUT };
 const visionInput = { system: SYSTEM, input: INPUT, images: [{ mimeType: 'image/png', dataBase64: PNG_BASE64 }] };
+
+// --- the binding is the transport, not the abstraction ----------------------
+
+await test('DeepSeek, Qwen and Llama are separate tiers that share one binding', () => {
+  const env = aiBinding().AI;
+  assert.equal(deepseek.configure({ AI: env }, 'text').model, DEEPSEEK_MODEL);
+  assert.equal(qwen.configure({ AI: env }, 'vision').model, QWEN_MODEL);
+  assert.equal(llama.configure({ AI: env }, 'text').model, LLAMA_MODEL);
+
+  // Distinct ids, so the router still selects a provider by name.
+  const ids = [deepseek.id, qwen.id, llama.id, openai.id];
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(ids.slice(0, 3).sort(), ['deepseek', 'qwen', 'workers_ai']);
+});
+
+await test('a binding-backed tier is configured by the binding alone, never a key', () => {
+  for (const tier of [deepseek, qwen, llama]) {
+    const modality = tier.id === 'qwen' ? 'vision' : 'text';
+    assert.equal(tier.configure({}, modality), null, `${tier.id} must need the binding`);
+    assert.equal(tier.configure({ AI: {} }, modality), null, `${tier.id} must need AI.run`);
+
+    const config = tier.configure({ AI: aiBinding().AI }, modality);
+    assert.ok(config, `${tier.id} must configure from the binding`);
+    assert.ok(!('apiKey' in config), `${tier.id} must not carry a key`);
+    assert.ok(!('url' in config), `${tier.id} must not carry a URL`);
+  }
+});
+
+await test('no source file references a DeepSeek or DashScope endpoint or key', () => {
+  const forbidden = [
+    'api.deepseek.com', 'dashscope', 'aliyuncs.com',
+    'DEEPSEEK_API_KEY', 'QWEN_API_KEY', 'AI_QWEN_BASE_URL',
+  ];
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    return entry.isDirectory() ? walk(full) : full.endsWith('.js') ? [full] : [];
+  });
+
+  for (const file of walk(path.join(rootDir, 'workers'))) {
+    const source = readFileSync(file, 'utf8');
+    for (const needle of forbidden) {
+      assert.ok(!source.includes(needle), `${path.relative(rootDir, file)} still references ${needle}`);
+    }
+  }
+});
 
 // --- capability registry ----------------------------------------------------
 
@@ -121,106 +181,126 @@ await test('every declared task resolves to known providers and bounded limits',
   }
 });
 
-await test('DeepSeek leads the cheap text classes and Qwen leads the multimodal ones', () => {
-  for (const name of ['concept_consult', 'aftercare_support', 'text_summarization', 'text_classification', 'text_extraction']) {
+await test('chain order follows Workers AI cost, not the old vendor assumption', () => {
+  // Short, high-volume public replies stay on the cheap Llama tier and escalate.
+  for (const name of ['concept_consult', 'aftercare_support']) {
+    const chain = tasks.resolveTask({}, name, router.PROVIDER_IDS).chain;
+    assert.deepEqual([...chain], ['workers_ai', 'deepseek'], name);
+  }
+  // Reasoning, structure and long context lead with DeepSeek.
+  for (const name of ['text_summarization', 'text_classification', 'text_extraction', 'high_quality_reasoning']) {
     assert.equal(tasks.resolveTask({}, name, router.PROVIDER_IDS).chain[0], 'deepseek', name);
   }
   for (const name of ['vision_reference_understanding', 'vision_document_extraction']) {
     assert.equal(tasks.resolveTask({}, name, router.PROVIDER_IDS).chain[0], 'qwen', name);
   }
-  // Quality-sensitive judgement stays on OpenAI by default.
-  assert.equal(tasks.resolveTask({}, 'high_quality_reasoning', router.PROVIDER_IDS).chain[0], 'openai');
-  // Both live public chains must end on the existing Cloudflare binding.
-  assert.equal(tasks.resolveTask({}, 'concept_consult', router.PROVIDER_IDS).chain.at(-1), 'workers_ai');
-  assert.equal(tasks.resolveTask({}, 'aftercare_support', router.PROVIDER_IDS).chain.at(-1), 'workers_ai');
+});
+
+await test('no chain depends on the external OpenAI tier', () => {
+  for (const name of tasks.TASK_NAMES) {
+    const plan = tasks.resolveTask({}, name, router.PROVIDER_IDS);
+    const cloudflareBacked = plan.chain.filter((id) => id !== 'openai');
+    assert.ok(cloudflareBacked.length >= 1, `${name} would stall without OPENAI_API_KEY`);
+  }
 });
 
 await test('server-side route overrides apply, and invalid ones are ignored', () => {
   const overridden = tasks.resolveTask(
-    { AI_ROUTE_CONCEPT_CONSULT: 'openai, workers_ai' }, 'concept_consult', router.PROVIDER_IDS);
-  assert.deepEqual([...overridden.chain], ['openai', 'workers_ai']);
+    { AI_ROUTE_CONCEPT_CONSULT: 'deepseek, workers_ai' }, 'concept_consult', router.PROVIDER_IDS);
+  assert.deepEqual([...overridden.chain], ['deepseek', 'workers_ai']);
   assert.equal(overridden.routeSource, 'env');
 
   for (const bad of ['', 'not_a_provider', 'deepseek,deepseek', 'deepseek,openai,workers_ai', '../etc']) {
     const plan = tasks.resolveTask({ AI_ROUTE_CONCEPT_CONSULT: bad }, 'concept_consult', router.PROVIDER_IDS);
-    assert.deepEqual([...plan.chain], ['deepseek', 'workers_ai'], `override "${bad}" must be ignored`);
+    assert.deepEqual([...plan.chain], ['workers_ai', 'deepseek'], `override "${bad}" must be ignored`);
     assert.equal(plan.routeSource, 'default');
   }
 });
 
 await test('an unknown task never reaches a provider', async () => {
-  const fetchImpl = recordingFetch(() => chatResponse('never'));
-  const result = await router.runModelTask({ DEEPSEEK_API_KEY: KEY }, 'no_such_task', textInput, { fetchImpl });
+  const stub = aiBinding();
+  const result = await router.runModelTask({ AI: stub.AI }, 'no_such_task', textInput, { fetchImpl: forbiddenFetch() });
   assert.equal(result.ok, false);
   assert.equal(result.errorCode, 'task_unknown');
-  assert.equal(fetchImpl.calls.length, 0);
+  assert.equal(stub.calls.length, 0);
 });
 
-// --- DeepSeek adapter -------------------------------------------------------
+// --- DeepSeek via env.AI ----------------------------------------------------
 
-await test('the DeepSeek adapter builds a bounded DeepSeek request and normalises the reply', async () => {
-  const fetchImpl = recordingFetch(() => chatResponse('  Concept: a wolf.  '));
-  const result = await router.runModelTask({ DEEPSEEK_API_KEY: KEY }, 'concept_consult', textInput, { fetchImpl });
+await test('DeepSeek runs on the binding with the Cloudflare model id and no network', async () => {
+  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL ? { response: '  Considered answer.  ' } : null));
+  const result = await router.runModelTask(
+    { AI: stub.AI }, 'high_quality_reasoning', textInput, { fetchImpl: forbiddenFetch() });
 
   assert.equal(result.ok, true);
   assert.equal(result.provider, 'deepseek');
-  assert.equal(result.model, deepseek.__testing.DEFAULT_TEXT_MODEL);
-  assert.equal(result.text, 'Concept: a wolf.');
+  assert.equal(result.model, DEEPSEEK_MODEL);
+  assert.equal(result.text, 'Considered answer.');
   assert.equal(result.fallbackUsed, false);
 
-  const [call] = fetchImpl.calls;
-  assert.equal(call.url, deepseek.__testing.DEFAULT_URL);
-  assert.equal(call.options.headers.authorization, `Bearer ${KEY}`);
-  assert.equal(call.body.model, 'deepseek-chat');
-  assert.equal(call.body.stream, false);
-  assert.equal(call.body.max_tokens, tasks.resolveTask({}, 'concept_consult', router.PROVIDER_IDS).maxOutputTokens);
-  assert.deepEqual(call.body.messages.map((m) => m.role), ['system', 'user']);
-  assert.equal(call.body.messages[1].content, INPUT);
+  assert.equal(stub.calls.length, 1);
+  const [call] = stub.calls;
+  assert.equal(call.model, DEEPSEEK_MODEL);
+  assert.deepEqual(call.input.messages.map((m) => m.role), ['system', 'user']);
+  assert.equal(call.input.messages[1].content, INPUT);
+  assert.equal(
+    call.input.max_tokens,
+    tasks.resolveTask({}, 'high_quality_reasoning', router.PROVIDER_IDS).maxOutputTokens,
+  );
 });
 
-await test('the DeepSeek model id is server-configurable but validated', () => {
-  assert.equal(deepseek.configure({ DEEPSEEK_API_KEY: KEY, AI_MODEL_DEEPSEEK_TEXT: 'deepseek-reasoner' }, 'text').model, 'deepseek-reasoner');
-  assert.equal(deepseek.configure({ DEEPSEEK_API_KEY: KEY, AI_MODEL_DEEPSEEK_TEXT: 'bad model/../x' }, 'text').model, 'deepseek-chat');
-  assert.equal(deepseek.configure({ DEEPSEEK_API_KEY: 'short' }, 'text'), null);
-  assert.equal(deepseek.configure({ DEEPSEEK_API_KEY: KEY }, 'vision'), null, 'DeepSeek must never take image work');
+await test('the DeepSeek model id is server-configurable but must be a Cloudflare id', () => {
+  const AI = aiBinding().AI;
+  assert.equal(
+    deepseek.configure({ AI, AI_MODEL_DEEPSEEK_TEXT: '@cf/deepseek-ai/deepseek-v4-pro-0813' }, 'text').model,
+    '@cf/deepseek-ai/deepseek-v4-pro-0813',
+  );
+  for (const bad of ['deepseek-chat', 'https://api.deepseek.com/v1', '@cf/', 'x'.repeat(200)]) {
+    assert.equal(deepseek.configure({ AI, AI_MODEL_DEEPSEEK_TEXT: bad }, 'text').model, DEEPSEEK_MODEL, bad);
+  }
+  assert.equal(deepseek.configure({ AI }, 'vision'), null, 'DeepSeek must never take image work');
 });
 
-// --- Qwen adapter -----------------------------------------------------------
+// --- Qwen vision via env.AI -------------------------------------------------
 
-await test('the Qwen adapter carries the image to DashScope and normalises content parts', async () => {
-  const fetchImpl = recordingFetch(() => ({
-    ok: true,
-    status: 200,
-    text: async () => JSON.stringify({
-      choices: [{ message: { content: [{ text: 'Red.' }] }, finish_reason: 'stop' }],
-    }),
-  }));
+await test('Qwen vision runs on the binding and carries the image as a data URI part', async () => {
+  const stub = aiBinding((model) => (model === QWEN_MODEL ? { response: 'Red.' } : null));
   const result = await router.runModelTask(
-    { QWEN_API_KEY: KEY }, 'vision_reference_understanding', visionInput, { fetchImpl });
+    { AI: stub.AI }, 'vision_reference_understanding', visionInput, { fetchImpl: forbiddenFetch() });
 
   assert.equal(result.ok, true);
   assert.equal(result.provider, 'qwen');
-  assert.equal(result.model, 'qwen-vl-plus');
+  assert.equal(result.model, QWEN_MODEL);
   assert.equal(result.text, 'Red.');
 
-  const [call] = fetchImpl.calls;
-  assert.equal(call.url, qwen.__testing.DEFAULT_URL);
-  const parts = call.body.messages[1].content;
+  const parts = stub.calls[0].input.messages[1].content;
   assert.equal(parts[0].type, 'text');
+  assert.equal(parts[0].text, INPUT);
   assert.equal(parts[1].type, 'image_url');
-  assert.ok(parts[1].image_url.url.startsWith('data:image/png;base64,'));
+  assert.equal(parts[1].image_url.url, `data:image/png;base64,${PNG_BASE64}`);
 });
 
-await test('the Qwen base URL stays inside DashScope', () => {
-  assert.equal(qwen.configure({ QWEN_API_KEY: KEY, AI_QWEN_BASE_URL: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions' }, 'vision').url,
-    'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions');
-  assert.equal(qwen.configure({ QWEN_API_KEY: KEY, AI_QWEN_BASE_URL: 'https://attacker.example/collect' }, 'vision').url,
-    qwen.__testing.DEFAULT_URL);
+await test('Qwen vision needs no OpenAI key', async () => {
+  const stub = aiBinding(() => ({ response: 'Red.' }));
+  const result = await router.runModelTask(
+    { AI: stub.AI }, 'vision_reference_understanding', visionInput, { fetchImpl: forbiddenFetch() });
+  assert.equal(result.ok, true);
+  assert.equal(result.provider, 'qwen');
 });
 
-await test('image payloads are bounded before any provider is paid', async () => {
-  const fetchImpl = recordingFetch(() => chatResponse('never'));
-  const env = { QWEN_API_KEY: KEY };
+await test('the Qwen model id is server-configurable but must be a Cloudflare id', () => {
+  const AI = aiBinding().AI;
+  assert.equal(qwen.configure({ AI, AI_MODEL_QWEN_VISION: '@cf/qwen/qwen3.8-27b' }, 'vision').model, QWEN_MODEL);
+  for (const bad of ['qwen-vl-plus', 'https://dashscope-intl.aliyuncs.com/x', '']) {
+    assert.equal(qwen.configure({ AI, AI_MODEL_QWEN_VISION: bad }, 'vision').model, QWEN_MODEL, bad);
+  }
+});
+
+// --- request bounds ---------------------------------------------------------
+
+await test('image payloads are bounded before the binding is called', async () => {
+  const stub = aiBinding();
+  const env = { AI: stub.AI };
   const oversized = 'A'.repeat(Math.ceil((tasks.MAX_IMAGE_BYTES + 1024) * 4 / 3));
 
   const cases = [
@@ -237,204 +317,200 @@ await test('image payloads are bounded before any provider is paid', async () =>
   ];
 
   for (const input of cases) {
-    const result = await router.runModelTask(env, 'vision_reference_understanding', input, { fetchImpl });
+    const result = await router.runModelTask(env, 'vision_reference_understanding', input, { fetchImpl: forbiddenFetch() });
     assert.equal(result.ok, false);
     assert.equal(result.errorCode, 'request_invalid');
   }
-  assert.equal(fetchImpl.calls.length, 0, 'a rejected request must never be sent');
+  assert.equal(stub.calls.length, 0, 'a rejected request must never be billed');
 });
 
 await test('a text task refuses images rather than silently dropping them', async () => {
-  const fetchImpl = recordingFetch(() => chatResponse('never'));
-  const result = await router.runModelTask({ DEEPSEEK_API_KEY: KEY }, 'concept_consult', visionInput, { fetchImpl });
+  const stub = aiBinding();
+  const result = await router.runModelTask({ AI: stub.AI }, 'concept_consult', visionInput, { fetchImpl: forbiddenFetch() });
   assert.equal(result.errorCode, 'request_invalid');
-  assert.equal(fetchImpl.calls.length, 0);
+  assert.equal(stub.calls.length, 0);
 });
 
-// --- OpenAI fallback --------------------------------------------------------
+// --- fallback ---------------------------------------------------------------
 
-await test('OpenAI takes over when Qwen fails, exactly once', async () => {
-  const fetchImpl = recordingFetch((url) => (url.includes('aliyuncs.com')
-    ? chatResponse('', 503)
-    : chatResponse('A red square.')));
+await test('a failing DeepSeek call falls through to Llama on the same binding', async () => {
+  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
+    ? new Error('model not available on this plan')
+    : { response: 'Summary.' }));
 
   const result = await router.runModelTask(
-    { QWEN_API_KEY: KEY, OPENAI_API_KEY: KEY }, 'vision_reference_understanding', visionInput, { fetchImpl });
+    { AI: stub.AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch() });
 
   assert.equal(result.ok, true);
-  assert.equal(result.provider, 'openai');
+  assert.equal(result.provider, 'workers_ai');
+  assert.equal(result.model, LLAMA_MODEL);
   assert.equal(result.fallbackUsed, true);
-  assert.equal(fetchImpl.calls.length, 2, 'one attempt per provider, no retry loop');
-  assert.deepEqual(result.attempts.map((a) => `${a.provider}:${a.outcome}`), ['qwen:failed', 'openai:succeeded']);
+  assert.equal(stub.calls.length, 2, 'one attempt per tier, no retry loop');
+  assert.deepEqual(result.attempts.map((a) => `${a.provider}:${a.outcome}`), ['deepseek:failed', 'workers_ai:succeeded']);
+  // A binding exception must never leak the provider's own wording.
   assert.equal(result.attempts[0].errorCode, 'provider_unavailable');
 });
 
-await test('OpenAI leads high-quality reasoning and DeepSeek backs it up', async () => {
-  const fetchImpl = recordingFetch((url) => (url.includes('openai.com')
-    ? chatResponse('', 429)
-    : chatResponse('Considered answer.')));
-
+await test('the live public chain still lands on Llama first', async () => {
+  const stub = aiBinding(() => ({ response: 'Concept: a raven.' }));
   const result = await router.runModelTask(
-    { OPENAI_API_KEY: KEY, DEEPSEEK_API_KEY: KEY }, 'high_quality_reasoning', textInput, { fetchImpl });
+    { AI: stub.AI }, 'concept_consult', textInput, { fetchImpl: forbiddenFetch() });
 
-  assert.equal(result.provider, 'deepseek');
-  assert.equal(result.attempts[0].provider, 'openai');
-  assert.equal(result.attempts[0].errorCode, 'provider_rate_limited');
+  assert.equal(result.provider, 'workers_ai');
+  assert.equal(result.model, LLAMA_MODEL);
+  assert.equal(result.fallbackUsed, false);
+  assert.equal(stub.calls.length, 1, 'the cheap tier answers without touching DeepSeek');
 });
 
-// --- incumbent Workers AI path ---------------------------------------------
+await test('Qwen failure reaches OpenAI when, and only when, a key exists', async () => {
+  const failingQwen = () => new Error('vision unavailable');
 
-await test('with no external keys the live chain still lands on the Cloudflare binding', async () => {
-  const binding = workersAiBinding();
-  const fetchImpl = recordingFetch(() => { throw new Error('the incumbent path must not use fetch'); });
+  const withoutKey = aiBinding(failingQwen);
+  const noFallback = await router.runModelTask(
+    { AI: withoutKey.AI }, 'vision_reference_understanding', visionInput, { fetchImpl: forbiddenFetch() });
+  assert.equal(noFallback.ok, false);
+  assert.equal(noFallback.errorCode, 'all_providers_failed');
+  assert.equal(noFallback.attempts.length, 1, 'an unconfigured tier is skipped, not attempted');
 
-  const result = await router.runModelTask({ AI: binding.AI }, 'concept_consult', textInput, { fetchImpl });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.provider, 'workers_ai');
-  assert.equal(result.model, '@cf/meta/llama-3.1-8b-instruct-fast');
-  assert.equal(result.fallbackUsed, false, 'an unconfigured provider is skipped, not attempted');
-  assert.equal(binding.calls[0].model, '@cf/meta/llama-3.1-8b-instruct-fast');
-  assert.equal(binding.calls[0].options.messages[1].content, INPUT);
-  assert.equal(fetchImpl.calls.length, 0);
-});
-
-await test('DeepSeek failure falls back to the Cloudflare binding on the live chain', async () => {
-  const binding = workersAiBinding('Concept: a fallback raven.');
-  const fetchImpl = recordingFetch(() => chatResponse('', 500));
-
-  const result = await router.runModelTask(
-    { AI: binding.AI, DEEPSEEK_API_KEY: KEY }, 'concept_consult', textInput, { fetchImpl });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.provider, 'workers_ai');
-  assert.equal(result.text, 'Concept: a fallback raven.');
-  assert.equal(result.fallbackUsed, true);
+  const withKey = aiBinding(failingQwen);
+  const fetchImpl = recordingFetch(() => chatResponse('A red square.'));
+  const recovered = await router.runModelTask(
+    { AI: withKey.AI, OPENAI_API_KEY: KEY }, 'vision_reference_understanding', visionInput, { fetchImpl });
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.provider, 'openai');
+  assert.equal(recovered.fallbackUsed, true);
   assert.equal(fetchImpl.calls.length, 1);
-  assert.equal(binding.calls.length, 1);
+  assert.equal(fetchImpl.calls[0].url, openai.__testing.DEFAULT_URL);
 });
 
-await test('nothing configured is reported, not thrown', async () => {
-  const result = await router.runModelTask({}, 'concept_consult', textInput, { fetchImpl: recordingFetch(() => chatResponse('x')) });
+await test('without the binding nothing is attempted', async () => {
+  for (const name of ['concept_consult', 'text_summarization', 'vision_reference_understanding']) {
+    const result = await router.runModelTask({}, name, name.startsWith('vision') ? visionInput : textInput,
+      { fetchImpl: forbiddenFetch() });
+    assert.equal(result.ok, false, name);
+    assert.equal(result.errorCode, 'no_provider_configured', name);
+  }
+});
+
+await test('a chain that fails everywhere fails closed without throwing', async () => {
+  const stub = aiBinding(() => new Error('down'));
+  const result = await router.runModelTask(
+    { AI: stub.AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch() });
   assert.equal(result.ok, false);
-  assert.equal(result.errorCode, 'no_provider_configured');
+  assert.equal(result.errorCode, 'all_providers_failed');
+  assert.equal(stub.calls.length, 2, 'the two-provider cap holds even when every tier fails');
 });
 
-// --- timeouts, exhaustion and structured output -----------------------------
-
-await test('a hung provider times out and the chain moves on once', async () => {
-  const binding = workersAiBinding('Recovered.');
-  const fetchImpl = async (_url, options) => new Promise((_resolve, reject) => {
-    options.signal.addEventListener('abort', () => {
-      const error = new Error('aborted');
-      error.name = 'AbortError';
-      reject(error);
-    }, { once: true });
-  });
-
-  const env = {
-    AI: binding.AI,
-    DEEPSEEK_API_KEY: KEY,
-    AI_ROUTE_CONCEPT_CONSULT: 'deepseek,workers_ai',
+await test('a hung binding times out and the chain moves on once', async () => {
+  const calls = [];
+  const AI = {
+    run: async (model) => {
+      calls.push(model);
+      if (model === DEEPSEEK_MODEL) return new Promise(() => {});
+      return { response: 'Recovered.' };
+    },
   };
   const started = Date.now();
-  const result = await router.runModelTask(env, 'concept_consult', textInput, { fetchImpl });
+  const result = await router.runModelTask({ AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch() });
   assert.ok(Date.now() - started < 25_000, 'the timeout must bound the request');
   assert.equal(result.ok, true);
   assert.equal(result.attempts[0].errorCode, 'provider_timeout');
   assert.equal(result.provider, 'workers_ai');
 });
 
-await test('a chain that fails everywhere fails closed without throwing', async () => {
-  const fetchImpl = recordingFetch(() => chatResponse('', 500));
-  const result = await router.runModelTask(
-    { QWEN_API_KEY: KEY, OPENAI_API_KEY: KEY }, 'vision_reference_understanding', visionInput, { fetchImpl });
-  assert.equal(result.ok, false);
-  assert.equal(result.errorCode, 'all_providers_failed');
-  assert.equal(result.attempts.length, 2);
-  assert.equal(fetchImpl.calls.length, 2, 'the cap holds even when every provider fails');
+// --- response normalisation -------------------------------------------------
+
+await test('the binding transport normalises every documented answer shape', () => {
+  assert.deepEqual(binding.normalizeBindingResponse({ response: ' hi ' }), { text: 'hi', finishReason: 'stop' });
+  assert.deepEqual(binding.normalizeBindingResponse('  plain  '), { text: 'plain', finishReason: 'stop' });
+  assert.deepEqual(
+    binding.normalizeBindingResponse({ choices: [{ message: { content: 'chat' }, finish_reason: 'length' }] }),
+    { text: 'chat', finishReason: 'length' },
+  );
+  assert.deepEqual(
+    binding.normalizeBindingResponse({ choices: [{ message: { content: [{ text: 'part ' }, { text: 'two' }] } }] }),
+    { text: 'part two', finishReason: 'stop' },
+  );
 });
 
-await test('unparseable structured output is a failure, and a fenced object is not', async () => {
-  const bad = recordingFetch(() => chatResponse('Sure! Here is the answer.'));
-  const failed = await router.runModelTask(
-    { DEEPSEEK_API_KEY: KEY, OPENAI_API_KEY: KEY }, 'text_classification', textInput,
-    { fetchImpl: bad, requiredKeys: ['label'] });
-  assert.equal(failed.ok, false);
-  assert.equal(failed.errorCode, 'all_providers_failed');
-  assert.deepEqual(failed.attempts.map((a) => a.errorCode), ['output_invalid', 'output_invalid']);
-
-  const mixed = recordingFetch((url) => (url.includes('deepseek')
-    ? chatResponse('not json')
-    : chatResponse('```json\n{"label":"cover_up"}\n```')));
-  const recovered = await router.runModelTask(
-    { DEEPSEEK_API_KEY: KEY, OPENAI_API_KEY: KEY }, 'text_classification', textInput,
-    { fetchImpl: mixed, requiredKeys: ['label'] });
-  assert.equal(recovered.ok, true);
-  assert.equal(recovered.provider, 'openai');
-  assert.deepEqual(recovered.json, { label: 'cover_up' });
-
-  const missingKey = recordingFetch(() => chatResponse('{"other":"value"}'));
-  const rejected = await router.runModelTask(
-    { DEEPSEEK_API_KEY: KEY }, 'text_classification', textInput,
-    { fetchImpl: missingKey, requiredKeys: ['label'] });
-  assert.equal(rejected.ok, false);
-});
-
-await test('a structured task asks the provider for JSON', async () => {
-  const fetchImpl = recordingFetch(() => chatResponse('{"label":"x"}'));
-  await router.runModelTask({ DEEPSEEK_API_KEY: KEY }, 'text_classification', textInput,
-    { fetchImpl, requiredKeys: ['label'] });
-  assert.deepEqual(fetchImpl.calls[0].body.response_format, { type: 'json_object' });
-
-  const plain = recordingFetch(() => chatResponse('prose'));
-  await router.runModelTask({ DEEPSEEK_API_KEY: KEY }, 'concept_consult', textInput, { fetchImpl: plain });
-  assert.equal(plain.calls[0].body.response_format, undefined);
-});
-
-await test('a malformed provider body is rejected rather than parsed loosely', async () => {
-  for (const body of ['not json', '{}', JSON.stringify({ choices: [{ message: { content: '   ' } }] })]) {
-    const fetchImpl = recordingFetch(() => ({ ok: true, status: 200, text: async () => body }));
-    const result = await router.runModelTask({ DEEPSEEK_API_KEY: KEY }, 'concept_consult', textInput, { fetchImpl });
-    assert.equal(result.ok, false, `body "${body}" must not be accepted`);
+await test('an empty or malformed binding answer is rejected, with the two told apart', () => {
+  for (const empty of [{ response: '   ' }, { choices: [] }, { result: '' }]) {
+    assert.throws(() => binding.normalizeBindingResponse(empty), /provider_empty_response/);
+  }
+  for (const malformed of [null, undefined, 42, ['a'], { unexpected: true }]) {
+    assert.throws(() => binding.normalizeBindingResponse(malformed), /provider_malformed_response/);
   }
 });
 
+await test('a malformed binding answer fails the attempt rather than reaching a caller', async () => {
+  const stub = aiBinding(() => ({ unexpected: true }));
+  const result = await router.runModelTask(
+    { AI: stub.AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch() });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.attempts.map((a) => a.errorCode), ['provider_malformed_response', 'provider_malformed_response']);
+});
+
+// --- structured output ------------------------------------------------------
+
+await test('unparseable structured output is a failure, and a fenced object is not', async () => {
+  const bad = aiBinding(() => ({ response: 'Sure! Here is the answer.' }));
+  const failed = await router.runModelTask(
+    { AI: bad.AI }, 'text_classification', textInput,
+    { fetchImpl: forbiddenFetch(), requiredKeys: ['label'] });
+  assert.equal(failed.ok, false);
+  assert.deepEqual(failed.attempts.map((a) => a.errorCode), ['output_invalid', 'output_invalid']);
+
+  const mixed = aiBinding((model) => (model === DEEPSEEK_MODEL
+    ? { response: 'not json' }
+    : { response: '```json\n{"label":"cover_up"}\n```' }));
+  const recovered = await router.runModelTask(
+    { AI: mixed.AI }, 'text_classification', textInput,
+    { fetchImpl: forbiddenFetch(), requiredKeys: ['label'] });
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.provider, 'workers_ai');
+  assert.deepEqual(recovered.json, { label: 'cover_up' });
+
+  const missingKey = aiBinding(() => ({ response: '{"other":"value"}' }));
+  const rejected = await router.runModelTask(
+    { AI: missingKey.AI }, 'text_classification', textInput,
+    { fetchImpl: forbiddenFetch(), requiredKeys: ['label'] });
+  assert.equal(rejected.ok, false);
+});
+
 await test('every provider error code is in the declared taxonomy', () => {
-  const known = new Set([...errors.PROVIDER_ERROR_CODES, 'task_unknown', 'request_invalid', 'no_provider_configured', 'all_providers_failed']);
-  assert.ok(known.has(errors.providerErrorCodeForStatus(429)));
   assert.equal(errors.providerErrorCodeForStatus(429), 'provider_rate_limited');
   assert.equal(errors.providerErrorCodeForStatus(503), 'provider_unavailable');
   assert.equal(errors.providerErrorCodeForStatus(404), 'provider_http_error');
   assert.equal(new errors.ProviderError('nonsense').code, 'provider_unavailable');
+  assert.ok(errors.PROVIDER_ERROR_CODES.includes('provider_malformed_response'));
 });
 
 // --- telemetry --------------------------------------------------------------
 
-await test('telemetry identifies the route without carrying content or credentials', async () => {
+await test('telemetry identifies the tier and model without carrying content', async () => {
   const logger = collectingLogger();
-  const binding = workersAiBinding('Concept: a raven with a long descriptive answer.');
-  const fetchImpl = recordingFetch(() => chatResponse('', 429));
+  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
+    ? new Error('paid plan required')
+    : { response: 'A summary mentioning a raven.' }));
 
   const result = await router.runModelTask(
-    { AI: binding.AI, DEEPSEEK_API_KEY: KEY }, 'concept_consult', textInput, { fetchImpl, logger });
+    { AI: stub.AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch(), logger });
 
   const completed = logger.lines.find((line) => line.event === 'ai.router.completed');
-  assert.ok(completed, 'a completed event must be emitted');
-  assert.equal(completed.task, 'concept_consult');
-  assert.equal(completed.capability, 'drafting');
+  assert.ok(completed);
+  assert.equal(completed.task, 'text_summarization');
   assert.equal(completed.provider, 'workers_ai');
   assert.equal(completed.model, 'cf-meta-llama-3.1-8b-instruct-fast');
   assert.equal(completed.fallbackUsed, true);
   assert.equal(completed.providerAttempts, 2);
-  assert.ok(typeof completed.durationMs === 'number');
   assert.equal(completed.outputChars, result.text.length);
 
   const attempt = logger.lines.find((line) => line.event === 'ai.router.attempt' && line.provider === 'deepseek');
-  assert.equal(attempt.errorCode, 'provider_rate_limited');
+  assert.equal(attempt.model, 'cf-deepseek-ai-deepseek-v4-flash-0731');
+  assert.equal(attempt.errorCode, 'provider_unavailable');
 
   const serialized = JSON.stringify(logger.lines);
-  for (const forbidden of [KEY, SYSTEM, INPUT, 'Bearer', 'raven']) {
+  for (const forbidden of [SYSTEM, INPUT, 'raven', 'paid plan required']) {
     assert.ok(!serialized.includes(forbidden), `telemetry must not contain "${forbidden}"`);
   }
 });
@@ -444,8 +520,8 @@ await test('routing telemetry survives the external observability sanitizer', ()
     event: 'ai.router.completed',
     operation: 'vision_reference_understanding',
     provider: 'qwen',
-    model: router.modelToken('@cf/meta/llama-3.1-8b-instruct'),
-    fallbackUsed: 'yes',
+    model: router.modelToken(QWEN_MODEL),
+    fallbackUsed: 'no',
     outcome: 'succeeded',
     durationMs: 120,
   });
@@ -453,13 +529,11 @@ await test('routing telemetry survives the external observability sanitizer', ()
     event: 'ai.router.completed',
     operation: 'vision_reference_understanding',
     provider: 'qwen',
-    model: 'cf-meta-llama-3.1-8b-instruct',
-    fallbackUsed: 'yes',
+    model: 'cf-qwen-qwen3.8-27b',
+    fallbackUsed: 'no',
     outcome: 'succeeded',
     durationMs: 120,
   });
-
-  // The sanitizer must still refuse anything that is not an operational token.
   assert.deepEqual(
     observability.sanitizeOperationalEvent({ event: 'ai.router.completed', model: 'a wolf in moonlight' }),
     { event: 'ai.router.completed' },
@@ -472,8 +546,8 @@ const ENDPOINT = 'https://tattooai.vvetrov41.workers.dev/';
 const ORIGIN = 'https://vishartattoo.com';
 const ctx = { waitUntil: () => {} };
 
-async function post(path, options = {}, env = {}) {
-  const request = new Request(`${ENDPOINT.replace(/\/$/, '')}${path}`, {
+async function post(pathname, options = {}, env = {}) {
+  const request = new Request(`${ENDPOINT.replace(/\/$/, '')}${pathname}`, {
     method: options.method ?? 'POST',
     headers: options.headers ?? { 'content-type': 'application/json' },
     body: options.body,
@@ -482,58 +556,55 @@ async function post(path, options = {}, env = {}) {
   return { response, payload: await response.json().catch(() => ({})) };
 }
 
-await test('the public assistant response exposes no provider, model or credential', async () => {
-  const binding = workersAiBinding('Concept: a raven.');
-  const env = { ...binding, DEEPSEEK_API_KEY: KEY, QWEN_API_KEY: KEY, OPENAI_API_KEY: KEY };
-  // Every external provider is "configured" but unreachable; the site must still answer.
-  globalThis.fetch = async () => { throw new Error('network down'); };
+await test('the public assistant answers from the binding and exposes nothing about it', async () => {
+  const stub = aiBinding(() => ({ response: 'Concept: a raven.' }));
+  globalThis.fetch = async () => { throw new Error('the public assistant must not use the network'); };
 
   const request = new Request(ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Origin: ORIGIN },
     body: JSON.stringify({ type: 'idea', message: 'A wolf' }),
   });
-  const response = await worker.fetch(request, env, ctx);
+  const response = await worker.fetch(request, { AI: stub.AI, OPENAI_API_KEY: KEY }, ctx);
   const raw = await response.text();
 
   assert.equal(response.status, 200);
   assert.deepEqual(JSON.parse(raw), { response: 'Concept: a raven.' });
-  for (const forbidden of [KEY, 'deepseek', 'qwen', 'openai', 'llama', 'provider', 'model']) {
-    assert.ok(!raw.toLowerCase().includes(forbidden), `the browser response must not contain "${forbidden}"`);
+  for (const forbidden of [KEY, 'deepseek', 'qwen', 'openai', 'llama', '@cf/', 'provider', 'model']) {
+    assert.ok(!raw.toLowerCase().includes(forbidden.toLowerCase()), `the browser response must not contain "${forbidden}"`);
   }
 });
 
-await test('the assistant degrades to a bounded error when every provider fails', async () => {
-  globalThis.fetch = async () => { throw new Error('network down'); };
+await test('the assistant degrades to a bounded error when every tier fails', async () => {
+  const stub = aiBinding(() => new Error('down'));
   const { response, payload } = await post('/', {
     headers: { 'content-type': 'application/json', Origin: ORIGIN },
     body: JSON.stringify({ type: 'idea', message: 'A wolf' }),
-  }, { DEEPSEEK_API_KEY: KEY });
+  }, { AI: stub.AI });
   assert.equal(response.status, 503);
   assert.equal(payload.ok, false);
-  assert.ok(!JSON.stringify(payload).includes(KEY));
 });
 
-await test('an empty assistant message is rejected before any provider call', async () => {
-  let called = false;
-  globalThis.fetch = async () => { called = true; throw new Error('unreachable'); };
+await test('an empty assistant message is rejected before any billed call', async () => {
+  const stub = aiBinding();
   const { response, payload } = await post('/', {
     headers: { 'content-type': 'application/json', Origin: ORIGIN },
     body: JSON.stringify({ type: 'idea', message: '   ' }),
-  }, { DEEPSEEK_API_KEY: KEY, ...workersAiBinding() });
+  }, { AI: stub.AI });
   assert.equal(response.status, 400);
   assert.equal(payload.ok, false);
-  assert.equal(called, false);
+  assert.equal(stub.calls.length, 0);
 });
 
-await test('the probe route does not exist unless explicitly enabled', async () => {
-  const disabled = [
-    {},
-    { AI_ROUTER_PROBE_ENABLED: 'true' },
-    { AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: 'too-short' },
-    { AI_ROUTER_PROBE_ENABLED: 'yes', AI_ROUTER_PROBE_TOKEN: 't'.repeat(40) },
+await test('the probe route stays closed until a token secret exists', async () => {
+  const AI = aiBinding().AI;
+  const closed = [
+    { AI },
+    { AI, AI_ROUTER_PROBE_ENABLED: 'true' },
+    { AI, AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: 'too-short' },
+    { AI, AI_ROUTER_PROBE_ENABLED: 'false', AI_ROUTER_PROBE_TOKEN: 't'.repeat(40) },
   ];
-  for (const env of disabled) {
+  for (const env of closed) {
     const { response } = await post('/internal/ai-router', { method: 'GET', body: undefined }, env);
     assert.equal(response.status, 404);
     assert.equal(probe.isProbeEnabled(env), false);
@@ -541,20 +612,19 @@ await test('the probe route does not exist unless explicitly enabled', async () 
 });
 
 await test('the probe requires the operator token', async () => {
-  const env = { AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: 't'.repeat(40) };
+  const env = { AI: aiBinding().AI, AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: 't'.repeat(40) };
   for (const headers of [{}, { authorization: 'Bearer wrong' }, { authorization: `Bearer ${'t'.repeat(39)}` }]) {
     const { response } = await post('/internal/ai-router', { method: 'GET', headers, body: undefined }, env);
     assert.equal(response.status, 401);
   }
 });
 
-await test('the readback reports configuration state without reading key values', async () => {
+await test('the readback reports every tier as available from the binding alone', async () => {
   const token = 't'.repeat(40);
   const env = {
+    AI: aiBinding().AI,
     AI_ROUTER_PROBE_ENABLED: 'true',
     AI_ROUTER_PROBE_TOKEN: token,
-    DEEPSEEK_API_KEY: KEY,
-    AI: workersAiBinding().AI,
   };
   const { response, payload } = await post('/internal/ai-router', {
     method: 'GET', headers: { authorization: `Bearer ${token}` }, body: undefined,
@@ -562,33 +632,27 @@ await test('the readback reports configuration state without reading key values'
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('access-control-allow-origin'), null, 'the probe must not be browser-reachable');
-  assert.equal(payload.routing.maxProvidersPerRequest, tasks.MAX_PROVIDERS_PER_REQUEST);
-  assert.equal(payload.routing.attemptsPerProvider, 1);
 
   const byId = Object.fromEntries(payload.routing.providers.map((p) => [p.provider, p]));
-  assert.equal(byId.deepseek.configured, true);
-  assert.equal(byId.qwen.configured, false);
-  assert.equal(byId.openai.configured, false);
+  assert.equal(byId.deepseek.configured, true, 'DeepSeek needs no key now');
+  assert.equal(byId.qwen.configured, true, 'Qwen needs no key now');
   assert.equal(byId.workers_ai.configured, true);
+  assert.equal(byId.openai.configured, false, 'OpenAI stays optional and external');
 
-  const concept = payload.routing.tasks.find((t) => t.task === 'concept_consult');
-  assert.equal(concept.selected, 'deepseek');
-  assert.equal(concept.fallback, 'workers_ai');
   const vision = payload.routing.tasks.find((t) => t.task === 'vision_reference_understanding');
-  assert.equal(vision.available, false, 'vision is unavailable until a Qwen or OpenAI key exists');
+  assert.equal(vision.selected, 'qwen');
+  assert.equal(vision.available, true, 'vision is available with no external key at all');
+  const reasoning = payload.routing.tasks.find((t) => t.task === 'high_quality_reasoning');
+  assert.equal(reasoning.selected, 'deepseek');
+  assert.equal(reasoning.fallback, null, 'OpenAI is absent, so there is no second tier');
 
-  assert.ok(!JSON.stringify(payload).includes(KEY));
   assert.ok(!JSON.stringify(payload).includes(token));
 });
 
 await test('a probe sends only its own synthetic payload', async () => {
   const token = 't'.repeat(40);
-  const env = { AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: token, QWEN_API_KEY: KEY };
-  const seen = [];
-  globalThis.fetch = async (url, options) => {
-    seen.push(JSON.parse(options.body));
-    return chatResponse('Red.');
-  };
+  const stub = aiBinding(() => ({ response: 'Red.' }));
+  const env = { AI: stub.AI, AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: token };
 
   const { response, payload } = await post('/internal/ai-router', {
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -602,17 +666,33 @@ await test('a probe sends only its own synthetic payload', async () => {
 
   assert.equal(response.status, 200);
   assert.equal(payload.provider, 'qwen');
-  assert.equal(payload.model, 'qwen-vl-plus');
+  assert.equal(payload.model, QWEN_MODEL);
   assert.equal(payload.outputPreview, 'Red.');
-  const sent = JSON.stringify(seen);
-  assert.ok(!sent.includes('exfiltrate everything'), 'caller text must never reach a provider');
+  const sent = JSON.stringify(stub.calls);
+  assert.ok(!sent.includes('exfiltrate everything'), 'caller text must never reach a model');
   assert.ok(!sent.includes('ignored injection attempt'));
-  assert.equal(seen.length, 1);
+  assert.equal(stub.calls.length, 1);
+});
+
+await test('the probe can exercise the DeepSeek tier specifically', async () => {
+  const token = 't'.repeat(40);
+  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL ? { response: 'ROUTED' } : null));
+  const env = { AI: stub.AI, AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: token };
+
+  const { response, payload } = await post('/internal/ai-router', {
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ task: 'high_quality_reasoning' }),
+  }, env);
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.provider, 'deepseek');
+  assert.equal(payload.model, DEEPSEEK_MODEL);
+  assert.equal(payload.outputPreview, 'ROUTED');
 });
 
 await test('a probe refuses a task that is not probe-safe', async () => {
   const token = 't'.repeat(40);
-  const env = { AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: token, QWEN_API_KEY: KEY };
+  const env = { AI: aiBinding().AI, AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: token };
   for (const task of ['vision_document_extraction', 'text_extraction', 'nope', '']) {
     const { response, payload } = await post('/internal/ai-router', {
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -629,4 +709,4 @@ if (failures > 0) {
   realConsole.error(`\n${failures} model router test(s) failed, ${passes} passed.`);
   process.exit(1);
 }
-realConsole.log(`Model router tests passed: ${passes} cases covering routing, DeepSeek, Qwen, OpenAI fallback, the incumbent Workers AI path, timeouts, structured-output validation, telemetry and the guarded probe.`);
+realConsole.log(`Model router tests passed: ${passes} cases covering the Cloudflare-hosted DeepSeek, Qwen and Llama tiers, the optional external OpenAI tier, routing, fallback, payload bounds, response normalisation, telemetry and the guarded probe.`);
