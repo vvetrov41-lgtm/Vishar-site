@@ -1,8 +1,8 @@
 -- 277_booking_time_step_error_code.sql
 --
--- A mobile datetime picker may supply any minute, while the CRM deliberately
--- keeps appointments on a five-minute grid. The invariant already existed;
--- this test pins the machine-readable refusal the UI now relies on.
+-- iPhone Safari may supply any minute for a consultation. Consultations accept
+-- that native value, while tattoo sessions keep the five-minute invariant and
+-- stable machine-readable refusal used by strict booking flows.
 
 begin;
 select no_plan();
@@ -28,8 +28,8 @@ end;
 $$;
 grant execute on function pg_temp.refusal_hint(text) to service_role;
 
-select is(
-  pg_temp.refusal_hint($sql$
+select lives_ok(
+  $sql$
     insert into public.sessions (
       artist_id, client_id, appointment_type, status, start_at, end_at
     ) values (
@@ -38,9 +38,8 @@ select is(
       'in_person_consultation', 'draft',
       '2030-01-08T10:03:00Z', '2030-01-08T10:33:00Z'
     )
-  $sql$),
-  'INVALID_APPOINTMENT_STEP',
-  'an off-grid appointment carries the stable five-minute refusal code'
+  $sql$,
+  'an in-person consultation accepts unrestricted native minutes'
 );
 
 select lives_ok(
@@ -50,11 +49,40 @@ select lives_ok(
     ) values (
       'a1111111-1111-4111-8111-111111111111',
       'bd211111-1111-4111-8111-111111111111',
-      'in_person_consultation', 'draft',
-      '2030-01-08T10:05:00Z', '2030-01-08T10:35:00Z'
+      'video_consultation', 'draft',
+      '2030-01-08T10:47:00Z', '2030-01-08T11:17:00Z'
     )
   $sql$,
-  'a five-minute appointment boundary is still accepted'
+  'a video consultation accepts unrestricted native minutes'
+);
+
+select is(
+  pg_temp.refusal_hint($sql$
+    insert into public.sessions (
+      artist_id, client_id, appointment_type, status, start_at, end_at
+    ) values (
+      'a1111111-1111-4111-8111-111111111111',
+      'bd211111-1111-4111-8111-111111111111',
+      'tattoo_session', 'draft',
+      '2030-01-08T12:03:00Z', '2030-01-08T13:03:00Z'
+    )
+  $sql$),
+  'INVALID_APPOINTMENT_STEP',
+  'an off-grid tattoo session keeps the stable five-minute refusal code'
+);
+
+select lives_ok(
+  $sql$
+    insert into public.sessions (
+      artist_id, client_id, appointment_type, status, start_at, end_at
+    ) values (
+      'a1111111-1111-4111-8111-111111111111',
+      'bd211111-1111-4111-8111-111111111111',
+      'tattoo_session', 'draft',
+      '2030-01-08T12:05:00Z', '2030-01-08T13:05:00Z'
+    )
+  $sql$,
+  'a five-minute tattoo boundary is still accepted'
 );
 
 select * from finish();
