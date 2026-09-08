@@ -1,151 +1,12 @@
 (function () {
   'use strict';
 
-  const MAX_IMAGES = 32;
-  const WIDTHS = [320, 480, 720, 960];
-  const CONFIG = {
-    'large-scale': {
-      base: '/assets/large-scale/',
-      genericAlt: 'Large-scale realism tattoo by Vladimir Vishar, London',
-    },
-    portrait: {
-      base: '/assets/portraits/',
-      genericAlt: 'Realism portrait tattoo by Vladimir Vishar, London',
-    },
-    healed: {
-      base: '/assets/healed/',
-      genericAlt: 'Confirmed healed realism tattoo by Vladimir Vishar',
-    },
-  };
-
-  async function loadMetadata(base) {
-    try {
-      const response = await fetch(base + 'metadata.json', { cache: 'no-store' });
-      if (!response.ok) return {};
-      const data = await response.json();
-      return data && typeof data === 'object' ? data : {};
-    } catch {
-      return {};
-    }
-  }
-
-  function galleryState(config, metadata) {
-    const stems = Object.keys(metadata)
-      .filter((key) => /^\d{2}$/.test(key))
-      .sort()
-      .slice(0, MAX_IMAGES);
-
-    const manifest = metadata._gallery && typeof metadata._gallery === 'object'
-      ? metadata._gallery
-      : {};
-    const thumbnailWidths = Array.isArray(manifest.thumbnailWidths)
-      ? manifest.thumbnailWidths
-        .filter((width) => WIDTHS.includes(width))
-        .sort((a, b) => a - b)
-      : [];
-    const sourceExtension = typeof manifest.sourceExtension === 'string'
-      && /^\.(?:jpe?g|webp|png)$/i.test(manifest.sourceExtension)
-      ? manifest.sourceExtension.toLowerCase()
-      : '.jpg';
-
-    return {
-      images: stems.map((stem) => ({ stem, source: `${config.base}${stem}${sourceExtension}` })),
-      thumbnailWidths,
-    };
-  }
-
-  function responsiveMedia(source, srcsetBase, stem, alt, thumbnailWidths, sizes, fit) {
-    const style = fit === 'contain' ? ' style="object-fit:contain;background:#000"' : '';
-    const imageTag = `<img src="${source}" loading="lazy" decoding="async" width="900" height="1200" alt="${escapeHtml(alt)}" class="w-full h-full transition-transform duration-1000 group-hover:scale-105"${style}>`;
-
-    if (!thumbnailWidths.length) return imageTag;
-
-    const srcset = thumbnailWidths
-      .map((width) => `${srcsetBase}${stem}-${width}.webp ${width}w`)
-      .join(', ');
-    return `<picture><source type="image/webp" srcset="${srcset}" sizes="${sizes}">${imageTag}</picture>`;
-  }
-
-  function imageMarkup(config, image, metadata, index, thumbnailWidths) {
-    const info = metadata[image.stem] || {};
-    const alt = info.alt || `${config.genericAlt} - image ${index + 1}`;
-    const caption = info.caption || info.healed_for || '';
-    const media = responsiveMedia(
-      image.source,
-      `${config.base}thumbs/`,
-      image.stem,
-      alt,
-      thumbnailWidths,
-      '(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw',
-      'cover',
-    );
-
-    return `
-      <figure class="overflow-hidden bg-white/5 rounded-2xl">
-        <a href="${image.source}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden" aria-label="Open ${escapeHtml(alt)}">
-          ${media}
-        </a>
-        ${caption ? `<figcaption class="p-4 text-sm text-white/50">${escapeHtml(caption)}</figcaption>` : ''}
-      </figure>`;
-  }
-
-  function healedPairMarkup(config, image, metadata, index) {
-    const info = metadata[image.stem] || {};
-    const healedAlt = info.alt || `${config.genericAlt} - image ${index + 1}`;
-    const subject = healedAlt
-      .replace(/^Confirmed healed\s+/i, '')
-      .replace(/\s+by Vladimir Vishar$/i, '');
-    const freshAlt = `Fresh-session ${subject} by Vladimir Vishar`;
-    const freshSource = `${config.base}fresh/${image.stem}.webp`;
-    const healedSource = image.stem === '05'
-      ? `${image.source}?v=20260907`
-      : image.source;
-
-    // Healed comparisons use the verified original sources directly. This avoids
-    // stale or incomplete responsive derivatives leaving black image cards.
-    const freshMedia = responsiveMedia(
-      freshSource,
-      '',
-      image.stem,
-      freshAlt,
-      [],
-      '(min-width: 768px) 25vw, 50vw',
-      'contain',
-    );
-    const healedMedia = responsiveMedia(
-      healedSource,
-      '',
-      image.stem,
-      healedAlt,
-      [],
-      '(min-width: 768px) 25vw, 50vw',
-      'contain',
-    );
-
-    return `
-      <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10">
-        <div class="grid grid-cols-2 gap-2 p-2">
-          <div>
-            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Fresh</p>
-            <a href="${freshSource}" data-speciality-lightbox data-lightbox-alt="${escapeHtml(freshAlt)}" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open ${escapeHtml(freshAlt)}">
-              ${freshMedia}
-            </a>
-          </div>
-          <div>
-            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Healed</p>
-            <a href="${healedSource}" data-speciality-lightbox data-lightbox-alt="${escapeHtml(healedAlt)}" class="group block aspect-[3/4] overflow-hidden rounded-2xl bg-black" aria-label="Open ${escapeHtml(healedAlt)}">
-              ${healedMedia}
-            </a>
-          </div>
-        </div>
-      </figure>`;
-  }
-
-  function escapeHtml(value) {
-    const div = document.createElement('div');
-    div.textContent = String(value);
-    return div.innerHTML;
-  }
+  /*
+   * The fresh/healed comparison cards are rendered into the page HTML at build
+   * time by scripts/build-static-html.mjs (from assets/healed/metadata.json),
+   * so the images, alt text and links are in the raw response. All that is
+   * left here is the comparison lightbox the healed page opens on click.
+   */
 
   function ensureSpecialityLightbox() {
     const existing = document.getElementById('speciality-image-lightbox');
@@ -248,36 +109,15 @@
     });
   }
 
-  async function buildGallery() {
-    const section = document.querySelector('[data-speciality-gallery]');
+  function initHealedGallery() {
+    const section = document.querySelector('[data-speciality-gallery="healed"]');
     if (!section) return;
-
-    const key = section.getAttribute('data-speciality-gallery');
-    const config = CONFIG[key];
-    if (!config) return;
-
-    const grid = section.querySelector('[data-speciality-gallery-grid]');
-    if (!grid) return;
-
-    const metadata = await loadMetadata(config.base);
-    const { images, thumbnailWidths } = galleryState(config, metadata);
-
-    if (!images.length) return;
-
-    const markup = key === 'healed'
-      ? images.map((image, index) => healedPairMarkup(config, image, metadata, index))
-      : images.map((image, index) => imageMarkup(config, image, metadata, index, thumbnailWidths));
-
-    grid.innerHTML = markup.join('');
-    section.classList.remove('hidden');
-    section.removeAttribute('aria-hidden');
-
-    if (key === 'healed') bindSpecialityLightbox(section);
+    bindSpecialityLightbox(section);
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', buildGallery, { once: true });
+    document.addEventListener('DOMContentLoaded', initHealedGallery, { once: true });
   } else {
-    buildGallery();
+    initHealedGallery();
   }
 })();

@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { Script } from 'node:vm';
 import sharp from 'sharp';
 
+import { buildStaticHtml } from './build-static-html.mjs';
+import { NAV_LINKS, COLLECTION_LINKS, BOOKING_URL } from './lib/site-content.mjs';
+
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIN_TAILWIND_BYTES = 10 * 1024;
 const LARGE_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -1290,6 +1293,119 @@ async function checkGalleryThumbnails() {
   pass(`Gallery responsive thumbnails checked (${checkedCount} derivatives across ${galleryConfigNamesLabel()}).`);
 }
 
+// The nav, footer, portfolio grids and portfolio cross-links are rendered into
+// the committed HTML by scripts/build-static-html.mjs. Generated output that
+// drifts from its source is the failure mode this guards against, exactly like
+// the compiled Tailwind artifact above.
+async function checkStaticHtmlInSync() {
+  let stale;
+  try {
+    stale = await buildStaticHtml({ write: false });
+  } catch (error) {
+    fail(`Static HTML generation failed: ${error.message}`);
+    return;
+  }
+
+  if (stale.length) {
+    fail(`Static HTML is out of date in ${stale.join(', ')}; run \`npm run build:html\` and commit the result.`);
+    return;
+  }
+
+  pass('Generated nav/footer/portfolio markup in the HTML matches scripts/lib/site-content.mjs.');
+}
+
+// The whole point of generating that markup is that a crawler which does not
+// run JavaScript still sees the site structure, so assert it on the raw file
+// contents rather than trusting the generator.
+async function checkRawHtmlSharedContent(htmlFiles) {
+  const requiredHrefs = [...NAV_LINKS, ...COLLECTION_LINKS].map((link) => link.href);
+
+  for (const file of htmlFiles) {
+    const fileRel = rel(file);
+    const contents = await readFile(file, 'utf8');
+
+    if (!/<nav\b[^>]*aria-label="Main"/i.test(contents)) {
+      fail(`${fileRel} has no <nav aria-label="Main"> in its raw HTML.`);
+    }
+    if (!/<footer\b/i.test(contents)) {
+      fail(`${fileRel} has no <footer> in its raw HTML.`);
+    }
+    if (!contents.includes(`href="${BOOKING_URL}"`)) {
+      fail(`${fileRel} has no raw-HTML link to ${BOOKING_URL}.`);
+    }
+
+    const missing = requiredHrefs.filter((href) => !contents.includes(`href="${href}"`));
+    if (missing.length) {
+      fail(`${fileRel} raw HTML is missing links to: ${missing.join(', ')}.`);
+    }
+  }
+
+  pass(`Raw HTML on ${htmlFiles.length} pages carries the main nav, the footer and links to all ${requiredHrefs.length} shared destinations.`);
+}
+
+// Expected image counts inside each gallery, checked against the raw file so a
+// gallery silently reverting to client-side rendering is caught.
+const RAW_GALLERY_EXPECTATIONS = [
+  { file: 'index.html', label: 'homepage portfolio grid', marker: 'portfolio-grid', images: 20 },
+  { file: 'index.html', label: 'homepage studio gallery', marker: 'studio-grid', images: 6 },
+  { file: 'colour-realism-tattoo-london/index.html', label: 'colour realism gallery', marker: 'gallery', images: 12 },
+  { file: 'black-and-grey-realism-london/index.html', label: 'black and grey gallery', marker: 'gallery', images: 12 },
+  { file: 'cover-up-tattoo-london/index.html', label: 'cover-up before/after pairs', marker: 'gallery', images: 12 },
+  { file: 'portrait-tattoo-artist-london/index.html', label: 'portrait gallery', marker: 'gallery', images: 26 },
+  { file: 'large-scale-realism-tattoo-london/index.html', label: 'large scale gallery', marker: 'gallery', images: 20 },
+  { file: 'healed-tattoos/index.html', label: 'fresh vs healed pairs', marker: 'gallery', images: 50 },
+];
+
+async function checkRawHtmlGalleryContent() {
+  for (const expectation of RAW_GALLERY_EXPECTATIONS) {
+    const contents = await readFile(path.join(rootDir, expectation.file), 'utf8');
+    const open = `<!-- build:${expectation.marker} -->`;
+    const close = `<!-- /build:${expectation.marker} -->`;
+    const start = contents.indexOf(open);
+    const end = contents.indexOf(close, start);
+
+    if (start === -1 || end === -1) {
+      fail(`${expectation.file} is missing the ${expectation.marker} generated block.`);
+      continue;
+    }
+
+    const block = contents.slice(start + open.length, end);
+    const images = (block.match(/<img\b/gi) || []).length;
+    if (images !== expectation.images) {
+      fail(`${expectation.file} ${expectation.label} has ${images} raw <img> elements; expected ${expectation.images}.`);
+      continue;
+    }
+
+    const withoutAlt = (block.match(/<img\b(?![^>]*\balt=")[^>]*>/gi) || []).length;
+    if (withoutAlt > 0) {
+      fail(`${expectation.file} ${expectation.label} has ${withoutAlt} raw <img> elements without alt text.`);
+    }
+  }
+
+  pass(`Raw HTML carries every gallery image, with alt text, across ${RAW_GALLERY_EXPECTATIONS.length} galleries.`);
+}
+
+// components.js is enhancement-only now: it must not rebuild the nav or footer,
+// and its BOOKING_URL must not drift from the build-time source of truth.
+async function checkComponentsIsEnhancementOnly() {
+  const components = await readFile(path.join(rootDir, 'components.js'), 'utf8');
+
+  for (const forbidden of ['site-nav\').innerHTML', 'site-footer\').innerHTML']) {
+    if (components.includes(forbidden)) {
+      fail(`components.js still writes ${forbidden}; nav and footer are build-time output.`);
+    }
+  }
+
+  const bookingUrl = /const BOOKING_URL\s*=\s*'([^']*)'/.exec(components);
+  if (!bookingUrl) {
+    fail('components.js has no BOOKING_URL definition.');
+  } else if (bookingUrl[1] !== BOOKING_URL) {
+    fail(`components.js BOOKING_URL is "${bookingUrl[1]}" but scripts/lib/site-content.mjs uses "${BOOKING_URL}".`);
+  }
+
+  pass('components.js is enhancement-only and its BOOKING_URL matches the build-time source of truth.');
+}
+
 function printResults() {
   console.log('Static site validation results');
   console.log('==============================');
@@ -1314,6 +1430,8 @@ async function main() {
   const htmlFiles = await listFiles(rootDir, (file) => HTML_EXTENSIONS.has(path.extname(file).toLowerCase()));
 
   await checkTailwindArtifact();
+  await checkStaticHtmlInSync();
+  await checkComponentsIsEnhancementOnly();
   await checkRequiredFiles();
   await checkRobotsAiCrawlers();
   await checkLlmsTxt();
@@ -1333,6 +1451,8 @@ async function main() {
   await checkTitlesAndDescriptions(htmlFiles);
   await checkRobotsIndexability(htmlFiles);
   await checkLocalHtmlReferences(htmlFiles);
+  await checkRawHtmlSharedContent(htmlFiles);
+  await checkRawHtmlGalleryContent();
   await checkWebpAllowlists();
   await checkLargeImagesWithoutWebpWarnings();
   await checkPortfolioOriginalsIntact();

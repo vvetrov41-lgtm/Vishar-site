@@ -94,7 +94,110 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </head>
 <body class="antialiased">
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <div id="site-nav"></div>
+    <div id="site-nav">
+      <!-- build:nav -->
+      <nav class="fixed top-0 w-full z-[100] glass border-b border-white/10" role="navigation" aria-label="Main">
+          <div class="max-w-[1200px] mx-auto px-6 h-14 flex justify-between items-center">
+            <a href="/" class="text-lg font-medium tracking-tight hover:opacity-70 transition-opacity">Vladimir Vishar</a>
+            <div class="hidden lg:flex space-x-6 text-[12px] font-normal text-white/60 items-center">
+              <a href="/" class="hover:text-white transition-colors">Home</a>
+              <details id="desktop-portfolio-menu" class="portfolio-desktop-wrap">
+                <summary class="portfolio-desktop-trigger">Portfolio
+                  <svg class="portfolio-nav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </summary>
+                <div class="portfolio-desktop-menu">
+              <a href="/colour-realism-tattoo-london/">Colour Realism</a>
+              <a href="/black-and-grey-realism-london/">Black &amp; Grey</a>
+              <a href="/cover-up-tattoo-london/">Cover-ups</a>
+              <a href="/portrait-tattoo-artist-london/">Portraits</a>
+              <a href="/large-scale-realism-tattoo-london/">Large Scale</a>
+              <a href="/healed-tattoos/">Fresh vs Healed</a>
+                </div>
+              </details>
+              <a href="/booking/" class="hover:text-white transition-colors">Book a Tattoo</a>
+              <a href="/about/" class="hover:text-white transition-colors text-white">About</a>
+              <a href="/book/" class="hover:text-white transition-colors">The Book</a>
+              <a href="/aftercare/" class="hover:text-white transition-colors">Aftercare</a>
+              <a href="/faq/" class="hover:text-white transition-colors">FAQ</a>
+              <a href="/ai-tools/" class="hover:text-white transition-colors">Studio Tools</a>
+            </div>
+            <button class="lg:hidden text-white p-2 -mr-2" onclick="toggleMenu()"
+                    aria-label="Toggle menu" aria-controls="mobile-overlay"
+                    aria-expanded="false" id="mobile-menu-toggle">
+              <svg id="menu-icon-open" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-16 6h16" />
+              </svg>
+              <svg id="menu-icon-close" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none"
+                   viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div id="mobile-overlay"
+               class="hidden fixed inset-0 left-0 right-0 top-14 max-w-full box-border overflow-x-hidden overflow-y-auto bg-black/95 backdrop-blur-md z-[90] flex flex-col px-6 pt-10 pb-8 space-y-5 text-xl font-medium"
+               aria-hidden="true">
+            <a href="/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Home</a>
+            <details id="mobile-portfolio-menu" class="mobile-portfolio">
+              <summary class="mobile-portfolio-toggle">Portfolio
+                <svg class="mobile-portfolio-chevron" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </summary>
+              <div class="mobile-portfolio-links">
+              <a href="/colour-realism-tattoo-london/" onclick="toggleMenu()">Colour Realism</a>
+              <a href="/black-and-grey-realism-london/" onclick="toggleMenu()">Black &amp; Grey</a>
+              <a href="/cover-up-tattoo-london/" onclick="toggleMenu()">Cover-ups</a>
+              <a href="/portrait-tattoo-artist-london/" onclick="toggleMenu()">Portraits</a>
+              <a href="/large-scale-realism-tattoo-london/" onclick="toggleMenu()">Large Scale</a>
+              <a href="/healed-tattoos/" onclick="toggleMenu()">Fresh vs Healed</a>
+              </div>
+            </details>
+            <a href="/booking/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Book a Tattoo</a>
+            <a href="/about/" onclick="toggleMenu()" class="transition-colors text-apple-blue">About</a>
+            <a href="/book/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">The Book</a>
+            <a href="/aftercare/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Aftercare</a>
+            <a href="/faq/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">FAQ</a>
+            <a href="/ai-tools/" onclick="toggleMenu()" class="transition-colors hover:text-white/80">Studio Tools</a>
+            <div class="mobile-menu-footer pt-4 mt-auto border-t border-white/10">
+              <div class="mb-5 flex items-center justify-center gap-1" role="group" aria-label="Social media and email">
+              <a href="https://www.instagram.com/vladimir_vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Instagram" title="Instagram">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.25"/><circle cx="17.4" cy="6.6" r="1" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://www.tiktok.com/@vladimir.vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="TikTok" title="TikTok">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4v10.2a4.2 4.2 0 1 1-3.6-4.16v2.82a1.6 1.6 0 1 0 1 1.48V4h2.6Zm0 0c.35 2.05 1.55 3.25 3.5 3.6v2.65A6.45 6.45 0 0 1 14.5 8.9"/></svg>
+              </a>
+              <a href="https://www.facebook.com/profile.php?id=100088974927193" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Facebook" title="Facebook">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.2 8.2h3V4.4c-.52-.07-2.3-.2-4.4-.2-4.1 0-6.9 2.5-6.9 7.1v4H2v4.3h3.9V24h4.8v-4.4h4l.64-4.3h-4.64v-3.58c0-1.25.34-2.1 2.12-2.1h2.38V8.2Z" transform="translate(3 -2) scale(.82)" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://uk.pinterest.com/VladimirVisharTatt/" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Pinterest" title="Pinterest">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2a8.8 8.8 0 0 0-3.2 17c-.08-1.45-.02-3.2.36-4.83l1.13-4.78s-.28-.58-.28-1.43c0-1.34.77-2.34 1.74-2.34.82 0 1.22.62 1.22 1.36 0 .83-.53 2.06-.8 3.2-.23.96.48 1.75 1.43 1.75 1.72 0 3.04-1.81 3.04-4.43 0-2.32-1.67-3.94-4.05-3.94-2.76 0-4.38 2.07-4.38 4.21 0 .84.32 1.73.72 2.22.08.1.09.18.07.28l-.27 1.1c-.04.18-.14.22-.33.13-1.23-.57-2-2.37-2-3.82 0-3.1 2.25-5.95 6.5-5.95 3.41 0 6.06 2.43 6.06 5.68 0 3.39-2.14 6.12-5.1 6.12-1 0-1.93-.52-2.25-1.13l-.61 2.33c-.22.85-.82 1.92-1.22 2.57.92.28 1.89.43 2.9.43a8.8 8.8 0 1 0 0-17.6Z" fill="currentColor" stroke="none"/></svg>
+              </a>
+              <a href="https://youtube.com/@vladimir_vishar" target="_blank" rel="noopener noreferrer"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="YouTube" title="YouTube">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.6 7.2a2.5 2.5 0 0 0-1.76-1.77C18.3 5 12 5 12 5s-6.3 0-7.84.43A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.76 1.77C5.7 19 12 19 12 19s6.3 0 7.84-.43a2.5 2.5 0 0 0 1.76-1.77A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8Z" fill="currentColor" stroke="none"/><path d="m10 15 5.2-3L10 9v6Z" fill="#000" stroke="none"/></svg>
+              </a>
+              <a href="mailto:info@vishartattoo.com"
+                class="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/65 transition-colors hover:border-white/40 hover:text-white focus-visible:border-white focus-visible:text-white"
+                aria-label="Email" title="Email">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg>
+              </a>
+              </div>
+              <a href="/booking/"
+                 class="block w-full text-center py-3 bg-white text-black rounded-full font-semibold text-base"
+                 onclick="toggleMenu()">Start an inquiry</a>
+            </div>
+          </div>
+        </nav>
+      <!-- /build:nav -->
+    </div>
     <main id="main-content" tabindex="-1">
 
 <div class="pt-20 px-6 max-w-[1200px] mx-auto">
@@ -358,7 +461,66 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 </main>
 
 <div id="sticky-cta" data-cta-text="Send your concept — £140/hr"></div>
-<div id="site-footer"></div>
+<div id="site-footer">
+  <!-- build:footer -->
+  <footer class="py-20 border-t border-white/5 px-6">
+      <div class="max-w-[1200px] mx-auto">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-12">
+          <div>
+            <p class="text-xl font-semibold mb-4">Vladimir Vishar</p>
+            <p class="text-sm text-white/60 leading-relaxed">Colour &amp; Black-Grey Realism<br>London enquiries now open</p>
+            <p class="text-sm text-white/60 leading-relaxed mt-3">Private studio details are confirmed with each appointment.<br>By appointment only · No walk-ins</p>
+            <a href="mailto:info@vishartattoo.com" class="text-sm text-white/60 hover:text-white mt-3 inline-block transition-colors">info@vishartattoo.com</a>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Pages</p>
+            <div class="flex flex-col space-y-2 text-sm text-white/60">
+              <a href="/" class="hover:text-white transition-colors">Home</a>
+              <a href="/booking/" class="hover:text-white transition-colors">Book a Tattoo</a>
+              <a href="/about/" class="hover:text-white transition-colors">About</a>
+              <a href="/book/" class="hover:text-white transition-colors">The Book</a>
+              <a href="/aftercare/" class="hover:text-white transition-colors">Aftercare</a>
+              <a href="/faq/" class="hover:text-white transition-colors">FAQ</a>
+              <a href="/ai-tools/" class="hover:text-white transition-colors">Studio Tools</a>
+            </div>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Collections</p>
+            <div class="flex flex-col space-y-2 text-sm text-white/60">
+              <a href="/colour-realism-tattoo-london/" class="hover:text-white transition-colors">Colour Realism</a>
+              <a href="/black-and-grey-realism-london/" class="hover:text-white transition-colors">Black &amp; Grey</a>
+              <a href="/cover-up-tattoo-london/" class="hover:text-white transition-colors">Cover-ups</a>
+              <a href="/portrait-tattoo-artist-london/" class="hover:text-white transition-colors">Portraits</a>
+              <a href="/large-scale-realism-tattoo-london/" class="hover:text-white transition-colors">Large Scale</a>
+              <a href="/healed-tattoos/" class="hover:text-white transition-colors">Fresh vs Healed</a>
+            </div>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">Social</p>
+            <div class="flex flex-col space-y-2 text-sm text-white/60">
+              <a href="https://www.instagram.com/vladimir_vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">Instagram</a>
+              <a href="https://youtube.com/@vladimir_vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">YouTube</a>
+              <a href="https://www.tiktok.com/@vladimir.vishar" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">TikTok</a>
+              <a href="https://www.facebook.com/profile.php?id=100088974927193" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">Facebook</a>
+            </div>
+          </div>
+        </div>
+        <div class="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div class="text-xs text-white/40 uppercase tracking-[0.4em]">
+            &copy; <span data-current-year>2026</span> Vladimir Vishar. All rights reserved.
+          </div>
+          <div class="flex items-center gap-6">
+            <a href="/privacy/" class="text-xs text-white/60 hover:text-white transition-colors">Privacy &amp; Cookies</a>
+            <a href="/booking/"
+               class="text-xs text-white/60 hover:text-white transition-colors">
+              Start an inquiry →
+            </a>
+          </div>
+        </div>
+      </div>
+    </footer>
+  <!-- /build:footer -->
+</div>
 <script src="/components.js" defer></script>
 
 </body>
