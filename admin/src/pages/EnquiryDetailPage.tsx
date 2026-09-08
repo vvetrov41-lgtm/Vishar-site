@@ -27,6 +27,7 @@ import { CollapsedSection } from '../components/CollapsedSection';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { EnquiryConsultationPanel } from '../components/EnquiryConsultationPanel';
 import { EnquiryContactConflict } from '../components/EnquiryContactConflict';
+import { EnquiryAiPanel } from '../components/EnquiryAiPanel';
 import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
 import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { BookingPanel } from '../components/BookingPanel';
@@ -234,6 +235,8 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       ) : null}
 
       {/* The work, in the order the state says it is waiting for it. */}
+      <EnquiryAiPanel enquiryId={enquiry.id} api={api} language={language} mayEdit={can(role, 'createEmailDraft')} />
+
       <Section title={t('enquiry.nextAction')}>
         <div className="actions">
           <Link

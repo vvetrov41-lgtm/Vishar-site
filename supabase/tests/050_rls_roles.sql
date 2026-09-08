@@ -371,6 +371,8 @@ select throws_ok($$update public.enquiries set idea = 'x'$$, '42501', null,
   'service_role holds no direct update privilege on enquiries');
 select throws_ok($$select count(*) from public.integration_outbox$$, '42501', null,
   'service_role reaches the outbox only through narrow RPCs, not the table endpoint');
+select throws_ok($$select count(*) from public.enquiry_ai_jobs$$, '42501', null,
+  'service_role reaches AI jobs only through bounded RPCs, never the raw private-text table');
 select throws_ok($$delete from public.activity_log$$, '42501', null,
   'service_role cannot delete audit history');
 select lives_ok($$select public.create_enquiry_intake(
@@ -551,11 +553,7 @@ insert into expected_function_acl values
   ('public.resolve_monzo_deposit_redirect(uuid)', false, false, true),
   ('public.register_monzo_reconciliation_candidate(text,text,text,numeric,text,timestamptz)', false, false, true),
   ('public.service_resolve_gmail_target(uuid,uuid,uuid)', false, false, true),
-  -- Client-scoped Gmail discovery (0122). Backend-only, like every other
-  -- service_ function: the browser reaches it through the Gmail Worker, which
-  -- re-derives the artist from the caller's own enquiries first.
   ('public.service_resolve_gmail_client_target(uuid,uuid)', false, false, true),
-  -- Known-client Gmail discovery (0123), backend-only like the rest.
   ('public.service_resolve_gmail_mailbox(uuid)', false, false, true),
   ('public.service_match_gmail_clients(uuid,text[])', false, false, true),
   ('public.service_resolve_gmail_outbox_target(uuid,text)', false, false, true),
@@ -569,11 +567,7 @@ insert into expected_function_acl values
   ('public.reset_calendar_expected_account(uuid)', false, true, false),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
-  -- Vladimir's WhatsApp completion call is fixed to the prepared production
-  -- route and accepts no artist, provider, timestamp or credential input.
   ('public.complete_vladimir_whatsapp_connection()', false, true, false),
-  -- Universal Embedded Signup completion accepts only authoritative artist and
-  -- route identities, then re-establishes capability and exact-route scope.
   ('public.complete_artist_whatsapp_connection(uuid,text)', false, true, false),
   ('public.record_activity(text,uuid,uuid,uuid,uuid,jsonb)', false, true, false),
   ('public.create_manual_enquiry(uuid,uuid,jsonb,jsonb,boolean)', false, true, false),
@@ -583,9 +577,6 @@ insert into expected_function_acl values
   ('public.schedule_session(uuid,timestamptz,timestamptz,public.session_status,text)', false, true, false),
   ('public.set_session_status(uuid,public.session_status)', false, true, false),
   ('public.list_appointment_conflicts(uuid,timestamptz,timestamptz,uuid)', false, true, false),
-  -- Artist scheduling policy and preference surface (migration 0120).
-  -- Browser-callable only; each RPC re-establishes exact artist scope
-  -- and the writes require manage_sessions. No backend role needs them.
   ('public.list_booking_conflicts(uuid,public.appointment_type,timestamptz,timestamptz,uuid)', false, true, false),
   ('public.get_artist_scheduling_preferences(uuid)', false, true, false),
   ('public.set_artist_scheduling_preferences(uuid,text,text,text[],text,text,boolean,integer)', false, true, false),
@@ -645,16 +636,9 @@ insert into expected_function_acl values
   ('public.list_telegram_destinations()', false, true, false),
   ('public.begin_telegram_link(text,uuid)', false, true, false),
   ('public.disconnect_telegram_destination(text,uuid)', false, true, false),
-
-  -- Reusable destination catalogue administration. Finance-authorised browser
-  -- callers only; the reads return fingerprints rather than provider URLs, and
-  -- the public redirect resolver stays service-role only.
   ('public.list_monzo_payment_destinations(uuid)', false, true, false),
   ('public.upsert_monzo_payment_destination(uuid,numeric,text)', false, true, false),
   ('public.archive_monzo_payment_destination(uuid)', false, true, false),
-
-  -- Project deposit policy and the authoritative project deposit request. The
-  -- request RPC takes no amount; the server recalculates it.
   ('public.configure_project_deposit_policy(uuid,text,numeric,numeric,numeric,numeric)', false, true, false),
   ('public.get_project_deposit_policy(uuid)', false, true, false),
   ('public.preview_project_deposit(uuid)', false, true, false),
@@ -666,10 +650,6 @@ insert into expected_function_acl values
   ('public.confirm_monzo_reconciliation_candidate(uuid)', false, true, false),
   ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
-
-  -- Provider-neutral communications core. The browser surface names a
-  -- conversation and nothing else; the trusted connector surface is
-  -- backend-only and never reachable from an authenticated session.
   ('public.queue_communication_message(uuid,text,uuid)', false, true, false),
   ('public.list_communication_conversations(text,text,integer,timestamptz)', false, true, false),
   ('public.mark_communication_conversation_read(uuid)', false, true, false),
@@ -678,7 +658,6 @@ insert into expected_function_acl values
   ('public.create_client_from_communication(uuid,text,text,text,text)', false, true, false),
   ('public.create_enquiry_from_communication(uuid,uuid,jsonb,jsonb,boolean)', false, true, false),
   ('public.authorize_instagram_connection(uuid)', false, true, false),
-
   ('public.claim_communication_outbox(text,text,integer,integer)', false, false, true),
   ('public.claim_communication_outbox_by_id(uuid,text,integer)', false, false, true),
   ('public.record_communication_outbox_result(uuid,text,boolean,text,text)', false, false, true),
@@ -688,199 +667,90 @@ insert into expected_function_acl values
   ('public.record_communication_outbound_echo(uuid,text,text,text,text,timestamptz,text,text,jsonb)', false, false, true),
   ('public.service_update_communication_participant(uuid,text,text,text,text)', false, false, true),
   ('public.service_list_unenriched_participants(text,integer)', false, false, true),
-
-  -- Instagram connection lifecycle. Written only by the connector after it has
-  -- verified the account server-side; no token is ever stored in Postgres.
   ('public.service_authorize_instagram_connection(uuid,uuid)', false, false, true),
   ('public.service_set_instagram_integration(uuid,text,text,text,text[])', false, false, true),
   ('public.service_disable_instagram_integration(uuid,text,text)', false, false, true),
   ('public.service_resolve_instagram_route(text)', false, false, true),
-
-  -- Platform capability registry and workspace layer (migrations 0074-0075).
-  -- list_capabilities reports only the caller's own rights and takes no profile
-  -- argument, so it cannot be used to enumerate somebody else's access.
   ('public.list_capabilities(uuid)', false, true, false),
   ('public.can_access_workspace(uuid)', false, true, true),
   ('public.can_manage_workspace(uuid)', false, true, true),
   ('public.list_workspaces()', false, true, false),
   ('public.upsert_workspace_membership(uuid,uuid,public.workspace_role,boolean,boolean,boolean,boolean)', false, true, false),
   ('public.grant_workspace_artist_membership(uuid,uuid,public.artist_access_level,boolean,boolean,boolean,boolean,boolean)', false, true, false),
-
-  -- Workspace-owned integrations, assignments and route selection
-  -- (migration 0076). The dashboard read returns no configuration blob, and
-  -- the Worker credential cannot assign or re-route anything.
   ('public.configure_workspace_integration(uuid,public.artist_integration_type,text,text,text,jsonb,boolean)', false, true, false),
   ('public.assign_workspace_integration(uuid,uuid,text,boolean)', false, true, false),
   ('public.select_artist_integration_route(uuid,public.artist_integration_type,public.integration_route_kind,uuid,uuid)', false, true, false),
   ('public.list_integration_status()', false, true, false),
-
-  -- Internal notifications and the follow-up sweep (migration 0077). The
-  -- sweep is backend-only; every browser surface reports or edits only the
-  -- caller's own notifications and takes no recipient argument.
   ('public.service_sweep_due_follow_ups(integer)', false, false, true),
   ('public.list_notifications(public.notification_status,integer)', false, true, false),
   ('public.mark_notification_read(uuid)', false, true, false),
   ('public.snooze_follow_up(uuid,timestamptz)', false, true, false),
   ('public.set_notification_preference(public.notification_channel,boolean)', false, true, false),
-
-  -- Automation engine (migration 0081) plus the privacy-safe scheduler
-  -- heartbeat recorder (migration 0112). Both calls are backend-only;
-  -- management RPCs remain browser-callable and enforce manage_automations.
-  -- Every private helper stays uncallable by an API role.
   ('public.service_run_automation_tick(integer)', false, false, true),
   ('public.service_record_automation_scheduler_heartbeat()', false, false, true),
   ('public.service_sweep_lifecycle_failure_alerts(integer)', false, false, true),
   ('public.list_automation_rules(uuid)', false, true, false),
   ('public.create_automation_rule(uuid,text,text,text,text,text,text,integer,public.notification_priority)', false, true, false),
   ('public.set_automation_rule_enabled(uuid,boolean)', false, true, false),
-
-  -- Client lifecycle control plane (migrations 0093-0094). These are human
-  -- policy-management calls only. The backend may execute the already-reviewed
-  -- scheduler but may not author or activate policy on a person's behalf.
   ('public.create_client_lifecycle_rule(uuid,text,public.appointment_type,text,public.automation_schedule_anchor,integer,text)', false, true, false),
   ('public.list_client_lifecycle_rules(uuid)', false, true, false),
   ('public.upsert_workspace_client_lifecycle_default(uuid,uuid,text,public.appointment_type,text,public.automation_schedule_anchor,integer,text,boolean)', false, true, false),
   ('public.list_workspace_client_lifecycle_defaults(uuid)', false, true, false),
   ('public.set_message_template_active(uuid,boolean)', false, true, false),
-
-  -- Lifecycle authoring reads (migration 0102). These expose only service
-  -- email template/catalogue metadata inside the caller's current artist scope.
   ('public.list_client_lifecycle_templates(uuid)', false, true, false),
   ('public.list_client_lifecycle_template_purposes(uuid)', false, true, false),
   ('public.list_client_lifecycle_template_variables(uuid)', false, true, false),
-
-  -- Lifecycle Studio preview foundation (migration 0104). Both are bounded
-  -- authenticated reads that re-check exact artist capabilities internally;
-  -- neither is exposed to anon or the service backend.
   ('public.list_client_lifecycle_preview_sessions(uuid,integer)', false, true, false),
   ('public.preview_client_lifecycle_rule(uuid,uuid,uuid)', false, true, false),
-
-  -- Lifecycle Studio execution history foundation (migration 0105). This is a
-  -- bounded authenticated read that re-checks the exact artist capabilities
-  -- internally and is unavailable to anon and the service backend.
   ('public.list_client_lifecycle_execution_history(uuid,integer)', false, true, false),
   ('public.retry_client_lifecycle_job(uuid)', false, true, false),
-
-  -- Lifecycle Studio timing control (migration 0106). The RPC is a narrow
-  -- authenticated mutation with its own artist capability and lifecycle-shape
-  -- checks; anon and the service backend receive no execute grant.
   ('public.update_client_lifecycle_rule_timing(uuid,text,integer,text)', false, true, false),
-
-  -- Lifecycle Studio configuration history (migration 0109). This is a
-  -- bounded typed Artist-scoped read with no raw activity metadata, template
-  -- copy, client data or provider state in its result.
   ('public.list_lifecycle_configuration_history(uuid,integer,timestamptz,uuid)', false, true, false),
-
-  -- Lifecycle Studio health foundation (migration 0110). This is a bounded
-  -- aggregate read with exact Artist capability checks and no client data,
-  -- message copy, destinations or raw provider errors in its result.
   ('public.get_lifecycle_automation_health(uuid)', false, true, false),
-
-  -- Templates and the consent/suppression gate (migration 0082). The gate is
-  -- readable by the backend as well, because every future send path must be
-  -- able to ask it. Nothing here can record consent on the backend's behalf.
   ('public.may_contact_client(uuid,public.message_template_channel,text)', false, true, true),
   ('public.resolve_message_template(uuid,text,public.message_template_channel,text)', false, true, true),
   ('public.upsert_message_template(uuid,text,public.message_template_channel,text,text,text,uuid)', false, true, false),
   ('public.record_client_marketing_consent(uuid,public.message_template_channel,public.consent_state,text,text)', false, true, false),
   ('public.suppress_client_communications(uuid,public.message_template_channel,public.suppression_reason,text)', false, true, true),
-
-  -- Unified GPT consent detail (migration 0084). The GPT action RPCs
-  -- themselves are hidden from this pre-GPT inventory by test 045, but this
-  -- one is new and stays visible so its grants are inventoried here.
   ('public.get_gpt_consent_details(text)', false, true, false),
-
-  -- Artist and workspace lifecycle (migration 0087). Every one of these is a
-  -- browser-callable control-plane write that authorises against
-  -- manage_workspace on the exact workspace inside its own body. None is
-  -- offered to the service backend: adding an artist or founding an
-  -- organization is a human decision made in the CRM, and no Worker or cron
-  -- has a reason to make one.
   ('public.create_workspace(text,public.workspace_type,text,text,text)', false, true, false),
   ('public.update_workspace(uuid,text,text,text,boolean)', false, true, false),
   ('public.create_artist(uuid,text,text,text,text,text)', false, true, false),
   ('public.update_artist(uuid,text,text,text,boolean)', false, true, false),
-  -- The one-shot bootstrap seat. Refuses once the artist has any membership.
   ('public.seat_artist_owner(uuid,uuid)', false, true, false),
-
-  -- Control-plane reads (migration 0088). Organizational metadata only: the
-  -- roster, the organization's own people, who holds one artist and why, and
-  -- what a prospective grant would allow. No operational record, no provider
-  -- identifier, and nothing the backend needs.
   ('public.list_workspace_artists(uuid)', false, true, false),
   ('public.list_workspace_team(uuid)', false, true, false),
   ('public.list_artist_memberships(uuid)', false, true, false),
   ('public.artist_onboarding_state(uuid)', false, true, false),
   ('public.preview_membership_capabilities(uuid,uuid,public.artist_access_level,boolean,boolean,boolean,boolean)', false, true, false),
-
-  -- Phase P's workspace automation control plane, opened by migration 0088 to
-  -- exactly the slice artist onboarding needs. `upsert_workspace_automation_default`
-  -- stays deliberately absent from this list: authoring a studio default is a
-  -- separate product surface and remains callable by no API role, which the
-  -- exhaustive check below is what actually pins.
   ('public.list_workspace_automation_defaults(uuid)', false, true, false),
   ('public.apply_workspace_automation_defaults_to_artist(uuid)', false, true, false),
-
-  -- Control-plane governance (migration 0089). All browser-callable, none
-  -- offered to the service backend: founding an organization, staffing it,
-  -- moving its ownership and opening an artist's administration page are human
-  -- decisions made in the CRM, and no Worker or cron has a reason to make one.
-  --
-  -- list_directory_profiles is the scoped replacement for the people picker.
-  -- public.list_profiles() stays exactly as it was - owner-only, listed above -
-  -- because widening it would have handed the whole staff directory to anybody
-  -- with a booking_manager role rather than to somebody trusted to staff a team.
   ('public.list_directory_profiles()', false, true, false),
   ('public.control_plane_access()', false, true, false),
   ('public.artist_control_plane_context(uuid)', false, true, false),
   ('public.transfer_workspace_ownership(uuid,uuid)', false, true, false),
-
-  -- Public artist signup (migration 0130).
-  --
-  -- self_service_signup_policy is the one function in this whole inventory
-  -- that `anon` may call, and it is worth being explicit about why. A
-  -- signed-out login screen has to decide whether to offer a "Create an
-  -- account" link, and it must not decide that in the browser. The function
-  -- returns a single boolean - no count, no address, no identity - and hiding
-  -- the link is only a courtesy: bootstrap_artist_account re-reads the same
-  -- switch and refuses on its own authority.
-  --
-  -- The other two are browser-only. The service backend is offered neither:
-  -- creating a tenant acts for auth.uid(), which a Worker does not have, and
-  -- opening signup is an installation-owner decision made in the CRM.
   ('public.self_service_signup_policy()', true, true, false),
   ('public.set_self_service_signup(boolean,integer,integer)', false, true, false),
   ('public.bootstrap_artist_account(text,text,text,text)', false, true, false),
-
-  -- Tenant-scoped invitation (0133). All three are browser-only, and none is
-  -- readable by anon: unlike the signup policy, nothing here is ever asked by a
-  -- logged-out page, so telling an anonymous caller whether invitations are open
-  -- would be disclosure with no purpose. The service backend is offered none of
-  -- them either - the Worker forwards the caller's own JWT and performs no
-  -- authorization of its own, which is the property that keeps one invitation
-  -- story in the database rather than two.
   ('public.tenant_invite_policy(uuid)', false, true, false),
   ('public.set_tenant_invites(boolean,integer,integer,integer)', false, true, false),
   ('public.begin_artist_invite(uuid,text,text,uuid,jsonb)', false, true, false),
   ('public.finalize_artist_invite(uuid)', false, true, false),
-
-  -- The account itself (0135). Browser-only, all three, and none of them takes
-  -- an identifier: each acts for auth.uid() and for nothing else, so there is
-  -- no argument a caller could substitute to reach somebody else's account.
-  -- `anon` is offered none - a logged-out page has no account to ask about -
-  -- and neither is the service backend: a Worker has no auth.uid() to be, and
-  -- a backend key that could delete accounts is exactly the key nobody should
-  -- have. crm_private.user_facing_role is deliberately absent from this list
-  -- entirely: it is reached only through account_overview's definer chain.
   ('public.account_overview()', false, true, false),
   ('public.set_my_display_name(text)', false, true, false),
   ('public.delete_my_account(text)', false, true, false),
-
-  -- Single-profile Telegram enquiry routing. Both functions are backend-only:
-  -- routing materialises a deduplicated internal notification without returning
-  -- a provider destination, while recovery requeues only an evidenced-safe dead job.
   ('public.service_route_telegram_enquiry_notification(uuid,text)', false, false, true),
   ('public.service_recover_telegram_enquiry_outbox(uuid)', false, false, true),
+
+  -- Bounded AI enquiry intake. Worker orchestration is service-only; the CRM
+  -- can only read/retry its own result and edit an existing draft in-scope.
+  ('public.service_observe_gmail_enquiry_ai(uuid,uuid,uuid,text,text,text,text,text)', false, false, true),
+  ('public.service_claim_enquiry_ai_jobs(integer,uuid)', false, false, true),
+  ('public.service_complete_enquiry_ai_job(uuid,uuid,jsonb,text,text)', false, false, true),
+  ('public.service_fail_enquiry_ai_job(uuid,uuid,text)', false, false, true),
+  ('public.get_enquiry_ai_result(uuid)', false, true, false),
+  ('public.retry_enquiry_ai(uuid)', false, true, false),
+  ('public.edit_email_draft(uuid,text,timestamptz)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
@@ -932,18 +802,15 @@ select ok(
      and relname in (
        'profiles', 'clients', 'enquiries', 'enquiry_files', 'projects',
        'project_files', 'sessions', 'activity_log', 'internal_notes',
-       'email_messages', 'follow_ups', 'integration_outbox',
+       'email_messages', 'follow_ups', 'integration_outbox', 'enquiry_ai_jobs',
        'enquiry_status_transitions', 'system_settings', 'retention_holds',
        'artist_availability_blocks',
        'artist_scheduling_preferences', 'artist_schedule_overrides',
-       -- Platform layer, migrations 0074-0077.
        'capability_registry', 'workspaces', 'workspace_memberships',
        'workspace_integrations', 'integration_assignments',
        'artist_integration_routes', 'notifications', 'notification_preferences',
-       -- Automation engine, migration 0081.
        'automation_trigger_catalog', 'automation_events', 'automation_rules',
        'automation_jobs', 'automation_kill_switches',
-       -- Templates and consent, migration 0082.
        'message_template_purposes', 'message_template_variables',
        'message_templates', 'client_marketing_consent',
        'communication_suppressions')),

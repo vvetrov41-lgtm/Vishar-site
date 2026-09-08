@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import { useAsync } from '../components/AsyncData';
+import { EmailDraftEditor } from '../components/EmailDraftEditor';
 import { ClientContextStrip } from '../components/ClientContextStrip';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
@@ -40,6 +41,7 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
   const mayApprove = can(role, 'approveEmail');
   const mayDismissFailure = mayApprove;
   const [busy, setBusy] = useState(false);
+  const [editingDraft, setEditingDraft] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -168,14 +170,17 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
             </p>
           )}
           <p className="email-subject"><strong>{actionable.subject}</strong></p>
-          <pre className="email-body">{actionable.body}</pre>
+          {actionable.status === 'draft' && actionable.updated_at && can(role, 'createEmailDraft') ? (
+            <EmailDraftEditor key={`${actionable.id}-${actionable.updated_at}`} draft={{ ...actionable, updated_at: actionable.updated_at }}
+              api={api} language={language} onEditingChange={setEditingDraft} onSaved={reload} />
+          ) : <pre className="email-body">{actionable.body}</pre>}
           {thread.state === 'awaiting_approval' ? (
             mayApprove ? (
               <div className="actions">
                 <button
                   type="button"
                   className="primary"
-                  disabled={busy}
+                  disabled={busy || editingDraft}
                   onClick={() => { void approve(actionable.id); }}
                 >
                   {copy.approve}

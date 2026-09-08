@@ -147,6 +147,26 @@ jobs:
             }
           '
 
+      - name: Live synthetic Qwen enquiry schema probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS -o /tmp/enquiry.json -w '%{http_code}' -X POST "$ENDPOINT" \
+            -H "authorization: Bearer $PROBE_TOKEN" \
+            -H 'content-type: application/json' \
+            --data '{"task":"enquiry_intake"}')"
+          cat /tmp/enquiry.json
+          echo
+          test "$status" = '200'
+          node -e '
+            const r = require("/tmp/enquiry.json");
+            if (r.provider !== "qwen") throw new Error(`served by ${r.provider}, not qwen`);
+            if (!r.model.startsWith("@cf/qwen/")) throw new Error(`unexpected model ${r.model}`);
+            if (r.schemaValid !== true) throw new Error("Qwen output failed the production enquiry schema");
+            if (r.outputPreview !== null) throw new Error("private-schema probe returned an output preview");
+            console.log(`Qwen enquiry schema valid: ${r.model} in ${r.durationMs}ms`);
+          '
+
       - name: Live synthetic Qwen vision probe
         shell: bash
         run: |
