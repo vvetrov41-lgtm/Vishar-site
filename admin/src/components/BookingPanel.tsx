@@ -37,6 +37,12 @@ import {
   isSlotConflict,
   type BookingErrorCode,
 } from '../lib/booking-errors';
+import {
+  APPOINTMENT_TIME_STEP_SECONDS,
+  appointmentEndValue,
+  appointmentTimeRange,
+  snapAppointmentStart,
+} from '../lib/appointment-time-step';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { useApi } from '../lib/session';
@@ -45,8 +51,8 @@ import type { BookingConflict, ScheduleOverride, SchedulingPreferences } from '.
 
 /**
  * Reuses the per-type durations the Calendar already offers, plus the two the
- * studio asked for by name. A duration list is a convenience, not a rule: any
- * length can still be typed.
+ * studio asked for by name. The selected duration is the source of truth for
+ * both smart search and manual entry; raw minutes stay internal.
  */
 const DURATION_MINUTES: Record<AppointmentType, number[]> = {
   tattoo_session: [180, 240, 300, 360, 420],
@@ -119,7 +125,6 @@ export function BookingPanel({
   const [chosenEnquiryId, setChosenEnquiryId] = useState('');
   const [manual, setManual] = useState(false);
   const [manualStart, setManualStart] = useState('');
-  const [manualEnd, setManualEnd] = useState('');
   const [checkingConflicts, setCheckingConflicts] = useState(false);
 
   const blocking = (conflicts ?? []).filter((conflict) => conflict.blocks);
@@ -159,6 +164,19 @@ export function BookingPanel({
     : 'PROJECT_REQUIRED';
 
   const grouped = useMemo(() => groupByDay(slots ?? []), [slots]);
+  const manualEnd = useMemo(
+    () => appointmentEndValue(manualStart, durationMinutes),
+    [manualStart, durationMinutes],
+  );
+
+  function chooseDuration(minutes: number) {
+    setDurationMinutes(minutes);
+    setSlots(null);
+    setSeries(null);
+    setChosen(null);
+    setStage('search');
+    setConflicts(null);
+  }
 
   async function runSearch(event: FormEvent) {
     event.preventDefault();
@@ -260,10 +278,7 @@ export function BookingPanel({
   }
 
   function manualTimes(): { start: string; end: string } | null {
-    const start = new Date(manualStart);
-    const end = new Date(manualEnd);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null;
-    return { start: start.toISOString(), end: end.toISOString() };
+    return appointmentTimeRange(manualStart, durationMinutes);
   }
 
   async function book(startAt: string, endAt: string) {
@@ -339,8 +354,7 @@ export function BookingPanel({
               onChange={(event) => {
                 const next = event.target.value as AppointmentType;
                 setAppointmentType(next);
-                setDurationMinutes(DURATION_MINUTES[next][DURATION_MINUTES[next].length - 1]);
-                setSlots(null);
+                chooseDuration(DURATION_MINUTES[next][DURATION_MINUTES[next].length - 1]);
               }}
             >
               <option value="tattoo_session">{copy.types.tattoo_session}</option>
@@ -401,7 +415,7 @@ export function BookingPanel({
               type="button"
               aria-pressed={durationMinutes === minutes}
               className={durationMinutes === minutes ? 'selected' : undefined}
-              onClick={() => setDurationMinutes(minutes)}
+              onClick={() => chooseDuration(minutes)}
             >
               {durationLabel(minutes, language)}
             </button>
@@ -436,7 +450,14 @@ export function BookingPanel({
           <button type="submit" className="primary" disabled={searching || !artistId}>
             {searching ? copy.searching : copy.search}
           </button>
-          <button type="button" onClick={() => setManual((value) => !value)}>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !manual;
+              setManual(next);
+              if (next && !manualStart) setManualStart(snapAppointmentStart(new Date()));
+            }}
+          >
             {manual ? copy.hideManual : copy.showManual}
           </button>
         </div>
@@ -528,32 +549,29 @@ export function BookingPanel({
       {manual ? (
         <div className="booking-manual">
           <p className="meta">{copy.manualHint}</p>
-          <label>
-            <span>{copy.duration}</span>
-            <input
-              type="number"
-              min={15}
-              max={720}
-              step={15}
-              value={durationMinutes}
-              onChange={(event) => setDurationMinutes(Number(event.target.value) || 15)}
-            />
-          </label>
+          <p className="meta">
+            {copy.duration}: <strong>{durationLabel(durationMinutes, language)}</strong>
+          </p>
           <div className="form-grid">
             <label>
               <span>{copy.start}</span>
               <input
                 type="datetime-local"
+                step={APPOINTMENT_TIME_STEP_SECONDS}
                 value={manualStart}
-                onChange={(event) => setManualStart(event.target.value)}
+                onChange={(event) => {
+                  setManualStart(event.target.value);
+                  setConflicts(null);
+                }}
               />
             </label>
             <label>
               <span>{copy.end}</span>
               <input
                 type="datetime-local"
+                step={APPOINTMENT_TIME_STEP_SECONDS}
                 value={manualEnd}
-                onChange={(event) => setManualEnd(event.target.value)}
+                readOnly
               />
             </label>
           </div>
@@ -612,7 +630,6 @@ export function BookingPanel({
     </div>
   );
 }
-
 
 /** Local day key for a date, matching the override table's `on_date`. */
 function dayValue(date: Date): string {
@@ -679,7 +696,7 @@ export function durationLabel(minutes: number, language: Language): string {
 const COPY = {
   en: {
     type: 'Appointment type',
-    duration: 'Duration in minutes',
+    duration: 'Duration',
     durationShortcuts: 'Common durations',
     from: 'Search from',
     days: 'How many days',
@@ -713,11 +730,11 @@ const COPY = {
     bookFailed: 'Could not book that appointment.',
     showManual: 'Enter a time myself',
     hideManual: 'Hide manual entry',
-    manualHint: 'For an exact length, a time the client has already named, or one outside the hours above.',
+    manualHint: 'Choose the start time. End time follows the selected duration automatically.',
     start: 'Start',
     end: 'End',
     bookManual: 'Book this exact time',
-    manualInvalid: 'Give a start and a later end.',
+    manualInvalid: 'Choose a valid start time.',
     booked: 'Booked. It is proposed until the client confirms it.',
     projectCreated: 'Project created.',
     alreadyBooked: 'That appointment was already booked. Nothing was duplicated.',
@@ -734,7 +751,7 @@ const COPY = {
   },
   ru: {
     type: 'Тип записи',
-    duration: 'Длительность в минутах',
+    duration: 'Длительность',
     durationShortcuts: 'Частые длительности',
     from: 'Искать с',
     days: 'Сколько дней',
@@ -768,11 +785,11 @@ const COPY = {
     bookFailed: 'Не удалось создать запись.',
     showManual: 'Ввести время вручную',
     hideManual: 'Скрыть ручной ввод',
-    manualHint: 'Для точной длительности, времени, которое клиент уже назвал, или вне указанных часов.',
+    manualHint: 'Выберите время начала. Конец рассчитывается автоматически по выбранной длительности.',
     start: 'Начало',
     end: 'Конец',
     bookManual: 'Записать на это время',
-    manualInvalid: 'Укажите начало и более позднее окончание.',
+    manualInvalid: 'Выберите корректное время начала.',
     booked: 'Записано. Запись предварительная, пока клиент не подтвердит.',
     projectCreated: 'Проект создан.',
     alreadyBooked: 'Эта запись уже создана. Дубль не появился.',
