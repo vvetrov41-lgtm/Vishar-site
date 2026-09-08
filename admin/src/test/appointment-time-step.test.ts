@@ -8,10 +8,11 @@ import {
 } from '../lib/appointment-time-step';
 
 describe('appointment time step', () => {
-  it('sets every datetime-local input to a five-minute step', () => {
+  it('sets strict datetime-local inputs to five minutes but preserves explicit unrestricted inputs', () => {
     document.body.innerHTML = `
       <input type="datetime-local" id="start">
       <input type="datetime-local" id="end" step="60">
+      <input type="datetime-local" id="consultation" data-appointment-time-step="unrestricted">
       <input type="text" id="notes">
     `;
 
@@ -20,6 +21,7 @@ describe('appointment time step', () => {
     expect(APPOINTMENT_TIME_STEP_SECONDS).toBe(300);
     expect((document.querySelector('#start') as HTMLInputElement).step).toBe('300');
     expect((document.querySelector('#end') as HTMLInputElement).step).toBe('300');
+    expect((document.querySelector('#consultation') as HTMLInputElement).getAttribute('step')).toBeNull();
     expect((document.querySelector('#notes') as HTMLInputElement).step).toBe('');
   });
 
