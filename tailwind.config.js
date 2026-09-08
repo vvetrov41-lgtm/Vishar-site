@@ -15,6 +15,7 @@ module.exports = {
     './book/index.html',
     './booking/index.html',
     './privacy/index.html',
+    './privacy/meta/index.html',
     './404.html',
     './components.js',
     './assets/js/speciality-gallery.js',
