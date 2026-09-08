@@ -11,3 +11,36 @@
 .booking-panel .actions button[aria-pressed='true']:focus-visible {
   outline-offset: 3px;
 }
+
+/* iOS Safari ignores datetime-local step=300 in its wheel picker. Manual
+   booking therefore uses explicit date/hour/minute controls, with minute
+   options physically limited to 00,05,...55. */
+.booking-manual-time-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(72px, 0.7fr) minmax(82px, 0.8fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.booking-manual-time-grid label,
+.booking-derived-end {
+  min-width: 0;
+}
+
+.booking-manual-time-grid input,
+.booking-manual-time-grid select,
+.booking-derived-end input {
+  width: 100%;
+}
+
+.booking-derived-end {
+  display: block;
+  margin-top: 10px;
+}
+
+@media (max-width: 430px) {
+  .booking-manual-time-grid {
+    grid-template-columns: minmax(0, 1fr) 82px 88px;
+    gap: 8px;
+  }
+}
