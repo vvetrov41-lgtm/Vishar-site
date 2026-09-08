@@ -1,0 +1,55 @@
+name: One-shot root security lockfile update
+
+on:
+  push:
+    branches:
+      - fix/root-audit-20260908
+
+permissions:
+  contents: write
+
+concurrency:
+  group: root-audit-lockfile-fix
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/root-audit-20260908
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Generate semver-safe audit fix and validate release tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm audit fix --package-lock-only --ignore-scripts
+          npm ci
+          npm audit --audit-level=moderate
+          npm run validate:site
+          npm run test:booking
+          npm run test:worker
+          npm run test:telegram-production
+          npm run check:worker-bundle
+          npm run check:telegram-production-bundle
+          node scripts/test-private-production-release-workflows.mjs
+          node scripts/test-private-production-release-orchestrator.mjs
+          npm run scan:secrets
+      - name: Commit only lockfile and remove this one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/root-audit-lockfile-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json .github/workflows/root-audit-lockfile-fix.yml
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'No dependency metadata change was required.'; exit 0; }
+          git commit -m 'Security: refresh root lockfile for current advisories'
+          git push origin HEAD:fix/root-audit-20260908
