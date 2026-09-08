@@ -108,12 +108,16 @@ describe('appointment workflow', () => {
 
     // Booked through the shared panel now, which is the only booking path.
     fireEvent.click(await screen.findByRole('button', { name: 'Enter a time myself' }));
-    fireEvent.change(await screen.findByLabelText('Start'), {
-      target: { value: '2026-09-10T11:00' },
+    fireEvent.change(await screen.findByLabelText('Date'), {
+      target: { value: '2026-09-10' },
     });
-    fireEvent.change(screen.getByLabelText('End'), {
-      target: { value: '2026-09-10T17:00' },
+    fireEvent.change(screen.getByLabelText('Hour'), {
+      target: { value: '11' },
     });
+    fireEvent.change(screen.getByLabelText('Minute'), {
+      target: { value: '00' },
+    });
+    expect((screen.getByLabelText('End') as HTMLInputElement).value).toMatch(/18:00/);
     fireEvent.click(screen.getByRole('button', { name: 'Book this exact time' }));
 
     await waitFor(() => {
