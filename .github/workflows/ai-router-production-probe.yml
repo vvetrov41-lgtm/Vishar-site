@@ -1,0 +1,162 @@
+name: AI router production probe
+
+# Proves, against the live Worker, that each model tier is reachable and which
+# Cloudflare model actually answers.
+#
+# The probe endpoint is authenticated by a Worker secret that does not exist in
+# steady state. This workflow mints a random one, uses it, and deletes it again
+# in the same run; the value is generated on the runner, never printed, and
+# never stored in GitHub. The deletion step runs even when a probe fails, so a
+# red run cannot leave the endpoint open.
+#
+# Every request uses the endpoint's own fixed synthetic prompts. No customer
+# data is read and no records are created.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_probe:
+        description: 'Type PROBE AI ROUTER PRODUCTION to confirm'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-router-production-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: inputs.confirm_probe == 'PROBE AI ROUTER PRODUCTION'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+    env:
+      ENDPOINT: https://tattooai.vvetrov41.workers.dev/internal/ai-router
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked tooling
+        run: npm ci
+
+      - name: Confirm the endpoint is closed before the probe window opens
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS -o /tmp/closed.json -w '%{http_code}' "$ENDPOINT")"
+          test "$status" = '404'
+          grep -Fq 'not_found' /tmp/closed.json
+          echo 'Probe endpoint is closed, as expected.'
+
+      - name: Mint an ephemeral probe token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "PROBE_TOKEN=$token" >> "$GITHUB_ENV"
+          printf '%s' "$token" | npx wrangler secret put AI_ROUTER_PROBE_TOKEN --name tattooai
+          echo 'Ephemeral probe token installed.'
+
+      - name: Read back the live routing configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            status="$(curl -sS -o /tmp/routing.json -w '%{http_code}' \
+              -H "authorization: Bearer $PROBE_TOKEN" "$ENDPOINT")"
+            if [ "$status" = '200' ]; then break; fi
+            echo "Attempt $attempt saw HTTP $status; waiting for the secret to propagate."
+            sleep 10
+          done
+          test "$status" = '200'
+          node -e '
+            const r = require("/tmp/routing.json").routing;
+            const tiers = Object.fromEntries(r.providers.map((p) => [p.provider, p.configured]));
+            console.log("configured tiers:", JSON.stringify(tiers));
+            for (const t of r.tasks) {
+              console.log(`${t.task.padEnd(32)} ${t.chain.join(" -> ").padEnd(24)} selected=${t.selected}`);
+            }
+            if (!tiers.deepseek || !tiers.qwen || !tiers.workers_ai) {
+              throw new Error("a Cloudflare-hosted tier reports itself unconfigured");
+            }
+          '
+
+      - name: Live synthetic DeepSeek probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS -o /tmp/deepseek.json -w '%{http_code}' -X POST "$ENDPOINT" \
+            -H "authorization: Bearer $PROBE_TOKEN" \
+            -H 'content-type: application/json' \
+            --data '{"task":"high_quality_reasoning"}')"
+          cat /tmp/deepseek.json
+          echo
+          test "$status" = '200'
+          node -e '
+            const r = require("/tmp/deepseek.json");
+            if (r.provider !== "deepseek") throw new Error(`served by ${r.provider}, not deepseek`);
+            if (!r.model.startsWith("@cf/deepseek-ai/")) throw new Error(`unexpected model ${r.model}`);
+            console.log(`DeepSeek reachable: ${r.model} in ${r.durationMs}ms`);
+          '
+
+      - name: Live synthetic Qwen vision probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS -o /tmp/qwen.json -w '%{http_code}' -X POST "$ENDPOINT" \
+            -H "authorization: Bearer $PROBE_TOKEN" \
+            -H 'content-type: application/json' \
+            --data '{"task":"vision_reference_understanding"}')"
+          cat /tmp/qwen.json
+          echo
+          test "$status" = '200'
+          node -e '
+            const r = require("/tmp/qwen.json");
+            if (r.provider !== "qwen") throw new Error(`served by ${r.provider}, not qwen`);
+            if (!r.model.startsWith("@cf/qwen/")) throw new Error(`unexpected model ${r.model}`);
+            console.log(`Qwen vision reachable: ${r.model} in ${r.durationMs}ms`);
+          '
+
+      - name: Confirm the public assistants still answer
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='https://tattooai.vvetrov41.workers.dev/'
+          for type in idea aftercare; do
+            status="$(curl -sS -o "/tmp/assistant-${type}.json" -w '%{http_code}' -X POST "$root" \
+              -H 'content-type: application/json' \
+              -H 'Origin: https://vishartattoo.com' \
+              --data "{\"type\":\"${type}\",\"message\":\"Production routing probe. Reply briefly.\"}")"
+            test "$status" = '200'
+            node -e '
+              const r = require(`/tmp/assistant-${process.argv[1]}.json`);
+              if (Object.keys(r).join() !== "response") throw new Error("assistant response shape changed");
+              if (!r.response.trim()) throw new Error("assistant returned an empty answer");
+              console.log(`${process.argv[1]} assistant OK (${r.response.length} chars)`);
+            ' "$type"
+          done
+
+      - name: Close the probe window
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler secret delete AI_ROUTER_PROBE_TOKEN --name tattooai --force
+          status="$(curl -sS -o /tmp/reclosed.json -w '%{http_code}' "$ENDPOINT")"
+          test "$status" = '404'
+          grep -Fq 'not_found' /tmp/reclosed.json
+          echo 'Probe endpoint is closed again.'
