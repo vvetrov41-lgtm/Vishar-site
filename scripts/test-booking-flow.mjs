@@ -987,7 +987,10 @@ await test('book-waitlist still rejects an invalid email', async () => {
   assert.equal(payload.error, 'A valid email is required.');
 });
 
-await test('the AI route is unchanged', async () => {
+// The prompts, the request shape and the response contract are unchanged. The
+// model id is not: Cloudflare retired `@cf/meta/llama-3.1-8b-instruct` on
+// 2026-05-30, and calling it is what made every live assistant request throw.
+await test('the AI route keeps its contract on an active model', async () => {
   const seen = [];
   const aiEnv = {
     ...env,
@@ -1003,7 +1006,7 @@ await test('the AI route is unchanged', async () => {
   const { response, payload } = await sendJson({ type: 'idea', message: 'A wolf' }, aiEnv);
   assert.equal(response.status, 200);
   assert.deepEqual(payload, { response: 'Concept: a raven.' });
-  assert.equal(seen[0].model, '@cf/meta/llama-3.1-8b-instruct');
+  assert.equal(seen[0].model, '@cf/meta/llama-3.1-8b-instruct-fast');
   assert.equal(seen[0].options.messages[0].role, 'system');
   assert.match(seen[0].options.messages[0].content, /AI Concept Consultant for Vladimir Vishar/);
   assert.equal(seen[0].options.messages[1].content, 'A wolf');

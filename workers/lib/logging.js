@@ -35,6 +35,16 @@ const SAFE_FIELDS = new Set([
   'clientConflict',
   'uploadedCount',
   'cleanedUpCount',
+  // Model routing. Task, capability, provider and model are operational
+  // identifiers chosen by this repository, never client content or credentials.
+  'task',
+  'capability',
+  'provider',
+  'model',
+  'fallbackUsed',
+  'providerAttempts',
+  'outputChars',
+  'imageCount',
 ]);
 
 // Values are bounded too. A safe field name with an unbounded value would still

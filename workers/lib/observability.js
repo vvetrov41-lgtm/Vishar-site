@@ -17,6 +17,9 @@ const SAFE_FIELDS = new Set([
   'errorCode',
   'outcome',
   'attempt',
+  'provider',
+  'model',
+  'fallbackUsed',
 ]);
 
 const TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;

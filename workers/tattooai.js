@@ -9,7 +9,7 @@
 //                           Storage). Origin is enforced, not merely reported.
 //   type=lead|sendIdea   -> unchanged Telegram forwarding
 //   type=book-waitlist   -> unchanged Telegram forwarding
-//   anything else        -> unchanged Workers AI behaviour
+//   anything else        -> public assistant, routed by ./lib/ai/router.js
 //
 // The tattoo-enquiry path used to accept a JSON body with base64 images. It now
 // requires multipart, because the enquiry is persisted and the files are
@@ -19,6 +19,7 @@
 import { getCorsHeaders, isMultipartRequest } from './lib/http.js';
 import { createLogger, newRequestId } from './lib/logging.js';
 import { handleEnquiryIntake } from './routes/enquiries.js';
+import { runModelTask } from './lib/ai/router.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -250,18 +251,34 @@ Large tattoos can stay sore and swollen longer. Rest helps. Friction makes heali
 
 Touch-up:
 Wait until fully healed before judging the result. Send a clear healed photo after 4-6 weeks if something needs checking. Use daylight and no filters.`;
-    const systemPrompt =
-      type === "aftercare"
-        ? aftercarePrompt
-        : ideaPrompt;
-    const response = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message }
-      ]
-    });
-    return Response.json(response, {
-      headers: cors
-    });
+    const aftercare = type === "aftercare";
+    const systemPrompt = aftercare ? aftercarePrompt : ideaPrompt;
+
+    // The task name is the contract. Which provider and model serve it is
+    // decided by the router from server-side configuration, so this route never
+    // names an API, and the visitor never learns which model answered.
+    const routed = await runModelTask(
+      env,
+      aftercare ? "aftercare_support" : "concept_consult",
+      { system: systemPrompt, input: typeof message === "string" ? message : "" },
+      { fetchImpl: fetch, logger: createLogger(newRequestId()) }
+    );
+
+    if (!routed.ok) {
+      // An empty or oversized message is the sender's problem and is rejected
+      // before any provider is contacted. Everything else is ours.
+      const badRequest = routed.errorCode === "request_invalid";
+      return Response.json(
+        {
+          ok: false,
+          error: badRequest
+            ? "Please write a short message for the assistant."
+            : "The assistant is temporarily unavailable. Please try again shortly."
+        },
+        { status: badRequest ? 400 : 503, headers: cors }
+      );
+    }
+
+    return Response.json({ response: routed.text }, { headers: cors });
   }
 };
