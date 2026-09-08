@@ -3,6 +3,9 @@ main = "workers/tattooai-entry.js"
 compatibility_date = "2026-05-25"
 workers_dev = true
 
+[triggers]
+crons = ["*/5 * * * *"]
+
 [ai]
 binding = "AI"
 
@@ -12,6 +15,9 @@ BOOKING_SOURCE_KEY = "vladimir-website"
 BOOKING_FORM_VERSION = "booking-v1"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 VISHAR_ENVIRONMENT = "production"
+CRM_AI_INTAKE_ENABLED = "true"
+CRM_AI_IMAGES_ENABLED = "false"
+AI_ROUTE_ENQUIRY_INTAKE = "qwen,workers_ai"
 
 # Model routing. Provider order per task and the model identifier per tier are
 # configuration, not code: change them here (or override them as Worker

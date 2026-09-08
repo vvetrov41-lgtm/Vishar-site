@@ -7,6 +7,7 @@ import {
   searchThreads,
 } from './lib/google-gmail.js';
 import { createGmailSupabase } from './lib/gmail-supabase.js';
+import { enqueueGmailEnquiryAnalysis } from './lib/gmail-enquiry-ai.js';
 
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const GMAIL_PUBLIC_HOST = 'gmail.vishartattoo.com';
@@ -416,14 +417,11 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
       const threads = [];
       for (const item of found) {
         const last = item.messages.at(-1);
-        const contextId = await db.backendRpc('service_upsert_gmail_thread_context', {
-          p_artist_id: auth.artist_id,
-          p_enquiry_id: auth.enquiry_id,
-          p_client_id: auth.client_id,
-          p_provider_thread_id: item.providerThreadId,
-          p_subject: last?.subject || '(no subject)',
-          p_last_provider_message_id: last?.provider_message_id || null,
-          p_last_rfc822_message_id: last?._rfc822_message_id || null,
+        const observed = await enqueueGmailEnquiryAnalysis(db, auth, target, item);
+        const contextId = uuid(observed.thread_context_id) || await db.backendRpc('service_upsert_gmail_thread_context', {
+          p_artist_id: auth.artist_id, p_enquiry_id: auth.enquiry_id, p_client_id: auth.client_id,
+          p_provider_thread_id: item.providerThreadId, p_subject: last?.subject || '(no subject)',
+          p_last_provider_message_id: last?.provider_message_id || null, p_last_rfc822_message_id: last?._rfc822_message_id || null,
         });
         threads.push({
           thread_context_id: contextId,
@@ -452,6 +450,7 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
       messageLimit: 30,
       fetchImpl,
     });
+    await enqueueGmailEnquiryAnalysis(db, auth, target, found);
     return json(request, 200, {
       enquiry_id: enquiryId,
       thread_context_id: contextId,

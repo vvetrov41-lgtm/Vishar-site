@@ -297,6 +297,7 @@ export interface EmailMessage {
 /** One stored email with its body. Read only when a thread is opened. */
 export interface EmailMessageDetail extends EmailMessage {
   body: string;
+  updated_at?: string;
 }
 
 export interface StatusTransition {

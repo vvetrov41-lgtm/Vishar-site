@@ -206,7 +206,7 @@ export function createEmailApi(client: CrmClient, fetcher: typeof fetch = global
     async getEmailMessage(id: string): Promise<EmailMessageDetail | null> {
       const result = await client
         .from('email_messages')
-        .select(`${LIST_COLUMNS}, body`)
+        .select(`${LIST_COLUMNS}, body, updated_at`)
         .eq('id', id)
         .maybeSingle();
       if (result.error) {

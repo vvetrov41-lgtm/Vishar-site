@@ -6,6 +6,7 @@ on:
       - 'release/tattooai-production-*'
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -24,12 +25,23 @@ jobs:
 
       - name: Verify immutable release snapshot and lineage
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse "origin/${GITHUB_REF_NAME}")" = "$GITHUB_SHA"
-          git fetch origin agent/platform-telegram-self-service --no-tags
-          git merge-base --is-ancestor origin/agent/platform-telegram-self-service "$GITHUB_SHA"
+          test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/tattooai-ci.json"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/tattooai-ci.json" >/dev/null || {
+                echo "Required exact-head workflow is not green: $workflow" >&2
+                exit 1
+              }
+          done
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,6 +56,7 @@ jobs:
         run: |
           npm audit --audit-level=moderate
           npm run test:worker
+          npm run test:enquiry-ai
           node scripts/test-public-booking-slugs.mjs
           npm run check:worker-bundle
 
@@ -53,6 +66,9 @@ jobs:
     timeout-minutes: 15
     environment:
       name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - name: Checkout exact release snapshot
         uses: actions/checkout@v4
@@ -64,7 +80,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse "origin/${GITHUB_REF_NAME}")" = "$GITHUB_SHA"
+          test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
           test "$(sed -n 's/^name = "\([^"]*\)"/\1/p' wrangler.toml | head -n1)" = "tattooai"
           grep -Fxq 'main = "workers/tattooai-entry.js"' wrangler.toml
 
@@ -77,13 +94,75 @@ jobs:
       - name: Install locked deployment tooling
         run: npm ci
 
+      - name: Snapshot live deployment and verify production binding
+        id: live
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          curl -fsS "${auth[@]}" "$api/deployments" > "$RUNNER_TEMP/tattooai-before.json"
+          curl -fsS "${auth[@]}" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-before.json"
+          jq -e '.success == true and any(.result.bindings[]?; .name == "AI" and .type == "ai") and any(.result.bindings[]?; .name == "SUPABASE_URL" and .text == "https://vfjexhfdbrjmuxfdvbdx.supabase.co")' \
+            "$RUNNER_TEMP/tattooai-settings-before.json" >/dev/null
+          jq -e '.success == true and ((if (.result|type)=="array" then .result[0] else .result.deployments[0] end) | (.versions|length) == 1 and .versions[0].percentage == 100)' \
+            "$RUNNER_TEMP/tattooai-before.json" >/dev/null
+          before="$(jq -r 'if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end' "$RUNNER_TEMP/tattooai-before.json")"
+          echo "deployment=$before" >> "$GITHUB_OUTPUT"
+
+      - name: Recheck immutable source and live deployment immediately before mutation
+        shell: bash
+        env:
+          PRE_DEPLOYMENT_ID: ${{ steps.live.outputs.deployment }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai/deployments" \
+            | jq -e --arg id "$PRE_DEPLOYMENT_ID" '.success == true and (if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end) == $id' >/dev/null
+
       - name: Deploy exact tattooai Worker snapshot
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.115.0"
-          command: deploy --env="" --strict --keep-vars
+          command: deploy --env="" --strict --keep-vars --tag ${{ github.sha }}
+
+      - name: Read back active version and exact production configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          curl -fsS "${auth[@]}" "$api/deployments" > "$RUNNER_TEMP/tattooai-after.json"
+          jq -e '.success == true and ((if (.result|type)=="array" then .result[0] else .result.deployments[0] end) | (.versions|length) == 1 and .versions[0].percentage == 100)' \
+            "$RUNNER_TEMP/tattooai-after.json" >/dev/null
+          version="$(jq -r 'if (.result|type)=="array" then .result[0].versions[0].version_id else .result.deployments[0].versions[0].version_id end' "$RUNNER_TEMP/tattooai-after.json")"
+          [[ "$version" =~ ^[0-9a-f-]{36}$ ]]
+          curl -fsS "${auth[@]}" "$api/versions/$version" \
+            | jq -e --arg sha "$GITHUB_SHA" '.success == true and .result.annotations["workers/tag"] == $sha' >/dev/null
+          curl -fsS "${auth[@]}" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-after.json"
+          curl -fsS "${auth[@]}" "$api/schedules" > "$RUNNER_TEMP/tattooai-schedules-after.json"
+          python - <<'PY'
+          import json, os, pathlib, tomllib
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          config = tomllib.loads(pathlib.Path('wrangler.toml').read_text())
+          settings = json.loads((root / 'tattooai-settings-after.json').read_text())
+          schedules = json.loads((root / 'tattooai-schedules-after.json').read_text())
+          assert settings.get('success') is True and schedules.get('success') is True
+          bindings = {b['name']: b for b in settings['result']['bindings']}
+          assert bindings.get('AI', {}).get('type') == 'ai', 'Workers AI binding missing'
+          for name, expected in config.get('vars', {}).items():
+              assert bindings.get(name, {}).get('text') == str(expected), f'Production binding mismatch: {name}'
+          actual = schedules['result']
+          if isinstance(actual, dict):
+              actual = actual.get('schedules', [])
+          assert sorted(row['cron'] for row in actual) == sorted(config.get('triggers', {}).get('crons', [])), 'Production cron mismatch'
+          print('Production variables, Workers AI binding and scheduled triggers match the release snapshot.')
+          PY
+          echo "Active tattooai version $version serves exact source $GITHUB_SHA at 100 percent."
 
       - name: Read back live Worker boundary
         shell: bash

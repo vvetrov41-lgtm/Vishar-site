@@ -49,6 +49,13 @@ export const AUTOMATION_BACKEND_RPCS = new Set([
   'service_run_automation_tick',
 ]);
 
+/** System-only bounded AI claims and results; never selected by model output. */
+export const ENQUIRY_AI_RPCS = new Set([
+  'service_claim_enquiry_ai_jobs',
+  'service_complete_enquiry_ai_job',
+  'service_fail_enquiry_ai_job',
+]);
+
 /** Scheduler liveness proof is separate from the automation execution surface. */
 export const AUTOMATION_HEARTBEAT_RPCS = new Set([
   'service_record_automation_scheduler_heartbeat',
@@ -168,6 +175,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       !ALLOWED_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
+      && !ENQUIRY_AI_RPCS.has(name)
       && !AUTOMATION_HEARTBEAT_RPCS.has(name)
       && !LIFECYCLE_ALERT_RPCS.has(name)
       && !APPOINTMENT_CLIENT_ACTION_RPCS.has(name)

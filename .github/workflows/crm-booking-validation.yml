@@ -46,6 +46,9 @@ jobs:
       - name: Test Worker modules
         run: npm run test:worker
 
+      - name: Test bounded enquiry AI safety
+        run: npm run test:enquiry-ai
+
       - name: Test canonical public booking slugs and root edge
         run: |
           node scripts/test-public-booking-slugs.mjs
