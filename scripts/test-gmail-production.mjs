@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-import { Miniflare } from 'miniflare';
+import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import {
   GMAIL_READ_SCOPE,
   GMAIL_SEND_SCOPE,
@@ -149,8 +149,6 @@ await test('OAuth exchange and refresh reject redirects without following them',
 });
 
 await test('real Workers runtime reaches shared Gmail claim and rejects backend/provider redirects', async () => {
-  // Exercise native workerd fetch: a Node fetch stub accepts unsupported redirect modes.
-  // Every outbound request is intercepted locally; this never contacts production or Google.
   const options = { bundle: true, write: false, format: 'esm', platform: 'neutral', external: ['cloudflare:workers'] };
   const gmailBundle = await build({ ...options, entryPoints: ['workers/gmail-production-entrypoint.js'] });
   const profileBundle = await build({ ...options, stdin: {
@@ -173,7 +171,7 @@ await test('real Workers runtime reaches shared Gmail claim and rejects backend/
     if (url.pathname === '/gmail/v1/users/me/profile') return Response.json({ emailAddress: 'local@example.com' });
     throw new Error('unexpected local outbound request');
   };
-  const mf = new Miniflare({ workers: [
+  const mf = new Miniflare(convertV4MiniflareOptions({ workers: [
     { name: 'scheduler', compatibilityDate: '2026-05-25', modules: true,
       serviceBindings: { GMAIL_SERVICE: 'gmail' },
       script: `export default { async fetch(request, env) {
@@ -188,7 +186,7 @@ await test('real Workers runtime reaches shared Gmail claim and rejects backend/
     },
     { name: 'profile', compatibilityDate: '2026-05-25', modules: true,
       script: profileBundle.outputFiles[0].text, outboundService },
-  ] });
+  ] }));
   try {
     const profile = await mf.getWorker('profile');
     assert.deepEqual(await (await mf.dispatchFetch('http://local.test')).json(),
@@ -197,7 +195,7 @@ await test('real Workers runtime reaches shared Gmail claim and rejects backend/
     redirect = true;
     assert.deepEqual(await (await mf.dispatchFetch('http://local.test')).json(), { error: 'gmail_rpc_failed' });
     assert.deepEqual(await (await profile.fetch('http://local.test')).json(), { error: 'gmail_api_error' });
-    assert.equal(calls.length, 4); // No redirect follow or extra retry for either 302 response.
+    assert.equal(calls.length, 4);
   } finally { await mf.dispose(); }
 });
 
