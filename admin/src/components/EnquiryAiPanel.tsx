@@ -29,6 +29,20 @@ export function EnquiryAiPanel({ enquiryId, api, language, mayEdit }: {
   if (data && !data.enabled && data.status === 'not_requested') return null;
   const result = data?.result;
   const draft = data?.draft;
+  const passiveStatus = data?.enabled && !result && !error && ['pending', 'processing'].includes(data.status)
+    ? data.status as 'pending' | 'processing'
+    : null;
+  // Passive background work should remain visible without taking the space of
+  // an actionable assistant result. Polling and the live status announcement
+  // remain unchanged; failed/stale/results still use the full panel below.
+  if (passiveStatus) {
+    return (
+      <section className="card" data-compact-enquiry-ai="true" style={{ padding: '12px 16px' }}>
+        <h2 style={{ margin: '0 0 4px' }}>{copy.title}</h2>
+        <p className="meta" role="status" style={{ margin: 0 }}>{copy.states[passiveStatus]}</p>
+      </section>
+    );
+  }
   return (
     <Section title={copy.title}>
       {loading && !data ? <p className="meta" role="status">{copy.loading}</p> : null}
