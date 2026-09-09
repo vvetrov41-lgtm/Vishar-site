@@ -9,7 +9,7 @@ import { RequestError } from './http.js';
 export const MAX_FILES = 3;
 export const MIN_FILES = 1;
 export const MAX_FILE_BYTES = 4 * 1024 * 1024;
-export const PRIVACY_NOTICE_VERSION = '2026-07-29';
+export const PRIVACY_NOTICE_VERSION = '2026-09-09';
 
 export const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
