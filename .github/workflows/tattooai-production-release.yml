@@ -3,7 +3,7 @@ name: TattooAI production release
 on:
   push:
     branches:
-      - 'release/tattooai-production-*'
+      - 'release/private-crm-rc*-tattooai-worker'
 
 permissions:
   actions: read
@@ -29,6 +29,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-tattooai-worker) ;;
+            *) echo 'TattooAI production release must use the reserved CRM production release namespace.' >&2; exit 1 ;;
+          esac
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
           test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
@@ -79,6 +83,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-tattooai-worker) ;;
+            *) echo 'TattooAI production release must use the reserved CRM production release namespace.' >&2; exit 1 ;;
+          esac
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
           test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
