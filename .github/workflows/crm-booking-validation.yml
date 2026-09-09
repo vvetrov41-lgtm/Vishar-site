@@ -112,7 +112,9 @@ jobs:
         run: npm run check:instagram-production-bundle
 
       - name: Test private production release workflow boundaries
-        run: node scripts/test-private-production-release-workflows.mjs
+        run: |
+          node scripts/test-private-production-release-workflows.mjs
+          node scripts/test-tattooai-production-release.mjs
 
       - name: Test automatic private production release boundaries
         run: node scripts/test-private-production-release-orchestrator.mjs

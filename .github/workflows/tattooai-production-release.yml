@@ -65,10 +65,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
-      name: production
+      name: crm-production
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - name: Checkout exact release snapshot
         uses: actions/checkout@v4
@@ -125,8 +125,8 @@ jobs:
       - name: Deploy exact tattooai Worker snapshot
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.115.0"
           command: deploy --env="" --strict --keep-vars --tag ${{ github.sha }}
 
