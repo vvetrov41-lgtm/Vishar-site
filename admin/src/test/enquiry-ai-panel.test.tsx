@@ -59,8 +59,8 @@ describe('enquiry AI panel', () => {
   it('keeps passive pending analysis compact while preserving its live status', async () => {
     const pending: EnquiryAiResult = { enabled: true, status: 'pending' };
     renderPanel(apiStub({ getEnquiryAiResult: vi.fn().mockResolvedValue(pending) }));
-    const status = await screen.findByRole('status');
-    expect(status).toHaveTextContent('Waiting for analysis. You can keep working on this enquiry.');
+    const status = await screen.findByText('Waiting for analysis. You can keep working on this enquiry.');
+    expect(status).toHaveAttribute('role', 'status');
     expect(status.closest('section')).toHaveAttribute('data-compact-enquiry-ai', 'true');
     expect(screen.getByRole('heading', { name: 'Enquiry assistant' })).toBeInTheDocument();
   });
