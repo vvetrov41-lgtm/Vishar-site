@@ -340,8 +340,12 @@
     const startedAt = Date.now();
     const IDEMPOTENCY_STORAGE_KEY = 'vishar.enquiry.idempotencyKey';
     const OPENAI_ADS_CONSENT_KEY = 'vishar-openai-ads-consent';
+    const META_ADS_CONSENT_KEY = 'vishar-meta-ads-consent';
     const GENERIC_CONSENT_KEY = 'vishar-cookie-consent';
-    const PRIVACY_NOTICE_VERSION = '2026-09-06';
+    const META_PIXEL_ID = '1729215778134902';
+    const PRIVACY_NOTICE_VERSION = '2026-09-09';
+    let metaPixelInitialised = false;
+    let metaPageViewQueued = false;
 
     function storedConsent(key) {
       try { return localStorage.getItem(key); } catch (error) { return null; }
@@ -356,6 +360,66 @@
       }
     }
 
+    function ensureMetaPixel() {
+      if (storedConsent(META_ADS_CONSENT_KEY) !== 'granted') return false;
+
+      if (!window.fbq) {
+        var n = window.fbq = function () {
+          n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+        };
+        if (!window._fbq) window._fbq = n;
+        n.push = n;
+        n.loaded = true;
+        n.version = '2.0';
+        n.queue = [];
+      }
+
+      if (!metaPixelInitialised) {
+        window.fbq('init', META_PIXEL_ID);
+        metaPixelInitialised = true;
+      }
+
+      if (!document.getElementById('meta-pixel-script')) {
+        var script = document.createElement('script');
+        script.id = 'meta-pixel-script';
+        script.async = true;
+        script.src = 'https://connect.facebook.net/en_US/fbevents.js';
+        var first = document.getElementsByTagName('script')[0];
+        first.parentNode.insertBefore(script, first);
+      }
+
+      if (!metaPageViewQueued) {
+        window.fbq('track', 'PageView');
+        metaPageViewQueued = true;
+      }
+      return true;
+    }
+
+    function setMetaAdsConsent(value) {
+      try { localStorage.setItem(META_ADS_CONSENT_KEY, value); } catch (error) { /* private browsing */ }
+      if (value === 'granted') {
+        ensureMetaPixel();
+      } else if (typeof window.fbq === 'function') {
+        try { window.fbq('consent', 'revoke'); } catch (error) { /* best effort */ }
+      }
+    }
+
+    function applyKnownAdvertisingChoices() {
+      const openAiChoice = storedConsent(OPENAI_ADS_CONSENT_KEY);
+      const metaChoice = storedConsent(META_ADS_CONSENT_KEY);
+      if (openAiChoice === 'granted' || openAiChoice === 'denied') setOpenAiAdsConsent(openAiChoice);
+      if (metaChoice === 'granted' || metaChoice === 'denied') setMetaAdsConsent(metaChoice);
+      return {
+        openAiKnown: openAiChoice === 'granted' || openAiChoice === 'denied',
+        metaKnown: metaChoice === 'granted' || metaChoice === 'denied'
+      };
+    }
+
+    function setMissingAdvertisingConsent(value) {
+      if (storedConsent(OPENAI_ADS_CONSENT_KEY) === null) setOpenAiAdsConsent(value);
+      if (storedConsent(META_ADS_CONSENT_KEY) === null) setMetaAdsConsent(value);
+    }
+
     function customiseSharedConsentBanner() {
       const banner = document.getElementById('cookie-consent');
       if (!banner) return false;
@@ -366,59 +430,56 @@
       return true;
     }
 
-    function buildOpenAiAdsConsentBanner() {
-      if (document.getElementById('openai-ads-consent')) return;
+    function buildAdvertisingMeasurementConsentBanner() {
+      if (document.getElementById('advertising-measurement-consent')) return;
       const banner = document.createElement('div');
-      banner.id = 'openai-ads-consent';
+      banner.id = 'advertising-measurement-consent';
       banner.setAttribute('role', 'region');
       banner.setAttribute('aria-label', 'Advertising measurement consent');
       banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
-      banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional advertising measurement can tell me whether a ChatGPT ad resulted in an enquiry. It stays off unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="openai-ads-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button><button type="button" id="openai-ads-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button></div>';
+      banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional advertising measurement can tell me whether an ad on Meta or ChatGPT resulted in an enquiry. It stays off unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="advertising-measurement-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button><button type="button" id="advertising-measurement-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button></div>';
       document.body.appendChild(banner);
 
-      banner.querySelector('#openai-ads-accept').addEventListener('click', function () {
-        setOpenAiAdsConsent('granted');
+      banner.querySelector('#advertising-measurement-accept').addEventListener('click', function () {
+        setMissingAdvertisingConsent('granted');
         banner.remove();
       });
-      banner.querySelector('#openai-ads-decline').addEventListener('click', function () {
-        setOpenAiAdsConsent('denied');
+      banner.querySelector('#advertising-measurement-decline').addEventListener('click', function () {
+        setMissingAdvertisingConsent('denied');
         banner.remove();
       });
     }
 
-    function syncOpenAiAdsConsentUi() {
-      const adsChoice = storedConsent(OPENAI_ADS_CONSENT_KEY);
-      if (adsChoice === 'granted' || adsChoice === 'denied') {
-        setOpenAiAdsConsent(adsChoice);
-        return;
-      }
+    function syncAdvertisingMeasurementConsentUi() {
+      const known = applyKnownAdvertisingChoices();
+      if (known.openAiKnown && known.metaKnown) return;
 
       // A fresh visitor can make one combined choice in the site's existing
-      // banner. Someone who already made an analytics-only choice gets a
-      // separate one-time prompt for the new advertising-measurement purpose.
+      // banner. Someone who already made an older measurement choice gets a
+      // separate one-time prompt only for the newly introduced purpose/vendor.
       if (storedConsent(GENERIC_CONSENT_KEY) === null && customiseSharedConsentBanner()) return;
-      buildOpenAiAdsConsentBanner();
+      buildAdvertisingMeasurementConsentBanner();
     }
 
     document.addEventListener('click', function (event) {
       var target = event.target && event.target.closest
         ? event.target.closest('#cookie-accept, #cookie-decline')
         : null;
-      if (!target || storedConsent(OPENAI_ADS_CONSENT_KEY) !== null) return;
-      setOpenAiAdsConsent(target.id === 'cookie-accept' ? 'granted' : 'denied');
+      if (!target) return;
+      setMissingAdvertisingConsent(target.id === 'cookie-accept' ? 'granted' : 'denied');
     });
 
-    function scheduleOpenAiAdsConsentUi() {
+    function scheduleAdvertisingMeasurementConsentUi() {
       // components.js also initializes on DOMContentLoaded. Run one task later
       // so its shared cookie banner exists before deciding whether a separate
       // advertising-measurement prompt is needed.
-      window.setTimeout(syncOpenAiAdsConsentUi, 0);
+      window.setTimeout(syncAdvertisingMeasurementConsentUi, 0);
     }
 
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', scheduleOpenAiAdsConsentUi, { once: true });
+      document.addEventListener('DOMContentLoaded', scheduleAdvertisingMeasurementConsentUi, { once: true });
     } else {
-      scheduleOpenAiAdsConsentUi();
+      scheduleAdvertisingMeasurementConsentUi();
     }
 
     function trackOpenAiLead(eventId) {
@@ -432,6 +493,16 @@
         );
       } catch (error) {
         console.warn('OpenAI Ads conversion tracking failed', error);
+      }
+    }
+
+    function trackMetaLead(eventId) {
+      try {
+        if (storedConsent(META_ADS_CONSENT_KEY) !== 'granted') return;
+        if (!ensureMetaPixel()) return;
+        window.fbq('track', 'Lead', {}, { eventID: eventId });
+      } catch (error) {
+        console.warn('Meta Pixel conversion tracking failed', error);
       }
     }
 
@@ -629,6 +700,7 @@
         successPanel.classList.remove('hidden');
         successPanel.focus();
         trackOpenAiLead(enquiryKey);
+        trackMetaLead(enquiryKey);
         clearIdempotencyKey();
       } catch (error) {
         console.error('Tattoo enquiry failed', error);
