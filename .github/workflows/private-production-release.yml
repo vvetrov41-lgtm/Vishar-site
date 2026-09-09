@@ -8,6 +8,7 @@ on:
       - '!release/private-crm-rc*-inventory-*'
       - '!release/private-crm-rc*-backend-auth-*'
       - '!release/private-crm-rc*-gpt-worker'
+      - '!release/private-crm-rc*-tattooai-worker'
       - '!release/private-crm-rc*-mcp-meta-activation'
       - '!release/private-crm-rc*-whatsapp-webhook-only'
   workflow_dispatch:
@@ -51,6 +52,10 @@ jobs:
               ;;
             release/private-crm-rc*-gpt-worker)
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-tattooai-worker)
+              echo 'TattooAI release refs are handled by the bounded TattooAI Worker rollout only.' >&2
               exit 1
               ;;
             release/private-crm-rc*-mcp-meta-activation)
@@ -127,6 +132,10 @@ jobs:
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
               exit 1
               ;;
+            release/private-crm-rc*-tattooai-worker)
+              echo 'TattooAI release refs are handled by the bounded TattooAI Worker rollout only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*-whatsapp-webhook-only)
               echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
               exit 1
@@ -134,7 +143,8 @@ jobs:
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
-          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          ]
           [ -z "$(git status --short)" ]
           git merge-base --is-ancestor "$REQUIRED_RELEASE_FOUNDATION_SHA" "$GITHUB_SHA"
           remote_sha="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
@@ -187,6 +197,10 @@ jobs:
             release/private-crm-rc*-booking-host*) exit 1 ;;
             release/private-crm-rc*-gpt-worker)
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-tattooai-worker)
+              echo 'TattooAI release refs are handled by the bounded TattooAI Worker rollout only.' >&2
               exit 1
               ;;
             release/private-crm-rc*-whatsapp-webhook-only)
@@ -289,6 +303,10 @@ jobs:
               ;;
             release/private-crm-rc*-gpt-worker)
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-tattooai-worker)
+              echo 'TattooAI release refs are handled by the bounded TattooAI Worker rollout only.' >&2
               exit 1
               ;;
             release/private-crm-rc*-whatsapp-webhook-only)
