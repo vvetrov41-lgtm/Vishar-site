@@ -28,13 +28,6 @@ export default {
     scheduleEnquiryAiDrain(env, ctx);
   },
   async fetch(request, env, ctx) {
-    // Scheduled Triggers are the primary queue consumer, but production intake
-    // must not stall if Cloudflare schedule mutation is temporarily unavailable.
-    // The database claim RPC is lease-safe, so opportunistic drains on normal
-    // Worker traffic cannot process the same job twice and never delay the HTTP
-    // response because execution is attached to waitUntil().
-    scheduleEnquiryAiDrain(env, ctx);
-
     // Operator-only model-routing readback. Answers 404 unless explicitly
     // enabled and token-authenticated, and never emits CORS headers.
     if (isAiRouterProbePath(request)) {
@@ -61,6 +54,11 @@ export default {
       });
     }
 
+    // Scheduled Triggers remain the primary consumer. Legacy/root Worker
+    // traffic is also allowed to drain the durable queue so enquiry AI cannot
+    // stall when Cloudflare schedule mutation is temporarily unavailable.
+    // Claims are lease-safe and waitUntil keeps the HTTP response non-blocking.
+    scheduleEnquiryAiDrain(env, ctx);
     return tattooai.fetch(request, env, ctx);
   },
 };
