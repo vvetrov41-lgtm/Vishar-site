@@ -1,6 +1,7 @@
 import telegramWorker from './telegram-drain-worker.js';
 
 const MAX_AI_JOBS_PER_TICK = 3;
+const AI_DRAIN_URL = 'https://tattooai.internal/internal/enquiry-ai/drain';
 
 function failure(code, message) {
   return Object.assign(new Error(message), { code });
@@ -24,10 +25,17 @@ export function assertEnquiryAiSummary(value) {
 
 export async function runSharedEnquiryAiDrain(env) {
   try {
-    if (!env?.TATTOOAI_SERVICE || typeof env.TATTOOAI_SERVICE.drainEnquiryAiJobs !== 'function') {
+    if (!env?.TATTOOAI_SERVICE || typeof env.TATTOOAI_SERVICE.fetch !== 'function') {
       throw failure('tattooai_service_binding_unavailable', 'TattooAI service binding unavailable');
     }
-    const summary = assertEnquiryAiSummary(await env.TATTOOAI_SERVICE.drainEnquiryAiJobs());
+    const secret = typeof env?.SUPABASE_SECRET_KEY === 'string' ? env.SUPABASE_SECRET_KEY : '';
+    if (!secret) throw failure('tattooai_service_auth_unavailable', 'TattooAI service auth unavailable');
+    const response = await env.TATTOOAI_SERVICE.fetch(AI_DRAIN_URL, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${secret}` },
+    });
+    if (!response?.ok) throw failure('tattooai_service_unavailable', 'TattooAI service unavailable');
+    const summary = assertEnquiryAiSummary(await response.json());
     console.log('enquiry ai shared drain', JSON.stringify(summary));
     return summary;
   } catch (error) {
@@ -76,6 +84,7 @@ export function createProductionScheduler(baseWorker = telegramWorker) {
 export default createProductionScheduler();
 
 export const __testing = Object.freeze({
+  AI_DRAIN_URL,
   MAX_AI_JOBS_PER_TICK,
   settle,
 });
