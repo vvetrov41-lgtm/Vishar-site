@@ -16,15 +16,15 @@ const output = path.resolve(outputArg);
 const sourcePath = path.resolve(source.pathname);
 if (output === sourcePath) throw new Error('refusing to overwrite the tracked production template');
 
-const workerEntrypoint = path.join(path.dirname(sourcePath), 'workers/telegram-drain-worker.js');
+const workerEntrypoint = path.join(path.dirname(sourcePath), 'workers/telegram-production-scheduler.js');
 if (!fs.existsSync(workerEntrypoint)) {
-  throw new Error('production Telegram Worker entrypoint is missing');
+  throw new Error('production shared scheduler entrypoint is missing');
 }
 const relativeWorkerEntrypoint = path.relative(path.dirname(output), workerEntrypoint)
   .split(path.sep)
   .join('/');
 if (!relativeWorkerEntrypoint || path.isAbsolute(relativeWorkerEntrypoint)) {
-  throw new Error('failed to derive a relative production Telegram Worker entrypoint');
+  throw new Error('failed to derive a relative production shared scheduler entrypoint');
 }
 
 let text = fs.readFileSync(source, 'utf8');
@@ -40,6 +40,7 @@ const required = [
   'TELEGRAM_DRAIN_ENABLED = "false"',
   'GMAIL_SHARED_DRAIN_ENABLED = "false"',
   'AUTOMATION_TICK_ENABLED = "false"',
+  'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"',
   'TELEGRAM_LINKING_ENABLED = "false"',
 ];
 for (const needle of required) {
@@ -82,21 +83,21 @@ text = text.replace(
 text = text.replace('TELEGRAM_DRAIN_ENABLED = "false"', 'TELEGRAM_DRAIN_ENABLED = "true"');
 text = text.replace('GMAIL_SHARED_DRAIN_ENABLED = "false"', 'GMAIL_SHARED_DRAIN_ENABLED = "true"');
 text = text.replace('AUTOMATION_TICK_ENABLED = "false"', 'AUTOMATION_TICK_ENABLED = "true"');
+text = text.replace('ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"', 'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"');
 if (enableLinking) {
   text = text.replace('TELEGRAM_LINKING_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "true"');
 }
 
 if (!text.includes(`main = "${relativeWorkerEntrypoint}"`)) {
-  throw new Error('failed to resolve the production Telegram Worker entrypoint for generated config');
+  throw new Error('failed to resolve the production shared scheduler entrypoint');
 }
-if (!text.includes('TELEGRAM_DRAIN_ENABLED = "true"')) {
-  throw new Error('failed to enable the production Telegram drain');
-}
-if (!text.includes('GMAIL_SHARED_DRAIN_ENABLED = "true"')) {
-  throw new Error('failed to preserve the Gmail shared scheduler dispatch');
-}
-if (!text.includes('AUTOMATION_TICK_ENABLED = "true"')) {
-  throw new Error('failed to enable the production automation heartbeat');
+for (const needle of [
+  'TELEGRAM_DRAIN_ENABLED = "true"',
+  'GMAIL_SHARED_DRAIN_ENABLED = "true"',
+  'AUTOMATION_TICK_ENABLED = "true"',
+  'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"',
+]) {
+  if (!text.includes(needle)) throw new Error(`failed to generate ${needle}`);
 }
 const expectedLinking = enableLinking ? 'true' : 'false';
 if (!text.includes(`TELEGRAM_LINKING_ENABLED = "${expectedLinking}"`)) {
@@ -104,5 +105,6 @@ if (!text.includes(`TELEGRAM_LINKING_ENABLED = "${expectedLinking}"`)) {
 }
 
 text += `\n[[services]]\nbinding = "GMAIL_SERVICE"\nservice = "vishar-gmail-production"\n`;
+text += `\n[[services]]\nbinding = "TATTOOAI_SERVICE"\nservice = "tattooai"\nentrypoint = "EnquiryAiService"\n`;
 text += `\n[triggers]\ncrons = ["*/5 * * * *"]\n\n[secrets]\nrequired = [\n  "SUPABASE_SECRET_KEY",\n  "ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION",\n  "ARTIST_TELEGRAM_KRISTINA_HPRODUCTION",\n  "TELEGRAM_BOT_TOKEN",\n  "TELEGRAM_WEBHOOK_SECRET",\n]\n`;
 fs.writeFileSync(output, text, { mode: 0o600 });
