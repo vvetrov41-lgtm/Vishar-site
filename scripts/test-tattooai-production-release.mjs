@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const workflow = fs.readFileSync(new URL('../.github/workflows/tattooai-production-release.yml', import.meta.url), 'utf8');
+const privateProductionWorkflow = fs.readFileSync(new URL('../.github/workflows/private-production-release.yml', import.meta.url), 'utf8');
 
 const expectIncludes = (needle, label) => {
   if (!workflow.includes(needle)) throw new Error(`${label}: missing ${needle}`);
@@ -9,7 +10,8 @@ const expectExcludes = (needle, label) => {
   if (workflow.includes(needle)) throw new Error(`${label}: forbidden ${needle}`);
 };
 
-expectIncludes("- 'release/tattooai-production-*'", 'release branch boundary');
+expectIncludes("- 'release/private-crm-rc*-tattooai-worker'", 'release branch boundary');
+expectIncludes('TattooAI production release must use the reserved CRM production release namespace.', 'runtime release branch gate');
 expectIncludes("for workflow in 'Static Validation' 'CRM and booking validation'", 'exact-head CI boundary');
 expectIncludes('refs/heads/agent/platform-telegram-self-service', 'canonical branch boundary');
 expectIncludes('name: crm-production', 'production credential environment');
@@ -27,5 +29,13 @@ expectIncludes('bindings.get(\'AI\', {}).get(\'type\') == \'ai\'', 'Workers AI b
 expectIncludes('https://vfjexhfdbrjmuxfdvbdx.supabase.co', 'production Supabase binding');
 expectIncludes("endpoint='https://tattooai.vvetrov41.workers.dev/'", 'live Worker boundary');
 expectIncludes("-X POST 'https://www.kristinavishar.com/api/booking'", 'live booking adapter boundary');
+
+if (!privateProductionWorkflow.includes("- '!release/private-crm-rc*-tattooai-worker'")) {
+  throw new Error('private production release must exclude the bounded TattooAI release namespace');
+}
+const privateTattooAiGuards = privateProductionWorkflow.match(/TattooAI release refs are handled by the bounded TattooAI Worker rollout only\./g) || [];
+if (privateTattooAiGuards.length !== 4) {
+  throw new Error(`private production release must fail closed for TattooAI refs in all four gates; found ${privateTattooAiGuards.length}`);
+}
 
 console.log('TattooAI production release boundaries: passed');
