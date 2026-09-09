@@ -130,13 +130,63 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai/deployments" \
             | jq -e --arg id "$PRE_DEPLOYMENT_ID" '.success == true and (if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end) == $id' >/dev/null
 
-      - name: Deploy exact tattooai Worker snapshot
+      - name: Prepare code-only deploy config and canonical cron payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, pathlib, re, tomllib
+
+          source = pathlib.Path('wrangler.toml')
+          text = source.read_text()
+          config = tomllib.loads(text)
+          crons = config.get('triggers', {}).get('crons', [])
+          assert crons == ['*/5 * * * *'], f'Unexpected TattooAI cron contract: {crons!r}'
+
+          deploy_text = re.sub(r'(?ms)^\[triggers\]\n.*?(?=^\[[^\n]+\]\n|\Z)', '', text)
+          deploy_path = pathlib.Path('.tattooai.deploy.toml')
+          deploy_path.write_text(deploy_text)
+          deploy_config = tomllib.loads(deploy_text)
+          assert 'triggers' not in deploy_config, 'Code-only deploy config still contains triggers'
+          assert deploy_config.get('name') == 'tattooai'
+          assert deploy_config.get('main') == 'workers/tattooai-entry.js'
+
+          pathlib.Path('/tmp/tattooai-schedules-request.json').write_text(
+              json.dumps([{'cron': cron} for cron in crons])
+          )
+          PY
+
+      - name: Deploy exact tattooai Worker snapshot without mutating triggers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.115.0"
-          command: deploy --env="" --strict --keep-vars --tag ${{ github.sha }}
+          command: deploy --config .tattooai.deploy.toml --env="" --strict --keep-vars --tag ${{ github.sha }}
+
+      - name: Reconcile exact production Cron Trigger through Cloudflare API
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai/schedules"
+          response="$(curl -sS -X PUT "$api" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/tattooai-schedules-request.json)"
+          printf '%s' "$response" > "$RUNNER_TEMP/tattooai-schedules-write.json"
+          if ! jq -e '.success == true' "$RUNNER_TEMP/tattooai-schedules-write.json" >/dev/null; then
+            jq '{success, errors: [.errors[]? | {code, message}]}' "$RUNNER_TEMP/tattooai-schedules-write.json" >&2
+            exit 1
+          fi
+          python - <<'PY'
+          import json, os, pathlib
+          body = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'tattooai-schedules-write.json').read_text())
+          result = body.get('result', [])
+          if isinstance(result, dict):
+              result = result.get('schedules', [])
+          crons = sorted(row.get('cron') for row in result if isinstance(row, dict) and row.get('cron'))
+          assert crons == ['*/5 * * * *'], f'Cloudflare cron write readback mismatch: {crons!r}'
+          PY
 
       - name: Read back active version and exact production configuration
         shell: bash
