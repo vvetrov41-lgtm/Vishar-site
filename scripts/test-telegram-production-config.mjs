@@ -54,10 +54,10 @@ try {
     'TELEGRAM_DRAIN_ENABLED = "true"','GMAIL_SHARED_DRAIN_ENABLED = "true"','AUTOMATION_TICK_ENABLED = "true"',
     'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"','TELEGRAM_LINKING_ENABLED = "false"',
     'binding = "GMAIL_SERVICE"','service = "vishar-gmail-production"',
-    'binding = "TATTOOAI_SERVICE"','service = "tattooai"','entrypoint = "EnquiryAiService"',
+    'binding = "TATTOOAI_SERVICE"','service = "tattooai"',
     '[triggers]','crons = ["*/5 * * * *"]','[secrets]','"SUPABASE_SECRET_KEY"',
   ]) expectIncludes(generated, needle, 'generated config');
-  for (const needle of ['TELEGRAM_DRAIN_ENABLED = "false"','GMAIL_SHARED_DRAIN_ENABLED = "false"','AUTOMATION_TICK_ENABLED = "false"','ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"','gwaliusblwrzisrwnsvs']) expectExcludes(generated, needle, 'generated config');
+  for (const needle of ['entrypoint =','TELEGRAM_DRAIN_ENABLED = "false"','GMAIL_SHARED_DRAIN_ENABLED = "false"','AUTOMATION_TICK_ENABLED = "false"','ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"','gwaliusblwrzisrwnsvs']) expectExcludes(generated, needle, 'generated config');
 
   const badFlag = spawnSync(process.execPath, [generator, generatedPath, '--unknown'], { encoding: 'utf8' });
   if (badFlag.status === 0) throw new Error('generator accepted an unknown production option');
