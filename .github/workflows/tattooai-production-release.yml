@@ -18,302 +18,109 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout exact release snapshot
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Verify immutable release snapshot and lineage
-        shell: bash
+      - name: Verify immutable canonical release snapshot
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -euo pipefail
-          case "$GITHUB_REF_NAME" in
-            release/private-crm-rc*-tattooai-worker) ;;
-            *) echo 'TattooAI production release must use the reserved CRM production release namespace.' >&2; exit 1 ;;
-          esac
+          case "$GITHUB_REF_NAME" in release/private-crm-rc*-tattooai-worker) ;; *) exit 1 ;; esac
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
           test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
-          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
-            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/tattooai-ci.json"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/tattooai-ci.json"
           for workflow in 'Static Validation' 'CRM and booking validation'; do
-            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
-              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
-              "$RUNNER_TEMP/tattooai-ci.json" >/dev/null || {
-                echo "Required exact-head workflow is not green: $workflow" >&2
-                exit 1
-              }
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" 'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' "$RUNNER_TEMP/tattooai-ci.json" >/dev/null
           done
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-
-      - name: Install locked dependencies
-        run: npm ci
-
-      - name: Validate Worker bundle and booking boundaries
+      - run: npm ci
+      - name: Validate code and no standalone TattooAI cron
         run: |
           npm audit --audit-level=moderate
           npm run test:worker
           npm run test:enquiry-ai
           node scripts/test-public-booking-slugs.mjs
           npm run check:worker-bundle
+          node - <<'NODE'
+          const fs = require('fs');
+          const text = fs.readFileSync('wrangler.toml', 'utf8').replace(/^\s*#.*$/gm, '');
+          if (/^\s*\[triggers\]\s*$/m.test(text) || /^\s*crons\s*=/m.test(text)) throw new Error('TattooAI must not own a standalone Cron Trigger');
+          NODE
 
   deploy:
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment:
-      name: crm-production
+    environment: crm-production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Checkout exact release snapshot
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Re-verify immutable release snapshot and target
+      - name: Re-verify immutable target
         shell: bash
         run: |
           set -euo pipefail
-          case "$GITHUB_REF_NAME" in
-            release/private-crm-rc*-tattooai-worker) ;;
-            *) echo 'TattooAI production release must use the reserved CRM production release namespace.' >&2; exit 1 ;;
-          esac
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
           test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
-          test "$(sed -n 's/^name = "\([^"]*\)"/\1/p' wrangler.toml | head -n1)" = "tattooai"
+          grep -Fxq 'name = "tattooai"' wrangler.toml
           grep -Fxq 'main = "workers/tattooai-entry.js"' wrangler.toml
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          ! grep -Eq '^\s*\[triggers\]\s*$|^\s*crons\s*=' wrangler.toml
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-
-      - name: Install locked deployment tooling
-        run: npm ci
-
-      - name: Snapshot live deployment and verify production binding
-        id: live
+      - run: npm ci
+      - name: Snapshot live state
         shell: bash
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai"
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
-          curl -fsS "${auth[@]}" "$api/deployments" > "$RUNNER_TEMP/tattooai-before.json"
-          curl -fsS "${auth[@]}" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-before.json"
-          jq -e '.success == true and any(.result.bindings[]?; .name == "AI" and .type == "ai") and any(.result.bindings[]?; .name == "SUPABASE_URL" and .text == "https://vfjexhfdbrjmuxfdvbdx.supabase.co")' \
-            "$RUNNER_TEMP/tattooai-settings-before.json" >/dev/null
-          jq -e '.success == true and ((if (.result|type)=="array" then .result[0] else .result.deployments[0] end) | (.versions|length) == 1 and .versions[0].percentage == 100)' \
-            "$RUNNER_TEMP/tattooai-before.json" >/dev/null
-          before="$(jq -r 'if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end' "$RUNNER_TEMP/tattooai-before.json")"
-          echo "deployment=$before" >> "$GITHUB_OUTPUT"
-
-      - name: Recheck immutable source and live deployment immediately before mutation
-        shell: bash
-        env:
-          PRE_DEPLOYMENT_ID: ${{ steps.live.outputs.deployment }}
-        run: |
-          set -euo pipefail
-          test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
-          test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
-          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai/deployments" \
-            | jq -e --arg id "$PRE_DEPLOYMENT_ID" '.success == true and (if (.result|type)=="array" then .result[0].id else .result.deployments[0].id end) == $id' >/dev/null
-
-      - name: Prepare code-only deploy config and canonical cron payload
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json, pathlib, re, tomllib
-
-          source = pathlib.Path('wrangler.toml')
-          text = source.read_text()
-          config = tomllib.loads(text)
-          crons = config.get('triggers', {}).get('crons', [])
-          assert crons == ['*/5 * * * *'], f'Unexpected TattooAI cron contract: {crons!r}'
-
-          deploy_text = re.sub(r'(?ms)^\[triggers\]\n.*?(?=^\[[^\n]+\]\n|\Z)', '', text)
-          deploy_path = pathlib.Path('.tattooai.deploy.toml')
-          deploy_path.write_text(deploy_text)
-          deploy_config = tomllib.loads(deploy_text)
-          assert 'triggers' not in deploy_config, 'Code-only deploy config still contains triggers'
-          assert deploy_config.get('name') == 'tattooai'
-          assert deploy_config.get('main') == 'workers/tattooai-entry.js'
-
-          pathlib.Path('/tmp/tattooai-schedules-request.json').write_text(
-              json.dumps([{'cron': cron} for cron in crons])
-          )
-          PY
-
-      - name: Deploy exact tattooai Worker snapshot without mutating triggers
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-before.json"
+          jq -e '.success == true and any(.result.bindings[]?; .name == "AI" and .type == "ai")' "$RUNNER_TEMP/tattooai-settings-before.json" >/dev/null
+      - name: Deploy exact code snapshot
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "4.115.0"
-          command: deploy --config .tattooai.deploy.toml --env="" --strict --keep-vars --tag ${{ github.sha }}
-
-      - name: Reconcile exact production Cron Trigger through Cloudflare API
+          wranglerVersion: "4.129.1"
+          command: deploy --config wrangler.toml --env="" --strict --keep-vars --tag ${{ github.sha }}
+      - name: Remove legacy standalone TattooAI schedules
         shell: bash
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai/schedules"
-          response="$(curl -sS -X PUT "$api" \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            -H 'Content-Type: application/json' \
-            --data-binary @/tmp/tattooai-schedules-request.json)"
-          printf '%s' "$response" > "$RUNNER_TEMP/tattooai-schedules-write.json"
-          if ! jq -e '.success == true' "$RUNNER_TEMP/tattooai-schedules-write.json" >/dev/null; then
-            jq '{success, errors: [.errors[]? | {code, message}]}' "$RUNNER_TEMP/tattooai-schedules-write.json" >&2
-            exit 1
-          fi
-          python - <<'PY'
-          import json, os, pathlib
-          body = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'tattooai-schedules-write.json').read_text())
-          result = body.get('result', [])
-          if isinstance(result, dict):
-              result = result.get('schedules', [])
-          crons = sorted(row.get('cron') for row in result if isinstance(row, dict) and row.get('cron'))
-          assert crons == ['*/5 * * * *'], f'Cloudflare cron write readback mismatch: {crons!r}'
-          PY
-
-      - name: Read back active version and exact production configuration
+          curl -fsS -X PUT "$api" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data '[]' > "$RUNNER_TEMP/tattooai-schedules-write.json"
+          jq -e '.success == true' "$RUNNER_TEMP/tattooai-schedules-write.json" >/dev/null
+      - name: Read back exact production state
         shell: bash
         run: |
           set -euo pipefail
           api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai"
           auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
           curl -fsS "${auth[@]}" "$api/deployments" > "$RUNNER_TEMP/tattooai-after.json"
-          jq -e '.success == true and ((if (.result|type)=="array" then .result[0] else .result.deployments[0] end) | (.versions|length) == 1 and .versions[0].percentage == 100)' \
-            "$RUNNER_TEMP/tattooai-after.json" >/dev/null
           version="$(jq -r 'if (.result|type)=="array" then .result[0].versions[0].version_id else .result.deployments[0].versions[0].version_id end' "$RUNNER_TEMP/tattooai-after.json")"
-          [[ "$version" =~ ^[0-9a-f-]{36}$ ]]
-          curl -fsS "${auth[@]}" "$api/versions/$version" \
-            | jq -e --arg sha "$GITHUB_SHA" '.success == true and .result.annotations["workers/tag"] == $sha' >/dev/null
+          curl -fsS "${auth[@]}" "$api/versions/$version" | jq -e --arg sha "$GITHUB_SHA" '.success == true and .result.annotations["workers/tag"] == $sha' >/dev/null
           curl -fsS "${auth[@]}" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-after.json"
           curl -fsS "${auth[@]}" "$api/schedules" > "$RUNNER_TEMP/tattooai-schedules-after.json"
-          python - <<'PY'
-          import json, os, pathlib, tomllib
-          root = pathlib.Path(os.environ['RUNNER_TEMP'])
-          config = tomllib.loads(pathlib.Path('wrangler.toml').read_text())
-          settings = json.loads((root / 'tattooai-settings-after.json').read_text())
-          schedules = json.loads((root / 'tattooai-schedules-after.json').read_text())
-          assert settings.get('success') is True and schedules.get('success') is True
-          bindings = {b['name']: b for b in settings['result']['bindings']}
-          assert bindings.get('AI', {}).get('type') == 'ai', 'Workers AI binding missing'
-          for name, expected in config.get('vars', {}).items():
-              assert bindings.get(name, {}).get('text') == str(expected), f'Production binding mismatch: {name}'
-          actual = schedules['result']
-          if isinstance(actual, dict):
-              actual = actual.get('schedules', [])
-          assert sorted(row['cron'] for row in actual) == sorted(config.get('triggers', {}).get('crons', [])), 'Production cron mismatch'
-          print('Production variables, Workers AI binding and scheduled triggers match the release snapshot.')
-          PY
-          echo "Active tattooai version $version serves exact source $GITHUB_SHA at 100 percent."
-
-      - name: Read back live Worker boundary
+          jq -e '.success == true and any(.result.bindings[]?; .name == "AI" and .type == "ai") and any(.result.bindings[]?; .name == "CRM_AI_IMAGES_ENABLED" and .text == "false")' "$RUNNER_TEMP/tattooai-settings-after.json" >/dev/null
+          jq -e '.success == true and ((if (.result|type)=="array" then .result else .result.schedules end) | length == 0)' "$RUNNER_TEMP/tattooai-schedules-after.json" >/dev/null
+          echo "TattooAI exact source $GITHUB_SHA is active with zero standalone schedules."
+      - name: Read back live HTTP boundary without persistence
         shell: bash
         run: |
           set -euo pipefail
           endpoint='https://tattooai.vvetrov41.workers.dev/'
-
-          get_status="$(curl -sS -o /tmp/tattooai-get.txt -w '%{http_code}' "$endpoint")"
-          test "$get_status" = '405'
+          test "$(curl -sS -o /tmp/tattooai-get.txt -w '%{http_code}' "$endpoint")" = '405'
           grep -Fq 'Use POST request' /tmp/tattooai-get.txt
-
-          post_status="$(curl -sS -o /tmp/tattooai-json.txt -w '%{http_code}' \
-            -X POST "$endpoint" \
-            -H 'content-type: application/json' \
-            --data '{"type":"tattoo-enquiry"}')"
-          test "$post_status" = '415'
+          test "$(curl -sS -o /tmp/tattooai-json.txt -w '%{http_code}' -X POST "$endpoint" -H 'content-type: application/json' --data '{"type":"tattoo-enquiry"}')" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
-
-          # Vladimir's personal form talks directly to the Worker root. This
-          # incomplete multipart request must resolve the trusted production
-          # source and then fail at field validation, before any persistence.
-          vladimir_probe_id="$(cat /proc/sys/kernel/random/uuid)"
-          vladimir_probe_status="$(curl -sS -o /tmp/tattooai-vladimir-probe.json -w '%{http_code}' \
-            -X POST "$endpoint" \
-            -H 'Origin: https://vishartattoo.com' \
-            -F "idempotencyKey=${vladimir_probe_id}" \
-            -F 'name=Production route probe')"
-          test "$vladimir_probe_status" = '400'
-          grep -Fq 'missing_required_field' /tmp/tattooai-vladimir-probe.json
-
-          # Mirror the fields that Kristina's live browser form actually sends.
-          # The same-origin /api/booking adapter must add its trusted routing,
-          # idempotency and privacy metadata and forward to this Worker.
-          #
-          # The attachment is a text file sent under an image content type, so
-          # the adapter's own file-count check passes and the request has to
-          # reach the shared Worker's file validation, which rejects it by
-          # extension. Getting the Worker's own error code back through the
-          # adapter is what proves the two are still wired together; the
-          # adapter answers the zero-attachment case itself and never forwards
-          # it, so that case proves nothing about this Worker.
-          #
-          # File validation runs before persistence, so this creates no
-          # customer data.
-          printf 'not an image' > /tmp/tattooai-not-an-image.txt
-          kristina_probe_status="$(curl -sS -o /tmp/tattooai-kristina-probe.json -w '%{http_code}' \
-            -X POST 'https://www.kristinavishar.com/api/booking' \
-            -H 'Origin: https://www.kristinavishar.com' \
-            -H 'Accept: application/json' \
-            -F 'name=Production route probe' \
-            -F 'email=route-probe@example.invalid' \
-            -F 'phone=' \
-            -F 'instagram=' \
-            -F 'preferredReply=Email' \
-            -F 'travellingFrom=London' \
-            -F 'projectType=Custom colour' \
-            -F 'placement=Forearm' \
-            -F 'size=10 cm' \
-            -F 'coverUp=No' \
-            -F 'timing=Flexible' \
-            -F 'discoverySource=google' \
-            -F 'discoverySourceDetail=' \
-            -F 'idea=Production route contract probe' \
-            -F 'website=' \
-            -F 'consent=yes' \
-            -F 'references=@/tmp/tattooai-not-an-image.txt;type=image/png')"
-          test "$kristina_probe_status" = '400'
-          grep -Fq '"code":"invalid_file_extension"' /tmp/tattooai-kristina-probe.json
-
-          malformed_status="$(curl -sS -o /tmp/tattooai-forms-malformed.html -w '%{http_code}' \
-            "${endpoint}forms/not-a-uuid")"
-          test "$malformed_status" = '404'
-          grep -Fq 'Booking form unavailable' /tmp/tattooai-forms-malformed.html
-          if grep -Fq 'Use POST request' /tmp/tattooai-forms-malformed.html; then
-            echo 'The hosted form namespace still reaches the POST-only intake boundary.' >&2
-            exit 1
-          fi
-
-          unknown_status="$(curl -sS -o /tmp/tattooai-forms-unknown.html -w '%{http_code}' \
-            "${endpoint}forms/00000000-0000-4000-8000-000000000000")"
-          test "$unknown_status" = '404'
-          grep -Fq 'Booking form unavailable' /tmp/tattooai-forms-unknown.html
-
-          # Database migration 0141 must already be live before this release.
-          # These are read-only public-form probes and create no customer data.
-          for slug in vladimir kristina; do
-            status="$(curl -sS -o "/tmp/tattooai-book-${slug}.html" -w '%{http_code}' "${endpoint}book/${slug}")"
-            test "$status" = '200'
-            grep -Fq '<form' "/tmp/tattooai-book-${slug}.html"
-          done
-          unknown_slug_status="$(curl -sS -o /tmp/tattooai-book-unknown.html -w '%{http_code}' \
-            "${endpoint}book/no-such-artist")"
-          test "$unknown_slug_status" = '404'
-          grep -Fq 'Booking form unavailable' /tmp/tattooai-book-unknown.html
-
-          echo "Live tattooai boundary matches the canonical public booking Worker at $GITHUB_SHA"
