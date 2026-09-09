@@ -161,6 +161,7 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
     reporter = null,
     now = () => Date.now(),
     requiredKeys = [],
+    validateJson = null,
   } = deps;
 
   const startedAt = now();
@@ -213,7 +214,15 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
 
       if (outcome.ok && plan.structured) {
         const json = parseStructuredOutput(outcome.result.text, requiredKeys);
-        if (!json) {
+        let valid = Boolean(json);
+        if (valid && typeof validateJson === 'function') {
+          try {
+            valid = Boolean(validateJson(json));
+          } catch {
+            valid = false;
+          }
+        }
+        if (!valid) {
           record.outcome = 'failed';
           record.errorCode = 'output_invalid';
           attempts.push(record);
