@@ -10,6 +10,7 @@ export const MAX_FILES = 3;
 export const MIN_FILES = 1;
 export const MAX_FILE_BYTES = 4 * 1024 * 1024;
 export const PRIVACY_NOTICE_VERSION = '2026-09-09';
+const ACCEPTED_PRIVACY_NOTICE_VERSIONS = new Set([PRIVACY_NOTICE_VERSION, '2026-07-29']);
 
 export const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
@@ -212,7 +213,7 @@ export function parseEnquiryFields(form) {
     enquiry.discoverySourceDetail = '';
   }
 
-  if (!privacyAcknowledged || enquiry.privacyNoticeVersion !== PRIVACY_NOTICE_VERSION) {
+  if (!privacyAcknowledged || !ACCEPTED_PRIVACY_NOTICE_VERSIONS.has(enquiry.privacyNoticeVersion)) {
     throw new RequestError(
       'privacy_notice_not_acknowledged',
       'Please read and acknowledge the current privacy notice.'
