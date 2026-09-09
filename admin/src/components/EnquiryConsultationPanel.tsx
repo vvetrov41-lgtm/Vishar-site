@@ -105,106 +105,109 @@ export function EnquiryConsultationPanel({
   }
 
   return (
-    <div style={{ marginTop: 16 }}>
-      <h3 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>{copy.title}</h3>
-      <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 10px' }}>
-        {copy.hint}
-      </p>
-      <div className="form-grid">
-        <label>
-          <span>{copy.type}</span>
-          <select
-            value={appointmentType}
-            disabled={busy}
-            onChange={(event) => {
-              setAppointmentType(event.target.value as AppointmentType);
-              setClash(null);
-            }}
-          >
-            {CONSULTATION_TYPES.map((type) => (
-              <option key={type} value={type}>{typeLabel(type, language)}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{copy.duration}</span>
-          <select
-            value={durationMinutes}
-            disabled={busy}
-            onChange={(event) => {
-              setDurationMinutes(Number(event.target.value));
-              setClash(null);
-            }}
-          >
-            {DURATIONS.map((minutes) => (
-              <option key={minutes} value={minutes}>{copy.minutes(minutes)}</option>
-            ))}
-          </select>
-        </label>
-      </div>
+    <details className="booking-disclosure" style={{ marginTop: 16 }}>
+      <summary>{copy.collapsedTitle}</summary>
+      <div style={{ marginTop: 12 }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>{copy.title}</h3>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 10px' }}>
+          {copy.hint}
+        </p>
+        <div className="form-grid">
+          <label>
+            <span>{copy.type}</span>
+            <select
+              value={appointmentType}
+              disabled={busy}
+              onChange={(event) => {
+                setAppointmentType(event.target.value as AppointmentType);
+                setClash(null);
+              }}
+            >
+              {CONSULTATION_TYPES.map((type) => (
+                <option key={type} value={type}>{typeLabel(type, language)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{copy.duration}</span>
+            <select
+              value={durationMinutes}
+              disabled={busy}
+              onChange={(event) => {
+                setDurationMinutes(Number(event.target.value));
+                setClash(null);
+              }}
+            >
+              {DURATIONS.map((minutes) => (
+                <option key={minutes} value={minutes}>{copy.minutes(minutes)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-      <div className="booking-manual-time-grid" role="group" aria-label={copy.start}>
+        <div className="booking-manual-time-grid" role="group" aria-label={copy.start}>
+          <label>
+            <span>{copy.date}</span>
+            <input
+              type="date"
+              value={startParts.date}
+              disabled={busy}
+              onChange={(event) => updateStart({ date: event.target.value })}
+            />
+          </label>
+          <label>
+            <span>{copy.hour}</span>
+            <select
+              value={startParts.hour}
+              disabled={busy}
+              onChange={(event) => updateStart({ hour: event.target.value })}
+            >
+              {MANUAL_HOUR_OPTIONS.map((hour) => (
+                <option key={hour} value={hour}>{hour}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{copy.minute}</span>
+            <select
+              value={startParts.minute}
+              disabled={busy}
+              onChange={(event) => updateStart({ minute: event.target.value })}
+            >
+              {MANUAL_MINUTE_OPTIONS.map((minute) => (
+                <option key={minute} value={minute}>{minute}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <label>
-          <span>{copy.date}</span>
-          <input
-            type="date"
-            value={startParts.date}
+          <span>{copy.notes}</span>
+          <textarea
+            value={notes}
+            maxLength={8000}
             disabled={busy}
-            onChange={(event) => updateStart({ date: event.target.value })}
+            onChange={(event) => setNotes(event.target.value)}
           />
         </label>
-        <label>
-          <span>{copy.hour}</span>
-          <select
-            value={startParts.hour}
-            disabled={busy}
-            onChange={(event) => updateStart({ hour: event.target.value })}
+        <div className="actions">
+          <button
+            type="button"
+            disabled={busy || !startAt}
+            onClick={() => { void schedule(); }}
           >
-            {MANUAL_HOUR_OPTIONS.map((hour) => (
-              <option key={hour} value={hour}>{hour}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{copy.minute}</span>
-          <select
-            value={startParts.minute}
-            disabled={busy}
-            onChange={(event) => updateStart({ minute: event.target.value })}
-          >
-            {MANUAL_MINUTE_OPTIONS.map((minute) => (
-              <option key={minute} value={minute}>{minute}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <label>
-        <span>{copy.notes}</span>
-        <textarea
-          value={notes}
-          maxLength={8000}
-          disabled={busy}
-          onChange={(event) => setNotes(event.target.value)}
-        />
-      </label>
-      <div className="actions">
-        <button
-          type="button"
-          disabled={busy || !startAt}
-          onClick={() => { void schedule(); }}
-        >
-          {busy ? copy.saving : copy.schedule}
-        </button>
-      </div>
-      {clash ? (
-        <div className="notice warn" role="alert">
-          <p style={{ margin: 0 }}>{copy.conflict(clash.count, clash.first)}</p>
+            {busy ? copy.saving : copy.schedule}
+          </button>
         </div>
-      ) : null}
-      {notice ? <p className="notice ok" role="status">{notice}</p> : null}
-      {error ? <p className="notice warn" role="alert">{error}</p> : null}
-    </div>
+        {clash ? (
+          <div className="notice warn" role="alert">
+            <p style={{ margin: 0 }}>{copy.conflict(clash.count, clash.first)}</p>
+          </div>
+        ) : null}
+        {notice ? <p className="notice ok" role="status">{notice}</p> : null}
+        {error ? <p className="notice warn" role="alert">{error}</p> : null}
+      </div>
+    </details>
   );
 }
 
@@ -224,6 +227,7 @@ function typeLabel(type: AppointmentType, language: 'en' | 'ru') {
 
 const COPY = {
   en: {
+    collapsedTitle: 'Consultation',
     title: 'Schedule a consultation',
     hint: 'Create a consultation directly from this enquiry. A project is not created until you decide to proceed with the tattoo.',
     type: 'Consultation type',
@@ -242,6 +246,7 @@ const COPY = {
     failed: 'Could not schedule that consultation.',
   },
   ru: {
+    collapsedTitle: 'Консультация',
     title: 'Записать на консультацию',
     hint: 'Создай консультацию прямо из заявки. Проект появится только тогда, когда решишь продолжить работу над татуировкой.',
     type: 'Тип консультации',
