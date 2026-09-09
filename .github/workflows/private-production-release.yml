@@ -143,8 +143,7 @@ jobs:
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
-          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
           [ -z "$(git status --short)" ]
           git merge-base --is-ancestor "$REQUIRED_RELEASE_FOUNDATION_SHA" "$GITHUB_SHA"
           remote_sha="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | awk 'NR == 1 {print $1}')"
