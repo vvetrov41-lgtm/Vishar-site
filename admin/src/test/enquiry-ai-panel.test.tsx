@@ -53,6 +53,16 @@ describe('enquiry AI panel', () => {
     expect(screen.getByText(/AI suggestions below are separate from the saved enquiry fields/i)).toBeInTheDocument();
     expect(screen.getByText(/Nothing has been sent/i)).toBeInTheDocument();
     expect(screen.getByText('Still needed')).toBeInTheDocument();
+    expect(screen.getByText('Fine-line moth enquiry.').closest('section')).not.toHaveAttribute('data-compact-enquiry-ai');
+  });
+
+  it('keeps passive pending analysis compact while preserving its live status', async () => {
+    const pending: EnquiryAiResult = { enabled: true, status: 'pending' };
+    renderPanel(apiStub({ getEnquiryAiResult: vi.fn().mockResolvedValue(pending) }));
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('Waiting for analysis. You can keep working on this enquiry.');
+    expect(status.closest('section')).toHaveAttribute('data-compact-enquiry-ai', 'true');
+    expect(screen.getByRole('heading', { name: 'Enquiry assistant' })).toBeInTheDocument();
   });
 
   it('edits the draft using its optimistic version without sending or approving', async () => {
