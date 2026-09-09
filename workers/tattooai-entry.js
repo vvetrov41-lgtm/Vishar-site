@@ -5,8 +5,8 @@
 // root-domain edge. `/forms/{uuid}` remains the legacy hosted compatibility path.
 // Enquiry AI queue draining is not scheduled here. Production invokes the
 // bounded internal drain endpoint through the existing shared CRM scheduler's
-// Cloudflare Service Binding. The endpoint is authenticated with the already-
-// shared production Supabase backend secret and never receives browser CORS.
+// Cloudflare Service Binding. The synthetic internal hostname is the capability
+// boundary and never receives browser CORS.
 
 import tattooai from './tattooai.js';
 import { drainEnquiryAi } from './lib/enquiry-ai.js';
@@ -24,11 +24,16 @@ import {
 
 const SAFE_CODE = /^[a-z][a-z0-9_]{2,63}$/;
 const AI_DRAIN_PATH = '/internal/enquiry-ai/drain';
+const AI_DRAIN_HOST = 'tattooai.internal';
 
 function isInternalAiDrainRequest(request) {
   try {
     const url = new URL(request?.url ?? '');
-    return url.pathname === AI_DRAIN_PATH && !url.search && !url.hash;
+    return url.protocol === 'https:'
+      && url.hostname === AI_DRAIN_HOST
+      && url.pathname === AI_DRAIN_PATH
+      && !url.search
+      && !url.hash;
   } catch {
     return false;
   }
@@ -37,9 +42,6 @@ function isInternalAiDrainRequest(request) {
 async function handleInternalAiDrain(request, env) {
   if (env?.VISHAR_ENVIRONMENT !== 'production') return new Response('Not found', { status: 404 });
   if (request.method !== 'POST') return new Response('Not found', { status: 404 });
-  const secret = typeof env?.SUPABASE_SECRET_KEY === 'string' ? env.SUPABASE_SECRET_KEY : '';
-  const supplied = request.headers.get('authorization') || '';
-  if (!secret || supplied !== `Bearer ${secret}`) return new Response('Not found', { status: 404 });
 
   const result = await drainEnquiryAi(env, { limit: 3 });
   const processed = Number.isInteger(result?.processed)
@@ -89,4 +91,9 @@ export default {
   },
 };
 
-export const __testing = Object.freeze({ AI_DRAIN_PATH, handleInternalAiDrain, isInternalAiDrainRequest });
+export const __testing = Object.freeze({
+  AI_DRAIN_HOST,
+  AI_DRAIN_PATH,
+  handleInternalAiDrain,
+  isInternalAiDrainRequest,
+});

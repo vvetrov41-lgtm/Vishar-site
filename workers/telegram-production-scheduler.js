@@ -28,11 +28,12 @@ export async function runSharedEnquiryAiDrain(env) {
     if (!env?.TATTOOAI_SERVICE || typeof env.TATTOOAI_SERVICE.fetch !== 'function') {
       throw failure('tattooai_service_binding_unavailable', 'TattooAI service binding unavailable');
     }
-    const secret = typeof env?.SUPABASE_SECRET_KEY === 'string' ? env.SUPABASE_SECRET_KEY : '';
-    if (!secret) throw failure('tattooai_service_auth_unavailable', 'TattooAI service auth unavailable');
+    // The Service Binding itself is the capability boundary. Do not couple two
+    // Workers by requiring their independent Supabase backend secrets to be
+    // byte-for-byte identical. The synthetic tattooai.internal host is checked
+    // by the callee so this route is not reachable through the public Worker URL.
     const response = await env.TATTOOAI_SERVICE.fetch(AI_DRAIN_URL, {
       method: 'POST',
-      headers: { authorization: `Bearer ${secret}` },
     });
     if (!response?.ok) throw failure('tattooai_service_unavailable', 'TattooAI service unavailable');
     const summary = assertEnquiryAiSummary(await response.json());
