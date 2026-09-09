@@ -3,6 +3,7 @@ import {
   assertEnquiryAiSummary,
   createProductionScheduler,
   runSharedEnquiryAiDrain,
+  __testing,
 } from '../workers/telegram-production-scheduler.js';
 
 assert.deepEqual(assertEnquiryAiSummary({ ok: true, processed: 0 }), { processed: 0 });
@@ -15,15 +16,27 @@ assert.throws(() => assertEnquiryAiSummary({ ok: false, processed: 0, errorCode:
   (error) => error?.code === 'queue_unavailable');
 
 let calls = 0;
+const backendSecret = 'unit-test-backend-secret';
 assert.deepEqual(await runSharedEnquiryAiDrain({
+  SUPABASE_SECRET_KEY: backendSecret,
   TATTOOAI_SERVICE: {
-    async drainEnquiryAiJobs() {
+    async fetch(url, init = {}) {
       calls += 1;
-      return { ok: true, processed: 2 };
+      assert.equal(String(url), __testing.AI_DRAIN_URL);
+      assert.equal(init.method, 'POST');
+      assert.equal(new Headers(init.headers).get('authorization'), `Bearer ${backendSecret}`);
+      return Response.json({ ok: true, processed: 2 });
     },
   },
 }), { processed: 2 });
 assert.equal(calls, 1);
+
+await assert.rejects(
+  runSharedEnquiryAiDrain({
+    TATTOOAI_SERVICE: { async fetch() { return Response.json({ ok: true, processed: 0 }); } },
+  }),
+  (error) => error?.code === 'tattooai_service_auth_unavailable',
+);
 
 const quietBase = {
   fetch() { return new Response('base', { status: 200 }); },
@@ -35,10 +48,11 @@ let previewCalls = 0;
 previewScheduler.scheduled({}, {
   VISHAR_ENVIRONMENT: 'preview',
   ENQUIRY_AI_SHARED_DRAIN_ENABLED: 'true',
+  SUPABASE_SECRET_KEY: backendSecret,
   TATTOOAI_SERVICE: {
-    async drainEnquiryAiJobs() {
+    async fetch() {
       previewCalls += 1;
-      return { ok: true, processed: 0 };
+      return Response.json({ ok: true, processed: 0 });
     },
   },
 }, { waitUntil() { waited = true; } });
@@ -61,8 +75,9 @@ let scheduledPromise;
 scheduler.scheduled({}, {
   VISHAR_ENVIRONMENT: 'production',
   ENQUIRY_AI_SHARED_DRAIN_ENABLED: 'true',
+  SUPABASE_SECRET_KEY: backendSecret,
   TATTOOAI_SERVICE: {
-    async drainEnquiryAiJobs() {
+    async fetch() {
       throw Object.assign(new Error('synthetic AI failure'), { code: 'synthetic_ai_failure' });
     },
   },
@@ -84,4 +99,4 @@ const response = await scheduler.fetch(new Request('https://telegram.example.tes
 assert.equal(response.status, 200);
 assert.equal(await response.text(), 'base');
 
-console.log('Enquiry AI shared scheduler tests passed: production-only AI work shares the existing scheduler and cannot suppress sibling work.');
+console.log('Enquiry AI shared scheduler tests passed: production-only authenticated service fetch shares the existing scheduler and cannot suppress sibling work.');
