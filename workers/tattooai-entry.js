@@ -3,7 +3,10 @@
 // Platform-owned public surfaces are dispatched before the legacy router.
 // `/book/{artist-slug}` is the canonical human-facing booking route behind the
 // root-domain edge. `/forms/{uuid}` remains the legacy hosted compatibility path.
+// Enquiry AI queue draining is not scheduled here. Production invokes the
+// bounded EnquiryAiService entrypoint from the existing shared CRM scheduler.
 
+import { WorkerEntrypoint } from 'cloudflare:workers';
 import tattooai from './tattooai.js';
 import { drainEnquiryAi } from './lib/enquiry-ai.js';
 import { getCorsHeaders, isRegistryBookingRequest } from './lib/http.js';
@@ -18,15 +21,29 @@ import {
   isAiRouterProbePath,
 } from './routes/ai-router-probe.js';
 
-function scheduleEnquiryAiDrain(env, ctx) {
-  if (typeof ctx?.waitUntil !== 'function') return;
-  ctx.waitUntil(drainEnquiryAi(env, { limit: 3 }));
+const SAFE_CODE = /^[a-z][a-z0-9_]{2,63}$/;
+
+export class EnquiryAiService extends WorkerEntrypoint {
+  async drainEnquiryAiJobs() {
+    if (this.env?.VISHAR_ENVIRONMENT !== 'production') {
+      return { ok: true, processed: 0 };
+    }
+    const result = await drainEnquiryAi(this.env, { limit: 3 });
+    const processed = Number.isInteger(result?.processed)
+      ? Math.min(3, Math.max(0, result.processed))
+      : 0;
+    if (result?.errorCode) {
+      return {
+        ok: false,
+        processed,
+        errorCode: SAFE_CODE.test(result.errorCode) ? result.errorCode : 'enquiry_ai_drain_failed',
+      };
+    }
+    return { ok: true, processed };
+  }
 }
 
 export default {
-  async scheduled(_event, env, ctx) {
-    scheduleEnquiryAiDrain(env, ctx);
-  },
   async fetch(request, env, ctx) {
     // Operator-only model-routing readback. Answers 404 unless explicitly
     // enabled and token-authenticated, and never emits CORS headers.
@@ -54,11 +71,6 @@ export default {
       });
     }
 
-    // Scheduled Triggers remain the primary consumer. Legacy/root Worker
-    // traffic is also allowed to drain the durable queue so enquiry AI cannot
-    // stall when Cloudflare schedule mutation is temporarily unavailable.
-    // Claims are lease-safe and waitUntil keeps the HTTP response non-blocking.
-    scheduleEnquiryAiDrain(env, ctx);
     return tattooai.fetch(request, env, ctx);
   },
 };
