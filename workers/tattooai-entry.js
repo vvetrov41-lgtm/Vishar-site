@@ -18,9 +18,14 @@ import {
   isAiRouterProbePath,
 } from './routes/ai-router-probe.js';
 
+function scheduleEnquiryAiDrain(env, ctx) {
+  if (typeof ctx?.waitUntil !== 'function') return;
+  ctx.waitUntil(drainEnquiryAi(env, { limit: 3 }));
+}
+
 export default {
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(drainEnquiryAi(env, { limit: 3 }));
+    scheduleEnquiryAiDrain(env, ctx);
   },
   async fetch(request, env, ctx) {
     // Operator-only model-routing readback. Answers 404 unless explicitly
@@ -49,6 +54,11 @@ export default {
       });
     }
 
+    // Scheduled Triggers remain the primary consumer. Legacy/root Worker
+    // traffic is also allowed to drain the durable queue so enquiry AI cannot
+    // stall when Cloudflare schedule mutation is temporarily unavailable.
+    // Claims are lease-safe and waitUntil keeps the HTTP response non-blocking.
+    scheduleEnquiryAiDrain(env, ctx);
     return tattooai.fetch(request, env, ctx);
   },
 };
