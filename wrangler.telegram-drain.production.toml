@@ -9,19 +9,23 @@ routes = [
 ]
 
 # One Worker owns Telegram delivery, the bounded Gmail shared scheduler dispatch,
-# the generic automation-engine heartbeat, and the Telegram linking callback.
-# The tracked production template is deliberately inert:
+# the generic automation-engine heartbeat, bounded enquiry AI dispatch, and the
+# Telegram linking callback. The tracked production template is deliberately inert:
 #   * Telegram scheduled delivery is disabled;
 #   * Gmail shared scheduler dispatch is disabled;
 #   * automation-engine ticks are disabled;
+#   * enquiry AI shared dispatch is disabled;
 #   * self-service linking is disabled;
 #   * no cron or Service Binding exists in this file.
 # The guarded production release generates the active scheduler config from this
-# template. It preserves the already-live Gmail shared-cron contract and enables
-# the backend-only automation heartbeat on the same existing cron. No second
-# Worker or cron is introduced.
+# template. It preserves the already-live Gmail shared-cron contract, enables
+# the backend-only automation heartbeat, and dispatches bounded enquiry AI to
+# TattooAI through a production-only Service Binding on the same existing cron.
+# No second cron is introduced.
 # GMAIL_SERVICE -> vishar-gmail-production plus GMAIL_SHARED_DRAIN_ENABLED=true.
-# Gmail credentials remain exclusively on the Gmail Worker.
+# TATTOOAI_SERVICE -> tattooai (EnquiryAiService) plus
+# ENQUIRY_AI_SHARED_DRAIN_ENABLED=true. AI/Supabase model credentials remain on
+# TattooAI and are never copied into this scheduler Worker.
 #
 # With TELEGRAM_LINKING_ENABLED=false every HTTP request returns 404, including
 # the pre-provisioned Custom Domain. Linking can only be enabled by the separate
@@ -40,6 +44,7 @@ CRM_ORIGIN = "https://crm.vishartattoo.com"
 TELEGRAM_DRAIN_ENABLED = "false"
 GMAIL_SHARED_DRAIN_ENABLED = "false"
 AUTOMATION_TICK_ENABLED = "false"
+ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"
 TELEGRAM_LINKING_ENABLED = "false"
 
 # Required encrypted production Worker secrets are deliberately absent here.
@@ -52,9 +57,10 @@ TELEGRAM_LINKING_ENABLED = "false"
 #   TELEGRAM_BOT_TOKEN
 #   TELEGRAM_WEBHOOK_SECRET
 #
-# GMAIL_SERVICE is a Cloudflare Service Binding, not a secret. It is generated
-# only in the active deploy config and points to vishar-gmail-production. No
-# Gmail OAuth/client/token/KV credential may be copied into this Worker.
+# GMAIL_SERVICE and TATTOOAI_SERVICE are Cloudflare Service Bindings, not
+# secrets. They are generated only in the active deploy config. No Gmail
+# OAuth/client/token/KV credential and no TattooAI model credential may be
+# copied into this Worker.
 #
 # TELEGRAM_BOT_TOKEN is the one shared bot credential used only by DB-resolved
 # destinations. TELEGRAM_WEBHOOK_SECRET authenticates the future /webhook
