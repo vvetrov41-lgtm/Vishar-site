@@ -11,11 +11,15 @@ import { App } from '../App';
 import { ENQUIRY_ID, renderWithSession } from './fixtures';
 
 describe('scheduling a consultation from an enquiry', () => {
-  it('sits with the other enquiry actions, without pressing Edit first', async () => {
+  it('sits with the other enquiry actions, collapsed until the operator chooses it', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: `/enquiries/${ENQUIRY_ID}` });
 
     const actions = await screen.findByRole('heading', { level: 2, name: 'Next action' });
     const schedule = await screen.findByRole('heading', { name: 'Schedule a consultation' });
+    const disclosure = screen.getByText('Consultation').closest('details');
+
+    expect(disclosure).not.toBeNull();
+    expect(disclosure).not.toHaveAttribute('open');
 
     // Inside the actions section, and ahead of the record content it used to
     // be buried in.
