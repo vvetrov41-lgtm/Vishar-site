@@ -85,12 +85,36 @@ await test('valid Qwen/router output creates one draft through the bounded compl
   const db = rpcRecorder();
   const response = await processEnquiryAiJob(env, job(), {
     supabase: db,
-    runTask: async () => ({ ok: true, json: result(), provider: 'qwen', model: '@cf/qwen/qwen3.8-27b' }),
+    runTask: async (_env, _task, _input, deps) => {
+      assert.equal(deps.validateJson, validateEnquiryAnalysis);
+      return { ok: true, json: result(), provider: 'qwen', model: '@cf/qwen/qwen3.8-27b' };
+    },
   });
   assert.equal(response.outcome, 'succeeded');
   assert.deepEqual(db.calls.map((call) => call.name), ['service_complete_enquiry_ai_job']);
   assert.equal(db.calls[0].args.p_job_id, JOB_ID);
   assert.equal(db.calls[0].args.p_result.enquiry_id, undefined);
+});
+
+await test('semantic-invalid Qwen output falls back to Workers AI before the CRM job fails', async () => {
+  const db = rpcRecorder();
+  const attemptedModels = [];
+  const aiEnv = {
+    ...env,
+    AI: {
+      run: async (model) => {
+        attemptedModels.push(model);
+        if (model.includes('/qwen/')) return { response: JSON.stringify({ fields: {} }) };
+        return { response: JSON.stringify(result()) };
+      },
+    },
+  };
+  const response = await processEnquiryAiJob(aiEnv, job(), { supabase: db });
+  assert.equal(response.outcome, 'succeeded');
+  assert.equal(attemptedModels.length, 2);
+  assert.ok(attemptedModels[0].includes('/qwen/'));
+  assert.ok(attemptedModels[1].includes('/llama-'));
+  assert.deepEqual(db.calls.map((call) => call.name), ['service_complete_enquiry_ai_job']);
 });
 
 await test('invalid model output never completes and records a retryable failure', async () => {

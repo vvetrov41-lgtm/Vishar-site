@@ -41,7 +41,12 @@ export async function processEnquiryAiJob(env, job, deps = {}) {
   try {
     const input = projectEnquiryAiInput(job.input);
     if (!input) return fail('input_invalid');
-    const model = await runTask(env, TASK, { system: ENQUIRY_AI_SYSTEM, input });
+    const model = await runTask(
+      env,
+      TASK,
+      { system: ENQUIRY_AI_SYSTEM, input },
+      { validateJson: validateEnquiryAnalysis },
+    );
     if (!model?.ok) return fail('ai_unavailable');
     const result = validateEnquiryAnalysis(model.json);
     if (!result) return fail('output_invalid');
