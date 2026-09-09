@@ -105,6 +105,6 @@ if (!text.includes(`TELEGRAM_LINKING_ENABLED = "${expectedLinking}"`)) {
 }
 
 text += `\n[[services]]\nbinding = "GMAIL_SERVICE"\nservice = "vishar-gmail-production"\n`;
-text += `\n[[services]]\nbinding = "TATTOOAI_SERVICE"\nservice = "tattooai"\nentrypoint = "EnquiryAiService"\n`;
+text += `\n[[services]]\nbinding = "TATTOOAI_SERVICE"\nservice = "tattooai"\n`;
 text += `\n[triggers]\ncrons = ["*/5 * * * *"]\n\n[secrets]\nrequired = [\n  "SUPABASE_SECRET_KEY",\n  "ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION",\n  "ARTIST_TELEGRAM_KRISTINA_HPRODUCTION",\n  "TELEGRAM_BOT_TOKEN",\n  "TELEGRAM_WEBHOOK_SECRET",\n]\n`;
 fs.writeFileSync(output, text, { mode: 0o600 });
