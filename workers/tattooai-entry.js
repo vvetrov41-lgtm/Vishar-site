@@ -18,11 +18,23 @@ import {
   isAiRouterProbePath,
 } from './routes/ai-router-probe.js';
 
+function scheduleEnquiryAiDrain(env, ctx) {
+  if (typeof ctx?.waitUntil !== 'function') return;
+  ctx.waitUntil(drainEnquiryAi(env, { limit: 3 }));
+}
+
 export default {
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(drainEnquiryAi(env, { limit: 3 }));
+    scheduleEnquiryAiDrain(env, ctx);
   },
   async fetch(request, env, ctx) {
+    // Scheduled Triggers are the primary queue consumer, but production intake
+    // must not stall if Cloudflare schedule mutation is temporarily unavailable.
+    // The database claim RPC is lease-safe, so opportunistic drains on normal
+    // Worker traffic cannot process the same job twice and never delay the HTTP
+    // response because execution is attached to waitUntil().
+    scheduleEnquiryAiDrain(env, ctx);
+
     // Operator-only model-routing readback. Answers 404 unless explicitly
     // enabled and token-authenticated, and never emits CORS headers.
     if (isAiRouterProbePath(request)) {
