@@ -1,0 +1,81 @@
+name: Enquiry AI reset window inspect
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-enquiry-ai-observe-reset-window'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact canonical one-file inspect snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')"
+          test "$canonical" = '61a0735e8f726235283b3e09c804e436eee70839'
+          test "$(git rev-parse HEAD^)" = "$canonical"
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/enquiry-ai-production-reset-window-inspect.yml'
+          test "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+      - name: Resolve production pooler
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          region="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF" | jq -r '.region // empty')"
+          [[ "$region" =~ ^[a-z0-9-]+$ ]]
+          echo "host=aws-0-${region}.pooler.supabase.com" >> "$GITHUB_OUTPUT"
+      - name: Read reset-window state
+        id: state
+        shell: bash
+        env:
+          PGPASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+          DB_HOST: ${{ steps.db.outputs.host }}
+        run: |
+          set -euo pipefail
+          conn="host=$DB_HOST port=5432 dbname=postgres user=postgres.$PROJECT_REF sslmode=require connect_timeout=10"
+          row="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -F '|' -c "with w as (select * from public.enquiry_ai_jobs where updated_at >= timestamptz '2026-09-10 16:55:43+00') select count(*)::text,count(*) filter(where status='succeeded')::text,count(*) filter(where status='failed')::text,count(*) filter(where status='pending')::text,count(*) filter(where status='processing')::text,count(*) filter(where status='stale')::text,count(*) filter(where status='succeeded' and attempts=3 and error_code is null and provider in ('qwen','workers_ai','openai') and model is not null and result is not null and crm_private.validate_enquiry_ai_result(result))::text from w;")"
+          IFS='|' read -r total succeeded failed pending processing stale valid_succeeded <<< "$row"
+          for value in "$total" "$succeeded" "$failed" "$pending" "$processing" "$stale" "$valid_succeeded"; do [[ "$value" =~ ^[0-9]+$ ]]; done
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "succeeded=$succeeded" >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          echo "processing=$processing" >> "$GITHUB_OUTPUT"
+          echo "stale=$stale" >> "$GITHUB_OUTPUT"
+          echo "valid_succeeded=$valid_succeeded" >> "$GITHUB_OUTPUT"
+      - name: Exactly one job changed in reset window
+        if: steps.state.outputs.total == '1'
+        run: echo exactly-one
+      - name: Reset-window job succeeded
+        if: steps.state.outputs.succeeded == '1'
+        run: echo succeeded
+      - name: Reset-window job strictly valid
+        if: steps.state.outputs.valid_succeeded == '1'
+        run: echo valid-succeeded
+      - name: Reset-window failure exists
+        if: fromJSON(steps.state.outputs.failed) > 0
+        run: echo failed
+      - name: Reset-window pending exists
+        if: fromJSON(steps.state.outputs.pending) > 0
+        run: echo pending
+      - name: Reset-window processing exists
+        if: fromJSON(steps.state.outputs.processing) > 0
+        run: echo processing
+      - name: Reset-window stale exists
+        if: fromJSON(steps.state.outputs.stale) > 0
+        run: echo stale
