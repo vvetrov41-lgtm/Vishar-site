@@ -38,9 +38,8 @@ const fieldSchema = (name) => {
   };
 };
 
-// Workers AI JSON Schema mode constrains the cheap Llama fallback before the
-// semantic validator runs. Cross-field rules (for example missing => null) stay
-// in validateEnquiryAnalysis so provider output still fails closed.
+// The full contract documents the shape we require after the provider returns.
+// validateEnquiryAnalysis below remains the authoritative fail-closed boundary.
 export const ENQUIRY_AI_RESPONSE_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
@@ -60,6 +59,30 @@ export const ENQUIRY_AI_RESPONSE_SCHEMA = Object.freeze({
       items: { type: 'string', enum: [...ENQUIRY_AI_FIELDS] },
     },
     draft_reply: { type: 'string', minLength: 1, maxLength: 3000 },
+  },
+});
+
+// Workers AI structured-output support is deliberately given a smaller transport
+// schema. Some hosted models reject richer JSON-Schema keywords before inference
+// starts. This schema only constrains the envelope and required field names; the
+// full semantic validator still checks every value, status, enum, length, missing
+// field and reply-safety rule after inference, so simplifying transport cannot
+// turn malformed model output into accepted CRM data.
+const transportField = () => ({ type: 'object' });
+export const ENQUIRY_AI_TRANSPORT_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  required: ['fields', 'summary', 'missing_information', 'draft_reply'],
+  properties: {
+    fields: {
+      type: 'object',
+      additionalProperties: false,
+      required: [...ENQUIRY_AI_FIELDS],
+      properties: Object.fromEntries(ENQUIRY_AI_FIELDS.map((name) => [name, transportField()])),
+    },
+    summary: { type: 'string' },
+    missing_information: { type: 'array', items: { type: 'string' } },
+    draft_reply: { type: 'string' },
   },
 });
 
