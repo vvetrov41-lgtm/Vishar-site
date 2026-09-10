@@ -105,7 +105,10 @@ jobs:
 
           status=''
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            status="$(curl -sS --max-time 90 -o "$response" -w '%{http_code}'               -X POST -H "Authorization: Bearer $token" "$endpoint")"
+            if ! status="$(curl -sS --max-time 90 -o "$response" -w '%{http_code}' \
+              -X POST -H "Authorization: Bearer $token" "$endpoint")"; then
+              status='000'
+            fi
             [ "$status" = '200' ] && break
             sleep 2
           done
@@ -124,7 +127,13 @@ jobs:
           '
 
           npx wrangler delete --config "$config" --name "$WORKER_NAME" --force >/dev/null
-          after="$(curl -sS -o "$RUNNER_TEMP/probe-after.json" -w '%{http_code}'             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/settings")"
+          after=''
+          for attempt in 1 2 3 4 5; do
+            after="$(curl -sS -o "$RUNNER_TEMP/probe-after.json" -w '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/settings")"
+            [ "$after" = '404' ] && break
+            sleep 2
+          done
           [ "$after" = '404' ]
           rm -f "$config" "$response"
           trap - EXIT
@@ -135,7 +144,7 @@ jobs:
           {
             echo '### Enquiry AI production drain probe'
             echo
-            echo "- Exact canonical SHA: `$GITHUB_SHA`"
+            printf '%s\\n' "- Exact canonical SHA: \`$GITHUB_SHA\`"
             echo '- Drain: TattooAI Service Binding only; maximum three jobs'
             echo '- Credentials: ephemeral probe secret; no Supabase/model secret copied'
             echo '- Output: bounded counters only; no client payload'
