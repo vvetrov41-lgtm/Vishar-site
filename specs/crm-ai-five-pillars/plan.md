@@ -124,3 +124,61 @@ For external reference URLs:
 No deployment from this branch. Production enablement is a separate explicit step.
 Initial runtime mode should be artist-only/shadow-safe: derive state and notify the
 artist, never send to clients automatically.
+
+---
+
+## As built
+
+The design above held. This records where the implementation is, and the four
+places where building it changed a decision.
+
+### Where things live
+
+| Concern | Implementation |
+| --- | --- |
+| Switches | `crm_private.crm_agent_config` (`enabled`, `vision_enabled`), plus `CRM_AGENT_ENABLED`, `CRM_AGENT_VISION_ENABLED`, `CRM_AGENT_SHARED_DRAIN_ENABLED`, `CRM_AGENT_TELEGRAM_DIGEST_ENABLED` |
+| Scope | `crm_private.client_ai_scope(artist, client)` |
+| Freshness | `crm_private.client_ai_watermark(artist, client)` |
+| Timeline | `crm_private.client_timeline_items` → `public.get_client_timeline` |
+| Brief | `public.client_ai_state` → `public.get_client_ai_state` |
+| Next Action | `public.client_ai_next_actions` → `public.list_client_ai_next_actions`, `public.resolve_client_ai_next_action` |
+| Images | `public.enquiry_file_ai_analysis` |
+| Queue | `public.crm_agent_jobs` + `service_claim_crm_agent_jobs` / `service_complete_*` / `service_fail_crm_agent_job` |
+| Rebuild | `public.refresh_client_ai_state(artist, client)` |
+| Contracts | `workers/lib/ai/client-state-schema.js`, `workers/lib/ai/reference-image-schema.js` |
+| Orchestration | `workers/lib/crm-agent.js`, drained via `/internal/crm-agent/drain` |
+| Telegram | `workers/lib/crm-agent-telegram.js`, `service_telegram_client_ai_digest` |
+
+### Four decisions the implementation changed
+
+**The watermark hashes content, not timestamps.** The first version hashed
+enquiry `updated_at`. A test caught it: editing an enquiry's idea left the
+watermark unchanged, so a brief that no longer matched the CRM reported itself
+fresh. Hashing the fields the context projection actually exposes makes
+staleness a property of the data rather than of a trigger remembering to bump a
+column.
+
+**Claiming takes the newest refresh, not the oldest.** Several events can queue
+several refreshes for one client before the drain runs. Claiming oldest-first
+guaranteed a stale answer and paid a provider for it. The claim now takes the
+newest and marks the backlog it supersedes as stale in the same statement.
+
+**A same-watermark refresh updates its recommendation in place.** The first
+version superseded every open recommendation and then inserted with `on conflict
+do nothing`, which left the artist with no open next step whenever the watermark
+was unchanged. Superseding only *other* watermarks and upserting the current one
+keeps exactly one open row, keeps its id stable, and therefore keeps the
+notification dedupe key stable.
+
+**`approval_required` is generated, not supplied.** The model was originally
+asked to report whether approval was needed. It is now a generated column
+derived from `action_type`, so the question is never asked and a model's answer
+to it cannot matter.
+
+### What is not here
+
+Deferred items are listed in `tasks.md`. The two worth restating: there is no
+Telegram callback/button surface, because every button worth adding is an
+action; and no client-facing send, date, deposit or booking can originate from
+this system at all. The action vocabulary that could commit one carries no
+model-written text, and the approval flag on it cannot be lowered.

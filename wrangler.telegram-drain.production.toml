@@ -45,6 +45,15 @@ TELEGRAM_DRAIN_ENABLED = "false"
 GMAIL_SHARED_DRAIN_ENABLED = "false"
 AUTOMATION_TICK_ENABLED = "false"
 ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"
+# Derived client AI state rides the same existing cron and the same TattooAI
+# Service Binding as the enquiry AI drain. It is switched separately so it can
+# be turned on and off without disturbing enquiry intake, and so a failure in
+# one is reported on its own rather than as an opaque scheduler error.
+CRM_AGENT_SHARED_DRAIN_ENABLED = "false"
+# The read-only /needsme and /today digest. It sends nothing to a client, holds
+# no date and moves no money; it requires TELEGRAM_LINKING_ENABLED as well,
+# because it answers on the same webhook.
+CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"
 TELEGRAM_LINKING_ENABLED = "false"
 
 # Required encrypted production Worker secrets are deliberately absent here.
