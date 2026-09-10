@@ -1,0 +1,87 @@
+name: Enquiry AI recovery age inspect
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-enquiry-ai-observe-recovery-age'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact canonical one-file inspect snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')"
+          test "$canonical" = '61a0735e8f726235283b3e09c804e436eee70839'
+          test "$(git rev-parse HEAD^)" = "$canonical"
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/enquiry-ai-production-recovery-age.yml'
+          test "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+      - name: Resolve production pooler
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          region="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF" | jq -r '.region // empty')"
+          [[ "$region" =~ ^[a-z0-9-]+$ ]]
+          echo "host=aws-0-${region}.pooler.supabase.com" >> "$GITHUB_OUTPUT"
+      - name: Read recoverable job age bucket
+        id: state
+        shell: bash
+        env:
+          PGPASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+          DB_HOST: ${{ steps.db.outputs.host }}
+        run: |
+          set -euo pipefail
+          conn="host=$DB_HOST port=5432 dbname=postgres user=postgres.$PROJECT_REF sslmode=require connect_timeout=10"
+          row="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -F '|' -c "select case when created_at > clock_timestamp()-interval '30 minutes' then 'lt30m' when created_at > clock_timestamp()-interval '2 hours' then 'lt2h' when created_at > clock_timestamp()-interval '6 hours' then 'lt6h' when created_at > clock_timestamp()-interval '24 hours' then 'lt24h' else 'old' end,trigger_type,attempts::text,case when source_text is null then 'no_source_text' else 'source_text_present' end from public.enquiry_ai_jobs where status='failed' and error_code='lease_expired' order by updated_at desc limit 1;")"
+          test -n "$row"
+          IFS='|' read -r age trigger attempts source_state <<< "$row"
+          echo "age=$age" >> "$GITHUB_OUTPUT"
+          echo "trigger=$trigger" >> "$GITHUB_OUTPUT"
+          echo "attempts=$attempts" >> "$GITHUB_OUTPUT"
+          echo "source_state=$source_state" >> "$GITHUB_OUTPUT"
+      - name: Recoverable within 30 minutes
+        if: steps.state.outputs.age == 'lt30m'
+        run: echo lt30m
+      - name: Recoverable within 2 hours
+        if: steps.state.outputs.age == 'lt2h'
+        run: echo lt2h
+      - name: Recoverable within 6 hours
+        if: steps.state.outputs.age == 'lt6h'
+        run: echo lt6h
+      - name: Recoverable within 24 hours
+        if: steps.state.outputs.age == 'lt24h'
+        run: echo lt24h
+      - name: Recoverable is older
+        if: steps.state.outputs.age == 'old'
+        run: echo old
+      - name: Booking trigger
+        if: steps.state.outputs.trigger == 'booking'
+        run: echo booking
+      - name: Gmail trigger
+        if: steps.state.outputs.trigger == 'gmail'
+        run: echo gmail
+      - name: Attempts three
+        if: steps.state.outputs.attempts == '3'
+        run: echo attempts-three
+      - name: Has source text
+        if: steps.state.outputs.source_state == 'source_text_present'
+        run: echo source-text-present
+      - name: No source text
+        if: steps.state.outputs.source_state == 'no_source_text'
+        run: echo no-source-text
