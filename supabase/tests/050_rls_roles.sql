@@ -752,6 +752,20 @@ insert into expected_function_acl values
   ('public.retry_enquiry_ai(uuid)', false, true, false),
   ('public.edit_email_draft(uuid,text,timestamptz)', false, true, false),
 
+  -- Derived CRM AI client state. Orchestration is service-only; the artist
+  -- surface reads its own scope and resolves or recomputes a recommendation.
+  -- No API role reaches the four derived tables directly.
+  ('public.service_schedule_client_ai_refresh(uuid,uuid,text)', false, false, true),
+  ('public.service_claim_crm_agent_jobs(integer)', false, false, true),
+  ('public.service_complete_client_ai_state_job(uuid,uuid,text,jsonb,jsonb,text,text)', false, false, true),
+  ('public.service_complete_reference_image_job(uuid,uuid,jsonb,text,text)', false, false, true),
+  ('public.service_fail_crm_agent_job(uuid,uuid,text)', false, false, true),
+  ('public.get_client_ai_state(uuid,uuid)', false, true, false),
+  ('public.list_client_ai_next_actions(uuid,integer)', false, true, false),
+  ('public.get_client_timeline(uuid,uuid,integer)', false, true, false),
+  ('public.resolve_client_ai_next_action(uuid,text)', false, true, false),
+  ('public.refresh_client_ai_state(uuid,uuid)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
