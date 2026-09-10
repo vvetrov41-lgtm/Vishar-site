@@ -53,7 +53,9 @@ jobs:
       # derived client-state boundary is legible in the CI log rather than one
       # line inside an eighty-script chain.
       - name: Test derived CRM AI client state
-        run: npm run test:crm-agent
+        run: |
+          npm run test:crm-agent
+          node scripts/test-crm-agent-review-fixes.mjs
 
       - name: Test canonical public booking slugs and root edge
         run: |
