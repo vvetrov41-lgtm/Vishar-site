@@ -12,9 +12,12 @@ and the production database has not been migrated.
 
 ## What this system may and may not do
 
-It writes to four derived tables and nothing else. It cannot send a message,
-hold a date, quote a price, request a deposit or confirm a booking, and no
-configuration in this runbook can give it that ability:
+The core layer writes three recomputable derived-state tables and one durable
+job queue. Gmail ingestion additionally keeps one bounded private excerpt table,
+and a private config table holds the runtime switches. None of these replaces
+an authoritative CRM, booking, payment or message record. The agent cannot send
+a message, hold a date, quote a price, request a deposit or confirm a booking,
+and no configuration in this runbook can give it that ability:
 
 - `approval_required` on a recommendation is a GENERATED column, so a model
   that returns `false` for a deposit request still produces an approval-gated
@@ -84,19 +87,24 @@ next is never taken.
 
 1. Fresh-check the exact head and confirm normal exact-head CI, including the
    pgTAP suite and `npm run test:worker`.
-2. Apply the ten migrations listed above, in order. They create five tables, add triggers to
-   `enquiries`, `communication_messages`, `communication_conversations`,
-   `enquiry_files`, `projects`, `sessions`, `client_ai_next_actions` and
-   `crm_private.gmail_thread_contexts`, and add no column to any existing
-   table. Every trigger is AFTER and wrapped, and every scheduler
-   short-circuits while `crm_agent_config.enabled` is false, so applying the
-   migrations changes no existing behaviour. In particular the triggers on
+2. Apply the ten migrations listed above, in order. Together they create four
+   public CRM-agent tables plus the private config and Gmail excerpt tables,
+   add triggers to `enquiries`, `communication_messages`,
+   `communication_conversations`, `enquiry_files`, `projects`, `sessions`,
+   `client_ai_next_actions`, `email_messages` and
+   `crm_private.gmail_thread_contexts`, and add no column to an existing table.
+   They also deliberately replace several CRM-agent helper functions as the
+   guard and convergence rules are tightened. Every scheduling trigger is AFTER
+   and fail-closed/fail-soft at its boundary, and scheduling short-circuits while
+   `crm_agent_config.enabled` is false, so applying the migrations with the
+   switch off does not start model processing. In particular the triggers on
    `projects` and `sessions` sit on the payment and booking paths: verify by
    inspection that each one's first act is the fingerprint comparison, and that
    its scheduling call is inside an exception block.
-3. Verify the four new tables have RLS enabled and forced and that no API role
-   holds a table grant. `supabase/tests/050_rls_roles.sql` asserts both, and its
-   function allow-list now names every new callable.
+3. Verify the four public CRM-agent tables have RLS enabled and forced and that
+   no API role holds a table grant. `supabase/tests/050_rls_roles.sql` asserts
+   both; the Gmail excerpt and config tables live in the private schema with
+   explicit API-role revocations.
 4. Deploy the `tattooai` Worker with `CRM_AGENT_ENABLED=false`. The drain route
    exists and answers, and the drain itself does nothing.
 5. Deploy the scheduler Worker with `CRM_AGENT_SHARED_DRAIN_ENABLED=false`.
@@ -159,8 +167,11 @@ its content comes from the mailbox, and the CRM only sees a message when the
 Gmail Worker reads that thread. Deleting it loses recent context until the next
 read, so withdraw it only when withdrawing Gmail ingestion itself.
 
-Nothing here needs rolling back in an existing system: no existing table gained
-a column, and no existing function changed behaviour.
+The normal rollback is therefore to disable the switches and leave the schema in
+place. No existing table gains a column, but the migration chain does replace
+CRM-agent helper functions and adds triggers, so a destructive schema rollback
+would require an explicit reverse migration and should not be improvised during
+an incident.
 
 ## Cost
 
