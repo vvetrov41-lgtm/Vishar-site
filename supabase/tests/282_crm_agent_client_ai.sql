@@ -309,6 +309,29 @@ select throws_ok(
   'an unknown action type is refused before any row is examined');
 
 -- ---------------------------------------------------------------------------
+-- Derived state does not feed itself
+--
+-- If writing a brief changed the watermark it was derived from, every refresh
+-- would invalidate itself and the queue would never converge.
+-- ---------------------------------------------------------------------------
+
+create temporary table pg_temp.wm_applied as
+select crm_private.client_ai_watermark(pg_temp.artist_a(), pg_temp.client_a()) as w;
+grant select on pg_temp.wm_applied to authenticated, service_role;
+
+select is(
+  (select w from pg_temp.wm_applied),
+  (select snapshot_hash from public.crm_agent_jobs
+   where id = (select (j->>'job_id')::uuid from pg_temp.claim1)),
+  'writing a brief and a recommendation leaves the watermark unchanged');
+
+select is(
+  (select count(*)::int from public.crm_agent_jobs
+   where client_id = pg_temp.client_a() and status = 'pending'),
+  0,
+  'so applying derived state queues no further work');
+
+-- ---------------------------------------------------------------------------
 -- No autonomous business action
 -- ---------------------------------------------------------------------------
 
@@ -420,6 +443,47 @@ select is(
    where artist_id = pg_temp.artist_a() and client_id = pg_temp.client_a()),
   1,
   'and the stored brief is left at its previous version');
+
+-- ---------------------------------------------------------------------------
+-- Manual recompute from the phone
+-- ---------------------------------------------------------------------------
+
+set local role authenticated;
+select pg_temp.claims('c1000000-0000-4000-8000-000000000002');
+create temporary table pg_temp.manual1 as
+select public.refresh_client_ai_state(pg_temp.artist_a(), pg_temp.client_a()) as r;
+grant select on pg_temp.manual1 to authenticated, service_role;
+select is((select r->>'status' from pg_temp.manual1), 'queued',
+  'the artist can recompute a client from the phone');
+select is(
+  public.refresh_client_ai_state(pg_temp.artist_a(), pg_temp.client_a())->>'status',
+  'in_progress',
+  'pressing it again while that work is queued does not queue it twice');
+reset role;
+select pg_temp.service_claims();
+
+-- Fail that job, then prove the retry path is reachable without a shell.
+create temporary table pg_temp.manual_claim as
+select (public.service_claim_crm_agent_jobs(1) -> 0) as j;
+grant select on pg_temp.manual_claim to authenticated, service_role;
+select is(
+  public.service_fail_crm_agent_job(
+    (select (j->>'job_id')::uuid from pg_temp.manual_claim),
+    (select (j->>'lease_token')::uuid from pg_temp.manual_claim),
+    'output_invalid')->>'status',
+  'pending',
+  'a bad model answer leaves the job retryable');
+
+set local role authenticated;
+select pg_temp.claims('c1000000-0000-4000-8000-000000000003');
+select throws_ok(
+  format($q$select public.refresh_client_ai_state(%L::uuid, %L::uuid)$q$,
+    pg_temp.artist_a(), pg_temp.client_a()),
+  '42501',
+  null,
+  'another artist cannot force a recompute of a client that is not theirs');
+reset role;
+select pg_temp.service_claims();
 
 -- ---------------------------------------------------------------------------
 -- Retry and lease behaviour

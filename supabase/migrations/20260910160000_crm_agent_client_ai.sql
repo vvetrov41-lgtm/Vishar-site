@@ -1965,23 +1965,41 @@ begin
   v_job := crm_private.schedule_client_ai_refresh(
     p_artist_id, p_client_id, 'manual:' || left(v_watermark, 32));
 
-  if v_job is null then
-    -- An existing job for this exact watermark is already queued or done.
-    -- Requeue a terminal one so a failure is recoverable from the phone.
-    update public.crm_agent_jobs
-    set status = 'pending', attempts = 0, available_at = clock_timestamp(),
-        lease_token = null, lease_until = null, error_code = null,
-        updated_at = clock_timestamp()
-    where artist_id = p_artist_id
-      and job_type = 'refresh_client_ai_state'
-      and source_event_id = 'manual:' || left(v_watermark, 32)
-      and status in ('failed','stale')
-    returning id into v_job;
+  if v_job is not null then
+    return jsonb_build_object('status', 'queued', 'job_id', v_job);
   end if;
 
+  -- A job for this exact watermark already exists. Requeue a terminal one so a
+  -- bad model day is recoverable from the phone, without a shell or a laptop.
+  update public.crm_agent_jobs
+  set status = 'pending', attempts = 0, available_at = clock_timestamp(),
+      lease_token = null, lease_until = null, error_code = null,
+      updated_at = clock_timestamp()
+  where artist_id = p_artist_id
+    and job_type = 'refresh_client_ai_state'
+    and source_event_id = 'manual:' || left(v_watermark, 32)
+    and status in ('failed','stale')
+  returning id into v_job;
+
+  if v_job is not null then
+    return jsonb_build_object('status', 'queued', 'job_id', v_job);
+  end if;
+
+  -- Nothing terminal to retry. Either the work is in flight, or a brief for
+  -- this exact watermark already exists, in which case recomputing it would
+  -- produce the same answer and cost a model call to do so. Say which, rather
+  -- than reporting a queue position that is not there.
   return jsonb_build_object(
-    'status', case when v_job is null then 'already_queued' else 'queued' end,
-    'job_id', v_job);
+    'status',
+    case
+      when exists (
+        select 1 from public.client_ai_state st
+        where st.artist_id = p_artist_id and st.client_id = p_client_id
+          and st.source_watermark = v_watermark
+      ) then 'up_to_date'
+      else 'in_progress'
+    end,
+    'job_id', null);
 end;
 $$;
 
