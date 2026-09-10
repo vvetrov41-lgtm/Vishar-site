@@ -7,7 +7,7 @@ export const ENQUIRY_AI_FIELDS = Object.freeze([
 const BOOLEAN_FIELDS = new Set(['cover_up', 'reference_images_present']);
 const ENUMS = Object.freeze({
   colour: ['colour', 'black_and_grey', 'mixed'],
-  discovery_source: ['instagram', 'chatgpt', 'other_ai', 'friend_referral', 'google', 'other'],
+  discovery_source: ['instagram', 'google', 'ai', 'referral', 'convention', 'returning_client', 'other'],
 });
 const STATUSES = new Set(['explicit', 'inferred', 'missing']);
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -131,8 +131,9 @@ Return ONLY one JSON object with exactly fields, summary, missing_information, d
 fields must contain ALL of: ${ENQUIRY_AI_FIELDS.join(', ')}.
 Each field is exactly {"value":string or boolean or null,"status":"explicit" or "inferred" or "missing"}.
 Only cover_up and reference_images_present use booleans. Other nonmissing values are strings.
-colour uses colour, black_and_grey, or mixed. discovery_source uses instagram, chatgpt, other_ai,
-friend_referral, google, or other. Maximum field length 500, description/notes 2000.
+colour uses colour, black_and_grey, or mixed. discovery_source preserves the CRM category and uses only
+instagram, google, ai, referral, convention, returning_client, or other. Maximum field length 500,
+description/notes 2000.
 Do not treat an image attachment as knowledge of its contents. Image analysis is disabled.
 missing_information lists exactly the field names whose status is missing, without duplicates.
 summary: concise internal summary, max 1200 characters. Do not repeat contact details unnecessarily.
