@@ -344,6 +344,22 @@ select is(
   (select w from pg_temp.wm1),
   'the watermark is deterministic over unchanged source data');
 
+-- to_jsonb() renders a timestamptz in the SESSION time zone. A digest that
+-- inherits that would differ between a Worker in UTC and a browser session in
+-- Europe/London, every brief would report itself stale to somebody, and every
+-- refresh would be invalidated by the next reader.
+set local timezone = 'Pacific/Kiritimati';
+select is(
+  crm_private.client_ai_watermark(pg_temp.artist_a(), pg_temp.client_a()),
+  (select w from pg_temp.wm1),
+  'and it does not depend on the reader''s time zone');
+set local timezone = 'Europe/London';
+select is(
+  crm_private.client_ai_watermark(pg_temp.artist_a(), pg_temp.client_a()),
+  (select w from pg_temp.wm1),
+  'in either direction');
+reset timezone;
+
 set local role authenticated;
 select pg_temp.claims('c1000000-0000-4000-8000-000000000002');
 select public.update_enquiry_details(

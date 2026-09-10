@@ -528,12 +528,19 @@ revoke all on public.crm_agent_jobs from public, anon, authenticated, service_ro
 -- and a stale write detectable.
 -- ---------------------------------------------------------------------------
 
+-- TimeZone is pinned because to_jsonb() renders a timestamptz in the SESSION
+-- time zone. Without this, a Worker running in UTC and a browser session in
+-- Europe/London compute DIFFERENT digests for identical data, every brief
+-- reports itself stale to somebody, and every refresh is immediately
+-- invalidated by the next reader. The digest has to be a property of the data
+-- alone.
 create function crm_private.client_ai_watermark(p_artist_id uuid, p_client_id uuid)
 returns text
 language sql
 stable
 security definer
 set search_path = pg_catalog, public, crm_private
+set "TimeZone" = 'UTC'
 as $$
   select encode(
     extensions.digest(
@@ -851,12 +858,16 @@ comment on function crm_private.client_timeline_items(uuid,uuid) is
 -- what carries the rest forward.
 -- ---------------------------------------------------------------------------
 
+-- Pinned to UTC for the same reason as the watermark: a prompt context that
+-- renders differently per session is not reproducible, and neither is a bug
+-- report about one.
 create function crm_private.client_ai_context(p_artist_id uuid, p_client_id uuid)
 returns jsonb
 language sql
 stable
 security definer
 set search_path = pg_catalog, public, crm_private
+set "TimeZone" = 'UTC'
 as $$
   select jsonb_build_object(
     'client', jsonb_build_object(
@@ -868,7 +879,7 @@ as $$
       'timezone', a.timezone
     ),
     'enquiries', (
-      select coalesce(jsonb_agg(x order by x->>'created_at' desc), '[]'::jsonb)
+      select coalesce(jsonb_agg(s.item order by s.rank), '[]'::jsonb)
       from (
         select jsonb_build_object(
           'reference', e.reference_number, 'status', e.status,
@@ -876,10 +887,12 @@ as $$
           'approximate_size', left(e.approximate_size, 200), 'cover_up', left(e.cover_up, 200),
           'preferred_timing', left(e.preferred_timing, 200), 'idea', left(e.idea, 2000),
           'created_at', e.created_at
-        ) as x
+        ) as item,
+        -- Ordered by the timestamp itself, never by its rendered text.
+        row_number() over (order by e.created_at desc, e.id desc) as rank
         from public.enquiries e
         where e.client_id = p_client_id and e.artist_id = p_artist_id and e.archived_at is null
-        order by e.created_at desc
+        order by e.created_at desc, e.id desc
         limit 5
       ) s
     ),
@@ -906,21 +919,22 @@ as $$
       )
     ),
     'timeline', (
-      select coalesce(jsonb_agg(t order by t->>'occurred_at' desc), '[]'::jsonb)
+      select coalesce(jsonb_agg(s.item order by s.rank), '[]'::jsonb)
       from (
         select jsonb_build_object(
           'source', u.source, 'direction', u.direction,
           'text', left(u.body, 1000), 'occurred_at', u.occurred_at
-        ) as t
+        ) as item,
+        row_number() over (order by u.occurred_at desc, u.source_id desc) as rank
         from crm_private.client_timeline_items(p_artist_id, p_client_id) u
-        order by u.occurred_at desc
+        order by u.occurred_at desc, u.source_id desc
         limit 20
       ) s
     ),
     'reference_images', (
       select coalesce(jsonb_agg(jsonb_build_object(
         'summary', f.summary, 'analysis', f.analysis
-      ) order by f.analyzed_at desc), '[]'::jsonb)
+      ) order by f.analyzed_at desc, f.id desc), '[]'::jsonb)
       from public.enquiry_file_ai_analysis f
       where f.client_id = p_client_id and f.artist_id = p_artist_id
     ),
