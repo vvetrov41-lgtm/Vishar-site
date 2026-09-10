@@ -17,10 +17,19 @@ function unavailable(code) {
   return json(502, { ok: false, processed: 0, errorCode: code });
 }
 
+function constantTimeEqual(left, right) {
+  if (typeof left !== 'string' || left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < right.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return mismatch === 0;
+}
+
 function authorized(request, env) {
   const token = typeof env?.PROBE_TOKEN === 'string' ? env.PROBE_TOKEN.trim() : '';
   return TOKEN.test(token)
-    && request.headers.get('authorization') === `Bearer ${token}`;
+    && constantTimeEqual(request.headers.get('authorization'), `Bearer ${token}`);
 }
 
 function normalizeSummary(value) {
