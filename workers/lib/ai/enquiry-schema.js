@@ -95,6 +95,70 @@ export function isSafeIntakeDraft(value) {
   return !/https?:|www\.|[£$€]\s*\d|\d\s*(?:gbp|usd|eur|pounds?|dollars?|euros?)\b|\b(?:confirmed|booked|guaranteed|available on|reserve|reserved|price is|costs?\s+\d|(?:will|would|should|takes?)\s+\d+\s+sessions?|pay(?:ment)?\s+(?:now|here|to)|send\s+(?:a\s+)?deposit|deposit\s+(?:is|of|required)|ignore (?:previous|all)|system prompt)\b/i.test(value);
 }
 
+const SAFE_DRAFT_QUESTION_LABELS = Object.freeze({
+  placement: 'placement', approximate_size: 'approximate size', style: 'preferred style',
+  reference_images_present: 'reference images', preferred_dates: 'availability', budget: 'budget',
+});
+
+function fallbackDraft(fields) {
+  const missing = Object.entries(SAFE_DRAFT_QUESTION_LABELS)
+    .filter(([name]) => fields[name]?.status === 'missing')
+    .map(([, label]) => label);
+  if (!missing.length) {
+    return 'Thanks for your enquiry. I have received the details. Estimates and dates can be discussed after artist review.';
+  }
+  const last = missing.pop();
+  const list = missing.length ? `${missing.join(', ')} and ${last}` : last;
+  return `Thanks for your enquiry. Could you also share your ${list}? Estimates and dates can be discussed after artist review.`;
+}
+
+function normalizeEnum(name, value) {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase().replace(/[&+]/g, 'and').replace(/[\s-]+/g, '_');
+  if (name === 'colour') {
+    if (['black_and_grey', 'black_and_gray', 'black_grey', 'black_gray'].includes(normalized)) return 'black_and_grey';
+    if (['color', 'colour'].includes(normalized)) return 'colour';
+  }
+  if (name === 'discovery_source' && normalized === 'returning_client') return 'returning_client';
+  return ENUMS[name]?.includes(normalized) ? normalized : value.trim();
+}
+
+// Hosted models occasionally return semantically valid extraction with harmless
+// transport drift: whitespace/case around enum tokens, stale missing_information,
+// or an unsafe draft sentence that repeats a price/date from the untrusted input.
+// Repair only those deterministic properties. Never invent or alter extracted
+// non-enum facts; the strict validator below still rejects malformed field data.
+export function normalizeEnquiryAnalysis(value) {
+  if (!plain(value) || !plain(value.fields)) return value;
+  const fields = {};
+  for (const name of ENQUIRY_AI_FIELDS) {
+    const raw = value.fields[name];
+    if (!plain(raw) || !Object.hasOwn(raw, 'value') || !Object.hasOwn(raw, 'status')) return value;
+    let status = typeof raw.status === 'string' ? raw.status.trim().toLowerCase() : raw.status;
+    let fieldValue = raw.value;
+    if (fieldValue === null) status = 'missing';
+    if (BOOLEAN_FIELDS.has(name) && typeof fieldValue === 'string') {
+      const token = fieldValue.trim().toLowerCase();
+      if (token === 'true') fieldValue = true;
+      if (token === 'false') fieldValue = false;
+    }
+    if (ENUMS[name] && typeof fieldValue === 'string') fieldValue = normalizeEnum(name, fieldValue);
+    if (typeof fieldValue === 'string') fieldValue = fieldValue.trim();
+    fields[name] = { value: fieldValue, status };
+  }
+
+  let summary = typeof value.summary === 'string' ? value.summary.trim() : value.summary;
+  if (typeof summary === 'string' && summary.length > 1200) summary = summary.slice(0, 1200).trim();
+  let draftReply = typeof value.draft_reply === 'string' ? value.draft_reply.trim() : value.draft_reply;
+  if (!isSafeIntakeDraft(draftReply)) draftReply = fallbackDraft(fields);
+  return {
+    fields,
+    summary,
+    missing_information: ENQUIRY_AI_FIELDS.filter((name) => fields[name].status === 'missing'),
+    draft_reply: draftReply,
+  };
+}
+
 export function validateEnquiryAnalysis(value) {
   if (!exactKeys(value, ['fields', 'summary', 'missing_information', 'draft_reply'])
     || !exactKeys(value.fields, ENQUIRY_AI_FIELDS)
