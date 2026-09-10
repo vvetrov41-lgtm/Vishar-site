@@ -1,6 +1,6 @@
 import { createSupabaseClient } from './supabase.js';
 import { runModelTask } from './ai/router.js';
-import { ENQUIRY_AI_SYSTEM, validateEnquiryAnalysis } from './ai/enquiry-schema.js';
+import { ENQUIRY_AI_SYSTEM, normalizeEnquiryAnalysis, validateEnquiryAnalysis } from './ai/enquiry-schema.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TASK = 'enquiry_intake';
@@ -27,6 +27,8 @@ export function projectEnquiryAiInput(input) {
   return json.length <= 12000 ? json : null;
 }
 
+const validateNormalizedEnquiryAnalysis = (value) => validateEnquiryAnalysis(normalizeEnquiryAnalysis(value));
+
 export async function processEnquiryAiJob(env, job, deps = {}) {
   const { supabase = createSupabaseClient(env), runTask = runModelTask } = deps;
   if (!enabled(env) || !UUID.test(job?.job_id ?? '') || !UUID.test(job?.lease_token ?? '')) {
@@ -45,10 +47,10 @@ export async function processEnquiryAiJob(env, job, deps = {}) {
       env,
       TASK,
       { system: ENQUIRY_AI_SYSTEM, input },
-      { validateJson: validateEnquiryAnalysis },
+      { validateJson: validateNormalizedEnquiryAnalysis },
     );
     if (!model?.ok) return fail('ai_unavailable');
-    const result = validateEnquiryAnalysis(model.json);
+    const result = validateNormalizedEnquiryAnalysis(model.json);
     if (!result) return fail('output_invalid');
     const saved = await supabase.rpc('service_complete_enquiry_ai_job', {
       ...args, p_result: result, p_provider: model.provider, p_model: model.model,
