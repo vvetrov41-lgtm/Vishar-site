@@ -10,6 +10,7 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare
   v_watermark text;
+  v_source_event_id text;
 begin
   if new.intake_state <> 'complete' then
     return new;
@@ -29,11 +30,21 @@ begin
   end if;
 
   begin
-    v_watermark := crm_private.client_ai_watermark(new.artist_id, new.client_id);
+    -- Preserve the original completion-event key so replaying that event stays
+    -- idempotent. Subsequent edits use the current watermark, which changes for
+    -- every prompt-bearing enquiry edit and therefore cannot collide with the
+    -- earlier completion event or another distinct edit.
+    if tg_op = 'INSERT' then
+      v_source_event_id := 'enquiry:' || new.id::text || ':' || new.status::text;
+    else
+      v_watermark := crm_private.client_ai_watermark(new.artist_id, new.client_id);
+      v_source_event_id := 'enquiry:' || new.id::text || ':wm:' || left(coalesce(v_watermark, 'missing'), 32);
+    end if;
+
     perform crm_private.schedule_client_ai_refresh(
       new.artist_id,
       new.client_id,
-      'enquiry:' || new.id::text || ':' || left(coalesce(v_watermark, 'missing'), 32)
+      v_source_event_id
     );
   exception when others then null;
   end;
