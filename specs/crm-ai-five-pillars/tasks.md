@@ -85,6 +85,21 @@ Migration `20260910160000_crm_agent_client_ai.sql`.
 - [x] Fresh-check branch HEAD and review diff.
 - [x] Record remaining rollout steps; do not deploy without explicit authorization.
 
+## I. Corrective pass
+
+- [x] Rebase onto the current trunk, preserving its enquiry-AI normalization.
+- [x] Carry bounded Gmail reply content into the brief
+      (`20260910190000_crm_agent_gmail_excerpts.sql`).
+- [x] Schedule refreshes from canonical project/session/deposit changes
+      (`20260910200000_crm_agent_canonical_facts.sql`).
+- [x] Withhold stale recommendations from Telegram and withdraw their
+      undelivered pushes (`20260910210000_crm_agent_stale_actions.sql`).
+- [x] Replace the digest's temporary table with a CTE.
+- [x] Align the visible `crm_facts` with the fields the watermark measures.
+- [x] Repair the local DB harness so these suites are reproducible outside CI,
+      and name its remaining divergence from `supabase test db` in the script.
+- [x] Add an explicit CI gate for the CRM agent suite.
+
 ## Deferred
 
 - Associating an external (public) reference URL to a client record. Firecrawl

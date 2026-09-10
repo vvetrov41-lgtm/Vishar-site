@@ -182,3 +182,55 @@ Telegram callback/button surface, because every button worth adding is an
 action; and no client-facing send, date, deposit or booking can originate from
 this system at all. The action vocabulary that could commit one carries no
 model-written text, and the approval flag on it cannot be lowered.
+
+---
+
+## Corrective pass
+
+An independent review found three functional gaps. All three shared a shape:
+the derived state was correct when it was written and wrong by the time the
+artist read it.
+
+**Gmail replies had no content.** The thread hook fired, the timeline carried
+the subject line, and the brief learned that something had been said without
+learning what. Content now arrives the way the repository already moves Gmail
+content into the database: the Gmail Worker, having completed an authorized
+read, pushes a bounded excerpt through a service RPC, beside the `source_text`
+the enquiry path already sends. Fetching mail at claim time was considered and
+rejected — it would put a mailbox credential in a third Worker, which the
+scheduler configuration explicitly forbids, to serve a derived-state feature.
+
+The store is capped at five excerpts per artist/client, 4000 characters each,
+pruned on insert, in a private schema with no API grant. It is retained rather
+than cleared after use because the brief has to stay rebuildable: an excerpt
+deleted after one refresh would make the same recomputation produce a different
+answer. The enquiry path's keyword relevance gate is untouched — it is the
+right question for drafting an enquiry reply and the wrong one for client
+memory, where a message on an already-bound thread is relevant by construction.
+
+**Canonical facts did not schedule their own refresh.** The watermark already
+covered projects and sessions, so a paid deposit correctly marked a brief
+stale; nothing recomputed it. Triggers now fire on the project and session
+columns the brief may reason about. Payments need no trigger of their own,
+because `payment_requests` already projects onto `projects.deposit_status`;
+triggering on the projection means one refresh per material change rather than
+one per webhook, and a future payment provider inherits it. A digest of exactly
+those columns is both the change test and the event id, so a no-op UPDATE and a
+renamed project queue nothing.
+
+**Stale recommendations reached Telegram as current work.** Two paths, failing
+at different moments: the pull path could be stale at read time, and the push
+path at delivery time, because a notification is queued when a recommendation
+is written and delivered by a later cron tick. The digest now withholds stale
+rows and queues their replacement keyed on the current watermark, so repeated
+reads collapse to one job; and a push is withdrawn when its recommendation
+stops being current, unless the connector has already claimed it, in which case
+delivery history stands. The shared notification access predicate was
+deliberately left alone: it governs every notification type in the CRM.
+
+Two smaller things were fixed while reviewing. The digest first used a
+temporary table inside a SECURITY DEFINER function, which puts state in the
+caller's temp schema outside the function's fixed search path; it is a CTE now.
+And the watermark had grown to measure project and session fields the reader
+never showed, so a change could invalidate a brief that the next brief could
+not see — those fields are now in `crm_facts` as well.

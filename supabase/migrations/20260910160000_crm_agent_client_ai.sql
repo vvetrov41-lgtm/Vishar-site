@@ -899,10 +899,14 @@ as $$
     -- Authoritative money/date/booking facts. The prompt is told these are the
     -- only ones that count, and the read RPC overlays them again afterwards.
     'crm_facts', jsonb_build_object(
+      -- These are the fields the watermark measures, so a change that
+      -- invalidates the brief is a change the next brief can actually see.
       'projects', (
         select coalesce(jsonb_agg(jsonb_build_object(
           'status', p.status, 'deposit_status', p.deposit_status,
+          'deposit_amount', p.deposit_amount,
           'estimated_sessions', p.estimated_sessions,
+          'estimated_hours', p.estimated_hours,
           'estimate_total', p.estimate_total, 'currency', p.currency
         ) order by p.created_at desc), '[]'::jsonb)
         from public.projects p
@@ -911,7 +915,7 @@ as $$
       'sessions', (
         select coalesce(jsonb_agg(jsonb_build_object(
           'status', s.status, 'start_at', s.start_at, 'end_at', s.end_at,
-          'payment_status', s.payment_status
+          'payment_status', s.payment_status, 'price', s.price
         ) order by s.start_at desc), '[]'::jsonb)
         from public.sessions s
         where s.client_id = p_client_id and s.artist_id = p_artist_id
@@ -1589,7 +1593,9 @@ begin
     'projects', (
       select coalesce(jsonb_agg(jsonb_build_object(
         'status', p.status, 'deposit_status', p.deposit_status,
+        'deposit_amount', p.deposit_amount,
         'estimated_sessions', p.estimated_sessions,
+        'estimated_hours', p.estimated_hours,
         'estimate_total', p.estimate_total, 'currency', p.currency
       ) order by p.created_at desc), '[]'::jsonb)
       from public.projects p
@@ -1597,7 +1603,8 @@ begin
     ),
     'sessions', (
       select coalesce(jsonb_agg(jsonb_build_object(
-        'status', s.status, 'start_at', s.start_at, 'payment_status', s.payment_status
+        'status', s.status, 'start_at', s.start_at, 'end_at', s.end_at,
+        'payment_status', s.payment_status, 'price', s.price
       ) order by s.start_at desc), '[]'::jsonb)
       from public.sessions s
       where s.client_id = p_client_id and s.artist_id = p_artist_id

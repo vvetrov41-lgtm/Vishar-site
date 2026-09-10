@@ -31,11 +31,21 @@ If a brief and the CRM disagree, the CRM is right. `get_client_ai_state`
 returns the live project/session facts beside the brief and flags the brief
 stale by comparing watermarks, so a reader never has to guess which is current.
 
+Staleness is not merely reported, it is acted on. A recommendation whose
+watermark no longer matches is withheld from the Telegram digest and its
+replacement queued, and an undelivered push for a recommendation that has
+stopped being current is withdrawn before the connector claims it. A deposit
+paid between generation and delivery therefore cannot arrive as "request a
+deposit".
+
 ## Fixed runtime boundary
 
-- Migrations: `20260910160000_crm_agent_client_ai.sql`,
+- Migrations, in order: `20260910160000_crm_agent_client_ai.sql`,
   `20260910170000_crm_agent_telegram_digest.sql`,
-  `20260910180000_crm_agent_gmail_hook.sql`.
+  `20260910180000_crm_agent_gmail_hook.sql`,
+  `20260910190000_crm_agent_gmail_excerpts.sql`,
+  `20260910200000_crm_agent_canonical_facts.sql`,
+  `20260910210000_crm_agent_stale_actions.sql`.
 - Worker library: `workers/lib/crm-agent.js`, drained through
   `POST https://tattooai.internal/internal/crm-agent/drain` on the `tattooai`
   Worker. The synthetic internal hostname is the capability boundary; the route
@@ -70,12 +80,16 @@ next is never taken.
 
 1. Fresh-check the exact head and confirm normal exact-head CI, including the
    pgTAP suite and `npm run test:worker`.
-2. Apply the three migrations. They create four tables, add triggers to
+2. Apply the six migrations. They create five tables, add triggers to
    `enquiries`, `communication_messages`, `communication_conversations`,
-   `enquiry_files` and `crm_private.gmail_thread_contexts`, and add no column to
-   any existing table. Every trigger is AFTER and wrapped, and every scheduler
+   `enquiry_files`, `projects`, `sessions`, `client_ai_next_actions` and
+   `crm_private.gmail_thread_contexts`, and add no column to any existing
+   table. Every trigger is AFTER and wrapped, and every scheduler
    short-circuits while `crm_agent_config.enabled` is false, so applying the
-   migrations changes no existing behaviour.
+   migrations changes no existing behaviour. In particular the triggers on
+   `projects` and `sessions` sit on the payment and booking paths: verify by
+   inspection that each one's first act is the fingerprint comparison, and that
+   its scheduling call is inside an exception block.
 3. Verify the four new tables have RLS enabled and forced and that no API role
    holds a table grant. `supabase/tests/050_rls_roles.sql` asserts both, and its
    function allow-list now names every new callable.
@@ -106,6 +120,12 @@ next is never taken.
 
 - One client with a recent enquiry has a `client_ai_state` row and exactly one
   open `client_ai_next_actions` row.
+- A Gmail reply from a known client produces a row in
+  `crm_private.gmail_client_ai_excerpts` and one `gmail:` job, and that
+  relationship never holds more than five excerpts.
+- Confirming a deposit through the normal payment flow produces a `project:`
+  job, and the previously open `request_deposit` recommendation is superseded
+  rather than left as the artist's next step.
 - `get_client_ai_state` reports `is_stale: false` immediately after a refresh
   and `true` after the client replies.
 - A recommendation whose `action_type` is `offer_dates`, `prepare_quote`,
@@ -130,6 +150,11 @@ It rebuilds from CRM facts, which is the point of it being derived. Job rows
 are safe to delete too. Do not delete `enquiry_file_ai_analysis` unless vision
 is also being withdrawn, because re-deriving it costs a model call per image.
 
+`crm_private.gmail_client_ai_excerpts` is the one store that does NOT rebuild:
+its content comes from the mailbox, and the CRM only sees a message when the
+Gmail Worker reads that thread. Deleting it loses recent context until the next
+read, so withdraw it only when withdrawing Gmail ingestion itself.
+
 Nothing here needs rolling back in an existing system: no existing table gained
 a column, and no existing function changed behaviour.
 
@@ -140,6 +165,12 @@ claim takes the newest queued refresh for a client and marks the backlog it
 supersedes as stale. Prompt input is capped at roughly 11k characters, with the
 timeline capped at 20 items and enquiries at 5. Vision is one call per uploaded
 reference image, once, unless the object is replaced.
+
+The canonical-fact triggers do not change that shape. A material project or
+session change queues one job, a no-op UPDATE queues none, and several rapid
+changes collapse at claim time. Reading the Telegram digest can queue a refresh
+for a stale row, but keyed on the current watermark, so a digest read fifty
+times in a minute queues one job.
 
 ## Deliberate omissions
 
