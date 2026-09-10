@@ -297,6 +297,28 @@ await test('Qwen vision runs on the binding and carries the image as a data URI 
   assert.equal(parts[1].image_url.url, `data:image/png;base64,${PNG_BASE64}`);
 });
 
+await test('Qwen bounds structured enquiry reasoning and uses the current completion ceiling', async () => {
+  const stub = aiBinding(() => ({ response: '{"ok":true}' }));
+  const request = {
+    ...textInput,
+    images: [],
+    maxOutputTokens: tasks.resolveTask({}, 'enquiry_intake', router.PROVIDER_IDS).maxOutputTokens,
+    temperature: 0,
+    responseFormat: 'json',
+    responseSchema: { type: 'object' },
+  };
+  await qwen.invoke({
+    config: qwen.configure({ AI: stub.AI }, 'text'),
+    request,
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(stub.calls.length, 1);
+  assert.equal(stub.calls[0].input.reasoning_effort, 'low');
+  assert.equal(stub.calls[0].input.max_completion_tokens, 1_400);
+  assert.equal('max_tokens' in stub.calls[0].input, false);
+});
+
 await test('Qwen vision needs no OpenAI key', async () => {
   const stub = aiBinding(() => ({ response: 'Red.' }));
   const result = await router.runModelTask(
