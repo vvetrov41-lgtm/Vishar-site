@@ -1,0 +1,65 @@
+name: Enquiry AI production operator
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-enquiry-ai-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enquiry-ai-production-operator
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: crm-production
+    env:
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify one-file operator snapshot over exact canonical
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')"
+          parent="$(git rev-parse HEAD^)"
+          test -n "$canonical"
+          test "$parent" = "$canonical"
+          changed="$(git diff --name-only "$parent" HEAD)"
+          test "$changed" = '.github/workflows/enquiry-ai-production-operator.yml'
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-inventory-enquiry-ai-enable*|release/private-crm-rc*-inventory-enquiry-ai-disable*|release/private-crm-rc*-inventory-enquiry-ai-observe*|release/private-crm-rc*-inventory-enquiry-ai-retry*) ;;
+            *) exit 1 ;;
+          esac
+          [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
+          test "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+          test -n "$SUPABASE_DB_PASSWORD"
+      - name: Operate private AI flag and print sanitized queue state
+        shell: bash
+        env:
+          PGPASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          db_host="db.${PROJECT_REF}.supabase.co"
+          case "$GITHUB_REF_NAME" in
+            *enquiry-ai-enable*) action_sql="update crm_private.enquiry_ai_config set enabled=true, images_enabled=false where singleton;" ;;
+            *enquiry-ai-disable*) action_sql="update crm_private.enquiry_ai_config set enabled=false, images_enabled=false where singleton;" ;;
+            *enquiry-ai-retry*) action_sql="with candidate as (select id from public.enquiry_ai_jobs where status='failed' and error_code='ai_unavailable' order by updated_at desc limit 1) update public.enquiry_ai_jobs j set status='pending', attempts=2, available_at=clock_timestamp(), lease_token=null, lease_until=null, error_code=null, provider=null, model=null, updated_at=clock_timestamp() from candidate c where j.id=c.id; update crm_private.enquiry_ai_config set enabled=true, images_enabled=false where singleton;" ;;
+            *) action_sql="" ;;
+          esac
+          psql "host=$db_host port=5432 dbname=postgres user=postgres sslmode=require" -v ON_ERROR_STOP=1 -X -q -c "$action_sql select enabled, images_enabled from crm_private.enquiry_ai_config where singleton; select status, attempts, coalesce(error_code,'none') as error_code, coalesce(provider,'none') as provider, coalesce(model,'none') as model, count(*)::int as jobs from public.enquiry_ai_jobs group by status, attempts, error_code, provider, model order by status, attempts;"
+          flag="$(psql "host=$db_host port=5432 dbname=postgres user=postgres sslmode=require" -v ON_ERROR_STOP=1 -X -Atq -c "select enabled::text || ',' || images_enabled::text from crm_private.enquiry_ai_config where singleton;")"
+          case "$GITHUB_REF_NAME" in
+            *enquiry-ai-enable*|*enquiry-ai-retry*) test "$flag" = 'true,false' ;;
+            *enquiry-ai-disable*) test "$flag" = 'false,false' ;;
+            *) test "${flag#*,}" = 'false' ;;
+          esac
