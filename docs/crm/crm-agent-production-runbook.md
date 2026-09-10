@@ -45,7 +45,11 @@ deposit".
   `20260910180000_crm_agent_gmail_hook.sql`,
   `20260910190000_crm_agent_gmail_excerpts.sql`,
   `20260910200000_crm_agent_canonical_facts.sql`,
-  `20260910210000_crm_agent_stale_actions.sql`.
+  `20260910210000_crm_agent_stale_actions.sql`,
+  `20260910220000_crm_agent_final_guards.sql`,
+  `20260910230000_crm_agent_contract_compat.sql`,
+  `20260910240000_crm_agent_review_fixes.sql`,
+  `20260910250000_crm_agent_convergence_guards.sql`.
 - Worker library: `workers/lib/crm-agent.js`, drained through
   `POST https://tattooai.internal/internal/crm-agent/drain` on the `tattooai`
   Worker. The synthetic internal hostname is the capability boundary; the route
@@ -80,7 +84,7 @@ next is never taken.
 
 1. Fresh-check the exact head and confirm normal exact-head CI, including the
    pgTAP suite and `npm run test:worker`.
-2. Apply the six migrations. They create five tables, add triggers to
+2. Apply the ten migrations listed above, in order. They create five tables, add triggers to
    `enquiries`, `communication_messages`, `communication_conversations`,
    `enquiry_files`, `projects`, `sessions`, `client_ai_next_actions` and
    `crm_private.gmail_thread_contexts`, and add no column to any existing
