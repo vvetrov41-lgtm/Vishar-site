@@ -35,6 +35,34 @@ export const visionEnabled = (env) => env?.CRM_AGENT_VISION_ENABLED === 'true';
 
 const clamp = (value, max) => (typeof value === 'string' ? value.slice(0, max) : undefined);
 
+function boundJson(value, { maxString = 500, maxArray = 12, maxKeys = 24, maxDepth = 5 } = {}, depth = 0) {
+  if (value === null || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value.slice(0, maxString);
+  if (depth >= maxDepth) return null;
+  if (Array.isArray(value)) {
+    return value.slice(0, maxArray).map((item) => boundJson(item, { maxString, maxArray, maxKeys, maxDepth }, depth + 1));
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).slice(0, maxKeys).map(([key, item]) => [
+      key,
+      boundJson(item, { maxString, maxArray, maxKeys, maxDepth }, depth + 1),
+    ]));
+  }
+  return null;
+}
+
+const projectEnquiry = (item, ideaMax = 2000) => ({
+  reference: clamp(item?.reference, 80),
+  status: clamp(item?.status, 40),
+  project_type: clamp(item?.project_type, 200),
+  placement: clamp(item?.placement, 200),
+  approximate_size: clamp(item?.approximate_size, 200),
+  cover_up: clamp(item?.cover_up, 200),
+  preferred_timing: clamp(item?.preferred_timing, 200),
+  idea: clamp(item?.idea, ideaMax),
+  created_at: clamp(item?.created_at, 40),
+});
+
 /**
  * Explicit projection of the claimed context into a prompt envelope.
  *
@@ -46,10 +74,12 @@ export function projectClientStateInput(input) {
   if (!input || typeof input !== 'object') return null;
 
   const timeline = Array.isArray(input.timeline) ? input.timeline : [];
+  const sourceEnquiries = Array.isArray(input.enquiries) ? input.enquiries : [];
+  const sourceImages = Array.isArray(input.reference_images) ? input.reference_images : [];
   const data = {
     client: { full_name: clamp(input.client?.full_name, 160) },
     artist: { display_name: clamp(input.artist?.display_name, 160) },
-    enquiries: (Array.isArray(input.enquiries) ? input.enquiries : []).slice(0, 5),
+    enquiries: sourceEnquiries.slice(0, 5).map((item) => projectEnquiry(item)),
     // Named `crm_facts` in the prompt too: the system prompt tells the model
     // this section outranks anything a client said, so the key must match.
     crm_facts: input.crm_facts ?? {},
@@ -59,7 +89,7 @@ export function projectClientStateInput(input) {
       text: clamp(item?.text, 1000),
       occurred_at: clamp(item?.occurred_at, 40),
     })),
-    reference_images: (Array.isArray(input.reference_images) ? input.reference_images : [])
+    reference_images: sourceImages
       .slice(0, 6)
       .map((item) => ({ summary: clamp(item?.summary, 800), analysis: item?.analysis ?? null })),
     previous_brief: input.previous_brief ?? null,
@@ -77,6 +107,39 @@ export function projectClientStateInput(input) {
       text: clamp(item?.text, 600),
       occurred_at: clamp(item?.occurred_at, 40),
     }));
+    json = JSON.stringify({ untrusted_crm_data: data });
+  }
+
+  // Timeline trimming alone is not sufficient for established clients with
+  // several large enquiry ideas, reference analyses or a long previous brief.
+  // Bound those optional sections before giving up on an otherwise valid job.
+  if (json.length > MAX_CONTEXT_CHARS) {
+    data.enquiries = sourceEnquiries.slice(0, 3).map((item) => projectEnquiry(item, 800));
+    data.reference_images = sourceImages.slice(0, 3).map((item) => ({
+      summary: clamp(item?.summary, 400),
+      analysis: boundJson(item?.analysis, { maxString: 300, maxArray: 8, maxKeys: 18, maxDepth: 4 }),
+    }));
+    data.previous_brief = boundJson(input.previous_brief, { maxString: 400, maxArray: 10, maxKeys: 24, maxDepth: 5 });
+    data.crm_facts = boundJson(input.crm_facts ?? {}, { maxString: 160, maxArray: 20, maxKeys: 24, maxDepth: 5 });
+    json = JSON.stringify({ untrusted_crm_data: data });
+  }
+
+  // Final deterministic fallback. This keeps the newest facts and a small
+  // amount of context rather than turning one oversized client into a durable
+  // retry loop that can never succeed.
+  if (json.length > MAX_CONTEXT_CHARS) {
+    data.timeline = timeline.slice(0, 3).map((item) => ({
+      source: clamp(item?.source, 32),
+      direction: clamp(item?.direction, 16),
+      text: clamp(item?.text, 300),
+      occurred_at: clamp(item?.occurred_at, 40),
+    }));
+    data.enquiries = sourceEnquiries.slice(0, 2).map((item) => projectEnquiry(item, 500));
+    data.reference_images = sourceImages.slice(0, 2).map((item) => ({
+      summary: clamp(item?.summary, 300), analysis: null,
+    }));
+    data.previous_brief = boundJson(input.previous_brief, { maxString: 240, maxArray: 6, maxKeys: 16, maxDepth: 4 });
+    data.crm_facts = boundJson(input.crm_facts ?? {}, { maxString: 120, maxArray: 10, maxKeys: 18, maxDepth: 4 });
     json = JSON.stringify({ untrusted_crm_data: data });
   }
 
