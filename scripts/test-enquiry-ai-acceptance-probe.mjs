@@ -19,6 +19,10 @@ for (const request of [
   new Request('https://probe.example.test/anything', { method: 'POST', headers: { authorization: `Bearer ${token}` } }),
   new Request('https://probe.example.test/drain', { method: 'POST' }),
   new Request('https://probe.example.test/drain', { method: 'POST', headers: { authorization: 'Bearer wrong' } }),
+  new Request('https://probe.example.test/drain', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${'b'.repeat(64)}` },
+  }),
 ]) {
   const response = await worker.fetch(request, env);
   assert.equal(response.status, 404);
