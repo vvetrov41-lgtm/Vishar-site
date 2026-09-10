@@ -1,0 +1,83 @@
+name: Enquiry AI production operator
+
+on:
+  push:
+    branches:
+      - 'ops/enquiry-ai-production-enable-*'
+      - 'ops/enquiry-ai-production-disable-*'
+      - 'ops/enquiry-ai-production-observe-*'
+      - 'ops/enquiry-ai-production-retry-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enquiry-ai-production-operator
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify one-file operator snapshot over exact canonical
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')"
+          parent="$(git rev-parse HEAD^)"
+          test -n "$canonical"
+          test "$parent" = "$canonical"
+          changed="$(git diff --name-only "$parent" HEAD)"
+          test "$changed" = '.github/workflows/enquiry-ai-production-operator.yml'
+          case "$GITHUB_REF_NAME" in
+            ops/enquiry-ai-production-enable-*|ops/enquiry-ai-production-disable-*|ops/enquiry-ai-production-observe-*|ops/enquiry-ai-production-retry-*) ;;
+            *) exit 1 ;;
+          esac
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
+          test "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+      - name: Operate private AI flag and print sanitized queue state
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.supabase.com/v1/projects/$PROJECT_REF/database/query"
+          auth=(-H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json')
+          run_sql() {
+            local q="$1"
+            jq -cn --arg query "$q" '{query:$query}' > /tmp/query.json
+            curl -fsS -X POST "$api" "${auth[@]}" --data-binary @/tmp/query.json
+          }
+          observe="select enabled, images_enabled from crm_private.enquiry_ai_config where singleton; select status, attempts, coalesce(error_code,'none') as error_code, coalesce(provider,'none') as provider, coalesce(model,'none') as model, count(*)::int as jobs, min(updated_at) as oldest_update, max(updated_at) as newest_update from public.enquiry_ai_jobs group by status, attempts, error_code, provider, model order by status, attempts;"
+          case "$GITHUB_REF_NAME" in
+            ops/enquiry-ai-production-enable-*)
+              sql="update crm_private.enquiry_ai_config set enabled=true, images_enabled=false where singleton returning enabled, images_enabled; $observe"
+              ;;
+            ops/enquiry-ai-production-disable-*)
+              sql="update crm_private.enquiry_ai_config set enabled=false, images_enabled=false where singleton returning enabled, images_enabled; $observe"
+              ;;
+            ops/enquiry-ai-production-retry-*)
+              sql="with candidate as (select id from public.enquiry_ai_jobs where status='failed' and error_code='ai_unavailable' order by updated_at desc limit 1), reset as (update public.enquiry_ai_jobs j set status='pending', attempts=2, available_at=clock_timestamp(), lease_token=null, lease_until=null, error_code=null, provider=null, model=null, updated_at=clock_timestamp() from candidate c where j.id=c.id returning 1) select count(*)::int as retried from reset; update crm_private.enquiry_ai_config set enabled=true, images_enabled=false where singleton returning enabled, images_enabled; $observe"
+              ;;
+            *) sql="$observe" ;;
+          esac
+          response="$(run_sql "$sql")"
+          echo "$response" | jq .
+          echo "$response" | jq -e '.. | objects | select(has("images_enabled")) | .images_enabled == false' >/dev/null
+          case "$GITHUB_REF_NAME" in
+            ops/enquiry-ai-production-enable-*|ops/enquiry-ai-production-retry-*)
+              echo "$response" | jq -e '.. | objects | select(has("enabled")) | .enabled == true' >/dev/null
+              ;;
+            ops/enquiry-ai-production-disable-*)
+              echo "$response" | jq -e '.. | objects | select(has("enabled")) | .enabled == false' >/dev/null
+              ;;
+          esac
