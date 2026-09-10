@@ -1,0 +1,152 @@
+name: Enquiry AI production drain probe
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-ai-drain-probe'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enquiry-ai-production-drain-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crm-production
+    env:
+      WORKER_NAME: vishar-enquiry-ai-acceptance-probe
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout exact canonical snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in release/private-crm-rc*-ai-drain-probe) ;; *) exit 1 ;; esac
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ -z "$(git status --short)" ]
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')"
+          [ "$canonical" = "$GITHUB_SHA" ] || {
+            echo 'Probe source is not the exact canonical CRM SHA.' >&2
+            exit 1
+          }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked tooling and test the probe boundary
+        run: |
+          npm ci --ignore-scripts
+          npm run test:enquiry-ai
+          npm run scan:secrets
+
+      - name: Drain through an ephemeral capability-bound Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[a-f0-9]{32}$ ]]
+          config="$GITHUB_WORKSPACE/.wrangler.enquiry-ai-acceptance.toml"
+          response="$RUNNER_TEMP/enquiry-ai-acceptance.json"
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME"
+
+          cleanup_best_effort() {
+            npx wrangler delete --config "$config" --name "$WORKER_NAME" --force >/dev/null 2>&1 || true
+            rm -f "$config" "$response"
+          }
+          trap cleanup_best_effort EXIT
+
+          before="$(curl -sS -o "$RUNNER_TEMP/probe-before.json" -w '%{http_code}'             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/settings")"
+          [ "$before" = '404' ] || {
+            echo 'Ephemeral acceptance Worker already exists; refusing to replace it.' >&2
+            exit 1
+          }
+
+          cat > "$config" <<'TOML'
+          name = "vishar-enquiry-ai-acceptance-probe"
+          main = "workers/enquiry-ai-acceptance-probe.js"
+          compatibility_date = "2026-09-10"
+          workers_dev = true
+          preview_urls = false
+
+          [[services]]
+          binding = "TATTOOAI_SERVICE"
+          service = "tattooai"
+          TOML
+
+          npx wrangler deploy --config "$config" --name "$WORKER_NAME" >/dev/null
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          printf '%s' "$token" | npx wrangler secret put PROBE_TOKEN             --config "$config" --name "$WORKER_NAME" >/dev/null
+
+          subdomain_json="$(curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(SUBDOMAIN_JSON="$subdomain_json" node -e '
+            const body = JSON.parse(process.env.SUBDOMAIN_JSON || "{}");
+            const value = body?.success === true ? body?.result?.subdomain : "";
+            if (!/^[a-z0-9-]{1,63}$/.test(value)) process.exit(1);
+            process.stdout.write(value);
+          ')"
+          endpoint="https://$WORKER_NAME.$subdomain.workers.dev/drain"
+
+          status=''
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if ! status="$(curl -sS --max-time 90 -o "$response" -w '%{http_code}' \
+              -X POST -H "Authorization: Bearer $token" "$endpoint")"; then
+              status='000'
+            fi
+            [ "$status" = '200' ] && break
+            sleep 2
+          done
+          [ "$status" = '200' ]
+          RESPONSE_FILE="$response" node -e '
+            const fs = require("fs");
+            const body = JSON.parse(fs.readFileSync(process.env.RESPONSE_FILE, "utf8"));
+            if (Object.keys(body).sort().join() !== "ok,processed"
+                || body.ok !== true
+                || !Number.isInteger(body.processed)
+                || body.processed < 1
+                || body.processed > 3) {
+              throw new Error("bounded production drain did not process a queued enquiry");
+            }
+            console.log(JSON.stringify({ ok: true, processed: body.processed }));
+          '
+
+          npx wrangler delete --config "$config" --name "$WORKER_NAME" --force >/dev/null
+          after=''
+          for attempt in 1 2 3 4 5; do
+            after="$(curl -sS -o "$RUNNER_TEMP/probe-after.json" -w '%{http_code}' \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/settings")"
+            [ "$after" = '404' ] && break
+            sleep 2
+          done
+          [ "$after" = '404' ]
+          rm -f "$config" "$response"
+          trap - EXIT
+
+      - name: Acceptance boundary summary
+        if: always()
+        run: |
+          {
+            echo '### Enquiry AI production drain probe'
+            echo
+            echo "- Exact canonical SHA: $GITHUB_SHA"
+            echo '- Drain: TattooAI Service Binding only; maximum three jobs'
+            echo '- Credentials: ephemeral probe secret; no Supabase/model secret copied'
+            echo '- Output: bounded counters only; no client payload'
+            echo '- Cleanup: temporary Worker deleted and control-plane 404 verified'
+          } >> "$GITHUB_STEP_SUMMARY"
