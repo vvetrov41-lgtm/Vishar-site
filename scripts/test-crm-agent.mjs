@@ -471,4 +471,104 @@ await test('vision stays off until its own switch is set', async () => {
   assert.equal(db.calls.length, 0);
 });
 
+
+// ---------------------------------------------------------------------------
+// Telegram control surface
+// ---------------------------------------------------------------------------
+
+const { crmAgentDigestCommand, handleCrmAgentDigestCommand, renderDigest } =
+  await import('../workers/lib/crm-agent-telegram.js');
+
+const tgEnv = { ...env, CRM_AGENT_TELEGRAM_DIGEST_ENABLED: 'true', TELEGRAM_BOT_TOKEN: 'x'.repeat(40) };
+const update = (text, chat = { id: 4242, type: 'private' }) => ({ message: { text, chat } });
+
+await test('the digest command is recognised in a private chat only', () => {
+  assert.deepEqual(crmAgentDigestCommand(update('/needsme')), { chatId: '4242' });
+  assert.deepEqual(crmAgentDigestCommand(update('/today')), { chatId: '4242' });
+  assert.deepEqual(crmAgentDigestCommand(update('/needsme@visharbot')), { chatId: '4242' });
+  // A group chat is a shared destination; one artist's client list is not
+  // group content.
+  assert.equal(crmAgentDigestCommand(update('/needsme', { id: -100, type: 'supergroup' })), null);
+  assert.equal(crmAgentDigestCommand(update('/needsme extra')), null);
+  assert.equal(crmAgentDigestCommand(update('/start')), null);
+  assert.equal(crmAgentDigestCommand(update('needsme')), null);
+  assert.equal(crmAgentDigestCommand({}), null);
+});
+
+await test('the rendered digest names no identifier and claims nothing was sent', () => {
+  const text = renderDigest({
+    status: 'ready',
+    total: 2,
+    items: [
+      { client_name: 'Donovan Hale', action_type: 'request_information', reason: 'Missing preferred month.', priority: 'high' },
+      { client_name: 'Ana Ruiz', action_type: 'prepare_quote', reason: 'Ready for an estimate.', priority: 'normal' },
+    ],
+  });
+  assert.ok(text.includes('Donovan Hale'));
+  assert.ok(text.includes('Prepare an estimate'));
+  assert.ok(text.includes('Nothing has been sent to any client.'));
+  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-/.test(text), 'no uuid appears in the message');
+  assert.equal(renderDigest({ items: [] }), 'Vishar CRM: nothing is waiting for you right now.');
+});
+
+await test('a model-written reason cannot break the message out of plain text', () => {
+  const text = renderDigest({
+    items: [{
+      client_name: 'A\nB',
+      action_type: 'follow_up',
+      reason: 'line one\nline two\n\n\nlots of space',
+      priority: 'normal',
+    }],
+  });
+  // The reason is collapsed to one line, so a long or multi-line reason cannot
+  // push the rest of the list off a phone screen.
+  assert.ok(text.includes('line one line two lots of space'));
+});
+
+await test('an unknown action type still renders rather than dropping the row', () => {
+  const text = renderDigest({ items: [{ client_name: 'X', action_type: 'invented', reason: 'r', priority: 'low' }] });
+  assert.ok(text.includes('Needs your review'));
+});
+
+await test('the digest asks the backend for its own chat and nothing else', async () => {
+  const calls = [];
+  const sent = [];
+  const ok = await handleCrmAgentDigestCommand(tgEnv, { chatId: '4242' }, {
+    supabase: {
+      rpc: async (name, args) => {
+        calls.push({ name, args });
+        return { status: 'ready', total: 1, items: [{ client_name: 'Donovan Hale', action_type: 'artist_review', reason: 'r', priority: 'high' }] };
+      },
+    },
+    fetchImpl: async (url, init) => { sent.push({ url: String(url), body: init?.body }); return { ok: true }; },
+  });
+  assert.equal(ok, true);
+  assert.deepEqual(calls, [{ name: 'service_telegram_client_ai_digest', args: { p_chat_id: '4242', p_limit: 10 } }]);
+  assert.ok(sent[0].body.includes('Donovan Hale'));
+});
+
+await test('a backend failure answers neutrally and logs no client detail', async () => {
+  const original = { log: console.log, warn: console.warn, error: console.error };
+  const emitted = [];
+  console.log = console.warn = console.error = (...args) => emitted.push(args.join(' '));
+  let body = '';
+  try {
+    await handleCrmAgentDigestCommand(tgEnv, { chatId: '4242' }, {
+      supabase: { rpc: async () => { throw new Error('donovan@example.test row failed'); } },
+      fetchImpl: async (_url, init) => { body = String(init?.body ?? ''); return { ok: true }; },
+    });
+  } finally { Object.assign(console, original); }
+  assert.ok(body.includes('unavailable at the moment'));
+  assert.ok(!emitted.join(' ').includes('donovan@example.test'));
+});
+
+await test('the digest stays off until its own switch is set', async () => {
+  let called = false;
+  const ok = await handleCrmAgentDigestCommand({ ...tgEnv, CRM_AGENT_TELEGRAM_DIGEST_ENABLED: 'false' },
+    { chatId: '4242' },
+    { supabase: { rpc: async () => { called = true; return {}; } }, fetchImpl: async () => ({ ok: true }) });
+  assert.equal(ok, false);
+  assert.equal(called, false);
+});
+
 if (!process.exitCode) console.log(`crm agent: ${passes} tests passed`);

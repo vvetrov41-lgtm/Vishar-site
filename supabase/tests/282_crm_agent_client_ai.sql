@@ -567,6 +567,73 @@ reset role;
 select pg_temp.service_claims();
 
 -- ---------------------------------------------------------------------------
+-- Telegram digest
+--
+-- A chat id identifies a destination, never a permission.
+-- ---------------------------------------------------------------------------
+
+select is(
+  public.service_telegram_client_ai_digest('999888777', 10)->>'status',
+  'empty',
+  'an unlinked chat is answered like a linked one with nothing to do');
+select is(
+  (public.service_telegram_client_ai_digest('999888777', 10)->>'total')::int,
+  0,
+  'and it learns nothing about whether the chat exists');
+
+select throws_ok(
+  $q$select public.service_telegram_client_ai_digest('not-a-chat', 10)$q$,
+  '22023',
+  'invalid Telegram chat id',
+  'a malformed chat id is refused rather than resolved');
+
+-- A destination alone must not grant a scope. The profile below has an active
+-- Telegram destination but no membership of artist A.
+insert into auth.users (id, email, email_confirmed_at)
+  values ('c1000000-0000-4000-8000-000000000004', 'agent-outsider@example.test', now());
+insert into public.profiles (id, email, display_name, role, is_active)
+  values ('c1000000-0000-4000-8000-000000000004', 'agent-outsider@example.test', 'Outsider', 'read_only', true);
+insert into crm_private.telegram_destinations (
+  destination_kind, profile_id, chat_id, chat_type, safe_label, is_active
+) values ('profile', 'c1000000-0000-4000-8000-000000000004', '555444333', 'private', 'Outsider', true);
+insert into public.notification_preferences (profile_id, channel, is_enabled)
+  values ('c1000000-0000-4000-8000-000000000004', 'telegram', true);
+
+select is(
+  (public.service_telegram_client_ai_digest('555444333', 10)->>'total')::int,
+  0,
+  'a linked chat with no membership of the artist sees nothing');
+
+-- The owning artist's own profile does see their work.
+insert into crm_private.telegram_destinations (
+  destination_kind, profile_id, chat_id, chat_type, safe_label, is_active
+) values ('profile', 'c1000000-0000-4000-8000-000000000002', '111222333', 'private', 'Artist A', true);
+insert into public.notification_preferences (profile_id, channel, is_enabled)
+  values ('c1000000-0000-4000-8000-000000000002', 'telegram', true);
+
+select is(
+  (public.service_telegram_client_ai_digest('111222333', 10)->>'total')::int,
+  1,
+  'the owning artist sees their own open recommendation');
+select is(
+  public.service_telegram_client_ai_digest('111222333', 10)->'items'->0->>'client_name',
+  'Donovan Hale',
+  'and it names the client');
+select ok(
+  not ((public.service_telegram_client_ai_digest('111222333', 10)->'items'->0) ?| array['client_id','next_action_id','draft_reply','chat_id']),
+  'the digest returns no identifier and no draft: it is a list to read, not a handle to act with');
+
+-- An artist-kind destination is a shared group chat and must never resolve to
+-- one person's CRM scope.
+insert into crm_private.telegram_destinations (
+  destination_kind, artist_id, chat_id, chat_type, safe_label, is_active
+) values ('artist', pg_temp.artist_a(), '-100777', 'supergroup', 'Studio group', true);
+select is(
+  (public.service_telegram_client_ai_digest('-100777', 10)->>'total')::int,
+  0,
+  'a shared artist-kind destination resolves to nobody');
+
+-- ---------------------------------------------------------------------------
 -- Resolution is an artist action
 -- ---------------------------------------------------------------------------
 
