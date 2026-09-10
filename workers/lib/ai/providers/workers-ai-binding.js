@@ -72,7 +72,9 @@ export function normalizeBindingResponse(payload) {
     ? candidate
     : Array.isArray(candidate)
       ? candidate.map((part) => (typeof part?.text === 'string' ? part.text : '')).join('')
-      : '';
+      : candidate && typeof candidate === 'object'
+        ? JSON.stringify(candidate)
+        : '';
 
   const trimmed = typeof text === 'string' ? text.trim() : '';
   if (!trimmed) {
@@ -93,7 +95,7 @@ export function normalizeBindingResponse(payload) {
  * One attempt against the binding. Never retries: a chain must not be able to
  * multiply Workers AI neuron spend behind the router's back.
  */
-export async function callBindingModel({ binding, model, request, signal }) {
+export async function callBindingModel({ binding, model, request, signal, jsonMode = false }) {
   if (signal?.aborted) throw new ProviderError('provider_timeout');
 
   const input = {
@@ -104,6 +106,9 @@ export async function callBindingModel({ binding, model, request, signal }) {
     max_tokens: request.maxOutputTokens,
   };
   if (typeof request.temperature === 'number') input.temperature = request.temperature;
+  if (jsonMode && request.responseFormat === 'json') {
+    input.response_format = { type: 'json_object' };
+  }
 
   let payload;
   try {

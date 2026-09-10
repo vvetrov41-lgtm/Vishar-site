@@ -24,7 +24,13 @@ export function configure(env, modality) {
 }
 
 export async function invoke({ config, request, signal }) {
-  return callBindingModel({ binding: config.binding, model: config.model, request, signal });
+  return callBindingModel({
+    binding: config.binding,
+    model: config.model,
+    request,
+    signal,
+    jsonMode: request.responseFormat === 'json',
+  });
 }
 
 export const __testing = Object.freeze({ DEFAULT_TEXT_MODEL });
