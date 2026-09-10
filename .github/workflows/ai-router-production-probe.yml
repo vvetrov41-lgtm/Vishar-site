@@ -161,7 +161,7 @@ jobs:
             const attempts = Array.isArray(r.attempts) ? r.attempts : [];
             const qwenAttempt = attempts.find((a) => a.provider === "qwen");
             if (!qwenAttempt) throw new Error("enquiry routing never attempted qwen");
-            if (!qwenAttempt.model.startsWith("@cf/qwen/")) {
+            if (!qwenAttempt.model.startsWith("cf-qwen-")) {
               throw new Error(`unexpected qwen model ${qwenAttempt.model}`);
             }
             if (r.schemaValid !== true) throw new Error("enquiry output failed the production schema");
