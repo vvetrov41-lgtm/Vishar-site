@@ -4,37 +4,37 @@ select no_plan();
 
 select ok(
   position('client_ai_watermark(new.artist_id, new.client_id)' in
-    pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure)) > 0,
+    lower(pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure))) > 0,
   'enquiry edit refresh source ids are derived from the current client watermark'
 );
 
 select ok(
-  position('old.idea IS NOT DISTINCT FROM new.idea' in
-    pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure)) > 0,
+  position('old.idea is not distinct from new.idea' in
+    lower(pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure))) > 0,
   'idea edits participate in the enquiry refresh change detector'
 );
 
 select ok(
-  position('old.placement IS NOT DISTINCT FROM new.placement' in
-    pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure)) > 0,
+  position('old.placement is not distinct from new.placement' in
+    lower(pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure))) > 0,
   'placement edits participate in the enquiry refresh change detector'
 );
 
 select ok(
-  position('old.approximate_size IS NOT DISTINCT FROM new.approximate_size' in
-    pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure)) > 0,
+  position('old.approximate_size is not distinct from new.approximate_size' in
+    lower(pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure))) > 0,
   'size edits participate in the enquiry refresh change detector'
 );
 
 select ok(
-  position('old.cover_up IS NOT DISTINCT FROM new.cover_up' in
-    pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure)) > 0,
+  position('old.cover_up is not distinct from new.cover_up' in
+    lower(pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure))) > 0,
   'cover-up edits participate in the enquiry refresh change detector'
 );
 
 select ok(
-  position('old.preferred_timing IS NOT DISTINCT FROM new.preferred_timing' in
-    pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure)) > 0,
+  position('old.preferred_timing is not distinct from new.preferred_timing' in
+    lower(pg_get_functiondef('crm_private.enqueue_enquiry_client_ai()'::regprocedure))) > 0,
   'preferred-timing edits participate in the enquiry refresh change detector'
 );
 
