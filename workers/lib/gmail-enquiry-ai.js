@@ -4,6 +4,16 @@ const MAX_SOURCE_CHARS = 12000;
 
 /** The client brief needs the reply, not the quoted thread history under it. */
 const MAX_CLIENT_STATE_CHARS = 4000;
+const CLIENT_STATE_TIME_PREFIX = '@vishar-crm-ai-occurred-at:';
+
+function clientStatePayload(body, timestamp) {
+  const clean = String(body || '').replace(/\u0000/g, '');
+  const parsed = typeof timestamp === 'string' ? Date.parse(timestamp) : Number.NaN;
+  const prefix = Number.isFinite(parsed)
+    ? `${CLIENT_STATE_TIME_PREFIX}${new Date(parsed).toISOString()}\n`
+    : '';
+  return `${prefix}${clean}`.slice(0, MAX_CLIENT_STATE_CHARS);
+}
 
 /**
  * Records what the client actually wrote, for the client brief.
@@ -18,9 +28,10 @@ const MAX_CLIENT_STATE_CHARS = 4000;
  *
  * The body is bounded here and bounded again in the database, is stored in a
  * private schema no API role can read, and is treated as untrusted client data
- * by every consumer. A failure is swallowed for the same reason as below: an
- * authorized Gmail read must not turn into an error because a derived-state
- * feature was unavailable.
+ * by every consumer. Provider time is carried in a versioned transport prefix
+ * inside this private RPC's bounded text value and stripped by the database
+ * before storage/model context. This preserves the already-reviewed eight-arg
+ * service RPC while making chronology come from Gmail rather than read time.
  *
  * The database owns baseline detection. This call intentionally happens before
  * service_observe_gmail_enquiry_ai, while the stored thread context still
@@ -32,7 +43,6 @@ async function recordGmailClientMessage(db, auth, thread, message) {
     const body = typeof message?.body === 'string' ? message.body : '';
     if (!body.trim()) return { status: 'skipped' };
 
-    const timestamp = typeof message?.timestamp === 'string' ? Date.parse(message.timestamp) : Number.NaN;
     await db.backendRpc('service_record_gmail_client_message', {
       p_artist_id: auth.artist_id,
       p_client_id: auth.client_id,
@@ -41,11 +51,7 @@ async function recordGmailClientMessage(db, auth, thread, message) {
       p_provider_message_id: message.provider_message_id,
       p_direction: message.direction,
       p_subject: typeof message.subject === 'string' ? message.subject.slice(0, 500) : null,
-      p_body: body.replace(/\u0000/g, '').slice(0, MAX_CLIENT_STATE_CHARS),
-      // Production Gmail normalization supplies this. A malformed/missing value
-      // is sent as null so the database rejects the excerpt while the authorized
-      // mailbox read itself still succeeds.
-      p_occurred_at: Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null,
+      p_body: clientStatePayload(body, message.timestamp),
     });
     return { status: 'recorded' };
   } catch {
@@ -105,3 +111,8 @@ export async function enqueueGmailEnquiryAnalysis(db, auth, target, thread) {
     return { status: 'failed' };
   }
 }
+
+export const __testing = Object.freeze({
+  CLIENT_STATE_TIME_PREFIX,
+  clientStatePayload,
+});
