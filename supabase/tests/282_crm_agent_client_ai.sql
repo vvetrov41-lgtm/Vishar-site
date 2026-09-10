@@ -567,6 +567,107 @@ reset role;
 select pg_temp.service_claims();
 
 -- ---------------------------------------------------------------------------
+-- Gmail
+--
+-- Gmail bodies are not stored in the CRM, so the thread advancing is the
+-- event. Establishing a baseline is not a reply.
+-- ---------------------------------------------------------------------------
+
+select is(
+  public.service_observe_gmail_enquiry_ai(
+    pg_temp.artist_a(), (select (r->>'enquiry_id')::uuid from pg_temp.enquiry_a), pg_temp.client_a(),
+    'thread-agent-0001', 'Re: your enquiry', 'msg-agent-0001', null, null)->>'status',
+  'observed',
+  'a first Gmail observation establishes a baseline');
+select is(
+  (select count(*)::int from public.crm_agent_jobs
+   where client_id = pg_temp.client_a() and source_event_id like 'gmail:%'),
+  0,
+  'and does not queue a refresh: opening old mail is not a client reply');
+
+select ok(
+  public.service_observe_gmail_enquiry_ai(
+    pg_temp.artist_a(), (select (r->>'enquiry_id')::uuid from pg_temp.enquiry_a), pg_temp.client_a(),
+    'thread-agent-0001', 'Re: your enquiry', 'msg-agent-0002', null, null) is not null,
+  'the thread advances to a new provider message');
+select is(
+  (select count(*)::int from public.crm_agent_jobs
+   where client_id = pg_temp.client_a() and source_event_id = 'gmail:msg-agent-0002'),
+  1,
+  'a Gmail reply queues exactly one refresh');
+
+-- ---------------------------------------------------------------------------
+-- Several enquiries, and canonical facts outranking a stale brief
+-- ---------------------------------------------------------------------------
+
+set local role authenticated;
+select pg_temp.claims('c1000000-0000-4000-8000-000000000002');
+create temporary table pg_temp.enquiry_a2 as
+select public.create_manual_enquiry(
+  'c1000000-0000-4000-8000-0000000000a3',
+  pg_temp.artist_a(),
+  '{"full_name":"Donovan Hale","email":"donovan-agent@example.test","phone":"+447700900901","preferred_contact":"Email"}'::jsonb,
+  '{"project_type":"Tattoo","idea":"Second piece: small ornamental band"}'::jsonb,
+  true
+) as r;
+grant select on pg_temp.enquiry_a2 to authenticated, service_role;
+reset role;
+select pg_temp.service_claims();
+
+select is(
+  (select count(*)::int from public.enquiries
+   where client_id = pg_temp.client_a() and artist_id = pg_temp.artist_a() and archived_at is null),
+  2,
+  'the same client now holds two enquiries with this artist');
+select isnt(
+  crm_private.client_ai_watermark(pg_temp.artist_a(), pg_temp.client_a()),
+  (select w from pg_temp.wm1),
+  'a second enquiry changes the watermark, so the brief is recomputed');
+
+-- A confirmed booking exists in the CRM while the stored brief still says the
+-- client is only gathering information. The read must show both: the
+-- authoritative facts alongside the brief, and a staleness flag on the brief.
+set local role authenticated;
+select pg_temp.claims('c1000000-0000-4000-8000-000000000002');
+select public.transition_enquiry_status(
+  (select (r->>'enquiry_id')::uuid from pg_temp.enquiry_a), 'accepted');
+create temporary table pg_temp.project_a as
+select (public.convert_enquiry_to_project(
+  (select (r->>'enquiry_id')::uuid from pg_temp.enquiry_a), 'Half sleeve')->>'project_id')::uuid as id;
+grant select on pg_temp.project_a to authenticated, service_role;
+select public.schedule_session(
+  (select id from pg_temp.project_a),
+  date_trunc('hour', now() + interval '30 days'),
+  date_trunc('hour', now() + interval '30 days') + interval '4 hours',
+  'confirmed', null);
+
+create temporary table pg_temp.read_booked as
+select public.get_client_ai_state(pg_temp.artist_a(), pg_temp.client_a()) as r;
+grant select on pg_temp.read_booked to authenticated, service_role;
+
+select is(
+  (select r->'brief'->>'stage' from pg_temp.read_booked),
+  'gathering_information',
+  'the stored brief still reports the stage it was derived with');
+select is(
+  (select r->'crm_facts'->'sessions'->0->>'status' from pg_temp.read_booked),
+  'confirmed',
+  'while the canonical CRM facts report the confirmed session');
+select is(
+  (select (r->>'is_stale')::boolean from pg_temp.read_booked),
+  true,
+  'and the brief is flagged stale, so the canonical facts are what a reader trusts');
+select is(
+  (select r->'brief'->'discussed'->'confirmed_dates'->>'status' from pg_temp.read_booked),
+  'not_discussed',
+  'the AI brief never became the record of the booking');
+select ok(
+  (select jsonb_array_length(r->'crm_facts'->'projects') >= 1 from pg_temp.read_booked),
+  'the canonical project facts are returned with every brief read');
+reset role;
+select pg_temp.service_claims();
+
+-- ---------------------------------------------------------------------------
 -- Telegram digest
 --
 -- A chat id identifies a destination, never a permission.
