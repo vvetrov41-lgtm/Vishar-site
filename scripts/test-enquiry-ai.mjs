@@ -60,6 +60,15 @@ await test('normal extraction validates and preserves provenance plus missing fi
   assert.ok(parsed.missing_information.includes('phone'));
 });
 
+await test('discovery source uses the canonical CRM taxonomy', () => {
+  for (const source of ['instagram', 'google', 'ai', 'referral', 'convention', 'returning_client', 'other']) {
+    assert.ok(validateEnquiryAnalysis(result({ fields: { discovery_source: field(source) } })), source);
+  }
+  for (const obsolete of ['chatgpt', 'other_ai', 'friend_referral']) {
+    assert.equal(validateEnquiryAnalysis(result({ fields: { discovery_source: field(obsolete) } })), null, obsolete);
+  }
+});
+
 await test('invalid structured output and model-provided record keys fail closed', () => {
   assert.equal(validateEnquiryAnalysis({ ...result(), enquiry_id: JOB_ID }), null);
   assert.equal(validateEnquiryAnalysis({ ...result(), fields: { ...result().fields, workspace_id: field('foreign') } }), null);
