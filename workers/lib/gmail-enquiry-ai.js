@@ -21,11 +21,20 @@ const MAX_CLIENT_STATE_CHARS = 4000;
  * by every consumer. A failure is swallowed for the same reason as below: an
  * authorized Gmail read must not turn into an error because a derived-state
  * feature was unavailable.
+ *
+ * The database owns baseline detection. This call intentionally happens before
+ * service_observe_gmail_enquiry_ai, while the stored thread context still
+ * contains the previous provider message id. A first read therefore establishes
+ * a baseline rather than backfilling old mail into the client brief.
  */
 async function recordGmailClientMessage(db, auth, thread, message) {
   try {
     const body = typeof message?.body === 'string' ? message.body : '';
     if (!body.trim()) return { status: 'skipped' };
+
+    const timestamp = typeof message?.timestamp === 'string' ? Date.parse(message.timestamp) : Number.NaN;
+    if (!Number.isFinite(timestamp)) return { status: 'skipped' };
+
     await db.backendRpc('service_record_gmail_client_message', {
       p_artist_id: auth.artist_id,
       p_client_id: auth.client_id,
@@ -35,6 +44,7 @@ async function recordGmailClientMessage(db, auth, thread, message) {
       p_direction: message.direction,
       p_subject: typeof message.subject === 'string' ? message.subject.slice(0, 500) : null,
       p_body: body.replace(/\u0000/g, '').slice(0, MAX_CLIENT_STATE_CHARS),
+      p_occurred_at: new Date(timestamp).toISOString(),
     });
     return { status: 'recorded' };
   } catch {
@@ -64,8 +74,9 @@ export async function enqueueGmailEnquiryAnalysis(db, auth, target, thread) {
     if ((!inbound && !outbound) || !PROVIDER_ID.test(message.provider_message_id || '')
       || !PROVIDER_ID.test(thread?.providerThreadId || '')) return { status: 'skipped' };
 
-    // The client brief gets the message content regardless of the enquiry
-    // relevance gate below, because the two answer different questions.
+    // Client memory gets the message content independently of the enquiry
+    // relevance gate below. The database rejects a first observation as a
+    // historical baseline and stores only later provider-message changes.
     await recordGmailClientMessage(db, auth, thread, message);
 
     const candidate = inbound && typeof message.body === 'string' && message.body.trim()
