@@ -95,7 +95,10 @@ export function normalizeBindingResponse(payload) {
  * One attempt against the binding. Never retries: a chain must not be able to
  * multiply Workers AI neuron spend behind the router's back.
  */
-export async function callBindingModel({ binding, model, request, signal, jsonMode = false }) {
+export async function callBindingModel({
+  binding, model, request, signal, jsonMode = false,
+  reasoningEffort = null, useMaxCompletionTokens = false,
+}) {
   if (signal?.aborted) throw new ProviderError('provider_timeout');
 
   const input = {
@@ -103,9 +106,11 @@ export async function callBindingModel({ binding, model, request, signal, jsonMo
       { role: 'system', content: request.system },
       { role: 'user', content: userContent(request) },
     ],
-    max_tokens: request.maxOutputTokens,
   };
+  if (useMaxCompletionTokens) input.max_completion_tokens = request.maxOutputTokens;
+  else input.max_tokens = request.maxOutputTokens;
   if (typeof request.temperature === 'number') input.temperature = request.temperature;
+  if (['low', 'medium', 'high'].includes(reasoningEffort)) input.reasoning_effort = reasoningEffort;
   if (jsonMode && request.responseFormat === 'json') {
     input.response_format = request.responseSchema && typeof request.responseSchema === 'object'
       ? { type: 'json_schema', json_schema: request.responseSchema }
