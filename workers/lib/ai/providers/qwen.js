@@ -30,7 +30,17 @@ export function configure(env, modality) {
 }
 
 export async function invoke({ config, request, signal }) {
-  return callBindingModel({ binding: config.binding, model: config.model, request, signal });
+  const boundedExtraction = request.responseSchema && request.responseFormat === 'json';
+  return callBindingModel({
+    binding: config.binding,
+    model: config.model,
+    request,
+    signal,
+    // Qwen is a reasoning model. CRM extraction needs deterministic structure,
+    // not a long hidden deliberation that can consume the whole Worker lease.
+    reasoningEffort: boundedExtraction ? 'low' : null,
+    useMaxCompletionTokens: boundedExtraction,
+  });
 }
 
 export const __testing = Object.freeze({ DEFAULT_VISION_MODEL, DEFAULT_TEXT_MODEL });
