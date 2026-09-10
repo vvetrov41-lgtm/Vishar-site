@@ -17,6 +17,7 @@
 //     throw into the request path.
 
 import { ProviderError, toProviderErrorCode } from './errors.js';
+import { ENQUIRY_AI_RESPONSE_SCHEMA } from './enquiry-schema.js';
 import {
   ALLOWED_IMAGE_MIME_TYPES,
   ATTEMPTS_PER_PROVIDER,
@@ -102,6 +103,7 @@ export function normalizeRequest(plan, input) {
       maxOutputTokens: plan.maxOutputTokens,
       temperature: plan.temperature,
       responseFormat: plan.structured ? 'json' : 'text',
+      responseSchema: plan.task === 'enquiry_intake' ? ENQUIRY_AI_RESPONSE_SCHEMA : null,
     }),
   };
 }
