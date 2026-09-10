@@ -1,0 +1,102 @@
+name: Enquiry AI production acceptance
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-enquiry-ai-retry-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enquiry-ai-production-operator
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact canonical one-file acceptance snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')"
+          parent="$(git rev-parse HEAD^)"
+          test "$canonical" = '61a0735e8f726235283b3e09c804e436eee70839'
+          test "$parent" = "$canonical"
+          test "$(git diff --name-only "$parent" HEAD)" = '.github/workflows/enquiry-ai-production-operator.yml'
+          case "$GITHUB_REF_NAME" in release/private-crm-rc*-inventory-enquiry-ai-retry-*) ;; *) exit 1 ;; esac
+          [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
+          test "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_DB_PASSWORD"
+      - name: Resolve production pooler
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          project_json="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF")"
+          region="$(printf '%s' "$project_json" | jq -r '.region // empty')"
+          [[ "$region" =~ ^[a-z0-9-]+$ ]]
+          echo "host=aws-0-${region}.pooler.supabase.com" >> "$GITHUB_OUTPUT"
+      - name: Retry one real failed enquiry and wait for natural scheduler
+        shell: bash
+        env:
+          PGPASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+          DB_HOST: ${{ steps.db.outputs.host }}
+        run: |
+          set -euo pipefail
+          conn="host=$DB_HOST port=5432 dbname=postgres user=postgres.$PROJECT_REF sslmode=require connect_timeout=10"
+          fail_closed() {
+            psql "$conn" -v ON_ERROR_STOP=1 -X -q -c "update crm_private.enquiry_ai_config set enabled=false, images_enabled=false where singleton;" || true
+          }
+          trap 'rc=$?; if [ $rc -ne 0 ]; then fail_closed; fi' EXIT
+
+          flag="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -c "select enabled::text || ',' || images_enabled::text from crm_private.enquiry_ai_config where singleton;")"
+          test "$flag" = 'true,false'
+
+          job_id="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -c "select id::text from public.enquiry_ai_jobs where status='failed' and error_code='ai_unavailable' order by updated_at desc limit 1;")"
+          test -n "$job_id"
+          [[ "$job_id" =~ ^[0-9a-f-]{36}$ ]]
+
+          reset_count="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -v jid="$job_id" -c "with u as (update public.enquiry_ai_jobs set status='pending', attempts=2, available_at=clock_timestamp(), lease_token=null, lease_until=null, error_code=null, provider=null, model=null, updated_at=clock_timestamp() where id=:'jid'::uuid and status='failed' and error_code='ai_unavailable' returning 1) select count(*) from u;")"
+          test "$reset_count" = '1'
+
+          outcome=''
+          for _ in $(seq 1 33); do
+            state="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -F '|' -v jid="$job_id" -c "select status, attempts::text, coalesce(error_code,'none'), coalesce(provider,'none'), case when model is null then 'none' else 'set' end, case when result is not null and crm_private.validate_enquiry_ai_result(result) then 'valid' else 'invalid' end from public.enquiry_ai_jobs where id=:'jid'::uuid;")"
+            status="${state%%|*}"
+            if [ "$status" = 'succeeded' ]; then
+              outcome="$state"
+              break
+            fi
+            if [ "$status" = 'failed' ] || [ "$status" = 'stale' ]; then
+              echo "Acceptance job terminal state: ${state#*|}"
+              exit 1
+            fi
+            sleep 15
+          done
+
+          test -n "$outcome"
+          IFS='|' read -r status attempts error_code provider model_state result_state <<< "$outcome"
+          test "$status" = 'succeeded'
+          test "$attempts" = '3'
+          test "$error_code" = 'none'
+          case "$provider" in qwen|workers_ai|openai) ;; *) exit 1 ;; esac
+          test "$model_state" = 'set'
+          test "$result_state" = 'valid'
+
+          final_flag="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -c "select enabled::text || ',' || images_enabled::text from crm_private.enquiry_ai_config where singleton;")"
+          test "$final_flag" = 'true,false'
+          echo "Natural production enquiry AI acceptance succeeded; provider=$provider; attempts=$attempts; result=$result_state"
