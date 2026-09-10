@@ -17,6 +17,52 @@ const exactKeys = (v, keys) => plain(v) && Object.keys(v).length === keys.length
 const text = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max
   && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(v);
 
+const fieldSchema = (name) => {
+  const maxLength = ['project_description', 'notes'].includes(name) ? 2000 : 500;
+  let value;
+  if (BOOLEAN_FIELDS.has(name)) {
+    value = { anyOf: [{ type: 'boolean' }, { type: 'null' }] };
+  } else if (ENUMS[name]) {
+    value = { anyOf: [{ type: 'string', enum: ENUMS[name] }, { type: 'null' }] };
+  } else {
+    value = { anyOf: [{ type: 'string', minLength: 1, maxLength }, { type: 'null' }] };
+  }
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['value', 'status'],
+    properties: {
+      value,
+      status: { type: 'string', enum: ['explicit', 'inferred', 'missing'] },
+    },
+  };
+};
+
+// Workers AI JSON Schema mode constrains the cheap Llama fallback before the
+// semantic validator runs. Cross-field rules (for example missing => null) stay
+// in validateEnquiryAnalysis so provider output still fails closed.
+export const ENQUIRY_AI_RESPONSE_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  required: ['fields', 'summary', 'missing_information', 'draft_reply'],
+  properties: {
+    fields: {
+      type: 'object',
+      additionalProperties: false,
+      required: [...ENQUIRY_AI_FIELDS],
+      properties: Object.fromEntries(ENQUIRY_AI_FIELDS.map((name) => [name, fieldSchema(name)])),
+    },
+    summary: { type: 'string', minLength: 1, maxLength: 1200 },
+    missing_information: {
+      type: 'array',
+      uniqueItems: true,
+      maxItems: ENQUIRY_AI_FIELDS.length,
+      items: { type: 'string', enum: [...ENQUIRY_AI_FIELDS] },
+    },
+    draft_reply: { type: 'string', minLength: 1, maxLength: 3000 },
+  },
+});
+
 // MVP replies ask for details and defer estimates/availability to artist review.
 // Transactional assertions are unnecessary in this first reply. Allow useful
 // dimensions such as "10 cm", but reject prices, commitments and send/payment

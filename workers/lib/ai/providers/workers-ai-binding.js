@@ -107,7 +107,9 @@ export async function callBindingModel({ binding, model, request, signal, jsonMo
   };
   if (typeof request.temperature === 'number') input.temperature = request.temperature;
   if (jsonMode && request.responseFormat === 'json') {
-    input.response_format = { type: 'json_object' };
+    input.response_format = request.responseSchema && typeof request.responseSchema === 'object'
+      ? { type: 'json_schema', json_schema: request.responseSchema }
+      : { type: 'json_object' };
   }
 
   let payload;
