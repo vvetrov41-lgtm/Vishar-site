@@ -1,0 +1,84 @@
+name: Enquiry AI production state inspect
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-enquiry-ai-observe-*'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact canonical one-file inspect snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')"
+          test "$canonical" = '61a0735e8f726235283b3e09c804e436eee70839'
+          test "$(git rev-parse HEAD^)" = "$canonical"
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/enquiry-ai-production-operator.yml'
+          test "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+      - name: Resolve production pooler
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          region="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF" | jq -r '.region // empty')"
+          [[ "$region" =~ ^[a-z0-9-]+$ ]]
+          echo "host=aws-0-${region}.pooler.supabase.com" >> "$GITHUB_OUTPUT"
+      - name: Read sanitized counters
+        id: state
+        shell: bash
+        env:
+          PGPASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+          DB_HOST: ${{ steps.db.outputs.host }}
+        run: |
+          set -euo pipefail
+          conn="host=$DB_HOST port=5432 dbname=postgres user=postgres.$PROJECT_REF sslmode=require connect_timeout=10"
+          row="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -F '|' -c "select (select enabled::int from crm_private.enquiry_ai_config where singleton),(select images_enabled::int from crm_private.enquiry_ai_config where singleton),(select count(*) from public.enquiry_ai_jobs where status='failed' and error_code='ai_unavailable'),(select count(*) from public.enquiry_ai_jobs where status='pending'),(select count(*) from public.enquiry_ai_jobs where status='processing'),(select count(*) from public.enquiry_ai_jobs where status='succeeded'),(select count(*) from public.enquiry_ai_jobs where status='failed' and coalesce(error_code,'')<>'ai_unavailable'),(select count(*) from public.enquiry_ai_jobs where status='stale');")"
+          IFS='|' read -r enabled images failed_ai pending processing succeeded failed_other stale <<< "$row"
+          for value in "$enabled" "$images" "$failed_ai" "$pending" "$processing" "$succeeded" "$failed_other" "$stale"; do [[ "$value" =~ ^[0-9]+$ ]]; done
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "failed_ai=$failed_ai" >> "$GITHUB_OUTPUT"
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          echo "processing=$processing" >> "$GITHUB_OUTPUT"
+          echo "succeeded=$succeeded" >> "$GITHUB_OUTPUT"
+          echo "failed_other=$failed_other" >> "$GITHUB_OUTPUT"
+          echo "stale=$stale" >> "$GITHUB_OUTPUT"
+      - name: Flag is fail closed
+        if: steps.state.outputs.enabled == '0' && steps.state.outputs.images == '0'
+        run: echo 'fail-closed'
+      - name: Failed ai unavailable exists
+        if: fromJSON(steps.state.outputs.failed_ai) > 0
+        run: echo 'failed-ai-present'
+      - name: Pending exists
+        if: fromJSON(steps.state.outputs.pending) > 0
+        run: echo 'pending-present'
+      - name: Processing exists
+        if: fromJSON(steps.state.outputs.processing) > 0
+        run: echo 'processing-present'
+      - name: Succeeded exists
+        if: fromJSON(steps.state.outputs.succeeded) > 0
+        run: echo 'succeeded-present'
+      - name: Other failed exists
+        if: fromJSON(steps.state.outputs.failed_other) > 0
+        run: echo 'other-failed-present'
+      - name: Stale exists
+        if: fromJSON(steps.state.outputs.stale) > 0
+        run: echo 'stale-present'
+      - name: Assert images remain disabled
+        run: test '${{ steps.state.outputs.images }}' = '0'
