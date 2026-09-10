@@ -9,6 +9,7 @@
 // 2026-05-30, and the deprecation notice names the `-fast` variants as the ones
 // that stay active.
 
+import { ENQUIRY_AI_TRANSPORT_SCHEMA } from '../enquiry-schema.js';
 import { bindingFor, callBindingModel, resolveModel } from './workers-ai-binding.js';
 
 export const id = 'workers_ai';
@@ -24,10 +25,13 @@ export function configure(env, modality) {
 }
 
 export async function invoke({ config, request, signal }) {
+  const transportRequest = request.responseSchema
+    ? { ...request, responseSchema: ENQUIRY_AI_TRANSPORT_SCHEMA }
+    : request;
   return callBindingModel({
     binding: config.binding,
     model: config.model,
-    request,
+    request: transportRequest,
     signal,
     jsonMode: request.responseFormat === 'json',
   });
