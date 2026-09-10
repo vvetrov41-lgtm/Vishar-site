@@ -11,6 +11,7 @@ const BACKEND_RPCS = new Set([
   'service_upsert_gmail_thread_context',
   'service_get_gmail_thread_context',
   'service_observe_gmail_enquiry_ai',
+  'service_record_gmail_client_message',
   'claim_email_outbox',
   'record_email_outbox_result',
 ]);

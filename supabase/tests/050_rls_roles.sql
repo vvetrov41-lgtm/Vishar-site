@@ -766,6 +766,7 @@ insert into expected_function_acl values
   ('public.resolve_client_ai_next_action(uuid,text)', false, true, false),
   ('public.refresh_client_ai_state(uuid,uuid)', false, true, false),
   ('public.service_telegram_client_ai_digest(text,integer)', false, false, true),
+  ('public.service_record_gmail_client_message(uuid,uuid,uuid,text,text,text,text,text)', false, false, true),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),

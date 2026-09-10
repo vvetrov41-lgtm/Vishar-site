@@ -30,6 +30,10 @@ const ACTION_LABELS = Object.freeze({
 
 const EMPTY_MESSAGE = 'Vishar CRM: nothing is waiting for you right now.';
 const UNAVAILABLE_MESSAGE = 'Vishar CRM: that list is unavailable at the moment. Try again shortly.';
+// The database withholds recommendations the CRM has moved past and queues
+// their replacement. Saying so is the difference between "you are free" and
+// "the answer is being recalculated", which are not the same news.
+const REFRESHING_NOTE = 'Some items are being recalculated after a recent change and will appear shortly.';
 
 export function crmAgentDigestCommand(update) {
   const message = update?.message;
@@ -53,7 +57,10 @@ export function crmAgentDigestCommand(update) {
  */
 export function renderDigest(digest) {
   const items = Array.isArray(digest?.items) ? digest.items : [];
-  if (!items.length) return EMPTY_MESSAGE;
+  const refreshing = Number.isInteger(digest?.refreshing) ? digest.refreshing : 0;
+  if (!items.length) {
+    return refreshing > 0 ? `${EMPTY_MESSAGE}\n\n${REFRESHING_NOTE}` : EMPTY_MESSAGE;
+  }
 
   const lines = ['Vishar CRM: waiting for you', ''];
   for (const item of items.slice(0, 20)) {
@@ -65,6 +72,7 @@ export function renderDigest(digest) {
     lines.push(`${item?.priority === 'high' ? '! ' : ''}${name} — ${label}`);
     if (reason) lines.push(`   ${reason}`);
   }
+  if (refreshing > 0) lines.push('', REFRESHING_NOTE);
   lines.push('', 'These are suggestions. Nothing has been sent to any client.');
   return lines.join('\n');
 }
@@ -103,5 +111,5 @@ export async function handleCrmAgentDigestCommand(env, command, deps = {}) {
 }
 
 export const __testing = Object.freeze({
-  ACTION_LABELS, DIGEST_COMMAND, EMPTY_MESSAGE, UNAVAILABLE_MESSAGE,
+  ACTION_LABELS, DIGEST_COMMAND, EMPTY_MESSAGE, REFRESHING_NOTE, UNAVAILABLE_MESSAGE,
 });
