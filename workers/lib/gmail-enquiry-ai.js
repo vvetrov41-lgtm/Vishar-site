@@ -33,8 +33,6 @@ async function recordGmailClientMessage(db, auth, thread, message) {
     if (!body.trim()) return { status: 'skipped' };
 
     const timestamp = typeof message?.timestamp === 'string' ? Date.parse(message.timestamp) : Number.NaN;
-    if (!Number.isFinite(timestamp)) return { status: 'skipped' };
-
     await db.backendRpc('service_record_gmail_client_message', {
       p_artist_id: auth.artist_id,
       p_client_id: auth.client_id,
@@ -44,7 +42,10 @@ async function recordGmailClientMessage(db, auth, thread, message) {
       p_direction: message.direction,
       p_subject: typeof message.subject === 'string' ? message.subject.slice(0, 500) : null,
       p_body: body.replace(/\u0000/g, '').slice(0, MAX_CLIENT_STATE_CHARS),
-      p_occurred_at: new Date(timestamp).toISOString(),
+      // Production Gmail normalization supplies this. A malformed/missing value
+      // is sent as null so the database rejects the excerpt while the authorized
+      // mailbox read itself still succeeds.
+      p_occurred_at: Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null,
     });
     return { status: 'recorded' };
   } catch {
