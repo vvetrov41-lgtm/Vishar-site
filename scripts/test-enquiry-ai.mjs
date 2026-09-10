@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { ENQUIRY_AI_FIELDS, isSafeIntakeDraft, validateEnquiryAnalysis } from '../workers/lib/ai/enquiry-schema.js';
+import { ENQUIRY_AI_FIELDS, isSafeIntakeDraft, normalizeEnquiryAnalysis, validateEnquiryAnalysis } from '../workers/lib/ai/enquiry-schema.js';
 import { drainEnquiryAi, processEnquiryAiJob, projectEnquiryAiInput, scheduleEnquiryAi } from '../workers/lib/enquiry-ai.js';
 
 const JOB_ID = '11111111-1111-4111-8111-111111111111';
@@ -75,6 +75,31 @@ await test('invalid structured output and model-provided record keys fail closed
   assert.equal(validateEnquiryAnalysis({ ...result(), missing_information: [] }), null);
 });
 
+await test('deterministic repair fixes transport drift without inventing extracted facts', () => {
+  const raw = result({
+    fields: {
+      colour: field(' Black & Grey '),
+      cover_up: field('true'),
+      phone: field(null, 'EXPLICIT'),
+    },
+    missing_information: [],
+    draft_reply: 'The price is £200 and your date is confirmed.',
+  });
+  const repaired = normalizeEnquiryAnalysis(raw);
+  assert.equal(repaired.fields.colour.value, 'black_and_grey');
+  assert.equal(repaired.fields.cover_up.value, true);
+  assert.equal(repaired.fields.phone.status, 'missing');
+  assert.ok(repaired.missing_information.includes('phone'));
+  assert.equal(isSafeIntakeDraft(repaired.draft_reply), true);
+  assert.ok(validateEnquiryAnalysis(repaired));
+  assert.equal(repaired.fields.project_description.value, raw.fields.project_description.value);
+});
+
+await test('deterministic repair still fails closed for malformed extracted fields', () => {
+  const raw = result({ fields: { placement: { value: ['arm'], status: 'explicit' } } });
+  assert.equal(validateEnquiryAnalysis(normalizeEnquiryAnalysis(raw)), null);
+});
+
 await test('draft safety allows dimensions but rejects commitments, price and prompt injection', () => {
   assert.equal(isSafeIntakeDraft('Would you like the design around 10 cm?'), true);
   assert.equal(isSafeIntakeDraft('The price is £200 and your date is confirmed.'), false);
@@ -95,7 +120,7 @@ await test('valid Qwen/router output creates one draft through the bounded compl
   const response = await processEnquiryAiJob(env, job(), {
     supabase: db,
     runTask: async (_env, _task, _input, deps) => {
-      assert.equal(deps.validateJson, validateEnquiryAnalysis);
+      assert.ok(deps.validateJson(result()));
       return { ok: true, json: result(), provider: 'qwen', model: '@cf/qwen/qwen3.8-27b' };
     },
   });
@@ -103,6 +128,27 @@ await test('valid Qwen/router output creates one draft through the bounded compl
   assert.deepEqual(db.calls.map((call) => call.name), ['service_complete_enquiry_ai_job']);
   assert.equal(db.calls[0].args.p_job_id, JOB_ID);
   assert.equal(db.calls[0].args.p_result.enquiry_id, undefined);
+});
+
+await test('repairable Qwen output completes without a provider retry', async () => {
+  const db = rpcRecorder();
+  const drifted = result({
+    fields: { colour: field('Black and Grey') },
+    missing_information: [],
+    draft_reply: 'The price is £200 and your date is confirmed.',
+  });
+  const response = await processEnquiryAiJob(env, job(), {
+    supabase: db,
+    runTask: async (_env, _task, _input, deps) => ({
+      ok: true,
+      json: deps.validateJson(drifted),
+      provider: 'qwen',
+      model: '@cf/qwen/qwen3.8-27b',
+    }),
+  });
+  assert.equal(response.outcome, 'succeeded');
+  assert.equal(isSafeIntakeDraft(db.calls[0].args.p_result.draft_reply), true);
+  assert.equal(db.calls[0].args.p_result.fields.colour.value, 'black_and_grey');
 });
 
 await test('semantic-invalid Qwen output falls back to Workers AI before the CRM job fails', async () => {
