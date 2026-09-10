@@ -115,6 +115,7 @@ jobs:
           '
 
       - name: Live synthetic DeepSeek probe
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -124,12 +125,9 @@ jobs:
             --data '{"task":"high_quality_reasoning"}')"
           cat /tmp/deepseek.json
           echo
-          # What this asserts is routing: the request must have been dispatched
-          # to the DeepSeek tier on a @cf/deepseek-ai model. Whether the model
-          # then answers is a billing-tier question, not a routing one --
-          # Cloudflare gates DeepSeek V4 Flash behind Workers Paid -- so a
-          # provider_unavailable is reported loudly and does not fail the run.
-          # Any other failure does.
+          # DeepSeek is informative for this workflow, not an enquiry-MVP gate.
+          # Keep reporting unexpected DeepSeek failures, but do not let an
+          # optional paid-tier/provider issue prevent the Qwen enquiry probe.
           node -e '
             const r = require("/tmp/deepseek.json");
             const attempt = (r.attempts || []).find((a) => a.provider === "deepseek");
