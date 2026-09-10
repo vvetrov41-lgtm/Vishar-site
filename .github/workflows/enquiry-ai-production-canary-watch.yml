@@ -1,0 +1,91 @@
+name: Enquiry AI production canary watch
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-enquiry-ai-observe-canary-*'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact canonical one-file inspect snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')"
+          test "$canonical" = '61a0735e8f726235283b3e09c804e436eee70839'
+          test "$(git rev-parse HEAD^)" = "$canonical"
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/enquiry-ai-production-canary-watch.yml'
+          test "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+      - name: Resolve production pooler
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          region="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF" | jq -r '.region // empty')"
+          [[ "$region" =~ ^[a-z0-9-]+$ ]]
+          echo "host=aws-0-${region}.pooler.supabase.com" >> "$GITHUB_OUTPUT"
+      - name: Read sanitized canary state
+        id: state
+        shell: bash
+        env:
+          PGPASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+          DB_HOST: ${{ steps.db.outputs.host }}
+        run: |
+          set -euo pipefail
+          conn="host=$DB_HOST port=5432 dbname=postgres user=postgres.$PROJECT_REF sslmode=require connect_timeout=10"
+          row="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -F '|' -c "with c as (select * from public.enquiry_ai_jobs where created_at >= timestamptz '2026-09-10 17:01:59+00' or updated_at >= timestamptz '2026-09-10 17:01:59+00') select (select enabled::int from crm_private.enquiry_ai_config where singleton),(select images_enabled::int from crm_private.enquiry_ai_config where singleton),(select count(*) from c),(select count(*) from c where status='pending'),(select count(*) from c where status='processing'),(select count(*) from c where status='succeeded'),(select count(*) from c where status='failed'),(select count(*) from c where status='stale'),(select count(*) from c where status='succeeded' and provider is not null and model is not null and error_code is null and crm_private.validate_enquiry_ai_result(result));")"
+          IFS='|' read -r enabled images total pending processing succeeded failed stale valid_success <<< "$row"
+          for value in "$enabled" "$images" "$total" "$pending" "$processing" "$succeeded" "$failed" "$stale" "$valid_success"; do [[ "$value" =~ ^[0-9]+$ ]]; done
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          echo "processing=$processing" >> "$GITHUB_OUTPUT"
+          echo "succeeded=$succeeded" >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          echo "stale=$stale" >> "$GITHUB_OUTPUT"
+          echo "valid_success=$valid_success" >> "$GITHUB_OUTPUT"
+      - name: Canary enabled
+        if: steps.state.outputs.enabled == '1'
+        run: echo 'enabled'
+      - name: Images disabled
+        if: steps.state.outputs.images == '0'
+        run: echo 'images-disabled'
+      - name: No canary-era jobs
+        if: steps.state.outputs.total == '0'
+        run: echo 'no-new-job'
+      - name: Canary pending
+        if: fromJSON(steps.state.outputs.pending) > 0
+        run: echo 'pending'
+      - name: Canary processing
+        if: fromJSON(steps.state.outputs.processing) > 0
+        run: echo 'processing'
+      - name: Canary succeeded
+        if: fromJSON(steps.state.outputs.succeeded) > 0
+        run: echo 'succeeded'
+      - name: Canary valid success
+        if: fromJSON(steps.state.outputs.valid_success) > 0
+        run: echo 'valid-success'
+      - name: Canary failed
+        if: fromJSON(steps.state.outputs.failed) > 0
+        run: echo 'failed'
+      - name: Canary stale
+        if: fromJSON(steps.state.outputs.stale) > 0
+        run: echo 'stale'
+      - name: Assert images remain disabled
+        run: test '${{ steps.state.outputs.images }}' = '0'
