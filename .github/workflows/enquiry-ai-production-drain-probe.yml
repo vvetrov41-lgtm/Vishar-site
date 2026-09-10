@@ -144,7 +144,7 @@ jobs:
           {
             echo '### Enquiry AI production drain probe'
             echo
-            printf '%s\\n' "- Exact canonical SHA: \`$GITHUB_SHA\`"
+            echo "- Exact canonical SHA: $GITHUB_SHA"
             echo '- Drain: TattooAI Service Binding only; maximum three jobs'
             echo '- Credentials: ephemeral probe secret; no Supabase/model secret copied'
             echo '- Output: bounded counters only; no client payload'
