@@ -22,6 +22,11 @@ const USER_RPCS = new Set([
   'list_capabilities',
 ]);
 
+const BOUNDED_ENRICHMENT_RPCS = new Set([
+  'service_observe_gmail_enquiry_ai',
+  'service_record_gmail_client_message',
+]);
+
 function projectOrigin(env) {
   const value = String(env?.SUPABASE_URL || '').trim();
   let url;
@@ -48,10 +53,9 @@ async function callRpc(origin, name, args, headers, fetchImpl, observe, retrySec
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(args || {}),
-      // Workers supports manual/follow only. Reject 3xx below without forwarding credentials.
       redirect: 'manual',
       // Keep optional enrichment bounded even if its database request stalls.
-      ...(name === 'service_observe_gmail_enquiry_ai' ? { signal: AbortSignal.timeout(1500) } : {}),
+      ...(BOUNDED_ENRICHMENT_RPCS.has(name) ? { signal: AbortSignal.timeout(1500) } : {}),
     });
     details = observe
       ? await observe(name, response, startedAt, attempt)
@@ -187,5 +191,5 @@ export function createGmailSupabase(env, fetchImpl = fetch) {
 }
 
 export const __testing = Object.freeze({
-  BACKEND_RPCS, USER_RPCS, projectOrigin, validBearer, readUserEnquiry, readUserClientArtists,
+  BACKEND_RPCS, USER_RPCS, BOUNDED_ENRICHMENT_RPCS, projectOrigin, validBearer, readUserEnquiry, readUserClientArtists,
 });
