@@ -1,0 +1,114 @@
+name: Enquiry AI production terminal inspect
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-enquiry-ai-observe-terminal'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact canonical one-file inspect snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')"
+          test "$canonical" = '61a0735e8f726235283b3e09c804e436eee70839'
+          test "$(git rev-parse HEAD^)" = "$canonical"
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/enquiry-ai-production-terminal-inspect.yml'
+          test "$PROJECT_REF" != 'gwaliusblwrzisrwnsvs'
+      - name: Resolve production pooler
+        id: db
+        shell: bash
+        run: |
+          set -euo pipefail
+          region="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/$PROJECT_REF" | jq -r '.region // empty')"
+          [[ "$region" =~ ^[a-z0-9-]+$ ]]
+          echo "host=aws-0-${region}.pooler.supabase.com" >> "$GITHUB_OUTPUT"
+      - name: Read latest sanitized terminal state
+        id: state
+        shell: bash
+        env:
+          PGPASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+          DB_HOST: ${{ steps.db.outputs.host }}
+        run: |
+          set -euo pipefail
+          conn="host=$DB_HOST port=5432 dbname=postgres user=postgres.$PROJECT_REF sslmode=require connect_timeout=10"
+          row="$(psql "$conn" -v ON_ERROR_STOP=1 -X -Atq -F '|' -c "select attempts::text,coalesce(error_code,'none'),coalesce(provider,'none'),case when model is null then 'none' when model like '%qwen%' then 'qwen_model' when model like '%llama%' then 'llama_model' else 'other_model' end,case when updated_at > clock_timestamp()-interval '5 minutes' then 'recent' else 'old' end,case when result is null then 'no_result' when crm_private.validate_enquiry_ai_result(result) then 'valid_result' else 'invalid_result' end from public.enquiry_ai_jobs where status='failed' and coalesce(error_code,'')<>'ai_unavailable' order by updated_at desc limit 1;")"
+          test -n "$row"
+          IFS='|' read -r attempts error provider model freshness result_state <<< "$row"
+          [[ "$attempts" =~ ^[0-3]$ ]]
+          echo "attempts=$attempts" >> "$GITHUB_OUTPUT"
+          echo "error=$error" >> "$GITHUB_OUTPUT"
+          echo "provider=$provider" >> "$GITHUB_OUTPUT"
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+          echo "freshness=$freshness" >> "$GITHUB_OUTPUT"
+          echo "result_state=$result_state" >> "$GITHUB_OUTPUT"
+      - name: Recent terminal
+        if: steps.state.outputs.freshness == 'recent'
+        run: echo recent
+      - name: Attempts three
+        if: steps.state.outputs.attempts == '3'
+        run: echo attempts-three
+      - name: Error output invalid
+        if: steps.state.outputs.error == 'output_invalid'
+        run: echo output-invalid
+      - name: Error input invalid
+        if: steps.state.outputs.error == 'input_invalid'
+        run: echo input-invalid
+      - name: Error processing failed
+        if: steps.state.outputs.error == 'processing_failed'
+        run: echo processing-failed
+      - name: Error stale input
+        if: steps.state.outputs.error == 'stale_input'
+        run: echo stale-input
+      - name: Error lease expired
+        if: steps.state.outputs.error == 'lease_expired'
+        run: echo lease-expired
+      - name: Error scope changed
+        if: steps.state.outputs.error == 'scope_changed'
+        run: echo scope-changed
+      - name: Provider qwen
+        if: steps.state.outputs.provider == 'qwen'
+        run: echo qwen
+      - name: Provider workers ai
+        if: steps.state.outputs.provider == 'workers_ai'
+        run: echo workers-ai
+      - name: Provider openai
+        if: steps.state.outputs.provider == 'openai'
+        run: echo openai
+      - name: Provider none
+        if: steps.state.outputs.provider == 'none'
+        run: echo none
+      - name: Model qwen
+        if: steps.state.outputs.model == 'qwen_model'
+        run: echo qwen-model
+      - name: Model llama
+        if: steps.state.outputs.model == 'llama_model'
+        run: echo llama-model
+      - name: Model none
+        if: steps.state.outputs.model == 'none'
+        run: echo no-model
+      - name: Has valid result
+        if: steps.state.outputs.result_state == 'valid_result'
+        run: echo valid-result
+      - name: Has invalid result
+        if: steps.state.outputs.result_state == 'invalid_result'
+        run: echo invalid-result
+      - name: Has no result
+        if: steps.state.outputs.result_state == 'no_result'
+        run: echo no-result
