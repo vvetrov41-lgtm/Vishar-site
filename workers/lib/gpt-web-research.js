@@ -112,6 +112,24 @@ function isPrivateIpv4(hostname) {
     || a >= 224;
 }
 
+/**
+ * A Supabase Storage object URL resolves on a public hostname, so the checks
+ * below would happily pass one to Firecrawl. Private client references live in
+ * that bucket, and a signed URL is a bearer capability: handing one to a
+ * third-party scraper would publish a client's photograph to it.
+ *
+ * Nothing in the CRM builds such a request - the reference-image path reads
+ * bytes server-side and never emits a URL - so this rejects the case where a
+ * URL reaches here another way: a client pastes one, or a model repeats one it
+ * saw. It is checked by shape rather than against the configured project, so a
+ * link to any Supabase project's storage is refused.
+ */
+function isSupabaseStorageUrl(url) {
+  const hostname = url.hostname.toLowerCase();
+  return (hostname.endsWith('.supabase.co') || hostname.endsWith('.supabase.in'))
+    && url.pathname.startsWith('/storage/v1/');
+}
+
 function normalizePublicUrl(value) {
   if (typeof value !== 'string' || !value || value.length > MAX_URL_CHARS) {
     throw new Error('invalid_field:url');
@@ -131,6 +149,7 @@ function normalizePublicUrl(value) {
     || isPrivateIpv4(hostname)) {
     throw new Error('invalid_field:url');
   }
+  if (isSupabaseStorageUrl(url)) throw new Error('invalid_field:url');
   return url.toString();
 }
 

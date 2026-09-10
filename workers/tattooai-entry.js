@@ -10,6 +10,7 @@
 
 import tattooai from './tattooai.js';
 import { drainEnquiryAi } from './lib/enquiry-ai.js';
+import { drainCrmAgent } from './lib/crm-agent.js';
 import { getCorsHeaders, isRegistryBookingRequest } from './lib/http.js';
 import { handleHostedBookingRequest, isHostedBookingPath } from './routes/hosted-booking.js';
 import { handlePublicBookingRequest, isPublicBookingPath } from './routes/public-booking.js';
@@ -24,19 +25,28 @@ import {
 
 const SAFE_CODE = /^[a-z][a-z0-9_]{2,63}$/;
 const AI_DRAIN_PATH = '/internal/enquiry-ai/drain';
+const CRM_AGENT_DRAIN_PATH = '/internal/crm-agent/drain';
 const AI_DRAIN_HOST = 'tattooai.internal';
 
-function isInternalAiDrainRequest(request) {
+function isInternalPath(request, pathname) {
   try {
     const url = new URL(request?.url ?? '');
     return url.protocol === 'https:'
       && url.hostname === AI_DRAIN_HOST
-      && url.pathname === AI_DRAIN_PATH
+      && url.pathname === pathname
       && !url.search
       && !url.hash;
   } catch {
     return false;
   }
+}
+
+function isInternalAiDrainRequest(request) {
+  return isInternalPath(request, AI_DRAIN_PATH);
+}
+
+function isInternalCrmAgentDrainRequest(request) {
+  return isInternalPath(request, CRM_AGENT_DRAIN_PATH);
 }
 
 async function handleInternalAiDrain(request, env) {
@@ -55,10 +65,33 @@ async function handleInternalAiDrain(request, env) {
   });
 }
 
+// Same shape and same capability boundary as the enquiry AI drain above: the
+// synthetic internal hostname is unreachable from the public Worker URL, so
+// this route never receives browser CORS.
+async function handleInternalCrmAgentDrain(request, env) {
+  if (env?.VISHAR_ENVIRONMENT !== 'production') return new Response('Not found', { status: 404 });
+  if (request.method !== 'POST') return new Response('Not found', { status: 404 });
+
+  const result = await drainCrmAgent(env, { limit: 2 });
+  const processed = Number.isInteger(result?.processed)
+    ? Math.min(3, Math.max(0, result.processed))
+    : 0;
+  const payload = result?.errorCode
+    ? { ok: false, processed, errorCode: SAFE_CODE.test(result.errorCode) ? result.errorCode : 'crm_agent_drain_failed' }
+    : { ok: true, processed };
+  return Response.json(payload, {
+    headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (isInternalAiDrainRequest(request)) {
       return handleInternalAiDrain(request, env);
+    }
+
+    if (isInternalCrmAgentDrainRequest(request)) {
+      return handleInternalCrmAgentDrain(request, env);
     }
 
     // Operator-only model-routing readback. Answers 404 unless explicitly
@@ -94,6 +127,9 @@ export default {
 export const __testing = Object.freeze({
   AI_DRAIN_HOST,
   AI_DRAIN_PATH,
+  CRM_AGENT_DRAIN_PATH,
   handleInternalAiDrain,
+  handleInternalCrmAgentDrain,
   isInternalAiDrainRequest,
+  isInternalCrmAgentDrainRequest,
 });
