@@ -4,6 +4,7 @@
 do $$
 declare
   v_definition text;
+  v_expected text := $needle$v_key = 'discovery_source' and v_field->>'value' not in ('instagram','chatgpt','other_ai','friend_referral','google','other')$needle$;
 begin
   select pg_get_functiondef(p.oid) into v_definition
   from pg_proc p
@@ -12,9 +13,7 @@ begin
     and p.proname = 'validate_enquiry_ai_result'
     and pg_get_function_identity_arguments(p.oid) = 'p_result jsonb';
 
-  if v_definition is null
-    or position("v_key = 'discovery_source' and v_field->>'value' not in ('instagram','chatgpt','other_ai','friend_referral','google','other')" in v_definition) = 0
-  then
+  if v_definition is null or position(v_expected in v_definition) = 0 then
     raise exception 'unexpected validate_enquiry_ai_result discovery_source contract';
   end if;
 end;
