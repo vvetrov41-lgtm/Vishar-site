@@ -154,6 +154,9 @@ export interface Enquiry {
   preferred_timing: string | null;
   idea: string | null;
   source: string | null;
+  /** Normalised client-reported acquisition source, present on detail reads. */
+  discovery_source?: string | null;
+  discovery_source_detail?: string | null;
   utm_source: string | null;
   created_at: string;
   last_action_at: string;

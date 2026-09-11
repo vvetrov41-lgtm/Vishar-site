@@ -204,6 +204,17 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <dd>{assignee?.display_name ?? t('common.unassigned')}</dd>
           <dt>{t('enquiry.type')}</dt>
           <dd>{enquiry.project_type ?? '—'}</dd>
+          {enquiry.discovery_source || enquiry.discovery_source_detail ? (
+            <>
+              <dt>{t('enquiry.discoverySource')}</dt>
+              <dd>
+                {[
+                  enquiry.discovery_source ? localiseKnownValue(enquiry.discovery_source, language) : null,
+                  enquiry.discovery_source_detail,
+                ].filter(Boolean).join(' · ')}
+              </dd>
+            </>
+          ) : null}
           <dt>{t('enquiry.received')}</dt>
           <dd>{formatDateTime(enquiry.created_at, language)}</dd>
           {nextAppointment ? (
