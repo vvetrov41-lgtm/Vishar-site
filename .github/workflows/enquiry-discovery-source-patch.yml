@@ -102,8 +102,8 @@ jobs:
 
               renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });
 
-              expect(await screen.findByText('How they found you')).toBeInTheDocument();
-              expect(screen.getByText('Instagram')).toBeInTheDocument();
+              const sourceLabel = await screen.findByText('How they found you');
+              expect(sourceLabel.nextElementSibling).toHaveTextContent('Instagram');
             });
 
             it('shows the optional source detail next to the normalised category', async () => {
