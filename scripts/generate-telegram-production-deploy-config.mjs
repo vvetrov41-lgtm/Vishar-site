@@ -41,6 +41,8 @@ const required = [
   'GMAIL_SHARED_DRAIN_ENABLED = "false"',
   'AUTOMATION_TICK_ENABLED = "false"',
   'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"',
+  'CRM_AGENT_SHARED_DRAIN_ENABLED = "false"',
+  'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"',
   'TELEGRAM_LINKING_ENABLED = "false"',
 ];
 for (const needle of required) {
@@ -84,6 +86,8 @@ text = text.replace('TELEGRAM_DRAIN_ENABLED = "false"', 'TELEGRAM_DRAIN_ENABLED 
 text = text.replace('GMAIL_SHARED_DRAIN_ENABLED = "false"', 'GMAIL_SHARED_DRAIN_ENABLED = "true"');
 text = text.replace('AUTOMATION_TICK_ENABLED = "false"', 'AUTOMATION_TICK_ENABLED = "true"');
 text = text.replace('ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"', 'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"');
+text = text.replace('CRM_AGENT_SHARED_DRAIN_ENABLED = "false"', 'CRM_AGENT_SHARED_DRAIN_ENABLED = "true"');
+text = text.replace('CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"', 'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "true"');
 if (enableLinking) {
   text = text.replace('TELEGRAM_LINKING_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "true"');
 }
@@ -96,6 +100,8 @@ for (const needle of [
   'GMAIL_SHARED_DRAIN_ENABLED = "true"',
   'AUTOMATION_TICK_ENABLED = "true"',
   'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"',
+  'CRM_AGENT_SHARED_DRAIN_ENABLED = "true"',
+  'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "true"',
 ]) {
   if (!text.includes(needle)) throw new Error(`failed to generate ${needle}`);
 }
