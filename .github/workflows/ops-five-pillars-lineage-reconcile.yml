@@ -1,0 +1,120 @@
+name: Five Pillars production migration lineage reconcile
+
+on:
+  push:
+    branches:
+      - 'ops/five-pillars-lineage-reconcile-20260912'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: five-pillars-production-lineage-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile production migration lineage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      DB_DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
+
+    steps:
+      - name: Checkout exact ops snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify bounded production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'ops/five-pillars-lineage-reconcile-20260912' ]
+          [ "$DB_DEPLOY_ENABLED" = 'true' ]
+          [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          git merge-base --is-ancestor a48cc6242fe9a87ea94bd222d468c93821a08582 "$GITHUB_SHA"
+          changed="$(git diff --name-only a48cc6242fe9a87ea94bd222d468c93821a08582..HEAD)"
+          [ "$changed" = '.github/workflows/ops-five-pillars-lineage-reconcile.yml' ] || {
+            echo "Unexpected files in ops snapshot:" >&2
+            echo "$changed" >&2
+            exit 1
+          }
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact production project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Verify expected migration gap
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(supabase migration list 2>&1)"
+          printf '%s\n' "$state"
+          expected=(
+            20260910160000
+            20260910170000
+            20260910180000
+            20260910190000
+            20260910200000
+            20260910210000
+            20260910220000
+            20260910230000
+            20260910240000
+            20260910250000
+          )
+          for version in "${expected[@]}"; do
+            line="$(printf '%s\n' "$state" | grep "$version" || true)"
+            [ -n "$line" ] || { echo "Expected local migration $version missing." >&2; exit 1; }
+            printf '%s\n' "$line" | grep -Eq "${version}.*[|][[:space:]]*[|]" || {
+              echo "Migration $version is no longer a local-only gap; refusing blind reconciliation." >&2
+              exit 1
+            }
+          done
+
+      - name: Dry-run only the reconciled production migration set
+        shell: bash
+        run: |
+          set -euo pipefail
+          dry="$(supabase db push --dry-run --include-all 2>&1)"
+          printf '%s\n' "$dry"
+          expected_files=(
+            20260910160000_crm_agent_client_ai.sql
+            20260910170000_crm_agent_telegram_digest.sql
+            20260910180000_crm_agent_gmail_hook.sql
+            20260910190000_crm_agent_gmail_excerpts.sql
+            20260910200000_crm_agent_canonical_facts.sql
+            20260910210000_crm_agent_stale_actions.sql
+            20260910220000_crm_agent_final_guards.sql
+            20260910230000_crm_agent_contract_compat.sql
+            20260910240000_crm_agent_review_fixes.sql
+            20260910250000_crm_agent_convergence_guards.sql
+          )
+          for file in "${expected_files[@]}"; do
+            printf '%s\n' "$dry" | grep -Fq "$file" || {
+              echo "Expected migration $file absent from include-all dry-run." >&2
+              exit 1
+            }
+          done
+
+      - name: Apply reconciled production migrations
+        run: supabase db push --include-all
+
+      - name: Verify migration convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list
+          final="$(supabase db push --dry-run 2>&1)"
+          printf '%s\n' "$final"
+          printf '%s\n' "$final" | grep -Fq 'Remote database is up to date.'
