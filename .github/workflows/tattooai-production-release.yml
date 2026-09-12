@@ -47,6 +47,8 @@ jobs:
           npm run test:enquiry-ai
           node scripts/test-public-booking-slugs.mjs
           npm run check:worker-bundle
+          grep -Fxq 'CRM_AGENT_ENABLED = "true"' wrangler.toml
+          grep -Fxq 'CRM_AGENT_VISION_ENABLED = "true"' wrangler.toml
           node - <<'NODE'
           const fs = require('fs');
           const text = fs.readFileSync('wrangler.toml', 'utf8').replace(/^\s*#.*$/gm, '');
@@ -74,6 +76,8 @@ jobs:
           test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
           grep -Fxq 'name = "tattooai"' wrangler.toml
           grep -Fxq 'main = "workers/tattooai-entry.js"' wrangler.toml
+          grep -Fxq 'CRM_AGENT_ENABLED = "true"' wrangler.toml
+          grep -Fxq 'CRM_AGENT_VISION_ENABLED = "true"' wrangler.toml
           ! grep -Eq '^\s*\[triggers\]\s*$|^\s*crons\s*=' wrangler.toml
       - uses: actions/setup-node@v4
         with:
@@ -112,9 +116,13 @@ jobs:
           curl -fsS "${auth[@]}" "$api/versions/$version" | jq -e --arg sha "$GITHUB_SHA" '.success == true and .result.annotations["workers/tag"] == $sha' >/dev/null
           curl -fsS "${auth[@]}" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-after.json"
           curl -fsS "${auth[@]}" "$api/schedules" > "$RUNNER_TEMP/tattooai-schedules-after.json"
-          jq -e '.success == true and any(.result.bindings[]?; .name == "AI" and .type == "ai") and any(.result.bindings[]?; .name == "CRM_AI_IMAGES_ENABLED" and .text == "false")' "$RUNNER_TEMP/tattooai-settings-after.json" >/dev/null
+          jq -e '.success == true
+            and any(.result.bindings[]?; .name == "AI" and .type == "ai")
+            and any(.result.bindings[]?; .name == "CRM_AI_IMAGES_ENABLED" and .text == "false")
+            and any(.result.bindings[]?; .name == "CRM_AGENT_ENABLED" and .text == "true")
+            and any(.result.bindings[]?; .name == "CRM_AGENT_VISION_ENABLED" and .text == "true")' "$RUNNER_TEMP/tattooai-settings-after.json" >/dev/null
           jq -e '.success == true and ((if (.result|type)=="array" then .result else .result.schedules end) | length == 0)' "$RUNNER_TEMP/tattooai-schedules-after.json" >/dev/null
-          echo "TattooAI exact source $GITHUB_SHA is active with zero standalone schedules."
+          echo "TattooAI exact source $GITHUB_SHA is active with CRM Five Pillars runtime enabled and zero standalone schedules."
       - name: Read back live HTTP boundary without persistence
         shell: bash
         run: |
