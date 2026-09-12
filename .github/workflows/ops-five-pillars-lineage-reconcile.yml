@@ -74,10 +74,15 @@ jobs:
             20260910250000
           )
           for version in "${expected[@]}"; do
-            line="$(printf '%s\n' "$state" | grep "$version" || true)"
+            line="$(printf '%s\n' "$state" | grep "$version" | head -n 1 || true)"
             [ -n "$line" ] || { echo "Expected local migration $version missing." >&2; exit 1; }
-            occurrences="$(printf '%s\n' "$line" | grep -o "$version" | wc -l | tr -d ' ')"
-            [ "$occurrences" = '1' ] || {
+            local_version="$(printf '%s\n' "$line" | awk -F'|' '{gsub(/`/, "", $1); gsub(/[[:space:]]/, "", $1); print $1}')"
+            remote_version="$(printf '%s\n' "$line" | awk -F'|' '{gsub(/`/, "", $2); gsub(/[[:space:]]/, "", $2); print $2}')"
+            [ "$local_version" = "$version" ] || {
+              echo "Migration $version did not resolve to the expected local column." >&2
+              exit 1
+            }
+            [ -z "$remote_version" ] || {
               echo "Migration $version is already remote or its state is ambiguous; refusing blind reconciliation." >&2
               exit 1
             }
