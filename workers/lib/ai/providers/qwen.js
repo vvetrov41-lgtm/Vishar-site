@@ -30,14 +30,18 @@ export function configure(env, modality) {
 }
 
 export async function invoke({ config, request, signal }) {
-  const boundedExtraction = request.responseSchema && request.responseFormat === 'json';
+  // Every structured Qwen task is an extraction task, including reference-image
+  // analysis. Previously only tasks carrying a transport JSON schema got these
+  // bounds, so vision extraction could spend its whole lease reasoning and then
+  // return prose that failed JSON validation. Keep reasoning low and request
+  // JSON mode for all structured calls, whether or not a JSON Schema is present.
+  const boundedExtraction = request.responseFormat === 'json';
   return callBindingModel({
     binding: config.binding,
     model: config.model,
     request,
     signal,
-    // Qwen is a reasoning model. CRM extraction needs deterministic structure,
-    // not a long hidden deliberation that can consume the whole Worker lease.
+    jsonMode: boundedExtraction,
     reasoningEffort: boundedExtraction ? 'low' : null,
     useMaxCompletionTokens: boundedExtraction,
   });

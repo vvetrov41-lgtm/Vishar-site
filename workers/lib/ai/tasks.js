@@ -125,11 +125,13 @@ const TASKS = Object.freeze({
   // --- declared multimodal capabilities -------------------------------------
   // Structured description of one private client reference image. Separate
   // from `vision_reference_understanding` because that task is unstructured
-  // and this one is schema-validated before anything is persisted.
+  // and this one is schema-validated before anything is persisted. Gemma on
+  // the shared Workers AI binding is the real fallback: unlike external OpenAI,
+  // it is available without an API key and keeps private images on Cloudflare.
   vision_reference_extraction: {
     capability: 'vision',
     modality: 'vision',
-    chain: ['qwen', 'openai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 30_000,
     maxOutputTokens: 900,
     temperature: 0,
@@ -138,7 +140,7 @@ const TASKS = Object.freeze({
   vision_reference_understanding: {
     capability: 'vision',
     modality: 'vision',
-    chain: ['qwen', 'openai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 30_000,
     maxOutputTokens: 700,
     temperature: 0.2,
@@ -147,7 +149,7 @@ const TASKS = Object.freeze({
   vision_document_extraction: {
     capability: 'vision',
     modality: 'vision',
-    chain: ['qwen', 'openai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 30_000,
     maxOutputTokens: 800,
     temperature: 0,
