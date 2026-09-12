@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignedImage } from '../components/SignedImage';
 import type { EnquiryFile } from '../lib/types';
 
-const { api, signedFileUrl } = vi.hoisted(() => {
+const { api, signedFileUrl, confirmDialog } = vi.hoisted(() => {
   const signedFileUrl = vi.fn();
   return {
     signedFileUrl,
+    confirmDialog: vi.fn(),
     api: { signedFileUrl },
   };
 });
@@ -18,7 +19,13 @@ vi.mock('../lib/session', () => ({
 vi.mock('../lib/i18n', () => ({
   useLanguage: () => ({
     t: (key: string) => key,
+    language: 'en',
   }),
+}));
+
+vi.mock('../lib/confirm-dialog', () => ({
+  confirmDialog,
+  cancelLabelFor: () => 'Go back',
 }));
 
 const FILE: EnquiryFile = {
@@ -36,6 +43,7 @@ const FILE: EnquiryFile = {
 describe('SignedImage', () => {
   beforeEach(() => {
     signedFileUrl.mockReset();
+    confirmDialog.mockReset();
   });
 
   afterEach(() => {
@@ -95,5 +103,24 @@ describe('SignedImage', () => {
       expect(close).toHaveBeenCalledTimes(1);
     });
     expect(screen.getByText('image.openFailed')).toBeInTheDocument();
+  });
+
+  it('requires the shared confirmation before removing a reference', async () => {
+    signedFileUrl.mockResolvedValue('https://storage.example/preview-token');
+    confirmDialog.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const onRemove = vi.fn();
+
+    render(<SignedImage file={FILE} onRemove={onRemove} />);
+
+    await screen.findByRole('img');
+    const remove = screen.getByRole('button', { name: 'image.remove' });
+
+    fireEvent.click(remove);
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1));
+    expect(onRemove).not.toHaveBeenCalled();
+
+    fireEvent.click(remove);
+    await waitFor(() => expect(onRemove).toHaveBeenCalledTimes(1));
+    expect(confirmDialog).toHaveBeenCalledTimes(2);
   });
 });
