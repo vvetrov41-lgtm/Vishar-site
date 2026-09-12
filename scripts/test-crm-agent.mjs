@@ -407,7 +407,7 @@ await test('an unsupported or oversized image never reaches a provider', async (
   for (const input of [
     { storage_path: PATH, mime_type: 'image/gif', byte_size: 100 },
     { storage_path: PATH, mime_type: 'application/pdf', byte_size: 100 },
-    { storage_path: PATH, mime_type: 'image/jpeg', byte_size: 4_000_000 },
+    { storage_path: PATH, mime_type: 'image/jpeg', byte_size: 4 * 1024 * 1024 + 1 },
     { storage_path: '', mime_type: 'image/jpeg', byte_size: 100 },
   ]) {
     const db = rpcRecorder();
@@ -418,6 +418,20 @@ await test('an unsupported or oversized image never reaches a provider', async (
     });
     assert.equal(outcome.errorCode, 'image_unsupported', JSON.stringify(input));
   }
+});
+
+await test('an image at the CRM 4 MiB ceiling is eligible for analysis', async () => {
+  const db = rpcRecorder();
+  const outcome = await processCrmAgentJob(env, job({
+    job_type: 'analyze_reference_image',
+    input: { storage_path: PATH, mime_type: 'image/jpeg', byte_size: 4 * 1024 * 1024 },
+  }), {
+    supabase: db,
+    storage: { createSignedUrl: async () => 'https://project.supabase.co/signed' },
+    fetchImpl: async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2]).buffer }),
+    runTask: async () => ({ ok: true, json: image(), provider: 'workers_ai', model: '@cf/google/gemma-4-26b-a4b-it' }),
+  });
+  assert.equal(outcome.outcome, 'succeeded');
 });
 
 await test('malformed vision output is rejected before anything is persisted', async () => {
@@ -470,7 +484,6 @@ await test('vision stays off until its own switch is set', async () => {
   assert.equal(outcome.outcome, 'ignored');
   assert.equal(db.calls.length, 0);
 });
-
 
 // ---------------------------------------------------------------------------
 // Telegram control surface
@@ -570,7 +583,6 @@ await test('the digest stays off until its own switch is set', async () => {
   assert.equal(ok, false);
   assert.equal(called, false);
 });
-
 
 // ---------------------------------------------------------------------------
 // Gmail content into client memory
