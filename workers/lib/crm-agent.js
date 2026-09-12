@@ -23,8 +23,8 @@ const VISION_TASK = 'vision_reference_extraction';
 /** Router caps at 12k input chars; stay under it after JSON envelope overhead. */
 const MAX_CONTEXT_CHARS = 11_000;
 
-/** Router caps a single image at 1.5 MB; the CRM already caps uploads at 4 MB. */
-const MAX_IMAGE_BYTES = 1_500_000;
+/** Match the CRM's persisted enquiry-file ceiling so accepted uploads stay analyzable. */
+const MAX_IMAGE_BYTES = 4_194_304;
 const SUPPORTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 /** A signed read exists only for the duration of one fetch. */
