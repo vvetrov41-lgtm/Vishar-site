@@ -89,6 +89,13 @@ export function localiseKnownValue(
       no: 'No',
       нет: 'No',
       false: 'No',
+      instagram: 'Instagram',
+      google: 'Google',
+      ai: 'ChatGPT / AI',
+      referral: 'Recommendation / Friend',
+      convention: 'Tattoo convention',
+      returning_client: 'Returning client',
+      other: 'Other',
     },
     ru: {
       email: 'Электронная почта',
@@ -102,6 +109,13 @@ export function localiseKnownValue(
       no: 'Нет',
       нет: 'Нет',
       false: 'Нет',
+      instagram: 'Instagram',
+      google: 'Google',
+      ai: 'ChatGPT / AI',
+      referral: 'Рекомендация / знакомые',
+      convention: 'Тату-конвенция',
+      returning_client: 'Повторный клиент',
+      other: 'Другое',
     },
   };
   return values[language][normalised] ?? value;
