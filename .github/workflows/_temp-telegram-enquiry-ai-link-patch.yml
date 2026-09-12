@@ -1,0 +1,60 @@
+name: Temporary Telegram enquiry deep-link patch
+
+on:
+  push:
+    branches:
+      - agent/telegram-enquiry-ai-summary-link-20260912
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/telegram-enquiry-ai-summary-link-20260912
+          fetch-depth: 1
+      - name: Patch existing safe CRM deep-link mapper
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('workers/lib/telegram-drain.js')
+          text = path.read_text()
+          old = """function personalNotificationActionUrl(env, entityType, entityId) {
+            if (entityType !== 'session') return null;
+            if (!UUID.test(entityId ?? '')) throw new TelegramDrainError('telegram_notification_invalid');
+            const origin = trustedCrmOrigin(env);
+            if (!origin) return null;
+            return `${origin}/#/appointments/${entityId}`;
+          }
+          """
+          new = """function personalNotificationActionUrl(env, entityType, entityId) {
+            const route = entityType === 'session'
+              ? 'appointments'
+              : entityType === 'enquiry'
+                ? 'enquiries'
+                : null;
+            if (!route) return null;
+            if (!UUID.test(entityId ?? '')) throw new TelegramDrainError('telegram_notification_invalid');
+            const origin = trustedCrmOrigin(env);
+            if (!origin) return null;
+            return `${origin}/#/${route}/${entityId}`;
+          }
+          """
+          if text.count(old) != 1:
+              raise SystemExit('expected deep-link mapper exactly once')
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Commit bounded patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add workers/lib/telegram-drain.js
+          git diff --cached --check
+          git commit -m 'CRM: add enquiry deep link to Telegram notifications'
+          git push origin HEAD:agent/telegram-enquiry-ai-summary-link-20260912
