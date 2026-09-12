@@ -1,0 +1,131 @@
+name: Five Pillars production migration backfill
+
+on:
+  push:
+    branches:
+      - 'release/five-pillars-backfill-*'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: five-pillars-production-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Guarded Five Pillars migration backfill
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crm-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+
+    steps:
+      - name: Checkout exact release snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical release snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/five-pillars-backfill-*) ;;
+            *) echo 'Unexpected release ref.' >&2; exit 1 ;;
+          esac
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --short)"
+          test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA"
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/exact-head-ci.json"
+          for workflow in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/exact-head-ci.json" >/dev/null
+          done
+
+      - name: Verify exact production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx'
+          test "$PROJECT_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co'
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_DB_PASSWORD"
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact production project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Prove exact bounded backfill set
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$RUNNER_TEMP/expected-five-pillars.txt"
+          cat > "$expected" <<'EOF'
+          20260910160000_crm_agent_client_ai.sql
+          20260910170000_crm_agent_telegram_digest.sql
+          20260910180000_crm_agent_gmail_hook.sql
+          20260910190000_crm_agent_gmail_excerpts.sql
+          20260910200000_crm_agent_canonical_facts.sql
+          20260910210000_crm_agent_stale_actions.sql
+          20260910220000_crm_agent_final_guards.sql
+          20260910230000_crm_agent_contract_compat.sql
+          20260910240000_crm_agent_review_fixes.sql
+          20260910250000_crm_agent_convergence_guards.sql
+          EOF
+
+          for migration in $(cat "$expected"); do
+            test -f "supabase/migrations/$migration" || {
+              echo "Expected migration is missing: $migration" >&2
+              exit 1
+            }
+          done
+
+          set +e
+          supabase db push --dry-run --include-all 2>&1 | tee "$RUNNER_TEMP/backfill-dry-run.log"
+          dry_status=${PIPESTATUS[0]}
+          set -e
+          test "$dry_status" -eq 0
+
+          grep -oE '202[0-9]{11}_[a-zA-Z0-9_]+\.sql' "$RUNNER_TEMP/backfill-dry-run.log" \
+            | sort -u > "$RUNNER_TEMP/actual-five-pillars.txt" || true
+          diff -u "$expected" "$RUNNER_TEMP/actual-five-pillars.txt"
+
+      - name: Apply only the proven backfill
+        run: supabase db push --include-all
+
+      - name: Verify migration convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list | tee "$RUNNER_TEMP/migration-list-after.log"
+          set +e
+          supabase db push --dry-run --include-all 2>&1 | tee "$RUNNER_TEMP/backfill-after.log"
+          dry_status=${PIPESTATUS[0]}
+          set -e
+          test "$dry_status" -eq 0
+          pending="$(grep -oE '202[0-9]{11}_[a-zA-Z0-9_]+\.sql' "$RUNNER_TEMP/backfill-after.log" | sort -u || true)"
+          test -z "$pending" || {
+            echo "Unexpected migrations remain pending after backfill:" >&2
+            printf '%s\n' "$pending" >&2
+            exit 1
+          }
+          echo 'Five Pillars migration backfill converged with no pending migration files.'
