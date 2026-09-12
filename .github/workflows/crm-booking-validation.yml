@@ -49,6 +49,14 @@ jobs:
       - name: Test bounded enquiry AI safety
         run: npm run test:enquiry-ai
 
+      # Also covered by test:worker above. Named separately so a failure in the
+      # derived client-state boundary is legible in the CI log rather than one
+      # line inside an eighty-script chain.
+      - name: Test derived CRM AI client state
+        run: |
+          npm run test:crm-agent
+          node scripts/test-crm-agent-review-fixes.mjs
+
       - name: Test canonical public booking slugs and root edge
         run: |
           node scripts/test-public-booking-slugs.mjs

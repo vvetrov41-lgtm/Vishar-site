@@ -44,6 +44,15 @@ export const TELEGRAM_SELF_SERVICE_RPCS = new Set([
   'service_record_telegram_notification_result',
 ]);
 
+/** Derived CRM AI backend operations. Never selected by model output. */
+export const CRM_AGENT_RPCS = new Set([
+  'service_claim_crm_agent_jobs',
+  'service_complete_client_ai_state_job',
+  'service_complete_reference_image_job',
+  'service_fail_crm_agent_job',
+  'service_telegram_client_ai_digest',
+]);
+
 /** Existing generic automation engine backend surface. Never exposed to public callers. */
 export const AUTOMATION_BACKEND_RPCS = new Set([
   'service_run_automation_tick',
@@ -174,6 +183,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
     if (
       !ALLOWED_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
+      && !CRM_AGENT_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
       && !ENQUIRY_AI_RPCS.has(name)
       && !AUTOMATION_HEARTBEAT_RPCS.has(name)

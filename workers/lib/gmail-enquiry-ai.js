@@ -2,6 +2,64 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 const PROVIDER_ID = /^[A-Za-z0-9_-]{1,256}$/;
 const MAX_SOURCE_CHARS = 12000;
 
+/** The client brief needs the reply, not the quoted thread history under it. */
+const MAX_CLIENT_STATE_CHARS = 4000;
+const CLIENT_STATE_TIME_PREFIX = '@vishar-crm-ai-occurred-at:';
+
+function clientStatePayload(body, timestamp) {
+  const clean = String(body || '').replace(/\u0000/g, '');
+  const parsed = typeof timestamp === 'string' ? Date.parse(timestamp) : Number.NaN;
+  const prefix = Number.isFinite(parsed)
+    ? `${CLIENT_STATE_TIME_PREFIX}${new Date(parsed).toISOString()}\n`
+    : '';
+  return `${prefix}${clean}`.slice(0, MAX_CLIENT_STATE_CHARS);
+}
+
+/**
+ * Records what the client actually wrote, for the client brief.
+ *
+ * Deliberately NOT gated by the keyword relevance test below. That test exists
+ * to stop the enquiry path drafting a reply to unrelated mail, and it is the
+ * wrong question here: a message on a thread already bound to this artist,
+ * client and enquiry is relevant to that client's state by construction. A
+ * reply reading "yes, 19 October works, but could we change the dragon to
+ * black and grey?" names no tattoo keyword and is exactly what the brief must
+ * not miss.
+ *
+ * The body is bounded here and bounded again in the database, is stored in a
+ * private schema no API role can read, and is treated as untrusted client data
+ * by every consumer. Provider time is carried in a versioned transport prefix
+ * inside this private RPC's bounded text value and stripped by the database
+ * before storage/model context. This preserves the already-reviewed eight-arg
+ * service RPC while making chronology come from Gmail rather than read time.
+ *
+ * The database owns baseline detection. This call intentionally happens before
+ * service_observe_gmail_enquiry_ai, while the stored thread context still
+ * contains the previous provider message id. A first read therefore establishes
+ * a baseline rather than backfilling old mail into the client brief.
+ */
+async function recordGmailClientMessage(db, auth, thread, message) {
+  try {
+    const body = typeof message?.body === 'string' ? message.body : '';
+    if (!body.trim()) return { status: 'skipped' };
+
+    await db.backendRpc('service_record_gmail_client_message', {
+      p_artist_id: auth.artist_id,
+      p_client_id: auth.client_id,
+      p_enquiry_id: auth.enquiry_id,
+      p_provider_thread_id: thread.providerThreadId,
+      p_provider_message_id: message.provider_message_id,
+      p_direction: message.direction,
+      p_subject: typeof message.subject === 'string' ? message.subject.slice(0, 500) : null,
+      p_body: clientStatePayload(body, message.timestamp),
+    });
+    return { status: 'recorded' };
+  } catch {
+    // Never emit the error: an RPC failure message can echo the argument.
+    return { status: 'failed' };
+  }
+}
+
 /**
  * A bounded side effect of an already-authorized enquiry Gmail read. This is
  * deliberately not mailbox discovery or ingestion for an unknown client.
@@ -22,6 +80,11 @@ export async function enqueueGmailEnquiryAnalysis(db, auth, target, thread) {
       && message.from === target.mailbox_email && message.to === target.client_email;
     if ((!inbound && !outbound) || !PROVIDER_ID.test(message.provider_message_id || '')
       || !PROVIDER_ID.test(thread?.providerThreadId || '')) return { status: 'skipped' };
+
+    // Client memory gets the message content independently of the enquiry
+    // relevance gate below. The database rejects a first observation as a
+    // historical baseline and stores only later provider-message changes.
+    await recordGmailClientMessage(db, auth, thread, message);
 
     const candidate = inbound && typeof message.body === 'string' && message.body.trim()
       ? `Subject: ${String(message.subject || '').slice(0, 500)}\n\n${message.body}`.replace(/\u0000/g, '').slice(0, MAX_SOURCE_CHARS)
@@ -48,3 +111,8 @@ export async function enqueueGmailEnquiryAnalysis(db, auth, target, thread) {
     return { status: 'failed' };
   }
 }
+
+export const __testing = Object.freeze({
+  CLIENT_STATE_TIME_PREFIX,
+  clientStatePayload,
+});

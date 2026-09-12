@@ -15,7 +15,7 @@ const expectExcludes = (text, needle, label) => { if (text.includes(needle)) thr
 const telegramRpcSurface = [...TELEGRAM_SELF_SERVICE_RPCS].sort();
 const expectedTelegramRpcSurface = ['service_claim_telegram_notifications','service_complete_telegram_link','service_record_telegram_notification_result','service_resolve_telegram_destination','service_route_telegram_enquiry_notification'].sort();
 if (JSON.stringify(telegramRpcSurface) !== JSON.stringify(expectedTelegramRpcSurface)) throw new Error('Telegram self-service Worker RPC surface changed');
-if (JSON.stringify([...LIFECYCLE_ALERT_RPCS]) !== JSON.stringify(['service_sweep_lifecycle_failure_alerts'])) throw new Error('Lifecycle alert backend RPC surface changed');
+if (JSON.stringify([...LIFECYCLE_ALERT_RPCS]) !== JSON.stringify(['service_sweep_lifecycle_failure_alerts'])) throw new Error('Lifecycle alert backend Worker RPC surface changed');
 if (JSON.stringify([...AUTOMATION_BACKEND_RPCS].sort()) !== JSON.stringify(['service_run_automation_tick'])) throw new Error('Automation backend Worker RPC surface changed');
 
 const sessionId = '55555555-5555-4555-8555-555555555555';
@@ -30,7 +30,8 @@ for (const needle of [
   'workers_dev = false', 'preview_urls = false', 'VISHAR_ENVIRONMENT = "production"',
   'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"', 'CRM_ORIGIN = "https://crm.vishartattoo.com"',
   'TELEGRAM_DRAIN_ENABLED = "false"', 'GMAIL_SHARED_DRAIN_ENABLED = "false"', 'AUTOMATION_TICK_ENABLED = "false"',
-  'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "false"',
+  'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"', 'CRM_AGENT_SHARED_DRAIN_ENABLED = "false"',
+  'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "false"',
 ]) expectIncludes(tracked, needle, 'tracked config');
 for (const needle of ['[triggers]','crons =','[[services]]','gwaliusblwrzisrwnsvs','vishar-telegram-drain-staging','TELEGRAM_CHAT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_TOKEN_ENCRYPTION_KEY']) expectExcludes(tracked, needle, 'tracked config');
 
@@ -38,6 +39,8 @@ const rootTattooConfig = directivesOf(read('wrangler.toml'));
 expectExcludes(rootTattooConfig, '[triggers]', 'TattooAI config');
 expectExcludes(rootTattooConfig, 'crons =', 'TattooAI config');
 expectIncludes(rootTattooConfig, 'CRM_AI_IMAGES_ENABLED = "false"', 'TattooAI config');
+expectIncludes(rootTattooConfig, 'CRM_AGENT_ENABLED = "true"', 'TattooAI config');
+expectIncludes(rootTattooConfig, 'CRM_AGENT_VISION_ENABLED = "true"', 'TattooAI config');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telegram-production-'));
 const generatedPath = path.join(tempDir, 'wrangler.telegram.production.deploy.toml');
@@ -52,12 +55,17 @@ try {
   if (resolved !== path.join(root, 'workers/telegram-production-scheduler.js')) throw new Error(`generated main mismatch: ${resolved}`);
   for (const needle of [
     'TELEGRAM_DRAIN_ENABLED = "true"','GMAIL_SHARED_DRAIN_ENABLED = "true"','AUTOMATION_TICK_ENABLED = "true"',
-    'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"','TELEGRAM_LINKING_ENABLED = "false"',
+    'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"','CRM_AGENT_SHARED_DRAIN_ENABLED = "true"',
+    'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "true"','TELEGRAM_LINKING_ENABLED = "false"',
     'binding = "GMAIL_SERVICE"','service = "vishar-gmail-production"',
     'binding = "TATTOOAI_SERVICE"','service = "tattooai"',
     '[triggers]','crons = ["*/5 * * * *"]','[secrets]','"SUPABASE_SECRET_KEY"',
   ]) expectIncludes(generated, needle, 'generated config');
-  for (const needle of ['entrypoint =','TELEGRAM_DRAIN_ENABLED = "false"','GMAIL_SHARED_DRAIN_ENABLED = "false"','AUTOMATION_TICK_ENABLED = "false"','ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"','gwaliusblwrzisrwnsvs']) expectExcludes(generated, needle, 'generated config');
+  for (const needle of [
+    'entrypoint =','TELEGRAM_DRAIN_ENABLED = "false"','GMAIL_SHARED_DRAIN_ENABLED = "false"',
+    'AUTOMATION_TICK_ENABLED = "false"','ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"',
+    'CRM_AGENT_SHARED_DRAIN_ENABLED = "false"','CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"','gwaliusblwrzisrwnsvs',
+  ]) expectExcludes(generated, needle, 'generated config');
 
   const badFlag = spawnSync(process.execPath, [generator, generatedPath, '--unknown'], { encoding: 'utf8' });
   if (badFlag.status === 0) throw new Error('generator accepted an unknown production option');
@@ -70,4 +78,4 @@ const workflow = read('.github/workflows/deploy-private-production-telegram.yml'
 for (const needle of ['environment: crm-production','release/private-crm-rc*','approved_sha','node scripts/generate-telegram-production-deploy-config.mjs','GMAIL_SHARED_DRAIN_ENABLED = "true"','binding = "GMAIL_SERVICE"','crons = ["*/5 * * * *"]','--dry-run','WRANGLER_OUTPUT_FILE_PATH="$deploy_output"','wrangler versions list']) expectIncludes(workflow, needle, 'production workflow');
 for (const needle of ['wrangler secret put','wrangler secret bulk','wrangler pages deploy','supabase db push','wrangler.telegram-drain.staging.toml','gwaliusblwrzisrwnsvs','TELEGRAM_CHAT_ID']) expectExcludes(workflow, needle, 'production workflow');
 
-console.log('Telegram production configuration boundaries passed: one shared 5-minute scheduler owns Telegram, Gmail, lifecycle and bounded enquiry AI dispatch; TattooAI has no standalone cron.');
+console.log('Telegram production configuration boundaries passed: one shared 5-minute scheduler owns Telegram, Gmail, lifecycle, enquiry AI and CRM Five Pillars dispatch; TattooAI has no standalone cron.');

@@ -11,6 +11,10 @@ import {
 } from './lib/telegram.js';
 import { reconcileProductionTelegramWebhook } from './lib/telegram-webhook-reconcile.js';
 import {
+  crmAgentDigestCommand,
+  handleCrmAgentDigestCommand,
+} from './lib/crm-agent-telegram.js';
+import {
   handleAppointmentClientActionRequest,
   isAppointmentClientActionPath,
 } from './routes/appointment-client-action.js';
@@ -245,6 +249,15 @@ async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
 
   const link = linkingMessage(update);
   if (!link) {
+    // Read-only digest. It resolves the chat to a profile server-side and
+    // answers with that profile's own open work; it can send nothing to a
+    // client, hold no date and move no money.
+    const digest = crmAgentDigestCommand(update);
+    if (digest) {
+      await handleCrmAgentDigestCommand(env, digest, { fetchImpl });
+      return json(200, { ok: true });
+    }
+
     // Plain /start and malformed linking commands are common after reopening an
     // old Telegram tab. Give one generic recovery path without saying whether
     // any supplied token was ever valid. Other Telegram updates stay silent.

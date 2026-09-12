@@ -16,6 +16,15 @@ CRM_AI_INTAKE_ENABLED = "true"
 CRM_AI_IMAGES_ENABLED = "false"
 AI_ROUTE_ENQUIRY_INTAKE = "qwen,workers_ai"
 
+# Derived client AI state is enabled in production by explicit operator decision.
+# The database carries its own switch in crm_private.crm_agent_config, so jobs
+# still fail closed until the production schema and database switch are ready.
+# Vision remains separately guarded by the database vision_enabled switch.
+CRM_AGENT_ENABLED = "true"
+CRM_AGENT_VISION_ENABLED = "true"
+AI_ROUTE_CRM_CLIENT_STATE = "qwen,workers_ai"
+AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,openai"
+
 # Model routing. Provider order per task and the model identifier per tier are
 # configuration, not code: change them here (or override them as Worker
 # variables) without touching the router.

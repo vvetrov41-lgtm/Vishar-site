@@ -105,7 +105,36 @@ const TASKS = Object.freeze({
     structured: false,
   },
 
+  // Derived CRM client state. Qwen leads because the brief is a structured
+  // extraction over a bounded context, which is what this tier is already
+  // trusted with for enquiry intake; Workers AI backs it up so a Qwen outage
+  // degrades the brief rather than stopping it. The output ceiling is the
+  // largest here because one call returns a summary, a brief and a
+  // recommendation, and a truncated answer fails schema validation and is
+  // paid for twice.
+  crm_client_state: {
+    capability: 'extraction',
+    modality: 'text',
+    chain: ['qwen', 'workers_ai'],
+    timeoutMs: 30_000,
+    maxOutputTokens: 1_800,
+    temperature: 0,
+    structured: true,
+  },
+
   // --- declared multimodal capabilities -------------------------------------
+  // Structured description of one private client reference image. Separate
+  // from `vision_reference_understanding` because that task is unstructured
+  // and this one is schema-validated before anything is persisted.
+  vision_reference_extraction: {
+    capability: 'vision',
+    modality: 'vision',
+    chain: ['qwen', 'openai'],
+    timeoutMs: 30_000,
+    maxOutputTokens: 900,
+    temperature: 0,
+    structured: true,
+  },
   vision_reference_understanding: {
     capability: 'vision',
     modality: 'vision',
