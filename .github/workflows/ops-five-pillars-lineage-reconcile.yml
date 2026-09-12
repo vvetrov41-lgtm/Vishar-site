@@ -118,3 +118,5 @@ jobs:
           final="$(supabase db push --dry-run 2>&1)"
           printf '%s\n' "$final"
           printf '%s\n' "$final" | grep -Fq 'Remote database is up to date.'
+
+# Second push intentionally triggers the already-registered branch workflow.
