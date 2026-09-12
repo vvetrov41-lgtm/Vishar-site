@@ -44,18 +44,39 @@ describe('what the enquiry is waiting for', () => {
 });
 
 describe('the enquiry summary', () => {
-  it('carries the whole recognisable enquiry before any other card', async () => {
-    renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });
+  it('puts the person first, keeps the brief once, and moves the workflow state into Next action', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/enquiries/${ENQUIRY_ID}`,
+      rpcCalls,
+    });
 
-    const reference = await screen.findByRole('heading', { level: 2, name: 'ENQ-2026-0001' });
-    const summary = reference.closest('section');
+    const name = await screen.findByRole('heading', { level: 2, name: 'Fixture Client' });
+    const summary = name.closest('section');
     expect(summary).not.toBeNull();
 
-    // Who, how to reach them, and what they want - without scrolling.
-    expect(within(summary!).getByText('Fixture Client')).toBeInTheDocument();
+    // Who, how to reach them, and what they want - without making the technical
+    // enquiry id the visual title.
+    expect(within(summary!).getByText('ENQ-2026-0001')).toBeInTheDocument();
     expect(within(summary!).getByText('+44 7700 900 000')).toBeInTheDocument();
     expect(within(summary!).getByText('@fixture')).toBeInTheDocument();
-    expect(within(summary!).getByText(/Waiting on:/)).toBeInTheDocument();
+    expect(within(summary!).queryByText(/Waiting on:/)).not.toBeInTheDocument();
+
+    const nextHeading = screen.getByRole('heading', { level: 2, name: 'Next action' });
+    const nextSection = nextHeading.closest('section');
+    expect(nextSection).not.toBeNull();
+    expect(within(nextSection!).getByText(/Waiting on:/)).toBeInTheDocument();
+
+    // The client's original words belong to Project only. The summary may show
+    // a derived AI brief, but never a second copy of this submission.
+    expect(screen.getAllByText('A realistic raven with natural lighting.')).toHaveLength(1);
+
+    // The new summary reads the already-derived Five Pillars projection. The
+    // paused enquiry assistant remains paused: no old result read or retry.
+    expect(rpcCalls.some((entry) => entry.name === 'get_client_ai_state')).toBe(true);
+    expect(rpcCalls.some((entry) => entry.name === 'get_enquiry_ai_result')).toBe(false);
+    expect(rpcCalls.some((entry) => entry.name === 'retry_enquiry_ai')).toBe(false);
   });
 
   it('collapses the sections that are usually empty to a heading and a count', async () => {

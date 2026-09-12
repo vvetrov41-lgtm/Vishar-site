@@ -8,8 +8,9 @@
 //
 // What changed:
 //
-//   - a summary card carries the whole recognisable enquiry - reference,
-//     status, who, how to reach them, what they want, when they are booked in;
+//   - a summary card carries the whole recognisable enquiry - client name,
+//     status, how to reach them, what they want, when they are booked in and a
+//     derived Five Pillars summary when one already exists;
 //   - one "Next action" section holds the workflow, with the action the current
 //     state is actually waiting on marked as the one to press. Status changes,
 //     reassignment and closing stay, behind a disclosure, because they are
@@ -27,7 +28,6 @@ import { CollapsedSection } from '../components/CollapsedSection';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { EnquiryConsultationPanel } from '../components/EnquiryConsultationPanel';
 import { EnquiryContactConflict } from '../components/EnquiryContactConflict';
-import { EnquiryAiPanel } from '../components/EnquiryAiPanel';
 import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
 import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { BookingPanel } from '../components/BookingPanel';
@@ -43,6 +43,7 @@ import { nextEnquiryAction, type EnquiryNextAction } from '../lib/enquiry-next-a
 import { formatDateTime, localiseKnownValue, localiseSystemSubject, relativeDue } from '../lib/format';
 import { formatPhoneForDisplay } from '../lib/phone';
 import { useLanguage } from '../lib/i18n';
+import type { ClientAiState } from '../lib/ai-intake-api';
 import type { Appointment } from '../lib/appointment-api';
 import type { ClientConversation } from '../lib/communications-api';
 import type {
@@ -52,6 +53,7 @@ import type {
 interface DetailData {
   enquiry: Enquiry | null;
   client: Client | null;
+  aiState: ClientAiState | null;
   files: EnquiryFile[];
   notes: InternalNote[];
   followUps: FollowUp[];
@@ -90,13 +92,16 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
     const enquiry = await api.getEnquiry(enquiryId);
     if (!enquiry) {
       return {
-        enquiry: null, client: null, files: [], notes: [], followUps: [], activity: [],
+        enquiry: null, client: null, aiState: null, files: [], notes: [], followUps: [], activity: [],
         transitions: [], colleagues: [], emailThread: null, appointments: [], conversations: [],
       };
     }
 
-    const [client, files, notes, followUps, activity, transitions, colleagues, clientAppointments] = await Promise.all([
+    const [client, aiState, files, notes, followUps, activity, transitions, colleagues, clientAppointments] = await Promise.all([
       api.getClient(enquiry.client_id),
+      // Five Pillars is a derived read. Failure or absence never blocks the
+      // enquiry page, and this call cannot schedule or retry model work.
+      api.getClientAiState(enquiry.artist_id, enquiry.client_id).catch(() => null),
       can(role, 'viewEnquiryFiles') ? api.listEnquiryFiles(enquiryId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ enquiryId }) : Promise.resolve([]),
       api.listFollowUps({ enquiryId }),
@@ -118,7 +123,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       : [];
 
     return {
-      enquiry, client, files, notes, followUps, activity, transitions, colleagues, emailThread,
+      enquiry, client, aiState, files, notes, followUps, activity, transitions, colleagues, emailThread,
       appointments: clientAppointments.filter((appointment) => appointment.enquiry_id === enquiryId),
       conversations,
     };
@@ -144,7 +149,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   }
 
   const {
-    enquiry, client, files, notes, followUps, activity, transitions, colleagues,
+    enquiry, client, aiState, files, notes, followUps, activity, transitions, colleagues,
     emailThread, appointments, conversations,
   } = data;
   const { transitionOptions, canConvert } = enquiryWorkflowActions(transitions, enquiry.status, role);
@@ -155,7 +160,6 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   const canBook = can(role, 'manageSessions');
   const readyFiles = files.filter((file) => file.upload_state === 'ready');
   const nextAppointment = upcoming(appointments, new Date());
-  const assignee = colleagues.find((colleague) => colleague.id === enquiry.assigned_to);
   const conversation = conversations[0] ?? null;
   const replyHref = conversation
     ? `/inbox/${conversation.id}`
@@ -168,16 +172,32 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   });
 
   const hasAdminActions = transitionOptions.length > 0 || canAssign || canConvert;
+  const clientDisplayName = client?.full_name
+    ?? enquiry.submitted_full_name
+    ?? t('enquiry.clientUnavailable');
+  // A stale brief is deliberately not shown as a current summary. The original
+  // enquiry remains visible below while the derived projection catches up.
+  const aiSummary = aiState?.status === 'ready' && aiState.is_stale === false
+    ? aiState.summary
+    : null;
+  const aiSummaryLabel = language === 'ru' ? 'AI-разбор' : 'AI summary';
+  const clientBriefLabel = language === 'ru' ? 'Описание клиента' : 'Client brief';
 
   return (
     <>
       <DetailBackLink to="/enquiries" sectionLabel={t('nav.enquiries')} />
       <RecordArtistContext artistId={enquiry.artist_id} />
 
-      {/* Everything needed to recognise this enquiry, in one card. */}
+      {/* The person is the recognisable object. The enquiry number remains
+          available underneath as a secondary technical identifier. */}
       <section className="card enquiry-summary">
         <div className="enquiry-summary-headline">
-          <h2 className="enquiry-summary-reference">{enquiry.reference_number}</h2>
+          <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+            <h2 className="enquiry-summary-reference" style={{ fontSize: '1.18rem' }}>
+              {clientDisplayName}
+            </h2>
+            <div className="meta" style={{ marginTop: 2 }}>{enquiry.reference_number}</div>
+          </div>
           <span className="badge">{label('enquiryStatus', enquiry.status)}</span>
           {enquiry.intake_state !== 'complete' ? (
             <span className="badge warn">
@@ -192,16 +212,12 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </div>
 
         <dl className="definition">
-          <dt>{t('enquiry.name')}</dt>
-          <dd>{client ? client.full_name : t('enquiry.clientUnavailable')}</dd>
           <dt>{t('enquiry.phone')}</dt>
-          <dd>{formatPhoneForDisplay(client?.phone ?? null) ?? '—'}</dd>
+          <dd>{formatPhoneForDisplay(client?.phone ?? enquiry.submitted_phone ?? null) ?? '—'}</dd>
           <dt>{t('enquiry.instagram')}</dt>
-          <dd>{client?.instagram ?? '—'}</dd>
+          <dd>{client?.instagram ?? enquiry.submitted_instagram ?? '—'}</dd>
           <dt>{t('enquiry.prefers')}</dt>
-          <dd>{localiseKnownValue(client?.preferred_contact ?? null, language)}</dd>
-          <dt>{t('enquiry.assignedTo')}</dt>
-          <dd>{assignee?.display_name ?? t('common.unassigned')}</dd>
+          <dd>{localiseKnownValue(client?.preferred_contact ?? enquiry.submitted_preferred_contact ?? null, language)}</dd>
           <dt>{t('enquiry.type')}</dt>
           <dd>{enquiry.project_type ?? '—'}</dd>
           {enquiry.discovery_source || enquiry.discovery_source_detail ? (
@@ -229,10 +245,12 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           ) : null}
         </dl>
 
-        {enquiry.idea ? <p className="enquiry-summary-idea">{enquiry.idea}</p> : null}
-        <p className="meta" style={{ marginBottom: 0 }}>
-          {t('enquiry.nextActionIs', { action: t(`enquiry.next.${recommended}`) })}
-        </p>
+        {aiSummary ? (
+          <div style={{ marginTop: 12 }}>
+            <div className="meta" style={{ fontWeight: 600 }}>{aiSummaryLabel}</div>
+            <p className="enquiry-summary-idea" style={{ marginTop: 4 }}>{aiSummary}</p>
+          </div>
+        ) : null}
       </section>
 
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
@@ -245,11 +263,13 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         <EnquiryContactConflict enquiry={enquiry} client={client} api={api} onSaved={reload} />
       ) : null}
 
-      {/* The work, in the order the state says it is waiting for it. */}
-      <EnquiryAiPanel enquiryId={enquiry.id} api={api} language={language} mayEdit={can(role, 'createEmailDraft')} />
-
+      {/* The paused enquiry assistant stays paused. The summary above reads the
+          independent Five Pillars projection and never retries model work. */}
       <Section title={t('enquiry.nextAction')}>
-        <div className="actions">
+        <p className="meta" style={{ margin: '0 0 10px' }}>
+          {t('enquiry.nextActionIs', { action: t(`enquiry.next.${recommended}`) })}
+        </p>
+        <div className="actions" style={{ marginTop: 0 }}>
           <Link
             to={replyHref}
             className={recommended === 'reply' || recommended === 'chase' ? 'action-link primary' : 'action-link'}
@@ -351,8 +371,8 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         ) : null}
       </Section>
 
-      {/* The tattoo. This is the decision the artist is here to make, so it
-          stays open and stays above the administration. */}
+      {/* The original submission appears once, here, under the structured
+          tattoo facts. The summary above is derived and deliberately short. */}
       <Section title={t('enquiry.project')}>
         <dl className="definition">
           <dt>{t('enquiry.placement')}</dt><dd>{enquiry.placement ?? '—'}</dd>
@@ -360,7 +380,10 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <dt>{t('enquiry.coverUp')}</dt><dd>{localiseKnownValue(enquiry.cover_up, language)}</dd>
           <dt>{t('enquiry.timing')}</dt><dd>{enquiry.preferred_timing ?? '—'}</dd>
         </dl>
-        <p style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{enquiry.idea ?? '—'}</p>
+        <div style={{ marginTop: 12 }}>
+          <div className="meta" style={{ fontWeight: 600 }}>{clientBriefLabel}</div>
+          <p style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{enquiry.idea ?? '—'}</p>
+        </div>
         <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />
       </Section>
 

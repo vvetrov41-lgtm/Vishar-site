@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useLanguage } from '../lib/i18n';
 import { useApi } from '../lib/session';
+import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import type { EnquiryFile } from '../lib/types';
 
 export function SignedImage({
@@ -20,7 +21,7 @@ export function SignedImage({
   removeDisabled?: boolean;
 }) {
   const api = useApi();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [openFailed, setOpenFailed] = useState(false);
@@ -68,6 +69,20 @@ export function SignedImage({
     }
   }
 
+  async function removeReference() {
+    if (!onRemove) return;
+    const approved = await confirmDialog({
+      title: language === 'ru' ? 'Удалить референс?' : 'Remove reference?',
+      message: language === 'ru'
+        ? 'Изображение исчезнет из этой заявки.'
+        : 'This image will be removed from the enquiry.',
+      confirmLabel: t('image.remove'),
+      cancelLabel: cancelLabelFor(language),
+      tone: 'danger',
+    });
+    if (approved) onRemove();
+  }
+
   if (file.upload_state !== 'ready') {
     return <div className="notice warn">{t('image.uploadFailed')}</div>;
   }
@@ -103,10 +118,12 @@ export function SignedImage({
         <button
           type="button"
           className="reference-thumb-remove danger"
+          aria-label={t('image.remove')}
+          title={t('image.remove')}
           disabled={removeDisabled}
-          onClick={onRemove}
+          onClick={() => { void removeReference(); }}
         >
-          {t('image.remove')}
+          ⋯
         </button>
       ) : null}
     </div>
