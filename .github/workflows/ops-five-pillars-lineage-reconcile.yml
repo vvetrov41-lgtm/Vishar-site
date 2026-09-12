@@ -76,8 +76,9 @@ jobs:
           for version in "${expected[@]}"; do
             line="$(printf '%s\n' "$state" | grep "$version" || true)"
             [ -n "$line" ] || { echo "Expected local migration $version missing." >&2; exit 1; }
-            printf '%s\n' "$line" | grep -Eq "${version}.*[|][[:space:]]*[|]" || {
-              echo "Migration $version is no longer a local-only gap; refusing blind reconciliation." >&2
+            occurrences="$(printf '%s\n' "$line" | grep -o "$version" | wc -l | tr -d ' ')"
+            [ "$occurrences" = '1' ] || {
+              echo "Migration $version is already remote or its state is ambiguous; refusing blind reconciliation." >&2
               exit 1
             }
           done
