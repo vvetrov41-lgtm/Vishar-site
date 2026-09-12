@@ -29,6 +29,25 @@ export interface EnquiryAiResult {
   draft?: AiReplyDraft | null;
 }
 
+/**
+ * The read-only Five Pillars projection used by operator surfaces.
+ *
+ * This is deliberately separate from EnquiryAiResult. Reading it never queues,
+ * retries or invokes a model: the server only returns derived state that already
+ * exists for this artist/client relationship.
+ */
+export type ClientAiState =
+  | {
+      status: 'not_generated';
+      enabled: boolean;
+    }
+  | {
+      status: 'ready';
+      enabled: boolean;
+      summary: string;
+      is_stale: boolean;
+    };
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -55,6 +74,25 @@ function parseResult(value: unknown): EnquiryAiResult {
   return value as unknown as EnquiryAiResult;
 }
 
+function parseClientAiState(value: unknown): ClientAiState {
+  if (!isObject(value) || !['ready', 'not_generated'].includes(String(value.status))
+    || typeof value.enabled !== 'boolean') {
+    throw new Error('client_ai_state_unavailable');
+  }
+  if (value.status === 'not_generated') {
+    return { status: 'not_generated', enabled: value.enabled };
+  }
+  if (typeof value.summary !== 'string' || !value.summary.trim() || typeof value.is_stale !== 'boolean') {
+    throw new Error('client_ai_state_unavailable');
+  }
+  return {
+    status: 'ready',
+    enabled: value.enabled,
+    summary: value.summary.trim(),
+    is_stale: value.is_stale,
+  };
+}
+
 function parseDraft(value: unknown): AiReplyDraft {
   if (!isObject(value) || !['id', 'body', 'subject', 'status', 'updated_at'].every((key) => typeof value[key] === 'string')
     || !Number.isFinite(Date.parse(String(value.updated_at)))) throw new Error('ai_draft_unavailable');
@@ -68,6 +106,14 @@ export function createAiIntakeApi(client: CrmClient) {
       const response = await client.rpc('get_enquiry_ai_result', { p_enquiry_id: enquiryId });
       if (response.error) throw new Error('ai_result_unavailable');
       return parseResult(response.data);
+    },
+    async getClientAiState(artistId: string, clientId: string): Promise<ClientAiState> {
+      const response = await client.rpc('get_client_ai_state', {
+        p_artist_id: artistId,
+        p_client_id: clientId,
+      });
+      if (response.error) throw new Error('client_ai_state_unavailable');
+      return parseClientAiState(response.data);
     },
     async retryEnquiryAi(enquiryId: string): Promise<EnquiryAiResult> {
       const response = await client.rpc('retry_enquiry_ai', { p_enquiry_id: enquiryId });
