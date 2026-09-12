@@ -2,7 +2,7 @@
 //
 // Unit tests for the model capability router and its provider tiers.
 //
-// The DeepSeek, Qwen and Llama tiers all execute on the Cloudflare `AI`
+// The DeepSeek, Qwen and Workers AI tiers all execute on the Cloudflare `AI`
 // binding. That is the property most of this file defends: those tiers must
 // never reach the network, must never look for an API key, and must still be
 // selected by name so the routing layer stays a routing layer.
@@ -64,6 +64,7 @@ const PNG_BASE64 = probe.__testing.PROBES.vision_reference_understanding.images[
 const DEEPSEEK_MODEL = '@cf/deepseek-ai/deepseek-v4-flash-0731';
 const QWEN_MODEL = '@cf/qwen/qwen3.8-27b';
 const LLAMA_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
+const GEMMA_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 
 /** A stub `AI` binding that records every call and answers per model id. */
 function aiBinding(responder) {
@@ -119,11 +120,12 @@ const visionInput = { system: SYSTEM, input: INPUT, images: [{ mimeType: 'image/
 
 // --- the binding is the transport, not the abstraction ----------------------
 
-await test('DeepSeek, Qwen and Llama are separate tiers that share one binding', () => {
+await test('DeepSeek, Qwen and Workers AI are separate tiers that share one binding', () => {
   const env = aiBinding().AI;
   assert.equal(deepseek.configure({ AI: env }, 'text').model, DEEPSEEK_MODEL);
   assert.equal(qwen.configure({ AI: env }, 'vision').model, QWEN_MODEL);
   assert.equal(llama.configure({ AI: env }, 'text').model, LLAMA_MODEL);
+  assert.equal(llama.configure({ AI: env }, 'vision').model, GEMMA_MODEL);
 
   // Distinct ids, so the router still selects a provider by name.
   const ids = [deepseek.id, qwen.id, llama.id, openai.id];
@@ -200,7 +202,7 @@ await test('chain order follows Workers AI cost, not the old vendor assumption',
     ['deepseek', 'qwen'],
   );
   for (const name of ['vision_reference_understanding', 'vision_document_extraction']) {
-    assert.equal(tasks.resolveTask({}, name, router.PROVIDER_IDS).chain[0], 'qwen', name);
+    assert.deepEqual([...tasks.resolveTask({}, name, router.PROVIDER_IDS).chain], ['qwen', 'workers_ai'], name);
   }
 });
 
@@ -297,25 +299,25 @@ await test('Qwen vision runs on the binding and carries the image as a data URI 
   assert.equal(parts[1].image_url.url, `data:image/png;base64,${PNG_BASE64}`);
 });
 
-await test('Qwen bounds structured enquiry reasoning and uses the current completion ceiling', async () => {
+await test('Qwen bounds structured extraction and uses JSON mode', async () => {
   const stub = aiBinding(() => ({ response: '{"ok":true}' }));
   const request = {
-    ...textInput,
-    images: [],
-    maxOutputTokens: tasks.resolveTask({}, 'enquiry_intake', router.PROVIDER_IDS).maxOutputTokens,
+    ...visionInput,
+    maxOutputTokens: tasks.resolveTask({}, 'vision_reference_extraction', router.PROVIDER_IDS).maxOutputTokens,
     temperature: 0,
     responseFormat: 'json',
-    responseSchema: { type: 'object' },
+    responseSchema: null,
   };
   await qwen.invoke({
-    config: qwen.configure({ AI: stub.AI }, 'text'),
+    config: qwen.configure({ AI: stub.AI }, 'vision'),
     request,
     signal: new AbortController().signal,
   });
 
   assert.equal(stub.calls.length, 1);
   assert.equal(stub.calls[0].input.reasoning_effort, 'low');
-  assert.equal(stub.calls[0].input.max_completion_tokens, 1_400);
+  assert.equal(stub.calls[0].input.max_completion_tokens, 900);
+  assert.deepEqual(stub.calls[0].input.response_format, { type: 'json_object' });
   assert.equal('max_tokens' in stub.calls[0].input, false);
 });
 
@@ -401,25 +403,18 @@ await test('the live public chain still lands on Llama first', async () => {
   assert.equal(stub.calls.length, 1, 'the cheap tier answers without touching DeepSeek');
 });
 
-await test('Qwen failure reaches OpenAI when, and only when, a key exists', async () => {
-  const failingQwen = () => new Error('vision unavailable');
-
-  const withoutKey = aiBinding(failingQwen);
-  const noFallback = await router.runModelTask(
-    { AI: withoutKey.AI }, 'vision_reference_understanding', visionInput, { fetchImpl: forbiddenFetch() });
-  assert.equal(noFallback.ok, false);
-  assert.equal(noFallback.errorCode, 'all_providers_failed');
-  assert.equal(noFallback.attempts.length, 1, 'an unconfigured tier is skipped, not attempted');
-
-  const withKey = aiBinding(failingQwen);
-  const fetchImpl = recordingFetch(() => chatResponse('A red square.'));
+await test('Qwen vision failure falls through to Gemma on the same binding', async () => {
+  const stub = aiBinding((model) => (model === QWEN_MODEL
+    ? new Error('vision unavailable')
+    : { response: 'A red square.' }));
   const recovered = await router.runModelTask(
-    { AI: withKey.AI, OPENAI_API_KEY: KEY }, 'vision_reference_understanding', visionInput, { fetchImpl });
+    { AI: stub.AI }, 'vision_reference_understanding', visionInput, { fetchImpl: forbiddenFetch() });
   assert.equal(recovered.ok, true);
-  assert.equal(recovered.provider, 'openai');
+  assert.equal(recovered.provider, 'workers_ai');
+  assert.equal(recovered.model, GEMMA_MODEL);
   assert.equal(recovered.fallbackUsed, true);
-  assert.equal(fetchImpl.calls.length, 1);
-  assert.equal(fetchImpl.calls[0].url, openai.__testing.DEFAULT_URL);
+  assert.equal(stub.calls.length, 2);
+  assert.deepEqual(stub.calls.map((call) => call.model), [QWEN_MODEL, GEMMA_MODEL]);
 });
 
 await test('without the binding nothing is attempted', async () => {
@@ -680,6 +675,7 @@ await test('the readback reports every tier as available from the binding alone'
 
   const vision = payload.routing.tasks.find((t) => t.task === 'vision_reference_understanding');
   assert.equal(vision.selected, 'qwen');
+  assert.equal(vision.fallback, 'workers_ai');
   assert.equal(vision.available, true, 'vision is available with no external key at all');
   const reasoning = payload.routing.tasks.find((t) => t.task === 'high_quality_reasoning');
   assert.equal(reasoning.selected, 'deepseek');
@@ -748,4 +744,4 @@ if (failures > 0) {
   realConsole.error(`\n${failures} model router test(s) failed, ${passes} passed.`);
   process.exit(1);
 }
-realConsole.log(`Model router tests passed: ${passes} cases covering the Cloudflare-hosted DeepSeek, Qwen and Llama tiers, the optional external OpenAI tier, routing, fallback, payload bounds, response normalisation, telemetry and the guarded probe.`);
+realConsole.log(`Model router tests passed: ${passes} cases covering the Cloudflare-hosted DeepSeek, Qwen, Llama and Gemma tiers, the optional external OpenAI tier, routing, fallback, payload bounds, response normalisation, telemetry and the guarded probe.`);
