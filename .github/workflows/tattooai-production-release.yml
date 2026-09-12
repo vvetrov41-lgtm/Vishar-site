@@ -49,6 +49,8 @@ jobs:
           npm run check:worker-bundle
           grep -Fxq 'CRM_AGENT_ENABLED = "true"' wrangler.toml
           grep -Fxq 'CRM_AGENT_VISION_ENABLED = "true"' wrangler.toml
+          ! grep -Eiq '^[[:space:]]*AI_ROUTE_[A-Z0-9_]+[[:space:]]*=.*deepseek' wrangler.toml
+          ! grep -Eiq '^[[:space:]]*AI_MODEL_DEEPSEEK' wrangler.toml
           node - <<'NODE'
           const fs = require('fs');
           const text = fs.readFileSync('wrangler.toml', 'utf8').replace(/^\s*#.*$/gm, '');
@@ -78,6 +80,8 @@ jobs:
           grep -Fxq 'main = "workers/tattooai-entry.js"' wrangler.toml
           grep -Fxq 'CRM_AGENT_ENABLED = "true"' wrangler.toml
           grep -Fxq 'CRM_AGENT_VISION_ENABLED = "true"' wrangler.toml
+          ! grep -Eiq '^[[:space:]]*AI_ROUTE_[A-Z0-9_]+[[:space:]]*=.*deepseek' wrangler.toml
+          ! grep -Eiq '^[[:space:]]*AI_MODEL_DEEPSEEK' wrangler.toml
           ! grep -Eq '^\s*\[triggers\]\s*$|^\s*crons\s*=' wrangler.toml
       - uses: actions/setup-node@v4
         with:
@@ -120,9 +124,11 @@ jobs:
             and any(.result.bindings[]?; .name == "AI" and .type == "ai")
             and any(.result.bindings[]?; .name == "CRM_AI_IMAGES_ENABLED" and .text == "false")
             and any(.result.bindings[]?; .name == "CRM_AGENT_ENABLED" and .text == "true")
-            and any(.result.bindings[]?; .name == "CRM_AGENT_VISION_ENABLED" and .text == "true")' "$RUNNER_TEMP/tattooai-settings-after.json" >/dev/null
+            and any(.result.bindings[]?; .name == "CRM_AGENT_VISION_ENABLED" and .text == "true")
+            and any(.result.bindings[]?; .name == "AI_ROUTE_HIGH_QUALITY_REASONING" and .text == "qwen,workers_ai")
+            and ([.result.bindings[]? | select((.name // "") | startswith("AI_ROUTE_")) | (.text // "") | contains("deepseek")] | any | not)' "$RUNNER_TEMP/tattooai-settings-after.json" >/dev/null
           jq -e '.success == true and ((if (.result|type)=="array" then .result else .result.schedules end) | length == 0)' "$RUNNER_TEMP/tattooai-schedules-after.json" >/dev/null
-          echo "TattooAI exact source $GITHUB_SHA is active with CRM Five Pillars runtime enabled and zero standalone schedules."
+          echo "TattooAI exact source $GITHUB_SHA is active with CRM Five Pillars enabled, no DeepSeek routes and zero standalone schedules."
       - name: Read back live HTTP boundary without persistence
         shell: bash
         run: |
