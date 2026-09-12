@@ -125,11 +125,13 @@ const TASKS = Object.freeze({
   // --- declared multimodal capabilities -------------------------------------
   // Structured description of one private client reference image. Separate
   // from `vision_reference_understanding` because that task is unstructured
-  // and this one is schema-validated before anything is persisted.
+  // and this one is schema-validated before anything is persisted. Gemma on
+  // the shared Workers AI binding is the real fallback: unlike external OpenAI,
+  // it is available without an API key and keeps private images on Cloudflare.
   vision_reference_extraction: {
     capability: 'vision',
     modality: 'vision',
-    chain: ['qwen', 'openai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 30_000,
     maxOutputTokens: 900,
     temperature: 0,
@@ -138,7 +140,7 @@ const TASKS = Object.freeze({
   vision_reference_understanding: {
     capability: 'vision',
     modality: 'vision',
-    chain: ['qwen', 'openai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 30_000,
     maxOutputTokens: 700,
     temperature: 0.2,
@@ -147,7 +149,7 @@ const TASKS = Object.freeze({
   vision_document_extraction: {
     capability: 'vision',
     modality: 'vision',
-    chain: ['qwen', 'openai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 30_000,
     maxOutputTokens: 800,
     temperature: 0,
@@ -174,38 +176,32 @@ function clampInteger(value, min, max, fallback) {
 export function routeOverrideFor(env, taskName, knownProviderIds) {
   const raw = env?.[`AI_ROUTE_${taskName.toUpperCase()}`];
   if (typeof raw !== 'string' || !raw.trim()) return null;
-
-  const requested = raw.split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+  const requested = raw.split(',').map((entry) => entry.trim()).filter(Boolean);
   if (!requested.length || requested.length > MAX_PROVIDERS_PER_REQUEST) return null;
   if (new Set(requested).size !== requested.length) return null;
   if (!requested.every((id) => PROVIDER_ID_RE.test(id) && knownProviderIds.has(id))) return null;
-
   return requested;
 }
 
-/**
- * Resolves one task to its effective plan. `knownProviderIds` is supplied by the
- * router so this module never imports an adapter and stays a pure description.
- */
-export function resolveTask(env, taskName, knownProviderIds = new Set()) {
+/** Resolve a declared task and keep all effective limits inside hard caps. */
+export function resolveTask(env, taskName, knownProviderIds) {
   if (typeof taskName !== 'string' || !TASK_NAME_RE.test(taskName)) return null;
   const definition = TASKS[taskName];
   if (!definition) return null;
 
   const override = routeOverrideFor(env, taskName, knownProviderIds);
-  const chain = (override ?? definition.chain).slice(0, MAX_PROVIDERS_PER_REQUEST);
-
+  const chain = override ?? definition.chain;
   return Object.freeze({
     task: taskName,
     capability: definition.capability,
     modality: definition.modality,
-    chain: Object.freeze(chain),
+    chain: Object.freeze([...chain]),
     routeSource: override ? 'env' : 'default',
-    timeoutMs: clampInteger(definition.timeoutMs, 1_000, MAX_TIMEOUT_MS, MAX_TIMEOUT_MS),
-    maxOutputTokens: clampInteger(definition.maxOutputTokens, 16, MAX_OUTPUT_TOKENS, 512),
-    temperature: definition.temperature,
+    timeoutMs: clampInteger(definition.timeoutMs, 1_000, MAX_TIMEOUT_MS, 15_000),
+    maxOutputTokens: clampInteger(definition.maxOutputTokens, 1, MAX_OUTPUT_TOKENS, 512),
+    temperature: typeof definition.temperature === 'number' ? definition.temperature : 0,
     structured: definition.structured === true,
   });
 }
 
-export const __testing = Object.freeze({ TASKS, TASK_NAME_RE, PROVIDER_ID_RE });
+export const __testing = Object.freeze({ TASKS });
