@@ -160,7 +160,7 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
       {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
       {notice ? <p className="notice ok" role="status">{notice}</p> : null}
 
-      {actionable ? (
+      {actionable && (thread.state === 'send_failed' || actionable.created_by_kind === 'human') ? (
         <Section title={thread.state === 'send_failed' ? copy.failedTitle : copy.draftTitle}>
           {thread.state === 'send_failed' ? (
             <p className="meta">{copy.failedHint}</p>

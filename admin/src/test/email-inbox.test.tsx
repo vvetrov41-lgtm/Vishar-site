@@ -189,11 +189,24 @@ describe('an email conversation', () => {
     expect(screen.getByRole('link', { name: 'Open project' })).toHaveAttribute('href', `#/projects/${PROJECT_ID}`);
   });
 
-  it('offers approval rather than a composer, and says the words go to the client', async () => {
+  it('hides an automatically generated approval card while the AI consultant is paused', async () => {
     renderWithSession(<App />, {
       role: 'owner',
       path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
       emailMessages: [email()],
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Your deposit for the raven sleeve' })).toBeInTheDocument();
+    expect(screen.queryByText('Waiting for your approval')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hi Diana, here is the deposit link for your first session.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve and send' })).not.toBeInTheDocument();
+  });
+
+  it('offers approval for a human draft rather than a direct-send composer', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
+      emailMessages: [email({ created_by_kind: 'human' })],
     });
 
     expect(await screen.findByText('Waiting for your approval')).toBeInTheDocument();
@@ -203,12 +216,12 @@ describe('an email conversation', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
-  it('approves through the audited RPC, once the operator agrees', async () => {
+  it('approves a human draft through the audited RPC, once the operator agrees', async () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
     renderWithSession(<App />, {
       role: 'owner',
       path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
-      emailMessages: [email()],
+      emailMessages: [email({ created_by_kind: 'human' })],
       rpcCalls,
     });
 
@@ -247,11 +260,11 @@ describe('an email conversation', () => {
     expect(screen.queryByText(/gmail_oauth_expired/)).not.toBeInTheDocument();
   });
 
-  it('tells a booking manager the approval is not theirs, rather than failing on press', async () => {
+  it('tells a booking manager a human-draft approval is not theirs, rather than failing on press', async () => {
     renderWithSession(<App />, {
       role: 'booking_manager',
       path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
-      emailMessages: [email()],
+      emailMessages: [email({ created_by_kind: 'human' })],
     });
 
     const notice = await screen.findByText('Only the studio owner can approve an email for sending.');
