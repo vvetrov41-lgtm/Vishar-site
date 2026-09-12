@@ -407,7 +407,7 @@ await test('an unsupported or oversized image never reaches a provider', async (
   for (const input of [
     { storage_path: PATH, mime_type: 'image/gif', byte_size: 100 },
     { storage_path: PATH, mime_type: 'application/pdf', byte_size: 100 },
-    { storage_path: PATH, mime_type: 'image/jpeg', byte_size: 4_000_000 },
+    { storage_path: PATH, mime_type: 'image/jpeg', byte_size: 4_194_305 },
     { storage_path: '', mime_type: 'image/jpeg', byte_size: 100 },
   ]) {
     const db = rpcRecorder();
