@@ -170,11 +170,16 @@ function trustedCrmOrigin(env) {
 }
 
 function personalNotificationActionUrl(env, entityType, entityId) {
-  if (entityType !== 'session') return null;
+  const route = entityType === 'session'
+    ? 'appointments'
+    : entityType === 'enquiry'
+      ? 'enquiries'
+      : null;
+  if (!route) return null;
   if (!UUID.test(entityId ?? '')) throw new TelegramDrainError('telegram_notification_invalid');
   const origin = trustedCrmOrigin(env);
   if (!origin) return null;
-  return `${origin}/#/appointments/${entityId}`;
+  return `${origin}/#/${route}/${entityId}`;
 }
 
 function validatePersonalDelivery(env, row) {
