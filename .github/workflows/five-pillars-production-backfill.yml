@@ -3,7 +3,7 @@ name: Five Pillars production migration backfill
 on:
   push:
     branches:
-      - 'release/five-pillars-backfill-*'
+      - 'release/private-crm-rc*-inventory-five-pillars-backfill*'
 
 permissions:
   actions: read
@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
-            release/five-pillars-backfill-*) ;;
+            release/private-crm-rc*-inventory-five-pillars-backfill*) ;;
             *) echo 'Unexpected release ref.' >&2; exit 1 ;;
           esac
           test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
