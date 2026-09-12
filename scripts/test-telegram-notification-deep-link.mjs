@@ -6,6 +6,7 @@ const notificationId = '22222222-2222-4222-8222-222222222222';
 const profileId = '33333333-3333-4333-8333-333333333333';
 const artistId = '44444444-4444-4444-8444-444444444444';
 const sessionId = '55555555-5555-4555-8555-555555555555';
+const enquiryId = '66666666-6666-4666-8666-666666666666';
 const chatId = '500002';
 const workerId = 'telegram-deep-link-test';
 const sharedToken = '123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcd';
@@ -75,6 +76,28 @@ const productionEnv = {
 }
 
 {
+  const mock = mockFetch(claimed({
+    title: 'New enquiry: Test Client',
+    body: 'AI summary:\nTest Client wants a black and grey forearm piece.',
+    entity_type: 'enquiry',
+    entity_id: enquiryId,
+  }));
+  const result = await drainPersonalTelegramNotifications(productionEnv, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.equal(result.succeeded, 1);
+  assert.equal(mock.telegramCalls.length, 1);
+  assert.match(mock.telegramCalls[0].body.text, /New enquiry: Test Client/);
+  assert.match(mock.telegramCalls[0].body.text, /AI summary:/);
+  assert.match(
+    mock.telegramCalls[0].body.text,
+    new RegExp(`Open in CRM: https://crm\\.vishartattoo\\.com/#/enquiries/${enquiryId}`),
+  );
+}
+
+{
   // Simulate the new Worker running briefly against a pre-0101 DB response.
   // The same RPC lacks entity fields, so delivery must continue without a link.
   const { entity_type, entity_id, ...legacyRow } = claimed();
@@ -90,4 +113,4 @@ const productionEnv = {
   assert.doesNotMatch(mock.telegramCalls[0].body.text, /Open in CRM:/);
 }
 
-console.log('Telegram appointment notification deep-link tests passed: one RPC renders the exact production appointment link after 0101 and remains compatible with the pre-0101 response shape.');
+console.log('Telegram notification deep-link tests passed: session and enquiry notifications render exact production CRM links while legacy rows remain compatible.');
