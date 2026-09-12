@@ -198,6 +198,8 @@ export const OPERATOR_PARITY = Object.freeze([
   available("followups.create", "Notifications", "Notifications", "manage_notifications", "write", "createFollowUp", ["public.gpt_create_follow_up"]),
   available("followups.complete", "Notifications", "Notifications", "manage_notifications", "write", "completeFollowUp", ["public.gpt_complete_follow_up"]),
   available("followups.cancel", "Notifications", "Notifications", "manage_notifications", "write", "cancelFollowUp", ["public.gpt_cancel_follow_up"]),
+  gap("attention.acknowledgements.list", "Notifications", "Notifications", "view_notifications", "read", ["public.list_attention_acknowledgements"]),
+  gap("attention.acknowledge", "Notifications", "Notifications", "manage_notifications", "write", ["public.acknowledge_attention_item"]),
   gap("notifications.list", "Notifications", "Notifications", "view_notifications", "read", ["public.list_notifications"]),
   gap("notifications.mark_read", "Notifications", "Notifications", "manage_notifications", "write", ["public.mark_notification_read"]),
   gap("followups.snooze", "Notifications", "Notifications", "manage_notifications", "write", ["public.snooze_follow_up"]),

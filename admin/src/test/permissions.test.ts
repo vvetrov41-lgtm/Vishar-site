@@ -71,7 +71,7 @@ describe('capabilities', () => {
     const writes: Capability[] = [
       'transitionEnquiry', 'assignEnquiry', 'convertEnquiry',
       'manageProjects', 'manageSessions', 'manageFinance', 'createNotes',
-      'manageFollowUps', 'createEmailDraft', 'approveEmail', 'manageIntegrations',
+      'manageFollowUps', 'createEmailDraft', 'approveEmail', 'manageIntegrations', 'manageNotifications',
       'manageUsers', 'manageSettings',
     ];
     for (const capability of writes) {

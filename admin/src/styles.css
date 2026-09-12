@@ -560,6 +560,22 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   align-items: center;
   padding-inline: 12px;
 }
+.today-attention-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.today-attention-main {
+  display: block;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.today-dismiss {
+  white-space: nowrap;
+  align-self: center;
+}
 
 /* Client context carried onto another screen (the conversation, today). */
 .client-context-strip {

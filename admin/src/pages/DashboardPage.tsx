@@ -9,6 +9,7 @@
 // Every row names a person and opens the place the work is done. Nothing above
 // the schedule is a counter, a form or an instruction.
 
+import { useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { formatDate, formatDateTime, relativeDue } from '../lib/format';
@@ -24,6 +25,7 @@ import type { Appointment } from '../lib/appointment-api';
 import type { ConversationSummary } from '../lib/communications-api';
 import type { MonzoReconciliationCandidate } from '../lib/payment-api';
 import type { ActivityEntry, Enquiry, FollowUp, Project } from '../lib/types';
+import type { AttentionAcknowledgement, AttentionItemRef } from '../lib/attention-api';
 import { operationalLabel } from '../lib/operational-labels';
 
 interface TodayData {
@@ -37,6 +39,7 @@ interface TodayData {
   candidates: MonzoReconciliationCandidate[];
   failedJobCount: number;
   activity: ActivityEntry[];
+  acknowledgements: AttentionAcknowledgement[];
   clientNames: Map<string, string>;
 }
 
@@ -47,13 +50,16 @@ export function DashboardPage() {
   const role = profile?.role;
   const { selectedArtistId } = useArtistScope();
   const mayManageFinance = canAccess(role, 'manageFinance', memberships);
+  const mayDismissAttention = can(role, 'manageNotifications');
+  const [dismissing, setDismissing] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, loading, error, reload } = useAsync<TodayData>(async () => {
     const artistId = selectedArtistId ?? undefined;
 
     // Each read is asked for only where the role could hold the capability.
     // The database still decides what comes back.
-    const [appointments, enquiries, projects, followUps, conversations, failedJobs, activity] = await Promise.all([
+    const [appointments, enquiries, projects, followUps, conversations, failedJobs, activity, acknowledgements] = await Promise.all([
       can(role, 'viewSessions') ? api.listAppointments({ artistId }) : Promise.resolve([]),
       can(role, 'viewEnquiries') ? api.listEnquiries({ artistId }) : Promise.resolve([]),
       can(role, 'viewProjects') ? api.listProjects(undefined, artistId) : Promise.resolve([]),
@@ -61,6 +67,9 @@ export function DashboardPage() {
       can(role, 'viewEnquiries') ? api.listConversations({ limit: 50 }) : Promise.resolve([]),
       can(role, 'viewIntegrationJobs') ? api.listFailedJobs(artistId) : Promise.resolve([]),
       can(role, 'viewActivity') ? api.listActivity({ artistId }) : Promise.resolve([]),
+      can(role, 'viewNotifications')
+        ? api.listAttentionAcknowledgements(artistId).catch(() => [])
+        : Promise.resolve([]),
     ]);
 
     // The finance RPC is per artist. When no artist is chosen, ask for every
@@ -104,14 +113,14 @@ export function DashboardPage() {
       discoveryArtists.map(async (id) => {
         try {
           const result = await api.listGmailInboxClients(id);
-          return result.clients
-            .filter((entry) => entry.direction === 'inbound')
-            .map((entry) => ({
-              client_id: entry.client_id,
-              client_name: entry.client_name,
-              subject: entry.subject,
-              last_message_at: entry.last_message_at,
-            }));
+          return result.clients.map((entry) => ({
+            artist_id: id,
+            client_id: entry.client_id,
+            client_name: entry.client_name,
+            subject: entry.subject,
+            last_message_at: entry.last_message_at,
+            direction: entry.direction,
+          }));
         } catch {
           return [];
         }
@@ -138,6 +147,7 @@ export function DashboardPage() {
       candidates,
       failedJobCount: failedJobs.length,
       activity,
+      acknowledgements,
       clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
     };
   }, [api, role, selectedArtistId, mayManageFinance]);
@@ -162,10 +172,24 @@ export function DashboardPage() {
       (thread) => !selectedArtistId || thread.artist_id === selectedArtistId,
     ),
     gmailAwaitingReply: data.gmailAwaitingReply,
+    acknowledgements: data.acknowledgements,
     reconciliationCandidates: data.candidates,
     failedJobCount: data.failedJobCount,
     clientName: (clientId) => data.clientNames.get(clientId) ?? null,
   });
+
+  async function dismissAttention(item: AttentionItemRef, key: string) {
+    setDismissing(key);
+    setActionError(null);
+    try {
+      await api.acknowledgeAttentionItem(item);
+      reload();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : t('today.dismissFailed'));
+    } finally {
+      setDismissing(null);
+    }
+  }
 
   return (
     <>
@@ -174,12 +198,20 @@ export function DashboardPage() {
       </p>
 
       <Section title={t('today.needsYou')}>
+        {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
         {snapshot.needsYou.length === 0 ? (
           <EmptyState compact title={t('today.allClear')} hint={t('today.allClearHint')} />
         ) : (
           <div className="list">
             {snapshot.needsYou.map((item) => (
-              <NeedsYouRow key={item.key} item={item} now={now} />
+              <NeedsYouRow
+                key={item.key}
+                item={item}
+                now={now}
+                canDismiss={mayDismissAttention}
+                dismissing={dismissing === item.key}
+                onDismiss={(target) => { void dismissAttention(target, item.key); }}
+              />
             ))}
           </div>
         )}
@@ -260,7 +292,19 @@ export function DashboardPage() {
  * wanted and when is the line beneath it. Tapping the row opens where the work
  * is done, never a list the operator then has to search.
  */
-function NeedsYouRow({ item, now }: { item: TodayItem; now: Date }) {
+function NeedsYouRow({
+  item,
+  now,
+  canDismiss,
+  dismissing,
+  onDismiss,
+}: {
+  item: TodayItem;
+  now: Date;
+  canDismiss: boolean;
+  dismissing: boolean;
+  onDismiss: (target: AttentionItemRef) => void;
+}) {
   const { t, label, language } = useLanguage();
 
   const kindLabel = t(`today.item.${item.kind}`);
@@ -296,9 +340,23 @@ function NeedsYouRow({ item, now }: { item: TodayItem; now: Date }) {
     </>
   );
 
-  return item.href
-    ? <Link to={item.href} className="row">{content}</Link>
-    : <div className="row">{content}</div>;
+  if (!item.href) return <div className="row">{content}</div>;
+
+  return (
+    <div className="row today-attention-row">
+      <Link to={item.href} className="today-attention-main">{content}</Link>
+      {canDismiss && item.acknowledgement ? (
+        <button
+          type="button"
+          className="badge today-dismiss"
+          disabled={dismissing}
+          onClick={() => onDismiss(item.acknowledgement!)}
+        >
+          {t('today.dismiss')}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 /** Channel names are product names; they are the same in both languages. */

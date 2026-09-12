@@ -139,6 +139,8 @@ const EN = {
   // Today - operational triage. Every string here names work, not a metric.
   'today.loading': 'Loading today…',
   'today.needsYou': 'Needs you now',
+  'today.dismiss': 'Remove',
+  'today.dismissFailed': 'Could not remove that item.',
   'today.allClear': 'Nothing needs you right now',
   'today.allClearHint': 'No unanswered message, payment to confirm, unconfirmed booking or overdue follow-up.',
   'today.schedule': 'Today',
@@ -685,6 +687,8 @@ const RU: Record<TranslationKey, string> = {
 
   'today.loading': 'Загружаем сегодняшний день…',
   'today.needsYou': 'Требует внимания',
+  'today.dismiss': 'Убрать',
+  'today.dismissFailed': 'Не удалось убрать карточку.',
   'today.allClear': 'Сейчас ничего не требует внимания',
   'today.allClearHint': 'Нет неотвеченных сообщений, платежей к подтверждению, неподтверждённых записей и просроченных напоминаний.',
   'today.schedule': 'Сегодня',
