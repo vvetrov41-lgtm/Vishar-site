@@ -598,6 +598,8 @@ insert into expected_function_acl values
   ('public.create_email_draft(text,text,text,uuid,uuid,uuid,text)', false, true, false),
   ('public.approve_email_draft(uuid)', false, true, false),
   ('public.dismiss_failed_email_message(uuid)', false, true, false),
+  ('public.list_attention_acknowledgements(uuid)', false, true, false),
+  ('public.acknowledge_attention_item(uuid,text,uuid,timestamptz)', false, true, false),
   ('public.set_profile_active(uuid,boolean)', false, true, false),
   ('public.set_profile_role(uuid,public.crm_role)', false, true, false),
   ('public.list_profiles()', false, true, false),

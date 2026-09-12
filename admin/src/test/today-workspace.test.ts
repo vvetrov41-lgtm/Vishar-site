@@ -167,6 +167,7 @@ function input(overrides: Partial<TodayInput> = {}): TodayInput {
     conversations: [],
     emailThreads: [],
     gmailAwaitingReply: [],
+    acknowledgements: [],
     reconciliationCandidates: [],
     failedJobCount: 0,
     clientName: () => 'Fixture Client',
@@ -210,7 +211,7 @@ describe('needs you now', () => {
       conversations: [conversation()],
       reconciliationCandidates: [candidate()],
       projects: [project()],
-      enquiries: [enquiry()],
+      enquiries: [enquiry({ id: 'enquiry-2', client_id: 'client-2' })],
       followUps: [followUp()],
       failedJobCount: 2,
     }));
@@ -275,6 +276,15 @@ describe('needs you now', () => {
     expect(withBooking.needsYou.some((item) => item.kind === 'deposit_outstanding')).toBe(true);
   });
 
+  it('waits until a requested deposit is within the next seven days', () => {
+    const snapshot = summariseToday(input({
+      appointments: [appointment({ start_at: '2026-11-17T11:00:00Z' })],
+      projects: [project()],
+    }));
+
+    expect(snapshot.needsYou.some((item) => item.kind === 'deposit_outstanding')).toBe(false);
+  });
+
   it('never raises a booking that has already started', () => {
     const snapshot = summariseToday(input({
       appointments: [
@@ -317,5 +327,78 @@ describe('needs you now', () => {
     }));
 
     expect(snapshot.needsYou.map((item) => item.href)).toEqual(['/inbox/older', '/inbox/newer']);
+  });
+
+  it('does not duplicate a new enquiry once a real conversation has started', () => {
+    const snapshot = summariseToday(input({
+      enquiries: [enquiry()],
+      conversations: [conversation({
+        enquiry_id: 'enquiry-1',
+        client_id: CLIENT_ID,
+        last_message_at: '2026-08-30T09:00:00Z',
+        last_inbound_at: '2026-08-30T09:00:00Z',
+      })],
+    }));
+
+    expect(snapshot.needsYou.map((item) => item.kind)).toEqual(['reply']);
+  });
+
+  it('keeps a new enquiry visible when its only email is a paused machine draft', () => {
+    const snapshot = summariseToday(input({
+      enquiries: [enquiry()],
+      emailThreads: [{
+        key: 'enquiry-enquiry-1',
+        artist_id: ARTIST_ID,
+        client_id: CLIENT_ID,
+        enquiry_id: 'enquiry-1',
+        project_id: null,
+        to_email: 'fixture@example.test',
+        subject: 'Draft reply',
+        last_activity_at: '2026-08-30T09:00:00Z',
+        state: 'closed',
+        actionable_message_id: null,
+        messages: [{
+          id: 'email-1',
+          artist_id: ARTIST_ID,
+          status: 'draft',
+          to_email: 'fixture@example.test',
+          subject: 'Draft reply',
+          created_by_kind: 'ai',
+          created_at: '2026-08-30T09:00:00Z',
+          client_id: CLIENT_ID,
+          enquiry_id: 'enquiry-1',
+          project_id: null,
+          approved_at: null,
+          sent_at: null,
+          failed_at: null,
+          error_code: null,
+        }],
+      }],
+    }));
+
+    expect(snapshot.needsYou.map((item) => item.kind)).toEqual(['new_enquiry']);
+  });
+
+  it('hides only the acknowledged reply version and reopens on a newer inbound', () => {
+    const acknowledgedAt = '2026-08-30T09:00:00Z';
+    const acknowledgements = [{
+      artist_id: ARTIST_ID,
+      item_kind: 'conversation_reply' as const,
+      entity_id: 'conversation-1',
+      observed_at: acknowledgedAt,
+      acknowledged_at: '2026-08-30T10:00:00Z',
+    }];
+
+    const hidden = summariseToday(input({ conversations: [conversation()], acknowledgements }));
+    expect(hidden.needsYou).toHaveLength(0);
+
+    const reopened = summariseToday(input({
+      conversations: [conversation({
+        last_message_at: '2026-08-30T11:00:00Z',
+        last_inbound_at: '2026-08-30T11:00:00Z',
+      })],
+      acknowledgements,
+    }));
+    expect(reopened.needsYou.map((item) => item.kind)).toEqual(['reply']);
   });
 });

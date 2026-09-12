@@ -69,11 +69,17 @@ describe('what a thread is waiting on', () => {
     expect(threadNeedsOperator({ state: 'sent' })).toBe(false);
   });
 
+  it('does not turn a paused machine draft into an approval task', () => {
+    const [thread] = groupEmailThreads([message()]);
+    expect(thread.state).toBe('closed');
+    expect(thread.actionable_message_id).toBeNull();
+  });
+
   it('takes the most urgent state in the thread, not the newest message', () => {
     // Tuesday's failed send still needs somebody even though Wednesday brought
     // a fresh draft. Reading only the newest message would hide it.
     const [thread] = groupEmailThreads([
-      message({ id: 'newer', status: 'draft', created_at: '2026-07-02T09:00:00Z' }),
+      message({ id: 'newer', status: 'draft', created_by_kind: 'human', created_at: '2026-07-02T09:00:00Z' }),
       message({ id: 'older', status: 'failed', created_at: '2026-07-01T09:00:00Z' }),
     ]);
     expect(thread.state).toBe('send_failed');
@@ -93,7 +99,7 @@ describe('ordering', () => {
   it('puts work before history, then sorts by recency', () => {
     const threads = groupEmailThreads([
       message({ id: 'a', enquiry_id: 'e-old', status: 'sent', created_at: '2026-07-09T09:00:00Z' }),
-      message({ id: 'b', enquiry_id: 'e-work', status: 'draft', created_at: '2026-07-01T09:00:00Z' }),
+      message({ id: 'b', enquiry_id: 'e-work', status: 'draft', created_by_kind: 'human', created_at: '2026-07-01T09:00:00Z' }),
       message({ id: 'c', enquiry_id: 'e-recent', status: 'sent', created_at: '2026-07-10T09:00:00Z' }),
     ]);
     // The stale draft outranks both finished threads, however recent they are.

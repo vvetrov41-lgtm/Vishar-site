@@ -46,7 +46,7 @@ describe('email in the inbox list', () => {
     renderWithSession(<App />, {
       role: 'owner',
       path: '/inbox',
-      emailMessages: [email()],
+      emailMessages: [email({ created_by_kind: 'human' })],
     });
 
     // The messaging conversation and the email thread are both present, each
@@ -95,7 +95,7 @@ describe('email in the inbox list', () => {
     renderWithSession(<App />, {
       role: 'owner',
       path: '/inbox',
-      emailMessages: [email()],
+      emailMessages: [email({ created_by_kind: 'human' })],
     });
     const row = (await screen.findByText('Your deposit for the raven sleeve')).closest('a');
     expect(row).not.toBeNull();
@@ -110,7 +110,7 @@ describe('email in the inbox list', () => {
       role: 'owner',
       path: '/inbox',
       emailMessages: [
-        email(),
+        email({ created_by_kind: 'human' }),
         email({
           id: SENT_ID,
           status: 'sent',
@@ -133,6 +133,18 @@ describe('email in the inbox list', () => {
     expect(screen.getByText('Your deposit for the raven sleeve')).toBeInTheDocument();
     // A sent email is finished work and drops out.
     expect(screen.queryByText('Your appointment is confirmed')).not.toBeInTheDocument();
+  });
+
+  it('keeps a paused AI draft out of the Needs reply queue', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/inbox', emailMessages: [email()] });
+    await screen.findByText('Your deposit for the raven sleeve');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Needs reply' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Your deposit for the raven sleeve')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Can we move Friday?')).toBeInTheDocument();
   });
 
   it('filters to email alone without losing the messaging channels from the tabs', async () => {
@@ -180,7 +192,7 @@ describe('an email conversation', () => {
     renderWithSession(<App />, {
       role: 'owner',
       path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
-      emailMessages: [email()],
+      emailMessages: [email({ created_by_kind: 'human' })],
     });
 
     expect(await screen.findByRole('heading', { name: 'Your deposit for the raven sleeve' })).toBeInTheDocument();
@@ -277,7 +289,7 @@ describe('an email conversation', () => {
     renderWithSession(<App />, {
       role: 'owner',
       path: `/enquiries/${ENQUIRY_ID}`,
-      emailMessages: [email()],
+      emailMessages: [email({ created_by_kind: 'human' })],
     });
 
     const open = await screen.findByRole('link', { name: 'Open email conversation' });

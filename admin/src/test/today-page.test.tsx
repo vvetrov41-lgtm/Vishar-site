@@ -6,7 +6,7 @@
 // a person and opens where the work is done, and that no counter survived.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
 import {
   CLIENT_ID,
@@ -49,6 +49,22 @@ describe('today workspace', () => {
 
     const reply = within(needsYou).getByText('Waiting for your reply').closest('a') as HTMLElement;
     expect(reply).toHaveAttribute('href', `#/inbox/${UNANSWERED_CONVERSATION_ID}`);
+  });
+
+  it('lets an operator remove a handled client item without changing its business record', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    renderWithSession(<App />, { role: 'owner', path: '/', rpcCalls });
+
+    const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
+      .closest('section') as HTMLElement;
+    const replyRow = within(needsYou).getByText('Waiting for your reply').closest('.row') as HTMLElement;
+    fireEvent.click(within(replyRow).getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => {
+      expect(rpcCalls.some((call) => call.name === 'acknowledge_attention_item')).toBe(true);
+    });
+    expect(rpcCalls.some((call) => call.name === 'transition_enquiry_status')).toBe(false);
+    expect(rpcCalls.some((call) => call.name === 'update_project_deposit')).toBe(false);
   });
 
   it('does not put an unknown sender on the triage list', async () => {
