@@ -68,6 +68,16 @@ export function stateFor(status: EmailStatus): EmailThreadState {
   return 'closed';
 }
 
+/**
+ * A paused machine-generated draft is history, not work. The detail page
+ * already refuses to offer an approval control for it; treating the same row
+ * as awaiting approval in Inbox and Today left an impossible task behind.
+ */
+function stateForMessage(message: Pick<EmailMessage, 'status' | 'created_by_kind'>): EmailThreadState {
+  if (message.status === 'draft' && message.created_by_kind !== 'human') return 'closed';
+  return stateFor(message.status);
+}
+
 /** True when the thread is waiting on a person, not on a machine. */
 export function threadNeedsOperator(thread: Pick<EmailThread, 'state'>): boolean {
   return thread.state === 'awaiting_approval' || thread.state === 'send_failed';
@@ -96,7 +106,7 @@ export function groupEmailThreads(messages: EmailMessage[]): EmailThread[] {
     );
     const newest = ordered[0];
     const state = mostUrgentState(ordered);
-    const actionable = ordered.find((message) => stateFor(message.status) === state) ?? null;
+    const actionable = ordered.find((message) => stateForMessage(message) === state) ?? null;
     built.push({
       key,
       artist_id: newest.artist_id,
@@ -125,7 +135,7 @@ export function groupEmailThreads(messages: EmailMessage[]): EmailThread[] {
 function mostUrgentState(messages: EmailMessage[]): EmailThreadState {
   let best = STATE_ORDER.length - 1;
   for (const message of messages) {
-    const index = STATE_ORDER.indexOf(stateFor(message.status));
+    const index = STATE_ORDER.indexOf(stateForMessage(message));
     if (index >= 0 && index < best) best = index;
   }
   return STATE_ORDER[best];

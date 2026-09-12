@@ -13,6 +13,7 @@
 // Pure, and given `now` explicitly, so the ordering rules are tested directly.
 
 import type { Appointment } from './appointment-api';
+import type { AttentionAcknowledgement, AttentionItemRef } from './attention-api';
 import { conversationNeedsReply, type ConversationSummary } from './communications-api';
 import { threadNeedsOperator, type EmailThread } from './email-threads';
 import { isActionableConversation } from './inbox-items';
@@ -65,6 +66,8 @@ export interface TodayItem {
   /** One extra fact the row renders: a channel, an amount, a due label. */
   detail: string | null;
   urgent: boolean;
+  /** Present only where acknowledging this exact observed version is safe. */
+  acknowledgement: AttentionItemRef | null;
 }
 
 export interface TodaySnapshot {
@@ -77,10 +80,12 @@ export interface TodaySnapshot {
 
 /** One known client waiting on an emailed reply. */
 export interface GmailAwaitingReply {
+  artist_id: string;
   client_id: string;
   client_name: string | null;
   subject: string;
   last_message_at: string | null;
+  direction: 'inbound' | 'outbound';
 }
 
 export interface TodayInput {
@@ -102,6 +107,7 @@ export interface TodayInput {
    * CRM client server-side; an unknown sender never reaches this list.
    */
   gmailAwaitingReply: GmailAwaitingReply[];
+  acknowledgements: AttentionAcknowledgement[];
   reconciliationCandidates: MonzoReconciliationCandidate[];
   failedJobCount: number;
   /** Resolves a client id to a name, so no row is identified by a uuid. */
@@ -160,6 +166,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: appointment.start_at,
       detail: null,
       urgent: true,
+      acknowledgement: null,
     });
   }
 
@@ -181,6 +188,12 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: conversation.last_inbound_at ?? conversation.last_message_at,
       detail: conversation.channel,
       urgent: true,
+      acknowledgement: conversation.last_inbound_at ? {
+        artistId: conversation.artist_id,
+        kind: 'conversation_reply',
+        entityId: conversation.id,
+        observedAt: conversation.last_inbound_at,
+      } : null,
     });
   }
 
@@ -188,6 +201,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
   // "they spoke last" debt the messaging channels carry, arriving through the
   // only route email has for it.
   for (const waiting of input.gmailAwaitingReply) {
+    if (waiting.direction !== 'inbound') continue;
     items.push({
       key: `gmail-${waiting.client_id}`,
       kind: 'reply',
@@ -196,6 +210,12 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: waiting.last_message_at,
       detail: waiting.subject,
       urgent: true,
+      acknowledgement: waiting.last_message_at ? {
+        artistId: waiting.artist_id,
+        kind: 'gmail_reply',
+        entityId: waiting.client_id,
+        observedAt: waiting.last_message_at,
+      } : null,
     });
   }
 
@@ -213,6 +233,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: thread.last_activity_at,
       detail: thread.subject,
       urgent: true,
+      acknowledgement: null,
     });
   }
 
@@ -231,6 +252,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: candidate.occurred_at,
       detail: `${candidate.amount} ${candidate.currency}`,
       urgent: false,
+      acknowledgement: null,
     });
   }
 
@@ -247,6 +269,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: appointment.start_at,
       detail: null,
       urgent: false,
+      acknowledgement: null,
     });
   }
 
@@ -265,6 +288,11 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
     const appointment = bookedProjects.get(project.id);
     if (!appointment) continue;
     if (project.deposit_status === 'paid' || project.deposit_status === 'not_required') continue;
+    // A requested deposit is a normal waiting state until the booked session
+    // enters the same seven-day horizon the operator already sees below. It
+    // should not make a November booking look urgent in September. Refunded or
+    // forfeited deposits are exceptional and remain visible immediately.
+    if (project.deposit_status === 'requested' && time(appointment.start_at) >= aheadEnd) continue;
     items.push({
       key: `deposit-${project.id}`,
       kind: 'deposit_outstanding',
@@ -273,11 +301,18 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: appointment.start_at,
       detail: project.deposit_status,
       urgent: false,
+      acknowledgement: {
+        artistId: project.artist_id,
+        kind: 'deposit_outstanding',
+        entityId: project.id,
+        observedAt: project.updated_at,
+      },
     });
   }
 
   for (const enquiry of input.enquiries) {
     if (enquiry.status !== 'new') continue;
+    if (enquiryAlreadyEngaged(enquiry, input)) continue;
     items.push({
       key: `enquiry-${enquiry.id}`,
       kind: 'new_enquiry',
@@ -286,6 +321,12 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: enquiry.created_at,
       detail: enquiry.project_type,
       urgent: false,
+      acknowledgement: {
+        artistId: enquiry.artist_id,
+        kind: 'new_enquiry',
+        entityId: enquiry.id,
+        observedAt: enquiry.created_at,
+      },
     });
   }
 
@@ -300,6 +341,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: followUp.due_at,
       detail: null,
       urgent: false,
+      acknowledgement: null,
     });
   }
 
@@ -314,6 +356,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       at: null,
       detail: String(input.failedJobCount),
       urgent: false,
+      acknowledgement: null,
     });
   }
 
@@ -328,7 +371,57 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
     return leftAt - rightAt;
   });
 
-  return { needsYou: items, today, ahead };
+  return {
+    needsYou: items.filter((item) => !isAcknowledged(item, input.acknowledgements)),
+    today,
+    ahead,
+  };
+}
+
+function atOrAfter(value: string | null | undefined, baseline: string): boolean {
+  const valueTime = time(value);
+  const baselineTime = time(baseline);
+  return Number.isFinite(valueTime) && Number.isFinite(baselineTime) && valueTime >= baselineTime;
+}
+
+/**
+ * Once this exact enquiry has produced a real conversation, outbound email,
+ * project or appointment, "New enquiry" is duplicate work. The newer item
+ * carries the actual next action. Machine-only paused drafts do not count as
+ * engagement, otherwise an invisible AI draft could silently clear a lead.
+ */
+function enquiryAlreadyEngaged(enquiry: Enquiry, input: TodayInput): boolean {
+  if (input.projects.some((project) => project.enquiry_id === enquiry.id)) return true;
+  if (input.appointments.some((appointment) => appointment.enquiry_id === enquiry.id)) return true;
+  if (input.conversations.some((conversation) => (
+    (conversation.enquiry_id === enquiry.id || conversation.client_id === enquiry.client_id)
+      && atOrAfter(conversation.last_message_at, enquiry.created_at)
+  ))) return true;
+  if (input.gmailAwaitingReply.some((message) => (
+    message.client_id === enquiry.client_id && atOrAfter(message.last_message_at, enquiry.created_at)
+  ))) return true;
+  return input.emailThreads.some((thread) => (
+    (thread.enquiry_id === enquiry.id || thread.client_id === enquiry.client_id)
+      && atOrAfter(thread.last_activity_at, enquiry.created_at)
+      && thread.messages.some((message) => (
+        message.created_by_kind === 'human'
+          || ['approved', 'queued', 'sent', 'failed'].includes(message.status)
+      ))
+  ));
+}
+
+function isAcknowledged(item: TodayItem, acknowledgements: AttentionAcknowledgement[]): boolean {
+  const target = item.acknowledgement;
+  if (!target) return false;
+  const acknowledgement = acknowledgements.find((entry) => (
+    entry.artist_id === target.artistId
+      && entry.item_kind === target.kind
+      && entry.entity_id === target.entityId
+  ));
+  return Boolean(
+    acknowledgement
+      && time(acknowledgement.observed_at) >= time(target.observedAt)
+  );
 }
 
 function followUpTarget(followUp: FollowUp): string | null {

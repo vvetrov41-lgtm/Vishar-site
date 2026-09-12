@@ -43,6 +43,7 @@ export type Capability =
   | 'viewIntegrationJobs'
   | 'manageIntegrations'
   | 'viewNotifications'
+  | 'manageNotifications'
   | 'manageUsers'
   | 'manageSettings';
 
@@ -54,7 +55,7 @@ const OWNER: Capability[] = [
   'viewSessions', 'manageSessions', 'viewAutomations', 'viewFinance', 'manageFinance',
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft', 'approveEmail', 'viewActivity', 'viewIntegrationJobs', 'manageIntegrations',
-  'viewNotifications',
+  'viewNotifications', 'manageNotifications',
   'manageUsers', 'manageSettings',
 ];
 
@@ -66,7 +67,7 @@ const BOOKING_MANAGER: Capability[] = [
   'viewSessions', 'manageSessions', 'viewAutomations',
   'viewNotes', 'createNotes', 'viewFollowUps', 'manageFollowUps',
   'createEmailDraft',
-  'viewActivity', 'manageIntegrations', 'viewNotifications',
+  'viewActivity', 'manageIntegrations', 'viewNotifications', 'manageNotifications',
   // The frontend can only express the coarse global role. The database narrows
   // finance and Calendar Connections to memberships whose capability flags are
   // true. Deliberately absent: viewFinance, manageFinance, approveEmail,

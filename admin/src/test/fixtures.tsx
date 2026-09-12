@@ -902,7 +902,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       // Role checks live in the database. The fake enforces the same ones, so a
       // component test cannot "pass" by calling something the real RPC refuses.
       const ownerOnly = ['list_profiles', 'list_team_memberships', 'set_profile_role', 'set_profile_active', 'upsert_artist_membership', 'approve_email_draft', 'update_project_deposit', 'update_project_estimate', 'update_retention_policy'];
-      const managerOrOwner = ['queue_communication_message', 'link_communication_conversation_client', 'create_client_from_communication', 'create_enquiry_from_communication', 'set_communication_conversation_state', 'transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles'];
+      const managerOrOwner = ['queue_communication_message', 'link_communication_conversation_client', 'create_client_from_communication', 'create_enquiry_from_communication', 'set_communication_conversation_state', 'transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles', 'acknowledge_attention_item'];
 
       if (ownerOnly.includes(name) && effectiveRole !== 'owner') return { data: null, error: DENIED };
       if (managerOrOwner.includes(name) && effectiveRole !== 'owner' && effectiveRole !== 'booking_manager') {
@@ -1036,6 +1036,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         return { data: { follow_up_id: (args as any)?.p_follow_up_id, schedule_version: 2 }, error: null };
       }
       if (name === 'list_capabilities') return { data: [], error: null };
+      if (name === 'list_attention_acknowledgements') return { data: [], error: null };
 
       // --- Control plane ---------------------------------------------------
       // Every one of these refuses rather than answering empty when the option

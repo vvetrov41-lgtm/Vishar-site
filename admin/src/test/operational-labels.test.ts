@@ -24,6 +24,7 @@ describe('operational labels', () => {
     expect(operationalLabel('ru', 'event', 'session.scheduled')).toBe('Сеанс запланирован');
     expect(operationalLabel('en', 'event', 'appointment.scheduled')).toBe('Appointment scheduled');
     expect(operationalLabel('ru', 'event', 'appointment.status_changed')).toBe('Статус записи изменён');
+    expect(operationalLabel('ru', 'event', 'attention.dismissed')).toBe('Карточка убрана из внимания');
     expect(operationalLabel('ru', 'integrationKind', 'telegram_notification')).toBe('Telegram-уведомление');
     expect(operationalLabel('ru', 'integrationError', 'provider_route_unavailable')).toBe('Маршрут интеграции недоступен');
   });
