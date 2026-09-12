@@ -139,7 +139,7 @@ describe('Lifecycle runtime diagnostics', () => {
     render(<LifecycleAutomationStudioPage />);
 
     expect(await screen.findByText('Queue and execution')).toBeInTheDocument();
-    expect(screen.getByText('The scheduler is active.')).toBeInTheDocument();
+    expect(await screen.findByText('The scheduler is active.')).toBeInTheDocument();
     expect(screen.getByText('Last successful scheduler run')).toBeInTheDocument();
     expect(screen.getByText('2 tasks are more than 15 minutes late.')).toBeInTheDocument();
     expect(screen.getByText('waiting')).toBeInTheDocument();
@@ -167,7 +167,7 @@ describe('Lifecycle runtime diagnostics', () => {
     render(<LifecycleAutomationStudioPage />);
 
     expect(await screen.findByText('Очередь и выполнение')).toBeInTheDocument();
-    expect(screen.getByText('Планировщик работает.')).toBeInTheDocument();
+    expect(await screen.findByText('Планировщик работает.')).toBeInTheDocument();
     expect(screen.getByText('3 задачи ждут своего времени. Просроченных нет.')).toBeInTheDocument();
     expect(screen.queryByText('Самая старая просроченная задача')).not.toBeInTheDocument();
     expect(screen.getByText(/Диагностика только читает агрегированные данные/)).toBeInTheDocument();
