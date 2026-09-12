@@ -3,7 +3,7 @@ name: Five Pillars production migration lineage reconcile
 on:
   push:
     branches:
-      - 'ops/five-pillars-lineage-reconcile-20260912'
+      - 'release/private-crm-rc780-five-pillars-lineage-reconcile'
   workflow_dispatch:
 
 permissions:
@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ "$GITHUB_REF_NAME" = 'ops/five-pillars-lineage-reconcile-20260912' ]
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc780-five-pillars-lineage-reconcile' ]
           [ "$DB_DEPLOY_ENABLED" = 'true' ]
           [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
           git merge-base --is-ancestor a48cc6242fe9a87ea94bd222d468c93821a08582 "$GITHUB_SHA"
@@ -118,5 +118,3 @@ jobs:
           final="$(supabase db push --dry-run 2>&1)"
           printf '%s\n' "$final"
           printf '%s\n' "$final" | grep -Fq 'Remote database is up to date.'
-
-# Second push intentionally triggers the already-registered branch workflow.
