@@ -30,7 +30,11 @@ export const MAX_OUTPUT_TOKENS = 2_000;
 export const MAX_INPUT_CHARS = 12_000;
 export const MAX_SYSTEM_CHARS = 20_000;
 export const MAX_IMAGES = 2;
-export const MAX_IMAGE_BYTES = 1_500_000;
+// Match the CRM upload contract exactly. The database accepts reference images
+// up to 4 MiB, and the Workers AI binding keeps this transfer server-side.
+// Keeping one shared ceiling prevents an image the CRM accepted from becoming a
+// deterministic terminal failure only when Five Pillars later analyses it.
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export const ALLOWED_IMAGE_MIME_TYPES = Object.freeze(['image/jpeg', 'image/png', 'image/webp']);
 
 const TASKS = Object.freeze({
