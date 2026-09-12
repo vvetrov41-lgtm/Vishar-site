@@ -107,7 +107,16 @@ jobs:
 
           grep -oE '202[0-9]{11}_[a-zA-Z0-9_]+\.sql' "$RUNNER_TEMP/backfill-dry-run.log" \
             | sort -u > "$RUNNER_TEMP/actual-five-pillars.txt" || true
-          diff -u "$expected" "$RUNNER_TEMP/actual-five-pillars.txt"
+
+          if [ -s "$RUNNER_TEMP/actual-five-pillars.txt" ]; then
+            diff -u "$expected" "$RUNNER_TEMP/actual-five-pillars.txt"
+          else
+            grep -Fq 'Remote database is up to date.' "$RUNNER_TEMP/backfill-dry-run.log" || {
+              echo 'Dry-run returned no bounded migrations and did not prove convergence.' >&2
+              exit 1
+            }
+            echo 'Five Pillars migrations are already converged; bounded backfill is a no-op.'
+          fi
 
       - name: Apply only the proven backfill
         run: supabase db push --include-all
