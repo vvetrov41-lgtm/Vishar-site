@@ -30,7 +30,8 @@ export const MAX_OUTPUT_TOKENS = 2_000;
 export const MAX_INPUT_CHARS = 12_000;
 export const MAX_SYSTEM_CHARS = 20_000;
 export const MAX_IMAGES = 2;
-export const MAX_IMAGE_BYTES = 1_500_000;
+/** Keep the router in lockstep with the CRM's persisted enquiry-file ceiling. */
+export const MAX_IMAGE_BYTES = 4_194_304;
 export const ALLOWED_IMAGE_MIME_TYPES = Object.freeze(['image/jpeg', 'image/png', 'image/webp']);
 
 const TASKS = Object.freeze({
