@@ -1,7 +1,7 @@
 name: AI router production probe
 
-# Proves, against the live Worker, that each model tier is reachable and which
-# Cloudflare model actually answers.
+# Proves, against the live Worker, that the active production model routes are
+# reachable and that the expected Cloudflare models answer.
 #
 # The probe endpoint is authenticated by a Worker secret that does not exist in
 # steady state. This workflow mints a random one, uses it, and deletes it again
@@ -109,39 +109,60 @@ jobs:
             for (const t of r.tasks) {
               console.log(`${t.task.padEnd(32)} ${t.chain.join(" -> ").padEnd(24)} selected=${t.selected}`);
             }
-            if (!tiers.deepseek || !tiers.qwen || !tiers.workers_ai) {
-              throw new Error("a Cloudflare-hosted tier reports itself unconfigured");
+            if (!tiers.qwen || !tiers.workers_ai) {
+              throw new Error("an active Cloudflare-hosted tier reports itself unconfigured");
+            }
+            const deepseekTasks = r.tasks.filter((t) => t.chain.includes("deepseek"));
+            if (deepseekTasks.length) {
+              throw new Error(`DeepSeek remains in active routes: ${deepseekTasks.map((t) => t.task).join(", ")}`);
             }
           '
 
-      - name: Live synthetic DeepSeek probe
-        continue-on-error: true
+      - name: Live synthetic reasoning probe
         shell: bash
         run: |
           set -euo pipefail
-          status="$(curl -sS -o /tmp/deepseek.json -w '%{http_code}' -X POST "$ENDPOINT" \
+          status="$(curl -sS -o /tmp/reasoning.json -w '%{http_code}' -X POST "$ENDPOINT" \
             -H "authorization: Bearer $PROBE_TOKEN" \
             -H 'content-type: application/json' \
             --data '{"task":"high_quality_reasoning"}')"
-          cat /tmp/deepseek.json
+          cat /tmp/reasoning.json
           echo
-          # DeepSeek is informative for this workflow, not an enquiry-MVP gate.
-          # Keep reporting unexpected DeepSeek failures, but do not let an
-          # optional paid-tier/provider issue prevent the enquiry probe.
+          test "$status" = '200'
           node -e '
-            const r = require("/tmp/deepseek.json");
-            const attempt = (r.attempts || []).find((a) => a.provider === "deepseek");
-            if (!attempt) throw new Error("the request never reached the DeepSeek tier");
-            if (!attempt.model.startsWith("cf-deepseek-ai-")) {
-              throw new Error(`unexpected model ${attempt.model}`);
+            const r = require("/tmp/reasoning.json");
+            const attempts = Array.isArray(r.attempts) ? r.attempts : [];
+            if (attempts.some((a) => a.provider === "deepseek")) {
+              throw new Error("reasoning probe attempted DeepSeek after removal from the route plan");
             }
-            if (r.ok && r.provider === "deepseek") {
-              console.log(`DeepSeek reachable and answering: ${r.model} in ${r.durationMs}ms`);
-            } else if (attempt.errorCode === "provider_unavailable") {
-              console.log(`DeepSeek routed correctly (${attempt.model}) but the binding refused it.`);
-              console.log("This account most likely lacks Workers Paid or prepaid AI Gateway credits.");
+            const qwenAttempt = attempts.find((a) => a.provider === "qwen");
+            const fallbackCodes = new Set([
+              "provider_timeout",
+              "provider_rate_limited",
+              "provider_unavailable",
+              "provider_http_error",
+              "provider_malformed_response",
+              "provider_empty_response",
+              "output_invalid",
+            ]);
+            if (!qwenAttempt) throw new Error("reasoning routing never attempted qwen");
+            if (!qwenAttempt.model.startsWith("cf-qwen-")) {
+              throw new Error(`unexpected qwen model ${qwenAttempt.model}`);
+            }
+            if (r.provider === "qwen") {
+              if (!r.model.startsWith("@cf/qwen/")) throw new Error(`unexpected final qwen model ${r.model}`);
+              console.log(`Qwen reasoning reachable: ${r.model} in ${r.durationMs}ms`);
+            } else if (r.provider === "workers_ai") {
+              if (r.fallbackUsed !== true) throw new Error("workers_ai served reasoning without fallbackUsed=true");
+              if (qwenAttempt.outcome !== "failed" || !fallbackCodes.has(qwenAttempt.errorCode)) {
+                throw new Error(`unexpected qwen reasoning fallback cause ${qwenAttempt.errorCode}`);
+              }
+              if (!r.model.startsWith("@cf/meta/llama-3.1-8b-instruct-fast")) {
+                throw new Error(`unexpected workers_ai reasoning fallback model ${r.model}`);
+              }
+              console.log(`Workers AI reasoning fallback valid after Qwen ${qwenAttempt.errorCode}: ${r.model} in ${r.durationMs}ms`);
             } else {
-              throw new Error(`DeepSeek failed unexpectedly: ${attempt.errorCode}`);
+              throw new Error(`reasoning served by unexpected provider ${r.provider}`);
             }
           '
 
