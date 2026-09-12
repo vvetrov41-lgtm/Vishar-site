@@ -160,6 +160,15 @@ jobs:
             const r = require("/tmp/enquiry.json");
             const attempts = Array.isArray(r.attempts) ? r.attempts : [];
             const qwenAttempt = attempts.find((a) => a.provider === "qwen");
+            const fallbackCodes = new Set([
+              "provider_timeout",
+              "provider_rate_limited",
+              "provider_unavailable",
+              "provider_http_error",
+              "provider_malformed_response",
+              "provider_empty_response",
+              "output_invalid",
+            ]);
             if (!qwenAttempt) throw new Error("enquiry routing never attempted qwen");
             if (!qwenAttempt.model.startsWith("cf-qwen-")) {
               throw new Error(`unexpected qwen model ${qwenAttempt.model}`);
@@ -172,20 +181,19 @@ jobs:
               console.log(`Qwen enquiry schema valid: ${r.model} in ${r.durationMs}ms`);
             } else if (r.provider === "workers_ai") {
               if (r.fallbackUsed !== true) throw new Error("workers_ai served enquiry without fallbackUsed=true");
-              if (qwenAttempt.outcome !== "failed" || qwenAttempt.errorCode !== "provider_timeout") {
+              if (qwenAttempt.outcome !== "failed" || !fallbackCodes.has(qwenAttempt.errorCode)) {
                 throw new Error(`unexpected qwen fallback cause ${qwenAttempt.errorCode}`);
               }
               if (!r.model.startsWith("@cf/meta/llama-3.1-8b-instruct-fast")) {
                 throw new Error(`unexpected workers_ai fallback model ${r.model}`);
               }
-              console.log(`Workers AI enquiry fallback schema valid after Qwen timeout: ${r.model} in ${r.durationMs}ms`);
+              console.log(`Workers AI enquiry fallback schema valid after Qwen ${qwenAttempt.errorCode}: ${r.model} in ${r.durationMs}ms`);
             } else {
               throw new Error(`enquiry served by unexpected provider ${r.provider}`);
             }
           '
 
-      - name: Live synthetic Qwen vision probe
-        continue-on-error: true
+      - name: Live synthetic vision fallback probe
         shell: bash
         run: |
           set -euo pipefail
@@ -195,15 +203,42 @@ jobs:
             --data '{"task":"vision_reference_understanding"}')"
           cat /tmp/qwen.json
           echo
-          # Vision is intentionally informational while production enquiry image
-          # processing remains disabled. Text enquiry acceptance must not depend
-          # on a disabled image capability.
+          # Public enquiry-image intake stays disabled, but derived CRM reference
+          # analysis is production-active. This synthetic image must therefore
+          # be served by Qwen or by the reviewed Gemma fallback.
           test "$status" = '200'
           node -e '
             const r = require("/tmp/qwen.json");
-            if (r.provider !== "qwen") throw new Error(`served by ${r.provider}, not qwen`);
-            if (!r.model.startsWith("@cf/qwen/")) throw new Error(`unexpected model ${r.model}`);
-            console.log(`Qwen vision reachable: ${r.model} in ${r.durationMs}ms`);
+            const attempts = Array.isArray(r.attempts) ? r.attempts : [];
+            const qwenAttempt = attempts.find((a) => a.provider === "qwen");
+            const fallbackCodes = new Set([
+              "provider_timeout",
+              "provider_rate_limited",
+              "provider_unavailable",
+              "provider_http_error",
+              "provider_malformed_response",
+              "provider_empty_response",
+              "output_invalid",
+            ]);
+            if (!qwenAttempt) throw new Error("vision routing never attempted qwen");
+            if (!qwenAttempt.model.startsWith("cf-qwen-")) {
+              throw new Error(`unexpected qwen model ${qwenAttempt.model}`);
+            }
+            if (r.provider === "qwen") {
+              if (!r.model.startsWith("@cf/qwen/")) throw new Error(`unexpected final qwen model ${r.model}`);
+              console.log(`Qwen vision reachable: ${r.model} in ${r.durationMs}ms`);
+            } else if (r.provider === "workers_ai") {
+              if (r.fallbackUsed !== true) throw new Error("workers_ai served vision without fallbackUsed=true");
+              if (qwenAttempt.outcome !== "failed" || !fallbackCodes.has(qwenAttempt.errorCode)) {
+                throw new Error(`unexpected qwen vision fallback cause ${qwenAttempt.errorCode}`);
+              }
+              if (!r.model.startsWith("@cf/google/gemma-4-26b-a4b-it")) {
+                throw new Error(`unexpected workers_ai vision fallback model ${r.model}`);
+              }
+              console.log(`Gemma vision fallback valid after Qwen ${qwenAttempt.errorCode}: ${r.model} in ${r.durationMs}ms`);
+            } else {
+              throw new Error(`vision served by unexpected provider ${r.provider}`);
+            }
           '
 
       - name: Confirm the public assistants still answer
