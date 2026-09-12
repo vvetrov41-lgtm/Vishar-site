@@ -23,34 +23,37 @@ AI_ROUTE_ENQUIRY_INTAKE = "qwen,workers_ai"
 CRM_AGENT_ENABLED = "true"
 CRM_AGENT_VISION_ENABLED = "true"
 AI_ROUTE_CRM_CLIENT_STATE = "qwen,workers_ai"
-AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,openai"
+AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,workers_ai"
 
 # Model routing. Provider order per task and the model identifier per tier are
 # configuration, not code: change them here (or override them as Worker
 # variables) without touching the router.
 #
-# The DeepSeek, Qwen and Llama tiers all execute on the `AI` binding declared
-# above, so none of them needs an API key or an account outside Cloudflare. The
-# only key in this system is the optional OPENAI_API_KEY, which is a Worker
-# SECRET and is never declared in this file.
+# DeepSeek, Qwen, Llama and the Gemma vision fallback execute on the `AI`
+# binding declared above, so none of those tiers needs a vendor API key or an
+# account outside Cloudflare. The optional OpenAI adapter remains available for
+# explicitly configured routes, but is not required by the production vision
+# path.
 #
-# Order reflects Workers AI pricing: Llama 8B is the cheap tier, DeepSeek V4
-# Flash is the reasoning/long-context tier at roughly 3x the cost and requires
-# the Workers Paid plan.
+# Order reflects Workers AI pricing: Llama 8B is the cheap text tier, DeepSeek
+# V4 Flash is the reasoning/long-context tier and requires the Workers Paid
+# plan. Qwen leads vision work; Gemma on the same binding is its independent
+# Cloudflare-hosted fallback.
 AI_ROUTE_CONCEPT_CONSULT = "workers_ai,deepseek"
 AI_ROUTE_AFTERCARE_SUPPORT = "workers_ai,deepseek"
 AI_ROUTE_TEXT_SUMMARIZATION = "deepseek,workers_ai"
 AI_ROUTE_TEXT_CLASSIFICATION = "deepseek,workers_ai"
 AI_ROUTE_TEXT_EXTRACTION = "deepseek,workers_ai"
 AI_ROUTE_HIGH_QUALITY_REASONING = "deepseek,qwen"
-AI_ROUTE_VISION_REFERENCE_UNDERSTANDING = "qwen,openai"
-AI_ROUTE_VISION_DOCUMENT_EXTRACTION = "qwen,openai"
+AI_ROUTE_VISION_REFERENCE_UNDERSTANDING = "qwen,workers_ai"
+AI_ROUTE_VISION_DOCUMENT_EXTRACTION = "qwen,workers_ai"
 AI_MODEL_DEEPSEEK_TEXT = "@cf/deepseek-ai/deepseek-v4-flash-0731"
 AI_MODEL_QWEN_VISION = "@cf/qwen/qwen3.8-27b"
 AI_MODEL_QWEN_TEXT = "@cf/qwen/qwen3.8-27b"
 AI_MODEL_OPENAI_TEXT = "gpt-4o-mini"
 AI_MODEL_OPENAI_VISION = "gpt-4o-mini"
 AI_MODEL_WORKERS_AI_TEXT = "@cf/meta/llama-3.1-8b-instruct-fast"
+AI_MODEL_WORKERS_AI_VISION = "@cf/google/gemma-4-26b-a4b-it"
 
 # Marks this build as willing to serve the operator probe at /internal/ai-router.
 # It is NOT what opens the route: the route stays 404 until an
