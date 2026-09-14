@@ -40,6 +40,9 @@ jobs:
       - name: Validate static site
         run: npm run validate:site
 
+      - name: Test Meta Ads measurement boundary
+        run: node --test workers/meta-ads.test.js
+
       - name: Compile GEO runtime and launcher
         run: python -m compileall .geo-topic-agent-runtime scripts
 
