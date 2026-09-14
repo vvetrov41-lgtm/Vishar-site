@@ -33,6 +33,9 @@ export const ALLOWED_RPCS = new Set([
   'record_whatsapp_inbound_message',
   'record_whatsapp_message_status',
   'record_whatsapp_outbox_result',
+  'service_record_meta_attribution',
+  'claim_meta_conversion_outbox',
+  'record_meta_conversion_outbox_result',
 ]);
 
 /** Phase F-G Telegram operations. Kept separate so the legacy intake surface stays pinned. */
