@@ -9,6 +9,7 @@ on:
       - '!release/private-crm-rc*-backend-auth-*'
       - '!release/private-crm-rc*-mcp-meta-activation'
       - '!release/private-crm-rc*-whatsapp-webhook-only'
+      - '!release/private-crm-rc*-tattooai-worker*'
 
 permissions:
   contents: read
@@ -37,6 +38,7 @@ jobs:
             release/private-crm-rc*-booking-host*) exit 1 ;;
             release/private-crm-rc*-inventory-*) exit 1 ;;
             release/private-crm-rc*-whatsapp-webhook-only*) exit 1 ;;
+            release/private-crm-rc*-tattooai-worker*) exit 1 ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
