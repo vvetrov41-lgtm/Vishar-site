@@ -33,6 +33,10 @@ export const ALLOWED_RPCS = new Set([
   'record_whatsapp_inbound_message',
   'record_whatsapp_message_status',
   'record_whatsapp_outbox_result',
+]);
+
+/** Meta Ads is deliberately separate from the legacy intake RPC surface. */
+export const META_ADS_RPCS = new Set([
   'service_record_meta_attribution',
   'claim_meta_conversion_outbox',
   'record_meta_conversion_outbox_result',
@@ -185,6 +189,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
   async function rpc(name, args) {
     if (
       !ALLOWED_RPCS.has(name)
+      && !META_ADS_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !CRM_AGENT_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
