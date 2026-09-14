@@ -9,20 +9,22 @@ import type { Language } from '../lib/i18n';
 
 const ENGLISH_LABELS: Record<DiscoverySourceKey, string> = {
   instagram: 'Instagram',
-  chatgpt: 'ChatGPT',
-  other_ai: 'Other AI assistant',
-  friend_referral: 'Friend / recommendation',
   google: 'Google',
+  ai: 'ChatGPT / AI',
+  referral: 'Recommendation / Friend',
+  convention: 'Tattoo convention',
+  returning_client: 'Returning client',
   other: 'Other',
   not_recorded: 'Not recorded',
 };
 
 const RUSSIAN_LABELS: Record<DiscoverySourceKey, string> = {
   instagram: 'Instagram',
-  chatgpt: 'ChatGPT',
-  other_ai: 'Другой AI-ассистент',
-  friend_referral: 'Рекомендация друзей',
   google: 'Google',
+  ai: 'ChatGPT / AI',
+  referral: 'Рекомендация / знакомые',
+  convention: 'Тату-конвенция',
+  returning_client: 'Постоянный клиент',
   other: 'Другое',
   not_recorded: 'Не указано',
 };
