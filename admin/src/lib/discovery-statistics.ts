@@ -3,10 +3,11 @@ import type { StatisticsEnquiryWithDiscovery } from './statistics-api';
 
 export const DISCOVERY_SOURCE_KEYS = [
   'instagram',
-  'chatgpt',
-  'other_ai',
-  'friend_referral',
   'google',
+  'ai',
+  'referral',
+  'convention',
+  'returning_client',
   'other',
 ] as const;
 
@@ -19,6 +20,15 @@ export interface DiscoveryBreakdownRow {
 }
 
 const KNOWN = new Set<string>(DISCOVERY_SOURCE_KEYS);
+
+// Older booking forms stored these values before discovery attribution was
+// normalised to the current seven-category taxonomy. Keep them readable so a
+// form migration never makes historical attribution disappear from statistics.
+const LEGACY_ALIASES: Record<string, (typeof DISCOVERY_SOURCE_KEYS)[number]> = {
+  chatgpt: 'ai',
+  other_ai: 'ai',
+  friend_referral: 'referral',
+};
 
 /**
  * Self-reported discovery attribution for enquiries created inside `period`.
@@ -40,8 +50,9 @@ export function discoveryBreakdown(
     if (created < from || created >= to) continue;
 
     const raw = enquiry.discovery_source ?? '';
-    const key: DiscoverySourceKey = KNOWN.has(raw)
-      ? raw as DiscoverySourceKey
+    const normalised = LEGACY_ALIASES[raw] ?? raw;
+    const key: DiscoverySourceKey = KNOWN.has(normalised)
+      ? normalised as DiscoverySourceKey
       : 'not_recorded';
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
