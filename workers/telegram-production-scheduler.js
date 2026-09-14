@@ -1,4 +1,5 @@
 import telegramWorker from './telegram-drain-worker.js';
+import { drainMetaConversionOutbox } from './lib/meta-ads.js';
 
 const MAX_AI_JOBS_PER_TICK = 3;
 const AI_DRAIN_URL = 'https://tattooai.internal/internal/enquiry-ai/drain';
@@ -81,6 +82,20 @@ export async function runSharedCrmAgentDrain(env) {
   });
 }
 
+export async function runMetaAdsDrain(env) {
+  try {
+    const summary = await drainMetaConversionOutbox(env);
+    console.log('meta ads outbox drain', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    const code = typeof error?.code === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.code)
+      ? error.code
+      : 'meta_ads_drain_error';
+    console.error('meta ads outbox drain failed', JSON.stringify({ code }));
+    throw error;
+  }
+}
+
 async function settle(tasks) {
   const results = await Promise.allSettled(tasks);
   const failed = results.find((result) => result.status === 'rejected');
@@ -117,6 +132,14 @@ export function createProductionScheduler(baseWorker = telegramWorker) {
         tasks.push(runSharedCrmAgentDrain(env));
       }
 
+      // Meta CAPI is isolated from Telegram/Gmail/automation. A provider outage
+      // can fail this task without suppressing any sibling task or invalidating
+      // the already-committed CRM event.
+      if (env?.VISHAR_ENVIRONMENT === 'production'
+          && env?.META_ADS_DRAIN_ENABLED === 'true') {
+        tasks.push(runMetaAdsDrain(env));
+      }
+
       if (!tasks.length) return;
       ctx.waitUntil(settle(tasks));
     },
@@ -129,5 +152,6 @@ export const __testing = Object.freeze({
   AI_DRAIN_URL,
   CRM_AGENT_DRAIN_URL,
   MAX_AI_JOBS_PER_TICK,
+  runMetaAdsDrain,
   settle,
 });
