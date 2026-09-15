@@ -9,7 +9,7 @@
 // Every row names a person and opens the place the work is done. Nothing above
 // the schedule is a counter, a form or an instruction.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { formatDate, formatDateTime, relativeDue } from '../lib/format';
@@ -35,12 +35,16 @@ interface TodayData {
   followUps: FollowUp[];
   conversations: ConversationSummary[];
   emailThreads: EmailThread[];
-  gmailAwaitingReply: GmailAwaitingReply[];
   candidates: MonzoReconciliationCandidate[];
   failedJobCount: number;
   activity: ActivityEntry[];
   acknowledgements: AttentionAcknowledgement[];
   clientNames: Map<string, string>;
+}
+
+interface GmailDiscoveryState {
+  scopeKey: string;
+  rows: GmailAwaitingReply[];
 }
 
 export function DashboardPage() {
@@ -51,8 +55,11 @@ export function DashboardPage() {
   const { selectedArtistId } = useArtistScope();
   const mayManageFinance = canAccess(role, 'manageFinance', memberships);
   const mayDismissAttention = can(role, 'manageNotifications');
+  const mayViewEnquiries = can(role, 'viewEnquiries');
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const gmailScopeKey = `${profile?.id ?? 'anonymous'}:${selectedArtistId ?? 'all'}:${mayViewEnquiries ? '1' : '0'}`;
+  const [gmailDiscovery, setGmailDiscovery] = useState<GmailDiscoveryState>({ scopeKey: '', rows: [] });
 
   const { data, loading, error, reload } = useAsync<TodayData>(async () => {
     const artistId = selectedArtistId ?? undefined;
@@ -61,10 +68,10 @@ export function DashboardPage() {
     // The database still decides what comes back.
     const [appointments, enquiries, projects, followUps, conversations, failedJobs, activity, acknowledgements] = await Promise.all([
       can(role, 'viewSessions') ? api.listAppointments({ artistId }) : Promise.resolve([]),
-      can(role, 'viewEnquiries') ? api.listEnquiries({ artistId }) : Promise.resolve([]),
+      mayViewEnquiries ? api.listEnquiries({ artistId }) : Promise.resolve([]),
       can(role, 'viewProjects') ? api.listProjects(undefined, artistId) : Promise.resolve([]),
       can(role, 'viewFollowUps') ? api.listFollowUps({ open: true, artistId }) : Promise.resolve([]),
-      can(role, 'viewEnquiries') ? api.listConversations({ limit: 50 }) : Promise.resolve([]),
+      mayViewEnquiries ? api.listConversations({ limit: 50 }) : Promise.resolve([]),
       can(role, 'viewIntegrationJobs') ? api.listFailedJobs(artistId) : Promise.resolve([]),
       can(role, 'viewActivity') ? api.listActivity({ artistId }) : Promise.resolve([]),
       can(role, 'viewNotifications')
@@ -91,41 +98,11 @@ export function DashboardPage() {
     // a lifecycle draft could sit unapproved indefinitely. Email is additive
     // here exactly as it is in the Inbox: if it cannot be read, Today still
     // renders everything else.
-    const emailThreads = can(role, 'viewEnquiries')
+    const emailThreads = mayViewEnquiries
       ? groupEmailThreads(
         await api.listEmailMessages({ artistId, limit: 200 }).catch(() => []),
       )
       : [];
-
-    // A known client who emailed and has not been answered. Stored email cannot
-    // say this - the CRM keeps no inbound mail - so it comes from the same
-    // server-side discovery the Inbox uses, which resolves every address to a
-    // CRM client before returning it. Failure is isolated: a mailbox that
-    // cannot be read must not take the rest of Today with it.
-    const discoveryArtists = can(role, 'viewEnquiries')
-      ? (selectedArtistId
-        ? [selectedArtistId]
-        : (await api.listAccessibleArtists().catch(() => []))
-          .filter((artist) => artist.is_active)
-          .map((artist) => artist.id))
-      : [];
-    const gmailAwaitingReply = (await Promise.all(
-      discoveryArtists.map(async (id) => {
-        try {
-          const result = await api.listGmailInboxClients(id);
-          return result.clients.map((entry) => ({
-            artist_id: id,
-            client_id: entry.client_id,
-            client_name: entry.client_name,
-            subject: entry.subject,
-            last_message_at: entry.last_message_at,
-            direction: entry.direction,
-          }));
-        } catch {
-          return [];
-        }
-      }),
-    )).flat();
 
     // "Who am I seeing?" is the question. A date and a duration badge is not an
     // answer, so every id that reaches a row is resolved to a name first.
@@ -143,14 +120,57 @@ export function DashboardPage() {
       followUps,
       conversations,
       emailThreads,
-      gmailAwaitingReply,
       candidates,
       failedJobCount: failedJobs.length,
       activity,
       acknowledgements,
       clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
     };
-  }, [api, role, selectedArtistId, mayManageFinance]);
+  }, [api, role, selectedArtistId, mayManageFinance, mayViewEnquiries]);
+
+  // Gmail discovery used to sit inside the blocking Today loader. A mailbox
+  // with forty recent messages could therefore keep the entire page on its
+  // loading state while the Worker made dozens of provider requests. Today is
+  // useful without that additive signal, so render the CRM-owned data first
+  // and merge known-client Gmail replies when discovery finishes.
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!mayViewEnquiries) {
+      setGmailDiscovery({ scopeKey: gmailScopeKey, rows: [] });
+      return () => { cancelled = true; };
+    }
+
+    void (async () => {
+      const artistIds = selectedArtistId
+        ? [selectedArtistId]
+        : (await api.listAccessibleArtists().catch(() => []))
+          .filter((artist) => artist.is_active)
+          .map((artist) => artist.id);
+
+      const rows = (await Promise.all(
+        artistIds.map(async (id) => {
+          try {
+            const result = await api.listGmailInboxClients(id);
+            return result.clients.map((entry) => ({
+              artist_id: id,
+              client_id: entry.client_id,
+              client_name: entry.client_name,
+              subject: entry.subject,
+              last_message_at: entry.last_message_at,
+              direction: entry.direction,
+            }));
+          } catch {
+            return [];
+          }
+        }),
+      )).flat();
+
+      if (!cancelled) setGmailDiscovery({ scopeKey: gmailScopeKey, rows });
+    })();
+
+    return () => { cancelled = true; };
+  }, [api, gmailScopeKey, mayViewEnquiries, selectedArtistId]);
 
   if (loading) return <LoadingState label={t('today.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -160,6 +180,9 @@ export function DashboardPage() {
   const conversations = data.conversations.filter(
     (conversation) => !selectedArtistId || conversation.artist_id === selectedArtistId,
   );
+  const gmailAwaitingReply = gmailDiscovery.scopeKey === gmailScopeKey
+    ? gmailDiscovery.rows
+    : [];
 
   const snapshot = summariseToday({
     now,
@@ -171,7 +194,7 @@ export function DashboardPage() {
     emailThreads: data.emailThreads.filter(
       (thread) => !selectedArtistId || thread.artist_id === selectedArtistId,
     ),
-    gmailAwaitingReply: data.gmailAwaitingReply,
+    gmailAwaitingReply,
     acknowledgements: data.acknowledgements,
     reconciliationCandidates: data.candidates,
     failedJobCount: data.failedJobCount,

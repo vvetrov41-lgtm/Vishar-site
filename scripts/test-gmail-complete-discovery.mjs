@@ -92,6 +92,54 @@ await test('30-day discovery paginates beyond 100 mailbox messages and excludes 
   assert.equal(Object.keys(seen[0]).some((key) => key.includes('provider') || key === 'id' || key === 'threadId'), false);
 });
 
+await test('metadata discovery is concurrent within the Worker connection bound, ordered, and failure-isolated', async () => {
+  const ids = Array.from({ length: 12 }, (_, index) => `msg${String(index + 1).padStart(4, '0')}`);
+  let activeMetadata = 0;
+  let maxActiveMetadata = 0;
+
+  const fetchImpl = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/gmail/v1/users/me/messages') {
+      return Response.json({ messages: ids.map((id) => ({ id })) });
+    }
+
+    const id = url.pathname.split('/').pop();
+    const index = ids.indexOf(id);
+    assert.notEqual(index, -1);
+    activeMetadata += 1;
+    maxActiveMetadata = Math.max(maxActiveMetadata, activeMetadata);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, index % 2 === 0 ? 12 : 2));
+      if (id === 'msg0007') {
+        return Response.json({ error: { message: 'synthetic failure' } }, { status: 503 });
+      }
+      return Response.json(metadataMessage(
+        id,
+        `client${index + 1}@example.test`,
+        mailbox,
+        `2026-08-${String(10 + index).padStart(2, '0')}T09:00:00.000Z`,
+        `Client ${index + 1}`,
+      ));
+    } finally {
+      activeMetadata -= 1;
+    }
+  };
+
+  const seen = await discovery.listCompleteRecentCorrespondents('synthetic-access-token', {
+    mailboxEmail: mailbox,
+    fetchImpl,
+  });
+
+  assert.equal(discovery.GMAIL_METADATA_CONCURRENCY, 5);
+  assert.equal(maxActiveMetadata, discovery.GMAIL_METADATA_CONCURRENCY);
+  assert.deepEqual(
+    seen.map((row) => row.email),
+    ids
+      .filter((id) => id !== 'msg0007')
+      .map((id) => `client${ids.indexOf(id) + 1}@example.test`),
+  );
+});
+
 await test('only database-matched clients reach the public discovery payload', () => {
   const seen = [
     { email: 'unknown@example.test', subject: 'Unknown', timestamp: '2026-08-31T12:00:00.000Z', direction: 'inbound' },

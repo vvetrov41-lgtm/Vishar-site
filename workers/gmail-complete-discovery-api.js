@@ -10,6 +10,7 @@ const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const GMAIL_PUBLIC_HOST = 'gmail.vishartattoo.com';
 const CRM_ORIGIN = 'https://crm.vishartattoo.com';
 const REQUIRED_OPERATOR_CAPABILITY = 'manage_communications';
+const GMAIL_METADATA_CONCURRENCY = 5;
 const JSON_HEADERS = Object.freeze({
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store',
@@ -215,23 +216,31 @@ async function listCompleteRecentCorrespondents(accessToken, {
     const ids = (Array.isArray(listing.messages) ? listing.messages : [])
       .map((message) => safeProviderId(message?.id))
       .filter(Boolean);
-
+    const uniqueIds = [];
     for (const id of ids) {
       if (seenMessageIds.has(id)) continue;
       seenMessageIds.add(id);
-      let message;
-      try {
-        message = await gmailFetch(
-          `/gmail/v1/users/me/messages/${encodeURIComponent(id)}`
-          + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date',
-          accessToken,
-          fetchImpl,
-        );
-      } catch {
-        continue;
+      uniqueIds.push(id);
+    }
+
+    for (let offset = 0; offset < uniqueIds.length; offset += GMAIL_METADATA_CONCURRENCY) {
+      const batch = uniqueIds.slice(offset, offset + GMAIL_METADATA_CONCURRENCY);
+      const items = await Promise.all(batch.map(async (id) => {
+        try {
+          const message = await gmailFetch(
+            `/gmail/v1/users/me/messages/${encodeURIComponent(id)}`
+            + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date',
+            accessToken,
+            fetchImpl,
+          );
+          return correspondentFromMetadata(message, mailbox);
+        } catch {
+          return null;
+        }
+      }));
+      for (const item of items) {
+        if (item) correspondents.push(item);
       }
-      const item = correspondentFromMetadata(message, mailbox);
-      if (item) correspondents.push(item);
     }
 
     const next = typeof listing.nextPageToken === 'string' && listing.nextPageToken
@@ -386,6 +395,7 @@ export const __testing = Object.freeze({
   GMAIL_PUBLIC_HOST,
   CRM_ORIGIN,
   REQUIRED_OPERATOR_CAPABILITY,
+  GMAIL_METADATA_CONCURRENCY,
   safeEmail,
   safeProviderId,
   correspondentFromMetadata,
