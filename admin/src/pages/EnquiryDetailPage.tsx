@@ -142,7 +142,10 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
     }
   }
 
-  if (loading) return <LoadingState label={t('enquiry.loading')} />;
+  // A workflow action reloads this same enquiry. Keep its existing DOM mounted
+  // during that refresh so the browser keeps the operator's scroll position and
+  // open disclosures. A genuinely different enquiry still gets a full loader.
+  if (loading && data?.enquiry?.id !== enquiryId) return <LoadingState label={t('enquiry.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.enquiry) {
     return <EmptyState title={t('enquiry.notFound')} hint={t('enquiry.notFoundHint')} />;
