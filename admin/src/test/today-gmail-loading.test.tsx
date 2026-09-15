@@ -9,7 +9,7 @@ import {
 
 describe('Today Gmail loading', () => {
   it('renders CRM-owned work before Gmail discovery resolves, then merges the reply', async () => {
-    let resolveDiscovery: ((response: Response) => void) | null = null;
+    let resolveDiscovery!: (response: Response) => void;
     const pendingDiscovery = new Promise<Response>((resolve) => {
       resolveDiscovery = resolve;
     });
@@ -38,7 +38,7 @@ describe('Today Gmail loading', () => {
         .toBeInTheDocument();
       expect(screen.queryByText('Is Friday still free?')).not.toBeInTheDocument();
 
-      resolveDiscovery?.(Response.json({
+      resolveDiscovery(Response.json({
         artist_id: VLADIMIR_ARTIST_ID,
         clients: [{
           client_id: CLIENT_ID,
