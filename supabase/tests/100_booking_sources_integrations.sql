@@ -14,7 +14,7 @@ select has_type('public', 'artist_integration_type',
                 'artist_integration_type exists');
 select enum_has_labels(
   'public', 'artist_integration_type',
-  array['telegram', 'calendar', 'email', 'payments', 'gpt', 'whatsapp', 'instagram'],
+  array['telegram', 'calendar', 'email', 'payments', 'gpt', 'whatsapp', 'instagram', 'meta_ads'],
   'artist integration types are explicit and provider-neutral'
 );
 
@@ -381,8 +381,8 @@ set local role authenticated;
 select pg_temp.claims('{"sub":"71111111-1111-4111-8111-111111111111","role":"authenticated"}');
 select is((select count(*)::int from public.booking_sources), 3,
           'owner sees both logical sources and the synthetic active source');
-select is((select count(*)::int from public.artist_integrations), 3,
-          'owner sees integration metadata for both artists');
+select is((select count(*)::int from public.artist_integrations), 4,
+          'owner sees integration metadata for both artists including Vladimir Meta Ads');
 select throws_ok(
   $$insert into public.booking_sources (
       artist_id, source_key, allowed_origin, form_version, is_active
