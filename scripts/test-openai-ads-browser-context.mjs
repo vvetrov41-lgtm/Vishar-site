@@ -11,6 +11,7 @@ const privacy = await fs.readFile(path.join(rootDir, 'privacy', 'index.html'), '
 
 assert.match(booking, /pixelId: 'XkQY5Xq3FbxJvAx2qDD9my'/);
 assert.match(booking, /const OPENAI_ADS_CONSENT_KEY = 'vishar-openai-ads-consent'/);
+assert.match(booking, /const META_ADS_CONSENT_KEY = 'vishar-meta-ads-consent'/);
 assert.match(booking, /storedConsent\(OPENAI_ADS_CONSENT_KEY\) !== 'granted'/);
 assert.match(booking, /cookieValue\('__oppref'\)/);
 assert.match(booking, /cookieValue\('__obref'\)/);
@@ -41,6 +42,8 @@ assert.ok(!booking.includes("payload.append('openaiAdsName'"));
 
 assert.match(privacy, /server-to-server through the OpenAI Ads Conversions API/);
 assert.match(privacy, /<code>__obref<\/code>/);
-assert.match(privacy, /does not manually send your name, email, phone number, Instagram username, reference images or tattoo description/);
+assert.match(privacy, /OpenAI Ads and Meta measurement remain separate integrations with separate consent states/);
+assert.match(privacy, /No optional advertising-measurement event is sent before the relevant consent/);
+assert.match(privacy, /tattoo idea or description, reference images, medical or private notes, Instagram username and message contents are not sent to Meta advertising measurement/);
 
 console.log('OpenAI Ads browser context checks passed.');
