@@ -229,9 +229,7 @@ as $$
 $$;
 
 revoke execute on function crm_private.client_ai_notification_is_current(public.notifications)
-  from public, anon, authenticated;
-grant execute on function crm_private.client_ai_notification_is_current(public.notifications)
-  to service_role;
+  from public, anon, authenticated, service_role;
 
 -- Status changes are operator acknowledgements. Close an existing intake
 -- request immediately before scheduling a refreshed client brief.
