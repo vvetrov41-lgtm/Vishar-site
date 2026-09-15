@@ -528,6 +528,26 @@
       };
     }
 
+    function metaAdsServerContext() {
+      if (storedConsent(META_ADS_CONSENT_KEY) !== 'granted') return null;
+      let sourceUrl = '';
+      try { sourceUrl = window.location.origin + window.location.pathname; } catch (error) { sourceUrl = ''; }
+      if (!sourceUrl) return null;
+
+      let fbp = cookieValue('_fbp');
+      let fbc = cookieValue('_fbc');
+      if (!fbc) {
+        try {
+          const fbclid = (new URLSearchParams(window.location.search).get('fbclid') || '').trim();
+          if (fbclid && fbclid.length <= 180 && !/\s/.test(fbclid)) {
+            fbc = 'fb.1.' + String(Date.now()) + '.' + fbclid;
+          }
+        } catch (error) { /* optional click context */ }
+      }
+
+      return { sourceUrl, fbp, fbc };
+    }
+
     // One key per attempt, kept in sessionStorage until the enquiry is
     // confirmed saved. A retry after a dropped connection therefore reuses the
     // same key, and the server returns the original enquiry instead of
@@ -672,6 +692,14 @@
           payload.append('openaiAdsSourceUrl', adsContext.sourceUrl);
           if (adsContext.oppref) payload.append('openaiAdsOppref', adsContext.oppref);
           if (adsContext.obref) payload.append('openaiAdsObref', adsContext.obref);
+        }
+
+        const metaContext = metaAdsServerContext();
+        if (metaContext) {
+          payload.append('metaAdsMeasurementConsent', 'granted');
+          payload.append('metaAdsSourceUrl', metaContext.sourceUrl);
+          if (metaContext.fbp) payload.append('metaAdsFbp', metaContext.fbp);
+          if (metaContext.fbc) payload.append('metaAdsFbc', metaContext.fbc);
         }
 
         files.forEach(function (file) { payload.append('references', file, file.name); });
