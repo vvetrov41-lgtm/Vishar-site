@@ -14,7 +14,6 @@ security definer
 set search_path = pg_catalog, public, crm_private
 as $$
 declare
-  v_status public.enquiry_status;
   v_ack_at timestamptz;
 begin
   if not exists (
@@ -42,8 +41,8 @@ begin
 
   -- Ignore terminal siblings when choosing the acknowledgement watermark. If
   -- every enquiry is terminal, there is no intake question left to reopen.
-  select e.status, e.updated_at
-  into v_status, v_ack_at
+  select e.updated_at
+  into v_ack_at
   from public.enquiries e
   where e.artist_id = p_artist_id
     and e.client_id = p_client_id
