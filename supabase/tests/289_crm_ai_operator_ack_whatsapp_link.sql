@@ -4,9 +4,11 @@ begin;
 select no_plan();
 
 select ok(
-  position($needle$v_status = 'new'$needle$ in lower(pg_get_functiondef(
+  position($needle$if exists ($needle$ in lower(pg_get_functiondef(
+    'crm_private.client_request_information_is_actionable(uuid,uuid)'::regprocedure))) > 0
+  and position($needle$e.status = 'new'::public.enquiry_status$needle$ in lower(pg_get_functiondef(
     'crm_private.client_request_information_is_actionable(uuid,uuid)'::regprocedure))) > 0,
-  'new enquiries may still produce request_information');
+  'a brand-new sibling enquiry remains independently actionable');
 select ok(
   position($needle$'declined'$needle$ in lower(pg_get_functiondef(
     'crm_private.client_request_information_is_actionable(uuid,uuid)'::regprocedure))) > 0
