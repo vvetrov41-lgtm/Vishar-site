@@ -743,6 +743,9 @@ insert into expected_function_acl values
   ('public.delete_my_account(text)', false, true, false),
   ('public.service_route_telegram_enquiry_notification(uuid,text)', false, false, true),
   ('public.service_recover_telegram_enquiry_outbox(uuid)', false, false, true),
+  ('public.service_record_meta_attribution(uuid,text,boolean,text,text,text)', false, false, true),
+  ('public.claim_meta_conversion_outbox(text,integer,integer)', false, false, true),
+  ('public.record_meta_conversion_outbox_result(uuid,text,boolean,boolean,text)', false, false, true),
 
   -- Bounded AI enquiry intake. Worker orchestration is service-only; the CRM
   -- can only read/retry its own result and edit an existing draft in-scope.

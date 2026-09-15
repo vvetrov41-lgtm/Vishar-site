@@ -31,6 +31,10 @@ import {
   readOpenAiAdsMeasurementContext,
   scheduleOpenAiLeadConversion,
 } from '../lib/openai-ads.js';
+import {
+  readMetaAdsMeasurementContext,
+  recordMetaAdsAttribution,
+} from '../lib/meta-ads.js';
 
 const SUPPORTED_HOSTED_FORM_TEMPLATE = 'tattoo-enquiry';
 
@@ -177,6 +181,7 @@ async function handleEnquiryIntakeInternal(
     }
 
     const openAiAdsContext = readOpenAiAdsMeasurementContext(form, origin);
+    const metaAdsContext = readMetaAdsMeasurementContext(form, origin);
     const files = await parseEnquiryFiles(form);
 
     if (!supabase) supabase = createSupabaseClient(env, fetchImpl);
@@ -273,6 +278,14 @@ async function handleEnquiryIntakeInternal(
       intakeState: intake.intake_state,
       clientConflict: Boolean(intake.client_conflict),
       fileCount: manifests.length,
+    });
+
+    let metaAttribution = await recordMetaAdsAttribution({
+      supabase,
+      enquiryId,
+      eventId: idempotencyKey,
+      context: metaAdsContext,
+      logger,
     });
 
     if (intake.replayed && intake.intake_state === 'complete') {
@@ -373,6 +386,19 @@ async function handleEnquiryIntakeInternal(
         'We saved your details but could not store your images. Please try sending the form again.',
         503
       );
+    }
+
+    // A transient attribution RPC failure never fails the booking. Retry once
+    // after durable finalisation so a successful enquiry still gets its server
+    // Lead whenever the database becomes available again during this request.
+    if (metaAdsContext && !metaAttribution.recorded) {
+      metaAttribution = await recordMetaAdsAttribution({
+        supabase,
+        enquiryId,
+        eventId: idempotencyKey,
+        context: metaAdsContext,
+        logger,
+      });
     }
 
     scheduleOpenAiLeadConversion({
