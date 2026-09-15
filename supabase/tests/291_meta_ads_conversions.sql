@@ -296,19 +296,28 @@ select ok(
   'Meta outbox payload contains only bounded event metadata, never tattoo content or contact PII'
 );
 
--- Artist isolation: even a consented, complete Kristina enquiry cannot use
--- Vladimir's enabled dataset row.
+-- Artist isolation: create Kristina's enquiry through the trusted booking-source
+-- workflow. Never bypass the immutable artist scope just to make a fixture.
+insert into public.booking_sources (
+  artist_id, source_key, allowed_origin, form_version, is_active
+) values (
+  'a2222222-2222-4222-8222-222222222222',
+  'meta-test-kristina',
+  'https://booking.vishartattoo.com',
+  'meta-test-v1',
+  true
+);
+
 create temporary table meta_kristina as
-select public.create_enquiry_intake(
+select public.create_trusted_enquiry_intake(
+  'meta-test-kristina',
+  'https://booking.vishartattoo.com',
+  'meta-test-v1',
   'aaaaaaaa-2222-4222-8222-222222222222',
   jsonb_build_object('full_name', 'Kristina Meta Test', 'email', 'kristina-meta@example.test'),
   pg_temp.meta_enquiry_meta(),
   pg_temp.meta_files()
 ) as r;
-
-update public.enquiries
-set artist_id = 'a2222222-2222-4222-8222-222222222222'
-where id = (select (r ->> 'enquiry_id')::uuid from meta_kristina);
 
 select public.mark_enquiry_file_uploaded(f.id)
 from public.enquiry_files f
