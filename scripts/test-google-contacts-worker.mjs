@@ -39,6 +39,7 @@ function job(overrides = {}) {
   return {
     outbox_id: 'c1111111-1111-4111-8111-111111111111',
     artist_id: artistId,
+    kind: 'google_contact_create',
     client_id: clientId,
     attempt_count: 0,
     max_attempts: 8,
@@ -104,11 +105,10 @@ await test('contact payload is minimal and contains only approved CRM fields', (
 
 await test('route and token validation fail closed until Contacts capability and scope exist', () => {
   assert.equal(validateGoogleContactsRoute(route(), job()).alias, 'vladimir');
+  const disabledRoute = route();
+  disabledRoute.configuration.google_contacts_sync = false;
   assert.throws(
-    () => validateGoogleContactsRoute(
-      route(job().outbox_id, { configuration: { google_contacts_sync: false } }),
-      job(),
-    ),
+    () => validateGoogleContactsRoute(disabledRoute, job()),
     (error) => error.code === 'google_contacts_not_enabled',
   );
   assert.throws(
