@@ -372,6 +372,7 @@ create or replace function public.claim_google_contact_outbox(
 returns table (
   outbox_id uuid,
   artist_id uuid,
+  kind public.outbox_kind,
   client_id uuid,
   attempt_count integer,
   max_attempts integer,
@@ -432,6 +433,7 @@ begin
   select
     l.id,
     l.artist_id,
+    l.kind,
     l.client_id,
     l.attempt_count,
     l.max_attempts,
