@@ -26,6 +26,8 @@ export const ALLOWED_RPCS = new Set([
   'record_telegram_outbox_result',
   'claim_calendar_outbox',
   'record_calendar_outbox_result',
+  'claim_google_contact_outbox',
+  'record_google_contact_outbox_result',
   'claim_calendar_availability_outbox',
   'record_calendar_availability_outbox_result',
   'claim_whatsapp_outbox',
