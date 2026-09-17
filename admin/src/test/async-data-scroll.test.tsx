@@ -15,6 +15,7 @@ function ReloadHarness({ loader }: { loader: () => Promise<number> }) {
 describe('useAsync in-place reload', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 });
   });
 
   it('releases focus and restores the viewport after a record reload', async () => {
