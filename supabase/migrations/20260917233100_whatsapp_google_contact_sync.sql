@@ -549,6 +549,7 @@ begin
       'artist_route_unconfigured',
       'calendar_encryption_key_invalid',
       'calendar_oauth_expired',
+      'calendar_provider_rejected',
       'calendar_scope_missing',
       'calendar_token_invalid',
       'google_account_mismatch',
@@ -572,6 +573,8 @@ begin
       attempt_count = v_attempt_count,
       next_attempt_at = case
         when p_succeeded or v_status = 'dead' then o.next_attempt_at
+        when p_error_code = 'google_contacts_create_result_unknown'
+          then now() + interval '5 minutes'
         else now() + make_interval(
           secs => least((power(2, least(v_job.attempt_count, 7)) * 30)::integer, 3600)
         )
