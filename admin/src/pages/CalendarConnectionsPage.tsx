@@ -256,7 +256,7 @@ const COPY: Record<Language, Record<string, string>> = {
     connect: 'Connect Google', reconnect: 'Reconnect Google', connecting: 'Opening Google…', connectFailed: 'Could not start the Google connection.',
     disconnect: 'Disconnect', changeAccount: 'Change Google account', changeAccountFailed: 'Could not clear the recorded Google account.',
     account: 'Google account', noAccount: 'No connected account', connectionUpdated: 'Connection metadata updated',
-    lastSuccessfulSync: 'Last successful calendar sync', queue: 'Calendar queue', queueValue: '{queued} queued · {retrying} retrying · {failed} failed',
+    lastSuccessfulSync: 'Last successful calendar sync', queue: 'Google queue', queueValue: '{queued} queued · {retrying} retrying · {failed} failed',
     lastError: 'Last current error', noError: 'No current error',
   },
   ru: {
@@ -269,7 +269,7 @@ const COPY: Record<Language, Record<string, string>> = {
     connect: 'Подключить Google', reconnect: 'Переподключить Google', connecting: 'Открываю Google…', connectFailed: 'Не удалось начать подключение Google.',
     disconnect: 'Отключить', changeAccount: 'Сменить Google-аккаунт', changeAccountFailed: 'Не удалось очистить записанный Google-аккаунт.',
     account: 'Google-аккаунт', noAccount: 'Аккаунт не подключён', connectionUpdated: 'Метаданные подключения обновлены',
-    lastSuccessfulSync: 'Последняя успешная синхронизация календаря', queue: 'Очередь календаря', queueValue: 'в очереди: {queued} · повтор: {retrying} · ошибок: {failed}',
+    lastSuccessfulSync: 'Последняя успешная синхронизация календаря', queue: 'Очередь Google', queueValue: 'в очереди: {queued} · повтор: {retrying} · ошибок: {failed}',
     lastError: 'Последняя текущая ошибка', noError: 'Текущих ошибок нет',
   },
 };
