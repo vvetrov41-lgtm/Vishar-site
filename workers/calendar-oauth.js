@@ -1,5 +1,6 @@
 import { drainCalendarOutbox } from './lib/calendar-drain.js';
 import { drainCalendarAvailabilityOutbox } from './lib/calendar-availability-drain.js';
+import { drainGoogleContactsOutbox } from './lib/google-contacts-drain.js';
 import {
   decryptTokenRecord,
   encryptTokenRecord,
@@ -30,7 +31,8 @@ const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const GOOGLE_PRIMARY_CALENDAR_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary';
 const GOOGLE_CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const GOOGLE_CALENDAR_METADATA_SCOPE = 'https://www.googleapis.com/auth/calendar.calendars.readonly';
-const OAUTH_SCOPE = `openid email ${GOOGLE_CALENDAR_EVENTS_SCOPE} ${GOOGLE_CALENDAR_METADATA_SCOPE}`;
+const GOOGLE_CONTACTS_SCOPE = 'https://www.googleapis.com/auth/contacts';
+const OAUTH_SCOPE = `openid email ${GOOGLE_CALENDAR_EVENTS_SCOPE} ${GOOGLE_CALENDAR_METADATA_SCOPE} ${GOOGLE_CONTACTS_SCOPE}`;
 const EVENT_LABEL_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EVENT_LABEL_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const STATE_TTL_SECONDS = 600;
@@ -228,6 +230,34 @@ async function updateIntegrationMetadata(config, accountEmail, enabled, env, fet
   if (!response.ok) throw new OAuthSecurityError('calendar_metadata_update_failed', 502);
 }
 
+async function updateGoogleContactsSyncMetadata(config, enabled, env, fetchImpl = fetch) {
+  const url = `${env.SUPABASE_URL}/rest/v1/rpc/set_google_contacts_sync`;
+  const response = await fetchImpl(url, {
+    method: 'POST',
+    headers: {
+      ...supabaseBackend(env),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      p_artist_id: config.artistId,
+      p_integration_key: config.integrationKey,
+      p_is_enabled: enabled,
+    }),
+  });
+  if (!response.ok) {
+    throw new OAuthSecurityError('google_contacts_metadata_update_failed', 502);
+  }
+}
+
+function requireGoogleContactsScope(scope) {
+  const scopes = typeof scope === 'string'
+    ? new Set(scope.split(/\s+/).filter(Boolean))
+    : new Set();
+  if (!scopes.has(GOOGLE_CONTACTS_SCOPE)) {
+    throw new OAuthSecurityError('google_contacts_scope_missing', 409);
+  }
+}
+
 function normalizedLabelTarget(config) {
   const name = typeof config?.eventLabelName === 'string' ? config.eventLabelName.trim() : '';
   const color = typeof config?.eventLabelColor === 'string' ? config.eventLabelColor.trim().toLowerCase() : '';
@@ -336,6 +366,12 @@ async function callback(request, env, fetchImpl = fetch) {
   });
   const tokens = await tokenResponse.json().catch(() => ({}));
   validateTokenExchange(tokenResponse.ok, tokens);
+  try {
+    requireGoogleContactsScope(tokens.scope);
+  } catch (error) {
+    await revokeGoogleRefreshToken(tokens.refresh_token, fetchImpl).catch(() => false);
+    throw error;
+  }
 
   const userResponse = await fetchImpl(GOOGLE_USERINFO_URL, {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
@@ -371,7 +407,10 @@ async function callback(request, env, fetchImpl = fetch) {
 
   try {
     await updateIntegrationMetadata(config, accountEmail, true, env, fetchImpl);
+    await updateGoogleContactsSyncMetadata(config, true, env, fetchImpl);
   } catch (error) {
+    await updateGoogleContactsSyncMetadata(config, false, env, fetchImpl).catch(() => null);
+    await updateIntegrationMetadata(config, accountEmail, false, env, fetchImpl).catch(() => null);
     await env.CALENDAR_OAUTH_TOKENS.delete(tokenKey);
     await revokeGoogleRefreshToken(tokens.refresh_token, fetchImpl).catch(() => false);
     throw error;
@@ -448,6 +487,7 @@ async function disconnect(request, artistRef, env, fetchImpl = fetch) {
 async function runScheduledDrain(env) {
   const appointments = await drainCalendarOutbox(env);
   const availability = await drainCalendarAvailabilityOutbox(env);
+  const contacts = await drainGoogleContactsOutbox(env);
   console.log('calendar outbox drain', JSON.stringify({
     appointments: {
       claimed: appointments.claimed,
@@ -462,6 +502,14 @@ async function runScheduledDrain(env) {
       obsolete: availability.obsolete,
       failed: availability.failed,
       unrecorded: availability.unrecorded,
+    },
+    contacts: {
+      claimed: contacts.claimed,
+      created: contacts.created,
+      existing: contacts.existing,
+      skippedInvalid: contacts.skippedInvalid,
+      failed: contacts.failed,
+      unrecorded: contacts.unrecorded,
     },
   }));
 }
@@ -519,6 +567,7 @@ export default {
 export const __testing = {
   GOOGLE_CALENDAR_EVENTS_SCOPE,
   GOOGLE_CALENDAR_METADATA_SCOPE,
+  GOOGLE_CONTACTS_SCOPE,
   OAUTH_SCOPE,
   ARTIST_ROUTE_PATTERN,
   normalizedArtistRoute,
@@ -529,6 +578,8 @@ export const __testing = {
   rateLimitRouteClass,
   supabaseBackend,
   updateIntegrationMetadata,
+  updateGoogleContactsSyncMetadata,
+  requireGoogleContactsScope,
   normalizedLabelTarget,
   resolveGoogleEventLabel,
   startOAuth,
