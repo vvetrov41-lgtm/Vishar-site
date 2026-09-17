@@ -52,13 +52,13 @@ export function connectionResultNotice(
   if (!name) return null;
   if (result === 'connected') {
     return language === 'ru'
-      ? `Google для ${name} подключён. Calendar и Contacts разрешения активированы.`
-      : `${name}’s Google account is connected. Calendar and Contacts permissions are enabled.`;
+      ? `Google для ${name} подключён. Разрешения Calendar и Contacts активированы. Статус ниже повторно загружен из CRM.`
+      : `${name}’s Google account is connected. Calendar and Contacts permissions are enabled. The status below was reloaded from the CRM.`;
   }
   if (result === 'disconnected') {
     return language === 'ru'
-      ? `Google для ${name} отключён. Автосохранение WhatsApp-клиентов в Contacts остановлено.`
-      : `${name}’s Google account is disconnected. Automatic WhatsApp-client saving to Contacts is stopped.`;
+      ? `Google для ${name} отключён. Автосохранение WhatsApp-клиентов в Contacts остановлено. Статус ниже повторно загружен из CRM.`
+      : `${name}’s Google account is disconnected. Automatic WhatsApp-client saving to Contacts is stopped. The status below was reloaded from the CRM.`;
   }
   return null;
 }
@@ -159,7 +159,7 @@ function ConnectionCard({
       <div className="title" id={`calendar-${connection.artist_slug}`}>{connection.artist_display_name}</div>
       <div className="meta">
         <span className={statusClass}>{status}</span>{' '}
-        <span className="badge">Google Calendar + Contacts</span>
+        <span className="badge">{copy.providerBadge}</span>
       </div>
 
       <dl className="details" style={{ marginTop: 12 }}>
@@ -246,7 +246,7 @@ function formatOptionalDate(value: string | null, language: Language): string {
 
 const COPY: Record<Language, Record<string, string>> = {
   en: {
-    title: 'Google connections', loading: 'Loading Google connections…',
+    title: 'Google connections', loading: 'Loading Google connections…', providerBadge: 'Google Calendar + Contacts',
     noneTitle: 'No Google connections are available',
     noneHint: 'Your current artist memberships do not allow integration management.',
     intro: 'Each artist can connect their own Google account for Calendar and Contacts. Once authorised, CRM can save a linked WhatsApp client to Google Contacts using only the client name, phone number and optional email. Provider credentials stay server-side.',
@@ -260,7 +260,7 @@ const COPY: Record<Language, Record<string, string>> = {
     lastError: 'Last current error', noError: 'No current error',
   },
   ru: {
-    title: 'Подключения Google', loading: 'Загрузка подключений Google…',
+    title: 'Подключения Google', loading: 'Загрузка подключений Google…', providerBadge: 'Google Calendar + Contacts',
     noneTitle: 'Нет доступных подключений Google', noneHint: 'Твои текущие права на мастеров не разрешают управление интеграциями.',
     intro: 'Каждый мастер может подключить свой Google-аккаунт для Calendar и Contacts. После разрешения CRM сможет сохранять linked WhatsApp-клиента в Google Contacts, передавая только имя, номер телефона и при наличии email. Данные доступа остаются только на сервере.',
     connectorDisabled: 'Управление подключением Google отключено в этом окружении. Существующие метаданные CRM доступны только для просмотра.',
