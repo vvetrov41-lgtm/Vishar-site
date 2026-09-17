@@ -157,14 +157,33 @@ export function createGoogleContactsProvider({
     const params = new URLSearchParams({
       personFields: 'metadata,names,phoneNumbers,emailAddresses',
     });
-    await peopleFetch(fetchImpl, `${GOOGLE_PEOPLE_BASE_URL}/people:createContact?${params}`, {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+
+    // A network failure or 5xx after POST is ambiguous: Google may have
+    // committed the contact even though the response never reached us. Give
+    // that case its own retry code so the database can wait longer before the
+    // next search-and-create attempt.
+    let response;
+    try {
+      response = await fetchImpl(
+        `${GOOGLE_PEOPLE_BASE_URL}/people:createContact?${params}`,
+        {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        },
+      );
+    } catch {
+      throw new CalendarConnectorError('google_contacts_create_result_unknown');
+    }
+    if (!response.ok) {
+      if (response.status >= 500) {
+        throw new CalendarConnectorError('google_contacts_create_result_unknown');
+      }
+      throw peopleError(response.status);
+    }
     return { phone };
   }
 
