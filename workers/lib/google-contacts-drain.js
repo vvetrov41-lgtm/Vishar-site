@@ -85,7 +85,7 @@ async function resolveGoogleContactsRoute(supabase, claimed) {
   }
 }
 
-async function providerForJob(job, route, env, fetchImpl, cache) {
+async function providerForJob(job, route, env, fetchImpl, sleepImpl, cache) {
   validateGoogleContactsRoute(route, job);
   const existing = cache.get(job.artist_id);
   if (existing) return existing;
@@ -99,7 +99,7 @@ async function providerForJob(job, route, env, fetchImpl, cache) {
       tokenRecord.refreshToken,
       fetchImpl,
     );
-    const provider = createGoogleContactsProvider({ accessToken, fetchImpl });
+    const provider = createGoogleContactsProvider({ accessToken, fetchImpl, sleepImpl });
     await provider.warmSearch();
     return {
       provider,
@@ -111,7 +111,7 @@ async function providerForJob(job, route, env, fetchImpl, cache) {
   return promise;
 }
 
-async function processJob(job, env, supabase, workerId, fetchImpl, providerCache) {
+async function processJob(job, env, supabase, workerId, fetchImpl, sleepImpl, providerCache) {
   const claimed = validateClaimedJob(job);
   if (claimed.job_valid !== true) {
     await recordResult(supabase, claimed, workerId, {
@@ -123,7 +123,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl, providerCache
 
   const resolved = await resolveGoogleContactsRoute(supabase, claimed);
   const route = firstRow(resolved);
-  const state = await providerForJob(claimed, route, env, fetchImpl, providerCache);
+  const state = await providerForJob(claimed, route, env, fetchImpl, sleepImpl, providerCache);
 
   const phone = claimed.phone_normalized;
   if (state.seenPhones.has(phone)) {
@@ -154,6 +154,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl, providerCache
 
 export async function drainGoogleContactsOutbox(env, {
   fetchImpl = fetch,
+  sleepImpl = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   limit = DEFAULT_DRAIN_LIMIT,
   leaseSeconds = DEFAULT_LEASE_SECONDS,
   workerId = randomWorkerId(),
@@ -178,6 +179,7 @@ export async function drainGoogleContactsOutbox(env, {
         supabase,
         workerId,
         fetchImpl,
+        sleepImpl,
         providerCache,
       ));
     } catch (error) {
