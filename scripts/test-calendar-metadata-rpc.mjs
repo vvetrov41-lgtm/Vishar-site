@@ -61,4 +61,49 @@ await assert.rejects(
     && error.status === 502,
 );
 
+
+let contactsCaptured;
+await __testing.updateGoogleContactsSyncMetadata(
+  config,
+  true,
+  env,
+  async (url, init) => {
+    contactsCaptured = {
+      url: String(url),
+      method: init.method,
+      headers: init.headers,
+      body: JSON.parse(init.body),
+    };
+    return new Response(null, { status: 204 });
+  },
+);
+
+assert.equal(
+  contactsCaptured.url,
+  'https://example.supabase.co/rest/v1/rpc/set_google_contacts_sync',
+);
+assert.equal(contactsCaptured.method, 'POST');
+assert.equal(contactsCaptured.headers.apikey, 'sb_secret_test');
+assert.equal(contactsCaptured.headers.Authorization, undefined);
+assert.deepEqual(contactsCaptured.body, {
+  p_artist_id: config.artistId,
+  p_integration_key: config.integrationKey,
+  p_is_enabled: true,
+});
+assert.ok(!('account_email' in contactsCaptured.body));
+assert.ok(!('token' in contactsCaptured.body));
+assert.ok(!('refresh_token' in contactsCaptured.body));
+
+await assert.rejects(
+  __testing.updateGoogleContactsSyncMetadata(
+    config,
+    true,
+    env,
+    async () => Response.json({ message: 'denied' }, { status: 403 }),
+  ),
+  (error) => error instanceof OAuthSecurityError
+    && error.code === 'google_contacts_metadata_update_failed'
+    && error.status === 502,
+);
+
 console.log('Calendar metadata RPC tests passed: backend-only endpoint, minimal payload and safe failure mapping.');
