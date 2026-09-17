@@ -744,3 +744,136 @@ grant execute on function public.resolve_outbox_route(uuid)
 
 comment on function public.resolve_outbox_route(uuid) is
   'Backend-only outbox provider resolver. Google Contacts jobs reuse the owning artist pinned Google integration only when explicit Contacts sync capability is enabled.';
+
+
+-- Google connection status includes both Calendar and Contacts projection
+-- health. Existing Calendar-only OAuth tokens intentionally surface a safe
+-- reconnect-required error until the new Contacts permission is granted.
+create or replace function public.list_calendar_connection_status()
+returns table(
+  artist_id uuid,
+  artist_slug text,
+  artist_display_name text,
+  provider text,
+  integration_key text,
+  connected boolean,
+  external_account_label text,
+  connection_updated_at timestamptz,
+  last_successful_sync_at timestamptz,
+  queued_jobs integer,
+  retrying_jobs integer,
+  failed_jobs integer,
+  last_error_code text
+)
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+  with manageable_artists as (
+    select
+      a.id,
+      a.slug,
+      a.display_name,
+      'google_calendar_' || a.slug as expected_integration_key
+    from public.artists a
+    where a.is_active
+      and public.can_manage_artist_integrations(a.id)
+  ),
+  google_jobs as (
+    select
+      o.artist_id,
+      count(*) filter (where o.status = 'pending')::integer as queued_jobs,
+      count(*) filter (where o.status = 'leased')::integer as retrying_jobs,
+      count(*) filter (
+        where o.status in ('failed', 'dead')
+          and (i.updated_at is null or o.updated_at >= i.updated_at)
+      )::integer as failed_jobs
+    from public.integration_outbox o
+    join manageable_artists a on a.id = o.artist_id
+    left join public.artist_integrations i
+      on i.artist_id = a.id
+     and i.integration_type = 'calendar'
+     and i.provider = 'google'
+     and i.integration_key = a.expected_integration_key
+    where o.kind in (
+      'calendar_create',
+      'calendar_update',
+      'calendar_cancel',
+      'calendar_availability_create',
+      'calendar_availability_update',
+      'calendar_availability_cancel',
+      'google_contact_create'
+    )
+    group by o.artist_id
+  ),
+  successful_syncs as (
+    select s.artist_id, s.calendar_last_synced_at
+    from public.sessions s
+    join manageable_artists a on a.id = s.artist_id
+    where s.calendar_last_synced_at is not null
+    union all
+    select b.artist_id, b.calendar_last_synced_at
+    from public.artist_availability_blocks b
+    join manageable_artists a on a.id = b.artist_id
+    where b.calendar_last_synced_at is not null
+  ),
+  calendar_sync as (
+    select artist_id, max(calendar_last_synced_at) as last_successful_sync_at
+    from successful_syncs
+    group by artist_id
+  )
+  select
+    a.id as artist_id,
+    a.slug as artist_slug,
+    a.display_name as artist_display_name,
+    coalesce(i.provider, 'google') as provider,
+    a.expected_integration_key as integration_key,
+    coalesce(i.is_enabled, false) as connected,
+    i.external_account_label,
+    i.updated_at as connection_updated_at,
+    s.last_successful_sync_at,
+    coalesce(j.queued_jobs, 0) as queued_jobs,
+    coalesce(j.retrying_jobs, 0) as retrying_jobs,
+    coalesce(j.failed_jobs, 0) as failed_jobs,
+    coalesce(
+      e.last_error_code,
+      case
+        when coalesce(i.is_enabled, false)
+          and coalesce(i.configuration ->> 'google_contacts_sync', 'false') <> 'true'
+          then 'google_contacts_scope_missing'
+        else null
+      end
+    ) as last_error_code
+  from manageable_artists a
+  left join public.artist_integrations i
+    on i.artist_id = a.id
+   and i.integration_type = 'calendar'
+   and i.provider = 'google'
+   and i.integration_key = a.expected_integration_key
+  left join google_jobs j on j.artist_id = a.id
+  left join calendar_sync s on s.artist_id = a.id
+  left join lateral (
+    select o.last_error_code
+    from public.integration_outbox o
+    where o.artist_id = a.id
+      and o.kind in (
+        'calendar_create',
+        'calendar_update',
+        'calendar_cancel',
+        'calendar_availability_create',
+        'calendar_availability_update',
+        'calendar_availability_cancel',
+        'google_contact_create'
+      )
+      and o.status in ('failed', 'dead')
+      and o.last_error_code is not null
+      and (i.updated_at is null or o.updated_at >= i.updated_at)
+    order by o.updated_at desc, o.id desc
+    limit 1
+  ) e on true
+  order by a.display_name, a.slug;
+$$;
+
+comment on function public.list_calendar_connection_status() is
+  'Authorized Google integration status including Calendar and automatic Google Contacts projection health; Calendar-only legacy consent surfaces reconnect required until Contacts is granted.';
