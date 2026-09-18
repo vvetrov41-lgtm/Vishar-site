@@ -46,7 +46,7 @@ export function readTrustedBookingConfig(env){
 export function integrationTypeForOutboxKind(kind){
   if(kind==='telegram_notification')return 'telegram';
   if(kind==='transactional_email'||kind==='approved_email')return 'email';
-  if(kind==='calendar_create'||kind==='calendar_update'||kind==='calendar_cancel')return 'calendar';
+  if(kind==='calendar_create'||kind==='calendar_update'||kind==='calendar_cancel'||kind==='google_contact_create')return 'calendar';
   if(kind==='whatsapp_message')return 'whatsapp';
   return null;
 }

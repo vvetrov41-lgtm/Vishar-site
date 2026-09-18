@@ -35,7 +35,7 @@ insert into public.artist_integrations (
 ) values
   ('a1111111-1111-4111-8111-111111111111', 'calendar', 'google',
    'google_calendar_vladimir', 'vladimir-calendar@example.test',
-   '{"calendar_id":"primary","connection_mode":"worker_oauth"}'::jsonb, true,
+   '{"calendar_id":"primary","connection_mode":"worker_oauth","google_contacts_sync":true}'::jsonb, true,
    '2026-08-05 12:00:00+00'),
   ('a2222222-2222-4222-8222-222222222222', 'calendar', 'google',
    'google_calendar_kristina', 'kristina-calendar@example.test',
@@ -208,6 +208,25 @@ select is(
   (select queued_jobs + retrying_jobs from public.list_calendar_connection_status() where artist_slug = 'vladimir'),
   2,
   'a reconnect keeps pending and leased work visible until the Worker processes it'
+);
+reset role;
+
+-- A pre-feature Calendar-only connection is still connected for Calendar but
+-- must surface a reconnect requirement before Contacts projection can run.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update public.artist_integrations
+set configuration = configuration - 'google_contacts_sync',
+    updated_at = now() + interval '2 minutes'
+where artist_id = 'a1111111-1111-4111-8111-111111111111'
+  and integration_type = 'calendar'
+  and integration_key = 'google_calendar_vladimir';
+
+set local role authenticated;
+select pg_temp.calendar_claims('{"sub":"81111111-1111-4111-8111-111111111111","role":"authenticated"}');
+select is(
+  (select last_error_code from public.list_calendar_connection_status() where artist_slug = 'vladimir'),
+  'google_contacts_scope_missing',
+  'a legacy Calendar-only connection requires Google reconnect for Contacts permission'
 );
 reset role;
 

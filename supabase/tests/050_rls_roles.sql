@@ -565,6 +565,9 @@ insert into expected_function_acl values
   ('public.record_email_outbox_result(uuid,text,boolean,text,text)', false, false, true),
   ('public.list_calendar_connection_status()', false, true, false),
   ('public.reset_calendar_expected_account(uuid)', false, true, false),
+  ('public.set_google_contacts_sync(uuid,text,boolean)', false, false, true),
+  ('public.claim_google_contact_outbox(text,integer,integer)', false, false, true),
+  ('public.record_google_contact_outbox_result(uuid,text,boolean,text,text)', false, false, true),
 
   -- Authenticated CRM RPCs. Their bodies enforce owner/manager sub-roles.
   ('public.complete_vladimir_whatsapp_connection()', false, true, false),

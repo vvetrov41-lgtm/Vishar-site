@@ -308,6 +308,7 @@ test('the RPC allow-list is exactly the intake surface', () => {
   assert.deepEqual([...supabase.ALLOWED_RPCS].sort(), [
     'claim_calendar_availability_outbox',
     'claim_calendar_outbox',
+    'claim_google_contact_outbox',
     'claim_telegram_outbox',
     'claim_telegram_outbox_by_id',
     'claim_whatsapp_outbox',
@@ -323,6 +324,7 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'mark_enquiry_file_uploaded',
     'record_calendar_availability_outbox_result',
     'record_calendar_outbox_result',
+    'record_google_contact_outbox_result',
     'record_outbox_attempt',
     'record_telegram_outbox_result',
     'record_whatsapp_inbound_message',
@@ -447,6 +449,7 @@ test('email and calendar use the same future routing boundary', () => {
   assert.equal(providerRouting.integrationTypeForOutboxKind('calendar_create'),'calendar');
   assert.equal(providerRouting.integrationTypeForOutboxKind('calendar_update'),'calendar');
   assert.equal(providerRouting.integrationTypeForOutboxKind('calendar_cancel'),'calendar');
+  assert.equal(providerRouting.integrationTypeForOutboxKind('google_contact_create'),'calendar');
   assert.equal(providerRouting.integrationTypeForOutboxKind('reconciliation'),null);
 });
 test('an artist route never falls back to global Telegram variables', () => {

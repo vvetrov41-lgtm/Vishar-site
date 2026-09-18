@@ -151,6 +151,12 @@ async function publicCallback(request, env, fetchImpl = fetch) {
   });
   const tokens = await tokenResponse.json().catch(() => ({}));
   validateTokenExchange(tokenResponse.ok, tokens);
+  try {
+    calendar.requireGoogleContactsScope(tokens.scope);
+  } catch (error) {
+    await revokeGoogleRefreshToken(tokens.refresh_token, fetchImpl).catch(() => false);
+    throw error;
+  }
 
   const userResponse = await fetchImpl(GOOGLE_USERINFO_URL, {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
@@ -185,7 +191,10 @@ async function publicCallback(request, env, fetchImpl = fetch) {
   );
   try {
     await calendar.updateIntegrationMetadata(config, accountEmail, true, env, fetchImpl);
+    await calendar.updateGoogleContactsSyncMetadata(config, true, env, fetchImpl);
   } catch (error) {
+    await calendar.updateGoogleContactsSyncMetadata(config, false, env, fetchImpl).catch(() => null);
+    await calendar.updateIntegrationMetadata(config, accountEmail, false, env, fetchImpl).catch(() => null);
     await env.CALENDAR_OAUTH_TOKENS.delete(tokenKey);
     await revokeGoogleRefreshToken(tokens.refresh_token, fetchImpl).catch(() => false);
     throw error;

@@ -21,6 +21,8 @@ const RECONNECT_ERROR_CODES = new Set([
   'calendar_scope_missing',
   'calendar_token_invalid',
   'google_account_mismatch',
+  'google_contacts_permission_denied',
+  'google_contacts_scope_missing',
   'google_refresh_invalid_grant',
   'google_token_revoked',
 ]);
@@ -50,13 +52,13 @@ export function connectionResultNotice(
   if (!name) return null;
   if (result === 'connected') {
     return language === 'ru'
-      ? `Google Calendar для ${name} подключён. Статус ниже повторно загружен из CRM.`
-      : `${name}’s Google Calendar is connected. The status below was reloaded from the CRM.`;
+      ? `Google для ${name} подключён. Разрешения Calendar и Contacts активированы. Статус ниже повторно загружен из CRM.`
+      : `${name}’s Google account is connected. Calendar and Contacts permissions are enabled. The status below was reloaded from the CRM.`;
   }
   if (result === 'disconnected') {
     return language === 'ru'
-      ? `Google Calendar для ${name} отключён. Статус ниже повторно загружен из CRM.`
-      : `${name}’s Google Calendar is disconnected. The status below was reloaded from the CRM.`;
+      ? `Google для ${name} отключён. Автосохранение WhatsApp-клиентов в Contacts остановлено. Статус ниже повторно загружен из CRM.`
+      : `${name}’s Google account is disconnected. Automatic WhatsApp-client saving to Contacts is stopped. The status below was reloaded from the CRM.`;
   }
   return null;
 }
@@ -157,7 +159,7 @@ function ConnectionCard({
       <div className="title" id={`calendar-${connection.artist_slug}`}>{connection.artist_display_name}</div>
       <div className="meta">
         <span className={statusClass}>{status}</span>{' '}
-        <span className="badge">Google Calendar</span>
+        <span className="badge">{copy.providerBadge}</span>
       </div>
 
       <dl className="details" style={{ marginTop: 12 }}>
@@ -244,30 +246,30 @@ function formatOptionalDate(value: string | null, language: Language): string {
 
 const COPY: Record<Language, Record<string, string>> = {
   en: {
-    title: 'Calendar connections', loading: 'Loading calendar connections…',
-    noneTitle: 'No calendar connections are available',
+    title: 'Google connections', loading: 'Loading Google connections…', providerBadge: 'Google Calendar + Contacts',
+    noneTitle: 'No Google connections are available',
     noneHint: 'Your current artist memberships do not allow integration management.',
-    intro: 'Every artist you manage can connect their own Google account here. Each connection keeps a separate encrypted token envelope and primary calendar, and the CRM never receives provider credentials.',
-    connectorDisabled: 'Calendar connection controls are disabled in this environment. Existing CRM metadata remains read-only.',
-    securityNotice: 'Connect uses your current CRM session to authorize the artist, then opens Google directly. Disconnect remains on the protected Calendar connector. Supabase remains the source of truth.',
+    intro: 'Each artist can connect their own Google account for Calendar and Contacts. Once authorised, CRM can save a linked WhatsApp client to Google Contacts using only the client name, phone number and optional email. Provider credentials stay server-side.',
+    connectorDisabled: 'Google connection controls are disabled in this environment. Existing CRM metadata remains read-only.',
+    securityNotice: 'Connect uses your current CRM session and then opens Google for explicit Calendar and Contacts consent. Automatic contact saving runs only after CRM has linked the WhatsApp conversation to a client. Disconnect stops both Google projections.',
     connected: 'Connected', disconnected: 'Not connected', attentionRequired: 'Attention required', reconnectRequired: 'Reconnect required',
-    connect: 'Connect', reconnect: 'Reconnect', connecting: 'Opening Google…', connectFailed: 'Could not start Google Calendar connection.',
+    connect: 'Connect Google', reconnect: 'Reconnect Google', connecting: 'Opening Google…', connectFailed: 'Could not start the Google connection.',
     disconnect: 'Disconnect', changeAccount: 'Change Google account', changeAccountFailed: 'Could not clear the recorded Google account.',
     account: 'Google account', noAccount: 'No connected account', connectionUpdated: 'Connection metadata updated',
-    lastSuccessfulSync: 'Last successful sync', queue: 'Calendar queue', queueValue: '{queued} queued · {retrying} retrying · {failed} failed',
+    lastSuccessfulSync: 'Last successful calendar sync', queue: 'Google queue', queueValue: '{queued} queued · {retrying} retrying · {failed} failed',
     lastError: 'Last current error', noError: 'No current error',
   },
   ru: {
-    title: 'Подключения календаря', loading: 'Загрузка подключений календаря…',
-    noneTitle: 'Нет доступных подключений календаря', noneHint: 'Ваши текущие права на мастеров не разрешают управление интеграциями.',
-    intro: 'Любой мастер, которым ты управляешь, подключает здесь свой Google-аккаунт. У каждого подключения отдельный зашифрованный token envelope и основной календарь, CRM не получает данные доступа провайдера.',
-    connectorDisabled: 'Управление подключением календаря отключено в этом окружении. Существующие метаданные CRM доступны только для просмотра.',
-    securityNotice: 'Подключение проверяет текущую CRM-сессию и сразу открывает Google. Отключение остаётся на защищённом Calendar connector. Источником истины остаётся Supabase.',
+    title: 'Подключения Google', loading: 'Загрузка подключений Google…', providerBadge: 'Google Calendar + Contacts',
+    noneTitle: 'Нет доступных подключений Google', noneHint: 'Твои текущие права на мастеров не разрешают управление интеграциями.',
+    intro: 'Каждый мастер может подключить свой Google-аккаунт для Calendar и Contacts. После разрешения CRM сможет сохранять linked WhatsApp-клиента в Google Contacts, передавая только имя, номер телефона и при наличии email. Данные доступа остаются только на сервере.',
+    connectorDisabled: 'Управление подключением Google отключено в этом окружении. Существующие метаданные CRM доступны только для просмотра.',
+    securityNotice: 'Подключение проверяет текущую CRM-сессию и открывает Google для явного разрешения Calendar и Contacts. Автосохранение контакта запускается только после того, как CRM связала WhatsApp-диалог с клиентом. Отключение останавливает обе Google-интеграции.',
     connected: 'Подключён', disconnected: 'Не подключён', attentionRequired: 'Требует внимания', reconnectRequired: 'Нужно переподключить',
-    connect: 'Подключить', reconnect: 'Переподключить', connecting: 'Открываю Google…', connectFailed: 'Не удалось начать подключение Google Calendar.',
+    connect: 'Подключить Google', reconnect: 'Переподключить Google', connecting: 'Открываю Google…', connectFailed: 'Не удалось начать подключение Google.',
     disconnect: 'Отключить', changeAccount: 'Сменить Google-аккаунт', changeAccountFailed: 'Не удалось очистить записанный Google-аккаунт.',
     account: 'Google-аккаунт', noAccount: 'Аккаунт не подключён', connectionUpdated: 'Метаданные подключения обновлены',
-    lastSuccessfulSync: 'Последняя успешная синхронизация', queue: 'Очередь календаря', queueValue: 'в очереди: {queued} · повтор: {retrying} · ошибок: {failed}',
+    lastSuccessfulSync: 'Последняя успешная синхронизация календаря', queue: 'Очередь Google', queueValue: 'в очереди: {queued} · повтор: {retrying} · ошибок: {failed}',
     lastError: 'Последняя текущая ошибка', noError: 'Текущих ошибок нет',
   },
 };
