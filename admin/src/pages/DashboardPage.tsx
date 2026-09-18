@@ -128,11 +128,9 @@ export function DashboardPage() {
     };
   }, [api, role, selectedArtistId, mayManageFinance, mayViewEnquiries]);
 
-  // Gmail discovery used to sit inside the blocking Today loader. A mailbox
-  // with forty recent messages could therefore keep the entire page on its
-  // loading state while the Worker made dozens of provider requests. Today is
-  // useful without that additive signal, so render the CRM-owned data first
-  // and merge known-client Gmail replies when discovery finishes.
+  // Gmail attention is CRM-owned snapshot state. This read goes directly to
+  // Supabase under RLS and never contacts the Gmail Worker or Google, so Today
+  // remains independent of provider latency and outages.
   useEffect(() => {
     let cancelled = false;
 
@@ -141,33 +139,19 @@ export function DashboardPage() {
       return () => { cancelled = true; };
     }
 
-    void (async () => {
-      const artistIds = selectedArtistId
-        ? [selectedArtistId]
-        : (await api.listAccessibleArtists().catch(() => []))
-          .filter((artist) => artist.is_active)
-          .map((artist) => artist.id);
-
-      const rows = (await Promise.all(
-        artistIds.map(async (id) => {
-          try {
-            const result = await api.listGmailInboxClients(id);
-            return result.clients.map((entry) => ({
-              artist_id: id,
-              client_id: entry.client_id,
-              client_name: entry.client_name,
-              subject: entry.subject,
-              last_message_at: entry.last_message_at,
-              direction: entry.direction,
-            }));
-          } catch {
-            return [];
-          }
-        }),
-      )).flat();
-
-      if (!cancelled) setGmailDiscovery({ scopeKey: gmailScopeKey, rows });
-    })();
+    void api.listGmailMetadataSnapshots(selectedArtistId ?? undefined)
+      .then((snapshots) => snapshots.map((entry) => ({
+        artist_id: entry.artist_id,
+        client_id: entry.client_id,
+        client_name: null,
+        subject: entry.subject,
+        last_message_at: entry.last_message_at,
+        direction: entry.direction,
+      })))
+      .catch(() => [])
+      .then((rows) => {
+        if (!cancelled) setGmailDiscovery({ scopeKey: gmailScopeKey, rows });
+      });
 
     return () => { cancelled = true; };
   }, [api, gmailScopeKey, mayViewEnquiries, selectedArtistId]);
