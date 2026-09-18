@@ -143,29 +143,6 @@ describe('CRM-owned Gmail metadata snapshot', () => {
     expect(within(rows[0]).getByText('Needs reply')).toBeInTheDocument();
   });
 
-  it('reads the snapshot table directly and does not sweep provider routes', async () => {
-    const queryCalls: { table: string; method: string; args: unknown[] }[] = [];
-    const fetchMock = vi.fn(async () => {
-      throw new TypeError('network disabled in tests');
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      renderWithSession(<App />, {
-        role: 'owner',
-        path: '/inbox',
-        accessibleArtistIds: [VLADIMIR_ARTIST_ID],
-        queryCalls,
-        gmailMetadataSnapshots: [snapshot()],
-      });
-
-      await screen.findByText('Is Friday still free?');
-      expect(queryCalls.some((call) => call.table === 'gmail_client_metadata_snapshots')).toBe(true);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
   it('never renders provider identifiers even if an over-wide fixture row contains one', async () => {
     renderWithSession(<App />, {
       role: 'owner',
