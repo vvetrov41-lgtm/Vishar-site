@@ -315,6 +315,11 @@ const EN = {
   'clientWorkspace.project': 'Project',
   'clientWorkspace.enquiry': 'Enquiry',
   'clientWorkspace.viewAllBookings': 'All bookings',
+  'clientWorkspace.gmail': 'Gmail',
+  'clientWorkspace.gmailRefresh': 'Refresh',
+  'clientWorkspace.gmailLoading': 'Loading Gmail…',
+  'clientWorkspace.gmailUnavailable': 'Gmail is temporarily unavailable. Client details are unaffected.',
+  'clientWorkspace.gmailNone': 'No recent Gmail messages',
   'clientContext.unavailable': 'Client context could not be loaded.',
 
   'projects.loading': 'Loading projects…',
@@ -861,6 +866,11 @@ const RU: Record<TranslationKey, string> = {
   'clientWorkspace.project': 'Проект',
   'clientWorkspace.enquiry': 'Заявка',
   'clientWorkspace.viewAllBookings': 'Все записи',
+  'clientWorkspace.gmail': 'Gmail',
+  'clientWorkspace.gmailRefresh': 'Обновить',
+  'clientWorkspace.gmailLoading': 'Загрузка Gmail…',
+  'clientWorkspace.gmailUnavailable': 'Gmail временно недоступен. Данные клиента продолжают работать.',
+  'clientWorkspace.gmailNone': 'Недавних писем Gmail нет',
   'clientContext.unavailable': 'Не удалось загрузить контекст клиента.',
 
   'projects.loading': 'Загружаем проекты…',
