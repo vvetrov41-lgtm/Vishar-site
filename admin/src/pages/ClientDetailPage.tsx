@@ -582,7 +582,7 @@ function MessagesSection({
 const gmailHistoryCaches = new WeakMap<object, ReturnType<typeof createGmailClientHistoryCache>>();
 
 function GmailMessagesSection({ api, clientId }: { api: ReturnType<typeof useApi>; clientId: string }) {
-  const { language } = useLanguage();
+  const { t, language } = useLanguage();
   const [history, setHistory] = useState<LiveGmailClientHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -620,19 +620,19 @@ function GmailMessagesSection({ api, clientId }: { api: ReturnType<typeof useApi
 
   return (
     <Section
-      title="Gmail"
-      action={<button type="button" className="badge" onClick={() => load(true)} disabled={loading}>Refresh</button>}
+      title={t('clientWorkspace.gmail')}
+      action={<button type="button" className="badge" onClick={() => load(true)} disabled={loading}>{t('clientWorkspace.gmailRefresh')}</button>}
     >
-      {loading && !history ? <LoadingState label="Loading Gmail…" /> : null}
-      {error ? <p className="notice warn" role="status">Gmail is temporarily unavailable. Client details are unaffected.</p> : null}
-      {!loading && !error && messages.length === 0 ? <EmptyState compact title="No recent Gmail messages" /> : null}
+      {loading && !history ? <LoadingState label={t('clientWorkspace.gmailLoading')} /> : null}
+      {error ? <p className="notice warn" role="status">{t('clientWorkspace.gmailUnavailable')}</p> : null}
+      {!loading && !error && messages.length === 0 ? <EmptyState compact title={t('clientWorkspace.gmailNone')} /> : null}
       {messages.length > 0 ? (
         <ul className="timeline">
           {messages.map((message, index) => (
             <li key={`${message.timestamp}:${index}`}>
               <div style={{ whiteSpace: 'pre-wrap' }}>{message.body || '—'}</div>
               <div className="when">
-                {message.direction === 'inbound' ? 'Client' : 'You'} · {formatDateTime(message.timestamp, language)}
+                {message.direction === 'inbound' ? t('clientWorkspace.them') : t('clientWorkspace.you')} · {formatDateTime(message.timestamp, language)}
               </div>
             </li>
           ))}
