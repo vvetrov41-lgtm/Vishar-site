@@ -20,6 +20,7 @@ const instagram = read('.github/workflows/deploy-private-production-instagram.ym
 const hostSplit = read('.github/workflows/crm-host-split-operator.yml');
 const hostSplitScript = read('scripts/crm-host-split.mjs');
 const privateRelease = read('.github/workflows/private-production-release.yml');
+const privateReleaseObserver = read('.github/workflows/private-production-release-observer.yml');
 const calendarPublicOauthRollout = read('.github/workflows/calendar-public-oauth-production-rollout.yml');
 const teamConfig = read('wrangler.team-admin.toml');
 
@@ -59,6 +60,17 @@ expectIncludes(
 if ((privateRelease.match(/release\/private-crm-rc\*-calendar-public-oauth-rollout-/g) ?? []).length < 5) {
   throw new Error('Private production release: Calendar public OAuth release refs are not fail-closed in every admission guard');
 }
+
+expectIncludes(
+  privateReleaseObserver,
+  "- '!release/private-crm-rc*-calendar-public-oauth-rollout-*'",
+  'Private production release observer',
+);
+expectIncludes(
+  privateReleaseObserver,
+  'release/private-crm-rc*-calendar-public-oauth-rollout-*) exit 1 ;;',
+  'Private production release observer',
+);
 
 // The OAuth start/callback paths already have exact path-only Access Bypass.
 // A Calendar Worker deploy therefore proves the intended boundary by reaching
