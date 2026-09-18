@@ -82,6 +82,30 @@ export async function runSharedCrmAgentDrain(env) {
   });
 }
 
+export async function runSharedGmailMetadataRefresh(env) {
+  try {
+    if (!env?.GMAIL_SERVICE || typeof env.GMAIL_SERVICE.refreshClientMetadataSnapshot !== 'function') {
+      throw failure('gmail_metadata_service_binding_unavailable', 'Gmail metadata service binding unavailable');
+    }
+    const summary = await env.GMAIL_SERVICE.refreshClientMetadataSnapshot();
+    if (!summary || typeof summary !== 'object'
+        || !Number.isInteger(summary.artists) || summary.artists < 0
+        || !Number.isInteger(summary.refreshed) || summary.refreshed < 0
+        || !Number.isInteger(summary.failed) || summary.failed < 0
+        || summary.refreshed + summary.failed > summary.artists) {
+      throw failure('gmail_metadata_summary_invalid', 'invalid Gmail metadata refresh summary');
+    }
+    console.log('gmail metadata snapshot refresh', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    const code = typeof error?.code === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.code)
+      ? error.code
+      : 'gmail_metadata_refresh_error';
+    console.error('gmail metadata snapshot refresh failed', JSON.stringify({ code }));
+    throw error;
+  }
+}
+
 export async function runMetaAdsDrain(env) {
   try {
     const summary = await drainMetaConversionOutbox(env);
@@ -132,6 +156,14 @@ export function createProductionScheduler(baseWorker = telegramWorker) {
         tasks.push(runSharedCrmAgentDrain(env));
       }
 
+      // Gmail remains HTTP-only. The existing production scheduler owns the
+      // periodic refresh through the same service binding already used for the
+      // email outbox, so page loads never become the provider scheduler.
+      if (env?.VISHAR_ENVIRONMENT === 'production'
+          && env?.GMAIL_SHARED_DRAIN_ENABLED === 'true') {
+        tasks.push(runSharedGmailMetadataRefresh(env));
+      }
+
       // Meta CAPI is isolated from Telegram/Gmail/automation. A provider outage
       // can fail this task without suppressing any sibling task or invalidating
       // the already-committed CRM event.
@@ -153,5 +185,6 @@ export const __testing = Object.freeze({
   CRM_AGENT_DRAIN_URL,
   MAX_AI_JOBS_PER_TICK,
   runMetaAdsDrain,
+  runSharedGmailMetadataRefresh,
   settle,
 });
