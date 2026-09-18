@@ -19,6 +19,8 @@ const whatsapp = read('.github/workflows/deploy-private-production-whatsapp.yml'
 const instagram = read('.github/workflows/deploy-private-production-instagram.yml');
 const hostSplit = read('.github/workflows/crm-host-split-operator.yml');
 const hostSplitScript = read('scripts/crm-host-split.mjs');
+const privateRelease = read('.github/workflows/private-production-release.yml');
+const calendarPublicOauthRollout = read('.github/workflows/calendar-public-oauth-production-rollout.yml');
 const teamConfig = read('wrangler.team-admin.toml');
 
 // Assertions about a TOML file must describe its directives, not its prose.
@@ -45,6 +47,40 @@ for (const [label, text] of [
   expectIncludes(text, 'approved_sha', label);
   expectExcludes(text, 'environment: production\n', label);
 }
+
+// Dedicated Calendar public-OAuth release refs must never fall through to the
+// full private release. This prevents a one-Worker rollout from also mutating
+// Pages, Supabase and the shared Telegram scheduler.
+expectIncludes(
+  privateRelease,
+  "- '!release/private-crm-rc*-calendar-public-oauth-rollout-*'",
+  'Private production release',
+);
+if ((privateRelease.match(/release\/private-crm-rc\*-calendar-public-oauth-rollout-/g) ?? []).length < 5) {
+  throw new Error('Private production release: Calendar public OAuth release refs are not fail-closed in every admission guard');
+}
+
+// The OAuth start/callback paths already have exact path-only Access Bypass.
+// A Calendar Worker deploy therefore proves the intended boundary by reaching
+// the Worker on those two paths while keeping /health behind host-level Access.
+expectIncludes(
+  calendarPublicOauthRollout,
+  'Verify protected operator boundary and public OAuth paths',
+  'Calendar public OAuth rollout',
+);
+expectIncludes(calendarPublicOauthRollout, 'start_status\" = \'405\'', 'Calendar public OAuth rollout');
+expectIncludes(calendarPublicOauthRollout, 'callback_status\" = \'400\'', 'Calendar public OAuth rollout');
+expectIncludes(calendarPublicOauthRollout, 'Calendar operator boundary is not Access-gated', 'Calendar public OAuth rollout');
+expectExcludes(
+  calendarPublicOauthRollout,
+  'Verify Access still gates all Calendar paths before Bypass sync',
+  'Calendar public OAuth rollout',
+);
+expectExcludes(
+  calendarPublicOauthRollout,
+  'calendar-oauth-access-bypass-sync.mjs sync',
+  'Calendar public OAuth rollout',
+);
 
 expectIncludes(crm, 'working-directory: admin', 'CRM Pages');
 expectIncludes(crm, '../node_modules/.bin/wrangler pages deploy dist', 'CRM Pages');

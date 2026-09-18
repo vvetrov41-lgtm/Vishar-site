@@ -7,6 +7,7 @@ on:
       - '!release/private-crm-rc*-booking-host*'
       - '!release/private-crm-rc*-inventory-*'
       - '!release/private-crm-rc*-backend-auth-*'
+      - '!release/private-crm-rc*-calendar-public-oauth-rollout-*'
       - '!release/private-crm-rc*-gpt-worker'
       - '!release/private-crm-rc*-tattooai-worker'
       - '!release/private-crm-rc*-mcp-meta-activation'
@@ -42,6 +43,10 @@ jobs:
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;
+            release/private-crm-rc*-calendar-public-oauth-rollout-*)
+              echo 'Calendar public OAuth rollout refs are handled by the bounded Calendar workflow only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*-booking-host*)
               echo 'Booking-host release refs are handled by the bounded booking-host workflow only.' >&2
               exit 1
@@ -127,6 +132,10 @@ jobs:
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;
+            release/private-crm-rc*-calendar-public-oauth-rollout-*)
+              echo 'Calendar public OAuth rollout refs are handled by the bounded Calendar workflow only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*-booking-host*) exit 1 ;;
             release/private-crm-rc*-gpt-worker)
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
@@ -193,6 +202,10 @@ jobs:
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;
+            release/private-crm-rc*-calendar-public-oauth-rollout-*)
+              echo 'Calendar public OAuth rollout refs are handled by the bounded Calendar workflow only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*-booking-host*) exit 1 ;;
             release/private-crm-rc*-gpt-worker)
               echo 'GPT Worker release refs are handled by the bounded GPT Worker rollout only.' >&2
@@ -296,6 +309,10 @@ jobs:
           }
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*-backend-auth*) echo 'Backend auth refs must use the scheduler-only workflow.' >&2; exit 1 ;;
+            release/private-crm-rc*-calendar-public-oauth-rollout-*)
+              echo 'Calendar public OAuth rollout refs are handled by the bounded Calendar workflow only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*-booking-host*)
               echo 'Booking-host release refs must never enter the full private production rollout.' >&2
               exit 1
