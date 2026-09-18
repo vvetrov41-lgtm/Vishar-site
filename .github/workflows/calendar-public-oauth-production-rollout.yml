@@ -233,16 +233,30 @@ jobs:
           [ "$post_deployment" != "$PRE_DEPLOYMENT_ID" ]
           echo "Calendar Worker deployment readback passed: $post_deployment"
 
-      - name: Verify Access still gates all Calendar paths before Bypass sync
+      - name: Verify protected operator boundary and public OAuth paths
         run: |
           set -euo pipefail
-          for path in /health /oauth/google/start/vladimir '/oauth/google/callback?state=pre-bypass-probe'; do
-            status="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST$path" || true)"
-            case "$status" in
+          for attempt in $(seq 1 10); do
+            health_status="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/health" || true)"
+            start_status="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/start/vladimir" || true)"
+            callback_status="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "https://$CALENDAR_HOST/oauth/google/callback?state=post-deploy-probe" || true)"
+
+            case "$health_status" in
               302|303|307|401|403) ;;
-              *) echo "Calendar path escaped Access before path-specific Bypass sync: $path -> $status" >&2; exit 1 ;;
+              *) echo "Calendar operator boundary is not Access-gated: /health -> $health_status" >&2; exit 1 ;;
             esac
+
+            # These two paths already have an exact Cloudflare Access Bypass.
+            # Reaching the Worker is expected. GET on start is rejected because
+            # CRM must initiate OAuth with an authenticated POST; an invalid
+            # callback state is rejected before token handling.
+            if [ "$start_status" = '405' ] && [ "$callback_status" = '400' ]; then
+              exit 0
+            fi
+            sleep 3
           done
+          echo "Calendar OAuth path behaviour did not converge: start=$start_status callback=$callback_status" >&2
+          exit 1
 
       - name: Remove generated config
         if: always()
@@ -257,5 +271,6 @@ jobs:
             echo '- Worker entrypoint: `workers/calendar-public-oauth.js`'
             echo '- Existing Custom Domain, KV namespaces, secrets and five-minute drain preserved'
             echo '- Access policy mutation: none in this phase'
-            echo '- All Calendar paths required to remain Access-gated until the separate path-specific Bypass sync succeeds'
+            echo '- Existing path-only OAuth Bypass preserved: start GET=405, invalid callback=400'
+            echo '- Host-level operator boundary remains Access-gated at /health'
           } >> "$GITHUB_STEP_SUMMARY"
