@@ -26,7 +26,7 @@ export function createGmailMetadataApi(client: CrmClient) {
       if (artistId) query = query.eq('artist_id', artistId);
       const result = await query;
       if (result.error) {
-        throw new ApiError(friendlyMessage(result.error, 'load email metadata'), result.error);
+        throw new ApiError(friendlyMessage(result.error, 'load email conversations'), result.error);
       }
       return (result.data ?? []) as GmailClientMetadataSnapshot[];
     },
