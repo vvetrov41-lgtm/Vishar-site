@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const workflow = fs.readFileSync(new URL('../.github/workflows/tattooai-production-release.yml', import.meta.url), 'utf8');
 const privateProductionWorkflow = fs.readFileSync(new URL('../.github/workflows/private-production-release.yml', import.meta.url), 'utf8');
 const tattooConfig = fs.readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8').replace(/^\s*#.*$/gm, '');
+const probeKristinaContract = fs.readFileSync(new URL('./probe-kristina-live-booking-contract.mjs', import.meta.url), 'utf8');
 
 const expectIncludes = (needle, label) => {
   if (!workflow.includes(needle)) throw new Error(`${label}: missing ${needle}`);
@@ -31,6 +32,24 @@ expectIncludes('length == 0', 'zero-schedule readback gate');
 expectIncludes('.name == "AI" and .type == "ai"', 'Workers AI binding readback');
 expectIncludes('.name == "CRM_AI_IMAGES_ENABLED" and .text == "false"', 'images remain disabled');
 expectIncludes("endpoint='https://tattooai.vvetrov41.workers.dev/'", 'live Worker boundary');
+expectIncludes('node scripts/probe-kristina-live-booking-contract.mjs', 'Kristina live booking release guard');
+
+const kristinaProbeRuns = workflow.match(/node scripts\/probe-kristina-live-booking-contract\.mjs/g) || [];
+if (kristinaProbeRuns.length !== 2) {
+  throw new Error(`Kristina live booking guard must run before and after TattooAI deployment; found ${kristinaProbeRuns.length}`);
+}
+for (const [needle, label] of [
+  ["https://www.kristinavishar.com/booking/", 'Kristina booking page'],
+  ["https://www.kristinavishar.com/site.js", 'Kristina public JavaScript'],
+  ["https://www.kristinavishar.com/api/booking", 'Kristina same-origin adapter'],
+  ["route-probe@example.invalid", 'non-customer probe identity'],
+  ["not-an-image.txt", 'pre-persistence invalid file guard'],
+  ["invalid_file_extension", 'expected pre-persistence rejection'],
+]) {
+  if (!probeKristinaContract.includes(needle)) {
+    throw new Error(`Kristina production contract probe is missing ${label}: ${needle}`);
+  }
+}
 
 if (/^\s*\[triggers\]\s*$/m.test(tattooConfig) || /^\s*crons\s*=/m.test(tattooConfig)) {
   throw new Error('tracked TattooAI production config must own zero Cron Triggers');
