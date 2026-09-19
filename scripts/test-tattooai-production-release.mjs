@@ -43,7 +43,8 @@ for (const [needle, label] of [
   ["https://www.kristinavishar.com/site.js", 'Kristina public JavaScript'],
   ["https://www.kristinavishar.com/api/booking", 'Kristina same-origin adapter'],
   ["route-probe@example.invalid", 'non-customer probe identity'],
-  ["route-probe.jpeg", 'JPEG filename path'],
+  ["route-probe-valid.jpeg", 'valid JPEG filename path'],
+  ["route-probe-mismatch.jpeg", 'mismatched JPEG filename path'],
   ["image/jpeg", 'JPEG MIME path'],
   ["file_content_mismatch", 'expected deep pre-persistence content rejection'],
 ]) {
