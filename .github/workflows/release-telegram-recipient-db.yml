@@ -1,9 +1,7 @@
 name: Release Telegram recipient isolation to production DB
 
 on:
-  push:
-    branches:
-      - release/private-crm-rc816-db-telegram-recipient-20260919
+  workflow_dispatch:
 
 permissions:
   contents: read

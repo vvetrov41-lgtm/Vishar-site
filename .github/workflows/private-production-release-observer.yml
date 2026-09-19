@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'release/private-crm-rc*'
+      - '!release/private-crm-rc816-db-telegram-recipient-20260919'
       - '!release/private-crm-rc*-booking-host*'
       - '!release/private-crm-rc*-inventory-*'
       - '!release/private-crm-rc*-backend-auth-*'
