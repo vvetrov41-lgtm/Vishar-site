@@ -1,0 +1,47 @@
+name: Kristina domain origin diagnosis
+
+on:
+  push:
+    branches:
+      - agent/kristina-domain-origin-diagnosis-20260919
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: crm-production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Read only Kristina zone and redirect topology
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          api='https://api.cloudflare.com/client/v4'
+
+          curl --fail --silent --show-error --get --header "$auth"             --data-urlencode 'name=kristinavishar.com'             "$api/zones" > "$RUNNER_TEMP/zones.json"
+
+          jq -e '.success == true' "$RUNNER_TEMP/zones.json" >/dev/null
+          count="$(jq '.result | length' "$RUNNER_TEMP/zones.json")"
+          echo "zone_count=$count"
+          if [ "$count" -ne 1 ]; then exit 0; fi
+          zone_id="$(jq -r '.result[0].id' "$RUNNER_TEMP/zones.json")"
+
+          curl --fail --silent --show-error --header "$auth"             "$api/zones/$zone_id/dns_records?per_page=100" > "$RUNNER_TEMP/dns.json"
+          jq -r '.result[] | select(.name=="kristinavishar.com" or .name=="www.kristinavishar.com") | [.type,.name,.content,(.proxied|tostring)] | @tsv' "$RUNNER_TEMP/dns.json"
+
+          curl --fail --silent --show-error --header "$auth"             "$api/zones/$zone_id/workers/routes" > "$RUNNER_TEMP/routes.json"
+          jq -r '.result[] | [.pattern, (.script // "")] | @tsv' "$RUNNER_TEMP/routes.json"
+
+          for phase in http_request_dynamic_redirect http_request_transform; do
+            status="$(curl --silent --show-error --output "$RUNNER_TEMP/$phase.json" --write-out '%{http_code}'               --header "$auth" "$api/zones/$zone_id/rulesets/phases/$phase/entrypoint")"
+            echo "$phase status=$status"
+            if [ "$status" = 200 ]; then
+              jq -r '.result.rules[]? | select(.enabled==true) | [.action, (.description // ""), (.expression // "")] | @tsv' "$RUNNER_TEMP/$phase.json"
+            fi
+          done
