@@ -7,7 +7,7 @@ workers_dev = true
 binding = "AI"
 
 [vars]
-ALLOWED_ORIGINS = "https://vishartattoo.com,https://booking.vishartattoo.com,https://www.kristinavishar.com"
+ALLOWED_ORIGINS = "https://vishartattoo.com,https://booking.vishartattoo.com"
 BOOKING_SOURCE_KEY = "vladimir-website"
 BOOKING_FORM_VERSION = "booking-v1"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"

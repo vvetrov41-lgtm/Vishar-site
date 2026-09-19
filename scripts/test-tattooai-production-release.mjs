@@ -33,6 +33,9 @@ expectIncludes('.name == "AI" and .type == "ai"', 'Workers AI binding readback')
 expectIncludes('.name == "CRM_AI_IMAGES_ENABLED" and .text == "false"', 'images remain disabled');
 expectIncludes("endpoint='https://tattooai.vvetrov41.workers.dev/'", 'live Worker boundary');
 expectIncludes('node scripts/probe-kristina-live-booking-contract.mjs', 'Kristina live booking release guard');
+if (tattooConfig.includes('https://www.kristinavishar.com')) {
+  throw new Error('Kristina must use the registry-backed public source id, never the generic TattooAI fallback allow-list');
+}
 
 const kristinaProbeRuns = workflow.match(/node scripts\/probe-kristina-live-booking-contract\.mjs/g) || [];
 if (kristinaProbeRuns.length !== 2) {
@@ -43,8 +46,10 @@ for (const [needle, label] of [
   ["https://www.kristinavishar.com/site.js", 'Kristina public JavaScript'],
   ["https://www.kristinavishar.com/api/booking", 'Kristina same-origin adapter'],
   ["route-probe@example.invalid", 'non-customer probe identity'],
-  ["not-an-image.txt", 'pre-persistence invalid file guard'],
-  ["invalid_file_extension", 'expected pre-persistence rejection'],
+  ["route-probe-valid.jpeg", 'valid JPEG filename path'],
+  ["route-probe-mismatch.jpeg", 'mismatched JPEG filename path'],
+  ["image/jpeg", 'JPEG MIME path'],
+  ["file_content_mismatch", 'expected deep pre-persistence content rejection'],
 ]) {
   if (!probeKristinaContract.includes(needle)) {
     throw new Error(`Kristina production contract probe is missing ${label}: ${needle}`);
