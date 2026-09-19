@@ -13,7 +13,7 @@ insert into auth.users(id,email) values
 
 insert into public.profiles(id,email,display_name,role,is_active) values
   ('f2920000-0000-4000-8000-000000000001','preferred-manager@example.test','Preferred Artist Recipient','booking_manager',true),
-  ('f2920000-0000-4000-8000-000000000002','fallback-owner@example.test','Administrative Owner','owner',true),
+  ('f2920000-0000-4000-8000-000000000002','fallback-owner@example.test','Administrative Owner','booking_manager',true),
   ('f2920000-0000-4000-8000-000000000003','readonly-observer@example.test','Read Only Observer','read_only',true);
 
 insert into public.artist_memberships(
