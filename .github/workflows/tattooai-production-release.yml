@@ -56,6 +56,9 @@ jobs:
           const text = fs.readFileSync('wrangler.toml', 'utf8').replace(/^\s*#.*$/gm, '');
           if (/^\s*\[triggers\]\s*$/m.test(text) || /^\s*crons\s*=/m.test(text)) throw new Error('TattooAI must not own a standalone Cron Trigger');
           NODE
+      - name: Verify Kristina public booking contract before deployment
+        run: node scripts/probe-kristina-live-booking-contract.mjs
+
 
   deploy:
     needs: validate
@@ -138,3 +141,5 @@ jobs:
           grep -Fq 'Use POST request' /tmp/tattooai-get.txt
           test "$(curl -sS -o /tmp/tattooai-json.txt -w '%{http_code}' -X POST "$endpoint" -H 'content-type: application/json' --data '{"type":"tattoo-enquiry"}')" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
+      - name: Verify Kristina public booking contract after deployment
+        run: node scripts/probe-kristina-live-booking-contract.mjs
