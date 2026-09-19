@@ -33,6 +33,9 @@ expectIncludes('.name == "AI" and .type == "ai"', 'Workers AI binding readback')
 expectIncludes('.name == "CRM_AI_IMAGES_ENABLED" and .text == "false"', 'images remain disabled');
 expectIncludes("endpoint='https://tattooai.vvetrov41.workers.dev/'", 'live Worker boundary');
 expectIncludes('node scripts/probe-kristina-live-booking-contract.mjs', 'Kristina live booking release guard');
+if (tattooConfig.includes('https://www.kristinavishar.com')) {
+  throw new Error('Kristina must use the registry-backed public source id, never the generic TattooAI fallback allow-list');
+}
 
 const kristinaProbeRuns = workflow.match(/node scripts\/probe-kristina-live-booking-contract\.mjs/g) || [];
 if (kristinaProbeRuns.length !== 2) {
