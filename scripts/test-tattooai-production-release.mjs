@@ -43,8 +43,9 @@ for (const [needle, label] of [
   ["https://www.kristinavishar.com/site.js", 'Kristina public JavaScript'],
   ["https://www.kristinavishar.com/api/booking", 'Kristina same-origin adapter'],
   ["route-probe@example.invalid", 'non-customer probe identity'],
-  ["not-an-image.txt", 'pre-persistence invalid file guard'],
-  ["invalid_file_extension", 'expected pre-persistence rejection'],
+  ["route-probe.jpeg", 'JPEG filename path'],
+  ["image/jpeg", 'JPEG MIME path'],
+  ["file_content_mismatch", 'expected deep pre-persistence content rejection'],
 ]) {
   if (!probeKristinaContract.includes(needle)) {
     throw new Error(`Kristina production contract probe is missing ${label}: ${needle}`);
