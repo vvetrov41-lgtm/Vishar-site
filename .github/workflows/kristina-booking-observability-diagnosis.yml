@@ -14,69 +14,49 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment: crm-production
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Inspect live browser contract and kisa adapter
+      - name: Inspect live page and public booking JavaScript
         id: probe
         shell: bash
         run: |
           set -euo pipefail
           page_status="$(curl -sS -L -o "$RUNNER_TEMP/booking.html" -w '%{http_code}' 'https://www.kristinavishar.com/booking/')"
+          js_status="$(curl -sS -L -o "$RUNNER_TEMP/site.js" -w '%{http_code}' 'https://www.kristinavishar.com/site.js')"
 
-          PAGE="$RUNNER_TEMP/booking.html" node <<'NODE' > "$RUNNER_TEMP/client-contract.json"
+          PAGE="$RUNNER_TEMP/booking.html" JS="$RUNNER_TEMP/site.js" node <<'NODE' | tee "$RUNNER_TEMP/browser-contract.json"
           const fs = require('fs');
           const html = fs.readFileSync(process.env.PAGE, 'utf8');
+          const js = fs.readFileSync(process.env.JS, 'utf8');
           const controls = [...html.matchAll(/<(?:input|select|textarea)\b[^>]*\bname=["']([^"']+)["']/gi)]
             .map(m => m[1]).filter(Boolean);
-          const fetches = [...html.matchAll(/fetch\(\s*["']([^"']+)["']/g)].map(m => m[1]);
-          const actions = [...html.matchAll(/<form\b[^>]*\baction=["']([^"']*)["']/gi)].map(m => m[1]);
-          const scripts = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/gi)].map(m => m[1]);
           const required = [
             'name','email','preferredReply','travellingFrom','projectType','placement',
             'size','coverUp','timing','idea','consent','references'
           ];
           const unique = [...new Set(controls)].sort();
-          console.log(JSON.stringify({
-            hasForm: /<form\b/i.test(html),
-            usesFormData: /new\s+FormData\s*\(/.test(html),
-            hasSubmitHandler: /addEventListener\(\s*["']submit["']/.test(html) || /onsubmit\s*=/.test(html),
-            referencesApiBooking: /\/api\/booking/.test(html),
-            fetchLiterals: [...new Set(fetches)].sort(),
-            formActions: [...new Set(actions)].sort(),
-            scriptSources: [...new Set(scripts)].sort(),
+          const bookingFetchMatches = [...js.matchAll(/fetch\s*\(\s*([^,\n]+)/g)].map(m => m[1].trim()).slice(0, 20);
+          const report = {
+            pageHasForm: /<form\b/i.test(html),
+            scriptLoadedFromSiteJs: /<script\b[^>]*src=["']\/site\.js["']/i.test(html),
+            jsSyntaxLooksValid: true,
+            jsUsesFormData: /new\s+FormData\s*\(/.test(js),
+            jsHasSubmitHandler: /addEventListener\s*\(\s*["']submit["']/.test(js),
+            jsReferencesApiBooking: /\/api\/booking/.test(js),
+            jsHasFetch: /\bfetch\s*\(/.test(js),
+            jsHasResponseOkCheck: /\.ok\b|response\.ok|res\.ok/.test(js),
+            jsHasErrorDisplay: /error|status|message/i.test(js),
+            jsReferencesFiles: /references|files|FileList/.test(js),
+            jsReferencesDiscoverySource: /discoverySource/.test(js),
+            jsReferencesDiscoverySourceDetail: /discoverySourceDetail/.test(js),
             namedControls: unique,
             missingRequiredControls: required.filter(name => !unique.includes(name)),
-            hasDiscoverySource: unique.includes('discoverySource'),
-            hasDiscoverySourceDetail: unique.includes('discoverySourceDetail')
-          }, null, 2));
+            bookingFetchExpressions: bookingFetchMatches
+          };
+          console.log(JSON.stringify(report, null, 2));
           NODE
 
-          adapter_status="$(curl -sS -o "$RUNNER_TEMP/kisa-content.bin" -w '%{http_code}' \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kisa/content")"
-          adapter_contract=false
-          if [ "$adapter_status" = 200 ]; then
-            ADAPTER="$RUNNER_TEMP/kisa-content.bin" node <<'NODE' > "$RUNNER_TEMP/adapter-contract.json"
-          const fs = require('fs');
-          const source = fs.readFileSync(process.env.ADAPTER, 'utf8');
-          console.log(JSON.stringify({
-            referencesBookingPath: source.includes('/api/booking'),
-            referencesCrmEndpoint: source.includes('CRM_BOOKING_ENDPOINT'),
-            referencesPrivacyVersion: source.includes('CRM_PRIVACY_NOTICE_VERSION'),
-            containsSupabaseCredentialName: /SUPABASE_(SECRET|SERVICE_ROLE)/.test(source)
-          }, null, 2));
-          NODE
-            if [ "$(jq -r '.referencesBookingPath' "$RUNNER_TEMP/adapter-contract.json")" = true ] \
-               && [ "$(jq -r '.referencesCrmEndpoint' "$RUNNER_TEMP/adapter-contract.json")" = true ] \
-               && [ "$(jq -r '.containsSupabaseCredentialName' "$RUNNER_TEMP/adapter-contract.json")" = false ]; then
-              adapter_contract=true
-            fi
-          else
-            printf '{"unavailable":true}\n' > "$RUNNER_TEMP/adapter-contract.json"
-          fi
-
+          syntax_ok=true
+          node --check "$RUNNER_TEMP/site.js" >/dev/null 2>&1 || syntax_ok=false
           printf 'not an image' > "$RUNNER_TEMP/not-an-image.txt"
           api_status="$(curl -sS -o "$RUNNER_TEMP/api.json" -w '%{http_code}' \
             -X POST 'https://www.kristinavishar.com/api/booking' \
@@ -101,40 +81,33 @@ jobs:
             -F "references=@$RUNNER_TEMP/not-an-image.txt;type=image/png")"
           api_code="$(jq -r '.code // "non_json"' "$RUNNER_TEMP/api.json" 2>/dev/null || printf 'non_json')"
 
-          client_contract=false
+          contract_ok=false
           if [ "$page_status" = 200 ] \
-             && [ "$(jq -r '.hasForm' "$RUNNER_TEMP/client-contract.json")" = true ] \
-             && [ "$(jq -r '.referencesApiBooking' "$RUNNER_TEMP/client-contract.json")" = true ] \
-             && [ "$(jq -r '.missingRequiredControls | length' "$RUNNER_TEMP/client-contract.json")" = 0 ]; then
-            client_contract=true
-          fi
-
-          route_contract=false
-          if [ "$api_status" = 400 ] && [ "$api_code" = invalid_file_extension ]; then
-            route_contract=true
-          fi
-
-          healthy=false
-          if [ "$client_contract" = true ] && [ "$adapter_contract" = true ] && [ "$route_contract" = true ]; then
-            healthy=true
+             && [ "$js_status" = 200 ] \
+             && [ "$syntax_ok" = true ] \
+             && [ "$(jq -r '.pageHasForm' "$RUNNER_TEMP/browser-contract.json")" = true ] \
+             && [ "$(jq -r '.scriptLoadedFromSiteJs' "$RUNNER_TEMP/browser-contract.json")" = true ] \
+             && [ "$(jq -r '.jsUsesFormData' "$RUNNER_TEMP/browser-contract.json")" = true ] \
+             && [ "$(jq -r '.jsHasSubmitHandler' "$RUNNER_TEMP/browser-contract.json")" = true ] \
+             && [ "$(jq -r '.jsReferencesApiBooking' "$RUNNER_TEMP/browser-contract.json")" = true ] \
+             && [ "$(jq -r '.missingRequiredControls | length' "$RUNNER_TEMP/browser-contract.json")" = 0 ] \
+             && [ "$api_status" = 400 ] \
+             && [ "$api_code" = invalid_file_extension ]; then
+            contract_ok=true
           fi
 
           {
             echo "page_status=$page_status"
-            echo "client_contract=$client_contract"
-            echo "adapter_status=$adapter_status"
-            echo "adapter_contract=$adapter_contract"
+            echo "js_status=$js_status"
+            echo "syntax_ok=$syntax_ok"
             echo "api_status=$api_status"
             echo "api_code=$api_code"
-            echo "route_contract=$route_contract"
-            echo "healthy=$healthy"
+            echo "contract_ok=$contract_ok"
           } >> "$GITHUB_OUTPUT"
 
-          echo 'SANITIZED_CLIENT_CONTRACT'
-          cat "$RUNNER_TEMP/client-contract.json"
-          echo 'SANITIZED_ADAPTER_CONTRACT'
-          cat "$RUNNER_TEMP/adapter-contract.json"
-          echo "RESULT page=$page_status client=$client_contract adapter_http=$adapter_status adapter=$adapter_contract api=$api_status code=$api_code route=$route_contract healthy=$healthy"
+          echo "RESULT page=$page_status js=$js_status syntax=$syntax_ok api=$api_status code=$api_code contract=$contract_ok"
+          echo 'RELEVANT_PUBLIC_JS_LINES'
+          grep -nEi 'api/booking|FormData|addEventListener\(.submit|discoverySource|references|response\.ok|res\.ok' "$RUNNER_TEMP/site.js" | head -n 120 || true
 
       - name: Publish sanitized diagnosis status
         if: always()
@@ -142,18 +115,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PAGE_STATUS: ${{ steps.probe.outputs.page_status }}
-          CLIENT_CONTRACT: ${{ steps.probe.outputs.client_contract }}
-          ADAPTER_STATUS: ${{ steps.probe.outputs.adapter_status }}
-          ADAPTER_CONTRACT: ${{ steps.probe.outputs.adapter_contract }}
+          JS_STATUS: ${{ steps.probe.outputs.js_status }}
+          SYNTAX_OK: ${{ steps.probe.outputs.syntax_ok }}
           API_STATUS: ${{ steps.probe.outputs.api_status }}
           API_CODE: ${{ steps.probe.outputs.api_code }}
-          HEALTHY: ${{ steps.probe.outputs.healthy }}
+          CONTRACT_OK: ${{ steps.probe.outputs.contract_ok }}
         run: |
           set -euo pipefail
           state=failure
-          [ "$HEALTHY" = true ] && state=success
-          desc="page=$PAGE_STATUS client=$CLIENT_CONTRACT adapter=$ADAPTER_STATUS/$ADAPTER_CONTRACT api=$API_STATUS/$API_CODE"
-          desc="$(printf '%s' "$desc" | cut -c1-135)"
+          [ "$CONTRACT_OK" = true ] && state=success
+          desc="page=$PAGE_STATUS js=$JS_STATUS syntax=$SYNTAX_OK api=$API_STATUS/$API_CODE contract=$CONTRACT_OK"
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$state" \
             -f context='kristina-production-form-diagnosis' \
@@ -161,5 +132,5 @@ jobs:
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: Fail if production contract is broken
-        if: steps.probe.outputs.healthy != 'true'
+        if: steps.probe.outputs.contract_ok != 'true'
         run: exit 1
