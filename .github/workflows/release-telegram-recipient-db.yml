@@ -1,0 +1,107 @@
+name: Release Telegram recipient isolation to production DB
+
+on:
+  push:
+    branches:
+      - release/private-crm-rc816-db-telegram-recipient-20260919
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-private-production-crm-database
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.event.before }}
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
+
+    steps:
+      - name: Verify immutable release lineage and production gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$GITHUB_REF_NAME" = "release/private-crm-rc816-db-telegram-recipient-20260919" ]
+          [ "$DEPLOY_ENABLED" = "true" ]
+          [[ "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]
+          [ "$PROJECT_REF" != "gwaliusblwrzisrwnsvs" ]
+          [ "$PROJECT_URL" = "https://${PROJECT_REF}.supabase.co" ]
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+
+          git init -q "$RUNNER_TEMP/release-check"
+          cd "$RUNNER_TEMP/release-check"
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch -q --depth=2 origin "$GITHUB_SHA" "$APPROVED_SHA" "refs/heads/$CANONICAL_BRANCH"
+          [ "$(git rev-parse FETCH_HEAD)" != "" ]
+          git cat-file -e "$GITHUB_SHA^{commit}"
+          git cat-file -e "$APPROVED_SHA^{commit}"
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR==1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ]
+
+          changed="$(git diff --name-only "$APPROVED_SHA" "$GITHUB_SHA")"
+          [ "$changed" = ".github/workflows/release-telegram-recipient-db.yml" ]
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100"             --jq '.workflow_runs[] | [.name,.status,.conclusion,.head_sha] | @tsv' > "$RUNNER_TEMP/runs.tsv"
+
+          for required in             "CRM and booking validation"             "Static Validation"             "Gmail production validation"; do
+            awk -F '\t' -v name="$required" -v sha="$APPROVED_SHA"               '$1==name && $2=="completed" && $3=="success" && $4==sha {found=1} END{exit !found}'               "$RUNNER_TEMP/runs.tsv"
+          done
+
+      - name: Checkout exact canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact source and intended migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          test -f supabase/migrations/20260919143000_telegram_artist_recipient_preference.sql
+          grep -q "telegram_notification_recipient_eligible"             supabase/migrations/20260919143000_telegram_artist_recipient_preference.sql
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact production project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Production migration readback before deploy
+        run: supabase migration list
+
+      - name: Dry-run pending production migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/dry-run.txt"
+          grep -q "20260919143000" "$RUNNER_TEMP/dry-run.txt"
+
+      - name: Apply pending production migration
+        run: supabase db push
+
+      - name: Production migration readback after deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list 2>&1 | tee "$RUNNER_TEMP/migrations-after.txt"
+          grep -q "20260919143000" "$RUNNER_TEMP/migrations-after.txt"
