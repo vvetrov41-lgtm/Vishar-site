@@ -1,0 +1,23 @@
+name: Kristina live JPEG probe acceptance v2
+
+on:
+  push:
+    branches:
+      - 'agent/kristina-jpeg-content-probe-acceptance-v2-20260919'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run no-persistence live Kristina JPEG contract probe
+        run: node scripts/probe-kristina-live-booking-contract.mjs
