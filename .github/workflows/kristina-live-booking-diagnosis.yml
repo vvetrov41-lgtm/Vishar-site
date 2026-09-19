@@ -1,0 +1,100 @@
+name: Kristina live booking diagnosis
+
+on:
+  push:
+    branches:
+      - 'agent/kristina-form-live-diagnosis-20260919'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe live page and non-persisting booking contract
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          page_status="$(curl -sS -L -o "$RUNNER_TEMP/booking.html" -w '%{http_code}' 'https://www.kristinavishar.com/booking/' || true)"
+          page_has_form=false
+          if [ "$page_status" = '200' ] && grep -Eqi '<form|Send Enquiry to Kristina' "$RUNNER_TEMP/booking.html"; then
+            page_has_form=true
+          fi
+
+          printf 'not an image' > "$RUNNER_TEMP/not-an-image.txt"
+          api_status="$(curl -sS -o "$RUNNER_TEMP/api.json" -w '%{http_code}' \
+            -X POST 'https://www.kristinavishar.com/api/booking' \
+            -H 'Origin: https://www.kristinavishar.com' \
+            -H 'Accept: application/json' \
+            -F 'name=Production route probe' \
+            -F 'email=route-probe@example.invalid' \
+            -F 'phone=' \
+            -F 'instagram=' \
+            -F 'preferredReply=Email' \
+            -F 'travellingFrom=London' \
+            -F 'projectType=Custom colour' \
+            -F 'placement=Forearm' \
+            -F 'size=10 cm' \
+            -F 'coverUp=No' \
+            -F 'timing=Flexible' \
+            -F 'discoverySource=google' \
+            -F 'discoverySourceDetail=' \
+            -F 'idea=Production route contract probe' \
+            -F 'website=' \
+            -F 'consent=yes' \
+            -F "references=@$RUNNER_TEMP/not-an-image.txt;type=image/png" || true)"
+          api_code="$(jq -r '.code // "non_json"' "$RUNNER_TEMP/api.json" 2>/dev/null || printf 'non_json')"
+          api_error="$(jq -r '.error // empty' "$RUNNER_TEMP/api.json" 2>/dev/null | tr '\n' ' ' | cut -c1-100)"
+
+          healthy=false
+          if [ "$page_has_form" = true ] && [ "$api_status" = '400' ] && [ "$api_code" = 'invalid_file_extension' ]; then
+            healthy=true
+          fi
+
+          {
+            echo "page_status=$page_status"
+            echo "page_has_form=$page_has_form"
+            echo "api_status=$api_status"
+            echo "api_code=$api_code"
+            echo "healthy=$healthy"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo '### Kristina live booking diagnosis'
+            echo "- booking page HTTP: `$page_status`"
+            echo "- booking page contains form: `$page_has_form`"
+            echo "- /api/booking HTTP: `$api_status`"
+            echo "- returned code: `$api_code`"
+            if [ -n "$api_error" ]; then echo "- safe error: `$api_error`"; fi
+            echo '- persistence: none expected; deliberately invalid image is rejected before durable intake'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish sanitized diagnosis status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGE_STATUS: ${{ steps.probe.outputs.page_status }}
+          PAGE_HAS_FORM: ${{ steps.probe.outputs.page_has_form }}
+          API_STATUS: ${{ steps.probe.outputs.api_status }}
+          API_CODE: ${{ steps.probe.outputs.api_code }}
+          HEALTHY: ${{ steps.probe.outputs.healthy }}
+        run: |
+          set -euo pipefail
+          state=failure
+          [ "$HEALTHY" = true ] && state=success
+          desc="page=$PAGE_STATUS form=$PAGE_HAS_FORM api=$API_STATUS code=$API_CODE"
+          desc="$(printf '%s' "$desc" | cut -c1-135)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$state" \
+            -f context='kristina-live-form-diagnosis' \
+            -f description="$desc" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Fail if live contract is broken
+        if: steps.probe.outputs.healthy != 'true'
+        run: exit 1
