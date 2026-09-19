@@ -14,15 +14,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Probe live page and non-persisting booking contract
+      - name: Probe live page, browser contract and non-persisting intake
         id: probe
         shell: bash
         run: |
-          set -u
-          page_status="$(curl -sS -L -o "$RUNNER_TEMP/booking.html" -w '%{http_code}' 'https://www.kristinavishar.com/booking/' || true)"
-          page_has_form=false
-          if [ "$page_status" = '200' ] && grep -Eqi '<form|Send Enquiry to Kristina' "$RUNNER_TEMP/booking.html"; then
-            page_has_form=true
+          set -euo pipefail
+          page_status="$(curl -sS -L -o "$RUNNER_TEMP/booking.html" -w '%{http_code}' 'https://www.kristinavishar.com/booking/')"
+          PAGE="$RUNNER_TEMP/booking.html" node <<'NODE' | tee "$RUNNER_TEMP/client-contract.json"
+          const fs = require('fs');
+          const html = fs.readFileSync(process.env.PAGE, 'utf8');
+          const controls = [...html.matchAll(/<(?:input|select|textarea)\b[^>]*\bname=["']([^"']+)["']/gi)]
+            .map(m => m[1]).filter(Boolean);
+          const fetches = [...html.matchAll(/fetch\(\s*["']([^"']+)["']/g)].map(m => m[1]);
+          const actions = [...html.matchAll(/<form\b[^>]*\baction=["']([^"']*)["']/gi)].map(m => m[1]);
+          const required = [
+            'name','email','preferredReply','travellingFrom','projectType','placement',
+            'size','coverUp','timing','idea','consent','references'
+          ];
+          const unique = [...new Set(controls)].sort();
+          const report = {
+            hasForm: /<form\b/i.test(html),
+            usesFormData: /new\s+FormData\s*\(/.test(html),
+            hasSubmitHandler: /addEventListener\(\s*["']submit["']/.test(html) || /onsubmit\s*=/.test(html),
+            referencesApiBooking: /\/api\/booking/.test(html),
+            fetchLiterals: [...new Set(fetches)].sort(),
+            formActions: [...new Set(actions)].sort(),
+            namedControls: unique,
+            missingRequiredControls: required.filter(name => !unique.includes(name)),
+            hasDiscoverySource: unique.includes('discoverySource'),
+            hasDiscoverySourceDetail: unique.includes('discoverySourceDetail')
+          };
+          console.log(JSON.stringify(report, null, 2));
+          NODE
+
+          page_has_form="$(jq -r '.hasForm' "$RUNNER_TEMP/client-contract.json")"
+          client_contract=false
+          if [ "$page_status" = 200 ] \
+             && [ "$page_has_form" = true ] \
+             && [ "$(jq -r '.usesFormData' "$RUNNER_TEMP/client-contract.json")" = true ] \
+             && [ "$(jq -r '.referencesApiBooking' "$RUNNER_TEMP/client-contract.json")" = true ] \
+             && [ "$(jq -r '.missingRequiredControls | length' "$RUNNER_TEMP/client-contract.json")" = 0 ]; then
+            client_contract=true
           fi
 
           printf 'not an image' > "$RUNNER_TEMP/not-an-image.txt"
@@ -46,32 +78,25 @@ jobs:
             -F 'idea=Production route contract probe' \
             -F 'website=' \
             -F 'consent=yes' \
-            -F "references=@$RUNNER_TEMP/not-an-image.txt;type=image/png" || true)"
+            -F "references=@$RUNNER_TEMP/not-an-image.txt;type=image/png")"
           api_code="$(jq -r '.code // "non_json"' "$RUNNER_TEMP/api.json" 2>/dev/null || printf 'non_json')"
-          api_error="$(jq -r '.error // empty' "$RUNNER_TEMP/api.json" 2>/dev/null | tr '\n' ' ' | cut -c1-100)"
-
           healthy=false
-          if [ "$page_has_form" = true ] && [ "$api_status" = '400' ] && [ "$api_code" = 'invalid_file_extension' ]; then
+          if [ "$client_contract" = true ] && [ "$api_status" = 400 ] && [ "$api_code" = invalid_file_extension ]; then
             healthy=true
           fi
 
           {
             echo "page_status=$page_status"
             echo "page_has_form=$page_has_form"
+            echo "client_contract=$client_contract"
             echo "api_status=$api_status"
             echo "api_code=$api_code"
             echo "healthy=$healthy"
           } >> "$GITHUB_OUTPUT"
 
-          {
-            echo '### Kristina live booking diagnosis'
-            echo "- booking page HTTP: `$page_status`"
-            echo "- booking page contains form: `$page_has_form`"
-            echo "- /api/booking HTTP: `$api_status`"
-            echo "- returned code: `$api_code`"
-            if [ -n "$api_error" ]; then echo "- safe error: `$api_error`"; fi
-            echo '- persistence: none expected; deliberately invalid image is rejected before durable intake'
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "SANITIZED_CLIENT_CONTRACT"
+          cat "$RUNNER_TEMP/client-contract.json"
+          echo "INTAKE page=$page_status form=$page_has_form client_contract=$client_contract api=$api_status code=$api_code healthy=$healthy"
 
       - name: Publish sanitized diagnosis status
         if: always()
@@ -80,6 +105,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PAGE_STATUS: ${{ steps.probe.outputs.page_status }}
           PAGE_HAS_FORM: ${{ steps.probe.outputs.page_has_form }}
+          CLIENT_CONTRACT: ${{ steps.probe.outputs.client_contract }}
           API_STATUS: ${{ steps.probe.outputs.api_status }}
           API_CODE: ${{ steps.probe.outputs.api_code }}
           HEALTHY: ${{ steps.probe.outputs.healthy }}
@@ -87,7 +113,7 @@ jobs:
           set -euo pipefail
           state=failure
           [ "$HEALTHY" = true ] && state=success
-          desc="page=$PAGE_STATUS form=$PAGE_HAS_FORM api=$API_STATUS code=$API_CODE"
+          desc="page=$PAGE_STATUS form=$PAGE_HAS_FORM client=$CLIENT_CONTRACT api=$API_STATUS code=$API_CODE"
           desc="$(printf '%s' "$desc" | cut -c1-135)"
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$state" \
