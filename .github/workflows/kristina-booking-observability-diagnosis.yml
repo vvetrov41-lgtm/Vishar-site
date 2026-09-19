@@ -1,4 +1,4 @@
-name: Kristina booking observability diagnosis
+name: Kristina booking production diagnosis
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   statuses: write
 
 jobs:
-  diagnose-logs:
+  diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment: crm-production
@@ -18,86 +18,148 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Query sanitized kisa booking telemetry
-        id: telemetry
+      - name: Inspect live browser contract and kisa adapter
+        id: probe
         shell: bash
         run: |
           set -euo pipefail
-          [ -n "$CLOUDFLARE_API_TOKEN" ]
-          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
-          to_ms="$(date +%s%3N)"
-          from_ms="$((to_ms - 7 * 24 * 60 * 60 * 1000))"
-          cat > "$RUNNER_TEMP/query.json" <<JSON
-          {
-            "queryId": "kristina-booking-diagnosis",
-            "timeframe": {"from": $from_ms, "to": $to_ms},
-            "view": "events",
-            "limit": 500,
-            "parameters": {
-              "datasets": [],
-              "filterCombination": "and",
-              "filters": [
-                {"key":"\$metadata.service","operation":"eq","type":"string","value":"kisa"},
-                {"key":"\$metadata.trigger","operation":"includes","type":"string","value":"POST /api/booking"},
-                {"key":"\$metadata.type","operation":"eq","type":"string","value":"cf-worker-event"}
-              ]
-            }
-          }
-          JSON
-          status="$(curl -sS -o "$RUNNER_TEMP/query-response.json" -w '%{http_code}' \
-            -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/observability/telemetry/query" \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            -H 'Content-Type: application/json' \
-            --data-binary @"$RUNNER_TEMP/query.json")"
-          echo "http_status=$status" >> "$GITHUB_OUTPUT"
-          if [ "$status" != 200 ]; then
-            code="$(jq -r '.errors[0].code // "none"' "$RUNNER_TEMP/query-response.json" 2>/dev/null || printf none)"
-            message="$(jq -r '.errors[0].message // "query failed"' "$RUNNER_TEMP/query-response.json" 2>/dev/null | tr '\n' ' ' | cut -c1-120)"
-            echo "error_code=$code" >> "$GITHUB_OUTPUT"
-            echo "safe_error=$message" >> "$GITHUB_OUTPUT"
-            echo "Telemetry API HTTP $status, code $code, error $message"
-            exit 1
-          fi
-          RESPONSE="$RUNNER_TEMP/query-response.json" node <<'NODE' | tee "$RUNNER_TEMP/sanitized.txt"
-          const fs = require('fs');
-          const body = JSON.parse(fs.readFileSync(process.env.RESPONSE, 'utf8'));
-          const rows = body?.result?.events?.events || [];
-          const count = body?.result?.events?.count ?? rows.length;
-          const statuses = {}, days = {}, recent = [];
-          for (const row of rows) {
-            const m = row?.['$metadata'] || {};
-            const sc = String(m.statusCode ?? 'unknown');
-            statuses[sc] = (statuses[sc] || 0) + 1;
-            const ts = Number(row?.timestamp ?? m.startTime ?? m.endTime ?? 0);
-            const day = ts ? new Date(ts).toISOString().slice(0, 10) : 'unknown';
-            days[day] = (days[day] || 0) + 1;
-            recent.push({
-              time: ts ? new Date(ts).toISOString() : null,
-              status: m.statusCode ?? null,
-              outcome: row?.$workers?.outcome ?? null,
-              trigger: m.trigger ?? null
-            });
-          }
-          recent.sort((a,b)=>String(b.time).localeCompare(String(a.time)));
-          console.log(JSON.stringify({count, returned: rows.length, statuses, days, recent: recent.slice(0, 30)}, null, 2));
-          NODE
-          total="$(jq -r '.result.events.count // (.result.events.events | length) // 0' "$RUNNER_TEMP/query-response.json")"
-          echo "total=$total" >> "$GITHUB_OUTPUT"
+          page_status="$(curl -sS -L -o "$RUNNER_TEMP/booking.html" -w '%{http_code}' 'https://www.kristinavishar.com/booking/')"
 
-      - name: Publish sanitized telemetry status
+          PAGE="$RUNNER_TEMP/booking.html" node <<'NODE' > "$RUNNER_TEMP/client-contract.json"
+          const fs = require('fs');
+          const html = fs.readFileSync(process.env.PAGE, 'utf8');
+          const controls = [...html.matchAll(/<(?:input|select|textarea)\b[^>]*\bname=["']([^"']+)["']/gi)]
+            .map(m => m[1]).filter(Boolean);
+          const fetches = [...html.matchAll(/fetch\(\s*["']([^"']+)["']/g)].map(m => m[1]);
+          const actions = [...html.matchAll(/<form\b[^>]*\baction=["']([^"']*)["']/gi)].map(m => m[1]);
+          const scripts = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/gi)].map(m => m[1]);
+          const required = [
+            'name','email','preferredReply','travellingFrom','projectType','placement',
+            'size','coverUp','timing','idea','consent','references'
+          ];
+          const unique = [...new Set(controls)].sort();
+          console.log(JSON.stringify({
+            hasForm: /<form\b/i.test(html),
+            usesFormData: /new\s+FormData\s*\(/.test(html),
+            hasSubmitHandler: /addEventListener\(\s*["']submit["']/.test(html) || /onsubmit\s*=/.test(html),
+            referencesApiBooking: /\/api\/booking/.test(html),
+            fetchLiterals: [...new Set(fetches)].sort(),
+            formActions: [...new Set(actions)].sort(),
+            scriptSources: [...new Set(scripts)].sort(),
+            namedControls: unique,
+            missingRequiredControls: required.filter(name => !unique.includes(name)),
+            hasDiscoverySource: unique.includes('discoverySource'),
+            hasDiscoverySourceDetail: unique.includes('discoverySourceDetail')
+          }, null, 2));
+          NODE
+
+          adapter_status="$(curl -sS -o "$RUNNER_TEMP/kisa-content.bin" -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kisa/content")"
+          adapter_contract=false
+          if [ "$adapter_status" = 200 ]; then
+            ADAPTER="$RUNNER_TEMP/kisa-content.bin" node <<'NODE' > "$RUNNER_TEMP/adapter-contract.json"
+          const fs = require('fs');
+          const source = fs.readFileSync(process.env.ADAPTER, 'utf8');
+          console.log(JSON.stringify({
+            referencesBookingPath: source.includes('/api/booking'),
+            referencesCrmEndpoint: source.includes('CRM_BOOKING_ENDPOINT'),
+            referencesPrivacyVersion: source.includes('CRM_PRIVACY_NOTICE_VERSION'),
+            containsSupabaseCredentialName: /SUPABASE_(SECRET|SERVICE_ROLE)/.test(source)
+          }, null, 2));
+          NODE
+            if [ "$(jq -r '.referencesBookingPath' "$RUNNER_TEMP/adapter-contract.json")" = true ] \
+               && [ "$(jq -r '.referencesCrmEndpoint' "$RUNNER_TEMP/adapter-contract.json")" = true ] \
+               && [ "$(jq -r '.containsSupabaseCredentialName' "$RUNNER_TEMP/adapter-contract.json")" = false ]; then
+              adapter_contract=true
+            fi
+          else
+            printf '{"unavailable":true}\n' > "$RUNNER_TEMP/adapter-contract.json"
+          fi
+
+          printf 'not an image' > "$RUNNER_TEMP/not-an-image.txt"
+          api_status="$(curl -sS -o "$RUNNER_TEMP/api.json" -w '%{http_code}' \
+            -X POST 'https://www.kristinavishar.com/api/booking' \
+            -H 'Origin: https://www.kristinavishar.com' \
+            -H 'Accept: application/json' \
+            -F 'name=Production route probe' \
+            -F 'email=route-probe@example.invalid' \
+            -F 'phone=' \
+            -F 'instagram=' \
+            -F 'preferredReply=Email' \
+            -F 'travellingFrom=London' \
+            -F 'projectType=Custom colour' \
+            -F 'placement=Forearm' \
+            -F 'size=10 cm' \
+            -F 'coverUp=No' \
+            -F 'timing=Flexible' \
+            -F 'discoverySource=google' \
+            -F 'discoverySourceDetail=' \
+            -F 'idea=Production route contract probe' \
+            -F 'website=' \
+            -F 'consent=yes' \
+            -F "references=@$RUNNER_TEMP/not-an-image.txt;type=image/png")"
+          api_code="$(jq -r '.code // "non_json"' "$RUNNER_TEMP/api.json" 2>/dev/null || printf 'non_json')"
+
+          client_contract=false
+          if [ "$page_status" = 200 ] \
+             && [ "$(jq -r '.hasForm' "$RUNNER_TEMP/client-contract.json")" = true ] \
+             && [ "$(jq -r '.referencesApiBooking' "$RUNNER_TEMP/client-contract.json")" = true ] \
+             && [ "$(jq -r '.missingRequiredControls | length' "$RUNNER_TEMP/client-contract.json")" = 0 ]; then
+            client_contract=true
+          fi
+
+          route_contract=false
+          if [ "$api_status" = 400 ] && [ "$api_code" = invalid_file_extension ]; then
+            route_contract=true
+          fi
+
+          healthy=false
+          if [ "$client_contract" = true ] && [ "$adapter_contract" = true ] && [ "$route_contract" = true ]; then
+            healthy=true
+          fi
+
+          {
+            echo "page_status=$page_status"
+            echo "client_contract=$client_contract"
+            echo "adapter_status=$adapter_status"
+            echo "adapter_contract=$adapter_contract"
+            echo "api_status=$api_status"
+            echo "api_code=$api_code"
+            echo "route_contract=$route_contract"
+            echo "healthy=$healthy"
+          } >> "$GITHUB_OUTPUT"
+
+          echo 'SANITIZED_CLIENT_CONTRACT'
+          cat "$RUNNER_TEMP/client-contract.json"
+          echo 'SANITIZED_ADAPTER_CONTRACT'
+          cat "$RUNNER_TEMP/adapter-contract.json"
+          echo "RESULT page=$page_status client=$client_contract adapter_http=$adapter_status adapter=$adapter_contract api=$api_status code=$api_code route=$route_contract healthy=$healthy"
+
+      - name: Publish sanitized diagnosis status
         if: always()
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          HTTP_STATUS: ${{ steps.telemetry.outputs.http_status }}
-          TOTAL: ${{ steps.telemetry.outputs.total }}
+          PAGE_STATUS: ${{ steps.probe.outputs.page_status }}
+          CLIENT_CONTRACT: ${{ steps.probe.outputs.client_contract }}
+          ADAPTER_STATUS: ${{ steps.probe.outputs.adapter_status }}
+          ADAPTER_CONTRACT: ${{ steps.probe.outputs.adapter_contract }}
+          API_STATUS: ${{ steps.probe.outputs.api_status }}
+          API_CODE: ${{ steps.probe.outputs.api_code }}
+          HEALTHY: ${{ steps.probe.outputs.healthy }}
         run: |
           set -euo pipefail
-          state=success
-          [ "$HTTP_STATUS" = 200 ] || state=failure
-          desc="telemetry_http=$HTTP_STATUS booking_events=${TOTAL:-unknown}"
+          state=failure
+          [ "$HEALTHY" = true ] && state=success
+          desc="page=$PAGE_STATUS client=$CLIENT_CONTRACT adapter=$ADAPTER_STATUS/$ADAPTER_CONTRACT api=$API_STATUS/$API_CODE"
+          desc="$(printf '%s' "$desc" | cut -c1-135)"
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$state" \
-            -f context='kristina-booking-telemetry-diagnosis' \
+            -f context='kristina-production-form-diagnosis' \
             -f description="$desc" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Fail if production contract is broken
+        if: steps.probe.outputs.healthy != 'true'
+        run: exit 1
