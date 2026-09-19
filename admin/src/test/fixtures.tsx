@@ -504,6 +504,8 @@ export interface FakeClientOptions {
    * to supply one; there is no inbound row to invent.
    */
   emailMessages?: Record<string, unknown>[];
+  /** CRM-owned Gmail metadata snapshots returned directly from Supabase. */
+  gmailMetadataSnapshots?: Record<string, unknown>[];
   /**
    * Rows the conversation projection returns, replacing the shared
    * `CONVERSATIONS` set. Tests about the boundary between studio work and an
@@ -645,6 +647,7 @@ function tableResult(
   enquiryStatus?: EnquiryStatus,
   extraSessions: Record<string, unknown>[] = [],
   emailMessages: Record<string, unknown>[] = [],
+  gmailMetadataSnapshots: Record<string, unknown>[] = [],
   conversations: Record<string, unknown>[] = CONVERSATIONS as unknown as Record<string, unknown>[],
   extraEnquiries: Record<string, unknown>[] = []
 ) {
@@ -692,6 +695,11 @@ function tableResult(
       // The policy is can_manage_artist, so a read-only account genuinely sees
       // nothing here rather than an empty list by accident.
       return { data: canManage ? emailMessages : [], error: null };
+    case 'gmail_client_metadata_snapshots':
+      // Snapshot rows are already known-client metadata and remain artist/client
+      // scoped by RLS in production. Tests supply only rows the signed-in
+      // operator is allowed to read.
+      return { data: canManage ? gmailMetadataSnapshots : [], error: null };
     case 'follow_ups':
       return { data: [{ id: 'fu-1', artist_id: VLADIMIR_ARTIST_ID, status: 'open', due_at: '2026-07-05T09:00:00Z', subject: 'Chase references', details: null, client_id: CLIENT_ID, enquiry_id: ENQUIRY_ID, project_id: null, assigned_to: null }], error: null };
     case 'activity_log':
@@ -788,6 +796,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         options.enquiryStatus,
         options.extraSessions,
         options.emailMessages,
+        options.gmailMetadataSnapshots,
         options.conversations,
         options.extraEnquiries
       );

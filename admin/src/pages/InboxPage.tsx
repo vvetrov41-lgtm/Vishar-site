@@ -161,32 +161,22 @@ export function InboxPage() {
         emailFailed = true;
       }
 
-      // Known clients who have Gmail activity the CRM has never stored.
-      //
-      // Without this, a client the studio knows could email for the first time
-      // and appear nowhere: no stored message means no thread, and no thread
-      // means no row. The gateway resolves addresses to clients server-side and
-      // returns only the ones it can name, so this adds people the CRM already
-      // knows and nobody else.
-      //
-      // Asked per artist, explicitly, because the mailbox belongs to an artist.
-      // Failure is isolated exactly like stored email: one artist's mailbox
-      // being unreachable must not empty the queue.
-      const discoveryArtists = selectedArtistId
-        ? [selectedArtistId]
-        : (await api.listAccessibleArtists().catch(() => []))
-          .filter((artist) => artist.is_active)
-          .map((artist) => artist.id);
-      const discovered = (await Promise.all(
-        discoveryArtists.map(async (artistId) => {
-          try {
-            const result = await api.listGmailInboxClients(artistId);
-            return result.clients.map((entry) => gmailDiscoveryItem(entry, artistId));
-          } catch {
-            return [];
-          }
-        }),
-      )).flat();
+      // First-time Gmail activity for known clients comes from the CRM-owned
+      // metadata snapshot. Inbox never scans Gmail while rendering.
+      let discovered = [] as ReturnType<typeof gmailDiscoveryItem>[];
+      try {
+        const snapshots = await api.listGmailMetadataSnapshots(selectedArtistId ?? undefined);
+        discovered = snapshots.map((entry) => gmailDiscoveryItem({
+          client_id: entry.client_id,
+          client_name: null,
+          subject: entry.subject,
+          last_message_at: entry.last_message_at,
+          direction: entry.direction,
+          untrusted_content: true,
+        }, entry.artist_id));
+      } catch {
+        emailFailed = true;
+      }
 
       const threads = groupEmailThreads(emails);
       const clientIds = [

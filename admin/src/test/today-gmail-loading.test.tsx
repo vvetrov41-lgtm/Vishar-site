@@ -7,53 +7,61 @@ import {
   renderWithSession,
 } from './fixtures';
 
-describe('Today Gmail loading', () => {
-  it('renders CRM-owned work before Gmail discovery resolves, then merges the reply', async () => {
-    let resolveDiscovery!: (response: Response) => void;
-    const pendingDiscovery = new Promise<Response>((resolve) => {
-      resolveDiscovery = resolve;
-    });
+function snapshot() {
+  return {
+    artist_id: VLADIMIR_ARTIST_ID,
+    client_id: CLIENT_ID,
+    subject: 'Is Friday still free?',
+    last_message_at: '2026-09-01T10:00:00Z',
+    direction: 'inbound',
+    refreshed_at: '2026-09-01T10:01:00Z',
+  };
+}
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = new URL(String(input));
-      if (url.pathname === `/v1/operator/artists/${VLADIMIR_ARTIST_ID}/gmail/inbox`) {
-        return pendingDiscovery;
-      }
+describe('Today Gmail loading', () => {
+  it('renders CRM-owned work even when the Gmail metadata snapshot is unavailable', async () => {
+    const fetchMock = vi.fn(async () => {
       throw new TypeError('network disabled in tests');
     });
-
     vi.stubGlobal('fetch', fetchMock);
     try {
       renderWithSession(<App />, {
         role: 'owner',
         path: '/',
         accessibleArtistIds: [VLADIMIR_ARTIST_ID],
+        failTable: 'gmail_client_metadata_snapshots',
         emailMessages: [],
       });
 
-      // The mailbox is deliberately still unresolved. The Today shell and its
-      // CRM-owned work must nevertheless be usable instead of staying on the
-      // global loading state.
       expect(await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
         .toBeInTheDocument();
       expect(screen.queryByText('Is Friday still free?')).not.toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
-      resolveDiscovery(Response.json({
-        artist_id: VLADIMIR_ARTIST_ID,
-        clients: [{
-          client_id: CLIENT_ID,
-          client_name: 'Fixture Client',
-          subject: 'Is Friday still free?',
-          last_message_at: '2026-09-01T10:00:00Z',
-          direction: 'inbound',
-          untrusted_content: true,
-        }],
-        untrusted_content: true,
-      }));
+  it('merges cached Gmail attention without any provider request', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('network disabled in tests');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderWithSession(<App />, {
+        role: 'owner',
+        path: '/',
+        accessibleArtistIds: [VLADIMIR_ARTIST_ID],
+        gmailMetadataSnapshots: [snapshot()],
+        emailMessages: [],
+      });
 
+      expect(await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
+        .toBeInTheDocument();
       await waitFor(() => {
         expect(document.querySelector(`a[href="#/inbox/email/client-${CLIENT_ID}"]`)).not.toBeNull();
       });
+      expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }

@@ -11,6 +11,7 @@
 // owns the reasoning and is tested separately, so what this file does is fetch,
 // order and render.
 
+import { useEffect, useState } from 'react';
 import { ArtistRelationship } from '../components/ArtistRelationship';
 import { ClientEditPanel } from '../components/ClientEditPanel';
 import { useAsync } from '../components/AsyncData';
@@ -25,6 +26,8 @@ import {
   type ClientWorkspaceSnapshot,
 } from '../lib/client-workspace';
 import { formatDate, formatDateTime, localiseKnownValue, relativeDue } from '../lib/format';
+import { createGmailClientHistoryCache } from '../lib/gmail-client-cache';
+import type { LiveGmailClientHistory } from '../lib/email-api';
 import { useLanguage } from '../lib/i18n';
 import { formatPhoneForDisplay } from '../lib/phone';
 import { Link } from '../lib/router';
@@ -164,7 +167,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
       ) : null}
 
       {can(role, 'viewEnquiries') ? (
-        <MessagesSection conversations={conversations} messages={latestMessages} />
+        <>
+          <MessagesSection conversations={conversations} messages={latestMessages} />
+          <GmailMessagesSection api={api} clientId={clientId} />
+        </>
       ) : null}
 
       {can(role, 'viewFollowUps') ? (
@@ -568,6 +574,69 @@ function MessagesSection({
         <p className="meta" style={{ marginTop: 10 }}>
           {t('clientWorkspace.moreConversations', { count: conversations.length - 1 })}
         </p>
+      ) : null}
+    </Section>
+  );
+}
+
+const gmailHistoryCaches = new WeakMap<object, ReturnType<typeof createGmailClientHistoryCache>>();
+
+function GmailMessagesSection({ api, clientId }: { api: ReturnType<typeof useApi>; clientId: string }) {
+  const { t, language } = useLanguage();
+  const [history, setHistory] = useState<LiveGmailClientHistory | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  let cache = gmailHistoryCaches.get(api);
+  if (!cache) {
+    cache = createGmailClientHistoryCache((id, options) => api.listLiveGmailForClient(id, options));
+    gmailHistoryCaches.set(api, cache);
+  }
+
+  const load = (force = false) => {
+    setLoading(true);
+    setError(false);
+    void cache!.load(clientId, { force, threadLimit: 4, messageLimit: 20 })
+      .then((value) => setHistory(value))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(false);
+    void cache!.load(clientId, { threadLimit: 4, messageLimit: 20 })
+      .then((value) => { if (active) setHistory(value); })
+      .catch(() => { if (active) setError(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [api, clientId]);
+
+  const messages = history?.threads
+    .flatMap((thread) => thread.messages)
+    .sort((left, right) => timeOf(left.timestamp) - timeOf(right.timestamp))
+    .slice(-8) ?? [];
+
+  return (
+    <Section
+      title={t('clientWorkspace.gmail')}
+      action={<button type="button" className="badge" onClick={() => load(true)} disabled={loading}>{t('clientWorkspace.gmailRefresh')}</button>}
+    >
+      {loading && !history ? <LoadingState label={t('clientWorkspace.gmailLoading')} /> : null}
+      {error ? <p className="notice warn" role="status">{t('clientWorkspace.gmailUnavailable')}</p> : null}
+      {!loading && !error && messages.length === 0 ? <EmptyState compact title={t('clientWorkspace.gmailNone')} /> : null}
+      {messages.length > 0 ? (
+        <ul className="timeline">
+          {messages.map((message, index) => (
+            <li key={`${message.timestamp}:${index}`}>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{message.body || '—'}</div>
+              <div className="when">
+                {message.direction === 'inbound' ? t('clientWorkspace.them') : t('clientWorkspace.you')} · {formatDateTime(message.timestamp, language)}
+              </div>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </Section>
   );

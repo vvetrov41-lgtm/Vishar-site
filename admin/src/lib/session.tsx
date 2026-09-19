@@ -34,6 +34,7 @@ import { createRecordEditApi, type RecordEditApi } from './record-edit-api';
 import { createWhatsAppConnectionsApi, type WhatsAppConnectionsApi } from './whatsapp-connections-api';
 import { createCommunicationsApi, type CommunicationsApi } from './communications-api';
 import { createEmailApi, type EmailApi } from './email-api';
+import { createGmailMetadataApi, type GmailMetadataApi } from './gmail-metadata-api';
 import { createAiIntakeApi, type AiIntakeApi } from './ai-intake-api';
 import { createAttentionApi, type AttentionApi } from './attention-api';
 import { createSchedulingApi, type SchedulingApi } from './scheduling-api';
@@ -70,7 +71,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi;
+export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -143,6 +144,7 @@ export function SessionProvider({
       createWhatsAppConnectionsApi(client),
       createCommunicationsApi(client),
       createEmailApi(client),
+      createGmailMetadataApi(client),
       createAiIntakeApi(client),
       createAttentionApi(client),
       createSchedulingApi(client),
