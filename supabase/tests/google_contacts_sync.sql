@@ -1,6 +1,6 @@
 begin;
 
-select plan(21);
+select plan(22);
 
 select ok(
   'google_contact_create' = any(enum_range(null::public.outbox_kind)::text[]),
@@ -124,6 +124,18 @@ select is(
   crm_private.reconcile_google_contact_sync('a1111111-1111-4111-8111-111111111111'::uuid),
   1,
   'reconciliation enqueues a valid E.164 linked WhatsApp client'
+);
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+select is(
+  (
+    select job_valid
+    from public.claim_google_contact_outbox('google-contacts-test', 1, 120)
+    where client_id = 'ca611111-1111-4111-8111-111111111111'
+  ),
+  true,
+  'claim marks a valid E.164 linked WhatsApp Google Contact job as valid'
 );
 
 insert into public.clients
