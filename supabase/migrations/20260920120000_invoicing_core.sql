@@ -76,6 +76,7 @@ $$;
 
 create table if not exists public.invoices (
   id              uuid primary key default gen_random_uuid(),
+  idempotency_key uuid not null default gen_random_uuid(),
   artist_id       uuid not null references public.artists(id) on delete restrict,
   client_id       uuid not null references public.clients(id) on delete restrict,
   project_id      uuid not null,
@@ -93,6 +94,7 @@ create table if not exists public.invoices (
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
 
+  constraint invoices_idempotency_key_key unique (idempotency_key),
   constraint invoices_number_key unique (invoice_number),
   constraint invoices_id_artist_key unique (id, artist_id),
   constraint invoices_number_shape check (invoice_number ~ '^INV-[0-9]{4}-[0-9]{5,}$'),
@@ -420,6 +422,7 @@ begin
   end if;
 
   if new.id is distinct from old.id
+     or new.idempotency_key is distinct from old.idempotency_key
      or new.artist_id is distinct from old.artist_id
      or new.client_id is distinct from old.client_id
      or new.project_id is distinct from old.project_id
@@ -557,9 +560,11 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public, crm_private
-as $$
+as $
 declare
   v_invoice public.invoices%rowtype;
+  v_totals record;
+  v_link_added boolean;
 begin
   if tg_op = 'UPDATE'
      and old.invoice_id is not null
@@ -577,7 +582,20 @@ begin
 
   if new.invoice_id is null then return new; end if;
 
-  select * into v_invoice from public.invoices i where i.id = new.invoice_id;
+  v_link_added := tg_op = 'INSERT'
+    or (tg_op = 'UPDATE' and old.invoice_id is null);
+
+  if v_link_added then
+    select * into v_invoice
+    from public.invoices i
+    where i.id = new.invoice_id
+    for update;
+  else
+    select * into v_invoice
+    from public.invoices i
+    where i.id = new.invoice_id;
+  end if;
+
   if not found then
     raise exception 'invoice % does not exist', new.invoice_id using errcode = '23503';
   end if;
@@ -594,10 +612,24 @@ begin
   if v_invoice.voided_at is not null then
     raise exception 'a void invoice cannot take payments' using errcode = '42501';
   end if;
+  if v_invoice.issued_at is null then
+    raise exception 'a draft invoice takes no payments; issue it first' using errcode = '42501';
+  end if;
+
+  -- Linking a request reserves its full face value against the invoice, not
+  -- merely what has settled so far. That prevents a partially-paid request
+  -- from being safe at link time but capable of overpaying later.
+  if v_link_added then
+    select * into v_totals from crm_private.invoice_totals(new.invoice_id);
+    if new.amount > coalesce(v_totals.amount_outstanding, 0) then
+      raise exception 'that payment request is more than the invoice still asks for'
+        using errcode = '23514';
+    end if;
+  end if;
 
   return new;
 end;
-$$;
+$;
 
 /**
  * A void invoice must never acquire money.
@@ -613,24 +645,40 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public, crm_private
-as $$
+as $
 declare
-  v_voided_at timestamptz;
+  v_invoice public.invoices%rowtype;
+  v_totals record;
 begin
   if new.status = 'failed' then return new; end if;
 
-  select i.voided_at into v_voided_at
+  -- Serialize every settled transaction for the same invoice, even when the
+  -- money arrives through different payment requests. The older ledger guard
+  -- serializes one request; this lock owns the invoice-wide ceiling.
+  select i.* into v_invoice
   from public.payment_requests r
   join public.invoices i on i.id = r.invoice_id
-  where r.id = new.payment_request_id;
+  where r.id = new.payment_request_id
+  for update of i;
 
-  if v_voided_at is not null then
+  -- Most payment requests are not invoice-linked and keep their old behaviour.
+  if not found then return new; end if;
+
+  if v_invoice.voided_at is not null then
     raise exception 'a void invoice cannot receive a payment' using errcode = '42501';
+  end if;
+
+  if new.direction = 'credit' then
+    select * into v_totals from crm_private.invoice_totals(v_invoice.id);
+    if new.amount > coalesce(v_totals.amount_outstanding, 0) then
+      raise exception 'payment credits cannot exceed the invoice outstanding balance'
+        using errcode = '23514';
+    end if;
   end if;
 
   return new;
 end;
-$$;
+$;
 
 /**
  * Keeps `invoices.status` honest after anything that moves the arithmetic:
