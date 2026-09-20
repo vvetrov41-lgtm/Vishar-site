@@ -108,6 +108,7 @@ describe('navigation', () => {
       '/inbox',
       '/enquiries',
       '/clients',
+      '/follow-ups',
       '/projects',
       '/appointments',
       '/availability',
@@ -159,7 +160,7 @@ describe('navigation', () => {
     // signed-in profile's own rows, so there is nothing here for a role to
     // widen.
     expect(paths).toEqual([
-      '/', '/inbox', '/enquiries', '/clients', '/projects', '/appointments', '/availability',
+      '/', '/inbox', '/enquiries', '/clients', '/follow-ups', '/projects', '/appointments', '/availability',
       // Statistics counts the same enquiries, projects and sessions a read-only
       // role already reads, so it is offered to that role too. Its money block
       // is not: the database returns no finance rows to a read-only viewer.

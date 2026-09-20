@@ -26,6 +26,7 @@ const NAV_KEYS: Record<string, string> = {
   '/inbox': 'nav.inbox',
   '/enquiries': 'nav.enquiries',
   '/clients': 'nav.clients',
+  '/follow-ups': 'nav.follow-ups',
   '/projects': 'nav.projects',
   '/appointments': 'nav.appointments',
   '/sessions': 'nav.appointments',
@@ -621,6 +622,7 @@ function pageScopeFor(path: string): PageScope {
     || path.startsWith('/enquiries/')
     || path === '/projects'
     || path.startsWith('/projects/')
+    || path === '/follow-ups'
     || path === '/appointments'
     || path === '/sessions'
     || path === '/availability'
@@ -710,6 +712,8 @@ function NavIcon({ path }: { path: string }) {
       return <svg {...common}><path d="M4 5h16v14H4z" /><path d="M4 13h4l2 3h4l2-3h4" /></svg>;
     case '/clients':
       return <svg {...common}><circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><circle cx="17" cy="9" r="2.5" /><path d="M15.5 14.5A5 5 0 0 1 21 19" /></svg>;
+    case '/follow-ups':
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /><path d="m8.5 12 2 2 4-4" /></svg>;
     case '/projects':
       return <svg {...common}><path d="M3 6.5h7l2 2h9v10.5H3z" /><path d="M3 6.5V5h7l2 2" /></svg>;
     case '/appointments':

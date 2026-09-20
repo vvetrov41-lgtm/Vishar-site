@@ -39,6 +39,7 @@ import type {
   EnquiryFile,
   EnquiryStatus,
   FollowUp,
+  FollowUpStatus,
   InternalNote,
   OutboxJob,
   Profile,
@@ -355,6 +356,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     // ---- enquiries --------------------------------------------------------
     async listEnquiries(filters: {
       status?: EnquiryStatus;
+      statuses?: readonly EnquiryStatus[];
       assignedTo?: string;
       clientId?: string;
       search?: string;
@@ -372,6 +374,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
         .limit(200);
 
       if (filters.status) query = query.eq('status', filters.status);
+      else if (filters.statuses?.length) query = query.in('status', [...filters.statuses]);
       if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo);
       if (filters.clientId) query = query.eq('client_id', filters.clientId);
       // A reference number is the one identifier the operator does not have to
@@ -618,15 +621,25 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       );
     },
 
-    async listFollowUps(filter: { enquiryId?: string; clientId?: string; open?: boolean; artistId?: string } = {}): Promise<FollowUp[]> {
+    async listFollowUps(filter: {
+      enquiryId?: string;
+      clientId?: string;
+      open?: boolean;
+      artistId?: string;
+      statuses?: readonly FollowUpStatus[];
+      dueDescending?: boolean;
+      limit?: number;
+    } = {}): Promise<FollowUp[]> {
+      const limit = Math.max(1, Math.min(filter.limit ?? 100, 100));
       let query = client
         .from('follow_ups')
         .select('id, artist_id, status, due_at, subject, details, client_id, enquiry_id, project_id, assigned_to')
-        .order('due_at', { ascending: true })
-        .limit(100);
+        .order('due_at', { ascending: !filter.dueDescending })
+        .limit(limit);
       if (filter.enquiryId) query = query.eq('enquiry_id', filter.enquiryId);
       if (filter.clientId) query = query.eq('client_id', filter.clientId);
       if (filter.open) query = query.eq('status', 'open');
+      else if (filter.statuses?.length) query = query.in('status', [...filter.statuses]);
       if (filter.artistId) query = query.eq('artist_id', filter.artistId);
       return unwrap<FollowUp[]>(await query, 'load follow-ups');
     },
@@ -700,18 +713,22 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       sessionId?: string;
       eventType?: string;
       artistId?: string;
+      limit?: number;
+      offset?: number;
     } = {}): Promise<ActivityEntry[]> {
+      const limit = Math.max(1, Math.min(Math.floor(filter.limit ?? 200), 200));
+      const offset = Math.max(0, Math.floor(filter.offset ?? 0));
       let query = client
         .from('activity_log')
         .select('id, artist_id, occurred_at, event_type, actor_kind, actor_profile_id, client_id, enquiry_id, project_id, session_id, metadata')
-        .order('occurred_at', { ascending: false })
-        .limit(200);
+        .order('occurred_at', { ascending: false });
       if (filter.enquiryId) query = query.eq('enquiry_id', filter.enquiryId);
       if (filter.clientId) query = query.eq('client_id', filter.clientId);
       if (filter.projectId) query = query.eq('project_id', filter.projectId);
       if (filter.sessionId) query = query.eq('session_id', filter.sessionId);
       if (filter.eventType) query = query.eq('event_type', filter.eventType);
       if (filter.artistId) query = query.eq('artist_id', filter.artistId);
+      query = query.range(offset, offset + limit - 1);
       return unwrap<ActivityEntry[]>(await query, 'load the activity log');
     },
 

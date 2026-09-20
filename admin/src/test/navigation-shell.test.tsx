@@ -71,6 +71,7 @@ describe('responsive navigation shell', () => {
 
     expect(within(work).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Enquiries',
+      'Follow-ups',
       'Projects',
       // Statistics is work, not setup: it is read every week rather than
       // configured once.
@@ -99,6 +100,7 @@ describe('responsive navigation shell', () => {
 
     expect(within(dialog).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Enquiries',
+      'Follow-ups',
       'Projects',
       'Statistics',
       'Time off',
