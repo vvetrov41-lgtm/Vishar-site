@@ -116,8 +116,15 @@ That is the existing system reused, not a second one.
 
 ### Operator parity
 
-No new GPT/MCP operation is introduced and no generic query surface is added.
-The GPT action surface is unchanged by this feature.
+The calendar move is a new presentation of the existing `sessions.reschedule`
+operator action, so its GPT classification remains `available`.
+
+Invoicing adds eleven meaningful CRM operator actions. The production GPT
+transport is intentionally unchanged by this feature, but those actions are
+recorded explicitly in `docs/gpt-actions/operator-parity.current.mjs` as
+`gap` rows with bounded server contracts and MCP `candidate` status. They
+remain unavailable to GPT/MCP until a separately reviewed semantic wrapper is
+implemented. No generic query or arbitrary RPC surface is added.
 
 ## Deferred
 
