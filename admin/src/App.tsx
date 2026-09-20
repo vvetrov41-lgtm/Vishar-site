@@ -36,6 +36,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { EnquiriesPage } from './pages/EnquiriesPage';
 import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
 import { FocusedAppointmentPage } from './pages/FocusedAppointmentPage';
+import { FollowUpsPage } from './pages/FollowUpsPage';
 import { InboxPage } from './pages/InboxPage';
 import { InstagramConnectionsPage } from './pages/InstagramConnectionsPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
@@ -234,6 +235,8 @@ function Routes() {
       return <RequireCapability capability="viewEnquiries"><EnquiriesPage /></RequireCapability>;
     case '/clients':
       return <RequireCapability capability="viewClients"><ClientsPage /></RequireCapability>;
+    case '/follow-ups':
+      return <RequireCapability capability="viewFollowUps"><FollowUpsPage /></RequireCapability>;
     case '/projects':
       return <RequireCapability capability="viewProjects"><ProjectsPage /></RequireCapability>;
     case '/appointments':
