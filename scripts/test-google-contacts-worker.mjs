@@ -127,7 +127,7 @@ await test('route and token validation fail closed until Contacts capability and
 
 await test('People 403 responses preserve only safe provider reason classification', async () => {
   for (const [reason, expectedCode] of [
-    ['SERVICE_DISABLED', 'google_contacts_api_disabled'],
+    ['SERVICE_DISABLED', 'google_contacts_provider_rejected'],
     ['ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'google_contacts_scope_missing'],
     ['SOME_OTHER_REASON', 'google_contacts_permission_denied'],
   ]) {
