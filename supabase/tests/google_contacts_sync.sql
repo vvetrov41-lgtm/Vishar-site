@@ -1,6 +1,6 @@
 begin;
 
-select plan(16);
+select plan(17);
 
 select ok(
   'google_contact_create' = any(enum_range(null::public.outbox_kind)::text[]),
@@ -26,6 +26,18 @@ select ok(
 select ok(
   to_regprocedure('crm_private.reconcile_google_contact_sync(uuid)') is not null,
   'private reconciliation helper exists'
+);
+
+select ok(
+  (
+    select p.provolatile = 'v'
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'crm_private'
+      and p.proname = 'google_contacts_sync_enabled'
+      and pg_get_function_identity_arguments(p.oid) = 'p_artist_id uuid'
+  ),
+  'Google Contacts capability check is VOLATILE so same-RPC enablement is visible'
 );
 
 select ok(
