@@ -194,7 +194,7 @@ select is(
 );
 
 select throws_ok(
-  $select public.create_invoice(
+  $$select public.create_invoice(
       'd9111111-1111-4111-8111-111111111111',
       '60000000-0000-4000-8000-000000000001',
       current_date + 7
