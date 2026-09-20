@@ -14,6 +14,11 @@
 import { useEffect, useState } from 'react';
 import { ArtistRelationship } from '../components/ArtistRelationship';
 import { ClientEditPanel } from '../components/ClientEditPanel';
+import {
+  ClientMobileTabPanel,
+  ClientMobileTabs,
+  type ClientMobileTab,
+} from '../components/ClientMobileTabs';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink } from '../components/DetailContext';
 import { BookingPanel } from '../components/BookingPanel';
@@ -59,6 +64,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
   const { profile } = useSession();
   const { t, language } = useLanguage();
   const role = profile?.role;
+  const [mobileTab, setMobileTab] = useState<ClientMobileTab>('work');
 
   const { data, loading, error, reload } = useAsync<ClientData>(async () => {
     const client = await api.getClient(clientId);
@@ -130,88 +136,106 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
         artistIds={artistIds}
       />
 
-      <NextActionCard snapshot={snapshot} />
+      <ClientMobileTabs active={mobileTab} onChange={setMobileTab} />
 
-      <WorkSection enquiries={enquiries} projects={projects} snapshot={snapshot} />
+      <ClientMobileTabPanel tab="work" active={mobileTab}>
+        <NextActionCard snapshot={snapshot} />
 
-      {can(role, 'viewSessions') ? (
-        <BookingsSection appointments={appointments} />
-      ) : null}
+        <WorkSection enquiries={enquiries} projects={projects} snapshot={snapshot} />
 
-      {/* Booking starts where the operator realises they need it. The artist
-          comes from the client's own work when it is unambiguous, and from the
-          scope selector otherwise - never from a free-text field, because the
-          artist decides the whole schedule. */}
-      {can(role, 'manageSessions') ? (
-        <Section title={t('booking.title')}>
-          <BookingPanel
-            artistId={bookingArtistId}
-            clientId={clientId}
-            clientName={client.full_name}
-            /* Tattoo work belongs to a project, and the database refuses one
-               without. This screen already holds the client's projects and
-               enquiries, so it offers them rather than sending an operator to
-               another page to find out which. */
-            projectOptions={projects.map((project) => ({
-              id: project.id,
-              label: project.title,
-              enquiryId: project.enquiry_id,
-            }))}
-            enquiryOptions={enquiries.map((enquiry) => ({
-              id: enquiry.id,
-              label: enquiry.reference_number,
-            }))}
-            onBooked={() => reload()}
-          />
-        </Section>
-      ) : null}
+        {can(role, 'viewSessions') ? (
+          <BookingsSection appointments={appointments} />
+        ) : null}
 
-      {can(role, 'viewEnquiries') ? (
-        <>
-          <MessagesSection conversations={conversations} messages={latestMessages} />
-          <GmailMessagesSection api={api} clientId={clientId} />
-        </>
-      ) : null}
+        {/* Booking starts where the operator realises they need it. The artist
+            comes from the client's own work when it is unambiguous, and from the
+            scope selector otherwise - never from a free-text field, because the
+            artist decides the whole schedule. */}
+        {can(role, 'manageSessions') ? (
+          <Section title={t('booking.title')}>
+            <BookingPanel
+              artistId={bookingArtistId}
+              clientId={clientId}
+              clientName={client.full_name}
+              /* Tattoo work belongs to a project, and the database refuses one
+                 without. This screen already holds the client's projects and
+                 enquiries, so it offers them rather than sending an operator to
+                 another page to find out which. */
+              projectOptions={projects.map((project) => ({
+                id: project.id,
+                label: project.title,
+                enquiryId: project.enquiry_id,
+              }))}
+              enquiryOptions={enquiries.map((enquiry) => ({
+                id: enquiry.id,
+                label: enquiry.reference_number,
+              }))}
+              onBooked={() => reload()}
+            />
+          </Section>
+        ) : null}
 
-      {can(role, 'viewFollowUps') ? (
-        <FollowUpsSection followUps={snapshot.openFollowUps} clientId={clientId} />
-      ) : null}
+        {can(role, 'viewFollowUps') ? (
+          <FollowUpsSection followUps={snapshot.openFollowUps} clientId={clientId} />
+        ) : null}
+      </ClientMobileTabPanel>
 
-      {can(role, 'viewNotes') ? (
-        <Section title={t('client.notes')}>
-          {notes.length === 0 ? <EmptyState compact title={t('client.noNotes')} /> : (
-            <ul className="timeline">
-              {notes.map((note) => (
-                <li key={note.id}>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{note.body}</div>
-                  <div className="when">{formatDateTime(note.created_at, language)}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-      ) : null}
+      <ClientMobileTabPanel tab="messages" active={mobileTab}>
+        {can(role, 'viewEnquiries') ? (
+          <>
+            <MessagesSection conversations={conversations} messages={latestMessages} />
+            <GmailMessagesSection api={api} clientId={clientId} />
+          </>
+        ) : null}
+      </ClientMobileTabPanel>
 
-      {/* The nine-row identity block used to occupy the top of this page. It is
-          reference material, not the operational question, so it sits last and
-          closed. */}
-      <section className="card">
-        <details className="submitted-snapshot" style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}>
-          <summary>{t('clientWorkspace.details')}</summary>
-          <dl className="definition">
-            <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
-            <dt>{t('enquiry.phone')}</dt><dd>{formatPhoneForDisplay(client.phone) ?? '—'}</dd>
-            <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
-            <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
-            <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
-            <dt>{t('artistScope.label')}</dt>
-            <dd><ArtistRelationship artistIds={artistIds} showEmpty /></dd>
-            <dt>{t('client.firstSeen')}</dt><dd>{formatDate(client.created_at, language)}</dd>
-          </dl>
-          <ClientEditPanel client={client} role={role} api={api} language={language} onSaved={reload} />
-          <p className="notice" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>
-        </details>
-      </section>
+      <ClientMobileTabPanel tab="history" active={mobileTab}>
+        {can(role, 'viewSessions') ? (
+          <PastBookingsMobileSection appointments={appointments} />
+        ) : null}
+
+        {can(role, 'viewNotes') ? (
+          <Section title={t('client.notes')}>
+            {notes.length === 0 ? <EmptyState compact title={t('client.noNotes')} /> : (
+              <ul className="timeline">
+                {notes.map((note) => (
+                  <li key={note.id}>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{note.body}</div>
+                    <div className="when">{formatDateTime(note.created_at, language)}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+        ) : null}
+      </ClientMobileTabPanel>
+
+      <ClientMobileTabPanel tab="details" active={mobileTab}>
+        {/* On desktop this remains the same collapsed reference block. On a
+            phone, choosing Details opens it immediately instead of asking for
+            another tap after choosing the tab. */}
+        <section className="card">
+          <details
+            className="submitted-snapshot"
+            open={mobileTab === 'details' ? true : undefined}
+            style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}
+          >
+            <summary>{t('clientWorkspace.details')}</summary>
+            <dl className="definition">
+              <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
+              <dt>{t('enquiry.phone')}</dt><dd>{formatPhoneForDisplay(client.phone) ?? '—'}</dd>
+              <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
+              <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
+              <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
+              <dt>{t('artistScope.label')}</dt>
+              <dd><ArtistRelationship artistIds={artistIds} showEmpty /></dd>
+              <dt>{t('client.firstSeen')}</dt><dd>{formatDate(client.created_at, language)}</dd>
+            </dl>
+            <ClientEditPanel client={client} role={role} api={api} language={language} onSaved={reload} />
+            <p className="notice" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>
+          </details>
+        </section>
+      </ClientMobileTabPanel>
     </>
   );
 }
