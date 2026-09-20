@@ -27,7 +27,7 @@ language plpgsql
 stable
 security definer
 set search_path = pg_catalog, public, crm_private
-as $
+as $rpc$
 declare
   v_invoice public.invoices%rowtype;
   v_totals record;
@@ -135,7 +135,7 @@ begin
     ), '[]'::jsonb)
   );
 end;
-$$;
+$rpc$;
 
 /**
  * The invoice list, narrowed by whatever the caller supplied.
