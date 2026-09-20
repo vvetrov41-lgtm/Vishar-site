@@ -115,3 +115,95 @@ CSS. No PDF library is added.
 Self-booking, a public client area, VAT and tax returns, a second payment
 system, any third-party calendar service, and any change to Telegram, Gmail or
 WhatsApp routing.
+
+## Migration safety, rollback and backfill
+
+Two migrations, both forward-only and both additive:
+
+| File | What it adds |
+| --- | --- |
+| `supabase/migrations/20260920120000_invoicing_core.sql` | `public.invoice_status`; tables `invoices`, `invoice_line_items`, `credit_notes`; columns `payment_requests.invoice_id`, `payment_requests.payment_method_code`, `payment_requests.external_reference`; the totals and status derivation; the guards; RLS and `select` grants |
+| `supabase/migrations/20260920121000_invoicing_rpcs.sql` | Eleven `security definer` RPCs and their grants |
+
+Nothing is dropped and nothing is renamed. No existing row is written by either
+migration.
+
+### Why existing records keep working
+
+`payment_requests.invoice_id` is nullable and has no default. Every deposit and
+every payment that exists today keeps `invoice_id is null`, and every read and
+workflow that touches those rows is unchanged - `request_project_deposit`,
+`request_session_deposit`, `record_manual_payment`, the Monzo reconciliation
+path and `listProjectPaymentRequests` never mention the column. pgTAP 293 pins
+this with a deposit created the way the CRM creates one today.
+
+The two new `payment_requests` columns are nullable with shape checks that
+accept null, so an insert written before this change still satisfies them.
+
+### Rollback
+
+Forward-only is the repository's convention, so no `down` migration is
+committed. If the layer had to be withdrawn before anything used it, the
+reverse is, in order:
+
+```sql
+-- 1. The RPCs.
+drop function if exists public.create_credit_note(uuid,uuid,numeric,text);
+drop function if exists public.record_invoice_payment(uuid,uuid,numeric,timestamptz,text,text);
+drop function if exists public.attach_payment_request_to_invoice(uuid,uuid);
+drop function if exists public.void_invoice(uuid,text);
+drop function if exists public.issue_invoice(uuid,date);
+drop function if exists public.set_invoice_details(uuid,date,numeric,text);
+drop function if exists public.remove_invoice_line_item(uuid);
+drop function if exists public.set_invoice_line_item(uuid,text,numeric,numeric,uuid,uuid,integer);
+drop function if exists public.create_invoice(uuid,uuid,date,text);
+drop function if exists public.list_invoices(uuid,uuid,uuid,public.invoice_status,integer);
+drop function if exists public.get_invoice(uuid);
+
+-- 2. The triggers this change added to existing tables.
+drop trigger if exists payment_transactions_refresh_invoice on public.payment_transactions;
+drop trigger if exists payment_requests_invoice_link_guard on public.payment_requests;
+
+-- 3. The link, then the tables.
+alter table public.payment_requests drop constraint if exists payment_requests_invoice_artist_fkey;
+alter table public.payment_requests drop column if exists invoice_id;
+alter table public.payment_requests drop column if exists payment_method_code;
+alter table public.payment_requests drop column if exists external_reference;
+drop table if exists public.credit_notes;
+drop table if exists public.invoice_line_items;
+drop table if exists public.invoices;
+drop type if exists public.invoice_status;
+```
+
+Step 3 destroys invoices, so it is only safe while none exists. Once an invoice
+has been issued, the correct withdrawal is to stop offering the screens and
+leave the tables in place: the documents are financial records.
+
+### Backfill
+
+Deliberately none, and not by omission.
+
+A historical deposit cannot be attached to an invoice automatically, because
+there is no invoice to attach it to - invoices did not exist. Inventing one per
+historical deposit would create documents nobody issued and nobody sent, with
+numbers in this year's sequence.
+
+The path forward is per project and by hand, through the interface:
+
+1. Open the project and raise an invoice.
+2. Price it from the sessions actually worked.
+3. Issue it.
+4. Use **Count a deposit already taken** to attach the deposit the project
+   already holds.
+
+`attach_payment_request_to_invoice` is exactly that operation, and it refuses a
+request belonging to another artist, client or project.
+
+If a bulk backfill is ever wanted, it needs its own migration, its own approval
+and a dry run against a restored copy - not this change.
+
+### Production
+
+Not applied anywhere. This branch carries the migration files only; applying
+them is the `deploy-private-production-database` gate's job, from an approved
+release branch, which this is not.
