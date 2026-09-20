@@ -197,11 +197,15 @@ export function createGoogleContactsProvider({
       { headers },
     );
     const payload = await response.json().catch(() => null);
-    if (!payload || !Array.isArray(payload.results)) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new CalendarConnectorError('google_contacts_provider_rejected');
+    }
+    const results = payload.results === undefined ? [] : payload.results;
+    if (!Array.isArray(results)) {
       throw new CalendarConnectorError('google_contacts_provider_rejected');
     }
 
-    return payload.results.some((result) => {
+    return results.some((result) => {
       const numbers = Array.isArray(result?.person?.phoneNumbers)
         ? result.person.phoneNumbers
         : [];
