@@ -77,7 +77,16 @@ export function WeekCalendarView({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [resizePickingId, setResizePickingId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
-  const slots = slotsFor(calendar);
+  // If the latest appointment already ends on the grid boundary, the normal
+  // ruler has no row below its edge. While resize is active, reveal two more
+  // hours (capped at local midnight) so the edge can be extended as well as
+  // shortened. After the save/reload the normal grid contracts around the new
+  // authoritative window again.
+  const resizeActive = resizePickingId !== null || resizingId !== null;
+  const slots = slotsFor({
+    startHour: calendar.startHour,
+    endHour: resizeActive ? Math.min(24, calendar.endHour + 2) : calendar.endHour,
+  });
   const picking = pickingId
     ? calendar.days
       .flatMap((day) => day.entries)
