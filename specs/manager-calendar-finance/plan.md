@@ -126,26 +126,35 @@ recorded explicitly in `docs/gpt-actions/operator-parity.current.mjs` as
 remain unavailable to GPT/MCP until a separately reviewed semantic wrapper is
 implemented. No generic query or arbitrary RPC surface is added.
 
-## Deferred
+## Duration resize extension
 
-Changing an appointment's duration by dragging a block's edge. The week grid
-moves an appointment without resizing it; duration is edited through the
-existing start/end fields on the appointment row, which already go through
-`reschedule_appointment`. A resize handle needs its own conflict-preview
-behaviour, its own touch target and its own keyboard equivalent, and none of
-that is needed to answer "can this client come on Wednesday instead?". It is
-deferred, not refused.
+Duration editing belongs to the same week/day surface rather than a separate
+scheduler. The lower edge of an authorised, same-day appointment is a resize
+handle. Desktop users can drag it to a slot; touch and keyboard users activate
+the handle and choose an exposed end-time target.
+
+The start instant never changes. `resizeTarget` resolves the chosen end wall
+clock in the artist's IANA zone and refuses a duration shorter than one
+30-minute grid slot. The page then follows exactly the move path:
+`list_appointment_conflicts` first, then `reschedule_appointment`, with the
+same optimistic hold, in-flight guard and rollback. No database or Worker
+surface changes.
+
+The grid intentionally does not resize overnight appointments. A cross-day
+edge is ambiguous in a multi-column week view, while the existing explicit
+start/end editor already handles those rare records safely.
 
 ## Tests
 
 - `admin/src/test/calendar-week.test.ts`: zone reading, Monday week start,
-  wall-clock day arithmetic across the transition, the skipped 01:30, drop
-  placement into BST, elapsed duration across the October transition, grid
-  building, partial-day time off widening the grid.
-- `admin/src/test/calendar-drag.test.tsx`: the move through the keyboard path
-  and through synthetic drag events, the conflict pre-check ordering, rollback
-  on refusal, the overlap-bounded window with an overnight booking, the slot
-  ruler staying independent of bookings, and who is offered the drag.
+  wall-clock day arithmetic across the transition, the skipped 01:30, move and
+  resize placement through GMT/BST, elapsed duration across the October
+  transition, minimum resize duration, grid building, partial-day time off.
+- `admin/src/test/calendar-drag.test.tsx`: move and duration-resize through
+  keyboard/touch target paths and synthetic drag events, conflict pre-check
+  ordering, rollback on refusal, the overlap-bounded window with an overnight
+  booking, the slot ruler staying independent of bookings, and per-artist
+  permissions for both affordances.
 - `admin/src/test/invoicing.test.tsx`: the figures as the server derived them,
   overdue, the printable document, draft-only pricing and details, payment
   including the over-payment and double-press refusals, deposit attachment,
