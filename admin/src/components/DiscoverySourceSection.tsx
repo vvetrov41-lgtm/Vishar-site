@@ -1,33 +1,9 @@
 import { EmptyState, Section } from './StateViews';
-import {
-  discoveryBreakdown,
-  type DiscoverySourceKey,
-} from '../lib/discovery-statistics';
+import { discoveryBreakdown } from '../lib/discovery-statistics';
+import { discoverySourceLabel } from '../lib/discovery-source-registry';
 import type { StatisticsEnquiryWithDiscovery } from '../lib/statistics-api';
 import type { Period } from '../lib/statistics';
 import type { Language } from '../lib/i18n';
-
-const ENGLISH_LABELS: Record<DiscoverySourceKey, string> = {
-  instagram: 'Instagram',
-  google: 'Google',
-  ai: 'ChatGPT / AI',
-  referral: 'Recommendation / Friend',
-  convention: 'Tattoo convention',
-  returning_client: 'Returning client',
-  other: 'Other',
-  not_recorded: 'Not recorded',
-};
-
-const RUSSIAN_LABELS: Record<DiscoverySourceKey, string> = {
-  instagram: 'Instagram',
-  google: 'Google',
-  ai: 'ChatGPT / AI',
-  referral: 'Рекомендация / знакомые',
-  convention: 'Тату-конвенция',
-  returning_client: 'Постоянный клиент',
-  other: 'Другое',
-  not_recorded: 'Не указано',
-};
 
 export function DiscoverySourceSection({
   enquiries,
@@ -41,7 +17,6 @@ export function DiscoverySourceSection({
   locale: string;
 }) {
   const rows = discoveryBreakdown(enquiries, period);
-  const labels = language === 'ru' ? RUSSIAN_LABELS : ENGLISH_LABELS;
   const copy = language === 'ru'
     ? {
         title: 'Как о вас узнали',
@@ -75,7 +50,7 @@ export function DiscoverySourceSection({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.key}>
-                  <th scope="row">{labels[row.key]}</th>
+                  <th scope="row">{discoverySourceLabel(row.key, language)}</th>
                   <td>{new Intl.NumberFormat(locale).format(row.count)}</td>
                   <td>{new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(row.share)}%</td>
                 </tr>
