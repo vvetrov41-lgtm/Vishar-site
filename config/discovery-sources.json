@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "key": "instagram",
+      "labels": { "en": "Instagram", "ru": "Instagram" },
+      "detail": { "mode": "none", "label_en": "", "label_ru": "" }
+    },
+    {
+      "key": "google",
+      "labels": { "en": "Google", "ru": "Google" },
+      "detail": { "mode": "none", "label_en": "", "label_ru": "" }
+    },
+    {
+      "key": "ai",
+      "labels": { "en": "ChatGPT / AI", "ru": "ChatGPT / AI" },
+      "detail": {
+        "mode": "optional",
+        "label_en": "Which AI service? (optional)",
+        "label_ru": "Какой AI-сервис? (необязательно)"
+      }
+    },
+    {
+      "key": "referral",
+      "labels": { "en": "Recommendation / Friend", "ru": "Рекомендация / знакомые" },
+      "detail": {
+        "mode": "optional",
+        "label_en": "Who recommended {artist}? (optional)",
+        "label_ru": "Кто порекомендовал {artist}? (необязательно)"
+      }
+    },
+    {
+      "key": "convention",
+      "labels": { "en": "Tattoo convention", "ru": "Тату-конвенция" },
+      "detail": { "mode": "none", "label_en": "", "label_ru": "" }
+    },
+    {
+      "key": "returning_client",
+      "labels": { "en": "Returning client", "ru": "Постоянный клиент" },
+      "detail": { "mode": "none", "label_en": "", "label_ru": "" }
+    },
+    {
+      "key": "other",
+      "labels": { "en": "Other", "ru": "Другое" },
+      "detail": {
+        "mode": "required",
+        "label_en": "Please tell us where you found {artist}",
+        "label_ru": "Укажите, где вы нашли {artist}"
+      }
+    }
+  ],
+  "legacyAliases": {
+    "chatgpt": "ai",
+    "other_ai": "ai",
+    "friend_referral": "referral",
+    "tattoo_convention": "convention"
+  }
+}
